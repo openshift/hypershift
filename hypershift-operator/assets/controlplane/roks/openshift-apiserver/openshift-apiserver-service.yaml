@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openshift-apiserver
+spec:
+  clusterIP: {{ .OpenShiftAPIClusterIP }}
+  selector:
+    app: openshift-apiserver
+  ports:
+  - name: https
+    port: 443
+    targetPort: 8443

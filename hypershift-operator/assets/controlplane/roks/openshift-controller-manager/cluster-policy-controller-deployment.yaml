@@ -1,0 +1,93 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: cluster-policy-controller
+spec:
+  replicas: {{ .Replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: cluster-policy-controller
+  template:
+    metadata:
+      labels:
+        app: cluster-policy-controller
+        clusterID: "{{ .ClusterID }}"
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: clusterID
+                      operator: In
+                      values: ["{{ .ClusterID }}"]
+                topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["cluster-policy-controller"]
+              topologyKey: "kubernetes.io/hostname"
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["cluster-policy-controller"]
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+      automountServiceAccountToken: false
+{{ if .MasterPriorityClass }}
+      priorityClassName: {{ .MasterPriorityClass }}
+{{ end }}
+      containers:
+      - name: cluster-policy-controller
+        image: {{ imageFor "cluster-policy-controller" }}
+        command:
+        - "cluster-policy-controller"
+        args:
+        - "start"
+        - "--config=/etc/kubernetes/cmconfig/config.yaml"
+        - "--kubeconfig=/etc/kubernetes/secret/kubeconfig"
+{{ if .ClusterPolicyControllerResources }}
+        resources:{{ range .ClusterPolicyControllerResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        volumeMounts:
+        - mountPath: /etc/kubernetes/secret
+          name: secret
+        - mountPath: /etc/kubernetes/cmconfig
+          name: cmconfig
+        - mountPath: /etc/kubernetes/config
+          name: config
+      volumes:
+      - secret:
+          secretName: openshift-controller-manager
+        name: secret
+      - configMap:
+          name: openshift-controller-manager
+        name: config
+      - configMap:
+          name: openshift-controller-manager-config
+        name: cmconfig

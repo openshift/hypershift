@@ -1,0 +1,126 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: oauth-openshift
+spec:
+  replicas: {{ .Replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: oauth-openshift
+  template:
+    metadata:
+      labels:
+        app: oauth-openshift
+        clusterID: "{{ .ClusterID }}"
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      tolerations:
+      - key: "multi-az-worker"
+        operator: "Equal"
+        value: "true"
+        effect: NoSchedule
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: clusterID
+                      operator: In
+                      values: ["{{ .ClusterID }}"]
+                topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["oauth-openshift"]
+              topologyKey: "kubernetes.io/hostname"
+            - labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["oauth-openshift"]
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+      automountServiceAccountToken: false
+{{ if .MasterPriorityClass }}
+      priorityClassName: {{ .MasterPriorityClass }}
+{{ end }}
+      containers:
+        - name: openshift-oauthserver
+          image: {{ imageFor "oauth-server" }}
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: healthz
+              port: 6443
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            successThreshold: 1
+            timeoutSeconds: 10
+          args:
+            - "osinserver"
+            - "--config=/etc/oauth-openshift-configfile/config.yaml"
+{{ if .OAuthServerResources }}
+          resources:{{ range .OAuthServerResources }}{{ range .ResourceRequest }}
+            requests: {{ if .CPU }}
+              cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+              memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+            limits: {{ if .CPU }}
+              cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+              memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+          volumeMounts:
+            - mountPath: /etc/oauth-openshift-secrets/
+              name: oauth-openshift-secrets
+            - mountPath: /etc/oauth-openshift-sessionsecret/
+              name: oauth-openshift-sessionsecret
+            - mountPath: /etc/oauth-openshift-config/
+              name: oauth-openshift-config
+            - mountPath: /etc/oauth-openshift-configfile/
+              name: oauth-openshift-configfile
+            - mountPath: /var/run/kubernetes
+              name: logs
+            - mountPath: /var/config/system/secrets/v4-0-config-system-ocp-branding-template
+              name: v4-0-config-system-ocp-branding-template
+              readOnly: true
+          workingDir: /var/run/kubernetes
+      volumes:
+      - emptyDir: {}
+        name: logs
+      - name: oauth-openshift-secrets
+        secret:
+          defaultMode: 420
+          secretName: oauth-openshift
+      - name: oauth-openshift-sessionsecret
+        secret:
+          defaultMode: 420
+          secretName: oauth-openshift-sessionsecret
+      - name: oauth-openshift-config
+        configMap:
+          name: oauth-openshift
+      - name: oauth-openshift-configfile
+        configMap:
+          name: oauth-openshift-config
+      - name: v4-0-config-system-ocp-branding-template
+        secret:
+          defaultMode: 420
+          items:
+            - key: login.html
+              path: login.html
+            - key: providers.html
+              path: providers.html
+            - key: errors.html
+              path: errors.html
+          secretName: v4-0-config-system-ocp-branding-template

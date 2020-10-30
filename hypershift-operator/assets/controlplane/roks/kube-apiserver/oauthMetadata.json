@@ -1,0 +1,30 @@
+{
+{{ if ne .ExternalOauthPort 0 }}
+"issuer": "https://{{ .ExternalOauthDNSName }}:{{ .ExternalOauthPort }}",
+"authorization_endpoint": "https://{{ .ExternalOauthDNSName }}:{{ .ExternalOauthPort }}/oauth/authorize",
+"token_endpoint": "https://{{ .ExternalOauthDNSName }}:{{ .ExternalOauthPort }}/oauth/token",
+{{ else }}
+"issuer": "https://oauth-openshift.{{ .IngressSubdomain }}",
+"authorization_endpoint": "https://oauth-openshift.{{ .IngressSubdomain }}/oauth/authorize",
+"token_endpoint": "https://oauth-openshift.{{ .IngressSubdomain }}/oauth/token",
+{{ end }}
+  "scopes_supported": [
+    "user:check-access",
+    "user:full",
+    "user:info",
+    "user:list-projects",
+    "user:list-scoped-projects"
+  ],
+  "response_types_supported": [
+    "code",
+    "token"
+  ],
+  "grant_types_supported": [
+    "authorization_code",
+    "implicit"
+  ],
+  "code_challenge_methods_supported": [
+    "plain",
+    "S256"
+  ]
+}

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openvpn-ccd
+data:
+  worker: |-
+{{ include "openvpn/worker" 4 }}

@@ -1,0 +1,7 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: router-proxy-vpnclient-config
+data:
+  client.conf: |-
+{{ include "router-proxy/client.conf" 4 }}

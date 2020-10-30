@@ -1,0 +1,11 @@
+language: go
+
+go:
+  - 1.12.x
+  - 1.13.x
+  - 1.14.x
+  - tip
+
+script:
+  - go vet
+  - go test -v -cover -timeout 1800s

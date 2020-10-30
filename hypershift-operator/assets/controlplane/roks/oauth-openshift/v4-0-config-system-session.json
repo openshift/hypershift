@@ -1,0 +1,10 @@
+{
+  "kind": "SessionSecrets",
+  "apiVersion": "v1",
+  "secrets": [
+    {
+      "authentication": "{{ randomString 64 }}",
+      "encryption": "{{ randomString 32  }}"
+    }
+  ]
+}

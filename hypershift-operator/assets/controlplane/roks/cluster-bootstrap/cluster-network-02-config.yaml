@@ -1,0 +1,15 @@
+apiVersion: config.openshift.io/v1
+kind: Network
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec:
+  clusterNetwork:
+  - cidr: {{ .PodCIDR }}
+    hostPrefix: 23
+  externalIP:
+    policy: {}
+  networkType: {{ .NetworkType }}
+  serviceNetwork:
+  - {{ .ServiceCIDR }}
+status: {}

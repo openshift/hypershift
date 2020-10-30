@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypershift-operator
+data:
+  initial-ca.crt: |
+{{ include_pki "combined-ca.crt"  4 }}

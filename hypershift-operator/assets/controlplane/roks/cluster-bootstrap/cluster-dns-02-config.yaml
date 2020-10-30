@@ -1,0 +1,8 @@
+apiVersion: config.openshift.io/v1
+kind: DNS
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec:
+  baseDomain: {{ .BaseDomain }}
+status: {}

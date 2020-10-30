@@ -1,0 +1,131 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    name: control-plane-operator
+imagePullSecrets:
+- name: pull-secret
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-plane-operator
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - pods
+  verbs:
+  - get
+  - patch
+  - update
+  - create
+  - list
+  - watch
+- apiGroups: ["extensions", "apps"]
+  resources:
+  - deployments
+  verbs:
+  - get
+  - patch
+  - update
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-plane-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: control-plane-operator
+subjects:
+  - kind: ServiceAccount
+    name: control-plane-operator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane-operator
+  template:
+    metadata:
+      labels:
+        app: control-plane-operator
+        clusterID: "{{ .ClusterID }}"
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: clusterID
+                      operator: In
+                      values: ["{{ .ClusterID }}"]
+                topologyKey: "kubernetes.io/hostname"
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+{{ if .MasterPriorityClass }}
+      priorityClassName: {{ .MasterPriorityClass }}
+{{ end }}
+      containers:
+      - image: {{ .ControlPlaneOperatorImage }}
+        name: control-plane-operator
+{{ if .ControlPlaneOperatorSecurity }}
+        securityContext:
+          runAsUser: {{ .ControlPlaneOperatorSecurity }}
+{{ end }}
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: OPENSHIFT_RELEASE_VERSION
+          value: {{ version "release" }}
+        - name: KUBERNETES_VERSION
+          value: {{ version "kubernetes" }}
+        command:
+        - "/usr/bin/control-plane-operator"
+        - "--initial-ca-file=/etc/kubernetes/config/initial-ca.crt"
+        - "--target-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig"
+        - "--namespace"
+        - "$(POD_NAMESPACE)"{{range $controller := .ControlPlaneOperatorControllers }}
+        - "--controllers={{$controller}}"{{end}}
+{{ if .ControlPlaneOperatorResources }}
+        resources:{{ range .ControlPlaneOperatorResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        volumeMounts:
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/config
+          name: config
+      restartPolicy: Always
+      serviceAccountName: control-plane-operator
+      volumes:
+      - name: kubeconfig
+        secret:
+          secretName: service-network-admin-kubeconfig
+      - name: config
+        configMap:
+          name: control-plane-operator

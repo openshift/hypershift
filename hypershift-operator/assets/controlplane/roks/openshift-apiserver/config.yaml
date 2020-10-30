@@ -1,0 +1,69 @@
+apiVersion: openshiftcontrolplane.config.openshift.io/v1
+kind: OpenShiftAPIServerConfig
+aggregatorConfig:
+  allowedNames:
+  - kube-apiserver-proxy
+  - system:kube-apiserver-proxy
+  - system:openshift-aggregator
+  clientCA: "/etc/kubernetes/config/aggregator-client-ca.crt"
+  extraHeaderPrefixes:
+  - X-Remote-Extra-
+  groupHeaders:
+  - X-Remote-Group
+  usernameHeaders:
+  - X-Remote-User
+apiServerArguments:
+  minimal-shutdown-duration:
+  - 3s
+auditConfig:
+  auditFilePath: "/var/run/kubernetes/audit.log"
+  enabled: true
+  logFormat: json
+  maximumFileSizeMegabytes: 100
+  maximumRetainedFiles: 10
+  policyConfiguration:
+    apiVersion: audit.k8s.io/v1beta1
+    kind: Policy
+    omitStages:
+    - RequestReceived
+    rules:
+    - level: None
+      resources:
+      - group: ''
+        resources:
+        - events
+    - level: None
+      resources:
+      - group: oauth.openshift.io
+        resources:
+        - oauthaccesstokens
+        - oauthauthorizetokens
+    - level: None
+      nonResourceURLs:
+      - "/api*"
+      - "/version"
+      - "/healthz"
+      userGroups:
+      - system:authenticated
+      - system:unauthenticated
+    - level: Metadata
+      omitStages:
+      - RequestReceived
+kubeClientConfig:
+  kubeConfig: /etc/kubernetes/secret/kubeconfig
+servingInfo:
+  certFile: /etc/kubernetes/secret/server.crt
+  keyFile: /etc/kubernetes/secret/server.key
+  clientCA: /etc/kubernetes/config/serving-ca.crt
+imagePolicyConfig:
+  internalRegistryHostname: image-registry.openshift-image-registry.svc:5000
+projectConfig:
+  projectRequestMessage: ''
+routingConfig:
+  subdomain: {{ .IngressSubdomain }}
+storageConfig:
+  urls:
+  - https://{{ .EtcdClientName }}:2379
+  certFile: /etc/kubernetes/secret/etcd-client.crt
+  keyFile: /etc/kubernetes/secret/etcd-client.key
+  ca: /etc/kubernetes/config/etcd-ca.crt

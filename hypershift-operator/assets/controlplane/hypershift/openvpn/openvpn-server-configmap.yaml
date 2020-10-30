@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openvpn-server
+data:
+  server.conf: |-
+{{ include "openvpn/server.conf" 4 }}

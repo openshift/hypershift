@@ -1,0 +1,150 @@
+---
+apiVersion: kubecontrolplane.config.openshift.io/v1
+kind: KubeAPIServerConfig
+admission:
+  pluginConfig:
+    network.openshift.io/ExternalIPRanger:
+      configuration:
+        allowIngressIP: false
+        apiVersion: network.openshift.io/v1
+        externalIPNetworkCIDRs:
+        kind: ExternalIPRangerAdmissionConfig
+      location: ''
+    network.openshift.io/RestrictedEndpointsAdmission:
+      configuration:
+        apiVersion: network.openshift.io/v1
+        kind: RestrictedEndpointsAdmissionConfig
+        restrictedCIDRs:
+        - {{ .PodCIDR }}
+        - {{ .ServiceCIDR }}
+aggregatorConfig:
+  proxyClientInfo:
+    certFile: "/etc/kubernetes/secret/proxy-client.crt"
+    keyFile: "/etc/kubernetes/secret/proxy-client.key"
+apiServerArguments:
+  enable-aggregator-routing:
+  - 'true'
+  feature-gates:
+  {{ range $featureGate := .DefaultFeatureGates }}- {{ $featureGate }}
+  {{ end }}{{ range $featureGate := .ExtraFeatureGates }}- {{ $featureGate }}
+  {{ end }}
+  http2-max-streams-per-connection:
+  - '2000'
+  kubelet-preferred-address-types:
+  - InternalIP
+  shutdown-delay-duration:
+  - 70s
+  storage-backend:
+  - etcd3
+  storage-media-type:
+  - application/vnd.kubernetes.protobuf
+  advertise-address:
+  - "{{ .ExternalAPIAddress }}"
+  cloud-provider:
+  - "{{ .CloudProvider }}"
+  service-account-issuer:
+  - https://kubernetes.default.svc
+  service-account-signing-key-file:
+  - /etc/kubernetes/secret/service-account.key
+  api-audiences:
+  - https://kubernetes.default.svc
+auditConfig:
+  auditFilePath: "/var/log/kube-apiserver/audit.log"
+  enabled: true
+  logFormat: json
+  maximumFileSizeMegabytes: 100
+  maximumRetainedFiles: 10
+{{ if .APIServerAuditEnabled }}
+  policyFile: /etc/kubernetes/audit/policy.yaml
+  webHookKubeConfig: /etc/kubernetes/audit/webhook-kubeconfig
+  webHookMode: batch
+{{ else }}
+  policyConfiguration:
+    apiVersion: audit.k8s.io/v1beta1
+    kind: Policy
+    omitStages:
+    - RequestReceived
+    rules:
+    - level: None
+      resources:
+      - group: ''
+        resources:
+        - events
+    - level: None
+      resources:
+      - group: oauth.openshift.io
+        resources:
+        - oauthaccesstokens
+        - oauthauthorizetokens
+    - level: None
+      nonResourceURLs:
+      - "/api*"
+      - "/version"
+      - "/healthz"
+      - "/readyz"
+      userGroups:
+      - system:authenticated
+      - system:unauthenticated
+    - level: Metadata
+      omitStages:
+      - RequestReceived
+{{ end }}
+authConfig:
+  oauthMetadataFile: "/etc/kubernetes/oauth/oauthMetadata.json"
+  requestHeader:
+    clientCA: "/etc/kubernetes/config/aggregator-client-ca.crt"
+    clientCommonNames:
+    - kube-apiserver-proxy
+    - system:kube-apiserver-proxy
+    - system:openshift-aggregator
+    extraHeaderPrefixes:
+    - X-Remote-Extra-
+    groupHeaders:
+    - X-Remote-Group
+    usernameHeaders:
+    - X-Remote-User
+  webhookTokenAuthenticators:
+consolePublicURL: 'https://console-openshift-console.{{ .IngressSubdomain }}'
+corsAllowedOrigins:
+- "//127\\.0\\.0\\.1(:|$)"
+- "//localhost(:|$)"
+imagePolicyConfig:
+  internalRegistryHostname: image-registry.openshift-image-registry.svc:5000
+kubeletClientInfo:
+  ca: "/etc/kubernetes/config/kubelet-client-ca.crt"
+  certFile: "/etc/kubernetes/secret/kubelet-client.crt"
+  keyFile: "/etc/kubernetes/secret/kubelet-client.key"
+  port: 10250
+projectConfig:
+  defaultNodeSelector: ''
+serviceAccountPublicKeyFiles:
+- "/etc/kubernetes/config/service-account.pub"
+servicesNodePortRange: 30000-32767
+servicesSubnet: {{ .ServiceCIDR }}
+servingInfo:
+  bindAddress: 0.0.0.0:{{ .InternalAPIPort }}
+  bindNetwork: tcp4
+  clientCA: "/etc/kubernetes/config/serving-ca.crt"
+  certFile: "/etc/kubernetes/secret/server.crt"
+  keyFile: "/etc/kubernetes/secret/server.key"
+  maxRequestsInFlight: 1200
+  requestTimeoutSeconds: 3600
+{{ if .NamedCerts }}
+  namedCertificates:
+  {{ range .NamedCerts }}
+  - certFile: {{ .NamedCertPrefix }}.crt
+    keyFile: {{ .NamedCertPrefix }}.key
+    names:
+    - {{ .NamedCertDomain }}
+  {{ end }}
+{{ end }}
+storageConfig:
+  ca: "/etc/kubernetes/config/etcd-ca.crt"
+  certFile: "/etc/kubernetes/secret/etcd-client.crt"
+  keyFile: "/etc/kubernetes/secret/etcd-client.key"
+  urls:
+  - https://{{ .EtcdClientName }}:2379
+userAgentMatchingConfig:
+  defaultRejectionMessage: ''
+  deniedClients:
+  requiredClients:

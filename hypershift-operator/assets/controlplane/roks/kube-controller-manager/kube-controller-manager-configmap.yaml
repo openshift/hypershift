@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-controller-manager
+data:
+  root-ca.crt: |-
+{{ include_pki "combined-ca.crt" 4 }}
+  service-ca.crt: |-
+{{ include_pki "combined-ca.crt" 4 }}

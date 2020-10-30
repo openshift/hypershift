@@ -1,0 +1,103 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: openshift-apiserver
+spec:
+  replicas: {{ .Replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: openshift-apiserver
+  template:
+    metadata:
+      labels:
+        app: openshift-apiserver
+        clusterID: "{{ .ClusterID }}"
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: clusterID
+                      operator: In
+                      values: ["{{ .ClusterID }}"]
+                topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["openshift-apiserver"]
+              topologyKey: "kubernetes.io/hostname"
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["openshift-apiserver"]
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+      automountServiceAccountToken: false
+{{ if .MasterPriorityClass }}
+      priorityClassName: {{ .MasterPriorityClass }}
+{{ end }}
+      containers:
+      - name: openshift-apiserver
+        image: {{ imageFor "openshift-apiserver" }}
+        args:
+        - "start"
+        - "--config=/etc/kubernetes/apiserver-config/config.yaml"
+        - "--authorization-kubeconfig=/etc/kubernetes/secret/kubeconfig"
+        - "--authentication-kubeconfig=/etc/kubernetes/secret/kubeconfig"
+        - "--requestheader-client-ca-file=/etc/kubernetes/config/aggregator-client-ca.crt"
+        - "--requestheader-allowed-names=kube-apiserver-proxy,system:kube-apiserver-proxy,system:openshift-aggregator"
+        - "--requestheader-username-headers=X-Remote-User"
+        - "--requestheader-group-headers=X-Remote-Group"
+        - "--requestheader-extra-headers-prefix=X-Remote-Extra-"
+        - "--client-ca-file=/etc/kubernetes/config/serving-ca.crt"
+{{ if .OpenshiftAPIServerResources }}
+        resources:{{ range .OpenshiftAPIServerResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        volumeMounts:
+        - mountPath: /etc/kubernetes/secret
+          name: secret
+        - mountPath: /etc/kubernetes/apiserver-config
+          name: apiserver-config
+        - mountPath: /etc/kubernetes/config
+          name: config
+        - mountPath: /var/run/kubernetes
+          name: logs
+        workingDir: /var/run/kubernetes
+      volumes:
+      - secret:
+          secretName: openshift-apiserver
+        name: secret
+      - configMap:
+          name: openshift-apiserver
+        name: config
+      - configMap:
+          name: openshift-apiserver-config
+        name: apiserver-config
+      - emptyDir: {}
+        name: logs

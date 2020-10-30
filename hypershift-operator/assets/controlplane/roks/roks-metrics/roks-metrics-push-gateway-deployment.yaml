@@ -1,0 +1,38 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: push-gateway
+  namespace: openshift-roks-metrics
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: push-gateway
+  template:
+    metadata:
+      labels:
+        app: push-gateway
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      containers:
+      - name: push-gateway
+        image: {{ .ROKSMetricsImage }}
+        imagePullPolicy: Always
+        command:
+        - pushgateway
+        ports:
+        - containerPort: 9091
+          name: http

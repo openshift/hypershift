@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-version-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: cluster-version-operator
+  template:
+    metadata:
+      name: cluster-version-operator
+      labels:
+        k8s-app: cluster-version-operator
+        clusterID: "{{ .ClusterID }}"
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: clusterID
+                      operator: In
+                      values: ["{{ .ClusterID }}"]
+                topologyKey: "kubernetes.io/hostname"
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      automountServiceAccountToken: false
+{{ if .MasterPriorityClass }}
+      priorityClassName: {{ .MasterPriorityClass }}
+{{ end }}
+      containers:
+        - name: cluster-version-operator
+          image: {{ .ReleaseImage }}
+          imagePullPolicy: Always
+          command:
+            - "cluster-version-operator"
+          args:
+            - "start"
+            - "--release-image={{ .ReleaseImage }}"
+            - "--enable-auto-update=false"
+            - "--enable-default-cluster-version=true"
+            - "--kubeconfig=/etc/openshift/kubeconfig/kubeconfig"
+            - "--v=4"
+          terminationMessagePolicy: FallbackToLogsOnError
+{{ if .ClusterVersionOperatorResources }}
+          resources:{{ range .ClusterVersionOperatorResources }}{{ range .ResourceRequest }}
+            requests: {{ if .CPU }}
+              cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+              memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+            limits: {{ if .CPU }}
+              cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+              memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+          volumeMounts:
+            - mountPath: /etc/cvo/updatepayloads
+              name: etc-cvo-updatepayloads
+              readOnly: true
+            - mountPath: /etc/openshift/kubeconfig
+              name: kubeconfig
+              readOnly: true
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: EXCLUDE_MANIFESTS
+              value: internal-openshift-hosted
+{{ if .ROKSMetricsImage }}
+        - name: metrics-pusher
+          image: {{ .ROKSMetricsImage }}
+          imagePullPolicy: Always
+          command:
+            - "metrics-pusher"
+          args:
+            - "--destination-path=/api/v1/namespaces/openshift-roks-metrics/services/push-gateway:http/proxy/metrics/job/cluster-version-operator"
+            - "--kubeconfig=/etc/openshift/kubeconfig/kubeconfig"
+            - "--frequency=30s"
+            - "--source-url=http://localhost:9099/metrics"
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - mountPath: /etc/openshift/kubeconfig
+              name: kubeconfig
+              readOnly: true
+{{ end }}
+      volumes:
+        - name: work
+          emptyDir: {}
+        - name: etc-cvo-updatepayloads
+          emptyDir: {}
+        - name: kubeconfig
+          secret:
+            secretName: service-network-admin-kubeconfig

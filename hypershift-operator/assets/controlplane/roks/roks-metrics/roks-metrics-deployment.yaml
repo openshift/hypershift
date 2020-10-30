@@ -1,0 +1,50 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: metrics
+  namespace: openshift-roks-metrics
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: metrics
+  template:
+    metadata:
+      labels:
+        app: metrics
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      containers:
+      - name: metrics
+        image: {{ .ROKSMetricsImage }}
+        imagePullPolicy: Always
+        args:
+        - "--alsologtostderr"
+        - "--v=3"
+        - "--listen=:8443"
+        ports:
+        - containerPort: 8443
+          name: https
+        volumeMounts:
+        - name: serving-cert
+          mountPath: /var/run/secrets/serving-cert
+      serviceAccountName: roks-metrics 
+      volumes:
+      - name: serving-cert
+        secret:
+          secretName: serving-cert
+          defaultMode: 400
+          optional: true

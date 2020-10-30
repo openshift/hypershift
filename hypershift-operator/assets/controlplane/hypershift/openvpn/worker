@@ -1,0 +1,2 @@
+iroute {{ address .ServiceCIDR }} {{ mask .ServiceCIDR }}
+iroute {{ address .PodCIDR }} {{ mask .PodCIDR }}

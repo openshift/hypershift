@@ -1,0 +1,42 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 20-apiserver-haproxy
+  labels:
+    machineconfiguration.openshift.io/role: master
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    storage:
+      files:
+      - filesystem: root
+        path: "/usr/local/bin/setup-apiserver-ip.sh"
+        contents:
+          source: "{{ dataURLEncode "apiserver-haproxy/setup-apiserver-ip.sh" }}"
+          verification: {}
+        mode: 0755
+      - filesystem: root
+        path: "/usr/local/bin/teardown-apiserver-ip.sh"
+        contents:
+          source: "{{ dataURLEncode "apiserver-haproxy/teardown-apiserver-ip.sh" }}"
+          verification: {}
+        mode: 0755
+      - filesystem: root
+        path: "/etc/kubernetes/apiserver-proxy-config/haproxy.cfg"
+        contents:
+          source: "{{ dataURLEncode "apiserver-haproxy/haproxy.cfg" }}"
+          verification: {}
+        mode: 0644
+      - filesystem: root
+        path: "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml"
+        contents:
+          source: "{{ dataURLEncode "apiserver-haproxy/kube-apiserver-proxy.yaml" }}"
+          verification: {}
+        mode: 0644
+    systemd:
+      units:
+      - contents: |-
+{{ include "apiserver-haproxy/apiserver-ip.service" 10 }}
+        enabled: true
+        name: "apiserver-ip.service"

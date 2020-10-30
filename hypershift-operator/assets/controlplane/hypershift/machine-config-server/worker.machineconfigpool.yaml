@@ -1,0 +1,14 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: worker
+  labels:
+    "operator.machineconfiguration.openshift.io/required-for-upgrade": ""
+    "machineconfiguration.openshift.io/mco-built-in": ""
+spec:
+  machineConfigSelector:
+    matchLabels:
+      "machineconfiguration.openshift.io/role": "master"
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/master: ""

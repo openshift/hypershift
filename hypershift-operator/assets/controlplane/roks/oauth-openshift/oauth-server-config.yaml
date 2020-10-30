@@ -1,0 +1,76 @@
+apiVersion: osin.config.openshift.io/v1
+auditConfig:
+  auditFilePath: ''
+  enabled: false
+  logFormat: ''
+  maximumFileRetentionDays: 0
+  maximumFileSizeMegabytes: 0
+  maximumRetainedFiles: 0
+  policyConfiguration:
+  policyFile: ''
+  webHookKubeConfig: ''
+  webHookMode: ''
+corsAllowedOrigins:
+kind: OsinServerConfig
+kubeClientConfig:
+  connectionOverrides:
+    acceptContentTypes: ''
+    burst: 400
+    contentType: ''
+    qps: 400
+  kubeConfig: "/etc/oauth-openshift-secrets/kubeconfig"
+oauthConfig:
+  alwaysShowProviderSelection: false
+  assetPublicURL: https://console-openshift-console.{{ .BaseDomain }}
+  grantConfig:
+    method: auto
+    serviceAccountMethod: prompt
+{{ if .IdentityProviders }}  identityProviders:
+{{ trimTrailingSpace .IdentityProviders | indent 2 }}{{- else }}  identityProviders: []{{- end }}
+  loginURL: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
+{{ if .NamedCerts }}  masterCA: ""
+{{- else }}  masterCA: "/etc/oauth-openshift-config/ca.crt"
+{{- end }}
+  masterPublicURL: https://{{ .ExternalOauthDNSName }}:{{ .ExternalOauthPort }}
+  masterURL: https://{{ .ExternalOauthDNSName }}:{{ .ExternalOauthPort }}
+  sessionConfig:
+    sessionMaxAgeSeconds: 300
+    sessionName: ssn
+    sessionSecretsFile: "/etc/oauth-openshift-sessionsecret/v4-0-config-system-session"
+  templates:
+    error: "/var/config/system/secrets/v4-0-config-system-ocp-branding-template/errors.html"
+    login: "/var/config/system/secrets/v4-0-config-system-ocp-branding-template/login.html"
+    providerSelection: "/var/config/system/secrets/v4-0-config-system-ocp-branding-template/providers.html"
+  tokenConfig:
+    accessTokenMaxAgeSeconds: 86400
+    authorizeTokenMaxAgeSeconds: 300
+servingInfo:
+  bindAddress: 0.0.0.0:6443
+  bindNetwork: tcp4
+  certFile: /etc/oauth-openshift-secrets/server.crt
+  cipherSuites:
+    - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+    - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+    - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+    - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+    - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+    - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+    - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+    - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+    - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+    - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+    - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+    - TLS_RSA_WITH_AES_128_GCM_SHA256
+    - TLS_RSA_WITH_AES_256_GCM_SHA384
+    - TLS_RSA_WITH_AES_128_CBC_SHA
+    - TLS_RSA_WITH_AES_256_CBC_SHA
+  keyFile: /etc/oauth-openshift-secrets/server.key
+  maxRequestsInFlight: 1000
+  minTLSVersion: VersionTLS12
+  requestTimeoutSeconds: 300
+storageConfig:
+  ca: ''
+  certFile: ''
+  keyFile: ''
+  storagePrefix: ''

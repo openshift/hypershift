@@ -1,0 +1,92 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: openshift-controller-manager
+spec:
+  replicas: {{ .Replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: openshift-controller-manager
+  template:
+    metadata:
+      labels:
+        app: openshift-controller-manager
+        clusterID: "{{ .ClusterID }}"
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: clusterID
+                      operator: In
+                      values: ["{{ .ClusterID }}"]
+                topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["openshift-controller-manager"]
+              topologyKey: "kubernetes.io/hostname"
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["openshift-controller-manager"]
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+      automountServiceAccountToken: false
+{{ if .MasterPriorityClass }}
+      priorityClassName: {{ .MasterPriorityClass }}
+{{ end }}
+      containers:
+      - name: openshift-controller-manager
+        image: {{ imageFor "openshift-controller-manager" }}
+        command:
+        - "openshift-controller-manager"
+        args:
+        - "start"
+        - "--config=/etc/kubernetes/cmconfig/config.yaml"
+{{ if .OpenshiftControllerManagerResources }}
+        resources:{{ range .OpenshiftControllerManagerResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        volumeMounts:
+        - mountPath: /etc/kubernetes/secret
+          name: secret
+        - mountPath: /etc/kubernetes/cmconfig
+          name: cmconfig
+        - mountPath: /etc/kubernetes/config
+          name: config
+      volumes:
+      - secret:
+          secretName: openshift-controller-manager
+        name: secret
+      - configMap:
+          name: openshift-controller-manager
+        name: config
+      - configMap:
+          name: openshift-controller-manager-config
+        name: cmconfig

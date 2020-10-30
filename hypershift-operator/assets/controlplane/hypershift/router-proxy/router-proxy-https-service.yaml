@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: router-https
+spec:
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: https
+  selector:
+    app: router-proxy

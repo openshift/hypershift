@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: router-http
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  selector:
+    app: router-proxy

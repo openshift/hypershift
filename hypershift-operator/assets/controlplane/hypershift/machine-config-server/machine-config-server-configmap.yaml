@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: machine-config-server
+data:
+  root-ca.crt: |-
+{{ include_pki "root-ca.crt" 4 }}
+  combined-ca.crt: |-
+{{ include_pki "combined-ca.crt" 4 }}
+  cluster-infrastructure-02-config.yaml: |-
+{{ include "machine-config-server/cluster-infrastructure-02-config.yaml" 4 }}
+  cluster-network-02-config.yaml: |-
+{{ include "machine-config-server/cluster-network-02-config.yaml" 4 }}
+  cluster-proxy-01-config.yaml: |-
+{{ include "machine-config-server/cluster-proxy-01-config.yaml" 4 }}
+  install-config.yaml: |-
+{{ include "machine-config-server/install-config.yaml" 4 }}
+  pull-secret.yaml: |-
+{{ include "machine-config-server/pull-secret.yaml" 4 }}
+  master.machineconfigpool.yaml: |-
+{{ include "machine-config-server/master.machineconfigpool.yaml" 4 }}
+  worker.machineconfigpool.yaml: |-
+{{ include "machine-config-server/worker.machineconfigpool.yaml" 4 }}

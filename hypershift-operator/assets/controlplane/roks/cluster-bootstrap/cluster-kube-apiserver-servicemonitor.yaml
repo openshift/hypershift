@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openshift-kube-apiserver
+  namespace: openshift-kube-apiserver
+spec:
+  namespaceSelector:
+    matchNames:
+    - default
+  selector:
+      component: apiserver
+  endpoints:
+  - bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    tlsConfig:
+      caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    interval: 30s
+    scheme: https
+    port: https
+    path: /metrics
+    metricRelabelings:
+    - action: keep
+      regex: etcd_object_counts.*
+      sourceLabels:
+      - __name__

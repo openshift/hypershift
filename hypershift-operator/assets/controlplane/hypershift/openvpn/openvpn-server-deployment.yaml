@@ -1,0 +1,58 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: openvpn-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openvpn-server
+  template:
+    metadata:
+      labels:
+        app: openvpn-server
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: openvpn-server
+        image: quay.io/hypershift/openvpn:latest
+        imagePullPolicy: Always
+        command:
+        - /usr/sbin/openvpn
+        args:
+        - --config
+        - /etc/openvpn/config/server.conf
+        workingDir: /etc/openvpn/server
+        securityContext:
+          privileged: true
+{{ if .OpenVPNServerResources }}
+        resources:{{ range .OpenVPNServerResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        volumeMounts:
+        - mountPath: /etc/openvpn/server
+          name: server
+        - mountPath: /etc/openvpn/ccd
+          name: ccd
+        - mountPath: /etc/openvpn/config
+          name: config
+      serviceAccountName: vpn
+      volumes:
+      - secret:
+          secretName: openvpn-server
+        name: server
+      - configMap:
+          name: openvpn-server
+        name: config
+      - configMap:
+          name: openvpn-ccd
+        name: ccd

@@ -1,0 +1,59 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: openvpn-client
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openvpn-client
+  template:
+    metadata:
+      labels:
+        app: openvpn-client
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: openvpn-client
+        image: quay.io/hypershift/openvpn:latest
+        imagePullPolicy: Always
+        command:
+        - /bin/bash
+        args:
+        - -c
+        - |-
+          #!/bin/bash
+          set -eu
+          iptables -t nat -A POSTROUTING -s 192.168.255.0/24 -j MASQUERADE
+          exec /usr/sbin/openvpn --config /etc/openvpn-config/client.conf
+        workingDir: /etc/openvpn
+        securityContext:
+          privileged: true
+{{ if .OpenVPNClientResources }}
+        resources:{{ range .OpenVPNClientResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        volumeMounts:
+        - mountPath: /etc/openvpn
+          name: secret
+        - mountPath: /etc/openvpn-config
+          name: config
+        - mountPath: /lib/modules
+          name: host-modules
+          readOnly: true
+      volumes:
+      - secret:
+          secretName: openvpn-client
+        name: secret
+      - name: config
+        configMap:
+          name: openvpn-client
+      - hostPath:
+          path: /lib/modules
+        name: host-modules

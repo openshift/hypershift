@@ -1,0 +1,161 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: machine-config-server
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: machine-config-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+subjects:
+  - kind: ServiceAccount
+    name: machine-config-server
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-config-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: machine-config-server
+  template:
+    metadata:
+      labels:
+        app: machine-config-server
+    spec:
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      serviceAccountName: machine-config-server
+      initContainers:
+      - image: {{ imageFor "machine-config-operator" }}
+        name: machine-config-operator-bootstrap
+        command:
+        - /bin/bash
+        args:
+        - -c
+        - |-
+          mkdir -p /mcc-manifests/bootstrap/manifests
+          mkdir -p /mcc-manifests/manifests
+          exec machine-config-operator bootstrap \{{ if lessthan_version "4.6.0" }}
+          --etcd-ca=/assets/manifests/root-ca.crt \
+          --etcd-metric-ca=/assets/manifests/root-ca.crt \
+          --etcd-image={{ imageFor "etcd" }} \
+          --kube-client-agent-image={{ imageFor "kube-client-agent" }} \{{ end }}
+          --root-ca=/assets/manifests/root-ca.crt \
+          --kube-ca=/assets/manifests/combined-ca.crt \
+          --machine-config-operator-image={{ imageFor "machine-config-operator" }} \
+          --machine-config-oscontent-image={{ imageFor "machine-os-content" }} \
+          --infra-image={{ imageFor "pod" }} \
+          --keepalived-image={{ imageFor "keepalived-ipfailover" }} \
+          --coredns-image={{ imageFor "coredns" }} \
+          --mdns-publisher-image={{ imageFor "mdns-publisher" }} \
+          --haproxy-image={{ imageFor "haproxy-router" }} \
+          --baremetal-runtimecfg-image={{ imageFor "baremetal-runtimecfg" }} \
+          --infra-config-file=/assets/manifests/cluster-infrastructure-02-config.yaml \
+          --network-config-file=/assets/manifests/cluster-network-02-config.yaml \
+          --proxy-config-file=/assets/manifests/cluster-proxy-01-config.yaml \
+          --config-file=/assets/manifests/install-config.yaml \
+          --dest-dir=/mcc-manifests \
+          --pull-secret=/assets/manifests/pull-secret.yaml
+
+          # Use our own version of configpools that swap master and workers
+          mv /mcc-manifests/bootstrap/manifests /mcc-manifests/bootstrap/manifests.tmp
+          mkdir /mcc-manifests/bootstrap/manifests
+          cp /mcc-manifests/bootstrap/manifests.tmp/* /mcc-manifests/bootstrap/manifests/
+          cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests/
+        volumeMounts:
+        - mountPath: /mcc-manifests
+          name: mcc-manifests
+        - mountPath: /assets/manifests
+          name: config
+      - image: {{ imageFor "cli" }}
+        imagePullPolicy: IfNotPresent
+        name: inject-custom-machine-configs
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        workingDir: /tmp
+        command:
+        - /usr/bin/bash
+        args:
+        - -c
+        - |-
+          cat <<"EOF" > "./copy-ignition-config.sh"
+          #!/bin/bash
+          name="${1}"
+          oc get cm ${name} -n "${NAMESPACE}" -o jsonpath='{ .data.data }' > "/mcc-manifests/bootstrap/manifests/${name/#ignition-config-//}.yaml"
+          EOF
+          chmod +x ./copy-ignition-config.sh
+          oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh
+        volumeMounts:
+        - mountPath: /mcc-manifests
+          name: mcc-manifests
+      - image: {{ imageFor "machine-config-operator" }}
+        imagePullPolicy: IfNotPresent
+        name: machine-config-controller-bootstrap
+        command:
+        - /usr/bin/machine-config-controller
+        args:
+        - bootstrap
+        - --manifest-dir=/mcc-manifests/bootstrap/manifests
+        - --pull-secret=/mcc-manifests/bootstrap/manifests/machineconfigcontroller-pull-secret
+        - --dest-dir=/mcs-manifests
+        volumeMounts:
+        - mountPath: /mcc-manifests
+          name: mcc-manifests
+        - mountPath: /mcs-manifests
+          name: mcs-manifests
+      containers:
+      - image: {{ imageFor "machine-config-operator" }}
+        imagePullPolicy: IfNotPresent
+        name: machine-config-server
+        command:
+        - /usr/bin/machine-config-server
+        args:
+        - bootstrap
+        - --bootstrap-kubeconfig=/etc/openshift/kubeconfig
+        - --secure-port=8443
+        - --insecure-port=8080
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: https
+          containerPort: 8443
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /etc/openshift
+          name: kubeconfig
+          readOnly: true
+        - mountPath: /etc/mcs/bootstrap
+          name: mcs-manifests
+        - mountPath: /etc/mcc/bootstrap
+          name: mcc-manifests
+        - mountPath: /etc/ssl/mcs
+          name: mcs-tls
+      volumes:
+      - name: kubeconfig
+        secret:
+          secretName: machine-config-server-kubeconfig
+      - name: mcs-tls
+        secret:
+          secretName: machine-config-server
+      - name: mcc-manifests
+        emptyDir: {}
+      - name: mcs-manifests
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: machine-config-server

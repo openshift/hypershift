@@ -1,0 +1,7 @@
+
+# HACK: Our kube-controller-manager assumes this namespace exists and dies if it does not.
+# The pv-recycler-controller is creating a ServiceAccount in that namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-controller-manager

@@ -1,0 +1,99 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: user-manifests-bootstrapper
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: user-manifests-bootstrapper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+subjects:
+  - kind: ServiceAccount
+    name: user-manifests-bootstrapper
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: manifests-bootstrapper
+spec:
+  tolerations:
+    - key: "multi-az-worker"
+      operator: "Equal"
+      value: "true"
+      effect: NoSchedule
+  initContainers:
+    - image: {{ .ReleaseImage }}
+      imagePullPolicy: IfNotPresent
+      name: cluster-version-operator
+      workingDir: /tmp
+      command:
+        - /bin/bash
+      args:
+        - -c
+        - |-
+          cd /tmp
+          mkdir output
+          /usr/bin/cluster-version-operator render --output-dir /tmp/output --release-image {{ .ReleaseImage }}
+          # Exclude the CVO deployment manifest
+          rm /tmp/output/manifests/0000_00_cluster-version-operator*deployment.yaml
+          cp /tmp/output/manifests/* /work
+          # Add machineconfig CRDs to prevent upgrade getting stuck
+          cp /release-manifests/*machine-config-operator*machineconfig*.crd.yaml /work
+      volumeMounts:
+        - mountPath: /work
+          name: work
+    - image: {{ imageFor "cluster-config-operator" }}
+      imagePullPolicy: IfNotPresent
+      name: config-operator
+      workingDir: /tmp
+      command:
+        - /bin/bash
+      args:
+        - -c
+        - |-
+          cd /tmp
+          mkdir input output
+          /usr/bin/cluster-config-operator render --config-output-file config --asset-input-dir /tmp/input --asset-output-dir /tmp/output
+          cp /tmp/output/manifests/* /work
+      volumeMounts:
+        - mountPath: /work
+          name: work
+  containers:
+    - image: {{ imageFor "cli" }}
+      imagePullPolicy: IfNotPresent
+      name: bootstrapper
+      workingDir: /work
+      command:
+        - /bin/bash
+      args:
+        - -c
+        - |-
+          #!/bin/bash
+          set -eu
+          for name in $(oc get cm | grep '^user-manifest-' | awk '{ print $1 }'); do
+             oc get cm ${name} -o jsonpath='{ .data.data }' > "${name}.yaml"
+          done
+          export KUBECONFIG=/etc/openshift/kubeconfig
+          oc apply -f $(pwd)
+          # Replace the global certs configmap here because it's too large to oc apply
+          oc create configmap -n openshift-controller-manager openshift-global-ca --from-file ca-bundle.crt=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --dry-run -o yaml > /tmp/openshift-global-ca
+          oc replace -n openshift-controller-manager -f /tmp/openshift-global-ca --force
+      volumeMounts:
+        - mountPath: /etc/openshift
+          name: kubeconfig
+          readOnly: true
+        - mountPath: /work
+          name: work
+  restartPolicy: OnFailure
+  serviceAccountName: user-manifests-bootstrapper
+  volumes:
+    - name: kubeconfig
+      secret:
+        secretName: service-network-admin-kubeconfig
+    - name: work
+      emptyDir: {}

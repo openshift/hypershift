@@ -1,0 +1,20 @@
+apiVersion: openshiftcontrolplane.config.openshift.io/v1
+kind: OpenShiftControllerManagerConfig
+build:
+  buildDefaults:
+    resources: {}
+  imageTemplateFormat:
+    format: {{ imageFor "docker-builder" }}
+deployer:
+  imageTemplateFormat:
+    format: {{ imageFor "deployer" }}
+dockerPullSecret:
+  internalRegistryHostname: image-registry.openshift-image-registry.svc:5000
+ingress:
+  ingressIPNetworkCIDR: ''
+kubeClientConfig:
+  kubeConfig: /etc/kubernetes/secret/kubeconfig
+servingInfo:
+  certFile: /etc/kubernetes/secret/server.crt
+  keyFile: /etc/kubernetes/secret/server.key
+  clientCA: /etc/kubernetes/config/serving-ca.crt

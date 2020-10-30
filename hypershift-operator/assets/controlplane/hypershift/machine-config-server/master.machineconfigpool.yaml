@@ -1,0 +1,13 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: master
+  labels:
+    "machineconfiguration.openshift.io/mco-built-in": ""
+spec:
+  machineConfigSelector:
+    matchLabels:
+      "machineconfiguration.openshift.io/role": "worker"
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: roks-metrics
+  namespace: openshift-roks-metrics
+  labels:
+    app: metrics
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: serving-cert
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: https
+  selector:
+    app: metrics
+  type: ClusterIP
