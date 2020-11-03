@@ -1,0 +1,77 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.3.0
+  creationTimestamp: null
+  name: openshiftclusters.hypershift.openshift.io
+spec:
+  group: hypershift.openshift.io
+  names:
+    kind: OpenShiftCluster
+    listKind: OpenShiftClusterList
+    plural: openshiftclusters
+    singular: openshiftcluster
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: OpenShiftCluster is the Schema for the openshiftclusters API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: OpenShiftClusterSpec defines the desired state of OpenShiftCluster
+            properties:
+              baseDomain:
+                type: string
+              cloudProvider:
+                type: string
+              computeReplicas:
+                type: integer
+              podCIDR:
+                type: string
+              pullSecret:
+                type: string
+              releaseImage:
+                type: string
+              serviceCIDR:
+                type: string
+              sshKey:
+                type: string
+            required:
+            - baseDomain
+            - cloudProvider
+            - computeReplicas
+            - podCIDR
+            - pullSecret
+            - releaseImage
+            - serviceCIDR
+            - sshKey
+            type: object
+          status:
+            description: OpenShiftClusterStatus defines the observed state of OpenShiftCluster
+            properties:
+              ready:
+                type: boolean
+            required:
+            - ready
+            type: object
+        type: object
+    served: true
+    storage: true
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

@@ -1,0 +1,97 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: router-proxy
+  labels:
+    app: router-proxy
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: router-proxy
+  template:
+    metadata:
+      labels:
+        app: router-proxy
+    spec:
+      initContainers:
+      - name: service-ip
+        image: {{ imageFor "cli" }}
+        env:
+        - name: KUBECONFIG
+          value: /etc/openshift/kubeconfig
+        command:
+        - /bin/bash
+        args:
+        - -c
+        - |-
+          #!/bin/bash
+          while ! oc get service -n openshift-ingress router-internal-default; do
+            echo "Waiting for the internal default router to be available"
+            sleep 30
+          done
+          export ROUTER_SERVICE_IP="$(oc get service -n openshift-ingress router-internal-default -o jsonpath='{ .spec.clusterIP }')"
+          sed -e "s/\${ROUTER_SERVICE_IP}/${ROUTER_SERVICE_IP}/" /config-template/haproxy.cfg > /config/haproxy.cfg
+        volumeMounts:
+        - name: config-template
+          mountPath: /config-template
+        - name: config
+          mountPath: /config
+        - name: kubeconfig
+          mountPath: /etc/openshift
+      containers:
+      - name: router-proxy
+        image: {{ imageFor "haproxy-router" }}
+        command:
+        - haproxy
+        args:
+        - -f
+        - /usr/local/etc/haproxy/haproxy.cfg
+        ports:
+        - containerPort: 8443
+          name: https
+        - containerPort: 8080
+          name: http
+        securityContext:
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - MKNOD
+            - NET_ADMIN
+        volumeMounts:
+        - name: config
+          mountPath: /usr/local/etc/haproxy
+      - name: openvpn-client
+        image: quay.io/hypershift/openvpn:latest
+        imagePullPolicy: Always
+        command:
+        - /usr/sbin/openvpn
+        args:
+        - --config
+        - /etc/openvpn/config/client.conf
+        workingDir: /etc/openvpn/
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /etc/openvpn/secret
+          name: vpnsecret
+        - mountPath: /etc/openvpn/config
+          name: vpnconfig
+      serviceAccountName: vpn
+      volumes:
+      - name: config-template
+        configMap:
+          name: router-proxy-config
+      - name: config
+        emptyDir: {}
+      - name: kubeconfig
+        secret:
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          name: router-proxy-vpnclient-config
+        name: vpnconfig
+      - secret:
+          secretName: router-proxy-vpnclient-secret
+        name: vpnsecret

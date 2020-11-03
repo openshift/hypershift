@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-apiserver
+data:
+  aggregator-client-ca.crt: |-
+{{ include_pki "root-ca.crt" 4 }}
+  kubelet-client-ca.crt: |-
+{{ include_pki "combined-ca.crt" 4 }}
+  service-account.pub: |-
+{{ include_pki "service-account.pub" 4 }}
+  serving-ca.crt: |-
+{{ include_pki "combined-ca.crt" 4 }}
+  etcd-ca.crt: |-
+{{ include_pki "root-ca.crt" 4 }}

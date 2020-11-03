@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-apiserver
+spec:
+  ports:
+  - port: {{ .InternalAPIPort }}
+    protocol: TCP
+    targetPort: {{ .InternalAPIPort }}
+    nodePort: {{ .APINodePort }}
+  selector:
+    app: kube-apiserver
+  type: NodePort

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth-openshift-config
+data:
+  config.yaml: |-
+{{ include "oauth-openshift/oauth-server-config.yaml" 4 }}

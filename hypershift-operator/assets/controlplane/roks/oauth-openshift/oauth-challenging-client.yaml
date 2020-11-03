@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-manifest-openshift-challenging-client
+data:
+  data: |
+    apiVersion: oauth.openshift.io/v1
+    grantMethod: auto
+    kind: OAuthClient
+    metadata:
+      name: openshift-challenging-client
+    redirectURIs:
+    - https://{{ .ExternalOauthDNSName }}:{{ .ExternalOauthPort }}/oauth/token/implicit
+    respondWithChallenges: true

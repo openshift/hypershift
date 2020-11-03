@@ -1,0 +1,42 @@
+- op: add
+  path: /spec/template/spec/containers/0/securityContext
+  value:
+    runAsUser: 1001
+    capabilities:
+      drop:
+      - MKNOD
+      - NET_ADMIN
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: vpnconfig
+    configMap:
+      name: kube-apiserver-vpnclient-config
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: vpnsecret
+    secret:
+      secretName: kube-apiserver-vpnclient-secret
+- op: add
+  path: /spec/template/spec/serviceAccountName
+  value: vpn
+- op: add
+  path: /spec/template/spec/containers/-
+  value:
+    name: openvpn-client
+    image: quay.io/hypershift/openvpn:latest
+    imagePullPolicy: Always
+    command:
+    - /usr/sbin/openvpn
+    args:
+    - --config
+    - /etc/openvpn/config/client.conf
+    workingDir: /etc/openvpn/
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - mountPath: /etc/openvpn/secret
+      name: vpnsecret
+    - mountPath: /etc/openvpn/config
+      name: vpnconfig

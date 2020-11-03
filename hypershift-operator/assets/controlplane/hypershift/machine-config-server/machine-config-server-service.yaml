@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: machine-config-server
+spec:
+  ports:
+  - port: 80
+    name: http
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: machine-config-server
+  type: ClusterIP

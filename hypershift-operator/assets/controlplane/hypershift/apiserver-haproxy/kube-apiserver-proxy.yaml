@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-apiserver-proxy
+  namespace: kube-system
+  labels:
+    k8s-app: kube-apiserver-proxy
+spec:
+  hostNetwork: true
+  containers:
+  - name: haproxy
+    image: {{ imageFor "haproxy-router" }}
+    livenessProbe:
+      failureThreshold: 3
+      initialDelaySeconds: 120
+      periodSeconds: 120
+      successThreshold: 1
+      tcpSocket:
+        host: {{ .ExternalAPIAddress }}
+        port: 6443
+      timeoutSeconds: 60
+    command:
+    - haproxy
+    - -f
+    - /usr/local/etc/haproxy/haproxy.cfg
+    volumeMounts:
+    - name: config
+      mountPath: /usr/local/etc/haproxy
+  volumes:
+  - name: config
+    hostPath:
+      path: /etc/kubernetes/apiserver-proxy-config

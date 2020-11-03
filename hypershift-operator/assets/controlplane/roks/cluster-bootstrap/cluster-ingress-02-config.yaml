@@ -1,0 +1,8 @@
+apiVersion: config.openshift.io/v1
+kind: Ingress
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec:
+  domain: {{ .IngressSubdomain }}
+status: {}

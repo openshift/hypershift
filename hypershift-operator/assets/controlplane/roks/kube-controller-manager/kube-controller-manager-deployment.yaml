@@ -1,0 +1,102 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: kube-controller-manager
+spec:
+  replicas: {{ .Replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: kube-controller-manager
+  template:
+    metadata:
+      labels:
+        app: kube-controller-manager
+        clusterID: "{{ .ClusterID }}"
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: clusterID
+                      operator: In
+                      values: ["{{ .ClusterID }}"]
+                topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["kube-controller-manager"]
+              topologyKey: "kubernetes.io/hostname"
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["kube-controller-manager"]
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+      automountServiceAccountToken: false
+{{ if .MasterPriorityClass }}
+      priorityClassName: {{ .MasterPriorityClass }}
+{{ end }}
+      containers:
+      - name: kube-controller-manager
+        image: {{ imageFor "hyperkube" }}
+        command:
+        - hyperkube
+        - kube-controller-manager
+        args:
+        - "--openshift-config=/etc/kubernetes/cmconfig/config.yaml"
+        - "--kubeconfig=/etc/kubernetes/secret/kubeconfig"
+{{ if .KubeControllerManagerResources }}
+        resources:{{ range .KubeControllerManagerResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        volumeMounts:
+        - mountPath: /etc/kubernetes/cmconfig
+          name: cmconfig
+        - mountPath: /etc/kubernetes/config
+          name: config
+        - mountPath: /etc/kubernetes/secret
+          name: secret
+        - mountPath: /var/run/kubernetes
+          name: certdir
+        - mountPath: /var/log/kube-controller-manager
+          name: logs
+        workingDir: /var/log/kube-controller-manager
+      volumes:
+      - secret:
+          secretName: kube-controller-manager
+        name: secret
+      - configMap:
+          name: kube-controller-manager-config
+        name: cmconfig
+      - configMap:
+          name: kube-controller-manager
+        name: config
+      - emptyDir: {}
+        name: logs
+      - emptyDir: {}
+        name: certdir

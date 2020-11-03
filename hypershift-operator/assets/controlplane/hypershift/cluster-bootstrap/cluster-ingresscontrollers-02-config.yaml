@@ -1,0 +1,11 @@
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  name: default
+  namespace: openshift-ingress-operator
+spec:
+  endpointPublishingStrategy:
+    type: Private
+  defaultCertificate:
+    name: default-ingress-cert
+status: {}

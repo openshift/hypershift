@@ -1,0 +1,14 @@
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: {{ .APIService }}
+spec:
+  caBundle: {{ .OpenshiftAPIServerCABundle }}
+  group: {{ .APIServiceGroup }}
+  groupPriorityMinimum: 9900
+  service:
+    name: openshift-apiserver
+    namespace: default
+  version: v1
+  versionPriority: 15

@@ -1,0 +1,45 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-apiserver
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-controller-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-kube-apiserver
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-kube-scheduler
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-kube-controller-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-etcd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    network.openshift.io/policy-group: ingress
+    openshift.io/cluster-monitoring: "true"
+  name: openshift-ingress
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-authentication

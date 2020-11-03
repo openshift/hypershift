@@ -1,0 +1,7 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: router-proxy-config
+data:
+  haproxy.cfg: |-
+{{ include "router-proxy/haproxy.cfg" 4 }}

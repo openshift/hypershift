@@ -1,0 +1,7 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: kube-scheduler-config
+data:
+  config.yaml: |-
+{{ include "kube-scheduler/config.yaml" 4 }}

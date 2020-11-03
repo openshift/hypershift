@@ -1,0 +1,7 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: openshift-controller-manager-config
+data:
+  config.yaml: |-
+{{ include "openshift-controller-manager/config.yaml" 4 }}

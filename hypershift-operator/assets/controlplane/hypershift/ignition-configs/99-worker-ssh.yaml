@@ -1,0 +1,16 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 99-worker-ssh
+  labels:
+    machineconfiguration.openshift.io/role: master
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    passwd:
+      users:
+      - name: core
+        sshAuthorizedKeys:
+        - |-
+          {{ .SSHKey }}

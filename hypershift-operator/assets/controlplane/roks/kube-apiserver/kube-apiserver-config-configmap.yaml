@@ -1,0 +1,7 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: kube-apiserver-config
+data:
+  config.yaml: |-
+{{ include "kube-apiserver/config.yaml" 4 }}

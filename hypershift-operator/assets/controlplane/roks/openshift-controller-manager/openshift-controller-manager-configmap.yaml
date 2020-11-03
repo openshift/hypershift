@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openshift-controller-manager
+data:
+  serving-ca.crt: |-
+{{ include_pki "root-ca.crt"  4 }}

@@ -1,0 +1,31 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: roks-metrics
+  namespace: openshift-roks-metrics
+spec:
+  endpoints:
+  - interval: 30s
+    metricRelabelings:
+    - action: drop
+      regex: apiserver_.*
+      sourceLabels:
+      - __name__
+    - action: drop
+      regex: go_.*
+      sourceLabels:
+      - __name__
+    - action: drop
+      regex: promhttp_.*
+      sourceLabels:
+      - __name__
+    path: /metrics
+    port: https
+    scheme: https
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
+      serverName: roks-metrics.openshift-roks-metrics.svc
+  jobLabel: component
+  selector:
+    matchLabels:
+      app: metrics

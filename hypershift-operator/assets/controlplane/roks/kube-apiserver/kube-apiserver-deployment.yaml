@@ -1,0 +1,209 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: kube-apiserver
+  labels:
+    app: kube-apiserver
+spec:
+  replicas: {{ .Replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: kube-apiserver
+  template:
+    metadata:
+      labels:
+        app: kube-apiserver
+        clusterID: "{{ .ClusterID }}"
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
+    spec:
+      tolerations:
+        - key: "multi-az-worker"
+          operator: "Equal"
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: clusterID
+                      operator: In
+                      values: ["{{ .ClusterID }}"]
+                topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["kube-apiserver"]
+              topologyKey: "kubernetes.io/hostname"
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["kube-apiserver"]
+              topologyKey: "failure-domain.beta.kubernetes.io/zone"
+      automountServiceAccountToken: false
+{{ if .MasterPriorityClass }}
+      priorityClassName: {{ .MasterPriorityClass }}
+{{ end }}
+      containers:
+      - name: kube-apiserver
+        image: {{ imageFor "hyperkube" }}
+        command:
+        - hyperkube
+        - kube-apiserver
+        args:
+        - "--openshift-config=/etc/kubernetes/apiserver-config/config.yaml"
+{{ if .KPInfo }}
+        - "--encryption-provider-config=/etc/kubernetes/kms-config/config.yaml"
+{{ end }}
+        workingDir: /var/log/kube-apiserver
+        livenessProbe:
+          httpGet:
+            scheme: HTTPS
+            port: {{ .InternalAPIPort }}
+{{ if .ApiserverLivenessPath }}
+            path: "{{ .ApiserverLivenessPath }}"
+{{ else }}
+            path: livez
+{{ end }}
+          initialDelaySeconds: 45
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            scheme: HTTPS
+            port: {{ .InternalAPIPort }}
+            path: readyz
+          initialDelaySeconds: 10
+          timeoutSeconds: 10
+{{ if .KubeAPIServerResources }}
+        resources:{{ range .KubeAPIServerResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        volumeMounts:
+        - mountPath: /etc/kubernetes/secret/
+          name: secret
+        - mountPath: /etc/kubernetes/apiserver-config/
+          name: apiserver-config
+        - mountPath: /etc/kubernetes/config/
+          name: config
+        - mountPath: /etc/kubernetes/oauth/
+          name: oauth
+        - mountPath: /var/log/kube-apiserver/
+          name: logs
+{{ if .APIServerAuditEnabled }}
+        - name: apiserver-cm
+          mountPath: /etc/kubernetes/audit/
+{{ end }}
+{{ if .KPInfo }}
+        - name: kms-config
+          mountPath: /etc/kubernetes/kms-config/
+        - name: kms-socket
+          mountPath: /tmp
+      - name: kms
+        image: {{ .KMSImage }}
+        imagePullPolicy: IfNotPresent
+{{ if .KMSServerResources }}
+        resources:{{ range .KMSServerResources }}{{ range .ResourceRequest }}
+          requests: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
+          limits: {{ if .CPU }}
+            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
+            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
+{{ end }}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        livenessProbe:
+          httpGet:
+            path: /healthz/liveness
+            port: 8081
+            scheme: HTTP
+          initialDelaySeconds: 120
+          periodSeconds: 300
+          successThreshold: 1
+          failureThreshold: 3
+          timeoutSeconds: 160
+        env:
+        - name: REGION
+          value: {{ .KPRegion }}
+        - name: LOG_LEVEL
+          value: info
+        - name: NUM_LEN_BYTES
+          value: "4"
+        - name: CACHE_TIMEOUT_IN_HOURS
+          value: "1"
+        - name: RESTART_DELAY_IN_SECONDS
+          value: "0"
+        - name: UNIX_SOCKET_PATH
+          value: "/tmp/keyprotectprovider.sock"
+        - name: KP_TIMEOUT
+          value: "10"
+        - name: KP_DATA_JSON
+          value: '{{ .KPInfo }}'
+        - name: KP_WDEK_PATH
+          value: "/tmp/kp/wdek"
+        - name: KP_STATE_PATH
+          value: "/tmp/kp/state"
+        - name: API_KEY
+          value: {{ .KPAPIKey }}
+        - name: HEALTHZ_PATH
+          value: /healthz
+        - name: HEALTHZ_PORT
+          value: ":8081"
+        volumeMounts:
+        - name: kms-socket
+          mountPath: /tmp
+        - name: kms-kp
+          mountPath: /tmp/kp
+          readOnly: true
+{{ end }}
+      volumes:
+      - secret:
+          secretName: kube-apiserver
+        name: secret
+      - emptyDir: {}
+        name: logs
+      - configMap:
+          name: kube-apiserver
+        name: config
+      - configMap:
+          name: kube-apiserver-config
+        name: apiserver-config
+      - configMap:
+          name: kube-apiserver-oauth-metadata
+        name: oauth
+{{ if .APIServerAuditEnabled }}
+      - name: apiserver-cm
+        configMap:
+          name: apiserver-audit-cm
+{{ end }}
+{{ if .KPInfo }}
+      - name: kms-config
+        configMap:
+          name: kms-config
+      - name: kms-socket
+        emptyDir: {}
+      - name: kms-kp
+        secret:
+          secretName: kp-wdek-secret
+          optional: true
+          defaultMode: 0400
+{{ end }}

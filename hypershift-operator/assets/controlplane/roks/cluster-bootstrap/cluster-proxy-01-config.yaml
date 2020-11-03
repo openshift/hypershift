@@ -1,0 +1,9 @@
+apiVersion: config.openshift.io/v1
+kind: Proxy
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec:
+  trustedCA:
+    name: ""
+status: {}

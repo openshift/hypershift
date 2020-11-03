@@ -1,0 +1,17 @@
+apiVersion: config.openshift.io/v1
+kind: Infrastructure
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec:
+  cloudConfig:
+    name: ""
+status:
+  apiServerInternalURI: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
+  apiServerURL: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
+  etcdDiscoveryDomain: {{ .BaseDomain }}
+  infrastructureName: kubernetes
+  platform: {{ if .PlatformType }}{{ .PlatformType }}{{ else }}None {{ end }}
+  platformStatus: {{ if eq .PlatformType "IBMCloud" }}
+    type: {{ .PlatformType }} {{ else }}
+    type: None {{ end }}
