@@ -1,3 +1,4 @@
+.PHONY: bin/hypershift-operator
 
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
@@ -23,7 +24,9 @@ test: generate fmt vet manifests
 	go test ./... -coverprofile cover.out
 
 # Build hypershift-operator binary
-hypershift-operator: generate fmt vet
+hypershift-operator: generate fmt vet bin/hypershift-operator
+
+bin/hypershift-operator:
 	go build -o bin/hypershift-operator ./hypershift-operator
 
 # Build control-plane-operator binary

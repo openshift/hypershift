@@ -170,6 +170,9 @@ func (c *clusterManifestContext) openshiftControllerManager() {
 
 func (c *clusterManifestContext) controlPlaneOperator() {
 	c.addManifestFiles(
+		"control-plane-operator/cp-operator-serviceaccount.yaml",
+		"control-plane-operator/cp-operator-role.yaml",
+		"control-plane-operator/cp-operator-rolebinding.yaml",
 		"control-plane-operator/cp-operator-deployment.yaml",
 	)
 }
@@ -196,6 +199,8 @@ func (c *clusterManifestContext) roksMetrics() {
 
 func (c *clusterManifestContext) userManifestsBootstrapper() {
 	c.addManifestFiles(
+		"user-manifests-bootstrapper/user-manifests-bootstrapper-serviceaccount.yaml",
+		"user-manifests-bootstrapper/user-manifests-bootstrapper-rolebinding.yaml",
 		"user-manifests-bootstrapper/user-manifests-bootstrapper-pod.yaml",
 	)
 	for _, file := range c.userManifestFiles {

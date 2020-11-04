@@ -81,6 +81,7 @@ func (c *clusterManifestContext) etcd() {
 		"etcd/etcd-cluster.yaml",
 		"etcd/etcd-operator-cluster-role-binding.yaml",
 		"etcd/etcd-operator-cluster-role.yaml",
+		"etcd/etcd-operator-serviceaccount.yaml",
 		"etcd/etcd-operator.yaml",
 	)
 
@@ -117,6 +118,8 @@ func (c *clusterManifestContext) clusterBootstrap() {
 
 func (c *clusterManifestContext) machineConfigServer() {
 	c.addManifestFiles("machine-config-server/machine-config-server-configmap.yaml")
+	c.addManifestFiles("machine-config-server/machine-config-server-serviceaccount.yaml")
+	c.addManifestFiles("machine-config-server/machine-config-server-rolebinding.yaml")
 	c.addManifestFiles("machine-config-server/machine-config-server-deployment.yaml")
 	c.addManifestFiles("machine-config-server/machine-config-server-service.yaml")
 }
@@ -146,6 +149,8 @@ func (c *clusterManifestContext) routerProxy() {
 
 func (c *clusterManifestContext) userManifestsBootstrapper() {
 	c.addManifestFiles(
+		"user-manifests-bootstrapper/user-manifests-bootstrapper-serviceaccount.yaml",
+		"user-manifests-bootstrapper/user-manifests-bootstrapper-rolebinding.yaml",
 		"user-manifests-bootstrapper/user-manifests-bootstrapper-pod.yaml",
 	)
 	for _, file := range c.userManifestFiles {

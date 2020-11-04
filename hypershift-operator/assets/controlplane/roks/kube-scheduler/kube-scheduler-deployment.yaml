@@ -88,7 +88,7 @@ spec:
           name: config
         - mountPath: /var/run/kubernetes/
           name: cert
-        workDir: /var/run/kubernetes
+        workingDir: /var/run/kubernetes
       volumes:
       - secret:
           secretName: service-network-admin-kubeconfig

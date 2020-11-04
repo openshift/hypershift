@@ -12,17 +12,16 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/blang/semver"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	"openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift/pki"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,10 +29,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/yaml"
 
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/hypershift-operator/releaseinfo"
 	hypershiftcp "openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift"
+	"openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift/pki"
 	rokscp "openshift.io/hypershift/hypershift-operator/render/controlplane/roks"
 )
 
@@ -59,7 +61,7 @@ type CreateClusterOpts struct {
 	ReleaseImageInfo          *releaseinfo.ReleaseImageInfo
 	ControlPlaneOperatorImage string
 
-	Client ctrlclient.Client
+	Client client.Client
 }
 
 func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, cluster *hyperv1.OpenShiftCluster, infraStatus InfrastructureStatus, releaseInfo *releaseinfo.ReleaseImageInfo) error {
@@ -122,20 +124,50 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 	params.ControlPlaneOperatorImage = r.ControlPlaneOperatorImage
 	params.HypershiftOperatorControllers = []string{"route-sync", "auto-approver", "kubeadmin-password", "node"}
 
+	// Generate PKI data just once and store it in a secret. PKI generation isn't
+	// deterministic and shouldn't be performed with every reconcile, otherwise
+	// we're effectively doing an uncontrolled cert rotation each generation.
+	pkiSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: name,
+			Name:      "pki",
+		},
+		Data: map[string][]byte{},
+	}
+	needsPkiSecret := false
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pkiSecret), pkiSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			needsPkiSecret = true
+		} else {
+			return fmt.Errorf("failed to get pki secret: %w", err)
+		}
+	} else {
+		r.Log.Info("using existing pki secret")
+	}
+	if needsPkiSecret {
+		log.Info("generating PKI secret data")
+		data, err := generatePKIData(params)
+		if err != nil {
+			return fmt.Errorf("failed to generate PKI data: %w", err)
+		}
+		pkiSecret.Data = data
+		if err := r.Create(ctx, pkiSecret); err != nil {
+			return fmt.Errorf("failed to create pki secret: %w", err)
+		}
+		r.Log.Info("created pki secret")
+	}
+
 	pkiDir := filepath.Join(workingDir, "pki")
 	if err = os.MkdirAll(pkiDir, 0755); err != nil {
 		return fmt.Errorf("failed to create temporary PKI directory: %w", err)
 	}
-	log.Info("Generating PKI")
-	dhParamsFile := os.Getenv("DH_PARAMS")
-	if len(dhParamsFile) > 0 {
-		if err = copyFile(dhParamsFile, filepath.Join(pkiDir, "openvpn-dh.pem")); err != nil {
-			return fmt.Errorf("failed to copy dh parameters file %s: %w", dhParamsFile, err)
+	for file, data := range pkiSecret.Data {
+		pkiFile := filepath.Join(pkiDir, file)
+		if err := ioutil.WriteFile(pkiFile, data, 0644); err != nil {
+			return fmt.Errorf("failed to write pki file %s: %w", pkiFile, err)
 		}
 	}
-	if err := pki.GeneratePKI(params, pkiDir); err != nil {
-		return fmt.Errorf("failed to generate PKI assets: %w", err)
-	}
+
 	manifestsDir := filepath.Join(workingDir, "manifests")
 	if err = os.MkdirAll(manifestsDir, 0755); err != nil {
 		return fmt.Errorf("cannot create temporary manifests directory: %w", err)
@@ -169,38 +201,27 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 		}
 	}
 
-	// TODO: Apply the manifests without any external dependencies
+	// Use server side apply for manifestss
 	manifests, err := filepath.Glob(filepath.Join(manifestsDir, "*.yaml"))
 	if err != nil {
 		return fmt.Errorf("failed to read manifest dir: %w", err)
 	}
-	manifestsToApply := make(chan string, len(manifests))
-	applyResults := make(chan error, len(manifests))
-	for w := 0; w < 10; w++ {
-		go func() {
-			for file := range manifestsToApply {
-				cmd := exec.Command("/bin/sh", "-c", fmt.Sprintf("oc apply --namespace %s -f %s", name, file))
-				cmd.Env = append(cmd.Env, "KUBECONFIG="+os.Getenv("KUBECONFIG"), "PATH="+os.Getenv("PATH"))
-				output, err := cmd.CombinedOutput()
-				r.Log.Info(string(output))
-				if err != nil {
-					applyResults <- fmt.Errorf("failed to apply manifest %s: %w", file, err)
-				} else {
-					r.Log.Info("applied manifest", "manifest", file)
-					applyResults <- nil
-				}
-			}
-		}()
-	}
-	for _, manifest := range manifests {
-		manifestsToApply <- manifest
-	}
-	close(manifestsToApply)
 	applyErrors := []error{}
-	for i := 0; i < len(manifests); i++ {
-		result := <-applyResults
-		if result != nil {
-			applyErrors = append(applyErrors, result)
+	for _, manifest := range manifests {
+		bytes, err := ioutil.ReadFile(manifest)
+		if err != nil {
+			applyErrors = append(applyErrors, fmt.Errorf("failed to read manifest %s: %w", manifest, err))
+		}
+		obj := &unstructured.Unstructured{}
+		if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(bytes)), 100).Decode(obj); err != nil {
+			applyErrors = append(applyErrors, fmt.Errorf("failed to decode manifest %s: %w", manifest, err))
+		}
+		obj.SetNamespace(name)
+		err = r.Patch(ctx, obj, client.RawPatch(types.ApplyPatchType, bytes), client.ForceOwnership, client.FieldOwner("hypershift-operator"))
+		if err != nil {
+			applyErrors = append(applyErrors, fmt.Errorf("failed to apply manifest %s: %w", manifest, err))
+		} else {
+			r.Log.Info("applied manifest", "manifest", manifest)
 		}
 	}
 	if errs := errors.NewAggregate(applyErrors); errs != nil {
@@ -209,11 +230,11 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 	r.Log.Info("successfully applied all manifests")
 
 	var infra configv1.Infrastructure
-	if err := r.Get(ctx, ctrlclient.ObjectKey{Name: "cluster"}, &infra); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, &infra); err != nil {
 		return fmt.Errorf("failed to get cluster infra: %w", err)
 	}
 	// Create a machineset for the new cluster's worker nodes
-	machineSet, err := generateWorkerMachineset(r, ctx, infra.Status.InfrastructureName, name, cluster.Spec.ComputeReplicas)
+	machineSet, err := r.generateWorkerMachineset(ctx, infra.Status.InfrastructureName, name, cluster.Spec.ComputeReplicas)
 	if err != nil {
 		return fmt.Errorf("failed to generate worker machineset: %w", err)
 	}
@@ -273,6 +294,36 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 	return nil
 }
 
+func generatePKIData(params *hypershiftcp.ClusterParams) (map[string][]byte, error) {
+	pkiDir, err := ioutil.TempDir("", "pki")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary pki directory: %w", err)
+	}
+	dhParamsFile := os.Getenv("DH_PARAMS")
+	if len(dhParamsFile) > 0 {
+		if err = copyFile(dhParamsFile, filepath.Join(pkiDir, "openvpn-dh.pem")); err != nil {
+			return nil, fmt.Errorf("failed to copy dh parameters file %s: %w", dhParamsFile, err)
+		}
+	}
+	if err := pki.GeneratePKI(params, pkiDir); err != nil {
+		return nil, fmt.Errorf("failed to generate PKI assets: %w", err)
+	}
+	files, err := ioutil.ReadDir(pkiDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PKI directory: %w", err)
+	}
+	data := map[string][]byte{}
+	for _, file := range files {
+		baseName := filepath.Base(file.Name())
+		bytes, err := ioutil.ReadFile(filepath.Join(pkiDir, baseName))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read PKI file %q: %w", file.Name(), err)
+		}
+		data[baseName] = bytes
+	}
+	return data, nil
+}
+
 func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace string) (*corev1.ConfigMap, error) {
 	secret := &corev1.Secret{}
 	secret.Name = "pull-secret"
@@ -290,14 +341,14 @@ func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace str
 	return configMap, nil
 }
 
-func generateWorkerMachineset(client ctrlclient.Client, ctx context.Context, infraName string, namespace string, workerCount int) (*unstructured.Unstructured, error) {
+func (r *OpenShiftClusterReconciler) generateWorkerMachineset(ctx context.Context, infraName string, namespace string, workerCount int) (*unstructured.Unstructured, error) {
 	machineSets := &unstructured.UnstructuredList{}
 	machineSets.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "machine.openshift.io",
 		Version: "v1beta1",
 		Kind:    "MachineSet",
 	})
-	if err := client.List(ctx, machineSets, ctrlclient.InNamespace("openshift-machine-api")); err != nil {
+	if err := r.List(ctx, machineSets, client.InNamespace("openshift-machine-api")); err != nil {
 		return nil, fmt.Errorf("failed to list machinesets: %w", err)
 	}
 	if len(machineSets.Items) == 0 {
