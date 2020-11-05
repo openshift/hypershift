@@ -52,8 +52,10 @@ spec:
         ports:
         - containerPort: 8443
           name: https
+          protocol: TCP
         - containerPort: 8080
           name: http
+          protocol: TCP
         securityContext:
           runAsUser: 1001
           capabilities:
