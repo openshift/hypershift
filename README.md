@@ -26,6 +26,13 @@ Run the operator:
 $ bin/hypershift-operator run --control-plane-operator-image quay.io/my/hypershift:latest
 ```
 
+Run the sigs.k8s.io cluster API controller:
+```
+$ git clone git@github.com:kubernetes-sigs/cluster-api.git
+$ cd cluster-api && make manager-core
+$ ./bin/manager
+```
+
 Create a cluster, referencing a release image present in the `release-images` configmap
 previously created:
 

@@ -53,7 +53,8 @@ deploy: manifests
 # Generate manifests e.g. CRD, RBAC etc.
 .PHONY: manifests
 manifests:
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=hypershift-operator-role webhook paths="./..." output:crd:artifacts:config=manifests
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=hypershift-operator-role webhook paths="./..." output:crd:artifacts:config=config/bases
+	cd config && kustomize build > ../manifests/hypershift.openshift.io_crds.yaml
 
 # Run go fmt against code
 fmt:

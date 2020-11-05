@@ -47,7 +47,9 @@ type OpenShiftClusterStatus struct {
 }
 
 // +kubebuilder:object:root=true
-
+// +kubebuilder:resource:path=openshiftclusters,shortName=oc;ocs,scope=Namespaced
+// +kubebuilder:storageversion
+// +kubebuilder:subresource:status
 // OpenShiftCluster is the Schema for the openshiftclusters API
 type OpenShiftCluster struct {
 	metav1.TypeMeta   `json:",inline"`
