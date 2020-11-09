@@ -108,7 +108,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	params.PodCIDR = hcp.Spec.PodCIDR
 	params.ReleaseImage = releaseInfo.Image
 	params.IngressSubdomain = fmt.Sprintf("apps.%s", hcp.Spec.BaseDomain)
-	params.OpenShiftAPIClusterIP = DefaultAPIServerIPAddress
+	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIAddress
 	params.BaseDomain = hcp.Spec.BaseDomain
 	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
 	params.CloudProvider = string(r.Infra.Status.PlatformStatus.Type)

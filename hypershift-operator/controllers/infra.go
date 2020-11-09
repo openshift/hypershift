@@ -190,7 +190,9 @@ func createOpenshiftService(client ctrl.Client, namespace string) (*corev1.Servi
 		},
 	}
 	if err := client.Create(context.TODO(), svc); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
+		if apierrors.IsAlreadyExists(err) {
+			return svc, client.Get(context.TODO(), ctrl.ObjectKeyFromObject(svc), svc)
+		} else {
 			return nil, fmt.Errorf("failed to create openshift service: %w", err)
 		}
 	}
