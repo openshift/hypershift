@@ -46,8 +46,8 @@ spec:
   releaseImage: quay.io/openshift-release-dev/ocp-release@sha256:d78292e9730dd387ff6198197c8b0598da340be7678e8e1e4810b557a926c2b9
   baseDomain: guest-hello.devcluster.openshift.com
   pullSecret: '{"auths": { ... }}'
-  serviceCIDR: 172.30.0.0/16
-  podCIDR: 10.128.0.0/14
+  serviceCIDR: 172.31.0.0/16
+  podCIDR: 10.132.0.0/14
   sshKey: 'ssh-rsa ...'
   cloudProvider: AWS
   computeReplicas: 1
