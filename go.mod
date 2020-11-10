@@ -23,7 +23,7 @@ require (
 	k8s.io/client-go v0.19.2
 	k8s.io/utils v0.0.0-20200912215256-4140de9c8800
 	sigs.k8s.io/cluster-api v0.3.11-0.20201103151415-d87a39c85f87
-	sigs.k8s.io/controller-runtime v0.7.0-alpha.5
+	sigs.k8s.io/controller-runtime v0.7.0-alpha.6.0.20201109223643-114431a4df15
 	sigs.k8s.io/controller-tools v0.3.0
 )
 

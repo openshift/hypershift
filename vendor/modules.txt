@@ -599,7 +599,7 @@ sigs.k8s.io/cluster-api/util/conditions
 sigs.k8s.io/cluster-api/util/container
 sigs.k8s.io/cluster-api/util/patch
 sigs.k8s.io/cluster-api/util/predicates
-# sigs.k8s.io/controller-runtime v0.7.0-alpha.5
+# sigs.k8s.io/controller-runtime v0.7.0-alpha.6.0.20201109223643-114431a4df15
 ## explicit
 sigs.k8s.io/controller-runtime
 sigs.k8s.io/controller-runtime/pkg/builder
