@@ -200,7 +200,6 @@ func generateWorkerMachineset(client ctrlclient.Client, ctx context.Context, inf
 }
 
 func (r *GuestClusterReconciler) delete(ctx context.Context, name string) error {
-	// TODO (alberto): wait for resources to go away
 	machineSetName := generateMachineSetName(r.Infra.Status.InfrastructureName, name, "worker")
 	machineSet := &unstructured.Unstructured{}
 	machineSet.SetGroupVersionKind(schema.GroupVersionKind{
@@ -210,7 +209,7 @@ func (r *GuestClusterReconciler) delete(ctx context.Context, name string) error 
 	})
 	machineSet.SetNamespace("openshift-machine-api")
 	machineSet.SetName(machineSetName)
-	if err := r.Delete(ctx, machineSet); err != nil && !apierrors.IsNotFound(err) {
+	if err := waitForDeletion(ctx, r.Log, r.Client, machineSet); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete machineset %s: %w", machineSetName, err)
 	}
 	r.Log.Info("deleted machineset", "name", machineSetName)

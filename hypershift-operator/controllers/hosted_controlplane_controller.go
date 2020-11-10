@@ -180,11 +180,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *HostedControlPlaneReconciler) delete(ctx context.Context, name string) error {
-	// TODO (alberto): wait for resources to go away
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
-	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
+	if err := waitForDeletion(ctx, r.Log, r.Client, ns); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 	r.Log.Info("deleted namespace", "name", name)
@@ -195,7 +194,7 @@ func (r *HostedControlPlaneReconciler) delete(ctx context.Context, name string) 
 			Name:      fmt.Sprintf("%s-user-data", name),
 		},
 	}
-	if err := r.Delete(ctx, machineSetConfig); err != nil && !apierrors.IsNotFound(err) {
+	if err := waitForDeletion(ctx, r.Log, r.Client, machineSetConfig); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete machineset secret %s: %w", machineSetConfig.Name, err)
 	}
 	r.Log.Info("deleted machineset secret", "name", machineSetConfig.Name)
