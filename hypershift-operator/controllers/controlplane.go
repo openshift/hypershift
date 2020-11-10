@@ -18,29 +18,26 @@ import (
 	"github.com/blang/semver"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/errors"
-	client "sigs.k8s.io/controller-runtime/pkg/client"
-
-	configv1 "github.com/openshift/api/config/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/yaml"
-
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/hypershift-operator/releaseinfo"
 	hypershiftcp "openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift"
 	"openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift/pki"
 	rokscp "openshift.io/hypershift/hypershift-operator/render/controlplane/roks"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	externalOauthPort         = 8443
+	APIServerPort             = 6443
 	DefaultAPIServerIPAddress = "172.20.0.1"
 )
 
@@ -64,7 +61,7 @@ type CreateClusterOpts struct {
 	Client client.Client
 }
 
-func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, cluster *hyperv1.OpenShiftCluster, infraStatus InfrastructureStatus, releaseInfo *releaseinfo.ReleaseImageInfo) error {
+func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseInfo *releaseinfo.ReleaseImageInfo) error {
 	workingDir, err := ioutil.TempDir("", "hypershift")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary directory: %w", err)
@@ -81,12 +78,12 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 			return err
 		}
 	}
-	r.Log.Info("ensuring control plane for cluster", "cluster", cluster.Name, "workingDir", workingDir)
+	r.Log.Info("ensuring control plane for cluster", "cluster", hcp.Name, "workingDir", workingDir)
 
-	name := cluster.Name
+	name := hcp.Name
 
 	pullSecretFile := filepath.Join(workingDir, "pull-secret")
-	if err := ioutil.WriteFile(pullSecretFile, []byte(cluster.Spec.PullSecret), 0644); err != nil {
+	if err := ioutil.WriteFile(pullSecretFile, []byte(hcp.Spec.PullSecret), 0644); err != nil {
 		return fmt.Errorf("failed to create temporary pull secret file: %v", err)
 	}
 	releaseVersion, err := releaseInfo.ReleaseVersion()
@@ -101,26 +98,26 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 	params := hypershiftcp.NewClusterParams()
 	params.Namespace = name
 	params.ExternalAPIDNSName = infraStatus.APIAddress
-	params.ExternalAPIPort = 6443
+	params.ExternalAPIPort = APIServerPort
 	params.ExternalAPIAddress = DefaultAPIServerIPAddress
 	params.ExternalOpenVPNAddress = infraStatus.VPNAddress
 	params.ExternalOpenVPNPort = 1194
 	params.ExternalOauthDNSName = infraStatus.OAuthAddress
 	params.ExternalOauthPort = externalOauthPort
-	params.ServiceCIDR = cluster.Spec.ServiceCIDR
-	params.PodCIDR = cluster.Spec.PodCIDR
+	params.ServiceCIDR = hcp.Spec.ServiceCIDR
+	params.PodCIDR = hcp.Spec.PodCIDR
 	params.ReleaseImage = releaseInfo.Image
-	params.IngressSubdomain = fmt.Sprintf("apps.%s", cluster.Spec.BaseDomain)
+	params.IngressSubdomain = fmt.Sprintf("apps.%s", hcp.Spec.BaseDomain)
 	params.OpenShiftAPIClusterIP = DefaultAPIServerIPAddress
-	params.BaseDomain = cluster.Spec.BaseDomain
+	params.BaseDomain = hcp.Spec.BaseDomain
 	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
-	params.CloudProvider = cluster.Spec.CloudProvider
-	params.InternalAPIPort = 6443
+	params.CloudProvider = string(r.Infra.Status.PlatformStatus.Type)
+	params.InternalAPIPort = APIServerPort
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.Replicas = "1"
-	params.SSHKey = cluster.Spec.SSHKey
+	params.SSHKey = hcp.Spec.SSHKey
 	params.ControlPlaneOperatorImage = r.ControlPlaneOperatorImage
 	params.HypershiftOperatorControllers = []string{"route-sync", "auto-approver", "kubeadmin-password", "node"}
 
@@ -229,19 +226,6 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 	}
 	r.Log.Info("successfully applied all manifests")
 
-	var infra configv1.Infrastructure
-	if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, &infra); err != nil {
-		return fmt.Errorf("failed to get cluster infra: %w", err)
-	}
-	// Create a machineset for the new cluster's worker nodes
-	machineSet, err := r.generateWorkerMachineset(ctx, infra.Status.InfrastructureName, name, cluster.Spec.ComputeReplicas)
-	if err != nil {
-		return fmt.Errorf("failed to generate worker machineset: %w", err)
-	}
-	if err := r.Create(ctx, machineSet); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create machineset: %w", err)
-	}
-
 	userDataSecret := generateUserDataSecret(name, infraStatus.IgnitionProviderAddress, version)
 	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to generate user data secret: %w", err)
@@ -273,7 +257,7 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
 	}
 
-	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), []byte(cluster.Spec.PullSecret), name)
+	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), []byte(hcp.Spec.PullSecret), name)
 	if err != nil {
 		return fmt.Errorf("failed to create pull secret manifest for target cluster: %w", err)
 	}
@@ -281,16 +265,11 @@ func (r *OpenShiftClusterReconciler) ensureControlPlane(ctx context.Context, clu
 		return fmt.Errorf("failed to generate targetPullSecret: %v", err)
 	}
 
-	log.Infof("Cluster API URL: %s", fmt.Sprintf("https://%s:6443", infraStatus.APIAddress))
+	log.Infof("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIAddress, APIServerPort))
 	log.Infof("Kubeconfig is available in secret %q in the %s namespace", "admin-kubeconfig", name)
 	log.Infof("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", params.IngressSubdomain))
 	log.Infof("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", name)
 
-	cluster = cluster.DeepCopy()
-	cluster.Status.Ready = true
-	if err := r.Update(ctx, cluster); err != nil {
-		return fmt.Errorf("failed to update cluster status: %w", err)
-	}
 	return nil
 }
 
@@ -339,41 +318,6 @@ func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace str
 	configMap.Name = "user-manifest-pullsecret"
 	configMap.Data = map[string]string{"data": string(secretBytes)}
 	return configMap, nil
-}
-
-func (r *OpenShiftClusterReconciler) generateWorkerMachineset(ctx context.Context, infraName string, namespace string, workerCount int) (*unstructured.Unstructured, error) {
-	machineSets := &unstructured.UnstructuredList{}
-	machineSets.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "machine.openshift.io",
-		Version: "v1beta1",
-		Kind:    "MachineSet",
-	})
-	if err := r.List(ctx, machineSets, client.InNamespace("openshift-machine-api")); err != nil {
-		return nil, fmt.Errorf("failed to list machinesets: %w", err)
-	}
-	if len(machineSets.Items) == 0 {
-		return nil, fmt.Errorf("no machinesets found")
-	}
-	obj := machineSets.Items[0]
-
-	workerName := generateMachineSetName(infraName, namespace, "worker")
-	object := obj.Object
-
-	unstructured.RemoveNestedField(object, "status")
-	unstructured.RemoveNestedField(object, "metadata", "creationTimestamp")
-	unstructured.RemoveNestedField(object, "metadata", "generation")
-	unstructured.RemoveNestedField(object, "metadata", "resourceVersion")
-	unstructured.RemoveNestedField(object, "metadata", "selfLink")
-	unstructured.RemoveNestedField(object, "metadata", "uid")
-	unstructured.RemoveNestedField(object, "spec", "template", "spec", "metadata")
-	unstructured.RemoveNestedField(object, "spec", "template", "spec", "providerSpec", "value", "publicIp")
-	unstructured.SetNestedField(object, int64(workerCount), "spec", "replicas")
-	unstructured.SetNestedField(object, workerName, "metadata", "name")
-	unstructured.SetNestedField(object, workerName, "spec", "selector", "matchLabels", "machine.openshift.io/cluster-api-machineset")
-	unstructured.SetNestedField(object, workerName, "spec", "template", "metadata", "labels", "machine.openshift.io/cluster-api-machineset")
-	unstructured.SetNestedField(object, fmt.Sprintf("%s-user-data", namespace), "spec", "template", "spec", "providerSpec", "value", "userDataSecret", "name")
-
-	return &obj, nil
 }
 
 func generateUserDataSecret(namespace string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {

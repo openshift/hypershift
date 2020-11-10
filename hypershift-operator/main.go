@@ -28,11 +28,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	"openshift.io/hypershift/hypershift-operator/controllers"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	hypershiftopenshiftiov1alpha1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/hypershift-operator/controllers"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -42,10 +42,9 @@ var (
 )
 
 func init() {
-	_ = clientgoscheme.AddToScheme(scheme)
-
-	_ = hypershiftopenshiftiov1alpha1.AddToScheme(scheme)
 	clientgoscheme.AddToScheme(scheme)
+	hyperv1.AddToScheme(scheme)
+	capiv1.AddToScheme(scheme)
 	configv1.AddToScheme(scheme)
 	securityv1.AddToScheme(scheme)
 	operatorv1.AddToScheme(scheme)
@@ -100,12 +99,27 @@ func NewStartCommand() *cobra.Command {
 
 		if err = (&controllers.OpenShiftClusterReconciler{
 			Client:                    mgr.GetClient(),
-			Log:                       ctrl.Log.WithName("controllers").WithName("OpenShiftCluster"),
 			ControlPlaneOperatorImage: controlPlaneOperatorImage,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "OpenShiftCluster")
 			os.Exit(1)
 		}
+
+		if err := (&controllers.HostedControlPlaneReconciler{
+			Client:                    mgr.GetClient(),
+			ControlPlaneOperatorImage: controlPlaneOperatorImage,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "hostedControlPlane")
+			os.Exit(1)
+		}
+
+		if err := (&controllers.GuestClusterReconciler{
+			Client: mgr.GetClient(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "guestCluster")
+			os.Exit(1)
+		}
+
 		// +kubebuilder:scaffold:builder
 
 		setupLog.Info("starting manager")

@@ -4,20 +4,17 @@ import (
 	"context"
 	"fmt"
 
+	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
-
+	securityv1 "github.com/openshift/api/security/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/retry"
-
-	operatorv1 "github.com/openshift/api/operator/v1"
-	securityv1 "github.com/openshift/api/security/v1"
-
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -44,10 +41,10 @@ func (s InfrastructureStatus) IsReady() bool {
 		len(s.IgnitionProviderAddress) > 0
 }
 
-func (r *OpenShiftClusterReconciler) ensureInfrastructure(ctx context.Context, cluster *hyperv1.OpenShiftCluster) (InfrastructureStatus, error) {
+func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
 	status := InfrastructureStatus{}
 
-	name := cluster.Name
+	name := hcp.Name
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
@@ -64,7 +61,7 @@ func (r *OpenShiftClusterReconciler) ensureInfrastructure(ctx context.Context, c
 
 	// Create pull secret
 	r.Log.Info("Creating pull secret")
-	if _, err := createPullSecret(r, name, cluster.Spec.PullSecret); err != nil {
+	if _, err := createPullSecret(r, name, hcp.Spec.PullSecret); err != nil {
 		return status, fmt.Errorf("failed to create pull secret: %w", err)
 	}
 
@@ -97,7 +94,7 @@ func (r *OpenShiftClusterReconciler) ensureInfrastructure(ctx context.Context, c
 	}
 
 	r.Log.Info("Creating router shard")
-	if err := createIngressController(r, name, cluster.Spec.BaseDomain); err != nil {
+	if err := createIngressController(r, name, hcp.Spec.BaseDomain); err != nil {
 		return status, fmt.Errorf("cannot create router shard: %w", err)
 	}
 

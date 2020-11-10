@@ -6,20 +6,25 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.3.0
   creationTimestamp: null
-  name: openshiftclusters.hypershift.openshift.io
+  name: hostedcontrolplanes.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
   names:
-    kind: OpenShiftCluster
-    listKind: OpenShiftClusterList
-    plural: openshiftclusters
-    singular: openshiftcluster
+    categories:
+    - cluster-api
+    kind: HostedControlPlane
+    listKind: HostedControlPlaneList
+    plural: hostedcontrolplanes
+    shortNames:
+    - hcp
+    - hcps
+    singular: hostedcontrolplane
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OpenShiftCluster is the Schema for the openshiftclusters API
+        description: HostedControlPlane defines the desired state of HostedControlPlane
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
@@ -30,14 +35,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: OpenShiftClusterSpec defines the desired state of OpenShiftCluster
+            description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
             properties:
               baseDomain:
                 type: string
-              cloudProvider:
-                type: string
-              computeReplicas:
-                type: integer
               podCIDR:
                 type: string
               pullSecret:
@@ -50,8 +51,6 @@ spec:
                 type: string
             required:
             - baseDomain
-            - cloudProvider
-            - computeReplicas
             - podCIDR
             - pullSecret
             - releaseImage
@@ -59,16 +58,34 @@ spec:
             - sshKey
             type: object
           status:
-            description: OpenShiftClusterStatus defines the observed state of OpenShiftCluster
+            description: HostedControlPlaneStatus defines the observed state of HostedControlPlane
             properties:
+              controlPlaneEndpoint:
+                properties:
+                  host:
+                    description: Host is the hostname on which the API server is serving.
+                    type: string
+                  port:
+                    description: Port is the port on which the API server is serving.
+                    format: int32
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
               ready:
+                default: false
+                description: Ready denotes that the HostedControlPlane API Server is ready to receive requests
                 type: boolean
             required:
+            - controlPlaneEndpoint
             - ready
             type: object
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}
 status:
   acceptedNames:
     kind: ""

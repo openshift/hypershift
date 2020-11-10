@@ -18,33 +18,32 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+)
 
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/hypershift-operator/releaseinfo"
+const (
+	finalizer = "hypershift.openshift.io/finalizer"
 )
 
 // OpenShiftClusterReconciler reconciles a OpenShiftCluster object
 type OpenShiftClusterReconciler struct {
 	client.Client
-	Log logr.Logger
-
+	Log                       logr.Logger
 	ControlPlaneOperatorImage string
 }
 
@@ -52,130 +51,166 @@ type OpenShiftClusterReconciler struct {
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=openshiftclusters/status,verbs=get;update;patch
 
 func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
-	_ = r.Log.WithValues("openshiftcluster", req.NamespacedName)
+	r.Log = ctrl.LoggerFrom(ctx)
+	r.Log.Info("Reconciling")
 
-	var result ctrl.Result
-
-	cluster := &hyperv1.OpenShiftCluster{}
+	ocluster := &hyperv1.OpenShiftCluster{}
 	isMissing := false
-	err := r.Get(ctx, req.NamespacedName, cluster)
+	err := r.Get(ctx, req.NamespacedName, ocluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			isMissing = true
 		} else {
-			return result, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
+			return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 		}
 	}
 
 	// Return early if deleted
-	if isMissing || !cluster.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, req.Name); err != nil {
+	if isMissing || !ocluster.DeletionTimestamp.IsZero() {
+		if err := r.delete(ctx, req.Name, req.Namespace); err != nil {
 			r.Log.Error(err, "failed to delete cluster")
-			return result, err
+			return ctrl.Result{}, err
 		}
-		if sets.NewString(cluster.Finalizers...).Has("hypershift.openshift.io/finalizer") {
-			cluster = cluster.DeepCopy()
-			cluster.Finalizers = sets.NewString(cluster.Finalizers...).Delete("hypershift.openshift.io/finalizer").List()
-			if err := r.Update(ctx, cluster); err != nil {
-				return result, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+
+		if controllerutil.ContainsFinalizer(ocluster, finalizer) {
+			controllerutil.RemoveFinalizer(ocluster, finalizer)
+			if err := r.Update(ctx, ocluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
 		}
-		return result, nil
+		return ctrl.Result{}, nil
 	}
 
 	// Ensure the cluster has a finalizer for cleanup
-	if !sets.NewString(cluster.Finalizers...).Has("hypershift.openshift.io/finalizer") {
-		cluster = cluster.DeepCopy()
-		cluster.Finalizers = append(cluster.Finalizers, "hypershift.openshift.io/finalizer")
-		if err := r.Update(ctx, cluster); err != nil {
-			return result, fmt.Errorf("failed to add finalizer to cluster: %w", err)
+	if !controllerutil.ContainsFinalizer(ocluster, finalizer) {
+		controllerutil.AddFinalizer(ocluster, finalizer)
+		if err := r.Update(ctx, ocluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
 		}
 	}
 
-	// The images.json key contains a hash of image pullspec to release info
-	// obtained from `oc adm release info $image -o json`.
-	releaseImages := &corev1.ConfigMap{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: "hypershift", Name: "release-images"}, releaseImages); err != nil {
-		result.RequeueAfter = 5 * time.Second
-		return result, fmt.Errorf("no release images found")
-	}
-	imagesJSON, hasImagesJSON := releaseImages.Data["images.json"]
-	if !hasImagesJSON {
-		return result, fmt.Errorf("no images.json found in release images configmap")
-	}
-	images := map[string]releaseinfo.ReleaseImageInfo{}
-	if err := json.Unmarshal([]byte(imagesJSON), &images); err != nil {
-		return result, fmt.Errorf("failed to read images.json: %w", err)
-	}
-	releaseInfo, hasReleaseInfo := images[cluster.Spec.ReleaseImage]
-	if !hasReleaseInfo {
-		result.RequeueAfter = 5 * time.Second
-		return result, fmt.Errorf("no release info found for image %q", cluster.Spec.ReleaseImage)
+	if ocluster.Status.Ready {
+		r.Log.Info("Is ready")
+		return ctrl.Result{}, nil
 	}
 
-	// First, set up infrastructure
-	infraStatus, err := r.ensureInfrastructure(ctx, cluster)
+	cluster := &capiv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ocluster.GetNamespace(),
+			Name:      ocluster.GetName(),
+		},
+		Spec: capiv1.ClusterSpec{
+			ControlPlaneEndpoint: capiv1.APIEndpoint{},
+			ControlPlaneRef: &corev1.ObjectReference{
+				APIVersion: "hypershift.openshift.io/v1alpha1",
+				Kind:       "HostedControlPlane",
+				Name:       ocluster.GetName(),
+			},
+			InfrastructureRef: &corev1.ObjectReference{
+				APIVersion: "hypershift.openshift.io/v1alpha1",
+				Kind:       "GuestCluster",
+				Name:       ocluster.GetName(),
+			},
+		},
+	}
+	patchHelper, err := patch.NewHelper(ocluster, r.Client)
 	if err != nil {
-		r.Log.Error(err, "failed to ensure infrastructure")
-		return result, fmt.Errorf("failed to ensure infrastructure: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper: %w", err)
+	}
+	if err := ctrl.SetControllerReference(ocluster, cluster, r.Client.Scheme()); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	// Wait for things like LB services to become available
-	if !infraStatus.IsReady() {
-		result.RequeueAfter = 5 * time.Second
-		r.Log.Info("cluster infrastructure is still provisioning, will try again later")
-		return result, nil
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ocluster.GetNamespace(),
+			Name:      ocluster.GetName(),
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			BaseDomain:   ocluster.Spec.BaseDomain,
+			PullSecret:   ocluster.Spec.PullSecret,
+			ServiceCIDR:  ocluster.Spec.ServiceCIDR,
+			PodCIDR:      ocluster.Spec.PodCIDR,
+			SSHKey:       ocluster.Spec.SSHKey,
+			ReleaseImage: ocluster.Spec.ReleaseImage,
+		},
+	}
+	guestCluster := &hyperv1.GuestCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ocluster.GetNamespace(),
+			Name:      ocluster.GetName(),
+		},
+		Spec: hyperv1.GuestClusterSpec{
+			ComputeReplicas: ocluster.Spec.ComputeReplicas,
+		},
 	}
 
-	// Install the control plane into the infrastructure
-	err = r.ensureControlPlane(ctx, cluster, infraStatus, &releaseInfo)
-	if err != nil {
-		r.Log.Error(err, "failed to ensure control plane")
-		return result, fmt.Errorf("failed to ensure control plane: %w", err)
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, cluster, func() error { return nil }); err != nil {
+		return ctrl.Result{}, err
 	}
 
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, hcp, func() error { return nil }); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, guestCluster, func() error { return nil }); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	var currentCluster capiv1.Cluster
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &currentCluster); err != nil {
+		return ctrl.Result{}, err
+	}
+	r.Log = r.Log.WithValues("cluster", cluster.Name)
+
+	ready := currentCluster.Status.ControlPlaneReady && currentCluster.Status.InfrastructureReady
+	if !ready {
+		r.Log.Info("Not ready yet. Requeueing")
+		return ctrl.Result{Requeue: true}, nil
+	}
+	ocluster.Status.Ready = ready
+	if err := patchHelper.Patch(ctx, ocluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
+	}
+
+	r.Log.Info("Successfully reconciled")
 	return ctrl.Result{}, nil
 }
 
-func (r *OpenShiftClusterReconciler) delete(ctx context.Context, name string) error {
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-	}
-	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete namespace: %w", err)
-	}
-	r.Log.Info("deleted namespace", "name", name)
-
-	var infra configv1.Infrastructure
-	if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, &infra); err != nil {
-		return fmt.Errorf("failed to get cluster infra: %w", err)
-	}
-
-	machineSetName := generateMachineSetName(infra.Status.InfrastructureName, name, "worker")
-	machineSet := &unstructured.Unstructured{}
-	machineSet.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "machine.openshift.io",
-		Version: "v1beta1",
-		Kind:    "MachineSet",
-	})
-	machineSet.SetNamespace("openshift-machine-api")
-	machineSet.SetName(machineSetName)
-	if err := r.Delete(ctx, machineSet); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete machineset %s: %w", machineSetName, err)
-	}
-	r.Log.Info("deleted machineset", "name", machineSetName)
-
-	machineSetConfig := &corev1.Secret{
+func (r *OpenShiftClusterReconciler) delete(ctx context.Context, name, namespace string) error {
+	cluster := &capiv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "openshift-machine-api",
-			Name:      fmt.Sprintf("%s-user-data", name),
+			Name:      name,
+			Namespace: namespace,
 		},
 	}
-	if err := r.Delete(ctx, machineSetConfig); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete machineset secret %s: %w", machineSetConfig.Name, err)
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
 	}
-	r.Log.Info("deleted machineset secret", "name", machineSetConfig.Name)
+	guestCluster := &hyperv1.GuestCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	if err := r.Delete(ctx, cluster); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete cluster: %w", err)
+	}
+	r.Log.Info("Deleted cluster", "name", name)
+
+	if err := r.Delete(ctx, hcp); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete hostedControlPlane: %w", err)
+	}
+	r.Log.Info("Deleted hostedControlPlane", "name", name)
+
+	if err := r.Delete(ctx, guestCluster); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete guestCluster: %w", err)
+	}
+	r.Log.Info("Deleted guestCluster", "name", name)
 
 	return nil
 }
@@ -184,6 +219,8 @@ func (r *OpenShiftClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.OpenShiftCluster{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
-		WithOptions(controller.Options{RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second)}).
+		WithOptions(controller.Options{
+			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+		}).
 		Complete(r)
 }
