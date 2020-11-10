@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
@@ -223,4 +224,28 @@ func (r *OpenShiftClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
 		Complete(r)
+}
+
+func waitForDeletion(ctx context.Context, log logr.Logger, c client.Client, obj client.Object) error {
+	log.WithValues("name", obj.GetName(),
+		"namespace", obj.GetNamespace(), "kind", obj.GetObjectKind())
+	log.Info("Deleting")
+
+	if err := c.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	if err := wait.PollInfinite(5*time.Second, func() (done bool, err error) {
+		if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			log.Error(err, "error getting")
+		}
+		log.Info("still exists")
+		return false, nil
+	}); err != nil {
+		return err
+	}
+	return nil
 }
