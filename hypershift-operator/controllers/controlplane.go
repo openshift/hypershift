@@ -39,6 +39,7 @@ const (
 	externalOauthPort         = 8443
 	APIServerPort             = 6443
 	DefaultAPIServerIPAddress = "172.20.0.1"
+	oauthBrandingManifest     = "v4-0-config-system-branding.yaml"
 )
 
 var (
@@ -108,7 +109,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	params.PodCIDR = hcp.Spec.PodCIDR
 	params.ReleaseImage = releaseInfo.Image
 	params.IngressSubdomain = fmt.Sprintf("apps.%s", hcp.Spec.BaseDomain)
-	params.OpenShiftAPIClusterIP = DefaultAPIServerIPAddress
+	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIAddress
 	params.BaseDomain = hcp.Spec.BaseDomain
 	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
 	params.CloudProvider = string(r.Infra.Status.PlatformStatus.Type)
@@ -178,12 +179,27 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString(caBytes)
 
-	if err = rokscp.RenderClusterManifests(&rokscp.ClusterParams{ClusterParams: *params}, releaseInfo, pullSecretFile, manifestsDir, false, false); err != nil {
+	if err = rokscp.RenderClusterManifests(&rokscp.ClusterParams{ClusterParams: *params}, releaseInfo, pullSecretFile, manifestsDir, true, false); err != nil {
 		return fmt.Errorf("failed to render roks manifests for cluster: %w", err)
 	}
 
 	if err = hypershiftcp.RenderClusterManifests(params, releaseInfo, pullSecretFile, pkiDir, manifestsDir, true, true, true, true); err != nil {
 		return fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
+	}
+
+	manifestBytes, err := ioutil.ReadFile(filepath.Join(manifestsDir, oauthBrandingManifest))
+	if err != nil {
+		return fmt.Errorf("failed to read manifest %s: %w", oauthBrandingManifest, err)
+	}
+	manifestObj := &unstructured.Unstructured{}
+	if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(manifestBytes)), 100).Decode(manifestObj); err != nil {
+		return fmt.Errorf("failed to decode manifest %s: %w", oauthBrandingManifest, err)
+	}
+	manifestObj.SetNamespace(name)
+	if err = r.Create(context.TODO(), manifestObj); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to apply manifest %s: %w", oauthBrandingManifest, err)
+		}
 	}
 
 	for _, name := range excludeManifests {
