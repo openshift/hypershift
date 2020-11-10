@@ -2,12 +2,10 @@
 
 All the following assumes `KUBECONFIG` points to the management cluster.
 
-Build binaries and push an image for the control plane operator:
+Build binaries: 
 
 ```
 $ make
-$ docker build -t quay.io/my/hypershift:latest .
-$ docker push quay.io/my/hypershift .
 ```
 
 Install the operator's supporting resources into the management cluster:
@@ -23,7 +21,7 @@ hack/generate-release-images.rb | oc apply --filename -
 
 Run the operator:
 ```
-$ bin/hypershift-operator run --control-plane-operator-image quay.io/my/hypershift:latest
+$ bin/hypershift-operator run --control-plane-operator-image quay.io/hypershift/hypershift:latest
 ```
 
 Run the sigs.k8s.io cluster API controller:
