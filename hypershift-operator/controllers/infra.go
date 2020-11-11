@@ -21,6 +21,7 @@ const (
 	kubeAPIServerServiceName = "kube-apiserver"
 	oauthServiceName         = "oauth-openshift"
 	vpnServiceName           = "openvpn-server"
+	konnectivityServiceName  = "konnectivity-server"
 	ingressOperatorNamespace = "openshift-ingress-operator"
 	hypershiftRouteLabel     = "hypershift.openshift.io/cluster"
 	vpnServiceAccountName    = "vpn"
@@ -30,6 +31,7 @@ type InfrastructureStatus struct {
 	APIAddress              string
 	OAuthAddress            string
 	VPNAddress              string
+	KonnectivityAddress     string
 	OpenShiftAPIAddress     string
 	IgnitionProviderAddress string
 }
@@ -80,6 +82,13 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	}
 	r.Log.Info("Created VPN service")
 
+	r.Log.Info("Creating Konnectivity server service")
+	konnectivityService, err := createKonnectivityServerService(r, name)
+	if err != nil {
+		return status, fmt.Errorf("failed to create konnectivity server service: %w", err)
+	}
+	r.Log.Info("Created Konnectivity service")
+
 	r.Log.Info("Creating Openshift API service")
 	openshiftAPIService, err := createOpenshiftService(r, name)
 	if err != nil {
@@ -121,6 +130,12 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		return status, fmt.Errorf("failed to get service: %w", err)
 	}
 	status.VPNAddress = vpnAddress
+
+	konnectivityAddress, err := getLoadBalancerServiceAddress(r, ctx, ctrl.ObjectKeyFromObject(konnectivityService))
+	if err != nil {
+		return status, fmt.Errorf("failed to get service: %w", err)
+	}
+	status.KonnectivityAddress = konnectivityAddress
 
 	ignitionAddress, err := getRouteAddress(r, ctx, ctrl.ObjectKeyFromObject(ignitionRoute))
 	if err != nil {
@@ -214,6 +229,28 @@ func createOauthService(client ctrl.Client, namespace string) (*corev1.Service, 
 		},
 	}
 	err := client.Create(context.TODO(), svc)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return nil, fmt.Errorf("failed to create oauth service: %w", err)
+	}
+	return svc, nil
+}
+
+func createKonnectivityServerService(client ctrl.Client, namespace string) (*corev1.Service, error) {
+	svc := &corev1.Service{}
+	svc.Namespace = namespace
+	svc.Name = konnectivityServiceName
+	svc.Spec.Selector = map[string]string{"app": "konnectivity-server"}
+	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	svc.Spec.Ports = []corev1.ServicePort{
+		{
+			Name:       "https",
+			Port:       8091,
+			Protocol:   corev1.ProtocolTCP,
+			TargetPort: intstr.FromInt(8091),
+		},
+	}
+	err := client.Create(context.TODO(), svc)
+
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return nil, fmt.Errorf("failed to create oauth service: %w", err)
 	}

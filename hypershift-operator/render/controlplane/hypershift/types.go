@@ -24,6 +24,7 @@ type ClusterParams struct {
 	ExternalOauthDNSName                string                 `json:"externalOauthDNSName"`
 	ExternalOauthPort                   uint                   `json:"externalOauthPort"`
 	IdentityProviders                   string                 `json:"identityProviders"`
+	KonnectivityServerAddress           string                 `json:"konnectivityServerAddress"`
 	ServiceCIDR                         string                 `json:"serviceCIDR"`
 	NamedCerts                          []NamedCert            `json:"namedCerts,omitempty"`
 	PodCIDR                             string                 `json:"podCIDR"`

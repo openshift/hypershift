@@ -105,6 +105,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	params.ExternalOpenVPNPort = 1194
 	params.ExternalOauthDNSName = infraStatus.OAuthAddress
 	params.ExternalOauthPort = externalOauthPort
+	params.KonnectivityServerAddress = infraStatus.KonnectivityAddress
 	params.ServiceCIDR = hcp.Spec.ServiceCIDR
 	params.PodCIDR = hcp.Spec.PodCIDR
 	params.ReleaseImage = releaseInfo.Image
