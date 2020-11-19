@@ -243,7 +243,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	r.Log.Info("successfully applied all manifests")
 
-	userDataSecret := generateUserDataSecret(name, infraStatus.IgnitionProviderAddress, version)
+	userDataSecret := generateUserDataSecret(hcp.GetNamespace(), name, infraStatus.IgnitionProviderAddress, version)
 	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to generate user data secret: %w", err)
 	}
@@ -266,7 +266,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate kubeadminPasswordSecret: %w", err)
 	}
 
-	kubeconfigSecret, err := generateKubeconfigSecret(filepath.Join(pkiDir, "admin.kubeconfig"), name)
+	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetNamespace(), name, filepath.Join(pkiDir, "admin.kubeconfig"))
 	if err != nil {
 		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
 	}
@@ -337,10 +337,10 @@ func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace str
 	return configMap, nil
 }
 
-func generateUserDataSecret(namespace string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {
+func generateUserDataSecret(namespace, name string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {
 	secret := &corev1.Secret{}
-	secret.Name = fmt.Sprintf("%s-user-data", namespace)
-	secret.Namespace = "openshift-machine-api"
+	secret.Name = fmt.Sprintf("%s-user-data", name)
+	secret.Namespace = namespace
 
 	disableTemplatingValue := []byte(base64.StdEncoding.EncodeToString([]byte("true")))
 	var userDataValue []byte
@@ -356,7 +356,7 @@ func generateUserDataSecret(namespace string, ignitionProviderAddr string, versi
 
 	secret.Data = map[string][]byte{
 		"disableTemplating": disableTemplatingValue,
-		"userData":          userDataValue,
+		"value":             userDataValue,
 	}
 	return secret
 }
@@ -407,15 +407,15 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	return secret
 }
 
-func generateKubeconfigSecret(kubeconfigFile, namespace string) (*corev1.Secret, error) {
+func generateKubeconfigSecret(namespace, name, kubeconfigFile string) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
-	secret.Name = "admin-kubeconfig"
+	secret.Name = fmt.Sprintf("%s-kubeconfig", name)
 	kubeconfigBytes, err := ioutil.ReadFile(kubeconfigFile)
 	if err != nil {
 		return nil, err
 	}
-	secret.Data = map[string][]byte{"kubeconfig": kubeconfigBytes}
+	secret.Data = map[string][]byte{"value": kubeconfigBytes}
 	return secret, nil
 }
 
@@ -457,10 +457,6 @@ func generateKubeadminPassword() (string, error) {
 		pw[replace] = '-'
 	}
 	return string(pw), nil
-}
-
-func generateMachineSetName(infraName, clusterName, suffix string) string {
-	return getName(fmt.Sprintf("%s-%s", infraName, clusterName), suffix, 43)
 }
 
 // getName returns a name given a base ("deployment-5") and a suffix ("deploy")

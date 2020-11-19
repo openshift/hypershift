@@ -31,6 +31,8 @@ type GuestClusterSpec struct {
 	// +optional
 	ComputeReplicas int `json:"computeReplicas,omitempty"`
 
+	Region string `json:"region,omitempty"`
+
 	// TODO (alberto): populate the API and create/consume infrastructure via aws sdk
 	// role profile, sg, vpc, subnets.
 }
