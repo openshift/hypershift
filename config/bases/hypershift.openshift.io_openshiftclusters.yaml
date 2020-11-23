@@ -37,9 +37,7 @@ spec:
             properties:
               baseDomain:
                 type: string
-              cloudProvider:
-                type: string
-              computeReplicas:
+              initialComputeReplicas:
                 type: integer
               podCIDR:
                 type: string
@@ -53,8 +51,7 @@ spec:
                 type: string
             required:
             - baseDomain
-            - cloudProvider
-            - computeReplicas
+            - initialComputeReplicas
             - podCIDR
             - pullSecret
             - releaseImage

@@ -9,8 +9,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -90,7 +89,7 @@ func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Return early if deleted
 	if !guestCluster.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, req.Name); err != nil {
+		if err := r.delete(ctx, req); err != nil {
 			r.Log.Error(err, "failed to delete cluster")
 			return ctrl.Result{}, err
 		}
@@ -136,17 +135,31 @@ func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return reconcile.Result{Requeue: true}, nil
 	}
 
-	// Create a machineset for the new cluster's worker nodes
-	machineSet, err := generateWorkerMachineset(r, ctx, r.Infra.Status.InfrastructureName, guestCluster.GetName(), guestCluster.Spec.ComputeReplicas)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
+	if guestCluster.Spec.ComputeReplicas > 0 {
+		nodePool := &hyperv1.NodePool{
+			TypeMeta: metav1.TypeMeta{},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("%v-default", guestCluster.GetName()),
+				Namespace: guestCluster.GetNamespace(),
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: cluster.GetName(),
+				NodeCount:   guestCluster.Spec.ComputeReplicas,
+				Platform: hyperv1.NodePoolPlatform{
+					AWS: &hyperv1.AWSNodePoolPlatform{
+						InstanceType: "m5.large",
+					},
+				},
+			},
+			Status: hyperv1.NodePoolStatus{},
+		}
+		if err := r.Create(ctx, nodePool); err != nil && !apierrors.IsAlreadyExists(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to create nodepool: %w", err)
+		}
+		// TODO (alberto): we currently use openshift mapi which has no notion of remote cluster
+		// therefore the machine.status does not get a nodeRef even though it yields a node for the dataplane.
+		// Once we move to capi machines we should wait for the machine to get a nodeRef.
 	}
-	if err := r.Create(ctx, machineSet); err != nil && !apierrors.IsAlreadyExists(err) {
-		return reconcile.Result{}, fmt.Errorf("failed to create machineset: %w", err)
-	}
-	// TODO (alberto): we currently use openshift mapi which has no notion of remote cluster
-	// therefore the machine.status does not get a nodeRef even though it yields a node for the dataplane.
-	// Once we move to capi machines we should wait for the machine to get a nodeRef.
 
 	// Set the values for upper level controller
 	guestCluster.Status.Ready = true
@@ -164,54 +177,16 @@ func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, nil
 }
 
-func generateWorkerMachineset(client ctrlclient.Client, ctx context.Context, infraName string, namespace string, workerCount int) (*unstructured.Unstructured, error) {
-	machineSets := &unstructured.UnstructuredList{}
-	machineSets.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "machine.openshift.io",
-		Version: "v1beta1",
-		Kind:    "MachineSet",
-	})
-	if err := client.List(ctx, machineSets, ctrlclient.InNamespace("openshift-machine-api")); err != nil {
-		return nil, fmt.Errorf("failed to list machinesets: %w", err)
+func (r *GuestClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%v-default", req.Name),
+			Namespace: req.Namespace,
+		},
 	}
-	if len(machineSets.Items) == 0 {
-		return nil, fmt.Errorf("no machinesets found")
+	if err := waitForDeletion(ctx, r.Log, r.Client, nodePool); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete nodePool %s: %w", nodePool.GetName(), err)
 	}
-	obj := machineSets.Items[0]
-
-	workerName := generateMachineSetName(infraName, namespace, "worker")
-	object := obj.Object
-
-	unstructured.RemoveNestedField(object, "status")
-	unstructured.RemoveNestedField(object, "metadata", "creationTimestamp")
-	unstructured.RemoveNestedField(object, "metadata", "generation")
-	unstructured.RemoveNestedField(object, "metadata", "resourceVersion")
-	unstructured.RemoveNestedField(object, "metadata", "selfLink")
-	unstructured.RemoveNestedField(object, "metadata", "uid")
-	unstructured.RemoveNestedField(object, "spec", "template", "spec", "metadata")
-	unstructured.RemoveNestedField(object, "spec", "template", "spec", "providerSpec", "value", "publicIp")
-	unstructured.SetNestedField(object, int64(workerCount), "spec", "replicas")
-	unstructured.SetNestedField(object, workerName, "metadata", "name")
-	unstructured.SetNestedField(object, workerName, "spec", "selector", "matchLabels", "machine.openshift.io/cluster-api-machineset")
-	unstructured.SetNestedField(object, workerName, "spec", "template", "metadata", "labels", "machine.openshift.io/cluster-api-machineset")
-	unstructured.SetNestedField(object, fmt.Sprintf("%s-user-data", namespace), "spec", "template", "spec", "providerSpec", "value", "userDataSecret", "name")
-
-	return &obj, nil
-}
-
-func (r *GuestClusterReconciler) delete(ctx context.Context, name string) error {
-	machineSetName := generateMachineSetName(r.Infra.Status.InfrastructureName, name, "worker")
-	machineSet := &unstructured.Unstructured{}
-	machineSet.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "machine.openshift.io",
-		Version: "v1beta1",
-		Kind:    "MachineSet",
-	})
-	machineSet.SetNamespace("openshift-machine-api")
-	machineSet.SetName(machineSetName)
-	if err := waitForDeletion(ctx, r.Log, r.Client, machineSet); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete machineset %s: %w", machineSetName, err)
-	}
-	r.Log.Info("deleted machineset", "name", machineSetName)
+	r.Log.Info("deleted nodePool", "name", nodePool)
 	return nil
 }

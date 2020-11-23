@@ -28,14 +28,13 @@ type OpenShiftClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	BaseDomain      string `json:"baseDomain"`
-	PullSecret      string `json:"pullSecret"`
-	ServiceCIDR     string `json:"serviceCIDR"`
-	PodCIDR         string `json:"podCIDR"`
-	SSHKey          string `json:"sshKey"`
-	CloudProvider   string `json:"cloudProvider"`
-	ComputeReplicas int    `json:"computeReplicas"`
-	ReleaseImage    string `json:"releaseImage"`
+	BaseDomain             string `json:"baseDomain"`
+	PullSecret             string `json:"pullSecret"`
+	ServiceCIDR            string `json:"serviceCIDR"`
+	PodCIDR                string `json:"podCIDR"`
+	SSHKey                 string `json:"sshKey"`
+	InitialComputeReplicas int    `json:"initialComputeReplicas"`
+	ReleaseImage           string `json:"releaseImage"`
 }
 
 // OpenShiftClusterStatus defines the observed state of OpenShiftCluster
