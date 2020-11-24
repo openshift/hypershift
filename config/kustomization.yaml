@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - bases/hypershift.openshift.io_guestclusters.yaml
   - bases/hypershift.openshift.io_hostedcontrolplanes.yaml
+  - bases/hypershift.openshift.io_nodepools.yaml
   - bases/hypershift.openshift.io_openshiftclusters.yaml
 commonLabels:
   cluster.x-k8s.io/v1alpha4: v1alpha1

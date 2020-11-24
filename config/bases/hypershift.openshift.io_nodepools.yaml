@@ -6,25 +6,25 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.3.0
   creationTimestamp: null
-  name: guestclusters.hypershift.openshift.io
+  name: nodepools.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
   names:
     categories:
     - cluster-api
-    kind: GuestCluster
-    listKind: GuestClusterList
-    plural: guestclusters
+    kind: NodePool
+    listKind: NodePoolList
+    plural: nodepools
     shortNames:
-    - gc
-    - gcs
-    singular: guestcluster
+    - np
+    - nps
+    singular: nodepool
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: GuestCluster is the Schema for the GuestCluster API
+        description: NodePool defines the desired state of NodePool
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
@@ -35,32 +35,43 @@ spec:
           metadata:
             type: object
           spec:
-            description: GuestClusterSpec defines the desired state of GuestCluster
+            description: NodePoolSpec defines the desired state of NodePool
             properties:
-              computeReplicas:
-                type: integer
-              controlPlaneEndpoint:
-                description: ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
+              autoScaling:
                 properties:
-                  host:
-                    description: Host is the hostname on which the API server is serving.
-                    type: string
-                  port:
-                    description: Port is the port on which the API server is serving.
-                    format: int32
+                  max:
+                    type: integer
+                  min:
                     type: integer
                 required:
-                - host
-                - port
+                - max
+                - min
                 type: object
-              region:
+              clusterName:
+                description: ClusterName is the name of the Cluster this object belongs to.
                 type: string
+              nodeCount:
+                type: integer
+              platform:
+                description: NodePoolPlatform is the platform-specific configuration for a node pool. Only one of the platforms should be set.
+                properties:
+                  aws:
+                    description: AWS is the configuration used when installing on AWS.
+                    properties:
+                      instanceType:
+                        description: InstanceType defines the ec2 instance type. eg. m4-large
+                        type: string
+                    required:
+                    - instanceType
+                    type: object
+                type: object
+            required:
+            - clusterName
+            - nodeCount
+            - platform
             type: object
           status:
-            description: GuestClusterStatus defines the observed state of GuestCluster
-            properties:
-              ready:
-                type: boolean
+            description: NodePoolStatus defines the observed state of NodePool
             type: object
         type: object
     served: true

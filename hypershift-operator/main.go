@@ -30,6 +30,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/hypershift-operator/controllers"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -45,6 +46,7 @@ func init() {
 	clientgoscheme.AddToScheme(scheme)
 	hyperv1.AddToScheme(scheme)
 	capiv1.AddToScheme(scheme)
+	capiaws.AddToScheme(scheme)
 	configv1.AddToScheme(scheme)
 	securityv1.AddToScheme(scheme)
 	operatorv1.AddToScheme(scheme)
@@ -117,6 +119,13 @@ func NewStartCommand() *cobra.Command {
 			Client: mgr.GetClient(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "guestCluster")
+			os.Exit(1)
+		}
+
+		if err := (&controllers.NodePoolReconciler{
+			Client: mgr.GetClient(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "nodePool")
 			os.Exit(1)
 		}
 
