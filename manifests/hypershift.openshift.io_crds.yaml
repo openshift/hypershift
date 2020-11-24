@@ -58,8 +58,6 @@ spec:
                 - host
                 - port
                 type: object
-              region:
-                type: string
             type: object
           status:
             description: GuestClusterStatus defines the observed state of GuestCluster
@@ -158,8 +156,6 @@ spec:
                 - host
                 - port
                 type: object
-              externalManagedControlPlane:
-                type: boolean
               ready:
                 default: false
                 description: Ready denotes that the HostedControlPlane API Server
@@ -167,103 +163,7 @@ spec:
                 type: boolean
             required:
             - controlPlaneEndpoint
-            - externalManagedControlPlane
             - ready
-            type: object
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  annotations:
-    controller-gen.kubebuilder.io/version: v0.3.0
-  creationTimestamp: null
-  labels:
-    cluster.x-k8s.io/v1alpha4: v1alpha1
-  name: nodepools.hypershift.openshift.io
-spec:
-  group: hypershift.openshift.io
-  names:
-    categories:
-    - cluster-api
-    kind: NodePool
-    listKind: NodePoolList
-    plural: nodepools
-    shortNames:
-    - np
-    - nps
-    singular: nodepool
-  scope: Namespaced
-  versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: NodePool defines the desired state of NodePool
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: NodePoolSpec defines the desired state of NodePool
-            properties:
-              autoScaling:
-                properties:
-                  max:
-                    type: integer
-                  min:
-                    type: integer
-                required:
-                - max
-                - min
-                type: object
-              clusterName:
-                description: ClusterName is the name of the Cluster this object belongs
-                  to.
-                type: string
-              nodeCount:
-                type: integer
-              platform:
-                description: NodePoolPlatform is the platform-specific configuration
-                  for a node pool. Only one of the platforms should be set.
-                properties:
-                  aws:
-                    description: AWS is the configuration used when installing on
-                      AWS.
-                    properties:
-                      instanceType:
-                        description: InstanceType defines the ec2 instance type. eg.
-                          m4-large
-                        type: string
-                    required:
-                    - instanceType
-                    type: object
-                type: object
-            required:
-            - clusterName
-            - nodeCount
-            - platform
-            type: object
-          status:
-            description: NodePoolStatus defines the observed state of NodePool
             type: object
         type: object
     served: true
@@ -320,7 +220,9 @@ spec:
             properties:
               baseDomain:
                 type: string
-              initialComputeReplicas:
+              cloudProvider:
+                type: string
+              computeReplicas:
                 type: integer
               podCIDR:
                 type: string
@@ -334,7 +236,8 @@ spec:
                 type: string
             required:
             - baseDomain
-            - initialComputeReplicas
+            - cloudProvider
+            - computeReplicas
             - podCIDR
             - pullSecret
             - releaseImage

@@ -73,15 +73,12 @@ spec:
                 - host
                 - port
                 type: object
-              externalManagedControlPlane:
-                type: boolean
               ready:
                 default: false
                 description: Ready denotes that the HostedControlPlane API Server is ready to receive requests
                 type: boolean
             required:
             - controlPlaneEndpoint
-            - externalManagedControlPlane
             - ready
             type: object
         type: object

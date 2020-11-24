@@ -86,7 +86,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, req); err != nil {
+		if err := r.delete(ctx, req.Name); err != nil {
 			r.Log.Error(err, "failed to delete cluster")
 			return ctrl.Result{}, err
 		}
@@ -121,10 +121,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	if hostedControlPlane.Status.Ready {
 		r.Log.Info("Is ready")
-		hostedControlPlane.Status.ExternalManagedControlPlane = true
-		if err := patchHelper.Patch(ctx, hostedControlPlane); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
-		}
 		return result, nil
 	}
 
@@ -175,7 +171,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	hostedControlPlane.Status.Ready = true
-	hostedControlPlane.Status.ExternalManagedControlPlane = true
 	if err := patchHelper.Patch(ctx, hostedControlPlane); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
 	}
@@ -184,35 +179,25 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{}, nil
 }
 
-func (r *HostedControlPlaneReconciler) delete(ctx context.Context, req ctrl.Request) error {
+func (r *HostedControlPlaneReconciler) delete(ctx context.Context, name string) error {
 	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: req.Name},
+		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
 	if err := waitForDeletion(ctx, r.Log, r.Client, ns); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
-	r.Log.Info("deleted namespace", "name", req.Name)
+	r.Log.Info("deleted namespace", "name", name)
 
-	machineConfig := &corev1.Secret{
+	machineSetConfig := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: req.Namespace,
-			Name:      fmt.Sprintf("%s-user-data", req.Name),
+			Namespace: "openshift-machine-api",
+			Name:      fmt.Sprintf("%s-user-data", name),
 		},
 	}
-	if err := waitForDeletion(ctx, r.Log, r.Client, machineConfig); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete machineConfig secret %s: %w", machineConfig.Name, err)
+	if err := waitForDeletion(ctx, r.Log, r.Client, machineSetConfig); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete machineset secret %s: %w", machineSetConfig.Name, err)
 	}
-
-	kubeconfig := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: req.Namespace,
-			Name:      fmt.Sprintf("%s-kubeconfig", req.Name),
-		},
-	}
-	if err := waitForDeletion(ctx, r.Log, r.Client, kubeconfig); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete machineset secret %s: %w", kubeconfig.Name, err)
-	}
-	r.Log.Info("deleted machineset secret", "name", kubeconfig.Name)
+	r.Log.Info("deleted machineset secret", "name", machineSetConfig.Name)
 
 	return nil
 }
