@@ -4,5 +4,6 @@ resources:
   - bases/hypershift.openshift.io_guestclusters.yaml
   - bases/hypershift.openshift.io_hostedcontrolplanes.yaml
   - bases/hypershift.openshift.io_openshiftclusters.yaml
+  - bases/hypershift.openshift.io_nodepools.yaml
 commonLabels:
   cluster.x-k8s.io/v1alpha4: v1alpha1
