@@ -37,9 +37,9 @@ type HostedControlPlaneStatus struct {
 	// Ready denotes that the HostedControlPlane API Server is ready to
 	// receive requests
 	// +kubebuilder:default=false
-	Ready                       bool        `json:"ready"`
-	ExternalManagedControlPlane bool        `json:"externalManagedControlPlane"`
-	ControlPlaneEndpoint        APIEndpoint `json:"controlPlaneEndpoint"`
+	Ready bool `json:"ready"`
+
+	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint"`
 }
 
 // +kubebuilder:object:root=true

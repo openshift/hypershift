@@ -53,8 +53,6 @@ spec:
                 - host
                 - port
                 type: object
-              region:
-                type: string
             type: object
           status:
             description: GuestClusterStatus defines the observed state of GuestCluster

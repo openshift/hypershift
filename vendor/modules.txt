@@ -159,14 +159,14 @@ go.uber.org/zap/internal/bufferpool
 go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
-# golang.org/x/crypto v0.0.0-20200930160638-afb6bcd081ae
+# golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 ## explicit
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blowfish
 golang.org/x/crypto/ssh/terminal
 # golang.org/x/mod v0.3.0
 golang.org/x/mod/semver
-# golang.org/x/net v0.0.0-20200930145003-4acb6c075d10
+# golang.org/x/net v0.0.0-20200822124328-c89045814202
 golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
 golang.org/x/net/http/httpguts
@@ -591,7 +591,6 @@ k8s.io/utils/pointer
 k8s.io/utils/trace
 # sigs.k8s.io/cluster-api v0.3.11-0.20201103151415-d87a39c85f87
 ## explicit
-sigs.k8s.io/cluster-api/api/v1alpha3
 sigs.k8s.io/cluster-api/api/v1alpha4
 sigs.k8s.io/cluster-api/errors
 sigs.k8s.io/cluster-api/util
@@ -600,9 +599,6 @@ sigs.k8s.io/cluster-api/util/conditions
 sigs.k8s.io/cluster-api/util/container
 sigs.k8s.io/cluster-api/util/patch
 sigs.k8s.io/cluster-api/util/predicates
-# sigs.k8s.io/cluster-api-provider-aws v0.6.2
-## explicit
-sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3
 # sigs.k8s.io/controller-runtime v0.7.0-alpha.6.0.20201109223643-114431a4df15
 ## explicit
 sigs.k8s.io/controller-runtime
