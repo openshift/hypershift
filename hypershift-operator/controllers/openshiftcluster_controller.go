@@ -142,7 +142,7 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			Name:      ocluster.GetName(),
 		},
 		Spec: hyperv1.GuestClusterSpec{
-			ComputeReplicas: ocluster.Spec.ComputeReplicas,
+			ComputeReplicas: ocluster.Spec.InitialComputeReplicas,
 		},
 	}
 
@@ -185,12 +185,7 @@ func (r *OpenShiftClusterReconciler) delete(ctx context.Context, name, namespace
 			Namespace: namespace,
 		},
 	}
-	hcp := &hyperv1.HostedControlPlane{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
+
 	guestCluster := &hyperv1.GuestCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -202,11 +197,6 @@ func (r *OpenShiftClusterReconciler) delete(ctx context.Context, name, namespace
 		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
 	r.Log.Info("Deleted cluster", "name", name)
-
-	if err := r.Delete(ctx, hcp); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete hostedControlPlane: %w", err)
-	}
-	r.Log.Info("Deleted hostedControlPlane", "name", name)
 
 	if err := r.Delete(ctx, guestCluster); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete guestCluster: %w", err)
