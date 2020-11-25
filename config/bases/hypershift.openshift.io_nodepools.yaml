@@ -19,7 +19,12 @@ spec:
     singular: nodepool
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - description: Available Nodes
+      jsonPath: .status.NodeCount
+      name: NodeCount
+      type: integer
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: NodePool defines the desired state of NodePool
@@ -70,11 +75,20 @@ spec:
             type: object
           status:
             description: NodePoolStatus defines the observed state of NodePool
+            properties:
+              nodeCount:
+                description: NodeCount is the most recently observed number of replicas.
+                type: integer
+            required:
+            - nodeCount
             type: object
         type: object
     served: true
     storage: true
     subresources:
+      scale:
+        specReplicasPath: .spec.nodeCount
+        statusReplicasPath: .status.nodeCount
       status: {}
 status:
   acceptedNames:

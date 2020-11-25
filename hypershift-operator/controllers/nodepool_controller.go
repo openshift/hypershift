@@ -133,6 +133,16 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, ocluster *hyperv1.Op
 		return ctrl.Result{}, err
 	}
 
+	available, exists, err := unstructured.NestedInt64(machineSet.Object, "status", "availableReplicas")
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !exists {
+		log.Info("scalable resource for the nodePool has no availableReplicas yet, requeuing")
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	nodePool.Status.NodeCount = int(available)
 	return ctrl.Result{}, nil
 }
 
