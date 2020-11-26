@@ -114,6 +114,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	params.BaseDomain = hcp.Spec.BaseDomain
 	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
 	params.CloudProvider = string(r.Infra.Status.PlatformStatus.Type)
+	params.PlatformType = string(r.Infra.Status.PlatformStatus.Type)
 	params.InternalAPIPort = APIServerPort
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
