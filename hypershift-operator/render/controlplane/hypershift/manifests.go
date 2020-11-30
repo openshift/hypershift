@@ -69,7 +69,6 @@ func (c *clusterManifestContext) setupManifests(etcd bool, vpn bool, externalOau
 	if includeRegistry {
 		c.registry()
 	}
-	c.konnectivity()
 	c.userManifestsBootstrapper()
 	c.routerProxy()
 	c.machineConfigServer()
@@ -145,20 +144,6 @@ func (c *clusterManifestContext) routerProxy() {
 		"router-proxy/router-proxy-vpnclient-configmap.yaml",
 		"router-proxy/router-proxy-http-service.yaml",
 		"router-proxy/router-proxy-https-service.yaml",
-	)
-}
-
-func (c *clusterManifestContext) konnectivity() {
-	c.addManifestFiles(
-		"konnectivity/konnectivity-server-secret.yaml",
-		"konnectivity/konnectivity-server-configmap.yaml",
-		"konnectivity/konnectivity-server-deployment.yaml",
-		"konnectivity/konnectivity-server-local-service.yaml",
-	)
-	c.addUserManifestFiles(
-		"konnectivity/konnectivity-agent-daemonset.yaml",
-		"konnectivity/konnectivity-agent-sa.yaml",
-		"konnectivity/konnectivity-server-rolebinding.yaml",
 	)
 }
 
