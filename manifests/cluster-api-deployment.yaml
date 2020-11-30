@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: hypershift
+  name: cluster-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: cluster-api
+  template:
+    metadata:
+      labels:
+        name: cluster-api
+    spec:
+      serviceAccountName: cluster-api
+      containers:
+      - name: manager
+        image: quay.io/hypershift/cluster-api:hypershift
+        command:
+        - /manager
+        args:
+        - --namespace=hypershift
+        - --v=4
