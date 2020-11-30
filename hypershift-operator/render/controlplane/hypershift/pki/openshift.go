@@ -57,19 +57,6 @@ func GeneratePKI(params *hypershiftcp.ClusterParams, outputDir string) error {
 	}
 	ingressHostNames = append(ingressHostNames, fmt.Sprintf("*.%s", params.IngressSubdomain))
 
-	konnectivityServerLocalHostNames := []string{
-		"konnectivity-server",
-		fmt.Sprintf("konnectivity-server.%s.svc", params.Namespace),
-		fmt.Sprintf("konnectivity-server.%s.svc.cluster.local", params.Namespace),
-	}
-	konnectivityServerHostNames := []string{}
-	konnectivityServerIPs := []string{}
-	if isNumericIP(params.KonnectivityServerAddress) {
-		konnectivityServerIPs = append(konnectivityServerIPs, params.KonnectivityServerAddress)
-	} else {
-		konnectivityServerHostNames = append(konnectivityServerHostNames, params.KonnectivityServerAddress)
-	}
-
 	certs := []certSpec{
 		// kube-apiserver
 		cert("kube-apiserver-server", "root-ca", "kubernetes", "kubernetes", apiServerHostNames, apiServerIPs),
@@ -130,10 +117,6 @@ func GeneratePKI(params *hypershiftcp.ClusterParams, outputDir string) error {
 		cert("openvpn-kube-apiserver-client", "openvpn-ca", "kube-apiserver", "kubernetes", nil, nil),
 		cert("openvpn-router-proxy-client", "openvpn-ca", "router-proxy", "kubernetes", nil, nil),
 		cert("openvpn-worker-client", "openvpn-ca", "worker", "kubernetes", nil, nil),
-
-		// konnectivity
-		cert("konnectivity-server", "root-ca", "konnectivity-server", "kubernetes", konnectivityServerHostNames, konnectivityServerIPs),
-		cert("konnectivity-server-local", "root-ca", "konnectivity-server", "kubernetes", konnectivityServerLocalHostNames, nil),
 	}
 	caMap, err := generateCAs(cas)
 	if err != nil {
