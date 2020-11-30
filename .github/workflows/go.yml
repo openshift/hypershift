@@ -1,4 +1,4 @@
-name: Go
+name: hypershift
 
 on:
   push:
@@ -23,8 +23,8 @@ jobs:
 
     - name: Build
       run: |
-        go build ./hypershift-operator
-        go build ./control-plane-operator
+        go build -o bin/hypershift-operator ./hypershift-operator
+        go build -o bin/control-plane-operator ./control-plane-operator
 
     - name: Test
       run: go test -v ./...
