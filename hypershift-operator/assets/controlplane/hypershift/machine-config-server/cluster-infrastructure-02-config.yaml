@@ -11,6 +11,6 @@ status:
   etcdDiscoveryDomain: {{ .BaseDomain }}
   infrastructureName: kubernetes
   platform: {{ if .PlatformType }}{{ .PlatformType }}{{ else }}None {{ end }}
-  platformStatus: {{ if eq .PlatformType "IBMCloud" }}
+  platformStatus: {{ if .PlatformType }}
     type: {{ .PlatformType }} {{ else }}
     type: None {{ end }}

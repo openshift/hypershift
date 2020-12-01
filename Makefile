@@ -24,7 +24,7 @@ test: generate fmt vet manifests
 	go test ./... -coverprofile cover.out
 
 # Build hypershift-operator binary
-hypershift-operator: generate fmt vet bin/hypershift-operator
+hypershift-operator: generate bindata manifests fmt vet bin/hypershift-operator
 
 bin/hypershift-operator:
 	go build -o bin/hypershift-operator ./hypershift-operator
@@ -67,6 +67,10 @@ vet:
 # Generate code
 generate:
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+
+.PHONY: bindata
+bindata:
+	hack/update-generated-bindata.sh
 
 # Build the docker image
 docker-build: test
