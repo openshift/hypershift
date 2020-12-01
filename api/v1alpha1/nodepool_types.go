@@ -14,6 +14,8 @@ func init() {
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
+// +kubebuilder:subresource:scale:specpath=.spec.nodeCount,statuspath=.status.nodeCount
+// +kubebuilder:printcolumn:name="NodeCount",type="integer",JSONPath=".status.NodeCount",description="Available Nodes"
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -33,7 +35,8 @@ type NodePoolSpec struct {
 
 // NodePoolStatus defines the observed state of NodePool
 type NodePoolStatus struct {
-	// TODO (alberto)
+	// NodeCount is the most recently observed number of replicas.
+	NodeCount int `json:"nodeCount"`
 }
 
 // +kubebuilder:object:root=true

@@ -47,8 +47,7 @@ spec:
   serviceCIDR: 172.31.0.0/16
   podCIDR: 10.132.0.0/14
   sshKey: 'ssh-rsa ...'
-  cloudProvider: AWS
-  computeReplicas: 1
+  initialComputeReplicas: 1
 ```
 
 Get the cluster kubeconfig using:
@@ -56,6 +55,23 @@ Get the cluster kubeconfig using:
 $ oc get secret --namespace guest-hello admin-kubeconfig --template={{.data.kubeconfig}} | base64 -D
 ```
 
+You can create additional nodePools:
+```yaml
+apiVersion: hypershift.openshift.io/v1alpha1
+kind: NodePool
+metadata:
+  name: guest-hello-custom-nodepool
+  namespace: hypershift
+spec:
+  clusterName: guest-hello
+  autoScaling:
+    max: 0
+    min: 0
+  nodeCount: 1
+  platform:
+    aws:
+      instanceType: m5.large
+```
 And delete the cluster using:
 
 ```
