@@ -17,7 +17,7 @@ $ make build
 
 $ make install PROFILE=development
 
-$ bin/hypershift-operator run --release-info config/bases/release-info.json
+$ make run-local
 ```
 
 Or you might want to run your own image in the cluster to do integration
