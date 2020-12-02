@@ -177,24 +177,6 @@ func writeRSAKey(outputDir, name string) error {
 	return nil
 }
 
-func writeDHParams(outputDir, name string) error {
-	fileName := filepath.Join(outputDir, name+".pem")
-	if util.FileExists(fileName) {
-		log.Infof("Skipping DH params %s because it already exists", fileName)
-		return nil
-	}
-	log.Infof("Generating DH params")
-	b, err := util.GenerateDHParams()
-	if err != nil {
-		return err
-	}
-	log.Infof("Writing DH params to %s", fileName)
-	if err := ioutil.WriteFile(fileName, b, 0644); err != nil {
-		return err
-	}
-	return nil
-}
-
 func nextIP(ip net.IP) net.IP {
 	nextIP := net.IP(make([]byte, len(ip)))
 	copy(nextIP, ip)
