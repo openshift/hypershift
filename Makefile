@@ -77,3 +77,6 @@ docker-push:
 
 release-info-data:
 	oc adm release info --output json > config/hypershift-operator/release-info.json
+
+run-local:
+	bin/hypershift-operator run --release-info config/hypershift-operator/release-info.json

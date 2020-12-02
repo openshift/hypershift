@@ -28,10 +28,12 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/hypershift-operator/controllers"
 	"openshift.io/hypershift/hypershift-operator/releaseinfo"
@@ -108,26 +110,22 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		// Add some flexibility to getting the control plane operator image. Use the
-		// flag if given, but if that's empty and we're running in a pod, use the
+		// flag if given, but if that's empty and we're running in a deployment, use the
 		// hypershift operator's image for the control plane by default.
 		lookupControlPlaneOperatorImage := func(kubeClient client.Client) (string, error) {
 			if len(controlPlaneOperatorImage) > 0 {
 				return controlPlaneOperatorImage, nil
 			}
-
-			podName := os.Getenv("MY_POD_NAME")
-			podNamespace := os.Getenv("MY_POD_NAMESPACE")
-			runningInPod := len(podName) > 0 && len(podNamespace) > 0
-			if !runningInPod {
-				return "", nil
+			deployment := appsv1.Deployment{}
+			err := kubeClient.Get(context.TODO(), client.ObjectKey{Namespace: "hypershift", Name: "operator"}, &deployment)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					return "", nil
+				}
+				return "", fmt.Errorf("failed to get operator deployment: %w", err)
 			}
-
 			var image string
-			pod := corev1.Pod{}
-			if err := kubeClient.Get(context.TODO(), client.ObjectKey{Namespace: podNamespace, Name: podName}, &pod); err != nil {
-				return "", fmt.Errorf("failed to get operator's pod %s/%s: %w", podNamespace, podName, err)
-			}
-			for _, container := range pod.Spec.Containers {
+			for _, container := range deployment.Spec.Template.Spec.Containers {
 				if container.Name == "operator" {
 					image = container.Image
 					break
