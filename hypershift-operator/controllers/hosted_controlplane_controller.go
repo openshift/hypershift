@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -14,22 +13,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/hypershift-operator/releaseinfo"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	"openshift.io/hypershift/hypershift-operator/releaseinfo"
 )
 
 type HostedControlPlaneReconciler struct {
 	client.Client
-	Log                       logr.Logger
-	Infra                     *configv1.Infrastructure
-	recorder                  record.EventRecorder
-	ControlPlaneOperatorImage string
+	Log                             logr.Logger
+	Infra                           *configv1.Infrastructure
+	recorder                        record.EventRecorder
+	LookupControlPlaneOperatorImage func(kubeClient client.Client) (string, error)
+	LookupReleaseInfo               func(image string) (*releaseinfo.ReleaseImageInfo, error)
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -124,25 +125,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return result, nil
 	}
 
-	// The images.json key contains a hash of image pullspec to release info
-	// obtained from `oc adm release info $image -o json`.
-	releaseImages := &corev1.ConfigMap{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: "hypershift", Name: "release-images"}, releaseImages); err != nil {
+	releaseInfo, err := r.LookupReleaseInfo(hostedControlPlane.Spec.ReleaseImage)
+	if err != nil {
 		result.RequeueAfter = 5 * time.Second
-		return result, fmt.Errorf("no release images found")
-	}
-	imagesJSON, hasImagesJSON := releaseImages.Data["images.json"]
-	if !hasImagesJSON {
-		return result, fmt.Errorf("no images.json found in release images configmap")
-	}
-	images := map[string]releaseinfo.ReleaseImageInfo{}
-	if err := json.Unmarshal([]byte(imagesJSON), &images); err != nil {
-		return result, fmt.Errorf("failed to read images.json: %w", err)
-	}
-	releaseInfo, hasReleaseInfo := images[hostedControlPlane.Spec.ReleaseImage]
-	if !hasReleaseInfo {
-		result.RequeueAfter = 5 * time.Second
-		return result, fmt.Errorf("no release info found for image %q", hostedControlPlane.Spec.ReleaseImage)
+		return result, fmt.Errorf("no release info found for image %q: %w", hostedControlPlane.Spec.ReleaseImage, err)
 	}
 
 	// First, set up infrastructure
@@ -164,7 +150,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Install the control plane into the infrastructure
-	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, &releaseInfo)
+	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseInfo)
 	if err != nil {
 		r.Log.Error(err, "failed to ensure control plane")
 		return result, fmt.Errorf("failed to ensure control plane: %w", err)

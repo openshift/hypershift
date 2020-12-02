@@ -95,6 +95,10 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	if err != nil {
 		return fmt.Errorf("cannot parse release version (%s): %v", releaseVersion, err)
 	}
+	controlPlaneOperatorImage, err := r.LookupControlPlaneOperatorImage(r.Client)
+	if err != nil {
+		return fmt.Errorf("failed to lookup control plane operator image: %w", err)
+	}
 
 	params := hypershiftcp.NewClusterParams()
 	params.Namespace = name
@@ -120,7 +124,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.Replicas = "1"
 	params.SSHKey = hcp.Spec.SSHKey
-	params.ControlPlaneOperatorImage = r.ControlPlaneOperatorImage
+	params.ControlPlaneOperatorImage = controlPlaneOperatorImage
 	params.HypershiftOperatorControllers = []string{"route-sync", "auto-approver", "kubeadmin-password", "node"}
 
 	// Generate PKI data just once and store it in a secret. PKI generation isn't

@@ -1,14 +1,16 @@
-.PHONY: bin/hypershift-operator
-
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= hypershift:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
 CONTROLLER_GEN=GO111MODULE=on GOFLAGS=-mod=vendor go run sigs.k8s.io/controller-tools/cmd/controller-gen
 
+GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOFLAGS=-mod=vendor go
-GO_BUILD_RECIPE=CGO_ENABLED=0 $(GO) build -o $(BIN) $(GO_GCFLAGS) $(MAIN_PACKAGE)
+GO_BUILD_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS)
+
+# Kustomize overlay to use
+PROFILE ?= production
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -17,65 +19,61 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-all: hypershift-operator control-plane-operator
+all: build manifests
 
-# Run tests
-test: generate fmt vet manifests
-	go test ./... -coverprofile cover.out
+build: hypershift-operator control-plane-operator
 
-# Build hypershift-operator binary
-hypershift-operator: generate bindata manifests fmt vet bin/hypershift-operator
-
-bin/hypershift-operator:
-	go build -o bin/hypershift-operator ./hypershift-operator
-
-# Build control-plane-operator binary
-control-plane-operator: generate fmt vet
-	go build -o bin/control-plane-operator ./control-plane-operator
-
-# Run against the configured Kubernetes cluster in ~/.kube/config
-run: generate fmt vet manifests
-	go run ./hypershift-operator/main.go
-
-# Install CRDs into a cluster
-install: manifests
-	kustomize build config/crd | kubectl apply -f -
-
-# Uninstall CRDs from a cluster
-uninstall: manifests
-	kustomize build config/crd | kubectl delete -f -
-
-# Deploy controller in the configured Kubernetes cluster in ~/.kube/config
-deploy: manifests
-	cd config/manager && kustomize edit set image controller=${IMG}
-	kustomize build config/default | kubectl apply -f -
-
-# Generate manifests e.g. CRD, RBAC etc.
-.PHONY: manifests
-manifests:
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=hypershift-operator-role webhook paths="./..." output:crd:artifacts:config=config/bases
-	cd config && kustomize build > ../manifests/hypershift.openshift.io_crds.yaml
-
-# Run go fmt against code
-fmt:
-	go fmt ./...
-
-# Run go vet against code
-vet:
-	go vet ./...
+verify: build fmt vet
 
 # Generate code
 generate:
+	hack/update-generated-bindata.sh
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
-.PHONY: bindata
-bindata:
-	hack/update-generated-bindata.sh
+# Build hypershift-operator binary
+hypershift-operator: generate
+	$(GO_BUILD_RECIPE) -o bin/hypershift-operator ./hypershift-operator
+
+# Build control-plane-operator binary
+control-plane-operator: generate
+	$(GO_BUILD_RECIPE) -o bin/control-plane-operator ./control-plane-operator
+
+# Run tests
+test: build
+	$(GO) test ./... -coverprofile cover.out
+
+# Generate Kube manifests (e.g. CRDs)
+manifests:
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) webhook paths="./..." output:crd:artifacts:config=config/hypershift-operator
+
+# Installs hypershift into a cluster
+install: manifests release-info-data
+	kustomize build config/install/$(PROFILE) | oc apply -f -
+
+# Uninstalls hypershit from a cluster
+uninstall: manifests
+	kustomize build config/install/$(PROFILE) | oc delete -f -
+
+# Builds the config with Kustomize for manual usage
+.PHONY: config
+config: release-info-data
+	kustomize build config/install/$(PROFILE)
+
+# Run go fmt against code
+fmt:
+	$(GO) fmt ./...
+
+# Run go vet against code
+vet:
+	$(GO) vet ./...
 
 # Build the docker image
-docker-build: test
+docker-build:
 	docker build . -t ${IMG}
 
 # Push the docker image
 docker-push:
 	docker push ${IMG}
+
+release-info-data:
+	oc adm release info --output json > config/hypershift-operator/release-info.json

@@ -26,3 +26,5 @@ bin
 .envrc
 
 .kube
+
+config/hypershift-operator/release-info.json

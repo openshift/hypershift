@@ -44,8 +44,7 @@ const (
 // OpenShiftClusterReconciler reconciles a OpenShiftCluster object
 type OpenShiftClusterReconciler struct {
 	client.Client
-	Log                       logr.Logger
-	ControlPlaneOperatorImage string
+	Log logr.Logger
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=openshiftclusters,verbs=get;list;watch;create;update;patch;delete
