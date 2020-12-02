@@ -17,7 +17,10 @@ limitations under the License.
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -25,13 +28,17 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/hypershift-operator/controllers"
+	"openshift.io/hypershift/hypershift-operator/releaseinfo"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
@@ -77,11 +84,14 @@ func NewStartCommand() *cobra.Command {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var controlPlaneOperatorImage string
+	var releaseInfoFile string
+
 	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0", "The address the metric endpoint binds to.")
 	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&controlPlaneOperatorImage, "control-plane-operator-image", "", "A control plane operator image.")
+	cmd.Flags().StringVar(&releaseInfoFile, "release-info", "", "A static release info JSON file to use for all guest clusters")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
@@ -97,17 +107,65 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		// Add some flexibility to getting the control plane operator image. Use the
+		// flag if given, but if that's empty and we're running in a pod, use the
+		// hypershift operator's image for the control plane by default.
+		lookupControlPlaneOperatorImage := func(kubeClient client.Client) (string, error) {
+			if len(controlPlaneOperatorImage) > 0 {
+				return controlPlaneOperatorImage, nil
+			}
+
+			podName := os.Getenv("MY_POD_NAME")
+			podNamespace := os.Getenv("MY_POD_NAMESPACE")
+			runningInPod := len(podName) > 0 && len(podNamespace) > 0
+			if !runningInPod {
+				return "", nil
+			}
+
+			var image string
+			pod := corev1.Pod{}
+			if err := kubeClient.Get(context.TODO(), client.ObjectKey{Namespace: podNamespace, Name: podName}, &pod); err != nil {
+				return "", fmt.Errorf("failed to get operator's pod %s/%s: %w", podNamespace, podName, err)
+			}
+			for _, container := range pod.Spec.Containers {
+				if container.Name == "operator" {
+					image = container.Image
+					break
+				}
+			}
+			return image, nil
+		}
+
+		// For now read release info from a file to keep it simple and externalize
+		// the complexity of the ways we currently know to get the data (which involves
+		// authenticated registry interactions interactions via `oc adm release info`, etc.)
+		lookupReleaseInfo := func(image string) (*releaseinfo.ReleaseImageInfo, error) {
+			if len(releaseInfoFile) == 0 {
+				return nil, fmt.Errorf("release-info is currently required")
+			}
+			contents, err := ioutil.ReadFile(releaseInfoFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read release info file %s: %w", releaseInfoFile, err)
+			}
+			var info releaseinfo.ReleaseImageInfo
+			err = json.Unmarshal(contents, &info)
+			if err != nil {
+				return nil, fmt.Errorf("invalid release info file %s: %w", releaseInfoFile, err)
+			}
+			return &info, nil
+		}
+
 		if err = (&controllers.OpenShiftClusterReconciler{
-			Client:                    mgr.GetClient(),
-			ControlPlaneOperatorImage: controlPlaneOperatorImage,
+			Client: mgr.GetClient(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "OpenShiftCluster")
 			os.Exit(1)
 		}
 
 		if err := (&controllers.HostedControlPlaneReconciler{
-			Client:                    mgr.GetClient(),
-			ControlPlaneOperatorImage: controlPlaneOperatorImage,
+			Client:                          mgr.GetClient(),
+			LookupControlPlaneOperatorImage: lookupControlPlaneOperatorImage,
+			LookupReleaseInfo:               lookupReleaseInfo,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hostedControlPlane")
 			os.Exit(1)

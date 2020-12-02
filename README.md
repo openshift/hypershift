@@ -1,40 +1,40 @@
-# Hypershift POC
+## HyperShift
 
-All the following assumes `KUBECONFIG` points to the management cluster.
+Guest clustering for [OpenShift](https://openshift.io).
 
-Build binaries: 
+### Prerequisites
 
-```
-$ make
-```
+* Admin access to an OpenShift cluster.
+* The OpenShift `oc` CLI tool.
+* [Kustomize](https://kustomize.io)
 
-Install the operator's supporting resources into the management cluster:
-```
-$ oc apply --filename manifests/
-```
+### Installation
 
-Define release image info to be referenced by clusters:
+Install HyperShift into the management cluster:
 
-```
-hack/generate-release-images.rb | oc apply --filename -
+```bash
+$ make install
 ```
 
-Run the operator:
-```
-$ bin/hypershift-operator run --control-plane-operator-image quay.io/hypershift/hypershift:latest
+Remove HyperShift from the management cluster:
+
+```bash
+$ make uninstall
 ```
 
-Create a cluster, referencing a release image present in the `release-images` configmap
-previously created:
+### Create a cluster
+
+Create a new guest cluster by creating an `OpenShiftCluster` resource. For now,
+the cluster will be based on the version of the management cluster itself.
+
+Here's an example:
 
 ```yaml
 apiVersion: hypershift.openshift.io/v1alpha1
 kind: OpenShiftCluster
 metadata:
-  namespace: hypershift
   name: guest-hello
 spec:
-  releaseImage: quay.io/openshift-release-dev/ocp-release@sha256:d78292e9730dd387ff6198197c8b0598da340be7678e8e1e4810b557a926c2b9
   baseDomain: guest-hello.devcluster.openshift.com
   pullSecret: '{"auths": { ... }}'
   serviceCIDR: 172.31.0.0/16
@@ -43,12 +43,14 @@ spec:
   initialComputeReplicas: 1
 ```
 
-Get the cluster kubeconfig using:
-```
+Get the guest cluster's kubeconfig using:
+
+```bash
 $ oc get secret --namespace guest-hello admin-kubeconfig --template={{.data.kubeconfig}} | base64 -D
 ```
 
 You can create additional nodePools:
+
 ```yaml
 apiVersion: hypershift.openshift.io/v1alpha1
 kind: NodePool
@@ -65,8 +67,9 @@ spec:
     aws:
       instanceType: m5.large
 ```
+
 And delete the cluster using:
 
-```
+```bash
 $ oc delete --namespace hypershift openshiftclusters/guest-hello
 ```

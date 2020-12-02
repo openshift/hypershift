@@ -16,7 +16,8 @@ spec:
       serviceAccountName: cluster-api
       containers:
       - name: manager
-        image: quay.io/hypershift/cluster-api:hypershift
+        image: cluster-api:latest
+        imagePullPolicy: Always
         command:
         - /manager
         args:
