@@ -148,9 +148,6 @@ func GeneratePKI(params *hypershiftcp.ClusterParams, outputDir string) error {
 	if err := writeRSAKey(outputDir, "service-account"); err != nil {
 		return err
 	}
-	if err := writeDHParams(outputDir, "openvpn-dh"); err != nil {
-		return err
-	}
 	return nil
 }
 
