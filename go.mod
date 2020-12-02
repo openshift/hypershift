@@ -3,7 +3,6 @@ module openshift.io/hypershift
 go 1.15
 
 require (
-	github.com/Luzifer/go-dhparam v1.1.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/go-logr/logr v0.2.1
 	github.com/google/uuid v1.1.2

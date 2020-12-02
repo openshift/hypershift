@@ -1,8 +1,5 @@
 # cloud.google.com/go v0.51.0
 cloud.google.com/go/compute/metadata
-# github.com/Luzifer/go-dhparam v1.1.0
-## explicit
-github.com/Luzifer/go-dhparam
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
 # github.com/blang/semver v3.5.1+incompatible
