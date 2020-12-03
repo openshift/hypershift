@@ -19,45 +19,9 @@ spec:
       labels:
         app: kube-apiserver
         clusterID: "{{ .ClusterID }}"
-{{ if .RestartDate }}
-      annotations:
-        openshift.io/restartedAt: "{{ .RestartDate }}"
-{{ end }}
     spec:
-      tolerations:
-        - key: "multi-az-worker"
-          operator: "Equal"
-          value: "true"
-          effect: NoSchedule
-      affinity:
-        podAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchExpressions:
-                    - key: clusterID
-                      operator: In
-                      values: ["{{ .ClusterID }}"]
-                topologyKey: "kubernetes.io/hostname"
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values: ["kube-apiserver"]
-              topologyKey: "kubernetes.io/hostname"
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values: ["kube-apiserver"]
-              topologyKey: "failure-domain.beta.kubernetes.io/zone"
       automountServiceAccountToken: false
-{{ if .MasterPriorityClass }}
-      priorityClassName: {{ .MasterPriorityClass }}
-{{ end }}
+      serviceAccountName: vpn
       containers:
       - name: kube-apiserver
         image: {{ imageFor "hyperkube" }}
@@ -88,15 +52,12 @@ spec:
             path: readyz
           initialDelaySeconds: 10
           timeoutSeconds: 10
-{{ if .KubeAPIServerResources }}
-        resources:{{ range .KubeAPIServerResources }}{{ range .ResourceRequest }}
-          requests: {{ if .CPU }}
-            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
-            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
-          limits: {{ if .CPU }}
-            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
-            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
-{{ end }}
+        securityContext:
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - MKNOD
+            - NET_ADMIN
         volumeMounts:
         - mountPath: /etc/kubernetes/secret/
           name: secret
@@ -175,6 +136,22 @@ spec:
           mountPath: /tmp/kp
           readOnly: true
 {{ end }}
+      - name: openvpn-client
+        image: quay.io/hypershift/openvpn:latest
+        imagePullPolicy: Always
+        command:
+        - /usr/sbin/openvpn
+        args:
+        - --config
+        - /etc/openvpn/config/client.conf
+        workingDir: /etc/openvpn/
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /etc/openvpn/secret
+          name: vpnsecret
+        - mountPath: /etc/openvpn/config
+          name: vpnconfig
       volumes:
       - secret:
           secretName: kube-apiserver
@@ -190,6 +167,12 @@ spec:
       - configMap:
           name: kube-apiserver-oauth-metadata
         name: oauth
+      - name: vpnconfig
+        configMap:
+          name: kube-apiserver-vpnclient-config
+      - name: vpnsecret
+        secret:
+          secretName: kube-apiserver-vpnclient-secret
 {{ if .APIServerAuditEnabled }}
       - name: apiserver-cm
         configMap:
