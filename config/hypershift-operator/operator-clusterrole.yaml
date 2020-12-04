@@ -67,6 +67,7 @@ rules:
   - events
   - configmaps
   - pods
+  - pods/log
   - secrets
   - nodes
   - namespaces

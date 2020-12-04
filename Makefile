@@ -1,9 +1,12 @@
+DIR := ${CURDIR}
+
 # Image URL to use all building/pushing image targets
 IMG ?= hypershift:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
-CONTROLLER_GEN=GO111MODULE=on GOFLAGS=-mod=vendor go run sigs.k8s.io/controller-tools/cmd/controller-gen
+CONTROLLER_GEN=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen
+BINDATA=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/github.com/kevinburke/go-bindata/go-bindata
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOFLAGS=-mod=vendor go
@@ -27,7 +30,22 @@ verify: build fmt vet
 
 # Generate code
 generate:
-	hack/update-generated-bindata.sh
+	$(BINDATA) -mode 420 -modtime 1 -pkg hypershift \
+		-o ./hypershift-operator/assets/controlplane/hypershift/bindata.go \
+		--prefix hypershift-operator/assets/controlplane/hypershift \
+		--ignore bindata.go \
+		./hypershift-operator/assets/controlplane/hypershift/...
+
+	gofmt -s -w ./hypershift-operator/assets/controlplane/hypershift/bindata.go
+
+	$(BINDATA) -mode 420 -modtime 1 -pkg roks \
+		-o ./hypershift-operator/assets/controlplane/roks/bindata.go \
+		--prefix hypershift-operator/assets/controlplane/roks \
+		--ignore bindata.go \
+		./hypershift-operator/assets/controlplane/roks/...
+
+	gofmt -s -w ./hypershift-operator/assets/controlplane/roks/bindata.go
+
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 # Build hypershift-operator binary
@@ -44,10 +62,10 @@ test: build
 
 # Generate Kube manifests (e.g. CRDs)
 manifests:
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) webhook paths="./..." output:crd:artifacts:config=config/hypershift-operator
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=config/hypershift-operator
 
 # Installs hypershift into a cluster
-install: manifests release-info-data
+install: manifests
 	kustomize build config/install/$(PROFILE) | oc apply -f -
 
 # Uninstalls hypershit from a cluster
@@ -56,7 +74,7 @@ uninstall: manifests
 
 # Builds the config with Kustomize for manual usage
 .PHONY: config
-config: release-info-data
+config:
 	kustomize build config/install/$(PROFILE)
 
 # Run go fmt against code
@@ -75,8 +93,13 @@ docker-build:
 docker-push:
 	docker push ${IMG}
 
-release-info-data:
-	oc adm release info --output json > config/hypershift-operator/release-info.json
-
 run-local:
-	bin/hypershift-operator run --release-info config/hypershift-operator/release-info.json
+	bin/hypershift-operator run
+
+BUILD_EXAMPLE_CLUSTER=KUSTOMIZE_PLUGIN_HOME=$(DIR)/config/example-cluster/plugin kustomize build --enable_alpha_plugins ./config/example-cluster
+
+example-cluster:
+	$(BUILD_EXAMPLE_CLUSTER)
+
+install-example-cluster:
+	$(BUILD_EXAMPLE_CLUSTER) | oc apply --namespace hypershift -f -

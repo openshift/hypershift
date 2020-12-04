@@ -30,7 +30,7 @@ type HostedControlPlaneReconciler struct {
 	Infra                           *configv1.Infrastructure
 	recorder                        record.EventRecorder
 	LookupControlPlaneOperatorImage func(kubeClient client.Client) (string, error)
-	LookupReleaseInfo               func(image string) (*releaseinfo.ReleaseImageInfo, error)
+	ReleaseProvider                 releaseinfo.Provider
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -125,12 +125,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return result, nil
 	}
 
-	releaseInfo, err := r.LookupReleaseInfo(hostedControlPlane.Spec.ReleaseImage)
-	if err != nil {
-		result.RequeueAfter = 5 * time.Second
-		return result, fmt.Errorf("no release info found for image %q: %w", hostedControlPlane.Spec.ReleaseImage, err)
-	}
-
 	// First, set up infrastructure
 	infraStatus, err := r.ensureInfrastructure(ctx, hostedControlPlane)
 	if err != nil {
@@ -149,8 +143,17 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		Port: APIServerPort,
 	}
 
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to look up release info: %w", err)
+	}
+	componentVersions, err := releaseImage.ComponentVersions()
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("invalid component versions found in release info: %w", err)
+	}
+	r.Log.Info("found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", releaseImage.ComponentImages(), "componentVersions", componentVersions)
 	// Install the control plane into the infrastructure
-	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseInfo)
+	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage)
 	if err != nil {
 		r.Log.Error(err, "failed to ensure control plane")
 		return result, fmt.Errorf("failed to ensure control plane: %w", err)

@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- cluster.yaml
+
+transformers:
+- imagedefaulter-plugin.yaml
+
+secretGenerator:
+- name: pull-secret
+  options:
+    disableNameSuffixHash: true
+  files:
+  - .dockerconfigjson=pull-secret
+  type: Opaque
+- name: ssh-key
+  options:
+    disableNameSuffixHash: true
+  files:
+  - id_rsa.pub=ssh-key
+  type: Opaque

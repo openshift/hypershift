@@ -1,0 +1,14 @@
+apiVersion: hypershift.openshift.io/v1alpha1
+kind: OpenShiftCluster
+metadata:
+  name: example
+spec:
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.6.7-x86_64
+  initialComputeReplicas: 1
+  serviceCIDR: 172.30.0.0/16
+  podCIDR: 10.128.0.0/14
+  pullSecret:
+    name: pull-secret
+  sshKey:
+    name: ssh-key

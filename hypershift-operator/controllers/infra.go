@@ -61,8 +61,22 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 
 	// Create pull secret
 	r.Log.Info("Creating pull secret")
-	if _, err := createPullSecret(r, name, hcp.Spec.PullSecret); err != nil {
+	var pullSecret corev1.Secret
+	err = r.Client.Get(ctx, ctrl.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.PullSecret.Name}, &pullSecret)
+	if err != nil {
+		return status, fmt.Errorf("failed to get pull secret %s: %w", hcp.Spec.PullSecret.Name, err)
+	}
+	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
+	if !hasPullSecretData {
+		return status, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
+	}
+	if _, err := createPullSecret(r, name, pullSecretData); err != nil {
 		return status, fmt.Errorf("failed to create pull secret: %w", err)
+	}
+
+	baseDomain, err := ClusterBaseDomain(r.Client, ctx, hcp.Name)
+	if err != nil {
+		return status, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
 
 	// Create Kube APIServer service
@@ -94,7 +108,7 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	}
 
 	r.Log.Info("Creating router shard")
-	if err := createIngressController(r, name, hcp.Spec.BaseDomain); err != nil {
+	if err := createIngressController(r, name, baseDomain); err != nil {
 		return status, fmt.Errorf("cannot create router shard: %w", err)
 	}
 
@@ -220,7 +234,7 @@ func createOauthService(client ctrl.Client, namespace string) (*corev1.Service, 
 	return svc, nil
 }
 
-func createPullSecret(client ctrl.Client, namespace, data string) (*corev1.Secret, error) {
+func createPullSecret(client ctrl.Client, namespace string, data []byte) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
 	secret.Name = "pull-secret"

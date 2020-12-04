@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,13 +29,26 @@ type OpenShiftClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	BaseDomain             string `json:"baseDomain"`
-	PullSecret             string `json:"pullSecret"`
-	ServiceCIDR            string `json:"serviceCIDR"`
-	PodCIDR                string `json:"podCIDR"`
-	SSHKey                 string `json:"sshKey"`
-	InitialComputeReplicas int    `json:"initialComputeReplicas"`
-	ReleaseImage           string `json:"releaseImage"`
+	Release ReleaseSpec `json:"release"`
+
+	InitialComputeReplicas int `json:"initialComputeReplicas"`
+
+	// PullSecret is a pull secret injected into the container runtime of guest
+	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
+	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
+
+	SSHKey corev1.LocalObjectReference `json:"sshKey"`
+
+	ServiceCIDR string `json:"serviceCIDR"`
+	PodCIDR     string `json:"podCIDR"`
+}
+
+type ReleaseSpec struct {
+	// +kubebuilder:validation:Optional
+	Channel string `json:"channel"`
+	// Image is the release image pullspec for the control plane
+	// +kubebuilder:validation:Required
+	Image string `json:"image"`
 }
 
 // OpenShiftClusterStatus defines the observed state of OpenShiftCluster
