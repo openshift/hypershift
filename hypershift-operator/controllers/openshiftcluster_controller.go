@@ -127,12 +127,11 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			Name:      ocluster.GetName(),
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
-			BaseDomain:   ocluster.Spec.BaseDomain,
 			PullSecret:   ocluster.Spec.PullSecret,
 			ServiceCIDR:  ocluster.Spec.ServiceCIDR,
 			PodCIDR:      ocluster.Spec.PodCIDR,
 			SSHKey:       ocluster.Spec.SSHKey,
-			ReleaseImage: ocluster.Spec.ReleaseImage,
+			ReleaseImage: ocluster.Spec.Release.Image,
 		},
 	}
 	guestCluster := &hyperv1.GuestCluster{

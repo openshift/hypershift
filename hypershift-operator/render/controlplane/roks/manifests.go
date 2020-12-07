@@ -11,13 +11,13 @@ import (
 )
 
 // RenderClusterManifests renders manifests for a hosted control plane cluster
-func RenderClusterManifests(params *ClusterParams, releaseImageInfo *releaseinfo.ReleaseImageInfo, pullSecretFile, outputDir string, externalOauth, includeRegistry bool) error {
-	releaseInfo, err := releaseImageInfo.ReleaseInfo(params.OriginReleasePrefix)
+func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecretFile, outputDir string, externalOauth, includeRegistry bool) error {
+	componentVersions, err := image.ComponentVersions()
 	if err != nil {
 		return err
 	}
 	includeMetrics := len(params.ROKSMetricsImage) > 0
-	ctx := newClusterManifestContext(releaseInfo.Images, releaseInfo.Versions, params, outputDir)
+	ctx := newClusterManifestContext(image.ComponentImages(), componentVersions, params, outputDir)
 	ctx.setupManifests(externalOauth, includeRegistry, includeMetrics)
 	return ctx.renderManifests()
 }

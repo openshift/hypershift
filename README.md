@@ -24,41 +24,39 @@ $ make uninstall
 
 ### Create a cluster
 
-Create a new guest cluster by creating an `OpenShiftCluster` resource. For now,
-the cluster will be based on the version of the management cluster itself.
+First, create the following files containing secrets used by the example cluster:
 
-Here's an example:
+- `config/example-cluster/pull-secret` a valid pull secret for image pulls.
+- `config/example-cluster/ssh-key` an SSH public key for guest node access
 
-```yaml
-apiVersion: hypershift.openshift.io/v1alpha1
-kind: OpenShiftCluster
-metadata:
-  name: guest-hello
-spec:
-  baseDomain: guest-hello.devcluster.openshift.com
-  pullSecret: '{"auths": { ... }}'
-  serviceCIDR: 172.31.0.0/16
-  podCIDR: 10.132.0.0/14
-  sshKey: 'ssh-rsa ...'
-  initialComputeReplicas: 1
-```
-
-Get the guest cluster's kubeconfig using:
+Install the example cluster:
 
 ```bash
-$ oc get secret --namespace guest-hello admin-kubeconfig --template={{.data.kubeconfig}} | base64 -D
+$ make install-example-cluster
 ```
 
-You can create additional nodePools:
+If you want to see but not apply the example cluster resource (i.e. dry run), try:
+
+```bash
+$ make example-cluster
+```
+
+When the cluster is available, get the guest kubeconfig using:
+
+```bash
+$ oc get secret --namespace example admin-kubeconfig --template={{.data.kubeconfig}} | base64 -D
+```
+
+To create additional node pools, create a resource like:
 
 ```yaml
 apiVersion: hypershift.openshift.io/v1alpha1
 kind: NodePool
 metadata:
-  name: guest-hello-custom-nodepool
   namespace: hypershift
+  name: example-extended
 spec:
-  clusterName: guest-hello
+  clusterName: example
   autoScaling:
     max: 0
     min: 0
@@ -71,5 +69,5 @@ spec:
 And delete the cluster using:
 
 ```bash
-$ oc delete --namespace hypershift openshiftclusters/guest-hello
+$ oc delete --namespace hypershift openshiftclusters/example
 ```

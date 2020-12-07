@@ -18,9 +18,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -31,6 +29,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
@@ -86,14 +85,12 @@ func NewStartCommand() *cobra.Command {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var controlPlaneOperatorImage string
-	var releaseInfoFile string
 
 	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0", "The address the metric endpoint binds to.")
 	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&controlPlaneOperatorImage, "control-plane-operator-image", "", "A control plane operator image.")
-	cmd.Flags().StringVar(&releaseInfoFile, "release-info", "", "A static release info JSON file to use for all guest clusters")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
@@ -134,23 +131,10 @@ func NewStartCommand() *cobra.Command {
 			return image, nil
 		}
 
-		// For now read release info from a file to keep it simple and externalize
-		// the complexity of the ways we currently know to get the data (which involves
-		// authenticated registry interactions interactions via `oc adm release info`, etc.)
-		lookupReleaseInfo := func(image string) (*releaseinfo.ReleaseImageInfo, error) {
-			if len(releaseInfoFile) == 0 {
-				return nil, fmt.Errorf("release-info is currently required")
-			}
-			contents, err := ioutil.ReadFile(releaseInfoFile)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read release info file %s: %w", releaseInfoFile, err)
-			}
-			var info releaseinfo.ReleaseImageInfo
-			err = json.Unmarshal(contents, &info)
-			if err != nil {
-				return nil, fmt.Errorf("invalid release info file %s: %w", releaseInfoFile, err)
-			}
-			return &info, nil
+		kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to create kube client")
+			os.Exit(1)
 		}
 
 		if err = (&controllers.OpenShiftClusterReconciler{
@@ -163,7 +147,9 @@ func NewStartCommand() *cobra.Command {
 		if err := (&controllers.HostedControlPlaneReconciler{
 			Client:                          mgr.GetClient(),
 			LookupControlPlaneOperatorImage: lookupControlPlaneOperatorImage,
-			LookupReleaseInfo:               lookupReleaseInfo,
+			ReleaseProvider: &releaseinfo.PodProvider{
+				Pods: kubeClient.CoreV1().Pods("hypershift"),
+			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hostedControlPlane")
 			os.Exit(1)

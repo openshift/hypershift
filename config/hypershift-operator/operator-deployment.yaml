@@ -13,20 +13,12 @@ spec:
       labels:
         name: operator
     spec:
-      volumes:
-      - name: release-info
-        configMap:
-          name: release-info
       serviceAccountName: operator
       containers:
       - name: operator
         image: hypershift:latest
         imagePullPolicy: Always
-        volumeMounts:
-        - name: release-info
-          mountPath: /etc/release-info
         command:
         - /usr/bin/hypershift-operator
         args:
         - run
-        - --release-info=/etc/release-info/release-info.json

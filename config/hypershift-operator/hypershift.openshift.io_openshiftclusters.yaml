@@ -35,26 +35,41 @@ spec:
           spec:
             description: OpenShiftClusterSpec defines the desired state of OpenShiftCluster
             properties:
-              baseDomain:
-                type: string
               initialComputeReplicas:
                 type: integer
               podCIDR:
                 type: string
               pullSecret:
-                type: string
-              releaseImage:
-                type: string
+                description: PullSecret is a pull secret injected into the container runtime of guest workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
+              release:
+                properties:
+                  channel:
+                    type: string
+                  image:
+                    description: Image is the release image pullspec for the control plane
+                    type: string
+                required:
+                - image
+                type: object
               serviceCIDR:
                 type: string
               sshKey:
-                type: string
+                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
             required:
-            - baseDomain
             - initialComputeReplicas
             - podCIDR
             - pullSecret
-            - releaseImage
+            - release
             - serviceCIDR
             - sshKey
             type: object

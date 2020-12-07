@@ -2,72 +2,147 @@ package releaseinfo
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/blang/semver"
 	imageapi "github.com/openshift/api/image/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
+	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
-type ReleaseImageInfo struct {
-	Image      string                   `json:"image"`
-	Metadata   ReleaseImageInfoMetadata `json:"metadata"`
-	References imageapi.ImageStream     `json:"references"`
+// Provider knows how to find the release image metadata for an image referred
+// to by its pullspec.
+type Provider interface {
+	Lookup(ctx context.Context, image string) (*ReleaseImage, error)
 }
 
-type ReleaseImageInfoMetadata struct {
-	Kind    string `json:"kind"`
-	Version string `json:"version"`
+var _ Provider = (*PodProvider)(nil)
+
+// PodProvider finds the release image metadata for an image by launching a pod
+// using the image and extracting the serialized ImageStream from the image
+// filesystem assumed to be present at /release-manifests/image-references.
+type PodProvider struct {
+	Pods v1.PodInterface
+
+	// TODO: consider something like ExpirationCache if performance becomes an issue
 }
 
-type ReleaseInfo struct {
-	Images   map[string]string
-	Versions map[string]string
-}
-
-func (info *ReleaseImageInfo) ReleaseInfo(originReleasePrefix string) (*ReleaseInfo, error) {
-	var newImagePrefix string
-	if !strings.Contains(info.Image, originReleasePrefix) {
-		newImagePrefix = strings.Replace(info.Image, ":", "-", -1)
+func (p *PodProvider) Lookup(ctx context.Context, image string) (releaseImage *ReleaseImage, err error) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    "hypershift",
+			GenerateName: "image-lookup",
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:    "lookup",
+					Image:   image,
+					Command: []string{"/usr/bin/cat", "/release-manifests/image-references"},
+				},
+			},
+		},
 	}
-	images := make(map[string]string)
-	for _, tag := range info.References.Spec.Tags {
-		name := tag.From.Name
-		if len(newImagePrefix) > 0 {
-			name = fmt.Sprintf("%s@%s", newImagePrefix, strings.Split(tag.From.Name, "@")[1])
+
+	// Launch the pod and ensure we clean up regardless of outcome
+	pod, err = p.Pods.Create(context.TODO(), pod, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create image lookup pod: %w", err)
+	}
+	defer func() {
+		err := p.Pods.Delete(ctx, pod.Name, metav1.DeleteOptions{})
+		if err != nil {
+			err = fmt.Errorf("failed to delete image lookup pod %q: %w", pod.Name, err)
 		}
-		images[tag.Name] = name
+	}()
+
+	// Wait for the pod to reach a terminate state
+	err = wait.PollImmediateUntil(1*time.Second, func() (bool, error) {
+		pod, err := p.Pods.Get(ctx, pod.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		switch pod.Status.Phase {
+		case corev1.PodSucceeded:
+			return true, nil
+		case corev1.PodFailed:
+			return true, fmt.Errorf("image lookup pod failed")
+		default:
+			return false, nil
+		}
+	}, ctx.Done())
+	if err != nil {
+		return nil, fmt.Errorf("failed waiting for image lookup pod %q: %w", pod.Name, err)
 	}
 
-	componentVersions, err := readComponentVersions(&info.References)
+	// Try and extract the pod's logs
+	req := p.Pods.GetLogs(pod.Name, &corev1.PodLogOptions{})
+	logs, err := req.Stream(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image lookup pod %q logs: %w", pod.Name, err)
+	}
+	defer func() {
+		err := logs.Close()
+		if err != nil {
+			err = fmt.Errorf("failed to close pod %q log stream: %w", pod.Name, err)
+		}
+	}()
+	data, err := ioutil.ReadAll(logs)
+
+	// The logs should be a serialized ImageStream resource
+	var imageStream imageapi.ImageStream
+	err = json.Unmarshal(data, &imageStream)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read image lookup pod %q logs as a serialized ImageStream: %w\nraw logs:\n%s", pod.Name, err, string(data))
+	}
+	releaseImage = &ReleaseImage{ImageStream: &imageStream}
+	return
+}
+
+// ReleaseImage wraps an ImageStream with some utilities that help the user
+// discover constituent component image information.
+type ReleaseImage struct {
+	*imageapi.ImageStream
+}
+
+func (i *ReleaseImage) Version() string {
+	return i.ImageStream.Name
+}
+
+func (i *ReleaseImage) ComponentImages() map[string]string {
+	images := make(map[string]string)
+	for _, tag := range i.ImageStream.Spec.Tags {
+		images[tag.Name] = tag.From.Name
+	}
+	return images
+}
+
+func (i *ReleaseImage) ComponentVersions() (map[string]string, error) {
+	componentVersions, err := readComponentVersions(i.ImageStream)
 	if err := errors.NewAggregate(err); err != nil {
 		return nil, err
 	}
 
 	versions := make(map[string]string)
-	if len(info.Metadata.Version) > 0 {
-		versions["release"] = info.Metadata.Version
+	if len(i.ImageStream.Name) > 0 {
+		versions["release"] = i.ImageStream.Name
 	}
 	for component, version := range componentVersions {
 		versions[component] = version.String()
 	}
-
-	return &ReleaseInfo{
-		Images:   images,
-		Versions: versions,
-	}, nil
-}
-
-func (info *ReleaseImageInfo) ReleaseVersion() (string, error) {
-	releaseInfo, err := info.ReleaseInfo("")
-	if err != nil {
-		return "", err
-	}
-	return releaseInfo.Versions["release"], nil
+	return versions, nil
 }
 
 const (

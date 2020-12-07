@@ -27,12 +27,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
+
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/hypershift-operator/releaseinfo"
 	hypershiftcp "openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift"
 	"openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift/pki"
 	rokscp "openshift.io/hypershift/hypershift-operator/render/controlplane/roks"
-	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -53,16 +54,7 @@ var (
 	version46 = semver.MustParse("4.6.0")
 )
 
-type CreateClusterOpts struct {
-	Directory                 string
-	Config                    hyperv1.OpenShiftCluster
-	ReleaseImageInfo          *releaseinfo.ReleaseImageInfo
-	ControlPlaneOperatorImage string
-
-	Client client.Client
-}
-
-func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseInfo *releaseinfo.ReleaseImageInfo) error {
+func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) error {
 	workingDir, err := ioutil.TempDir("", "hypershift")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary directory: %w", err)
@@ -83,21 +75,39 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 
 	name := hcp.Name
 
+	var pullSecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.PullSecret.Name}, &pullSecret)
+	if err != nil {
+		return fmt.Errorf("failed to get pull secret %s: %w", hcp.Spec.PullSecret.Name, err)
+	}
+	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
+	if !hasPullSecretData {
+		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
+	}
 	pullSecretFile := filepath.Join(workingDir, "pull-secret")
-	if err := ioutil.WriteFile(pullSecretFile, []byte(hcp.Spec.PullSecret), 0644); err != nil {
+	if err := ioutil.WriteFile(pullSecretFile, pullSecretData, 0644); err != nil {
 		return fmt.Errorf("failed to create temporary pull secret file: %v", err)
 	}
-	releaseVersion, err := releaseInfo.ReleaseVersion()
+	version, err := semver.Parse(releaseImage.Version())
 	if err != nil {
-		return fmt.Errorf("cannot obtain release version: %v", err)
-	}
-	version, err := semver.Parse(releaseVersion)
-	if err != nil {
-		return fmt.Errorf("cannot parse release version (%s): %v", releaseVersion, err)
+		return fmt.Errorf("cannot parse release version (%s): %v", releaseImage.Version(), err)
 	}
 	controlPlaneOperatorImage, err := r.LookupControlPlaneOperatorImage(r.Client)
 	if err != nil {
 		return fmt.Errorf("failed to lookup control plane operator image: %w", err)
+	}
+	var sshKeySecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
+	if err != nil {
+		return fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
+	}
+	sshKeyData, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
+	if !hasSSHKeyData {
+		return fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
+	}
+	baseDomain, err := ClusterBaseDomain(r.Client, ctx, hcp.Name)
+	if err != nil {
+		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
 
 	params := hypershiftcp.NewClusterParams()
@@ -111,10 +121,10 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	params.ExternalOauthPort = externalOauthPort
 	params.ServiceCIDR = hcp.Spec.ServiceCIDR
 	params.PodCIDR = hcp.Spec.PodCIDR
-	params.ReleaseImage = releaseInfo.Image
-	params.IngressSubdomain = fmt.Sprintf("apps.%s", hcp.Spec.BaseDomain)
+	params.ReleaseImage = hcp.Spec.ReleaseImage
+	params.IngressSubdomain = fmt.Sprintf("apps.%s", baseDomain)
 	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIAddress
-	params.BaseDomain = hcp.Spec.BaseDomain
+	params.BaseDomain = baseDomain
 	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
 	params.CloudProvider = string(r.Infra.Status.PlatformStatus.Type)
 	params.PlatformType = string(r.Infra.Status.PlatformStatus.Type)
@@ -123,7 +133,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.Replicas = "1"
-	params.SSHKey = hcp.Spec.SSHKey
+	params.SSHKey = string(sshKeyData)
 	params.ControlPlaneOperatorImage = controlPlaneOperatorImage
 	params.HypershiftOperatorControllers = []string{"route-sync", "auto-approver", "kubeadmin-password", "node"}
 
@@ -184,11 +194,11 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString(caBytes)
 
-	if err = rokscp.RenderClusterManifests(&rokscp.ClusterParams{ClusterParams: *params}, releaseInfo, pullSecretFile, manifestsDir, true, false); err != nil {
+	if err = rokscp.RenderClusterManifests(&rokscp.ClusterParams{ClusterParams: *params}, releaseImage, pullSecretFile, manifestsDir, true, false); err != nil {
 		return fmt.Errorf("failed to render roks manifests for cluster: %w", err)
 	}
 
-	if err = hypershiftcp.RenderClusterManifests(params, releaseInfo, pullSecretFile, pkiDir, manifestsDir, true, true, true, true); err != nil {
+	if err = hypershiftcp.RenderClusterManifests(params, releaseImage, pullSecretFile, pkiDir, manifestsDir, true, true, true, true); err != nil {
 		return fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
 
@@ -278,7 +288,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
 	}
 
-	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), []byte(hcp.Spec.PullSecret), name)
+	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), pullSecretData, name)
 	if err != nil {
 		return fmt.Errorf("failed to create pull secret manifest for target cluster: %w", err)
 	}

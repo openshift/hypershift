@@ -27,4 +27,5 @@ bin
 
 .kube
 
-config/hypershift-operator/release-info.json
+config/example-cluster/ssh-key
+config/example-cluster/pull-secret
