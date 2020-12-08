@@ -95,3 +95,7 @@ example-cluster:
 
 install-example-cluster:
 	$(BUILD_EXAMPLE_CLUSTER) | oc apply --namespace hypershift -f -
+
+.PHONY: test-e2e
+test-e2e: ## Run the e2e tests
+	$(MAKE) -C test/e2e run
