@@ -8,6 +8,8 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/kevinburke/go-bindata v3.21.0+incompatible
 	github.com/krishicks/yaml-patch v0.0.10
+	github.com/onsi/ginkgo v1.14.1
+	github.com/onsi/gomega v1.10.2
 	github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
 	github.com/openshift/client-go v0.0.0-20200929181438-91d71ef2122c
 	github.com/pkg/errors v0.9.1

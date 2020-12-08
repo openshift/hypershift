@@ -24,6 +24,15 @@ Or you might want to run your own image in the cluster to do integration
 testing, in which case you may want to use the default (production) profile
 and use `kubectl set image` (for example) to update the deployment.
 
+### Testing
+
+To run the e2e tests, install HyperShift (using whatever profile you want) and
+then run:
+
+```bash
+$ make test-e2e
+```
+
 ### Visualizing dependencies
 
 MacOS
