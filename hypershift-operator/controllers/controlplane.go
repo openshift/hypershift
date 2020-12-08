@@ -33,7 +33,6 @@ import (
 	"openshift.io/hypershift/hypershift-operator/releaseinfo"
 	hypershiftcp "openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift"
 	"openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift/pki"
-	rokscp "openshift.io/hypershift/hypershift-operator/render/controlplane/roks"
 )
 
 const (
@@ -186,19 +185,13 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("cannot create temporary manifests directory: %w", err)
 	}
 
-	log.Info("Rendering Manifests")
-	hypershiftcp.RenderPKISecrets(pkiDir, manifestsDir, true, true, true)
 	caBytes, err := ioutil.ReadFile(filepath.Join(pkiDir, "combined-ca.crt"))
 	if err != nil {
-		return fmt.Errorf("failed to render PKI secrets: %w", err)
+		return fmt.Errorf("failed to read combined CA: %w", err)
 	}
 	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString(caBytes)
 
-	if err = rokscp.RenderClusterManifests(&rokscp.ClusterParams{ClusterParams: *params}, releaseImage, pullSecretFile, manifestsDir, true, false); err != nil {
-		return fmt.Errorf("failed to render roks manifests for cluster: %w", err)
-	}
-
-	if err = hypershiftcp.RenderClusterManifests(params, releaseImage, pullSecretFile, pkiDir, manifestsDir, true, true, true, true); err != nil {
+	if err = hypershiftcp.RenderClusterManifests(params, releaseImage, pullSecretFile, pkiDir, manifestsDir); err != nil {
 		return fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
 

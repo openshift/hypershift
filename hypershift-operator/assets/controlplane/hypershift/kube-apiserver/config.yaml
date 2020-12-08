@@ -48,6 +48,8 @@ apiServerArguments:
   - /etc/kubernetes/secret/service-account.key
   api-audiences:
   - https://kubernetes.default.svc
+  runtime-config:
+  - flowcontrol.apiserver.k8s.io/v1alpha1=true
 auditConfig:
   auditFilePath: "/var/log/kube-apiserver/audit.log"
   enabled: true

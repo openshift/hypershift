@@ -4,8 +4,8 @@ metadata:
   name: default
   namespace: openshift-ingress-operator
 spec:
+  domain: {{ .IngressSubdomain }}
   endpointPublishingStrategy:
     type: Private
   defaultCertificate:
     name: default-ingress-cert
-status: {}

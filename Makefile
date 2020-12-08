@@ -38,14 +38,6 @@ generate:
 
 	gofmt -s -w ./hypershift-operator/assets/controlplane/hypershift/bindata.go
 
-	$(BINDATA) -mode 420 -modtime 1 -pkg roks \
-		-o ./hypershift-operator/assets/controlplane/roks/bindata.go \
-		--prefix hypershift-operator/assets/controlplane/roks \
-		--ignore bindata.go \
-		./hypershift-operator/assets/controlplane/roks/...
-
-	gofmt -s -w ./hypershift-operator/assets/controlplane/roks/bindata.go
-
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 # Build hypershift-operator binary

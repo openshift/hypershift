@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path"
 	"path/filepath"
 	"text/template"
@@ -21,7 +20,6 @@ type renderContext struct {
 	funcs         template.FuncMap
 	manifestFiles []string
 	manifests     map[string]string
-	patches       map[string][]string
 }
 
 func newRenderContext(params interface{}, outputDir string) *renderContext {
@@ -29,7 +27,6 @@ func newRenderContext(params interface{}, outputDir string) *renderContext {
 		params:    params,
 		outputDir: outputDir,
 		manifests: make(map[string]string),
-		patches:   make(map[string][]string),
 	}
 	return renderContext
 }
@@ -53,41 +50,11 @@ func (c *renderContext) renderManifests() error {
 		ioutil.WriteFile(outputFile, []byte(content), 0644)
 	}
 
-	for name, patches := range c.patches {
-		sourceFile := filepath.Join(c.outputDir, name)
-		outputFile := sourceFile + ".patched"
-		for _, p := range patches {
-			sourceBytes, err := ioutil.ReadFile(sourceFile)
-			if err != nil {
-				return err
-			}
-			patchBytes := assets.MustAsset(p)
-			patch := mustDecodePatch(patchBytes)
-			out, err := patch.Apply(sourceBytes)
-			if err != nil {
-				return err
-			}
-			if err = ioutil.WriteFile(outputFile, out, 0644); err != nil {
-				return err
-			}
-			if err = os.Remove(sourceFile); err != nil {
-				return err
-			}
-			if err = os.Rename(outputFile, sourceFile); err != nil {
-				return err
-			}
-		}
-	}
-
 	return nil
 }
 
 func (c *renderContext) addManifestFiles(name ...string) {
 	c.manifestFiles = append(c.manifestFiles, name...)
-}
-
-func (c *renderContext) addPatch(name, patch string) {
-	c.patches[name] = append(c.patches[name], patch)
 }
 
 func (c *renderContext) addManifest(name, content string) {
