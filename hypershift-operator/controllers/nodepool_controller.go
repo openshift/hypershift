@@ -52,7 +52,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	r.Infra = &infra
 
-	r.recorder = mgr.GetEventRecorderFor("guest-cluster-controller")
+	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
 
 	return nil
 }

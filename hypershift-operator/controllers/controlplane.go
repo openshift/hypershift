@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"strings"
 
 	"sigs.k8s.io/cluster-api/util"
 
@@ -68,6 +69,17 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	if !hasPullSecretData {
 		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
 	}
+
+	var providerCredsSecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.ProviderCreds.Name}, &providerCredsSecret)
+	if err != nil {
+		return fmt.Errorf("failed to get provider creds %s: %w", hcp.Spec.ProviderCreds.Name, err)
+	}
+	providerCredsData, hasProviderCredsData := providerCredsSecret.Data["credentials"]
+	if !hasProviderCredsData {
+		return fmt.Errorf("provider credentials %s is missing the credentials key", hcp.Spec.PullSecret.Name)
+	}
+
 	version, err := semver.Parse(releaseImage.Version())
 	if err != nil {
 		return fmt.Errorf("cannot parse release version (%s): %v", releaseImage.Version(), err)
@@ -174,17 +186,17 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 
 	// Create oauth branding manifest because it cannot be applied
-	//manifestBytes := manifests[oauthBrandingManifest]
-	//manifestObj := &unstructured.Unstructured{}
-	//if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(manifestBytes)), 100).Decode(manifestObj); err != nil {
-	//	return fmt.Errorf("failed to decode manifest %s: %w", oauthBrandingManifest, err)
-	//}
-	//manifestObj.SetNamespace(name)
-	//if err = r.Create(context.TODO(), manifestObj); err != nil {
-	//	if !apierrors.IsAlreadyExists(err) {
-	//		return fmt.Errorf("failed to apply manifest %s: %w", oauthBrandingManifest, err)
-	//	}
-	//}
+	manifestBytes := manifests[oauthBrandingManifest]
+	manifestObj := &unstructured.Unstructured{}
+	if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(manifestBytes)), 100).Decode(manifestObj); err != nil {
+		return fmt.Errorf("failed to decode manifest %s: %w", oauthBrandingManifest, err)
+	}
+	manifestObj.SetNamespace(name)
+	if err = r.Create(context.TODO(), manifestObj); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to apply manifest %s: %w", oauthBrandingManifest, err)
+		}
+	}
 
 	// Use server side apply for manifestss
 	applyErrors := []error{}
@@ -242,15 +254,15 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	if err != nil {
 		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
 	}
-	if err := r.Create(ctx, kubeconfigSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
-	}
 	kubeconfigSecret.OwnerReferences = util.EnsureOwnerRef(kubeconfigSecret.OwnerReferences, metav1.OwnerReference{
 		APIVersion: hyperv1.GroupVersion.String(),
 		Kind:       "HostedControlPlane",
 		Name:       hcp.GetName(),
 		UID:        hcp.UID,
 	})
+	if err := r.Create(ctx, kubeconfigSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
+	}
 
 	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), pullSecretData, name)
 	if err != nil {
@@ -260,12 +272,28 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate targetPullSecret: %v", err)
 	}
 
+	targetProviderCredsSecret, err := generateTargetProviderCredsSecret(providerCredsData, name)
+	if err != nil {
+		return fmt.Errorf("failed to create providerCreds secret manifest for target cluster: %w", err)
+	}
+	if err := r.Create(ctx, targetProviderCredsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to generate providerCreds secret: %v", err)
+	}
 	log.Infof("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIAddress, APIServerPort))
 	log.Infof("Kubeconfig is available in secret %q in the %s namespace", fmt.Sprintf("%s-kubeconfig", name), hcp.GetNamespace())
 	log.Infof("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", params.IngressSubdomain))
 	log.Infof("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", name)
 
 	return nil
+}
+
+func generateTargetProviderCredsSecret(data []byte, namespace string) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	secret.Name = "provider-creds"
+	secret.Namespace = namespace
+	secret.Data = map[string][]byte{"credentials": data}
+	secret.Type = corev1.SecretTypeOpaque
+	return secret, nil
 }
 
 func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace string) (*corev1.ConfigMap, error) {

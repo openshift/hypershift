@@ -1,0 +1,51 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capa-controller-manager
+  labels:
+    control-plane: capa-controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: capa-controller-manager
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        control-plane: capa-controller-manager
+    spec:
+      serviceAccountName: capa-controller-manager
+      containers:
+        - args:
+            - --alsologtostderr
+            - --v=4
+          image: quay.io/hypershift/cluster-api-provider-aws:master
+          imagePullPolicy: Always
+          name: manager
+          ports:
+            - containerPort: 9440
+              name: healthz
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: healthz
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+          env:
+            - name: AWS_SHARED_CREDENTIALS_FILE
+              value: /home/.aws/credentials
+          volumeMounts:
+            - name: credentials
+              mountPath: /home/.aws
+      volumes:
+        - name: credentials
+          secret:
+            secretName: provider-creds
+      terminationGracePeriodSeconds: 10
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master

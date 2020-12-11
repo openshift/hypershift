@@ -27,7 +27,8 @@ $ make uninstall
 First, create the following files containing secrets used by the example cluster:
 
 - `config/example-cluster/pull-secret` a valid pull secret for image pulls.
-- `config/example-cluster/ssh-key` an SSH public key for guest node access
+- `config/example-cluster/ssh-key` an SSH public key for guest node access.
+- `config/example-cluster/aws-creds` an [aws credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
 
 Install the example cluster:
 

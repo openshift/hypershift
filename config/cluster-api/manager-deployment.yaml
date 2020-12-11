@@ -22,4 +22,5 @@ spec:
         - /manager
         args:
         - --namespace=hypershift
+        - --alsologtostderr
         - --v=4

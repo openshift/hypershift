@@ -50,7 +50,7 @@ func (r *ExternalInfraClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	}
 	r.Infra = &infra
 
-	r.recorder = mgr.GetEventRecorderFor("guest-cluster-controller")
+	r.recorder = mgr.GetEventRecorderFor("external-infra-controller")
 
 	return nil
 }

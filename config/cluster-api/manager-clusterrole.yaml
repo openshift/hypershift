@@ -30,8 +30,8 @@ rules:
   resources:
   - hostedcontrolplanes
   - hostedcontrolplanes/status
-  - guestclusters
-  - guestclusters/status
+  - externalinfraclusters
+  - externalinfraclusters/status
   verbs:
   - '*'
 - apiGroups:

@@ -12,3 +12,5 @@ spec:
     name: pull-secret
   sshKey:
     name: ssh-key
+  providerCreds:
+    name: provider-creds

@@ -39,6 +39,8 @@ type OpenShiftClusterSpec struct {
 
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 
+	ProviderCreds corev1.LocalObjectReference `json:"providerCreds"`
+
 	ServiceCIDR string `json:"serviceCIDR"`
 	PodCIDR     string `json:"podCIDR"`
 }
