@@ -10,7 +10,7 @@ import (
 	hypershiftcp "openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift"
 )
 
-func GeneratePKI(params *hypershiftcp.ClusterParams, outputDir string) error {
+func GeneratePKI(params *hypershiftcp.PKIParams) (map[string][]byte, error) {
 	log.Info("Generating PKI artifacts")
 
 	cas := []caSpec{
@@ -19,7 +19,7 @@ func GeneratePKI(params *hypershiftcp.ClusterParams, outputDir string) error {
 		ca("openvpn-ca", "openvpn-ca", "openshift"),
 	}
 
-	externalAPIServerAddress := fmt.Sprintf("https://%s:%d", params.ExternalAPIDNSName, params.ExternalAPIPort)
+	externalAPIServerAddress := fmt.Sprintf("https://%s:%d", params.ExternalAPIAddress, params.ExternalAPIPort)
 	internalAPIServerAddress := fmt.Sprintf("https://kube-apiserver:%d", params.InternalAPIPort)
 	kubeconfigs := []kubeconfigSpec{
 		kubeconfig("admin", externalAPIServerAddress, "root-ca", "system:admin", "system:masters"),
@@ -29,7 +29,7 @@ func GeneratePKI(params *hypershiftcp.ClusterParams, outputDir string) error {
 
 	_, serviceIPNet, err := net.ParseCIDR(params.ServiceCIDR)
 	if err != nil {
-		return errors.Wrapf(err, "failed to parse service CIDR: %q", params.ServiceCIDR)
+		return nil, errors.Wrapf(err, "failed to parse service CIDR: %q", params.ServiceCIDR)
 	}
 	kubeIP := firstIP(serviceIPNet)
 	apiServerHostNames := []string{
@@ -42,18 +42,18 @@ func GeneratePKI(params *hypershiftcp.ClusterParams, outputDir string) error {
 	}
 	apiServerIPs := []string{
 		kubeIP.String(),
-		params.ExternalAPIAddress,
+		params.NodeInternalAPIServerIP,
 	}
-	if isNumericIP(params.ExternalAPIDNSName) {
-		apiServerIPs = append(apiServerIPs, params.ExternalAPIDNSName)
+	if isNumericIP(params.ExternalAPIAddress) {
+		apiServerIPs = append(apiServerIPs, params.ExternalAPIAddress)
 	} else {
-		apiServerHostNames = append(apiServerHostNames, params.ExternalAPIDNSName)
+		apiServerHostNames = append(apiServerHostNames, params.ExternalAPIAddress)
 	}
 	var ingressNumericIPs, ingressHostNames []string
-	if isNumericIP(params.ExternalOauthDNSName) {
-		ingressNumericIPs = append(ingressNumericIPs, params.ExternalOauthDNSName)
+	if isNumericIP(params.ExternalOauthAddress) {
+		ingressNumericIPs = append(ingressNumericIPs, params.ExternalOauthAddress)
 	} else {
-		ingressHostNames = append(ingressHostNames, params.ExternalOauthDNSName)
+		ingressHostNames = append(ingressHostNames, params.ExternalOauthAddress)
 	}
 	ingressHostNames = append(ingressHostNames, fmt.Sprintf("*.%s", params.IngressSubdomain))
 
@@ -120,35 +120,33 @@ func GeneratePKI(params *hypershiftcp.ClusterParams, outputDir string) error {
 	}
 	caMap, err := generateCAs(cas)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	kubeconfigMap, err := generateKubeconfigs(kubeconfigs, caMap)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	certMap, err := generateCerts(certs, caMap)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := writeCAs(caMap, outputDir); err != nil {
-		return err
+	result := map[string][]byte{}
+
+	serializeCAs(caMap, result)
+	if err := serializeKubeconfigs(kubeconfigMap, result); err != nil {
+		return nil, err
 	}
-	if err := writeKubeconfigs(kubeconfigMap, outputDir); err != nil {
-		return err
-	}
-	if err := writeCerts(certMap, outputDir); err != nil {
-		return err
-	}
+	serializeCerts(certMap, result)
 
 	// Miscellaneous PKI artifacts
-	if err := writeCombinedCA([]string{"root-ca", "cluster-signer"}, caMap, outputDir, "combined-ca"); err != nil {
-		return err
+	if err := serializeCombinedCA([]string{"root-ca", "cluster-signer"}, caMap, "combined-ca.crt", result); err != nil {
+		return nil, err
 	}
-	if err := writeRSAKey(outputDir, "service-account"); err != nil {
-		return err
+	if err := serializeRSAKey("service-account", result); err != nil {
+		return nil, err
 	}
-	return nil
+	return result, nil
 }
 
 func isNumericIP(s string) bool {

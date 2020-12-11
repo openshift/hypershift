@@ -14,6 +14,30 @@ func NewClusterParams() *ClusterParams {
 	return p
 }
 
+type PKIParams struct {
+	// API Server
+	ExternalAPIAddress      string // An externally accessible DNS name or IP for the API server. Currently obtained from the load balancer DNS name.
+	NodeInternalAPIServerIP string // A fixed IP that pods on worker nodes will use to communicate with the API server - 172.20.0.1
+	ExternalAPIPort         uint   // External API server port - fixed at 6443. This is used for kubeconfig generation.
+	InternalAPIPort         uint   // Internal API server network (on service network of host) - fixed at 6443. Used for kubeconfig generation.
+	ServiceCIDR             string // Used to determine the internal IP address of the Kube service and generate an IP for it.
+
+	// OAuth Server address
+	ExternalOauthAddress string // An externally accessible DNS name or IP for the Oauth server. Currently obtained from Oauth load balancer DNS name.
+
+	// Ingress
+	IngressSubdomain string // Subdomain for cluster ingress. Used to generate the wildcard certificate for ingress.
+
+	// MCO/MCS
+	MachineConfigServerAddress string // An externally accessible DNS name or IP for the Machine Config Server. Currently generated using a route hostname.
+
+	// VPN Server
+	ExternalOpenVPNAddress string // An externally accessible DNS name or IP for the VPN Server. Currently obtained from VPN load balancer DNS name.
+
+	// Common
+	Namespace string // Used to generate internal DNS names for services.
+}
+
 type ClusterParams struct {
 	Namespace                           string                 `json:"namespace"`
 	ExternalAPIDNSName                  string                 `json:"externalAPIDNSName"`

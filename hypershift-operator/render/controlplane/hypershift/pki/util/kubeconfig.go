@@ -1,11 +1,10 @@
 package util
 
 import (
-	"os"
+	"bytes"
 	"text/template"
 
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 )
 
 func GenerateKubeconfig(serverAddress, commonName, organization string, rootCA, signingCA *CA) (*Kubeconfig, error) {
@@ -48,16 +47,7 @@ users:
     client-key-data: {{ .ClientKey }}
 `))
 
-func (k *Kubeconfig) WriteTo(fileName string) error {
-	if KubeconfigExists(fileName) {
-		log.Infof("Skipping kubeconfig %s because it already exists", fileName)
-		return nil
-	}
-	f, err := os.Create(fileName + ".kubeconfig")
-	if err != nil {
-		return errors.Wrapf(err, "failed to create kubeconfig file %s", fileName+".kubeconfig")
-	}
-	defer f.Close()
+func (k *Kubeconfig) Serialize() ([]byte, error) {
 	caBytes := CertToPem(k.RootCA.Cert)
 	certBytes := CertToPem(k.Cert.Cert)
 	keyBytes := PrivateKeyToPem(k.Cert.Key)
@@ -67,8 +57,9 @@ func (k *Kubeconfig) WriteTo(fileName string) error {
 		"ClientCert":    Base64(certBytes),
 		"ClientKey":     Base64(keyBytes),
 	}
-	if err := kubeConfigTemplate.Execute(f, params); err != nil {
-		return errors.Wrapf(err, "failed to execute kubeconfig template for file %s", fileName+".kubeconfig")
+	result := &bytes.Buffer{}
+	if err := kubeConfigTemplate.Execute(result, params); err != nil {
+		return nil, errors.Wrapf(err, "failed to execute kubeconfig template")
 	}
-	return nil
+	return result.Bytes(), nil
 }

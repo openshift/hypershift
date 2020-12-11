@@ -157,8 +157,20 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		r.Log.Info("using existing pki secret")
 	}
 	if needsPkiSecret {
+		pkiParams := &hypershiftcp.PKIParams{
+			ExternalAPIAddress:         infraStatus.APIAddress,
+			NodeInternalAPIServerIP:    DefaultAPIServerIPAddress,
+			ExternalAPIPort:            APIServerPort,
+			InternalAPIPort:            APIServerPort,
+			ServiceCIDR:                hcp.Spec.ServiceCIDR,
+			ExternalOauthAddress:       infraStatus.OAuthAddress,
+			IngressSubdomain:           "apps." + baseDomain,
+			MachineConfigServerAddress: infraStatus.IgnitionProviderAddress,
+			ExternalOpenVPNAddress:     infraStatus.VPNAddress,
+			Namespace:                  name,
+		}
 		log.Info("generating PKI secret data")
-		data, err := generatePKIData(params)
+		data, err := pki.GeneratePKI(pkiParams)
 		if err != nil {
 			return fmt.Errorf("failed to generate PKI data: %w", err)
 		}
@@ -295,36 +307,6 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	log.Infof("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", name)
 
 	return nil
-}
-
-func generatePKIData(params *hypershiftcp.ClusterParams) (map[string][]byte, error) {
-	pkiDir, err := ioutil.TempDir("", "pki")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary pki directory: %w", err)
-	}
-	dhParamsFile := os.Getenv("DH_PARAMS")
-	if len(dhParamsFile) > 0 {
-		if err = copyFile(dhParamsFile, filepath.Join(pkiDir, "openvpn-dh.pem")); err != nil {
-			return nil, fmt.Errorf("failed to copy dh parameters file %s: %w", dhParamsFile, err)
-		}
-	}
-	if err := pki.GeneratePKI(params, pkiDir); err != nil {
-		return nil, fmt.Errorf("failed to generate PKI assets: %w", err)
-	}
-	files, err := ioutil.ReadDir(pkiDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read PKI directory: %w", err)
-	}
-	data := map[string][]byte{}
-	for _, file := range files {
-		baseName := filepath.Base(file.Name())
-		bytes, err := ioutil.ReadFile(filepath.Join(pkiDir, baseName))
-		if err != nil {
-			return nil, fmt.Errorf("failed to read PKI file %q: %w", file.Name(), err)
-		}
-		data[baseName] = bytes
-	}
-	return data, nil
 }
 
 func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace string) (*corev1.ConfigMap, error) {
