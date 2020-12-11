@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"os"
 
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
+
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -50,6 +52,7 @@ var (
 )
 
 func init() {
+	capiaws.AddToScheme(scheme)
 	clientgoscheme.AddToScheme(scheme)
 	hyperv1.AddToScheme(scheme)
 	capiv1.AddToScheme(scheme)
@@ -155,10 +158,10 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		if err := (&controllers.GuestClusterReconciler{
+		if err := (&controllers.ExternalInfraClusterReconciler{
 			Client: mgr.GetClient(),
 		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "guestCluster")
+			setupLog.Error(err, "unable to create controller", "controller", "ExternalInfraCluster")
 			os.Exit(1)
 		}
 

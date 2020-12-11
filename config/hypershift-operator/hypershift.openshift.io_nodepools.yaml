@@ -21,7 +21,7 @@ spec:
   versions:
   - additionalPrinterColumns:
     - description: Available Nodes
-      jsonPath: .status.NodeCount
+      jsonPath: .status.nodeCount
       name: NodeCount
       type: integer
     name: v1alpha1

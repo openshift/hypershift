@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -44,7 +46,8 @@ const (
 // OpenShiftClusterReconciler reconciles a OpenShiftCluster object
 type OpenShiftClusterReconciler struct {
 	client.Client
-	Log logr.Logger
+	Log   logr.Logger
+	Infra *configv1.Infrastructure
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=openshiftclusters,verbs=get;list;watch;create;update;patch;delete
@@ -104,11 +107,13 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			ControlPlaneRef: &corev1.ObjectReference{
 				APIVersion: "hypershift.openshift.io/v1alpha1",
 				Kind:       "HostedControlPlane",
+				Namespace:  ocluster.GetNamespace(),
 				Name:       ocluster.GetName(),
 			},
 			InfrastructureRef: &corev1.ObjectReference{
 				APIVersion: "hypershift.openshift.io/v1alpha1",
-				Kind:       "GuestCluster",
+				Kind:       "ExternalInfraCluster",
+				Namespace:  ocluster.GetNamespace(),
 				Name:       ocluster.GetName(),
 			},
 		},
@@ -134,13 +139,14 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			ReleaseImage: ocluster.Spec.Release.Image,
 		},
 	}
-	guestCluster := &hyperv1.GuestCluster{
+	ExternalInfraCluster := &hyperv1.ExternalInfraCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ocluster.GetNamespace(),
 			Name:      ocluster.GetName(),
 		},
-		Spec: hyperv1.GuestClusterSpec{
+		Spec: hyperv1.ExternalInfraClusterSpec{
 			ComputeReplicas: ocluster.Spec.InitialComputeReplicas,
+			Region:          r.Infra.Status.PlatformStatus.AWS.Region,
 		},
 	}
 
@@ -152,7 +158,7 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, guestCluster, func() error { return nil }); err != nil {
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, ExternalInfraCluster, func() error { return nil }); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -184,27 +190,21 @@ func (r *OpenShiftClusterReconciler) delete(ctx context.Context, name, namespace
 		},
 	}
 
-	guestCluster := &hyperv1.GuestCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
-
 	if err := r.Delete(ctx, cluster); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
 	r.Log.Info("Deleted cluster", "name", name)
 
-	if err := r.Delete(ctx, guestCluster); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete guestCluster: %w", err)
-	}
-	r.Log.Info("Deleted guestCluster", "name", name)
-
 	return nil
 }
 
 func (r *OpenShiftClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	var infra configv1.Infrastructure
+	if err := mgr.GetAPIReader().Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
+		return fmt.Errorf("failed to get cluster infra: %w", err)
+	}
+	r.Infra = &infra
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.OpenShiftCluster{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).

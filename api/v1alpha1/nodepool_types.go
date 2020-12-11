@@ -15,7 +15,7 @@ func init() {
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:scale:specpath=.spec.nodeCount,statuspath=.status.nodeCount
-// +kubebuilder:printcolumn:name="NodeCount",type="integer",JSONPath=".status.NodeCount",description="Available Nodes"
+// +kubebuilder:printcolumn:name="NodeCount",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
