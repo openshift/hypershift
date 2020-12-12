@@ -6,10 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"net"
-	"os"
-	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -60,29 +57,21 @@ func versionCompareFunc(versions map[string]string, versionCompareFn func(actual
 	}
 }
 
-func pkiFunc(pkiDir string) func(string) string {
+func pkiFunc(pki map[string][]byte) func(string) string {
 	return func(fileName string) string {
-		file := filepath.Join(pkiDir, fileName)
-		if _, err := os.Stat(file); err != nil {
-			panic(err.Error())
-		}
-		b, err := ioutil.ReadFile(file)
-		if err != nil {
-			panic(err.Error())
+		b, found := pki[fileName]
+		if !found {
+			panic(fmt.Sprintf("pki file %s not found", fileName))
 		}
 		return base64.StdEncoding.EncodeToString(b)
 	}
 }
 
-func includePKIFunc(pkiDir string) func(string, int) string {
+func includePKIFunc(pki map[string][]byte) func(string, int) string {
 	return func(fileName string, indent int) string {
-		file := filepath.Join(pkiDir, fileName)
-		if _, err := os.Stat(file); err != nil {
-			panic(err.Error())
-		}
-		b, err := ioutil.ReadFile(file)
-		if err != nil {
-			panic(err.Error())
+		b, found := pki[fileName]
+		if !found {
+			panic(fmt.Sprintf("pki file %s not found", fileName))
 		}
 		input := bytes.NewBuffer(b)
 		output := &bytes.Buffer{}
@@ -94,16 +83,9 @@ func includePKIFunc(pkiDir string) func(string, int) string {
 	}
 }
 
-func pullSecretBase64(file string) func() string {
+func pullSecretBase64(data []byte) func() string {
 	return func() string {
-		if _, err := os.Stat(file); err != nil {
-			panic(err.Error())
-		}
-		b, err := ioutil.ReadFile(file)
-		if err != nil {
-			panic(err.Error())
-		}
-		return base64.StdEncoding.EncodeToString(b)
+		return base64.StdEncoding.EncodeToString(data)
 	}
 }
 
@@ -136,7 +118,7 @@ func includeFileFunc(params interface{}, rc *renderContext) func(string, int) st
 			panic(err.Error())
 		}
 		includeFn := includeDataFunc()
-		return includeFn(result, indent)
+		return includeFn(string(result), indent)
 	}
 }
 

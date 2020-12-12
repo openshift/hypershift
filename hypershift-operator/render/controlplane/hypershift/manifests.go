@@ -12,12 +12,12 @@ import (
 )
 
 // RenderClusterManifests renders manifests for a hosted control plane cluster
-func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecretFile, pkiDir, outputDir string) error {
+func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, pki map[string][]byte) (map[string][]byte, error) {
 	componentVersions, err := image.ComponentVersions()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	ctx := newClusterManifestContext(image.ComponentImages(), componentVersions, params, pkiDir, outputDir, pullSecretFile)
+	ctx := newClusterManifestContext(image.ComponentImages(), componentVersions, params, pullSecret, pki)
 	ctx.setupManifests()
 	return ctx.renderManifests()
 }
@@ -28,9 +28,9 @@ type clusterManifestContext struct {
 	userManifests     map[string]string
 }
 
-func newClusterManifestContext(images, versions map[string]string, params interface{}, pkiDir, outputDir, pullSecretFile string) *clusterManifestContext {
+func newClusterManifestContext(images, versions map[string]string, params interface{}, pullSecret []byte, pki map[string][]byte) *clusterManifestContext {
 	ctx := &clusterManifestContext{
-		renderContext: newRenderContext(params, outputDir),
+		renderContext: newRenderContext(params),
 		userManifests: make(map[string]string),
 	}
 	ctx.setFuncs(template.FuncMap{
@@ -46,9 +46,9 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 		"randomString":      randomString,
 		"includeData":       includeDataFunc(),
 		"trimTrailingSpace": trimTrailingSpace,
-		"pki":               pkiFunc(pkiDir),
-		"include_pki":       includePKIFunc(pkiDir),
-		"pullSecretBase64":  pullSecretBase64(pullSecretFile),
+		"pki":               pkiFunc(pki),
+		"include_pki":       includePKIFunc(pki),
+		"pullSecretBase64":  pullSecretBase64(pullSecret),
 		"atleast_version":   atLeastVersionFunc(versions),
 		"lessthan_version":  lessThanVersionFunc(versions),
 	})
@@ -201,7 +201,7 @@ func (c *clusterManifestContext) openshiftAPIServer() {
 		if err != nil {
 			panic(err.Error())
 		}
-		apiServices.WriteString(entry)
+		apiServices.Write(entry)
 	}
 	c.addUserManifest("openshift-apiserver-apiservices.yaml", apiServices.String())
 }
@@ -305,7 +305,7 @@ func (c *clusterManifestContext) userManifestsBootstrapper() {
 		}
 		name := path.Base(file)
 		params := map[string]string{
-			"data": data,
+			"data": string(data),
 			"name": userConfigMapName(name),
 		}
 		manifest, err := c.substituteParams(params, "user-manifests-bootstrapper/user-manifest-template.yaml")
@@ -352,9 +352,9 @@ func (c *clusterManifestContext) ignitionConfigs() {
 		name := fmt.Sprintf("ignition-config-%s", strings.TrimSuffix(m, ".yaml"))
 		params := map[string]string{
 			"name":    name,
-			"content": content,
+			"content": string(content),
 		}
-		cm, err := c.substituteParamsInString(params, ignitionConfigTemplate)
+		cm, err := c.substituteParamsInBytes(params, []byte(ignitionConfigTemplate))
 		if err != nil {
 			panic(err)
 		}
