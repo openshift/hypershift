@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
 	crand "crypto/rand"
 	"encoding/base64"
@@ -8,11 +9,9 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/blang/semver"
@@ -26,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -43,49 +43,29 @@ const (
 )
 
 var (
-	excludeManifests = []string{
+	excludeManifests = sets.NewString(
 		"openshift-apiserver-service.yaml",
 		"v4-0-config-system-branding.yaml",
 		"oauth-server-service.yaml",
 		"kube-apiserver-service.yaml",
-	}
+	)
 
 	version46 = semver.MustParse("4.6.0")
 )
 
 func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) error {
-	workingDir, err := ioutil.TempDir("", "hypershift")
-	if err != nil {
-		return fmt.Errorf("failed to create temporary directory: %w", err)
-	}
-	if err := os.MkdirAll(workingDir, 0755); err != nil {
-		if os.IsExist(err) {
-			if err = os.RemoveAll(workingDir); err != nil {
-				return err
-			}
-			if err = os.MkdirAll(workingDir, 0755); err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
-	}
-	r.Log.Info("ensuring control plane for cluster", "cluster", hcp.Name, "workingDir", workingDir)
+	r.Log.Info("ensuring control plane for cluster", "cluster", hcp.Name)
 
 	name := hcp.Name
 
 	var pullSecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.PullSecret.Name}, &pullSecret)
+	err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.PullSecret.Name}, &pullSecret)
 	if err != nil {
 		return fmt.Errorf("failed to get pull secret %s: %w", hcp.Spec.PullSecret.Name, err)
 	}
 	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
 	if !hasPullSecretData {
 		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
-	}
-	pullSecretFile := filepath.Join(workingDir, "pull-secret")
-	if err := ioutil.WriteFile(pullSecretFile, pullSecretData, 0644); err != nil {
-		return fmt.Errorf("failed to create temporary pull secret file: %v", err)
 	}
 	version, err := semver.Parse(releaseImage.Version())
 	if err != nil {
@@ -157,8 +137,20 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		r.Log.Info("using existing pki secret")
 	}
 	if needsPkiSecret {
+		pkiParams := &hypershiftcp.PKIParams{
+			ExternalAPIAddress:         infraStatus.APIAddress,
+			NodeInternalAPIServerIP:    DefaultAPIServerIPAddress,
+			ExternalAPIPort:            APIServerPort,
+			InternalAPIPort:            APIServerPort,
+			ServiceCIDR:                hcp.Spec.ServiceCIDR,
+			ExternalOauthAddress:       infraStatus.OAuthAddress,
+			IngressSubdomain:           "apps." + baseDomain,
+			MachineConfigServerAddress: infraStatus.IgnitionProviderAddress,
+			ExternalOpenVPNAddress:     infraStatus.VPNAddress,
+			Namespace:                  name,
+		}
 		log.Info("generating PKI secret data")
-		data, err := generatePKIData(params)
+		data, err := pki.GeneratePKI(pkiParams)
 		if err != nil {
 			return fmt.Errorf("failed to generate PKI data: %w", err)
 		}
@@ -169,36 +161,19 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		r.Log.Info("created pki secret")
 	}
 
-	pkiDir := filepath.Join(workingDir, "pki")
-	if err = os.MkdirAll(pkiDir, 0755); err != nil {
-		return fmt.Errorf("failed to create temporary PKI directory: %w", err)
-	}
-	for file, data := range pkiSecret.Data {
-		pkiFile := filepath.Join(pkiDir, file)
-		if err := ioutil.WriteFile(pkiFile, data, 0644); err != nil {
-			return fmt.Errorf("failed to write pki file %s: %w", pkiFile, err)
-		}
-	}
-
-	manifestsDir := filepath.Join(workingDir, "manifests")
-	if err = os.MkdirAll(manifestsDir, 0755); err != nil {
-		return fmt.Errorf("cannot create temporary manifests directory: %w", err)
-	}
-
-	caBytes, err := ioutil.ReadFile(filepath.Join(pkiDir, "combined-ca.crt"))
+	caBytes := pkiSecret.Data["combined-ca.crt"]
 	if err != nil {
 		return fmt.Errorf("failed to read combined CA: %w", err)
 	}
 	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString(caBytes)
 
-	if err = hypershiftcp.RenderClusterManifests(params, releaseImage, pullSecretFile, pkiDir, manifestsDir); err != nil {
+	manifests, err := hypershiftcp.RenderClusterManifests(params, releaseImage, pullSecretData, pkiSecret.Data)
+	if err != nil {
 		return fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
 
-	manifestBytes, err := ioutil.ReadFile(filepath.Join(manifestsDir, oauthBrandingManifest))
-	if err != nil {
-		return fmt.Errorf("failed to read manifest %s: %w", oauthBrandingManifest, err)
-	}
+	// Create oauth branding manifest because it cannot be applied
+	manifestBytes := manifests[oauthBrandingManifest]
 	manifestObj := &unstructured.Unstructured{}
 	if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(manifestBytes)), 100).Decode(manifestObj); err != nil {
 		return fmt.Errorf("failed to decode manifest %s: %w", oauthBrandingManifest, err)
@@ -210,39 +185,22 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		}
 	}
 
-	for _, name := range excludeManifests {
-		f := filepath.Join(manifestsDir, name)
-		if _, err := os.Stat(f); err != nil {
+	// Use server side apply for manifestss
+	applyErrors := []error{}
+	for manifestName, manifestBytes := range manifests {
+		if excludeManifests.Has(manifestName) {
 			continue
 		}
-		if err := os.Remove(f); err != nil {
-			r.Log.Error(err, "failed to remove manifest", "manifest", f)
-		} else {
-			r.Log.Info("removed excluded manifest", "manifest", f)
-		}
-	}
-
-	// Use server side apply for manifestss
-	manifests, err := filepath.Glob(filepath.Join(manifestsDir, "*.yaml"))
-	if err != nil {
-		return fmt.Errorf("failed to read manifest dir: %w", err)
-	}
-	applyErrors := []error{}
-	for _, manifest := range manifests {
-		bytes, err := ioutil.ReadFile(manifest)
-		if err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to read manifest %s: %w", manifest, err))
-		}
 		obj := &unstructured.Unstructured{}
-		if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(bytes)), 100).Decode(obj); err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to decode manifest %s: %w", manifest, err))
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(obj); err != nil {
+			applyErrors = append(applyErrors, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err))
 		}
 		obj.SetNamespace(name)
-		err = r.Patch(ctx, obj, client.RawPatch(types.ApplyPatchType, bytes), client.ForceOwnership, client.FieldOwner("hypershift-operator"))
+		err = r.Patch(ctx, obj, client.RawPatch(types.ApplyPatchType, manifestBytes), client.ForceOwnership, client.FieldOwner("hypershift-operator"))
 		if err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to apply manifest %s: %w", manifest, err))
+			applyErrors = append(applyErrors, fmt.Errorf("failed to apply manifest %s: %w", manifestName, err))
 		} else {
-			r.Log.Info("applied manifest", "manifest", manifest)
+			r.Log.Info("applied manifest", "manifest", manifestName)
 		}
 	}
 	if errs := errors.NewAggregate(applyErrors); errs != nil {
@@ -273,7 +231,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate kubeadminPasswordSecret: %w", err)
 	}
 
-	kubeconfigSecret, err := generateKubeconfigSecret(filepath.Join(pkiDir, "admin.kubeconfig"), name)
+	kubeconfigSecret, err := generateKubeconfigSecret(pkiSecret.Data["admin.kubeconfig"], name)
 	if err != nil {
 		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
 	}
@@ -295,36 +253,6 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	log.Infof("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", name)
 
 	return nil
-}
-
-func generatePKIData(params *hypershiftcp.ClusterParams) (map[string][]byte, error) {
-	pkiDir, err := ioutil.TempDir("", "pki")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary pki directory: %w", err)
-	}
-	dhParamsFile := os.Getenv("DH_PARAMS")
-	if len(dhParamsFile) > 0 {
-		if err = copyFile(dhParamsFile, filepath.Join(pkiDir, "openvpn-dh.pem")); err != nil {
-			return nil, fmt.Errorf("failed to copy dh parameters file %s: %w", dhParamsFile, err)
-		}
-	}
-	if err := pki.GeneratePKI(params, pkiDir); err != nil {
-		return nil, fmt.Errorf("failed to generate PKI assets: %w", err)
-	}
-	files, err := ioutil.ReadDir(pkiDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read PKI directory: %w", err)
-	}
-	data := map[string][]byte{}
-	for _, file := range files {
-		baseName := filepath.Base(file.Name())
-		bytes, err := ioutil.ReadFile(filepath.Join(pkiDir, baseName))
-		if err != nil {
-			return nil, fmt.Errorf("failed to read PKI file %q: %w", file.Name(), err)
-		}
-		data[baseName] = bytes
-	}
-	return data, nil
 }
 
 func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace string) (*corev1.ConfigMap, error) {
@@ -414,14 +342,10 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	return secret
 }
 
-func generateKubeconfigSecret(kubeconfigFile, namespace string) (*corev1.Secret, error) {
+func generateKubeconfigSecret(kubeconfigBytes []byte, namespace string) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
 	secret.Name = "admin-kubeconfig"
-	kubeconfigBytes, err := ioutil.ReadFile(kubeconfigFile)
-	if err != nil {
-		return nil, err
-	}
 	secret.Data = map[string][]byte{"kubeconfig": kubeconfigBytes}
 	return secret, nil
 }

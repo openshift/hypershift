@@ -1,9 +1,7 @@
 package pki
 
 import (
-	"io/ioutil"
 	"net"
-	"path/filepath"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -109,34 +107,34 @@ func kubeconfig(name, serverAddress, ca, commonName, organization string) kubeco
 	}
 }
 
-func writeCerts(certMap map[string]*util.Cert, outputDir string) error {
+func serializeCerts(certMap map[string]*util.Cert, output map[string][]byte) {
 	for k, v := range certMap {
-		if err := v.WriteTo(filepath.Join(outputDir, k), false); err != nil {
-			return errors.Wrapf(err, "failed to write certificate to file %s", filepath.Join(outputDir, k))
-		}
+		certBytes, keyBytes := v.Serialize()
+		output[k+".crt"] = certBytes
+		output[k+".key"] = keyBytes
 	}
-	return nil
 }
 
-func writeKubeconfigs(kubeconfigMap map[string]*util.Kubeconfig, outputDir string) error {
+func serializeKubeconfigs(kubeconfigMap map[string]*util.Kubeconfig, output map[string][]byte) error {
 	for k, v := range kubeconfigMap {
-		if err := v.WriteTo(filepath.Join(outputDir, k)); err != nil {
-			return errors.Wrapf(err, "failed to write kubeconfig to file %s", filepath.Join(outputDir, k))
+		kubeconfigBytes, err := v.Serialize()
+		if err != nil {
+			return err
 		}
+		output[k+".kubeconfig"] = kubeconfigBytes
 	}
 	return nil
 }
 
-func writeCAs(caMap map[string]*util.CA, outputDir string) error {
+func serializeCAs(caMap map[string]*util.CA, output map[string][]byte) {
 	for k, v := range caMap {
-		if err := v.WriteTo(filepath.Join(outputDir, k)); err != nil {
-			return errors.Wrapf(err, "failed to write CA to file %s", filepath.Join(outputDir, k))
-		}
+		certBytes, keyBytes := v.Serialize()
+		output[k+".crt"] = certBytes
+		output[k+".key"] = keyBytes
 	}
-	return nil
 }
 
-func writeCombinedCA(cas []string, caMap map[string]*util.CA, outputDir, fileName string) error {
+func serializeCombinedCA(cas []string, caMap map[string]*util.CA, fileName string, output map[string][]byte) error {
 	var caList util.CAList
 	for _, c := range cas {
 		ca := caMap[c]
@@ -145,35 +143,22 @@ func writeCombinedCA(cas []string, caMap map[string]*util.CA, outputDir, fileNam
 		}
 		caList = append(caList, ca)
 	}
-	if err := caList.WriteTo(filepath.Join(outputDir, fileName)); err != nil {
-		return errors.Wrapf(err, "failed to write combined CA to file %s", filepath.Join(outputDir, fileName))
-	}
+	output[fileName] = caList.Serialize()
 	return nil
 }
 
-func writeRSAKey(outputDir, name string) error {
-	privateFilename := filepath.Join(outputDir, name+".key")
-	publicFilename := filepath.Join(outputDir, name+".pub")
-	if util.FileExists(privateFilename) && util.FileExists(publicFilename) {
-		log.Infof("Skipping RSA key %s because it already exists", name)
-		return nil
-	}
+func serializeRSAKey(name string, output map[string][]byte) error {
 	key, err := util.PrivateKey()
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "cannot generate a private key")
 	}
-	b := util.PrivateKeyToPem(key)
-	log.Infof("Writing RSA private key %s", privateFilename)
-	if err := ioutil.WriteFile(privateFilename, b, 0644); err != nil {
-		return errors.Wrapf(err, "failed to write RSA private key %s", privateFilename)
-	}
-	b, err = util.PublicKeyToPem(&key.PublicKey)
+	privateKeyBytes := util.PrivateKeyToPem(key)
+	publicKeyBytes, err := util.PublicKeyToPem(&key.PublicKey)
 	if err != nil {
-		errors.Wrapf(err, "cannot create public key for %s", name)
+		errors.Wrapf(err, "cannot serialize RSA key public key")
 	}
-	if err := ioutil.WriteFile(publicFilename, b, 0644); err != nil {
-		return errors.Wrapf(err, "failed to write RSA public key %s", publicFilename)
-	}
+	output[name+".key"] = privateKeyBytes
+	output[name+".pub"] = publicKeyBytes
 	return nil
 }
 

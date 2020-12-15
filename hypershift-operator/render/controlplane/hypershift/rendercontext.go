@@ -2,31 +2,25 @@ package hypershift
 
 import (
 	"bytes"
-	"fmt"
-	"io/ioutil"
 	"path"
-	"path/filepath"
 	"text/template"
 
-	yamlpatch "github.com/krishicks/yaml-patch"
 	"github.com/pkg/errors"
 
 	assets "openshift.io/hypershift/hypershift-operator/assets/controlplane/hypershift"
 )
 
 type renderContext struct {
-	outputDir     string
 	params        interface{}
 	funcs         template.FuncMap
 	manifestFiles []string
-	manifests     map[string]string
+	manifests     map[string][]byte
 }
 
-func newRenderContext(params interface{}, outputDir string) *renderContext {
+func newRenderContext(params interface{}) *renderContext {
 	renderContext := &renderContext{
 		params:    params,
-		outputDir: outputDir,
-		manifests: make(map[string]string),
+		manifests: make(map[string][]byte),
 	}
 	return renderContext
 }
@@ -35,51 +29,39 @@ func (c *renderContext) setFuncs(f template.FuncMap) {
 	c.funcs = f
 }
 
-func (c *renderContext) renderManifests() error {
+func (c *renderContext) renderManifests() (map[string][]byte, error) {
+	result := make(map[string][]byte, len(c.manifestFiles)+len(c.manifests))
+	for name, b := range c.manifests {
+		result[name] = b
+	}
 	for _, f := range c.manifestFiles {
-		outputFile := filepath.Join(c.outputDir, path.Base(f))
 		content, err := c.substituteParams(c.params, f)
 		if err != nil {
-			return errors.Wrapf(err, "cannot render %s", f)
+			return nil, errors.Wrapf(err, "cannot render %s", f)
 		}
-		ioutil.WriteFile(outputFile, []byte(content), 0644)
+		result[path.Base(f)] = content
 	}
-
-	for name, content := range c.manifests {
-		outputFile := filepath.Join(c.outputDir, name)
-		ioutil.WriteFile(outputFile, []byte(content), 0644)
-	}
-
-	return nil
+	return result, nil
 }
 
 func (c *renderContext) addManifestFiles(name ...string) {
 	c.manifestFiles = append(c.manifestFiles, name...)
 }
 
-func (c *renderContext) addManifest(name, content string) {
+func (c *renderContext) addManifest(name string, content []byte) {
 	c.manifests[name] = content
 }
 
-func (c *renderContext) substituteParams(data interface{}, fileName string) (string, error) {
-	asset := assets.MustAsset(fileName)
-	return c.substituteParamsInString(data, string(asset))
+func (c *renderContext) substituteParams(data interface{}, fileName string) ([]byte, error) {
+	return c.substituteParamsInBytes(data, assets.MustAsset(fileName))
 }
 
-func (c *renderContext) substituteParamsInString(data interface{}, fileContent string) (string, error) {
+func (c *renderContext) substituteParamsInBytes(data interface{}, content []byte) ([]byte, error) {
 	out := &bytes.Buffer{}
-	t := template.Must(template.New("template").Funcs(c.funcs).Parse(fileContent))
+	t := template.Must(template.New("template").Funcs(c.funcs).Parse(string(content)))
 	err := t.Execute(out, data)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
-	return out.String(), nil
-}
-
-func mustDecodePatch(b []byte) yamlpatch.Patch {
-	p, err := yamlpatch.DecodePatch(b)
-	if err != nil {
-		panic(fmt.Sprintf("Cannot decode patch %s: %v", string(b), err))
-	}
-	return p
+	return out.Bytes(), nil
 }
