@@ -24,18 +24,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-type GuestClusterReconciler struct {
+type ExternalInfraClusterReconciler struct {
 	ctrlclient.Client
 	recorder record.EventRecorder
 	Infra    *configv1.Infrastructure
 	Log      logr.Logger
 }
 
-func (r *GuestClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ExternalInfraClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// TODO (alberto): watch hostedControlPlane events too.
 	// So when controlPlane.Status.Ready it triggers a reconcile here.
 	_, err := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.GuestCluster{}).
+		For(&hyperv1.ExternalInfraCluster{}).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
@@ -50,29 +50,29 @@ func (r *GuestClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	r.Infra = &infra
 
-	r.recorder = mgr.GetEventRecorderFor("guest-cluster-controller")
+	r.recorder = mgr.GetEventRecorderFor("external-infra-controller")
 
 	return nil
 }
 
-func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ExternalInfraClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
 	r.Log.Info("Reconciling")
 
-	// Fetch the GuestCluster instance
-	guestCluster := &hyperv1.GuestCluster{}
-	err := r.Client.Get(ctx, req.NamespacedName, guestCluster)
+	// Fetch the ExternalInfraCluster instance
+	externalInfraCluster := &hyperv1.ExternalInfraCluster{}
+	err := r.Client.Get(ctx, req.NamespacedName, externalInfraCluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			r.Log.Info("GuestCluster not found")
+			r.Log.Info("ExternalInfraCluster not found")
 			return ctrl.Result{}, nil
 		}
-		r.Log.Error(err, "error getting guestCluster")
+		r.Log.Error(err, "error getting ExternalInfraCluster")
 		return ctrl.Result{}, err
 	}
 
 	// Fetch the Cluster.
-	cluster, err := util.GetOwnerCluster(ctx, r.Client, guestCluster.ObjectMeta)
+	cluster, err := util.GetOwnerCluster(ctx, r.Client, externalInfraCluster.ObjectMeta)
 	if err != nil {
 		r.Log.Error(err, "error getting owner cluster")
 		return ctrl.Result{}, err
@@ -82,20 +82,20 @@ func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	if util.IsPaused(cluster, guestCluster) {
-		r.Log.Info("GuestCluster or linked Cluster is marked as paused. Won't reconcile")
+	if util.IsPaused(cluster, externalInfraCluster) {
+		r.Log.Info("ExternalInfraCluster or linked Cluster is marked as paused. Won't reconcile")
 		return ctrl.Result{}, nil
 	}
 
 	// Return early if deleted
-	if !guestCluster.DeletionTimestamp.IsZero() {
+	if !externalInfraCluster.DeletionTimestamp.IsZero() {
 		if err := r.delete(ctx, req); err != nil {
 			r.Log.Error(err, "failed to delete cluster")
 			return ctrl.Result{}, err
 		}
-		if controllerutil.ContainsFinalizer(guestCluster, finalizer) {
-			controllerutil.RemoveFinalizer(guestCluster, finalizer)
-			if err := r.Update(ctx, guestCluster); err != nil {
+		if controllerutil.ContainsFinalizer(externalInfraCluster, finalizer) {
+			controllerutil.RemoveFinalizer(externalInfraCluster, finalizer)
+			if err := r.Update(ctx, externalInfraCluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
 		}
@@ -103,15 +103,15 @@ func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Ensure the cluster has a finalizer for cleanup
-	if !controllerutil.ContainsFinalizer(guestCluster, finalizer) {
-		controllerutil.AddFinalizer(guestCluster, finalizer)
-		if err := r.Update(ctx, guestCluster); err != nil {
+	if !controllerutil.ContainsFinalizer(externalInfraCluster, finalizer) {
+		controllerutil.AddFinalizer(externalInfraCluster, finalizer)
+		if err := r.Update(ctx, externalInfraCluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
 	}
 	r.Log = r.Log.WithValues("cluster", cluster.Name)
 
-	patchHelper, err := patch.NewHelper(guestCluster, r.Client)
+	patchHelper, err := patch.NewHelper(externalInfraCluster, r.Client)
 	if err != nil {
 		r.Log.Error(err, "error building patchHelper")
 		return ctrl.Result{}, err
@@ -135,16 +135,16 @@ func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return reconcile.Result{Requeue: true}, nil
 	}
 
-	if guestCluster.Spec.ComputeReplicas > 0 {
+	if externalInfraCluster.Spec.ComputeReplicas > 0 {
 		nodePool := &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%v-default", guestCluster.GetName()),
-				Namespace: guestCluster.GetNamespace(),
+				Name:      fmt.Sprintf("%v-default", externalInfraCluster.GetName()),
+				Namespace: externalInfraCluster.GetNamespace(),
 			},
 			Spec: hyperv1.NodePoolSpec{
 				ClusterName: cluster.GetName(),
-				NodeCount:   guestCluster.Spec.ComputeReplicas,
+				NodeCount:   externalInfraCluster.Spec.ComputeReplicas,
 				Platform: hyperv1.NodePoolPlatform{
 					AWS: &hyperv1.AWSNodePoolPlatform{
 						InstanceType: "m5.large",
@@ -156,19 +156,16 @@ func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err := r.Create(ctx, nodePool); err != nil && !apierrors.IsAlreadyExists(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to create nodepool: %w", err)
 		}
-		// TODO (alberto): we currently use openshift mapi which has no notion of remote cluster
-		// therefore the machine.status does not get a nodeRef even though it yields a node for the dataplane.
-		// Once we move to capi machines we should wait for the machine to get a nodeRef.
 	}
 
 	// Set the values for upper level controller
-	guestCluster.Status.Ready = true
-	guestCluster.Spec.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+	externalInfraCluster.Status.Ready = true
+	externalInfraCluster.Spec.ControlPlaneEndpoint = hyperv1.APIEndpoint{
 		Host: hcp.Status.ControlPlaneEndpoint.Host,
 		Port: hcp.Status.ControlPlaneEndpoint.Port,
 	}
 
-	if err := patchHelper.Patch(ctx, guestCluster); err != nil {
+	if err := patchHelper.Patch(ctx, externalInfraCluster); err != nil {
 		r.Log.Error(err, "failed to patch")
 		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
 	}
@@ -177,7 +174,7 @@ func (r *GuestClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, nil
 }
 
-func (r *GuestClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
+func (r *ExternalInfraClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%v-default", req.Name),

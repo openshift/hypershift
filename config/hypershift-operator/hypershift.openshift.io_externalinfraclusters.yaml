@@ -6,25 +6,25 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.3.0
   creationTimestamp: null
-  name: guestclusters.hypershift.openshift.io
+  name: externalinfraclusters.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
   names:
     categories:
     - cluster-api
-    kind: GuestCluster
-    listKind: GuestClusterList
-    plural: guestclusters
+    kind: ExternalInfraCluster
+    listKind: ExternalInfraClusterList
+    plural: externalinfraclusters
     shortNames:
-    - gc
-    - gcs
-    singular: guestcluster
+    - eic
+    - eics
+    singular: externalinfracluster
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: GuestCluster is the Schema for the GuestCluster API
+        description: ExternalInfraCluster is the Schema for the ExternalInfraCluster API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
@@ -35,7 +35,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: GuestClusterSpec defines the desired state of GuestCluster
+            description: ExternalInfraClusterSpec defines the desired state of ExternalInfraCluster
             properties:
               computeReplicas:
                 type: integer
@@ -53,9 +53,14 @@ spec:
                 - host
                 - port
                 type: object
+              region:
+                description: 'TODO (alberto): populate the API and create/consume infrastructure via aws sdk role profile, sg, vpc, subnets.'
+                type: string
+            required:
+            - region
             type: object
           status:
-            description: GuestClusterStatus defines the observed state of GuestCluster
+            description: ExternalInfraClusterStatus defines the observed state of ExternalInfraCluster
             properties:
               ready:
                 type: boolean

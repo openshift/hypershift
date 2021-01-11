@@ -27,7 +27,8 @@ $ make uninstall
 First, create the following files containing secrets used by the example cluster:
 
 - `config/example-cluster/pull-secret` a valid pull secret for image pulls.
-- `config/example-cluster/ssh-key` an SSH public key for guest node access
+- `config/example-cluster/ssh-key` an SSH public key for guest node access.
+- `config/example-cluster/aws-creds` an [aws credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
 
 Install the example cluster:
 
@@ -44,7 +45,7 @@ $ make example-cluster
 When the cluster is available, get the guest kubeconfig using:
 
 ```bash
-$ oc get secret --namespace example admin-kubeconfig --template={{.data.kubeconfig}} | base64 -D
+$ oc get secret --namespace hypershift example-kubeconfig --template={{.data.value}} | base64 -D
 ```
 
 To create additional node pools, create a resource like:

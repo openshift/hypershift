@@ -5,11 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/utils/pointer"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
@@ -17,9 +12,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	k8sutilspointer "k8s.io/utils/pointer"
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -53,7 +52,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	r.Infra = &infra
 
-	r.recorder = mgr.GetEventRecorderFor("guest-cluster-controller")
+	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
 
 	return nil
 }
@@ -118,31 +117,24 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, ocluster *hyperv1.Op
 		UID:        ocluster.UID,
 	})
 
-	machineSet, err := generateWorkerMachineset(r, ctx, r.Infra.Status.InfrastructureName, nodePool)
+	// Create a machine scalable resources for the new cluster's worker nodes
+	machineSet, AWSMachineTemplate, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 	}
 
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, AWSMachineTemplate, func() error { return nil }); err != nil {
+		return ctrl.Result{}, err
+	}
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, machineSet, func() error {
-		if err := unstructured.SetNestedField(
-			machineSet.Object, int64(nodePool.Spec.NodeCount), "spec", "replicas"); err != nil {
-			return err
-		}
+		machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(nodePool.Spec.NodeCount))
 		return nil
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	available, exists, err := unstructured.NestedInt64(machineSet.Object, "status", "availableReplicas")
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if !exists {
-		log.Info("scalable resource for the nodePool has no availableReplicas yet, requeuing")
-		return ctrl.Result{Requeue: true}, nil
-	}
+	nodePool.Status.NodeCount = int(machineSet.Status.AvailableReplicas)
 
-	nodePool.Status.NodeCount = int(available)
 	return ctrl.Result{}, nil
 }
 
@@ -161,7 +153,8 @@ func GetOClusterByName(ctx context.Context, c client.Client, namespace, name str
 	return ocluster, nil
 }
 
-func generateWorkerMachineset(client ctrlclient.Client, ctx context.Context, infraName string, nodePool *hyperv1.NodePool) (*unstructured.Unstructured, error) {
+func generateScalableResources(client ctrlclient.Client, ctx context.Context, infraName, region string, nodePool *hyperv1.NodePool) (*capiv1.MachineSet, *capiaws.AWSMachineTemplate, error) {
+	// find AMI
 	machineSets := &unstructured.UnstructuredList{}
 	machineSets.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "machine.openshift.io",
@@ -169,45 +162,106 @@ func generateWorkerMachineset(client ctrlclient.Client, ctx context.Context, inf
 		Kind:    "MachineSet",
 	})
 	if err := client.List(ctx, machineSets, ctrlclient.InNamespace("openshift-machine-api")); err != nil {
-		return nil, fmt.Errorf("failed to list machinesets: %w", err)
+		return nil, nil, fmt.Errorf("failed to list machinesets: %w", err)
 	}
 	if len(machineSets.Items) == 0 {
-		return nil, fmt.Errorf("no machinesets found")
+		return nil, nil, fmt.Errorf("no machinesets found")
 	}
 	obj := machineSets.Items[0]
-
-	workerName := generateMachineSetName(infraName, nodePool.Spec.ClusterName, nodePool.GetName())
 	object := obj.Object
 
-	unstructured.RemoveNestedField(object, "status")
-	unstructured.RemoveNestedField(object, "metadata", "creationTimestamp")
-	unstructured.RemoveNestedField(object, "metadata", "generation")
-	unstructured.RemoveNestedField(object, "metadata", "resourceVersion")
-	unstructured.RemoveNestedField(object, "metadata", "selfLink")
-	unstructured.RemoveNestedField(object, "metadata", "uid")
-	unstructured.RemoveNestedField(object, "spec", "template", "spec", "metadata")
-	unstructured.RemoveNestedField(object, "spec", "template", "spec", "providerSpec", "value", "publicIp")
-	unstructured.SetNestedField(object, int64(nodePool.Spec.NodeCount), "spec", "replicas")
-	unstructured.SetNestedField(object, workerName, "metadata", "name")
-	unstructured.SetNestedField(object, workerName, "spec", "selector", "matchLabels", "machine.openshift.io/cluster-api-machineset")
-	unstructured.SetNestedField(object, workerName, "spec", "template", "metadata", "labels", "machine.openshift.io/cluster-api-machineset")
-	unstructured.SetNestedField(object, fmt.Sprintf("%s-user-data", nodePool.Spec.ClusterName), "spec", "template", "spec", "providerSpec", "value", "userDataSecret", "name")
-	unstructured.SetNestedField(object, nodePool.Spec.Platform.AWS.InstanceType, "spec", "template", "spec", "providerSpec", "value", "instanceType")
-
-	gvk, err := apiutil.GVKForObject(nodePool, client.Scheme())
-	if err != nil {
-		return nil, err
+	AMI, found, err := unstructured.NestedString(object, "spec", "template", "spec", "providerSpec", "value", "ami", "id")
+	if err != nil || !found {
+		return nil, nil, fmt.Errorf("error finding AMI. Found: %v. Error: %v", found, err)
 	}
-	ownerRef := []metav1.OwnerReference{
-		metav1.OwnerReference{
-			APIVersion:         gvk.GroupVersion().String(),
-			Kind:               gvk.Kind,
-			Name:               nodePool.GetName(),
-			UID:                nodePool.GetUID(),
-			BlockOwnerDeletion: pointer.BoolPtr(true),
-			Controller:         pointer.BoolPtr(true),
+	// TODO (alberto): remove hardcoded "a" zone and come up with a solution
+	// for automation across az
+	// e.g have a "locations" field in the nodeGroup or expose the subnet in the nodeGroup
+	subnet := fmt.Sprintf("%s-private-%sa", infraName, region)
+	instanceProfile := fmt.Sprintf("%s-worker-profile", infraName)
+	instanceType := nodePool.Spec.Platform.AWS.InstanceType
+	resourcesName := generateMachineSetName(infraName, nodePool.Spec.ClusterName, nodePool.GetName())
+	dataSecretName := fmt.Sprintf("%s-user-data", nodePool.Spec.ClusterName)
+
+	AWSMachineTemplate := &capiaws.AWSMachineTemplate{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resourcesName,
+			Namespace: nodePool.GetNamespace(),
+		},
+		Spec: capiaws.AWSMachineTemplateSpec{
+			Template: capiaws.AWSMachineTemplateResource{
+				Spec: capiaws.AWSMachineSpec{
+					UncompressedUserData: k8sutilspointer.BoolPtr(true),
+					CloudInit: capiaws.CloudInit{
+						InsecureSkipSecretsManager: true,
+						SecureSecretsBackend:       "secrets-manager",
+					},
+					IAMInstanceProfile: instanceProfile,
+					InstanceType:       instanceType,
+					AMI: capiaws.AWSResourceReference{
+						ID: k8sutilspointer.StringPtr(AMI),
+					},
+					Subnet: &capiaws.AWSResourceReference{
+						Filters: []capiaws.Filter{
+							{
+								Name: "tag:Name",
+								Values: []string{
+									subnet,
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
-	obj.SetOwnerReferences(ownerRef)
-	return &obj, nil
+
+	machineSet := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resourcesName,
+			Namespace: nodePool.GetNamespace(),
+			// TODO (alberto): drop/expose this annotation at the nodePool API
+			Annotations: map[string]string{
+				"machine.cluster.x-k8s.io/exclude-node-draining": "true",
+			},
+			Labels: map[string]string{
+				capiv1.ClusterLabelName: "example",
+			},
+			// TODO (alberto): pass autoscaler min/max annotations from nodePool API
+		},
+		TypeMeta: metav1.TypeMeta{},
+		Spec: capiv1.MachineSetSpec{
+			ClusterName: nodePool.Spec.ClusterName,
+			Replicas:    k8sutilspointer.Int32Ptr(int32(nodePool.Spec.NodeCount)),
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					resourcesName: resourcesName,
+				},
+			},
+			Template: capiv1.MachineTemplateSpec{
+				ObjectMeta: capiv1.ObjectMeta{
+					Labels: map[string]string{
+						resourcesName: resourcesName,
+					},
+				},
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{
+						DataSecretName: &dataSecretName,
+					},
+					ClusterName: nodePool.Spec.ClusterName,
+					InfrastructureRef: corev1.ObjectReference{
+						Namespace:  nodePool.GetNamespace(),
+						Name:       resourcesName,
+						APIVersion: "infrastructure.cluster.x-k8s.io/v1alpha3",
+						Kind:       "AWSMachineTemplate",
+					},
+				},
+			},
+		},
+	}
+	if err := ctrl.SetControllerReference(nodePool, machineSet, client.Scheme()); err != nil {
+		return nil, nil, err
+	}
+	return machineSet, AWSMachineTemplate, nil
 }

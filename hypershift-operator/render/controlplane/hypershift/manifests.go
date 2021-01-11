@@ -74,6 +74,7 @@ func (c *clusterManifestContext) setupManifests() {
 	c.routerProxy()
 	c.machineConfigServer()
 	c.ignitionConfigs()
+	c.capi()
 }
 
 func (c *clusterManifestContext) serviceAdminKubeconfig() {
@@ -146,6 +147,15 @@ func (c *clusterManifestContext) kubeAPIServer() {
 		"kube-apiserver/kube-apiserver-secret.yaml",
 		"kube-apiserver/kube-apiserver-configmap.yaml",
 		"kube-apiserver/kube-apiserver-vpnclient-secret.yaml",
+	)
+}
+
+func (c *clusterManifestContext) capi() {
+	c.addManifestFiles(
+		"capi/capa-manager-serviceaccount.yaml",
+		"capi/capa-manager-clusterrole.yaml",
+		"capi/capa-manager-clusterrolebinding.yaml",
+		"capi/capa-manager-deployment.yaml",
 	)
 }
 

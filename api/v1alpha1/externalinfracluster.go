@@ -5,25 +5,25 @@ import (
 )
 
 func init() {
-	SchemeBuilder.Register(&GuestCluster{})
-	SchemeBuilder.Register(&GuestClusterList{})
+	SchemeBuilder.Register(&ExternalInfraCluster{})
+	SchemeBuilder.Register(&ExternalInfraClusterList{})
 }
 
-// +kubebuilder:resource:path=guestclusters,shortName=gc;gcs,scope=Namespaced,categories=cluster-api
+// +kubebuilder:resource:path=externalinfraclusters,shortName=eic;eics,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// GuestCluster is the Schema for the GuestCluster API
-type GuestCluster struct {
+// ExternalInfraCluster is the Schema for the ExternalInfraCluster API
+type ExternalInfraCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   GuestClusterSpec   `json:"spec,omitempty"`
-	Status GuestClusterStatus `json:"status,omitempty"`
+	Spec   ExternalInfraClusterSpec   `json:"spec,omitempty"`
+	Status ExternalInfraClusterStatus `json:"status,omitempty"`
 }
 
-// GuestClusterSpec defines the desired state of GuestCluster
-type GuestClusterSpec struct {
+// ExternalInfraClusterSpec defines the desired state of ExternalInfraCluster
+type ExternalInfraClusterSpec struct {
 	// ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
 	// +optional
 	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
@@ -33,6 +33,7 @@ type GuestClusterSpec struct {
 
 	// TODO (alberto): populate the API and create/consume infrastructure via aws sdk
 	// role profile, sg, vpc, subnets.
+	Region string `json:"region"`
 }
 
 type APIEndpoint struct {
@@ -43,16 +44,16 @@ type APIEndpoint struct {
 	Port int32 `json:"port"`
 }
 
-// GuestClusterStatus defines the observed state of GuestCluster
-type GuestClusterStatus struct {
+// ExternalInfraClusterStatus defines the observed state of ExternalInfraCluster
+type ExternalInfraClusterStatus struct {
 	// +optional
 	Ready bool `json:"ready,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-// GuestClusterList contains a list of GuestClusters.
-type GuestClusterList struct {
+// ExternalInfraClusterList contains a list of ExternalInfraClusters.
+type ExternalInfraClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []GuestCluster `json:"items"`
+	Items           []ExternalInfraCluster `json:"items"`
 }

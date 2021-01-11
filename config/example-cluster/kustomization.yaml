@@ -20,3 +20,9 @@ secretGenerator:
   files:
   - id_rsa.pub=ssh-key
   type: Opaque
+- name: provider-creds
+  options:
+    disableNameSuffixHash: true
+  files:
+  - credentials=aws-creds
+  type: Opaque

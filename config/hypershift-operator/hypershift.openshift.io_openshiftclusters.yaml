@@ -39,6 +39,13 @@ spec:
                 type: integer
               podCIDR:
                 type: string
+              providerCreds:
+                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
               pullSecret:
                 description: PullSecret is a pull secret injected into the container runtime of guest workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
                 properties:
@@ -68,6 +75,7 @@ spec:
             required:
             - initialComputeReplicas
             - podCIDR
+            - providerCreds
             - pullSecret
             - release
             - serviceCIDR

@@ -14,6 +14,8 @@ import (
 	"os"
 	"strings"
 
+	"sigs.k8s.io/cluster-api/util"
+
 	"github.com/blang/semver"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
@@ -67,6 +69,17 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	if !hasPullSecretData {
 		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
 	}
+
+	var providerCredsSecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.ProviderCreds.Name}, &providerCredsSecret)
+	if err != nil {
+		return fmt.Errorf("failed to get provider creds %s: %w", hcp.Spec.ProviderCreds.Name, err)
+	}
+	providerCredsData, hasProviderCredsData := providerCredsSecret.Data["credentials"]
+	if !hasProviderCredsData {
+		return fmt.Errorf("provider credentials %s is missing the credentials key", hcp.Spec.PullSecret.Name)
+	}
+
 	version, err := semver.Parse(releaseImage.Version())
 	if err != nil {
 		return fmt.Errorf("cannot parse release version (%s): %v", releaseImage.Version(), err)
@@ -208,10 +221,16 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	r.Log.Info("successfully applied all manifests")
 
-	userDataSecret := generateUserDataSecret(name, infraStatus.IgnitionProviderAddress, version)
+	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version)
 	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to generate user data secret: %w", err)
 	}
+	userDataSecret.OwnerReferences = util.EnsureOwnerRef(userDataSecret.OwnerReferences, metav1.OwnerReference{
+		APIVersion: hyperv1.GroupVersion.String(),
+		Kind:       "HostedControlPlane",
+		Name:       hcp.GetName(),
+		UID:        hcp.UID,
+	})
 
 	kubeadminPassword, err := generateKubeadminPassword()
 	if err != nil {
@@ -231,10 +250,16 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate kubeadminPasswordSecret: %w", err)
 	}
 
-	kubeconfigSecret, err := generateKubeconfigSecret(pkiSecret.Data["admin.kubeconfig"], name)
+	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetName(), hcp.GetNamespace(), pkiSecret.Data["admin.kubeconfig"])
 	if err != nil {
 		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
 	}
+	kubeconfigSecret.OwnerReferences = util.EnsureOwnerRef(kubeconfigSecret.OwnerReferences, metav1.OwnerReference{
+		APIVersion: hyperv1.GroupVersion.String(),
+		Kind:       "HostedControlPlane",
+		Name:       hcp.GetName(),
+		UID:        hcp.UID,
+	})
 	if err := r.Create(ctx, kubeconfigSecret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
 	}
@@ -247,12 +272,28 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate targetPullSecret: %v", err)
 	}
 
+	targetProviderCredsSecret, err := generateTargetProviderCredsSecret(providerCredsData, name)
+	if err != nil {
+		return fmt.Errorf("failed to create providerCreds secret manifest for target cluster: %w", err)
+	}
+	if err := r.Create(ctx, targetProviderCredsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to generate providerCreds secret: %v", err)
+	}
 	log.Infof("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIAddress, APIServerPort))
-	log.Infof("Kubeconfig is available in secret %q in the %s namespace", "admin-kubeconfig", name)
+	log.Infof("Kubeconfig is available in secret %q in the %s namespace", fmt.Sprintf("%s-kubeconfig", name), hcp.GetNamespace())
 	log.Infof("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", params.IngressSubdomain))
 	log.Infof("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", name)
 
 	return nil
+}
+
+func generateTargetProviderCredsSecret(data []byte, namespace string) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	secret.Name = "provider-creds"
+	secret.Namespace = namespace
+	secret.Data = map[string][]byte{"credentials": data}
+	secret.Type = corev1.SecretTypeOpaque
+	return secret, nil
 }
 
 func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace string) (*corev1.ConfigMap, error) {
@@ -272,10 +313,10 @@ func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace str
 	return configMap, nil
 }
 
-func generateUserDataSecret(namespace string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {
+func generateUserDataSecret(name, namespace string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {
 	secret := &corev1.Secret{}
-	secret.Name = fmt.Sprintf("%s-user-data", namespace)
-	secret.Namespace = "openshift-machine-api"
+	secret.Name = fmt.Sprintf("%s-user-data", name)
+	secret.Namespace = namespace
 
 	disableTemplatingValue := []byte(base64.StdEncoding.EncodeToString([]byte("true")))
 	var userDataValue []byte
@@ -291,7 +332,7 @@ func generateUserDataSecret(namespace string, ignitionProviderAddr string, versi
 
 	secret.Data = map[string][]byte{
 		"disableTemplating": disableTemplatingValue,
-		"userData":          userDataValue,
+		"value":             userDataValue,
 	}
 	return secret
 }
@@ -342,11 +383,11 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	return secret
 }
 
-func generateKubeconfigSecret(kubeconfigBytes []byte, namespace string) (*corev1.Secret, error) {
+func generateKubeconfigSecret(name, namespace string, kubeconfigBytes []byte) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
-	secret.Name = "admin-kubeconfig"
-	secret.Data = map[string][]byte{"kubeconfig": kubeconfigBytes}
+	secret.Name = fmt.Sprintf("%s-kubeconfig", name)
+	secret.Data = map[string][]byte{"value": kubeconfigBytes}
 	return secret, nil
 }
 
