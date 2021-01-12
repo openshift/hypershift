@@ -64,5 +64,35 @@ type NodePoolPlatform struct {
 type AWSNodePoolPlatform struct {
 	// InstanceType defines the ec2 instance type.
 	// eg. m4-large
-	InstanceType string `json:"instanceType"`
+	InstanceType    string                `json:"instanceType"`
+	InstanceProfile string                `json:"instanceProfile,omitempty"`
+	Subnet          *AWSResourceReference `json:"subnet,omitempty"`
+}
+
+// AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
+// Only one of ID, ARN or Filters may be specified. Specifying more than one will result in
+// a validation error.
+type AWSResourceReference struct {
+	// ID of resource
+	// +optional
+	ID *string `json:"id,omitempty"`
+
+	// ARN of resource
+	// +optional
+	ARN *string `json:"arn,omitempty"`
+
+	// Filters is a set of key/value pairs used to identify a resource
+	// They are applied according to the rules defined by the AWS API:
+	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html
+	// +optional
+	Filters []Filter `json:"filters,omitempty"`
+}
+
+// Filter is a filter used to identify an AWS resource
+type Filter struct {
+	// Name of the filter. Filter names are case-sensitive.
+	Name string `json:"name"`
+
+	// Values includes one or more filter values. Filter values are case-sensitive.
+	Values []string `json:"values"`
 }

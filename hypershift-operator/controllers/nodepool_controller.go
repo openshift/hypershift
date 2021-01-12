@@ -134,6 +134,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, ocluster *hyperv1.Op
 	}
 
 	nodePool.Status.NodeCount = int(machineSet.Status.AvailableReplicas)
+	if nodePool.Status.NodeCount != nodePool.Spec.NodeCount {
+		log.Info("Requeueing nodePool", "expected available nodes", nodePool.Spec.NodeCount, "current available nodes", nodePool.Status.NodeCount)
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -174,11 +178,37 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 	if err != nil || !found {
 		return nil, nil, fmt.Errorf("error finding AMI. Found: %v. Error: %v", found, err)
 	}
+
 	// TODO (alberto): remove hardcoded "a" zone and come up with a solution
 	// for automation across az
 	// e.g have a "locations" field in the nodeGroup or expose the subnet in the nodeGroup
-	subnet := fmt.Sprintf("%s-private-%sa", infraName, region)
+	subnet := &capiaws.AWSResourceReference{
+		Filters: []capiaws.Filter{
+			{
+				Name: "tag:Name",
+				Values: []string{
+					fmt.Sprintf("%s-private-%sa", infraName, region),
+				},
+			},
+		},
+	}
+	if nodePool.Spec.Platform.AWS.Subnet != nil {
+		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
+		subnet.ARN = nodePool.Spec.Platform.AWS.Subnet.ARN
+		for k := range nodePool.Spec.Platform.AWS.Subnet.Filters {
+			filter := capiaws.Filter{
+				Name:   nodePool.Spec.Platform.AWS.Subnet.Filters[k].Name,
+				Values: nodePool.Spec.Platform.AWS.Subnet.Filters[k].Values,
+			}
+			subnet.Filters = append(subnet.Filters, filter)
+		}
+	}
+
 	instanceProfile := fmt.Sprintf("%s-worker-profile", infraName)
+	if nodePool.Spec.Platform.AWS.InstanceProfile != "" {
+		instanceProfile = nodePool.Spec.Platform.AWS.InstanceProfile
+	}
+
 	instanceType := nodePool.Spec.Platform.AWS.InstanceType
 	resourcesName := generateMachineSetName(infraName, nodePool.Spec.ClusterName, nodePool.GetName())
 	dataSecretName := fmt.Sprintf("%s-user-data", nodePool.Spec.ClusterName)
@@ -202,16 +232,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 					AMI: capiaws.AWSResourceReference{
 						ID: k8sutilspointer.StringPtr(AMI),
 					},
-					Subnet: &capiaws.AWSResourceReference{
-						Filters: []capiaws.Filter{
-							{
-								Name: "tag:Name",
-								Values: []string{
-									subnet,
-								},
-							},
-						},
-					},
+					Subnet: subnet,
 				},
 			},
 		},
