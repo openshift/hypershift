@@ -24,6 +24,7 @@ func GeneratePKI(params *hypershiftcp.PKIParams) (map[string][]byte, error) {
 	kubeconfigs := []kubeconfigSpec{
 		kubeconfig("admin", externalAPIServerAddress, "root-ca", "system:admin", "system:masters"),
 		kubeconfig("internal-admin", internalAPIServerAddress, "root-ca", "system:admin", "system:masters"),
+		kubeconfig("localhost-admin", "https://localhost:6443", "root-ca", "system:admin", "system:masters"),
 		kubeconfig("kubelet-bootstrap", externalAPIServerAddress, "cluster-signer", "system:bootstrapper", "system:bootstrappers"),
 	}
 
@@ -33,6 +34,7 @@ func GeneratePKI(params *hypershiftcp.PKIParams) (map[string][]byte, error) {
 	}
 	kubeIP := firstIP(serviceIPNet)
 	apiServerHostNames := []string{
+		"localhost",
 		"kubernetes",
 		"kubernetes.default.svc",
 		"kubernetes.default.svc.cluster.local",
@@ -41,6 +43,7 @@ func GeneratePKI(params *hypershiftcp.PKIParams) (map[string][]byte, error) {
 		fmt.Sprintf("kube-apiserver.%s.svc.cluster.local", params.Namespace),
 	}
 	apiServerIPs := []string{
+		"127.0.0.1",
 		kubeIP.String(),
 		params.NodeInternalAPIServerIP,
 	}
@@ -84,9 +87,19 @@ func GeneratePKI(params *hypershiftcp.PKIParams) (map[string][]byte, error) {
 			[]string{
 				"openshift-apiserver",
 				fmt.Sprintf("openshift-apiserver.%s.svc", params.Namespace),
-				fmt.Sprintf("openshift-controller-manager.%s.svc.cluster.local", params.Namespace),
+				fmt.Sprintf("openshift-apiserver.%s.svc.cluster.local", params.Namespace),
 				"openshift-apiserver.default.svc",
 				"openshift-apiserver.default.svc.cluster.local",
+			}, nil),
+
+		// oauth-apiserver
+		cert("oauth-apiserver-server", "root-ca", "openshift-oauth-apiserver", "openshift",
+			[]string{
+				"openshift-oauth-apiserver",
+				fmt.Sprintf("openshift-oauth-apiserver.%s.svc", params.Namespace),
+				fmt.Sprintf("openshift-oauth-apiserver.%s.svc.cluster.local", params.Namespace),
+				"openshift-oauth-apiserver.default.svc",
+				"openshift-oauth-apiserver.default.svc.cluster.local",
 			}, nil),
 
 		// openshift-controller-manager

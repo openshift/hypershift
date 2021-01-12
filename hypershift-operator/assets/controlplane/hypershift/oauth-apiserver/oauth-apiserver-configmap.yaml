@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openshift-oauth-apiserver
+data:
+  etcd-ca.crt: |-
+{{ include_pki "root-ca.crt" 4 }}
+  serving-ca.crt: |-
+{{ include_pki "root-ca.crt" 4 }}

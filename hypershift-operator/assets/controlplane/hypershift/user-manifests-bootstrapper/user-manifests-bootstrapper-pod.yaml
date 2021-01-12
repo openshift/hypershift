@@ -27,22 +27,6 @@ spec:
       volumeMounts:
         - mountPath: /work
           name: work
-    - image: {{ imageFor "cluster-config-operator" }}
-      imagePullPolicy: IfNotPresent
-      name: config-operator
-      workingDir: /tmp
-      command:
-        - /bin/bash
-      args:
-        - -c
-        - |-
-          cd /tmp
-          mkdir input output
-          /usr/bin/cluster-config-operator render --config-output-file config --asset-input-dir /tmp/input --asset-output-dir /tmp/output
-          cp /tmp/output/manifests/* /work
-      volumeMounts:
-        - mountPath: /work
-          name: work
   containers:
     - image: {{ imageFor "cli" }}
       imagePullPolicy: IfNotPresent

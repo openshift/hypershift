@@ -4,7 +4,7 @@ Guest clustering for [OpenShift](https://openshift.io).
 
 ### Prerequisites
 
-* Admin access to an OpenShift cluster.
+* Admin access to an OpenShift cluster (version 4.7).
 * The OpenShift `oc` CLI tool.
 * [Kustomize](https://kustomize.io)
 

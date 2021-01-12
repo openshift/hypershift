@@ -7,6 +7,8 @@ data:
 {{ include_pki "root-ca.crt" 4 }}
   combined-ca.crt: |-
 {{ include_pki "combined-ca.crt" 4 }}
+  cluster-dns-02-config.yaml: |-
+{{ include "machine-config-server/cluster-dns-02-config.yaml" 4 }}
   cluster-infrastructure-02-config.yaml: |-
 {{ include "machine-config-server/cluster-infrastructure-02-config.yaml" 4 }}
   cluster-network-02-config.yaml: |-
