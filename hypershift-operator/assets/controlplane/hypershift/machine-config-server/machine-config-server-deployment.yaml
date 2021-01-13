@@ -47,6 +47,7 @@ spec:
           --network-config-file=/assets/manifests/cluster-network-02-config.yaml \
           --proxy-config-file=/assets/manifests/cluster-proxy-01-config.yaml \
           --config-file=/assets/manifests/install-config.yaml \
+          --dns-config-file=/assets/manifests/cluster-dns-02-config.yaml \
           --dest-dir=/mcc-manifests \
           --pull-secret=/assets/manifests/pull-secret.yaml
 

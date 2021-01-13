@@ -22,7 +22,50 @@ spec:
     spec:
       automountServiceAccountToken: false
       serviceAccountName: vpn
+      initContainers:
+      - image: {{ imageFor "cluster-config-operator" }}
+        imagePullPolicy: IfNotPresent
+        name: config-bootstrap
+        workingDir: /tmp
+        command:
+        - /bin/bash
+        args:
+        - -c
+        - |-
+          cd /tmp
+          mkdir input output
+          /usr/bin/cluster-config-operator render --config-output-file config --asset-input-dir /tmp/input --asset-output-dir /tmp/output
+          cp /tmp/output/manifests/* /work
+        volumeMounts:
+        - mountPath: /work
+          name: bootstrap-manifests
       containers:
+      - image: {{ imageFor "cli" }}
+        name: initialize-manifests
+        env:
+        - name: KUBECONFIG
+          value: /var/secrets/localhost-kubeconfig/kubeconfig
+        workingDir: /work
+        command:
+        - /bin/bash
+        args:
+        - -c
+        - |-
+          while true; do
+            if oc apply -f .; then
+              echo "Bootstrap manifests applied successfully."
+              break
+            fi
+            sleep 1
+          done
+          while true; do
+            sleep 1000
+          done
+        volumeMounts:
+        - mountPath: /work
+          name: bootstrap-manifests
+        - mountPath: /var/secrets/localhost-kubeconfig
+          name: localhost-kubeconfig
       - name: kube-apiserver
         image: {{ imageFor "hyperkube" }}
         command:
@@ -30,9 +73,6 @@ spec:
         - kube-apiserver
         args:
         - "--openshift-config=/etc/kubernetes/apiserver-config/config.yaml"
-{{ if .KPInfo }}
-        - "--encryption-provider-config=/etc/kubernetes/kms-config/config.yaml"
-{{ end }}
         workingDir: /var/log/kube-apiserver
         livenessProbe:
           httpGet:
@@ -69,73 +109,8 @@ spec:
           name: oauth
         - mountPath: /var/log/kube-apiserver/
           name: logs
-{{ if .APIServerAuditEnabled }}
         - name: apiserver-cm
           mountPath: /etc/kubernetes/audit/
-{{ end }}
-{{ if .KPInfo }}
-        - name: kms-config
-          mountPath: /etc/kubernetes/kms-config/
-        - name: kms-socket
-          mountPath: /tmp
-      - name: kms
-        image: {{ .KMSImage }}
-        imagePullPolicy: IfNotPresent
-{{ if .KMSServerResources }}
-        resources:{{ range .KMSServerResources }}{{ range .ResourceRequest }}
-          requests: {{ if .CPU }}
-            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
-            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
-          limits: {{ if .CPU }}
-            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
-            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
-{{ end }}
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
-        livenessProbe:
-          httpGet:
-            path: /healthz/liveness
-            port: 8081
-            scheme: HTTP
-          initialDelaySeconds: 120
-          periodSeconds: 300
-          successThreshold: 1
-          failureThreshold: 3
-          timeoutSeconds: 160
-        env:
-        - name: REGION
-          value: {{ .KPRegion }}
-        - name: LOG_LEVEL
-          value: info
-        - name: NUM_LEN_BYTES
-          value: "4"
-        - name: CACHE_TIMEOUT_IN_HOURS
-          value: "1"
-        - name: RESTART_DELAY_IN_SECONDS
-          value: "0"
-        - name: UNIX_SOCKET_PATH
-          value: "/tmp/keyprotectprovider.sock"
-        - name: KP_TIMEOUT
-          value: "10"
-        - name: KP_DATA_JSON
-          value: '{{ .KPInfo }}'
-        - name: KP_WDEK_PATH
-          value: "/tmp/kp/wdek"
-        - name: KP_STATE_PATH
-          value: "/tmp/kp/state"
-        - name: API_KEY
-          value: {{ .KPAPIKey }}
-        - name: HEALTHZ_PATH
-          value: /healthz
-        - name: HEALTHZ_PORT
-          value: ":8081"
-        volumeMounts:
-        - name: kms-socket
-          mountPath: /tmp
-        - name: kms-kp
-          mountPath: /tmp/kp
-          readOnly: true
-{{ end }}
       - name: openvpn-client
         image: quay.io/hypershift/openvpn:latest
         imagePullPolicy: Always
@@ -153,6 +128,8 @@ spec:
         - mountPath: /etc/openvpn/config
           name: vpnconfig
       volumes:
+      - name: bootstrap-manifests
+        emptyDir: {}
       - secret:
           secretName: kube-apiserver
         name: secret
@@ -161,6 +138,9 @@ spec:
       - configMap:
           name: kube-apiserver
         name: config
+      - secret:
+          secretName: localhost-admin-kubeconfig
+        name: localhost-kubeconfig
       - configMap:
           name: kube-apiserver-config
         name: apiserver-config
@@ -173,20 +153,6 @@ spec:
       - name: vpnsecret
         secret:
           secretName: kube-apiserver-vpnclient-secret
-{{ if .APIServerAuditEnabled }}
       - name: apiserver-cm
         configMap:
-          name: apiserver-audit-cm
-{{ end }}
-{{ if .KPInfo }}
-      - name: kms-config
-        configMap:
-          name: kms-config
-      - name: kms-socket
-        emptyDir: {}
-      - name: kms-kp
-        secret:
-          secretName: kp-wdek-secret
-          optional: true
-          defaultMode: 0400
-{{ end }}
+          name: apiserver-default-audit-cm

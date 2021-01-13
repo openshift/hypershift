@@ -116,6 +116,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	params.ReleaseImage = hcp.Spec.ReleaseImage
 	params.IngressSubdomain = fmt.Sprintf("apps.%s", baseDomain)
 	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIAddress
+	params.OauthAPIClusterIP = infraStatus.OauthAPIServerAddress
 	params.BaseDomain = baseDomain
 	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
 	params.CloudProvider = string(r.Infra.Status.PlatformStatus.Type)
@@ -179,6 +180,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to read combined CA: %w", err)
 	}
 	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString(caBytes)
+	params.OauthAPIServerCABundle = params.OpenshiftAPIServerCABundle
 
 	manifests, err := hypershiftcp.RenderClusterManifests(params, releaseImage, pullSecretData, pkiSecret.Data)
 	if err != nil {

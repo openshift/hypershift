@@ -54,6 +54,7 @@ type ClusterParams struct {
 	ReleaseImage                        string                 `json:"releaseImage"`
 	IngressSubdomain                    string                 `json:"ingressSubdomain"`
 	OpenShiftAPIClusterIP               string                 `json:"openshiftAPIClusterIP"`
+	OauthAPIClusterIP                   string                 `json:"oauthAPIClusterIP"`
 	ImageRegistryHTTPSecret             string                 `json:"imageRegistryHTTPSecret"`
 	RouterNodePortHTTP                  string                 `json:"routerNodePortHTTP"`
 	RouterNodePortHTTPS                 string                 `json:"routerNodePortHTTPS"`
@@ -63,6 +64,7 @@ type ClusterParams struct {
 	EtcdClientName                      string                 `json:"etcdClientName"`
 	OriginReleasePrefix                 string                 `json:"originReleasePrefix"`
 	OpenshiftAPIServerCABundle          string                 `json:"openshiftAPIServerCABundle"`
+	OauthAPIServerCABundle              string                 `json:"oauthAPIServerCABundle"`
 	CloudProvider                       string                 `json:"cloudProvider"`
 	CVOSetupImage                       string                 `json:"cvoSetupImage"`
 	InternalAPIPort                     uint                   `json:"internalAPIPort"`

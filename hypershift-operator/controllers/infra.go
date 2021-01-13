@@ -31,6 +31,7 @@ type InfrastructureStatus struct {
 	OAuthAddress            string
 	VPNAddress              string
 	OpenShiftAPIAddress     string
+	OauthAPIServerAddress   string
 	IgnitionProviderAddress string
 }
 
@@ -101,6 +102,13 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	}
 	r.Log.Info("Created Openshift API service")
 
+	r.Log.Info("Creating Openshift OAuth API service")
+	oauthAPIService, err := createOauthAPIService(r, name)
+	if err != nil {
+		return status, fmt.Errorf("failed to create openshift oauth api service: %w", err)
+	}
+	r.Log.Info("Created Openshift Oauth API service")
+
 	r.Log.Info("Creating OAuth service")
 	oauthService, err := createOauthService(r, name)
 	if err != nil {
@@ -143,6 +151,7 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	status.IgnitionProviderAddress = ignitionAddress
 
 	status.OpenShiftAPIAddress = openshiftAPIService.Spec.ClusterIP
+	status.OauthAPIServerAddress = oauthAPIService.Spec.ClusterIP
 
 	return status, nil
 }
@@ -194,6 +203,30 @@ func createOpenshiftService(client ctrl.Client, namespace string) (*corev1.Servi
 	svc.Namespace = namespace
 	svc.Name = "openshift-apiserver"
 	svc.Spec.Selector = map[string]string{"app": "openshift-apiserver"}
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
+	svc.Spec.Ports = []corev1.ServicePort{
+		{
+			Name:       "https",
+			Port:       443,
+			Protocol:   corev1.ProtocolTCP,
+			TargetPort: intstr.FromInt(8443),
+		},
+	}
+	if err := client.Create(context.TODO(), svc); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return svc, client.Get(context.TODO(), ctrl.ObjectKeyFromObject(svc), svc)
+		} else {
+			return nil, fmt.Errorf("failed to create openshift service: %w", err)
+		}
+	}
+	return svc, nil
+}
+
+func createOauthAPIService(client ctrl.Client, namespace string) (*corev1.Service, error) {
+	svc := &corev1.Service{}
+	svc.Namespace = namespace
+	svc.Name = "openshift-oauth-apiserver"
+	svc.Spec.Selector = map[string]string{"app": "openshift-oauth-apiserver"}
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
