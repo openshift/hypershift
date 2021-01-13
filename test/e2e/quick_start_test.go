@@ -111,19 +111,19 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		Eventually(func() bool {
 			key := ctrl.ObjectKey{
 				Namespace: cluster.Name,
-				Name:      "admin-kubeconfig",
+				Name:      cluster.Name + "-kubeconfig",
 			}
 			if err := input.Client.Get(ctx, key, guestKubeConfigSecret); err != nil {
 				return false
 			}
 			return true
-		}, 2*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't find admin-kubeconfig secret")
+		}, 2*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't find guest kubeconfig secret")
 
-		guestKubeConfigSecretData, hasData := guestKubeConfigSecret.Data["kubeconfig"]
-		Expect(hasData).To(BeTrue(), "guest admin-kubeconfig secret is missing kubeconfig key")
+		guestKubeConfigSecretData, hasData := guestKubeConfigSecret.Data["value"]
+		Expect(hasData).To(BeTrue(), "guest guest kubeconfig secret is missing value key")
 
 		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
-		Expect(err).NotTo(HaveOccurred(), "couldn't load guest admin kubeconfig")
+		Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
 
 		By("Establishing a connection to the guest apiserver")
 		var guestClient ctrl.Client
@@ -134,7 +134,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 			}
 			guestClient = kubeClient
 			return true
-		}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "couldn't make guest admin kube client")
+		}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "couldn't create guest kube client")
 
 		By("Ensuring guest nodes become ready")
 		nodes := &corev1.NodeList{}
