@@ -8,9 +8,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/cluster-api/util"
@@ -87,7 +85,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, req); err != nil {
+		if err := r.delete(ctx, hostedControlPlane); err != nil {
 			r.Log.Error(err, "failed to delete cluster")
 			return ctrl.Result{}, err
 		}
@@ -125,7 +123,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return result, nil
 	}
 
-	// First, set up infrastructure
+	r.Log.Info("Creating API services")
 	infraStatus, err := r.ensureInfrastructure(ctx, hostedControlPlane)
 	if err != nil {
 		r.Log.Error(err, "failed to ensure infrastructure")
@@ -152,7 +150,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("invalid component versions found in release info: %w", err)
 	}
 	r.Log.Info("found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", releaseImage.ComponentImages(), "componentVersions", componentVersions)
+
 	// Install the control plane into the infrastructure
+	r.Log.Info("Creating hosted control plane")
 	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage)
 	if err != nil {
 		r.Log.Error(err, "failed to ensure control plane")
@@ -168,13 +168,17 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{}, nil
 }
 
-func (r *HostedControlPlaneReconciler) delete(ctx context.Context, req ctrl.Request) error {
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: req.Name},
+func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hcp.Spec.ReleaseImage)
+	if err != nil {
+		return fmt.Errorf("failed to look up release info: %w", err)
 	}
-	if err := waitForDeletion(ctx, r.Log, r.Client, ns); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete namespace: %w", err)
+	manifests, err := r.generateControlPlaneManifests(ctx, hcp, InfrastructureStatus{}, releaseImage)
+	if err != nil {
+		return nil
 	}
-	r.Log.Info("deleted namespace", "name", req.Name)
+	if err := deleteManifests(ctx, r, r.Log, hcp.GetName(), manifests); err != nil {
+		return err
+	}
 	return nil
 }

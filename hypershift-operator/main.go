@@ -142,6 +142,9 @@ func NewStartCommand() *cobra.Command {
 
 		if err = (&controllers.OpenShiftClusterReconciler{
 			Client: mgr.GetClient(),
+			ReleaseProvider: &releaseinfo.PodProvider{
+				Pods: kubeClient.CoreV1().Pods("hypershift"),
+			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "OpenShiftCluster")
 			os.Exit(1)

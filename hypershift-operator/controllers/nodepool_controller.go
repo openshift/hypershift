@@ -75,10 +75,15 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	ocluster, err := GetOClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Ignore deleted nodePools, this can happen when foregroundDeletion
 	// is enabled
 	if !nodePool.DeletionTimestamp.IsZero() {
-		machineSet, _, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool)
+		machineSet, _, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool, ocluster.GetName())
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 		}
@@ -102,11 +107,6 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.Update(ctx, nodePool); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to nodePool: %w", err)
 		}
-	}
-
-	ocluster, err := GetOClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
-	if err != nil {
-		return ctrl.Result{}, err
 	}
 
 	// Initialize the patch helper
@@ -143,7 +143,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, ocluster *hyperv1.Op
 	})
 
 	// Create a machine scalable resources for the new cluster's worker nodes
-	machineSet, AWSMachineTemplate, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool)
+	machineSet, AWSMachineTemplate, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool, ocluster.GetName())
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 	}
@@ -182,7 +182,8 @@ func GetOClusterByName(ctx context.Context, c client.Client, namespace, name str
 	return ocluster, nil
 }
 
-func generateScalableResources(client ctrlclient.Client, ctx context.Context, infraName, region string, nodePool *hyperv1.NodePool) (*capiv1.MachineSet, *capiaws.AWSMachineTemplate, error) {
+func generateScalableResources(client ctrlclient.Client, ctx context.Context,
+	infraName, region string, nodePool *hyperv1.NodePool, targetNamespace string) (*capiv1.MachineSet, *capiaws.AWSMachineTemplate, error) {
 	// find AMI
 	machineSets := &unstructured.UnstructuredList{}
 	machineSets.SetGroupVersionKind(schema.GroupVersionKind{
@@ -242,7 +243,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      resourcesName,
-			Namespace: nodePool.GetNamespace(),
+			Namespace: targetNamespace,
 		},
 		Spec: capiaws.AWSMachineTemplateSpec{
 			Template: capiaws.AWSMachineTemplateResource{
@@ -266,7 +267,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 	machineSet := &capiv1.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      resourcesName,
-			Namespace: nodePool.GetNamespace(),
+			Namespace: targetNamespace,
 			// TODO (alberto): drop/expose this annotation at the nodePool API
 			Annotations: map[string]string{
 				"machine.cluster.x-k8s.io/exclude-node-draining": "true",
@@ -307,8 +308,6 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 			},
 		},
 	}
-	if err := ctrl.SetControllerReference(nodePool, machineSet, client.Scheme()); err != nil {
-		return nil, nil, err
-	}
+
 	return machineSet, AWSMachineTemplate, nil
 }

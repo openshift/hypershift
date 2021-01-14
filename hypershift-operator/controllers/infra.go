@@ -45,34 +45,10 @@ func (s InfrastructureStatus) IsReady() bool {
 func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
 	status := InfrastructureStatus{}
 
-	name := hcp.Name
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-	}
-	// Start creating resources on management cluster
-	err := r.Create(ctx, ns)
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return status, fmt.Errorf("failed to create target namespace %q: %w", ns.Name, err)
-	}
-
+	targetNamespace := hcp.GetName()
 	// Ensure that we can run privileged pods
-	if err := ensureVPNSCC(r, name); err != nil {
+	if err := ensureVPNSCC(r, hcp, targetNamespace); err != nil {
 		return status, fmt.Errorf("failed to ensure privileged SCC for the new namespace: %w", err)
-	}
-
-	// Create pull secret
-	r.Log.Info("Creating pull secret")
-	var pullSecret corev1.Secret
-	err = r.Client.Get(ctx, ctrl.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.PullSecret.Name}, &pullSecret)
-	if err != nil {
-		return status, fmt.Errorf("failed to get pull secret %s: %w", hcp.Spec.PullSecret.Name, err)
-	}
-	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
-	if !hasPullSecretData {
-		return status, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
-	}
-	if _, err := createPullSecret(r, name, pullSecretData); err != nil {
-		return status, fmt.Errorf("failed to create pull secret: %w", err)
 	}
 
 	baseDomain, err := ClusterBaseDomain(r.Client, ctx, hcp.Name)
@@ -82,46 +58,47 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 
 	// Create Kube APIServer service
 	r.Log.Info("Creating Kube API service")
-	apiService, err := createKubeAPIServerService(r, name)
+	apiService, err := createKubeAPIServerService(r, hcp, targetNamespace)
 	if err != nil {
 		return status, fmt.Errorf("failed to create Kube API service: %w", err)
 	}
 	r.Log.Info("Created Kube API service")
 
 	r.Log.Info("Creating VPN service")
-	vpnService, err := createVPNServerService(r, name)
+	vpnService, err := createVPNServerService(r, hcp, targetNamespace)
 	if err != nil {
 		return status, fmt.Errorf("failed to create vpn server service: %w", err)
 	}
 	r.Log.Info("Created VPN service")
 
 	r.Log.Info("Creating Openshift API service")
-	openshiftAPIService, err := createOpenshiftService(r, name)
+	openshiftAPIService, err := createOpenshiftService(r, hcp, targetNamespace)
 	if err != nil {
 		return status, fmt.Errorf("failed to create openshift server service: %w", err)
 	}
 	r.Log.Info("Created Openshift API service")
 
 	r.Log.Info("Creating Openshift OAuth API service")
-	oauthAPIService, err := createOauthAPIService(r, name)
+	oauthAPIService, err := createOauthAPIService(r, hcp, targetNamespace)
 	if err != nil {
 		return status, fmt.Errorf("failed to create openshift oauth api service: %w", err)
 	}
 	r.Log.Info("Created Openshift Oauth API service")
 
 	r.Log.Info("Creating OAuth service")
-	oauthService, err := createOauthService(r, name)
+	oauthService, err := createOauthService(r, hcp, targetNamespace)
 	if err != nil {
 		return status, fmt.Errorf("error creating service for oauth: %w", err)
 	}
 
 	r.Log.Info("Creating router shard")
-	if err := createIngressController(r, name, baseDomain); err != nil {
+	if err := createIngressController(r, hcp, targetNamespace, baseDomain); err != nil {
 		return status, fmt.Errorf("cannot create router shard: %w", err)
 	}
 
 	r.Log.Info("Creating ignition provider route")
-	ignitionRoute := createIgnitionServerRoute(r, ctx, name)
+	ignitionRoute := createIgnitionServerRoute(r, ctx, targetNamespace)
+	ignitionRoute.OwnerReferences = ensureHCPOwnerRef(hcp, ignitionRoute.OwnerReferences)
 	if err := r.Create(ctx, ignitionRoute); err != nil && !apierrors.IsAlreadyExists(err) {
 		return status, fmt.Errorf("failed to create ignition route: %w", err)
 	}
@@ -156,7 +133,7 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	return status, nil
 }
 
-func createKubeAPIServerService(client ctrl.Client, namespace string) (*corev1.Service, error) {
+func createKubeAPIServerService(client ctrl.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
 	svc := &corev1.Service{}
 	svc.Namespace = namespace
 	svc.Name = kubeAPIServerServiceName
@@ -169,6 +146,7 @@ func createKubeAPIServerService(client ctrl.Client, namespace string) (*corev1.S
 			TargetPort: intstr.FromInt(6443),
 		},
 	}
+	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
 	if err := client.Create(context.TODO(), svc); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return nil, fmt.Errorf("failed to create api server service: %w", err)
@@ -177,7 +155,7 @@ func createKubeAPIServerService(client ctrl.Client, namespace string) (*corev1.S
 	return svc, nil
 }
 
-func createVPNServerService(client ctrl.Client, namespace string) (*corev1.Service, error) {
+func createVPNServerService(client ctrl.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
 	svc := &corev1.Service{}
 	svc.Namespace = namespace
 	svc.Name = vpnServiceName
@@ -190,6 +168,7 @@ func createVPNServerService(client ctrl.Client, namespace string) (*corev1.Servi
 			TargetPort: intstr.FromInt(1194),
 		},
 	}
+	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
 	if err := client.Create(context.TODO(), svc); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return nil, fmt.Errorf("failed to create vpn server service: %w", err)
@@ -198,7 +177,7 @@ func createVPNServerService(client ctrl.Client, namespace string) (*corev1.Servi
 	return svc, nil
 }
 
-func createOpenshiftService(client ctrl.Client, namespace string) (*corev1.Service, error) {
+func createOpenshiftService(client ctrl.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
 	svc := &corev1.Service{}
 	svc.Namespace = namespace
 	svc.Name = "openshift-apiserver"
@@ -212,6 +191,7 @@ func createOpenshiftService(client ctrl.Client, namespace string) (*corev1.Servi
 			TargetPort: intstr.FromInt(8443),
 		},
 	}
+	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
 	if err := client.Create(context.TODO(), svc); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return svc, client.Get(context.TODO(), ctrl.ObjectKeyFromObject(svc), svc)
@@ -222,7 +202,7 @@ func createOpenshiftService(client ctrl.Client, namespace string) (*corev1.Servi
 	return svc, nil
 }
 
-func createOauthAPIService(client ctrl.Client, namespace string) (*corev1.Service, error) {
+func createOauthAPIService(client ctrl.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
 	svc := &corev1.Service{}
 	svc.Namespace = namespace
 	svc.Name = "openshift-oauth-apiserver"
@@ -236,6 +216,7 @@ func createOauthAPIService(client ctrl.Client, namespace string) (*corev1.Servic
 			TargetPort: intstr.FromInt(8443),
 		},
 	}
+	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
 	if err := client.Create(context.TODO(), svc); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return svc, client.Get(context.TODO(), ctrl.ObjectKeyFromObject(svc), svc)
@@ -246,7 +227,7 @@ func createOauthAPIService(client ctrl.Client, namespace string) (*corev1.Servic
 	return svc, nil
 }
 
-func createOauthService(client ctrl.Client, namespace string) (*corev1.Service, error) {
+func createOauthService(client ctrl.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
 	svc := &corev1.Service{}
 	svc.Namespace = namespace
 	svc.Name = oauthServiceName
@@ -260,6 +241,7 @@ func createOauthService(client ctrl.Client, namespace string) (*corev1.Service, 
 			TargetPort: intstr.FromInt(6443),
 		},
 	}
+	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
 	err := client.Create(context.TODO(), svc)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return nil, fmt.Errorf("failed to create oauth service: %w", err)
@@ -270,7 +252,7 @@ func createOauthService(client ctrl.Client, namespace string) (*corev1.Service, 
 func createPullSecret(client ctrl.Client, namespace string, data []byte) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
-	secret.Name = "pull-secret"
+	secret.Name = pullSecretName
 	secret.Data = map[string][]byte{".dockerconfigjson": []byte(data)}
 	secret.Type = corev1.SecretTypeDockerConfigJson
 	if err := client.Create(context.TODO(), secret); err != nil {
@@ -291,7 +273,7 @@ func createPullSecret(client ctrl.Client, namespace string, data []byte) (*corev
 	})
 }
 
-func ensureVPNSCC(client ctrl.Client, namespace string) error {
+func ensureVPNSCC(client ctrl.Client, hcp *hyperv1.HostedControlPlane, namespace string) error {
 	scc := &securityv1.SecurityContextConstraints{}
 	if err := client.Get(context.TODO(), ctrl.ObjectKey{Name: "privileged"}, scc); err != nil {
 		return fmt.Errorf("failed to get privileged scc: %w", err)
@@ -303,13 +285,14 @@ func ensureVPNSCC(client ctrl.Client, namespace string) error {
 	}
 	userSet.Insert(svcAccount)
 	scc.Users = userSet.List()
+	scc.OwnerReferences = ensureHCPOwnerRef(hcp, scc.OwnerReferences)
 	if err := client.Update(context.TODO(), scc); err != nil {
 		return fmt.Errorf("failed to update privileged scc: %w", err)
 	}
 	return nil
 }
 
-func createIngressController(client ctrl.Client, name string, parentDomain string) error {
+func createIngressController(client ctrl.Client, hcp *hyperv1.HostedControlPlane, name string, parentDomain string) error {
 	// First ensure that the default ingress controller doesn't use routes generated for hypershift clusters
 	err := ensureDefaultIngressControllerSelector(client)
 	if err != nil {
@@ -329,6 +312,7 @@ func createIngressController(client ctrl.Client, name string, parentDomain strin
 			},
 		},
 	}
+	ic.OwnerReferences = ensureHCPOwnerRef(hcp, ic.OwnerReferences)
 	if err := client.Create(context.TODO(), ic); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create ingress controller for %s: %w", name, err)
 	}
