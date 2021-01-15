@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
@@ -73,15 +75,38 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	ocluster, err := GetOClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	// Ignore deleted nodePools, this can happen when foregroundDeletion
 	// is enabled
 	if !nodePool.DeletionTimestamp.IsZero() {
+		machineSet, _, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
+		}
+		if err := r.Delete(ctx, machineSet); err != nil && !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to delete nodePool: %w", err)
+		}
+
+		if controllerutil.ContainsFinalizer(nodePool, finalizer) {
+			controllerutil.RemoveFinalizer(nodePool, finalizer)
+			if err := r.Update(ctx, nodePool); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from nodePool: %w", err)
+			}
+		}
+		r.Log.Info("Deleted machineSet", "machineset", machineSet.GetName())
 		return ctrl.Result{}, nil
+	}
+
+	// Ensure the nodePool has a finalizer for cleanup
+	if !controllerutil.ContainsFinalizer(nodePool, finalizer) {
+		controllerutil.AddFinalizer(nodePool, finalizer)
+		if err := r.Update(ctx, nodePool); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to nodePool: %w", err)
+		}
+	}
+
+	ocluster, err := GetOClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Initialize the patch helper
@@ -247,7 +272,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 				"machine.cluster.x-k8s.io/exclude-node-draining": "true",
 			},
 			Labels: map[string]string{
-				capiv1.ClusterLabelName: "example",
+				capiv1.ClusterLabelName: infraName,
 			},
 			// TODO (alberto): pass autoscaler min/max annotations from nodePool API
 		},
@@ -263,7 +288,8 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 			Template: capiv1.MachineTemplateSpec{
 				ObjectMeta: capiv1.ObjectMeta{
 					Labels: map[string]string{
-						resourcesName: resourcesName,
+						resourcesName:           resourcesName,
+						capiv1.ClusterLabelName: infraName,
 					},
 				},
 				Spec: capiv1.MachineSpec{

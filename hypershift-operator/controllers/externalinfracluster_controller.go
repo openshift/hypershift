@@ -9,7 +9,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -20,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -89,26 +87,9 @@ func (r *ExternalInfraClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Return early if deleted
 	if !externalInfraCluster.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, req); err != nil {
-			r.Log.Error(err, "failed to delete cluster")
-			return ctrl.Result{}, err
-		}
-		if controllerutil.ContainsFinalizer(externalInfraCluster, finalizer) {
-			controllerutil.RemoveFinalizer(externalInfraCluster, finalizer)
-			if err := r.Update(ctx, externalInfraCluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
-			}
-		}
 		return ctrl.Result{}, nil
 	}
 
-	// Ensure the cluster has a finalizer for cleanup
-	if !controllerutil.ContainsFinalizer(externalInfraCluster, finalizer) {
-		controllerutil.AddFinalizer(externalInfraCluster, finalizer)
-		if err := r.Update(ctx, externalInfraCluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
-		}
-	}
 	r.Log = r.Log.WithValues("cluster", cluster.Name)
 
 	patchHelper, err := patch.NewHelper(externalInfraCluster, r.Client)
@@ -135,29 +116,6 @@ func (r *ExternalInfraClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		return reconcile.Result{Requeue: true}, nil
 	}
 
-	if externalInfraCluster.Spec.ComputeReplicas > 0 {
-		nodePool := &hyperv1.NodePool{
-			TypeMeta: metav1.TypeMeta{},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%v-default", externalInfraCluster.GetName()),
-				Namespace: externalInfraCluster.GetNamespace(),
-			},
-			Spec: hyperv1.NodePoolSpec{
-				ClusterName: cluster.GetName(),
-				NodeCount:   externalInfraCluster.Spec.ComputeReplicas,
-				Platform: hyperv1.NodePoolPlatform{
-					AWS: &hyperv1.AWSNodePoolPlatform{
-						InstanceType: "m5.large",
-					},
-				},
-			},
-			Status: hyperv1.NodePoolStatus{},
-		}
-		if err := r.Create(ctx, nodePool); err != nil && !apierrors.IsAlreadyExists(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to create nodepool: %w", err)
-		}
-	}
-
 	// Set the values for upper level controller
 	externalInfraCluster.Status.Ready = true
 	externalInfraCluster.Spec.ControlPlaneEndpoint = hyperv1.APIEndpoint{
@@ -172,18 +130,4 @@ func (r *ExternalInfraClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 	r.Log.Info("Successfully reconciled")
 	return ctrl.Result{}, nil
-}
-
-func (r *ExternalInfraClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
-	nodePool := &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%v-default", req.Name),
-			Namespace: req.Namespace,
-		},
-	}
-	if err := waitForDeletion(ctx, r.Log, r.Client, nodePool); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete nodePool %s: %w", nodePool.GetName(), err)
-	}
-	r.Log.Info("deleted nodePool", "name", nodePool)
-	return nil
 }

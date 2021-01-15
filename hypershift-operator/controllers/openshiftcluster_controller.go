@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
 	configv1 "github.com/openshift/api/config/v1"
 
 	"github.com/go-logr/logr"
@@ -179,6 +181,29 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
 	}
 
+	if ocluster.Spec.InitialComputeReplicas > 0 {
+		nodePool := &hyperv1.NodePool{
+			TypeMeta: metav1.TypeMeta{},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("%v-default", ocluster.GetName()),
+				Namespace: ocluster.GetNamespace(),
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: cluster.GetName(),
+				NodeCount:   ocluster.Spec.InitialComputeReplicas,
+				Platform: hyperv1.NodePoolPlatform{
+					AWS: &hyperv1.AWSNodePoolPlatform{
+						InstanceType: "m5.large",
+					},
+				},
+			},
+			Status: hyperv1.NodePoolStatus{},
+		}
+		if err := r.Create(ctx, nodePool); err != nil && !apierrors.IsAlreadyExists(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to create nodepool: %w", err)
+		}
+	}
+
 	r.Log.Info("Successfully reconciled")
 	return ctrl.Result{}, nil
 }
@@ -189,6 +214,16 @@ func (r *OpenShiftClusterReconciler) delete(ctx context.Context, name, namespace
 			Name:      name,
 			Namespace: namespace,
 		},
+	}
+	defaultNodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-default", name),
+			Namespace: namespace,
+		},
+	}
+
+	if err := r.Delete(ctx, defaultNodePool); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
 
 	if err := r.Delete(ctx, cluster); err != nil && !apierrors.IsNotFound(err) {
