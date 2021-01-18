@@ -402,10 +402,8 @@ func getRouteAddress(client ctrl.Client, ctx context.Context, key ctrl.ObjectKey
 		return "", fmt.Errorf("failed to get route: %w", err)
 	}
 	var addr string
-	if len(route.Status.Ingress) > 0 {
-		if len(route.Status.Ingress[0].Host) > 0 {
-			addr = route.Status.Ingress[0].Host
-		}
+	if len(route.Spec.Host) > 0 {
+		addr = route.Spec.Host
 	}
 	return addr, nil
 }
