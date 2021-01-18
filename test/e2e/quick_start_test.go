@@ -110,14 +110,14 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		guestKubeConfigSecret := &corev1.Secret{}
 		Eventually(func() bool {
 			key := ctrl.ObjectKey{
-				Namespace: cluster.Name,
+				Namespace: cluster.GetNamespace(),
 				Name:      cluster.Name + "-kubeconfig",
 			}
 			if err := input.Client.Get(ctx, key, guestKubeConfigSecret); err != nil {
 				return false
 			}
 			return true
-		}, 2*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't find guest kubeconfig secret")
+		}, 5*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't find guest kubeconfig secret")
 
 		guestKubeConfigSecretData, hasData := guestKubeConfigSecret.Data["value"]
 		Expect(hasData).To(BeTrue(), "guest guest kubeconfig secret is missing value key")
@@ -149,16 +149,14 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 			}
 			log.Logf("found %d nodes", len(nodes.Items))
 			return true
-		}, 5*time.Minute, 1*time.Second).Should(BeTrue(), "guest nodes never became ready")
+		}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "guest nodes never became ready")
 	})
 
 	AfterEach(func() {
 		if cluster != nil {
 			By("Deleting the example cluster")
 
-			policy := metav1.DeletePropagationForeground
-			opts := &ctrl.DeleteOptions{PropagationPolicy: &policy}
-			Expect(input.Client.Delete(ctx, cluster, opts)).To(Succeed(), "couldn't clean up test cluster")
+			Expect(input.Client.Delete(ctx, cluster, &ctrl.DeleteOptions{})).To(Succeed(), "couldn't clean up test cluster")
 
 			By("Ensuring the example cluster resources are deleted")
 
