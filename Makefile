@@ -4,6 +4,8 @@ DIR := ${CURDIR}
 IMG ?= hypershift:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
+# Runtime CLI to use for building and pushing images
+RUNTIME ?= docker
 
 CONTROLLER_GEN=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen
 BINDATA=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/github.com/kevinburke/go-bindata/go-bindata
@@ -79,11 +81,11 @@ vet:
 
 # Build the docker image
 docker-build:
-	docker build . -t ${IMG}
+	${RUNTIME} build . -t ${IMG}
 
 # Push the docker image
 docker-push:
-	docker push ${IMG}
+	${RUNTIME} push ${IMG}
 
 run-local:
 	bin/hypershift-operator run
