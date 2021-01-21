@@ -4,7 +4,7 @@ metadata:
   name: example
 spec:
   release:
-    image: quay.io/openshift-release-dev/ocp-release:4.6.7-x86_64
+    image: quay.io/openshift-release-dev/ocp-release:4.7.0-fc.3-x86_64
   initialComputeReplicas: 2
   serviceCIDR: 172.31.0.0/16
   podCIDR: 10.132.0.0/14
