@@ -65,6 +65,38 @@ spec:
         args:
         - "--openshift-config=/etc/kubernetes/cmconfig/config.yaml"
         - "--kubeconfig=/etc/kubernetes/secret/kubeconfig"
+        - "--authentication-kubeconfig=/etc/kubernetes/secret/kubeconfig"
+        - "--authorization-kubeconfig=/etc/kubernetes/secret/kubeconfig"
+        - "--allocate-node-cidrs=true"
+        - "--cert-dir=/var/run/kubernetes"
+        - "--cluster-cidr={{ .PodCIDR }}"
+        - "--cluster-signing-cert-file=/etc/kubernetes/secret/cluster-signer.crt"
+        - "--cluster-signing-key-file=/etc/kubernetes/secret/cluster-signer.key"
+        - "--configure-cloud-routes=false"
+        - "--controllers=*"
+        - "--controllers=-ttl"
+        - "--controllers=-bootstrapsigner"
+        - "--controllers=-tokencleaner"
+        - "--enable-dynamic-provisioning=true"
+        - "--flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec"
+        - "--kube-api-burst=300"
+        - "--kube-api-qps=150"
+        - "--leader-elect-resource-lock=configmaps"
+        - "--leader-elect=true"
+        - "--leader-elect-retry-period=3s"
+        - "--port=0"
+        - "--root-ca-file=/etc/kubernetes/config/root-ca.crt"
+        - "--secure-port=10257"
+        - "--service-account-private-key-file=/etc/kubernetes/secret/service-account.key"
+        - "--service-cluster-ip-range={{ .ServiceCIDR }}"
+        - "--use-service-account-credentials=true"
+        - "--experimental-cluster-signing-duration=26280h"
+{{ range $featureGate := .DefaultFeatureGates }}
+        - "--feature-gates={{ $featureGate }}"
+{{ end }}
+{{ range $featureGate := .ExtraFeatureGates }}
+        - "--feature-gates={{ $featureGate }}"
+{{ end }}
 {{ if .KubeControllerManagerResources }}
         resources:{{ range .KubeControllerManagerResources }}{{ range .ResourceRequest }}
           requests: {{ if .CPU }}
