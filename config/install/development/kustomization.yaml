@@ -10,7 +10,7 @@ images:
   newName: quay.io/hypershift/cluster-api
   newTag: hypershift
 - name: hypershift
-  newName: quay.io/hypershift/hypershift
+  newName: registry.ci.openshift.org/hypershift/hypershift
   newTag: latest
 
 patches:
