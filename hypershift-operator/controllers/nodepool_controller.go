@@ -204,19 +204,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 		return nil, nil, fmt.Errorf("error finding AMI. Found: %v. Error: %v", found, err)
 	}
 
-	// TODO (alberto): remove hardcoded "a" zone and come up with a solution
-	// for automation across az
-	// e.g have a "locations" field in the nodeGroup or expose the subnet in the nodeGroup
-	subnet := &capiaws.AWSResourceReference{
-		Filters: []capiaws.Filter{
-			{
-				Name: "tag:Name",
-				Values: []string{
-					fmt.Sprintf("%s-private-%sa", infraName, region),
-				},
-			},
-		},
-	}
+	subnet := &capiaws.AWSResourceReference{}
 	if nodePool.Spec.Platform.AWS.Subnet != nil {
 		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
 		subnet.ARN = nodePool.Spec.Platform.AWS.Subnet.ARN
@@ -226,6 +214,20 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context, in
 				Values: nodePool.Spec.Platform.AWS.Subnet.Filters[k].Values,
 			}
 			subnet.Filters = append(subnet.Filters, filter)
+		}
+	} else {
+		// TODO (alberto): remove hardcoded "a" zone and come up with a solution
+		// for automation across az
+		// e.g have a "locations" field in the nodeGroup or expose the subnet in the nodeGroup
+		subnet = &capiaws.AWSResourceReference{
+			Filters: []capiaws.Filter{
+				{
+					Name: "tag:Name",
+					Values: []string{
+						fmt.Sprintf("%s-private-%sa", infraName, region),
+					},
+				},
+			},
 		}
 	}
 
