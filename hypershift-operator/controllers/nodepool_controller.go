@@ -183,25 +183,32 @@ func GetOClusterByName(ctx context.Context, c client.Client, namespace, name str
 }
 
 func generateScalableResources(client ctrlclient.Client, ctx context.Context, infraName, region string, nodePool *hyperv1.NodePool) (*capiv1.MachineSet, *capiaws.AWSMachineTemplate, error) {
-	// find AMI
-	machineSets := &unstructured.UnstructuredList{}
-	machineSets.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "machine.openshift.io",
-		Version: "v1beta1",
-		Kind:    "MachineSet",
-	})
-	if err := client.List(ctx, machineSets, ctrlclient.InNamespace("openshift-machine-api")); err != nil {
-		return nil, nil, fmt.Errorf("failed to list machinesets: %w", err)
-	}
-	if len(machineSets.Items) == 0 {
-		return nil, nil, fmt.Errorf("no machinesets found")
-	}
-	obj := machineSets.Items[0]
-	object := obj.Object
+	var AMI string
+	if nodePool.Spec.Platform.AWS.AMI != "" {
+		AMI = nodePool.Spec.Platform.AWS.AMI
+	} else {
+		// find AMI
+		machineSets := &unstructured.UnstructuredList{}
+		machineSets.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "machine.openshift.io",
+			Version: "v1beta1",
+			Kind:    "MachineSet",
+		})
+		if err := client.List(ctx, machineSets, ctrlclient.InNamespace("openshift-machine-api")); err != nil {
+			return nil, nil, fmt.Errorf("failed to list machinesets: %w", err)
+		}
+		if len(machineSets.Items) == 0 {
+			return nil, nil, fmt.Errorf("no machinesets found")
+		}
+		obj := machineSets.Items[0]
+		object := obj.Object
 
-	AMI, found, err := unstructured.NestedString(object, "spec", "template", "spec", "providerSpec", "value", "ami", "id")
-	if err != nil || !found {
-		return nil, nil, fmt.Errorf("error finding AMI. Found: %v. Error: %v", found, err)
+		var found bool
+		var err error
+		AMI, found, err = unstructured.NestedString(object, "spec", "template", "spec", "providerSpec", "value", "ami", "id")
+		if err != nil || !found {
+			return nil, nil, fmt.Errorf("error finding AMI. Found: %v. Error: %v", found, err)
+		}
 	}
 
 	subnet := &capiaws.AWSResourceReference{}

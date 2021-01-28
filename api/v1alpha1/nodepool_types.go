@@ -62,6 +62,10 @@ type NodePoolPlatform struct {
 // AWSNodePoolPlatform stores the configuration for a node pool
 // installed on AWS.
 type AWSNodePoolPlatform struct {
+	// AMI defines the AMI ID to use for the instances.
+	// This is region dependent.
+	// If not provided, the AMI ID of the host cluster machines will be used.
+	AMI string `json:"ami,omitempty"`
 	// InstanceType defines the ec2 instance type.
 	// eg. m4-large
 	InstanceType    string                `json:"instanceType"`

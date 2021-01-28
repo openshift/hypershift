@@ -61,6 +61,9 @@ spec:
                   aws:
                     description: AWS is the configuration used when installing on AWS.
                     properties:
+                      ami:
+                        description: AMI defines the AMI ID to use for the instances. This is region dependent. If not provided, the AMI ID of the host cluster machines will be used.
+                        type: string
                       instanceProfile:
                         type: string
                       instanceType:
