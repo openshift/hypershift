@@ -6,9 +6,6 @@ resources:
 - ../../hypershift-operator
 
 images:
-- name: cluster-api
-  newName: quay.io/hypershift/cluster-api
-  newTag: hypershift
 - name: hypershift
   newName: registry.ci.openshift.org/hypershift/hypershift
   newTag: latest

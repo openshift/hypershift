@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: hypershift
   name: cluster-api
 spec:
   replicas: 1
@@ -16,11 +15,11 @@ spec:
       serviceAccountName: cluster-api
       containers:
       - name: manager
-        image: cluster-api:latest
+        image: quay.io/hypershift/cluster-api:hypershift
         imagePullPolicy: Always
         command:
         - /manager
         args:
-        - --namespace=hypershift
+        - --namespace={{ .Namespace }}
         - --alsologtostderr
         - --v=4

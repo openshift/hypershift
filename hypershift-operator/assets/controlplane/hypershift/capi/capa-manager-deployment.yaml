@@ -18,6 +18,7 @@ spec:
       serviceAccountName: capa-controller-manager
       containers:
         - args:
+            - --namespace={{ .Namespace }}
             - --alsologtostderr
             - --v=4
           image: quay.io/hypershift/cluster-api-provider-aws:master

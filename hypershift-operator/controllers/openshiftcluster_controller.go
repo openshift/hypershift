@@ -21,35 +21,40 @@ import (
 	"fmt"
 	"time"
 
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	configv1 "github.com/openshift/api/config/v1"
-
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	"openshift.io/hypershift/hypershift-operator/releaseinfo"
+	hypershiftcp "openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
-	finalizer = "hypershift.openshift.io/finalizer"
+	finalizer               = "hypershift.openshift.io/finalizer"
+	pullSecretName          = "pull-secret"
+	sshKeySecretName        = "ssh-key"
+	providerCredsSecretName = "provider-creds"
 )
 
 // OpenShiftClusterReconciler reconciles a OpenShiftCluster object
 type OpenShiftClusterReconciler struct {
 	client.Client
-	Log   logr.Logger
-	Infra *configv1.Infrastructure
+	Log             logr.Logger
+	ReleaseProvider releaseinfo.Provider
+	Infra           *configv1.Infrastructure
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=openshiftclusters,verbs=get;list;watch;create;update;patch;delete
@@ -72,7 +77,7 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Return early if deleted
 	if isMissing || !ocluster.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, req.Name, req.Namespace); err != nil {
+		if err := r.delete(ctx, req); err != nil {
 			r.Log.Error(err, "failed to delete cluster")
 			return ctrl.Result{}, err
 		}
@@ -99,9 +104,79 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, nil
 	}
 
+	targetNamespace := ocluster.GetName()
+	r.Log.Info("Creating the target namespace", "namespace", targetNamespace)
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: targetNamespace},
+	}
+	if err := r.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
+		return ctrl.Result{}, fmt.Errorf("failed to create target namespace %q: %w", ns.Name, err)
+	}
+
+	r.Log.Info("Creating provider creds secret in the target namespace", "namespace", targetNamespace)
+	var providerCredsSecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: ocluster.GetNamespace(), Name: ocluster.Spec.ProviderCreds.Name}, &providerCredsSecret)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", ocluster.Spec.ProviderCreds.Name, err)
+	}
+	providerCredsData, hasProviderCredsData := providerCredsSecret.Data["credentials"]
+	if !hasProviderCredsData {
+		return ctrl.Result{}, fmt.Errorf("provider credentials %s is missing the credentials key", ocluster.Spec.PullSecret.Name)
+	}
+	targetProviderCredsSecret, err := generateProviderCredsSecret(providerCredsData, targetNamespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create providerCreds secret manifest for target cluster: %w", err)
+	}
+	if err := r.Create(ctx, targetProviderCredsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return ctrl.Result{}, fmt.Errorf("failed to generate providerCreds secret: %v", err)
+	}
+
+	r.Log.Info("Creating pull secret in the target namespace", "namespace", targetNamespace)
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: ocluster.GetNamespace(), Name: ocluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", ocluster.Spec.PullSecret.Name, err)
+	}
+	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
+	if !hasPullSecretData {
+		return ctrl.Result{}, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", ocluster.Spec.PullSecret.Name)
+	}
+	if _, err := createPullSecret(r, targetNamespace, pullSecretData); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create pull secret: %w", err)
+	}
+
+	r.Log.Info("Creating ssh key secret in the target namespace", "namespace", targetNamespace)
+	var sshKeySecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: ocluster.Namespace, Name: ocluster.Spec.SSHKey.Name}, &sshKeySecret)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get SSH key secret %s: %w", ocluster.Spec.SSHKey.Name, err)
+	}
+	sshKeyData, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
+	if !hasSSHKeyData {
+		return ctrl.Result{}, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", ocluster.Spec.SSHKey.Name)
+	}
+	targetSSHSecret, err := generateSSHSecret(sshKeyData, targetNamespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to generate ssh secret manifest for target cluster: %w", err)
+	}
+	if err := r.Create(ctx, targetSSHSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return ctrl.Result{}, fmt.Errorf("failed to create target ssh secret : %v", err)
+	}
+
+	// run CAPI controllers
+	params := hypershiftcp.NewClusterParams()
+	params.Namespace = targetNamespace
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, ocluster.Spec.Release.Image)
+	manifests, err := hypershiftcp.RenderCAPIManifests(params, releaseImage, nil, nil)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
+	}
+	if err := applyManifests(ctx, r, r.Log, targetNamespace, manifests); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	cluster := &capiv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ocluster.GetNamespace(),
+			Namespace: targetNamespace,
 			Name:      ocluster.GetName(),
 		},
 		Spec: capiv1.ClusterSpec{
@@ -109,13 +184,13 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			ControlPlaneRef: &corev1.ObjectReference{
 				APIVersion: "hypershift.openshift.io/v1alpha1",
 				Kind:       "HostedControlPlane",
-				Namespace:  ocluster.GetNamespace(),
+				Namespace:  targetNamespace,
 				Name:       ocluster.GetName(),
 			},
 			InfrastructureRef: &corev1.ObjectReference{
 				APIVersion: "hypershift.openshift.io/v1alpha1",
 				Kind:       "ExternalInfraCluster",
-				Namespace:  ocluster.GetNamespace(),
+				Namespace:  targetNamespace,
 				Name:       ocluster.GetName(),
 			},
 		},
@@ -124,27 +199,30 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to init patch helper: %w", err)
 	}
-	if err := ctrl.SetControllerReference(ocluster, cluster, r.Client.Scheme()); err != nil {
-		return ctrl.Result{}, err
-	}
 
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ocluster.GetNamespace(),
+			Namespace: targetNamespace,
 			Name:      ocluster.GetName(),
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
-			ProviderCreds: ocluster.Spec.ProviderCreds,
-			PullSecret:    ocluster.Spec.PullSecret,
-			ServiceCIDR:   ocluster.Spec.ServiceCIDR,
-			PodCIDR:       ocluster.Spec.PodCIDR,
-			SSHKey:        ocluster.Spec.SSHKey,
-			ReleaseImage:  ocluster.Spec.Release.Image,
+			ProviderCreds: corev1.LocalObjectReference{
+				Name: providerCredsSecretName,
+			},
+			PullSecret: corev1.LocalObjectReference{
+				Name: pullSecretName,
+			},
+			SSHKey: corev1.LocalObjectReference{
+				Name: sshKeySecretName,
+			},
+			ServiceCIDR:  ocluster.Spec.ServiceCIDR,
+			PodCIDR:      ocluster.Spec.PodCIDR,
+			ReleaseImage: ocluster.Spec.Release.Image,
 		},
 	}
 	ExternalInfraCluster := &hyperv1.ExternalInfraCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ocluster.GetNamespace(),
+			Namespace: targetNamespace,
 			Name:      ocluster.GetName(),
 		},
 		Spec: hyperv1.ExternalInfraClusterSpec{
@@ -185,7 +263,7 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		nodePool := &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%v-default", ocluster.GetName()),
+				Name:      ocluster.GetName(),
 				Namespace: ocluster.GetNamespace(),
 			},
 			Spec: hyperv1.NodePoolSpec{
@@ -208,29 +286,40 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	return ctrl.Result{}, nil
 }
 
-func (r *OpenShiftClusterReconciler) delete(ctx context.Context, name, namespace string) error {
-	cluster := &capiv1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
+func (r *OpenShiftClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
+	targetNamespace := req.Name
+
+	r.Log.Info("Deleting default nodePool", "name", req.Name)
 	defaultNodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-default", name),
-			Namespace: namespace,
+			Name:      req.Name,
+			Namespace: req.Namespace,
 		},
 	}
 
 	if err := r.Delete(ctx, defaultNodePool); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete defaultNodePool: %w", err)
+	}
+
+	r.Log.Info("Deleting cluster", "name", req.Name, "namespace", targetNamespace)
+	cluster := &capiv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      req.Name,
+			Namespace: targetNamespace,
+		},
+	}
+
+	if err := waitForDeletion(ctx, r.Log, r, cluster); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
 
-	if err := r.Delete(ctx, cluster); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete cluster: %w", err)
+	r.Log.Info("Deleting target namespace", "namespace", targetNamespace)
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: targetNamespace},
 	}
-	r.Log.Info("Deleted cluster", "name", name)
-
+	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete namespace: %w", err)
+	}
 	return nil
 }
 

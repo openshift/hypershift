@@ -14,6 +14,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/go-logr/logr"
+
 	"sigs.k8s.io/cluster-api/util"
 
 	"github.com/blang/semver"
@@ -55,55 +57,29 @@ var (
 	version46 = semver.MustParse("4.6.0")
 )
 
-func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) error {
-	r.Log.Info("ensuring control plane for cluster", "cluster", hcp.Name)
+func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
+	targetNamespace := hcp.GetName()
 
-	name := hcp.Name
-
-	var pullSecret corev1.Secret
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.PullSecret.Name}, &pullSecret)
-	if err != nil {
-		return fmt.Errorf("failed to get pull secret %s: %w", hcp.Spec.PullSecret.Name, err)
-	}
-	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
-	if !hasPullSecretData {
-		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
-	}
-
-	var providerCredsSecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.ProviderCreds.Name}, &providerCredsSecret)
-	if err != nil {
-		return fmt.Errorf("failed to get provider creds %s: %w", hcp.Spec.ProviderCreds.Name, err)
-	}
-	providerCredsData, hasProviderCredsData := providerCredsSecret.Data["credentials"]
-	if !hasProviderCredsData {
-		return fmt.Errorf("provider credentials %s is missing the credentials key", hcp.Spec.PullSecret.Name)
-	}
-
-	version, err := semver.Parse(releaseImage.Version())
-	if err != nil {
-		return fmt.Errorf("cannot parse release version (%s): %v", releaseImage.Version(), err)
-	}
 	controlPlaneOperatorImage, err := r.LookupControlPlaneOperatorImage(r.Client)
 	if err != nil {
-		return fmt.Errorf("failed to lookup control plane operator image: %w", err)
+		return nil, fmt.Errorf("failed to lookup control plane operator image: %w", err)
 	}
 	var sshKeySecret corev1.Secret
 	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
 	if err != nil {
-		return fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
+		return nil, fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
 	}
 	sshKeyData, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
 	if !hasSSHKeyData {
-		return fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
+		return nil, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
 	}
 	baseDomain, err := ClusterBaseDomain(r.Client, ctx, hcp.Name)
 	if err != nil {
-		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
+		return nil, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
 
 	params := hypershiftcp.NewClusterParams()
-	params.Namespace = name
+	params.Namespace = targetNamespace
 	params.ExternalAPIDNSName = infraStatus.APIAddress
 	params.ExternalAPIPort = APIServerPort
 	params.ExternalAPIAddress = DefaultAPIServerIPAddress
@@ -135,7 +111,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	// we're effectively doing an uncontrolled cert rotation each generation.
 	pkiSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: name,
+			Namespace: targetNamespace,
 			Name:      "pki",
 		},
 		Data: map[string][]byte{},
@@ -145,7 +121,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		if apierrors.IsNotFound(err) {
 			needsPkiSecret = true
 		} else {
-			return fmt.Errorf("failed to get pki secret: %w", err)
+			return nil, fmt.Errorf("failed to get pki secret: %w", err)
 		}
 	} else {
 		r.Log.Info("using existing pki secret")
@@ -161,30 +137,71 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 			IngressSubdomain:           "apps." + baseDomain,
 			MachineConfigServerAddress: infraStatus.IgnitionProviderAddress,
 			ExternalOpenVPNAddress:     infraStatus.VPNAddress,
-			Namespace:                  name,
+			Namespace:                  targetNamespace,
 		}
 		log.Info("generating PKI secret data")
 		data, err := pki.GeneratePKI(pkiParams)
 		if err != nil {
-			return fmt.Errorf("failed to generate PKI data: %w", err)
+			return nil, fmt.Errorf("failed to generate PKI data: %w", err)
 		}
 		pkiSecret.Data = data
 		if err := r.Create(ctx, pkiSecret); err != nil {
-			return fmt.Errorf("failed to create pki secret: %w", err)
+			return nil, fmt.Errorf("failed to create pki secret: %w", err)
 		}
 		r.Log.Info("created pki secret")
 	}
 
 	caBytes := pkiSecret.Data["combined-ca.crt"]
 	if err != nil {
-		return fmt.Errorf("failed to read combined CA: %w", err)
+		return nil, fmt.Errorf("failed to read combined CA: %w", err)
 	}
 	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString(caBytes)
 	params.OauthAPIServerCABundle = params.OpenshiftAPIServerCABundle
 
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return nil, fmt.Errorf("failed to get pull secret %s: %w", hcp.Spec.PullSecret.Name, err)
+	}
+	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
+	if !hasPullSecretData {
+		return nil, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
+	}
 	manifests, err := hypershiftcp.RenderClusterManifests(params, releaseImage, pullSecretData, pkiSecret.Data)
 	if err != nil {
-		return fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
+		return nil, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
+	}
+	return manifests, nil
+}
+
+func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) error {
+	r.Log.Info("ensuring control plane for cluster", "cluster", hcp.Name)
+
+	targetNamespace := hcp.GetName()
+	version, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return fmt.Errorf("cannot parse release version (%s): %v", releaseImage.Version(), err)
+	}
+
+	// Create the configmap with the pull secret for the guest cluster
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: targetNamespace, Name: pullSecretName}, &pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret %s: %w", pullSecretName, err)
+	}
+	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
+	if !hasPullSecretData {
+		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", pullSecretName)
+	}
+	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), pullSecretData, targetNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to create pull secret manifest for target cluster: %w", err)
+	}
+	if err := r.Create(ctx, targetPullSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to generate targetPullSecret: %v", err)
+	}
+
+	manifests, err := r.generateControlPlaneManifests(ctx, hcp, infraStatus, releaseImage)
+	if err != nil {
+		return err
 	}
 
 	// Create oauth branding manifest because it cannot be applied
@@ -193,13 +210,85 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(manifestBytes)), 100).Decode(manifestObj); err != nil {
 		return fmt.Errorf("failed to decode manifest %s: %w", oauthBrandingManifest, err)
 	}
-	manifestObj.SetNamespace(name)
+	manifestObj.SetNamespace(targetNamespace)
 	if err = r.Create(context.TODO(), manifestObj); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("failed to apply manifest %s: %w", oauthBrandingManifest, err)
 		}
 	}
 
+	if err := applyManifests(ctx, r, r.Log, targetNamespace, manifests); err != nil {
+		return err
+	}
+	r.Log.Info("successfully applied all manifests")
+
+	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version)
+	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to generate user data secret: %w", err)
+	}
+	userDataSecret.OwnerReferences = ensureHCPOwnerRef(hcp, userDataSecret.OwnerReferences)
+
+	kubeadminPassword, err := generateKubeadminPassword()
+	if err != nil {
+		return fmt.Errorf("failed to generate kubeadmin password: %w", err)
+	}
+
+	kubeadminPasswordTargetSecret, err := generateKubeadminPasswordTargetSecret(r.Scheme(), kubeadminPassword, targetNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to create kubeadmin secret manifest for target cluster: %w", err)
+	}
+	kubeadminPasswordTargetSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeadminPasswordTargetSecret.OwnerReferences)
+	if err := r.Create(ctx, kubeadminPasswordTargetSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to generate kubeadminPasswordTargetSecret: %w", err)
+	}
+
+	kubeadminPasswordSecret := generateKubeadminPasswordSecret(targetNamespace, kubeadminPassword)
+	kubeadminPasswordSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeadminPasswordSecret.OwnerReferences)
+	if err := r.Create(ctx, kubeadminPasswordSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to generate kubeadminPasswordSecret: %w", err)
+	}
+
+	pkiSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: targetNamespace,
+			Name:      "pki",
+		},
+		Data: map[string][]byte{},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pkiSecret), pkiSecret); err != nil {
+		return fmt.Errorf("failed to get pki secret: %w", err)
+	}
+
+	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetName(), hcp.GetNamespace(), pkiSecret.Data["admin.kubeconfig"])
+	if err != nil {
+		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
+	}
+	kubeconfigSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeconfigSecret.OwnerReferences)
+	if err := r.Create(ctx, kubeconfigSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
+	}
+
+	baseDomain, err := ClusterBaseDomain(r.Client, ctx, hcp.Name)
+	if err != nil {
+		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
+	}
+	log.Infof("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIAddress, APIServerPort))
+	log.Infof("Kubeconfig is available in secret %q in the %s namespace", fmt.Sprintf("%s-kubeconfig", targetNamespace), hcp.GetNamespace())
+	log.Infof("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", fmt.Sprintf("apps.%s", baseDomain)))
+	log.Infof("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", targetNamespace)
+
+	return nil
+}
+
+func ensureHCPOwnerRef(hcp *hyperv1.HostedControlPlane, ownerReferences []metav1.OwnerReference) []metav1.OwnerReference {
+	return util.EnsureOwnerRef(ownerReferences, metav1.OwnerReference{
+		APIVersion: hyperv1.GroupVersion.String(),
+		Kind:       "HostedControlPlane",
+		Name:       hcp.GetName(),
+		UID:        hcp.UID,
+	})
+}
+func applyManifests(ctx context.Context, c client.Client, log logr.Logger, namespace string, manifests map[string][]byte) error {
 	// Use server side apply for manifestss
 	applyErrors := []error{}
 	for manifestName, manifestBytes := range manifests {
@@ -210,88 +299,57 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(obj); err != nil {
 			applyErrors = append(applyErrors, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err))
 		}
-		obj.SetNamespace(name)
-		err = r.Patch(ctx, obj, client.RawPatch(types.ApplyPatchType, manifestBytes), client.ForceOwnership, client.FieldOwner("hypershift-operator"))
+		obj.SetNamespace(namespace)
+		err := c.Patch(ctx, obj, client.RawPatch(types.ApplyPatchType, manifestBytes), client.ForceOwnership, client.FieldOwner("hypershift-operator"))
 		if err != nil {
 			applyErrors = append(applyErrors, fmt.Errorf("failed to apply manifest %s: %w", manifestName, err))
 		} else {
-			r.Log.Info("applied manifest", "manifest", manifestName)
+			log.Info("applied manifest", "manifest", manifestName)
 		}
 	}
 	if errs := errors.NewAggregate(applyErrors); errs != nil {
 		return fmt.Errorf("failed to apply some manifests: %w", errs)
 	}
-	r.Log.Info("successfully applied all manifests")
-
-	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version)
-	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate user data secret: %w", err)
-	}
-	userDataSecret.OwnerReferences = util.EnsureOwnerRef(userDataSecret.OwnerReferences, metav1.OwnerReference{
-		APIVersion: hyperv1.GroupVersion.String(),
-		Kind:       "HostedControlPlane",
-		Name:       hcp.GetName(),
-		UID:        hcp.UID,
-	})
-
-	kubeadminPassword, err := generateKubeadminPassword()
-	if err != nil {
-		return fmt.Errorf("failed to generate kubeadmin password: %w", err)
-	}
-
-	kubeadminPasswordTargetSecret, err := generateKubeadminPasswordTargetSecret(r.Scheme(), kubeadminPassword, name)
-	if err != nil {
-		return fmt.Errorf("failed to create kubeadmin secret manifest for target cluster: %w", err)
-	}
-	if err := r.Create(ctx, kubeadminPasswordTargetSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate kubeadminPasswordTargetSecret: %w", err)
-	}
-
-	kubeadminPasswordSecret := generateKubeadminPasswordSecret(name, kubeadminPassword)
-	if err := r.Create(ctx, kubeadminPasswordSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate kubeadminPasswordSecret: %w", err)
-	}
-
-	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetName(), hcp.GetNamespace(), pkiSecret.Data["admin.kubeconfig"])
-	if err != nil {
-		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
-	}
-	kubeconfigSecret.OwnerReferences = util.EnsureOwnerRef(kubeconfigSecret.OwnerReferences, metav1.OwnerReference{
-		APIVersion: hyperv1.GroupVersion.String(),
-		Kind:       "HostedControlPlane",
-		Name:       hcp.GetName(),
-		UID:        hcp.UID,
-	})
-	if err := r.Create(ctx, kubeconfigSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
-	}
-
-	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), pullSecretData, name)
-	if err != nil {
-		return fmt.Errorf("failed to create pull secret manifest for target cluster: %w", err)
-	}
-	if err := r.Create(ctx, targetPullSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate targetPullSecret: %v", err)
-	}
-
-	targetProviderCredsSecret, err := generateTargetProviderCredsSecret(providerCredsData, name)
-	if err != nil {
-		return fmt.Errorf("failed to create providerCreds secret manifest for target cluster: %w", err)
-	}
-	if err := r.Create(ctx, targetProviderCredsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate providerCreds secret: %v", err)
-	}
-	log.Infof("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIAddress, APIServerPort))
-	log.Infof("Kubeconfig is available in secret %q in the %s namespace", fmt.Sprintf("%s-kubeconfig", name), hcp.GetNamespace())
-	log.Infof("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", params.IngressSubdomain))
-	log.Infof("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", name)
-
 	return nil
 }
 
-func generateTargetProviderCredsSecret(data []byte, namespace string) (*corev1.Secret, error) {
+func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, namespace string, manifests map[string][]byte) error {
+	// Use server side apply for manifestss
+	applyErrors := []error{}
+	for manifestName, manifestBytes := range manifests {
+		if excludeManifests.Has(manifestName) {
+			continue
+		}
+		obj := &unstructured.Unstructured{}
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(obj); err != nil {
+			applyErrors = append(applyErrors, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err))
+		}
+		obj.SetNamespace(namespace)
+		err := c.Delete(ctx, obj)
+		if err != nil {
+			applyErrors = append(applyErrors, fmt.Errorf("failed to delete manifest %s: %w", manifestName, err))
+		} else {
+			log.Info("deleted manifest", "manifest", manifestName)
+		}
+	}
+	if errs := errors.NewAggregate(applyErrors); errs != nil {
+		return fmt.Errorf("failed to delete some manifests: %w", errs)
+	}
+	return nil
+}
+
+func generateSSHSecret(data []byte, namespace string) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
-	secret.Name = "provider-creds"
+	secret.Name = sshKeySecretName
+	secret.Namespace = namespace
+	secret.Data = map[string][]byte{"id_rsa.pub": data}
+	secret.Type = corev1.SecretTypeOpaque
+	return secret, nil
+}
+
+func generateProviderCredsSecret(data []byte, namespace string) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	secret.Name = providerCredsSecretName
 	secret.Namespace = namespace
 	secret.Data = map[string][]byte{"credentials": data}
 	secret.Type = corev1.SecretTypeOpaque

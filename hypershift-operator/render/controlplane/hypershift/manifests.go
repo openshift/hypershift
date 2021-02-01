@@ -12,6 +12,16 @@ import (
 )
 
 // RenderClusterManifests renders manifests for a hosted control plane cluster
+func RenderCAPIManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, pki map[string][]byte) (map[string][]byte, error) {
+	componentVersions, err := image.ComponentVersions()
+	if err != nil {
+		return nil, err
+	}
+	ctx := newClusterManifestContext(image.ComponentImages(), componentVersions, params, pullSecret, pki)
+	ctx.capi()
+	return ctx.renderManifests()
+}
+
 func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, pki map[string][]byte) (map[string][]byte, error) {
 	componentVersions, err := image.ComponentVersions()
 	if err != nil {
@@ -75,7 +85,6 @@ func (c *clusterManifestContext) setupManifests() {
 	c.routerProxy()
 	c.machineConfigServer()
 	c.ignitionConfigs()
-	c.capi()
 }
 
 func (c *clusterManifestContext) serviceAdminKubeconfig() {
@@ -159,6 +168,10 @@ func (c *clusterManifestContext) capi() {
 		"capi/capa-manager-clusterrole.yaml",
 		"capi/capa-manager-clusterrolebinding.yaml",
 		"capi/capa-manager-deployment.yaml",
+		"capi/manager-serviceaccount.yaml",
+		"capi/manager-clusterrole.yaml",
+		"capi/manager-clusterrolebinding.yaml",
+		"capi/manager-deployment.yaml",
 	)
 }
 
