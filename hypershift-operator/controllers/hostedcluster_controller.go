@@ -49,24 +49,24 @@ const (
 	providerCredsSecretName = "provider-creds"
 )
 
-// OpenShiftClusterReconciler reconciles a OpenShiftCluster object
-type OpenShiftClusterReconciler struct {
+// HostedClusterReconciler reconciles a HostedCluster object
+type HostedClusterReconciler struct {
 	client.Client
 	Log             logr.Logger
 	ReleaseProvider releaseinfo.Provider
 	Infra           *configv1.Infrastructure
 }
 
-// +kubebuilder:rbac:groups=hypershift.openshift.io,resources=openshiftclusters,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=hypershift.openshift.io,resources=openshiftclusters/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters/status,verbs=get;update;patch
 
-func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
 	r.Log.Info("Reconciling")
 
-	ocluster := &hyperv1.OpenShiftCluster{}
+	hcluster := &hyperv1.HostedCluster{}
 	isMissing := false
-	err := r.Get(ctx, req.NamespacedName, ocluster)
+	err := r.Get(ctx, req.NamespacedName, hcluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			isMissing = true
@@ -76,15 +76,15 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Return early if deleted
-	if isMissing || !ocluster.DeletionTimestamp.IsZero() {
+	if isMissing || !hcluster.DeletionTimestamp.IsZero() {
 		if err := r.delete(ctx, req); err != nil {
 			r.Log.Error(err, "failed to delete cluster")
 			return ctrl.Result{}, err
 		}
 
-		if controllerutil.ContainsFinalizer(ocluster, finalizer) {
-			controllerutil.RemoveFinalizer(ocluster, finalizer)
-			if err := r.Update(ctx, ocluster); err != nil {
+		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
+			controllerutil.RemoveFinalizer(hcluster, finalizer)
+			if err := r.Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
 		}
@@ -92,19 +92,19 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Ensure the cluster has a finalizer for cleanup
-	if !controllerutil.ContainsFinalizer(ocluster, finalizer) {
-		controllerutil.AddFinalizer(ocluster, finalizer)
-		if err := r.Update(ctx, ocluster); err != nil {
+	if !controllerutil.ContainsFinalizer(hcluster, finalizer) {
+		controllerutil.AddFinalizer(hcluster, finalizer)
+		if err := r.Update(ctx, hcluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
 		}
 	}
 
-	if ocluster.Status.Ready {
+	if hcluster.Status.Ready {
 		r.Log.Info("Is ready")
 		return ctrl.Result{}, nil
 	}
 
-	targetNamespace := ocluster.GetName()
+	targetNamespace := hcluster.GetName()
 	r.Log.Info("Creating the target namespace", "namespace", targetNamespace)
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: targetNamespace},
@@ -115,13 +115,13 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	r.Log.Info("Creating provider creds secret in the target namespace", "namespace", targetNamespace)
 	var providerCredsSecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: ocluster.GetNamespace(), Name: ocluster.Spec.ProviderCreds.Name}, &providerCredsSecret)
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.ProviderCreds.Name}, &providerCredsSecret)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", ocluster.Spec.ProviderCreds.Name, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.ProviderCreds.Name, err)
 	}
 	providerCredsData, hasProviderCredsData := providerCredsSecret.Data["credentials"]
 	if !hasProviderCredsData {
-		return ctrl.Result{}, fmt.Errorf("provider credentials %s is missing the credentials key", ocluster.Spec.PullSecret.Name)
+		return ctrl.Result{}, fmt.Errorf("provider credentials %s is missing the credentials key", hcluster.Spec.PullSecret.Name)
 	}
 	targetProviderCredsSecret, err := generateProviderCredsSecret(providerCredsData, targetNamespace)
 	if err != nil {
@@ -133,12 +133,12 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	r.Log.Info("Creating pull secret in the target namespace", "namespace", targetNamespace)
 	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: ocluster.GetNamespace(), Name: ocluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", ocluster.Spec.PullSecret.Name, err)
+	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 	}
 	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
 	if !hasPullSecretData {
-		return ctrl.Result{}, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", ocluster.Spec.PullSecret.Name)
+		return ctrl.Result{}, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcluster.Spec.PullSecret.Name)
 	}
 	if _, err := createPullSecret(r, targetNamespace, pullSecretData); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create pull secret: %w", err)
@@ -146,13 +146,13 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	r.Log.Info("Creating ssh key secret in the target namespace", "namespace", targetNamespace)
 	var sshKeySecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: ocluster.Namespace, Name: ocluster.Spec.SSHKey.Name}, &sshKeySecret)
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &sshKeySecret)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get SSH key secret %s: %w", ocluster.Spec.SSHKey.Name, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 	}
 	sshKeyData, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
 	if !hasSSHKeyData {
-		return ctrl.Result{}, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", ocluster.Spec.SSHKey.Name)
+		return ctrl.Result{}, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcluster.Spec.SSHKey.Name)
 	}
 	targetSSHSecret, err := generateSSHSecret(sshKeyData, targetNamespace)
 	if err != nil {
@@ -165,7 +165,7 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// run CAPI controllers
 	params := hypershiftcp.NewClusterParams()
 	params.Namespace = targetNamespace
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, ocluster.Spec.Release.Image)
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image)
 	manifests, err := hypershiftcp.RenderCAPIManifests(params, releaseImage, nil, nil)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
@@ -177,7 +177,7 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	cluster := &capiv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
-			Name:      ocluster.GetName(),
+			Name:      hcluster.GetName(),
 		},
 		Spec: capiv1.ClusterSpec{
 			ControlPlaneEndpoint: capiv1.APIEndpoint{},
@@ -185,17 +185,17 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				APIVersion: "hypershift.openshift.io/v1alpha1",
 				Kind:       "HostedControlPlane",
 				Namespace:  targetNamespace,
-				Name:       ocluster.GetName(),
+				Name:       hcluster.GetName(),
 			},
 			InfrastructureRef: &corev1.ObjectReference{
 				APIVersion: "hypershift.openshift.io/v1alpha1",
 				Kind:       "ExternalInfraCluster",
 				Namespace:  targetNamespace,
-				Name:       ocluster.GetName(),
+				Name:       hcluster.GetName(),
 			},
 		},
 	}
-	patchHelper, err := patch.NewHelper(ocluster, r.Client)
+	patchHelper, err := patch.NewHelper(hcluster, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to init patch helper: %w", err)
 	}
@@ -203,7 +203,7 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
-			Name:      ocluster.GetName(),
+			Name:      hcluster.GetName(),
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
 			ProviderCreds: corev1.LocalObjectReference{
@@ -215,18 +215,18 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			SSHKey: corev1.LocalObjectReference{
 				Name: sshKeySecretName,
 			},
-			ServiceCIDR:  ocluster.Spec.ServiceCIDR,
-			PodCIDR:      ocluster.Spec.PodCIDR,
-			ReleaseImage: ocluster.Spec.Release.Image,
+			ServiceCIDR:  hcluster.Spec.ServiceCIDR,
+			PodCIDR:      hcluster.Spec.PodCIDR,
+			ReleaseImage: hcluster.Spec.Release.Image,
 		},
 	}
 	ExternalInfraCluster := &hyperv1.ExternalInfraCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
-			Name:      ocluster.GetName(),
+			Name:      hcluster.GetName(),
 		},
 		Spec: hyperv1.ExternalInfraClusterSpec{
-			ComputeReplicas: ocluster.Spec.InitialComputeReplicas,
+			ComputeReplicas: hcluster.Spec.InitialComputeReplicas,
 			Region:          r.Infra.Status.PlatformStatus.AWS.Region,
 		},
 	}
@@ -254,21 +254,21 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		r.Log.Info("Not ready yet. Requeueing")
 		return ctrl.Result{Requeue: true}, nil
 	}
-	ocluster.Status.Ready = ready
-	if err := patchHelper.Patch(ctx, ocluster); err != nil {
+	hcluster.Status.Ready = ready
+	if err := patchHelper.Patch(ctx, hcluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
 	}
 
-	if ocluster.Spec.InitialComputeReplicas > 0 {
+	if hcluster.Spec.InitialComputeReplicas > 0 {
 		nodePool := &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      ocluster.GetName(),
-				Namespace: ocluster.GetNamespace(),
+				Name:      hcluster.GetName(),
+				Namespace: hcluster.GetNamespace(),
 			},
 			Spec: hyperv1.NodePoolSpec{
 				ClusterName: cluster.GetName(),
-				NodeCount:   ocluster.Spec.InitialComputeReplicas,
+				NodeCount:   hcluster.Spec.InitialComputeReplicas,
 				Platform: hyperv1.NodePoolPlatform{
 					AWS: &hyperv1.AWSNodePoolPlatform{
 						InstanceType: "m5.large",
@@ -286,7 +286,7 @@ func (r *OpenShiftClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	return ctrl.Result{}, nil
 }
 
-func (r *OpenShiftClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
+func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
 	targetNamespace := req.Name
 
 	r.Log.Info("Deleting default nodePool", "name", req.Name)
@@ -323,7 +323,7 @@ func (r *OpenShiftClusterReconciler) delete(ctx context.Context, req ctrl.Reques
 	return nil
 }
 
-func (r *OpenShiftClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	var infra configv1.Infrastructure
 	if err := mgr.GetAPIReader().Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
 		return fmt.Errorf("failed to get cluster infra: %w", err)
@@ -331,7 +331,7 @@ func (r *OpenShiftClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Infra = &infra
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.OpenShiftCluster{}).
+		For(&hyperv1.HostedCluster{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),

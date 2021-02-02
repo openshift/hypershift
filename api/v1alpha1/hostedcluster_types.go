@@ -24,8 +24,8 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// OpenShiftClusterSpec defines the desired state of OpenShiftCluster
-type OpenShiftClusterSpec struct {
+// HostedClusterSpec defines the desired state of HostedCluster
+type HostedClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -53,8 +53,8 @@ type ReleaseSpec struct {
 	Image string `json:"image"`
 }
 
-// OpenShiftClusterStatus defines the observed state of OpenShiftCluster
-type OpenShiftClusterStatus struct {
+// HostedClusterStatus defines the observed state of HostedCluster
+type HostedClusterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -62,27 +62,27 @@ type OpenShiftClusterStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path=openshiftclusters,shortName=oc;ocs,scope=Namespaced
+// +kubebuilder:resource:path=hostedclusters,shortName=hc;hcs,scope=Namespaced
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// OpenShiftCluster is the Schema for the openshiftclusters API
-type OpenShiftCluster struct {
+// HostedCluster is the Schema for the hostedclusters API
+type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   OpenShiftClusterSpec   `json:"spec,omitempty"`
-	Status OpenShiftClusterStatus `json:"status,omitempty"`
+	Spec   HostedClusterSpec   `json:"spec,omitempty"`
+	Status HostedClusterStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// OpenShiftClusterList contains a list of OpenShiftCluster
-type OpenShiftClusterList struct {
+// HostedClusterList contains a list of HostedCluster
+type HostedClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []OpenShiftCluster `json:"items"`
+	Items           []HostedCluster `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&OpenShiftCluster{}, &OpenShiftClusterList{})
+	SchemeBuilder.Register(&HostedCluster{}, &HostedClusterList{})
 }

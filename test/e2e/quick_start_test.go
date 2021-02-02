@@ -52,7 +52,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		specName = "quick-start"
 		input    QuickStartSpecInput
 
-		cluster *hyperv1.OpenShiftCluster
+		cluster *hyperv1.HostedCluster
 	)
 
 	BeforeEach(func() {
@@ -82,9 +82,9 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 			Expect(err).NotTo(HaveOccurred(), "couldn't apply resource")
 		}
 
-		// Get the actual OpenShiftCluster that was created
+		// Get the actual HostedCluster that was created
 		log.Logf("Waiting for cluster resource to exist")
-		cluster = &hyperv1.OpenShiftCluster{
+		cluster = &hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "hypershift",
 				Name:      "example",
