@@ -70,5 +70,5 @@ spec:
 And delete the cluster using:
 
 ```bash
-$ oc delete --namespace hypershift openshiftclusters/example
+$ oc delete --namespace hypershift hostedclusters/example
 ```

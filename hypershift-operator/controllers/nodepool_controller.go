@@ -75,7 +75,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	ocluster, err := GetOClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
+	hcluster, err := GetHostedClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -83,7 +83,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Ignore deleted nodePools, this can happen when foregroundDeletion
 	// is enabled
 	if !nodePool.DeletionTimestamp.IsZero() {
-		machineSet, _, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool, ocluster.GetName())
+		machineSet, _, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool, hcluster.GetName())
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 		}
@@ -115,7 +115,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	result, err := r.reconcile(ctx, ocluster, nodePool)
+	result, err := r.reconcile(ctx, hcluster, nodePool)
 	if err != nil {
 		r.Log.Error(err, "Failed to reconcile nodePool")
 		r.recorder.Eventf(nodePool, corev1.EventTypeWarning, "ReconcileError", "%v", err)
@@ -131,19 +131,19 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return result, nil
 }
 
-func (r *NodePoolReconciler) reconcile(ctx context.Context, ocluster *hyperv1.OpenShiftCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
+func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconcile nodePool")
 
 	nodePool.OwnerReferences = util.EnsureOwnerRef(nodePool.OwnerReferences, metav1.OwnerReference{
 		APIVersion: hyperv1.GroupVersion.String(),
-		Kind:       "OpenshiftCluster",
-		Name:       ocluster.Name,
-		UID:        ocluster.UID,
+		Kind:       "HostedCluster",
+		Name:       hcluster.Name,
+		UID:        hcluster.UID,
 	})
 
 	// Create a machine scalable resources for the new cluster's worker nodes
-	machineSet, AWSMachineTemplate, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool, ocluster.GetName())
+	machineSet, AWSMachineTemplate, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool, hcluster.GetName())
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 	}
@@ -167,19 +167,19 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, ocluster *hyperv1.Op
 	return ctrl.Result{}, nil
 }
 
-// GetClusterByName finds and return an OpenshiftCluster object using the specified params.
-func GetOClusterByName(ctx context.Context, c client.Client, namespace, name string) (*hyperv1.OpenShiftCluster, error) {
-	ocluster := &hyperv1.OpenShiftCluster{}
+// GetHostedClusterByName finds and return a HostedCluster object using the specified params.
+func GetHostedClusterByName(ctx context.Context, c client.Client, namespace, name string) (*hyperv1.HostedCluster, error) {
+	hcluster := &hyperv1.HostedCluster{}
 	key := client.ObjectKey{
 		Namespace: namespace,
 		Name:      name,
 	}
 
-	if err := c.Get(ctx, key, ocluster); err != nil {
+	if err := c.Get(ctx, key, hcluster); err != nil {
 		return nil, err
 	}
 
-	return ocluster, nil
+	return hcluster, nil
 }
 
 func generateScalableResources(client ctrlclient.Client, ctx context.Context,

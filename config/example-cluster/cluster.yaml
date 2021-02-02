@@ -1,5 +1,5 @@
 apiVersion: hypershift.openshift.io/v1alpha1
-kind: OpenShiftCluster
+kind: HostedCluster
 metadata:
   name: example
 spec:

@@ -6,23 +6,23 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.3.0
   creationTimestamp: null
-  name: openshiftclusters.hypershift.openshift.io
+  name: hostedclusters.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
   names:
-    kind: OpenShiftCluster
-    listKind: OpenShiftClusterList
-    plural: openshiftclusters
+    kind: HostedCluster
+    listKind: HostedClusterList
+    plural: hostedclusters
     shortNames:
-    - oc
-    - ocs
-    singular: openshiftcluster
+    - hc
+    - hcs
+    singular: hostedcluster
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OpenShiftCluster is the Schema for the openshiftclusters API
+        description: HostedCluster is the Schema for the hostedclusters API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
@@ -33,7 +33,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: OpenShiftClusterSpec defines the desired state of OpenShiftCluster
+            description: HostedClusterSpec defines the desired state of HostedCluster
             properties:
               initialComputeReplicas:
                 type: integer
@@ -82,7 +82,7 @@ spec:
             - sshKey
             type: object
           status:
-            description: OpenShiftClusterStatus defines the observed state of OpenShiftCluster
+            description: HostedClusterStatus defines the observed state of HostedCluster
             properties:
               ready:
                 type: boolean
