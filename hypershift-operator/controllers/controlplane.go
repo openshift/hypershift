@@ -23,6 +23,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -326,7 +327,7 @@ func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, name
 		}
 		obj.SetNamespace(namespace)
 		err := c.Delete(ctx, obj)
-		if err != nil {
+		if err != nil && !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
 			applyErrors = append(applyErrors, fmt.Errorf("failed to delete manifest %s: %w", manifestName, err))
 		} else {
 			log.Info("deleted manifest", "manifest", manifestName)
