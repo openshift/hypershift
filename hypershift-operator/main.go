@@ -87,13 +87,13 @@ func NewStartCommand() *cobra.Command {
 
 	var metricsAddr string
 	var enableLeaderElection bool
-	var controlPlaneOperatorImage string
+	var hostedClusterConfigOperatorImage string
 
 	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0", "The address the metric endpoint binds to.")
 	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	cmd.Flags().StringVar(&controlPlaneOperatorImage, "control-plane-operator-image", "", "A control plane operator image.")
+	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A hosted cluster config operator image.")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
@@ -109,12 +109,12 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		// Add some flexibility to getting the control plane operator image. Use the
+		// Add some flexibility to getting the hosted cluster config operator image. Use the
 		// flag if given, but if that's empty and we're running in a deployment, use the
 		// hypershift operator's image for the control plane by default.
-		lookupControlPlaneOperatorImage := func(kubeClient client.Client) (string, error) {
-			if len(controlPlaneOperatorImage) > 0 {
-				return controlPlaneOperatorImage, nil
+		lookupHostedClusterConfigOperatorImage := func(kubeClient client.Client) (string, error) {
+			if len(hostedClusterConfigOperatorImage) > 0 {
+				return hostedClusterConfigOperatorImage, nil
 			}
 			deployment := appsv1.Deployment{}
 			err := kubeClient.Get(context.TODO(), client.ObjectKey{Namespace: "hypershift", Name: "operator"}, &deployment)
@@ -151,8 +151,8 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		if err := (&controllers.HostedControlPlaneReconciler{
-			Client:                          mgr.GetClient(),
-			LookupControlPlaneOperatorImage: lookupControlPlaneOperatorImage,
+			Client:                                 mgr.GetClient(),
+			LookupHostedClusterConfigOperatorImage: lookupHostedClusterConfigOperatorImage,
 			ReleaseProvider: &releaseinfo.PodProvider{
 				Pods: kubeClient.CoreV1().Pods("hypershift"),
 			},

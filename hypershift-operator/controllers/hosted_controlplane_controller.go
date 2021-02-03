@@ -24,11 +24,11 @@ import (
 
 type HostedControlPlaneReconciler struct {
 	client.Client
-	Log                             logr.Logger
-	Infra                           *configv1.Infrastructure
-	recorder                        record.EventRecorder
-	LookupControlPlaneOperatorImage func(kubeClient client.Client) (string, error)
-	ReleaseProvider                 releaseinfo.Provider
+	Log                                    logr.Logger
+	Infra                                  *configv1.Infrastructure
+	recorder                               record.EventRecorder
+	LookupHostedClusterConfigOperatorImage func(kubeClient client.Client) (string, error)
+	ReleaseProvider                        releaseinfo.Provider
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {

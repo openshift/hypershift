@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hosted-cluster-config-operator
+data:
+  initial-ca.crt: |
+{{ include_pki "combined-ca.crt"  4 }}

@@ -110,7 +110,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		guestKubeConfigSecret := &corev1.Secret{}
 		Eventually(func() bool {
 			key := ctrl.ObjectKey{
-				Namespace: cluster.GetNamespace(),
+				Namespace: cluster.GetName(),
 				Name:      cluster.Name + "-kubeconfig",
 			}
 			if err := input.Client.Get(ctx, key, guestKubeConfigSecret); err != nil {
@@ -174,7 +174,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 					return false
 				}
 				return false
-			}, 5*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't clean up example cluster namespace")
+			}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't clean up example cluster namespace")
 
 			log.Logf("Waiting for the cluster resource to be deleted")
 			Eventually(func() bool {
@@ -190,7 +190,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 					return false
 				}
 				return false
-			}, 5*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't clean up example cluster")
+			}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't clean up example cluster")
 		}
 	})
 }
