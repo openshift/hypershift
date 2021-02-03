@@ -26,7 +26,7 @@ endif
 
 all: build manifests
 
-build: hypershift-operator control-plane-operator
+build: hypershift-operator hosted-cluster-config-operator
 
 verify: build fmt vet
 
@@ -46,9 +46,9 @@ generate:
 hypershift-operator: generate
 	$(GO_BUILD_RECIPE) -o bin/hypershift-operator ./hypershift-operator
 
-# Build control-plane-operator binary
-control-plane-operator: generate
-	$(GO_BUILD_RECIPE) -o bin/control-plane-operator ./control-plane-operator
+# Build hosted-cluster-config-operator binary
+hosted-cluster-config-operator: generate
+	$(GO_BUILD_RECIPE) -o bin/hosted-cluster-config-operator ./hosted-cluster-config-operator
 
 # Run tests
 test: build

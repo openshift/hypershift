@@ -76,7 +76,7 @@ func (c *clusterManifestContext) setupManifests() {
 	c.oauthAPIServer()
 	c.openshiftControllerManager()
 	c.clusterBootstrap()
-	c.controlPlaneOperator()
+	c.hostedClusterConfigOperator()
 	c.oauthOpenshiftServer()
 	c.openVPN()
 	c.registry()
@@ -93,13 +93,13 @@ func (c *clusterManifestContext) serviceAdminKubeconfig() {
 	)
 }
 
-func (c *clusterManifestContext) controlPlaneOperator() {
+func (c *clusterManifestContext) hostedClusterConfigOperator() {
 	c.addManifestFiles(
-		"control-plane-operator/cp-operator-serviceaccount.yaml",
-		"control-plane-operator/cp-operator-role.yaml",
-		"control-plane-operator/cp-operator-rolebinding.yaml",
-		"control-plane-operator/cp-operator-deployment.yaml",
-		"control-plane-operator/cp-operator-configmap.yaml",
+		"hosted-cluster-config-operator/cp-operator-serviceaccount.yaml",
+		"hosted-cluster-config-operator/cp-operator-role.yaml",
+		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
+		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
+		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
 	)
 }
 

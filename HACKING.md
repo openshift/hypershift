@@ -1,39 +1,52 @@
 # Hacking
 
-### Development workflow
+## Development How-to Guides
 
-Often it's easiest to develop the operator locally connected to a remote
-cluster.
 
-In this case, you might want to install with the development Kustomize
-profile which uses 0 replicas for the operator deployment by default. This
-makes it easy to iterate on the non-deployment manifests in conjunction
-with the operator binary itself.
+### Run the operator in a local process
 
-Starting from clean management cluster, run the following to get started: 
+1. Ensure KUBECONFIG points to a management cluster with no HyperShift installed yet.
 
-```bash
-$ make build
+2. Build HyperShift.
 
-$ make install PROFILE=development
+        make build
 
-$ make run-local
-```
+3. Install HyperShift with the operator deployment scaled to zero so that it
+   doesn't conflict with your local operator process. 
 
-Or you might want to run your own image in the cluster to do integration
-testing, in which case you may want to use the default (production) profile
-and use `kubectl set image` (for example) to update the deployment.
+        make install PROFILE=development
 
-### Testing
+4. Run the HyperShift operator locally.
 
-To run the e2e tests, install HyperShift (using whatever profile you want) and
-then run:
+        make run-local
 
-```bash
-$ make test-e2e
-```
+### Run custom operator images
 
-### Visualizing dependencies
+1. Build and push a custom image build to your own repository.
+
+        make IMG=quay.io/my/hypershift:latest docker-build docker-push
+
+2. Deploy the latest production version.
+
+        make install PROFILE=production
+
+3. Reconfigure the HyperShift operator deployment to use your custom image.
+   This will also cause the image you specify to be used for the hosted cluster
+   config operator as well.  
+
+        oc --namespace hypershift set image deployment/operator operator=quay.io/my/hypershift:latest 
+
+### Run the e2e tests
+
+1. Install HyperShift.
+
+        make install PROFILE=production
+
+2. Run the tests.
+
+        make test-e2e
+
+### Visualize the Go dependency tree
 
 MacOS
 ```

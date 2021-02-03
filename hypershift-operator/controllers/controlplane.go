@@ -61,9 +61,9 @@ var (
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
 	targetNamespace := hcp.GetName()
 
-	controlPlaneOperatorImage, err := r.LookupControlPlaneOperatorImage(r.Client)
+	hostedClusterConfigOperatorImage, err := r.LookupHostedClusterConfigOperatorImage(r.Client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to lookup control plane operator image: %w", err)
+		return nil, fmt.Errorf("failed to lookup hosted cluster config operator image: %w", err)
 	}
 	var sshKeySecret corev1.Secret
 	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
@@ -104,7 +104,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.Replicas = "1"
 	params.SSHKey = string(sshKeyData)
-	params.ControlPlaneOperatorImage = controlPlaneOperatorImage
+	params.HostedClusterConfigOperatorImage = hostedClusterConfigOperatorImage
 	params.HypershiftOperatorControllers = []string{"route-sync", "auto-approver", "kubeadmin-password", "node"}
 
 	// Generate PKI data just once and store it in a secret. PKI generation isn't
