@@ -6,7 +6,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
-	"openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift/pki/util"
+	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki/util"
 )
 
 type caSpec struct {

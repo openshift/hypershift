@@ -1,8 +1,9 @@
-package controllers
+package nodepool
 
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -30,10 +31,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+const (
+	finalizer = "hypershift.openshift.io/finalizer"
+)
+
 type NodePoolReconciler struct {
 	ctrlclient.Client
 	recorder record.EventRecorder
-	Infra    *configv1.Infrastructure
 	Log      logr.Logger
 }
 
@@ -47,12 +51,6 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
-
-	var infra configv1.Infrastructure
-	if err := mgr.GetAPIReader().Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
-		return fmt.Errorf("failed to get cluster infra: %w", err)
-	}
-	r.Infra = &infra
 
 	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
 
@@ -79,11 +77,15 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	var infra configv1.Infrastructure
+	if err := r.Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster infra: %w", err)
+	}
 
 	// Ignore deleted nodePools, this can happen when foregroundDeletion
 	// is enabled
 	if !nodePool.DeletionTimestamp.IsZero() {
-		machineSet, _, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool, hcluster.GetName())
+		machineSet, _, err := generateScalableResources(r, ctx, infra.Status.InfrastructureName, infra.Status.PlatformStatus.AWS.Region, nodePool, hcluster.GetName())
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 		}
@@ -115,7 +117,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	result, err := r.reconcile(ctx, hcluster, nodePool)
+	result, err := r.reconcile(ctx, hcluster, &infra, nodePool)
 	if err != nil {
 		r.Log.Error(err, "Failed to reconcile nodePool")
 		r.recorder.Eventf(nodePool, corev1.EventTypeWarning, "ReconcileError", "%v", err)
@@ -131,7 +133,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return result, nil
 }
 
-func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
+func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, infra *configv1.Infrastructure, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconcile nodePool")
 
@@ -143,7 +145,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Create a machine scalable resources for the new cluster's worker nodes
-	machineSet, AWSMachineTemplate, err := generateScalableResources(r, ctx, r.Infra.Status.InfrastructureName, r.Infra.Status.PlatformStatus.AWS.Region, nodePool, hcluster.GetName())
+	machineSet, AWSMachineTemplate, err := generateScalableResources(r, ctx, infra.Status.InfrastructureName, infra.Status.PlatformStatus.AWS.Region, nodePool, hcluster.GetName())
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 	}
@@ -312,4 +314,64 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 	}
 
 	return machineSet, AWSMachineTemplate, nil
+}
+
+func generateMachineSetName(infraName, clusterName, suffix string) string {
+	return getName(fmt.Sprintf("%s-%s", infraName, clusterName), suffix, 43)
+}
+
+// getName returns a name given a base ("deployment-5") and a suffix ("deploy")
+// It will first attempt to join them with a dash. If the resulting name is longer
+// than maxLength: if the suffix is too long, it will truncate the base name and add
+// an 8-character hash of the [base]-[suffix] string.  If the suffix is not too long,
+// it will truncate the base, add the hash of the base and return [base]-[hash]-[suffix]
+func getName(base, suffix string, maxLength int) string {
+	if maxLength <= 0 {
+		return ""
+	}
+	name := fmt.Sprintf("%s-%s", base, suffix)
+	if len(name) <= maxLength {
+		return name
+	}
+
+	// length of -hash-
+	baseLength := maxLength - 10 - len(suffix)
+
+	// if the suffix is too long, ignore it
+	if baseLength < 0 {
+		prefix := base[0:min(len(base), max(0, maxLength-9))]
+		// Calculate hash on initial base-suffix string
+		shortName := fmt.Sprintf("%s-%s", prefix, hash(name))
+		return shortName[:min(maxLength, len(shortName))]
+	}
+
+	prefix := base[0:baseLength]
+	// Calculate hash on initial base-suffix string
+	return fmt.Sprintf("%s-%s-%s", prefix, hash(base), suffix)
+}
+
+// max returns the greater of its 2 inputs
+func max(a, b int) int {
+	if b > a {
+		return b
+	}
+	return a
+}
+
+// min returns the lesser of its 2 inputs
+func min(a, b int) int {
+	if b < a {
+		return b
+	}
+	return a
+}
+
+// hash calculates the hexadecimal representation (8-chars)
+// of the hash of the passed in string using the FNV-a algorithm
+func hash(s string) string {
+	hash := fnv.New32a()
+	hash.Write([]byte(s))
+	intHash := hash.Sum32()
+	result := fmt.Sprintf("%08x", intHash)
+	return result
 }

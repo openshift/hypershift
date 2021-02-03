@@ -52,7 +52,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		specName = "quick-start"
 		input    QuickStartSpecInput
 
-		cluster *hyperv1.HostedCluster
+		namespace *corev1.Namespace
 	)
 
 	BeforeEach(func() {
@@ -71,22 +71,32 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		resourceData, err := ioutil.ReadFile(exampleClusterPath)
 		Expect(err).NotTo(HaveOccurred(), "couldn't read example cluster data from %s", exampleClusterPath)
 
+		namespace = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "e2e-",
+			},
+		}
+		err = input.Client.Create(ctx, namespace)
+		Expect(err).NotTo(HaveOccurred(), "couldn't create namespace")
+		Expect(namespace.Name).NotTo(BeEmpty(), "generated namespace has no name")
+		log.Logf("Created test namespace %s", namespace.Name)
+
 		// Apply each resource into the hypershift namespace individually using
 		// a server-side apply
 		resources := strings.Split(string(resourceData), "---\n")
 		for _, resource := range resources {
 			obj := &unstructured.Unstructured{}
 			Expect(yaml.NewYAMLOrJSONDecoder(strings.NewReader(resource), 100).Decode(obj)).To(Succeed(), "couldn't read resource")
-			obj.SetNamespace("hypershift")
+			obj.SetNamespace(namespace.Name)
 			err := input.Client.Patch(ctx, obj, ctrl.RawPatch(types.ApplyPatchType, []byte(resource)), ctrl.ForceOwnership, ctrl.FieldOwner("hypershift"))
 			Expect(err).NotTo(HaveOccurred(), "couldn't apply resource")
 		}
 
 		// Get the actual HostedCluster that was created
 		log.Logf("Waiting for cluster resource to exist")
-		cluster = &hyperv1.HostedCluster{
+		cluster := &hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "hypershift",
+				Namespace: namespace.Name,
 				Name:      "example",
 			},
 		}
@@ -110,6 +120,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		guestKubeConfigSecret := &corev1.Secret{}
 		Eventually(func() bool {
 			key := ctrl.ObjectKey{
+				// TODO: This resource needs extracted into a library function
 				Namespace: cluster.GetName(),
 				Name:      cluster.Name + "-kubeconfig",
 			}
@@ -153,44 +164,29 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 	})
 
 	AfterEach(func() {
-		if cluster != nil {
-			By("Deleting the example cluster")
-
-			Expect(input.Client.Delete(ctx, cluster, &ctrl.DeleteOptions{})).To(Succeed(), "couldn't clean up test cluster")
-
-			By("Ensuring the example cluster resources are deleted")
-
-			log.Logf("Waiting for guest cluster namespace to be deleted")
-			Eventually(func() bool {
-				namespace := &corev1.Namespace{}
-				key := ctrl.ObjectKey{
-					Name: cluster.Name,
-				}
-				if err := input.Client.Get(ctx, key, namespace); err != nil {
-					if errors.IsNotFound(err) {
-						return true
-					}
-					log.Logf("error getting namespace: %s", err)
-					return false
-				}
-				return false
-			}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't clean up example cluster namespace")
-
-			log.Logf("Waiting for the cluster resource to be deleted")
-			Eventually(func() bool {
-				key := ctrl.ObjectKey{
-					Namespace: cluster.Namespace,
-					Name:      cluster.Name,
-				}
-				if err := input.Client.Get(ctx, key, cluster); err != nil {
-					if errors.IsNotFound(err) {
-						return true
-					}
-					log.Logf("error getting cluster: %s", err)
-					return false
-				}
-				return false
-			}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't clean up example cluster")
+		if namespace == nil {
+			return
 		}
+		By("Deleting the example cluster namespace")
+
+		Expect(input.Client.Delete(ctx, namespace, &ctrl.DeleteOptions{})).To(Succeed(), "couldn't clean up test cluster")
+
+		By("Ensuring the example cluster resources are deleted")
+
+		log.Logf("Waiting for the test namespace %q to be deleted", namespace.Name)
+		Eventually(func() bool {
+			latestNamespace := &corev1.Namespace{}
+			key := ctrl.ObjectKey{
+				Name: namespace.Name,
+			}
+			if err := input.Client.Get(ctx, key, latestNamespace); err != nil {
+				if errors.IsNotFound(err) {
+					return true
+				}
+				log.Logf("error getting namespace %q: %s", latestNamespace.Name, err)
+				return false
+			}
+			return false
+		}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't clean up example cluster namespace")
 	})
 }

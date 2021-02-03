@@ -3,9 +3,10 @@
 ## Development How-to Guides
 
 
-### Run the operator in a local process
+### Run the HyperShift Operator in a local process
 
-1. Ensure KUBECONFIG points to a management cluster with no HyperShift installed yet.
+1. Ensure the `KUBECONFIG` evnvironment variable points to a management cluster
+   with no HyperShift installed yet.
 
 2. Build HyperShift.
 
@@ -16,11 +17,12 @@
 
         make install PROFILE=development
 
-4. Run the HyperShift operator locally.
+4. Run the HyperShift operator locally. Replace `IMAGE` with a custom image,
+   if desired. This image is used for the Control Plane Operator.
 
-        make run-local
+        make run-local IMAGE=registry.ci.openshift.org/hypershift/hypershift
 
-### Run custom operator images
+### Run a custom image using the production profile
 
 1. Build and push a custom image build to your own repository.
 
@@ -31,8 +33,7 @@
         make install PROFILE=production
 
 3. Reconfigure the HyperShift operator deployment to use your custom image.
-   This will also cause the image you specify to be used for the hosted cluster
-   config operator as well.  
+   This image will also be used for the control plane operator.
 
         oc --namespace hypershift set image deployment/operator operator=quay.io/my/hypershift:latest 
 

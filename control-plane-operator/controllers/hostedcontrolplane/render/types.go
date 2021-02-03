@@ -1,4 +1,4 @@
-package hypershift
+package render
 
 import "github.com/google/uuid"
 
@@ -83,7 +83,6 @@ type ClusterParams struct {
 	OpenVPNServerResources                 []ResourceRequirements `json:"openVPNServerResources"`
 	APIServerAuditEnabled                  bool                   `json:"apiServerAuditEnabled"`
 	RestartDate                            string                 `json:"restartDate"`
-	HostedClusterConfigOperatorImage       string                 `json:"hostedClusterConfigOperatorImage"`
 	HostedClusterConfigOperatorControllers []string               `json:"hostedClusterConfigOperatorControllers"`
 	ROKSMetricsImage                       string                 `json:"roksMetricsImage"`
 	ExtraFeatureGates                      []string               `json:"extraFeatureGates"`

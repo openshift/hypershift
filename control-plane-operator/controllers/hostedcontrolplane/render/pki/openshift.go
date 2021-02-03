@@ -7,10 +7,10 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
-	hypershiftcp "openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift"
+	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 )
 
-func GeneratePKI(params *hypershiftcp.PKIParams) (map[string][]byte, error) {
+func GeneratePKI(params *render.PKIParams) (map[string][]byte, error) {
 	log.Info("Generating PKI artifacts")
 
 	cas := []caSpec{

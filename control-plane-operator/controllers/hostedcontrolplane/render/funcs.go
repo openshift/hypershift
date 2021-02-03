@@ -1,4 +1,4 @@
-package hypershift
+package render
 
 import (
 	"bufio"
