@@ -43,10 +43,11 @@ import (
 )
 
 const (
-	finalizer               = "hypershift.openshift.io/finalizer"
-	pullSecretName          = "pull-secret"
-	sshKeySecretName        = "ssh-key"
-	providerCredsSecretName = "provider-creds"
+	finalizer                 = "hypershift.openshift.io/finalizer"
+	pullSecretName            = "pull-secret"
+	sshKeySecretName          = "ssh-key"
+	providerCredsSecretName   = "provider-creds"
+	clusterNameIndexFieldName = "clusterName"
 )
 
 // HostedClusterReconciler reconciles a HostedCluster object
@@ -286,19 +287,30 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
+func (r *HostedClusterReconciler) listNodePools(key, value string) ([]hyperv1.NodePool, error) {
+	nodePoolList := &hyperv1.NodePoolList{}
+	if err := r.Client.List(
+		context.TODO(),
+		nodePoolList,
+		client.MatchingFields{key: value},
+	); err != nil {
+		return nil, fmt.Errorf("failed getting nodePool list: %v", err)
+	}
+	return nodePoolList.Items, nil
+}
+
 func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
 	targetNamespace := req.Name
 
-	r.Log.Info("Deleting default nodePool", "name", req.Name)
-	defaultNodePool := &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      req.Name,
-			Namespace: req.Namespace,
-		},
+	nodePools, err := r.listNodePools(clusterNameIndexFieldName, req.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", req.Name, err)
 	}
 
-	if err := r.Delete(ctx, defaultNodePool); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete defaultNodePool: %w", err)
+	for key := range nodePools {
+		if err := r.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete defaultNodePool: %w", err)
+		}
 	}
 
 	r.Log.Info("Deleting cluster", "name", req.Name, "namespace", targetNamespace)
@@ -329,6 +341,16 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("failed to get cluster infra: %w", err)
 	}
 	r.Infra = &infra
+
+	// index nodePool by clusterName
+	mgr.GetCache().IndexField(context.Background(), &hyperv1.NodePool{}, clusterNameIndexFieldName,
+		func(object client.Object) []string {
+			if nodePool, ok := object.(*hyperv1.NodePool); ok {
+				return []string{nodePool.Spec.ClusterName}
+			}
+			return nil
+		},
+	)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
