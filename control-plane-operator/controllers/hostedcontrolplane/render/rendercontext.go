@@ -1,4 +1,4 @@
-package hypershift
+package render
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	assets "openshift.io/hypershift/hypershift-operator/assets/controlplane/hypershift"
+	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
 )
 
 type renderContext struct {

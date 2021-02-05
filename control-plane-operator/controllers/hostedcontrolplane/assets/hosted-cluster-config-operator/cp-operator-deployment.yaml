@@ -37,7 +37,7 @@ spec:
       priorityClassName: {{ .MasterPriorityClass }}
 {{ end }}
       containers:
-      - image: {{ .HostedClusterConfigOperatorImage }}
+      - image: {{ imageFor "hosted-cluster-config-operator" }}
         name: hosted-cluster-config-operator
 {{ if .HostedClusterConfigOperatorSecurity }}
         securityContext:

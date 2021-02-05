@@ -1,4 +1,4 @@
-package hypershift
+package render
 
 import (
 	"bytes"
@@ -7,20 +7,9 @@ import (
 	"strings"
 	"text/template"
 
-	assets "openshift.io/hypershift/hypershift-operator/assets/controlplane/hypershift"
-	"openshift.io/hypershift/hypershift-operator/releaseinfo"
+	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
+	"openshift.io/hypershift/control-plane-operator/releaseinfo"
 )
-
-// RenderClusterManifests renders manifests for a hosted control plane cluster
-func RenderCAPIManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, pki map[string][]byte) (map[string][]byte, error) {
-	componentVersions, err := image.ComponentVersions()
-	if err != nil {
-		return nil, err
-	}
-	ctx := newClusterManifestContext(image.ComponentImages(), componentVersions, params, pullSecret, pki)
-	ctx.capi()
-	return ctx.renderManifests()
-}
 
 func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, pki map[string][]byte) (map[string][]byte, error) {
 	componentVersions, err := image.ComponentVersions()
@@ -66,6 +55,7 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 }
 
 func (c *clusterManifestContext) setupManifests() {
+	c.hostedClusterConfigOperator()
 	c.serviceAdminKubeconfig()
 	c.etcd()
 	c.kubeAPIServer()
@@ -76,21 +66,13 @@ func (c *clusterManifestContext) setupManifests() {
 	c.oauthAPIServer()
 	c.openshiftControllerManager()
 	c.clusterBootstrap()
-	c.hostedClusterConfigOperator()
 	c.oauthOpenshiftServer()
 	c.openVPN()
 	c.registry()
-	// c.roksMetrics()
 	c.userManifestsBootstrapper()
 	c.routerProxy()
 	c.machineConfigServer()
 	c.ignitionConfigs()
-}
-
-func (c *clusterManifestContext) serviceAdminKubeconfig() {
-	c.addManifestFiles(
-		"common/service-network-admin-kubeconfig-secret.yaml",
-	)
 }
 
 func (c *clusterManifestContext) hostedClusterConfigOperator() {
@@ -100,6 +82,12 @@ func (c *clusterManifestContext) hostedClusterConfigOperator() {
 		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
 		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
 		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
+	)
+}
+
+func (c *clusterManifestContext) serviceAdminKubeconfig() {
+	c.addManifestFiles(
+		"common/service-network-admin-kubeconfig-secret.yaml",
 	)
 }
 
@@ -159,19 +147,6 @@ func (c *clusterManifestContext) kubeAPIServer() {
 		"kube-apiserver/kube-apiserver-vpnclient-secret.yaml",
 		"kube-apiserver/kube-apiserver-default-audit-policy.yaml",
 		"kube-apiserver/kube-apiserver-localhost-kubeconfig-secret.yaml",
-	)
-}
-
-func (c *clusterManifestContext) capi() {
-	c.addManifestFiles(
-		"capi/capa-manager-serviceaccount.yaml",
-		"capi/capa-manager-clusterrole.yaml",
-		"capi/capa-manager-clusterrolebinding.yaml",
-		"capi/capa-manager-deployment.yaml",
-		"capi/manager-serviceaccount.yaml",
-		"capi/manager-clusterrole.yaml",
-		"capi/manager-clusterrolebinding.yaml",
-		"capi/manager-deployment.yaml",
 	)
 }
 
@@ -286,7 +261,7 @@ func (c *clusterManifestContext) registry() {
 func (c *clusterManifestContext) clusterBootstrap() {
 	manifests, err := assets.AssetDir("cluster-bootstrap")
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 	for _, m := range manifests {
 		c.addUserManifestFiles("cluster-bootstrap/" + m)
@@ -395,7 +370,7 @@ data:
 func (c *clusterManifestContext) ignitionConfigs() {
 	manifests, err := assets.AssetDir("ignition-configs")
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 	for _, m := range manifests {
 		content, err := c.substituteParams(c.params, "ignition-configs/"+m)

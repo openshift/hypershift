@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controllers
+package hostedcluster
 
 import (
 	"context"
@@ -27,10 +27,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/hypershift-operator/releaseinfo"
-	hypershiftcp "openshift.io/hypershift/hypershift-operator/render/controlplane/hypershift"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -40,26 +38,37 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 )
 
 const (
-	finalizer                 = "hypershift.openshift.io/finalizer"
-	pullSecretName            = "pull-secret"
-	sshKeySecretName          = "ssh-key"
-	providerCredsSecretName   = "provider-creds"
-	clusterNameIndexFieldName = "clusterName"
+	finalizer               = "hypershift.openshift.io/finalizer"
+	pullSecretName          = "pull-secret"
+	sshKeySecretName        = "ssh-key"
+	providerCredsSecretName = "provider-creds"
 )
 
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
-	Log             logr.Logger
-	ReleaseProvider releaseinfo.Provider
-	Infra           *configv1.Infrastructure
+
+	Log           logr.Logger
+	OperatorImage string
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters/status,verbs=get;update;patch
+
+func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedCluster{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithOptions(controller.Options{
+			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+		}).
+		Complete(r)
+}
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
@@ -103,6 +112,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if hcluster.Status.Ready {
 		r.Log.Info("Is ready")
 		return ctrl.Result{}, nil
+	}
+
+	var infra configv1.Infrastructure
+	if err := r.Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster infra: %w", err)
 	}
 
 	targetNamespace := hcluster.GetName()
@@ -163,11 +177,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to create target ssh secret : %v", err)
 	}
 
-	// run CAPI controllers
-	params := hypershiftcp.NewClusterParams()
-	params.Namespace = targetNamespace
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image)
-	manifests, err := hypershiftcp.RenderCAPIManifests(params, releaseImage, nil, nil)
+	// Install operators
+	params := &ClusterParams{
+		Namespace:                 targetNamespace,
+		ControlPlaneOperatorImage: r.OperatorImage,
+	}
+	manifests, err := renderControlPlaneManifests(params)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
@@ -228,7 +243,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		},
 		Spec: hyperv1.ExternalInfraClusterSpec{
 			ComputeReplicas: hcluster.Spec.InitialComputeReplicas,
-			Region:          r.Infra.Status.PlatformStatus.AWS.Region,
+			Region:          infra.Status.PlatformStatus.AWS.Region,
 		},
 	}
 
@@ -287,22 +302,28 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *HostedClusterReconciler) listNodePools(key, value string) ([]hyperv1.NodePool, error) {
+func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName string) ([]hyperv1.NodePool, error) {
 	nodePoolList := &hyperv1.NodePoolList{}
 	if err := r.Client.List(
 		context.TODO(),
 		nodePoolList,
-		client.MatchingFields{key: value},
 	); err != nil {
 		return nil, fmt.Errorf("failed getting nodePool list: %v", err)
 	}
-	return nodePoolList.Items, nil
+	// TODO: do a label association or something
+	filtered := []hyperv1.NodePool{}
+	for i, nodePool := range nodePoolList.Items {
+		if nodePool.Namespace == clusterNamespace && nodePool.Name == clusterName {
+			filtered = append(filtered, nodePoolList.Items[i])
+		}
+	}
+	return filtered, nil
 }
 
 func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
 	targetNamespace := req.Name
 
-	nodePools, err := r.listNodePools(clusterNameIndexFieldName, req.Name)
+	nodePools, err := r.listNodePools(req.Namespace, req.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", req.Name, err)
 	}
@@ -335,32 +356,6 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) 
 	return nil
 }
 
-func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	var infra configv1.Infrastructure
-	if err := mgr.GetAPIReader().Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
-		return fmt.Errorf("failed to get cluster infra: %w", err)
-	}
-	r.Infra = &infra
-
-	// index nodePool by clusterName
-	mgr.GetCache().IndexField(context.Background(), &hyperv1.NodePool{}, clusterNameIndexFieldName,
-		func(object client.Object) []string {
-			if nodePool, ok := object.(*hyperv1.NodePool); ok {
-				return []string{nodePool.Spec.ClusterName}
-			}
-			return nil
-		},
-	)
-
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
-		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
-		}).
-		Complete(r)
-}
-
 func waitForDeletion(ctx context.Context, log logr.Logger, c client.Client, obj client.Object) error {
 	log.WithValues("name", obj.GetName(),
 		"namespace", obj.GetNamespace(), "kind", obj.GetObjectKind())
@@ -383,4 +378,46 @@ func waitForDeletion(ctx context.Context, log logr.Logger, c client.Client, obj 
 		return err
 	}
 	return nil
+}
+
+func createPullSecret(c client.Client, namespace string, data []byte) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	secret.Namespace = namespace
+	secret.Name = pullSecretName
+	secret.Data = map[string][]byte{".dockerconfigjson": []byte(data)}
+	secret.Type = corev1.SecretTypeDockerConfigJson
+	if err := c.Create(context.TODO(), secret); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return nil, fmt.Errorf("failed to create pull secret: %w", err)
+		}
+	}
+	return secret, retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		sa := &corev1.ServiceAccount{}
+		if err := c.Get(context.TODO(), client.ObjectKey{Namespace: namespace, Name: "default"}, sa); err != nil {
+			return err
+		}
+		sa.ImagePullSecrets = append(sa.ImagePullSecrets, corev1.LocalObjectReference{Name: "pull-secret"})
+		if err := c.Update(context.TODO(), sa); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func generateProviderCredsSecret(data []byte, namespace string) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	secret.Name = providerCredsSecretName
+	secret.Namespace = namespace
+	secret.Data = map[string][]byte{"credentials": data}
+	secret.Type = corev1.SecretTypeOpaque
+	return secret, nil
+}
+
+func generateSSHSecret(data []byte, namespace string) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	secret.Name = sshKeySecretName
+	secret.Namespace = namespace
+	secret.Data = map[string][]byte{"id_rsa.pub": data}
+	secret.Type = corev1.SecretTypeOpaque
+	return secret, nil
 }
