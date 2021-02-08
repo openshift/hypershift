@@ -313,7 +313,7 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 	// TODO: do a label association or something
 	filtered := []hyperv1.NodePool{}
 	for i, nodePool := range nodePoolList.Items {
-		if nodePool.Namespace == clusterNamespace && nodePool.Name == clusterName {
+		if nodePool.Namespace == clusterNamespace && nodePool.Spec.ClusterName == clusterName {
 			filtered = append(filtered, nodePoolList.Items[i])
 		}
 	}
@@ -330,7 +330,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) 
 
 	for key := range nodePools {
 		if err := r.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete defaultNodePool: %w", err)
+			return fmt.Errorf("failed to delete nodePool %q for cluster %q: %w", nodePools[key].GetName(), req.Name, err)
 		}
 	}
 
