@@ -28,25 +28,31 @@ endif
 
 all: build manifests
 
-build: hypershift-operator control-plane-operator hosted-cluster-config-operator
+build: hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
 
 verify: build fmt vet
 
 # Generate code
 generate:
 	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
+		-o ./internal/cmd/install/assets/bindata.go \
+		--prefix internal/cmd/install/assets \
+		--ignore bindata.go \
+		./internal/cmd/install/assets/...
+	gofmt -s -w ./internal/cmd/install/assets/bindata.go
+
+	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
 		-o ./hypershift-operator/controllers/hostedcluster/assets/bindata.go \
 		--prefix hypershift-operator/controllers/hostedcluster/assets \
 		--ignore bindata.go \
 		./hypershift-operator/controllers/hostedcluster/assets/...
+	gofmt -s -w ./hypershift-operator/controllers/hostedcluster/assets/bindata.go
 
 	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
 		-o ./control-plane-operator/controllers/hostedcontrolplane/assets/bindata.go \
 		--prefix control-plane-operator/controllers/hostedcontrolplane/assets \
 		--ignore bindata.go \
 		./control-plane-operator/controllers/hostedcontrolplane/assets/...
-
-	gofmt -s -w ./hypershift-operator/controllers/hostedcluster/assets/bindata.go
 	gofmt -s -w ./control-plane-operator/controllers/hostedcontrolplane/assets/bindata.go
 
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
@@ -61,6 +67,9 @@ control-plane-operator: generate
 # Build hosted-cluster-config-operator binary
 hosted-cluster-config-operator: generate
 	$(GO_BUILD_RECIPE) -o bin/hosted-cluster-config-operator ./hosted-cluster-config-operator
+
+hypershift: generate
+	$(GO_BUILD_RECIPE) -o bin/hypershift .
 
 # Run tests
 test: build
