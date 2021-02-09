@@ -61,12 +61,8 @@ func init() {
 }
 
 type Options struct {
-	Namespace         string
-	HyperShiftImage   string
-	CAPIManagerImage  string
-	CAPIProviderImage string
-
-	Output string
+	Namespace       string
+	HyperShiftImage string
 }
 
 func NewCommand() *cobra.Command {
@@ -79,15 +75,12 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", "registry.ci.openshift.org/hypershift/hypershift:latest", "The HyperShift image to deploy")
-	cmd.Flags().StringVar(&opts.CAPIManagerImage, "capi-manager-image", "quay.io/hypershift/cluster-api:hypershift", "The CAPI Manager image to deploy")
-	cmd.Flags().StringVar(&opts.CAPIProviderImage, "capi-provider-image", "quay.io/hypershift/cluster-api-provider-aws:master", "The CAPI Provider image to deploy")
-	cmd.Flags().StringVar(&opts.Output, "output", "", "Render the resources to be installed as YAML instead of applying them")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		var objects []runtime.Object
 
-		objects = append(objects, buildHyperShiftOperatorManifests(opts)...)
-		objects = append(objects, buildClusterAPIManifests()...)
+		objects = append(objects, hyperShiftOperatorManifests(opts)...)
+		objects = append(objects, clusterAPIManifests()...)
 
 		for _, object := range objects {
 			err := yamlSerializer.Encode(object, os.Stdout)
@@ -101,84 +94,65 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func buildHyperShiftOperatorManifests(opts Options) []runtime.Object {
-	var objects []runtime.Object
-
+func hyperShiftOperatorManifests(opts Options) []runtime.Object {
 	hostedClustersCRD := assets.HyperShiftHostedClustersCustomResourceDefinition{}.Build()
-	objects = append(objects, hostedClustersCRD)
-
 	nodePoolsCRD := assets.HyperShiftNodePoolsCustomResourceDefinition{}.Build()
-	objects = append(objects, nodePoolsCRD)
-
 	hostedControlPlanesCRD := assets.HyperShiftHostedControlPlaneCustomResourceDefinition{}.Build()
-	objects = append(objects, hostedControlPlanesCRD)
-
 	externalInfraClustersCRD := assets.HyperShiftExternalInfraClustersCustomResourceDefinition{}.Build()
-	objects = append(objects, externalInfraClustersCRD)
-
-	namespace := assets.HyperShiftNamespace{
+	operatorNamespace := assets.HyperShiftNamespace{
 		Name: opts.Namespace,
 	}.Build()
-	objects = append(objects, namespace)
-
 	operatorServiceAccount := assets.HyperShiftOperatorServiceAccount{
-		Namespace: namespace.Name,
+		Namespace: operatorNamespace,
 	}.Build()
-	objects = append(objects, operatorServiceAccount)
-
 	operatorClusterRole := assets.HyperShiftOperatorClusterRole{}.Build()
-	objects = append(objects, operatorClusterRole)
-
 	operatorClusterRoleBinding := assets.HyperShiftOperatorClusterRoleBinding{
 		ClusterRole:    operatorClusterRole,
 		ServiceAccount: operatorServiceAccount,
 	}.Build()
-	objects = append(objects, operatorClusterRoleBinding)
-
-	deployment := assets.HyperShiftOperatorDeployment{
-		Namespace:     namespace.Name,
-		OperatorImage: opts.HyperShiftImage,
+	operatorDeployment := assets.HyperShiftOperatorDeployment{
+		Namespace:      operatorNamespace,
+		OperatorImage:  opts.HyperShiftImage,
+		ServiceAccount: operatorServiceAccount,
 	}.Build()
-	objects = append(objects, deployment)
 
-	return objects
+	return []runtime.Object{
+		hostedClustersCRD,
+		nodePoolsCRD,
+		hostedControlPlanesCRD,
+		externalInfraClustersCRD,
+		operatorNamespace,
+		operatorServiceAccount,
+		operatorClusterRole,
+		operatorClusterRoleBinding,
+		operatorDeployment,
+	}
 }
 
-func buildClusterAPIManifests() []runtime.Object {
-	var objects []runtime.Object
-
+func clusterAPIManifests() []runtime.Object {
 	clustersCRD := assets.ClusterAPIClustersCustomResourceDefinition{}.Build()
-	objects = append(objects, clustersCRD)
-
 	machineDeploymentsCRD := assets.ClusterAPIMachineDeploymentsCustomResourceDefinition{}.Build()
-	objects = append(objects, machineDeploymentsCRD)
-
 	machineHealthChecksCRD := assets.ClusterAPIMachineHealthChecksCustomResourceDefinition{}.Build()
-	objects = append(objects, machineHealthChecksCRD)
-
 	machinesCRD := assets.ClusterAPIMachinesCustomResourceDefinition{}.Build()
-	objects = append(objects, machinesCRD)
-
 	machineSetsCRD := assets.ClusterAPIMachineSetsCustomResourceDefinition{}.Build()
-	objects = append(objects, machineSetsCRD)
-
 	awsClustersCRD := assets.ClusterAPIAWSClustersCustomResourceDefinition{}.Build()
-	objects = append(objects, awsClustersCRD)
-
 	awsMachinePoolsCRD := assets.ClusterAPIAWSMachinePoolsCustomResourceDefinition{}.Build()
-	objects = append(objects, awsMachinePoolsCRD)
-
 	awsMachinesCRD := assets.ClusterAPIAWSMachinesCustomResourceDefinition{}.Build()
-	objects = append(objects, awsMachinesCRD)
-
 	awsMachineTemplatesCRD := assets.ClusterAPIAWSMachineTemplatesCustomResourceDefinition{}.Build()
-	objects = append(objects, awsMachineTemplatesCRD)
-
 	awsManagedClustersCRD := assets.ClusterAPIAWSManagedClustersCustomResourceDefinition{}.Build()
-	objects = append(objects, awsManagedClustersCRD)
-
 	awsManagedMachinePoolsCRD := assets.ClusterAPIAWSManagedMachinePoolsCustomResourceDefinition{}.Build()
-	objects = append(objects, awsManagedMachinePoolsCRD)
 
-	return objects
+	return []runtime.Object{
+		clustersCRD,
+		machineDeploymentsCRD,
+		machineHealthChecksCRD,
+		machinesCRD,
+		machineSetsCRD,
+		awsClustersCRD,
+		awsMachinePoolsCRD,
+		awsMachinesCRD,
+		awsMachineTemplatesCRD,
+		awsManagedClustersCRD,
+		awsManagedMachinePoolsCRD,
+	}
 }

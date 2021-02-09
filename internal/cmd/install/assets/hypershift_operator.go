@@ -26,22 +26,64 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 }
 
 type HyperShiftOperatorDeployment struct {
-	Namespace     string
-	OperatorImage string
+	Namespace      *corev1.Namespace
+	OperatorImage  string
+	ServiceAccount *corev1.ServiceAccount
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
-	deployment, err := newDeployment(mustAssetReader("hypershift-operator/operator-deployment.yaml"))
-	if err != nil {
-		panic(err)
+	deployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: appsv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "operator",
+			Namespace: o.Namespace.Name,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: int32Ptr(1),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "operator",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name": "operator",
+					},
+				},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: o.ServiceAccount.Name,
+					Containers: []corev1.Container{
+						{
+							Name:            "operator",
+							Image:           o.OperatorImage,
+							ImagePullPolicy: corev1.PullAlways,
+							Env: []corev1.EnvVar{
+								{
+									Name: "MY_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
+							Command: []string{"/usr/bin/hypershift-operator"},
+							Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "operator"},
+						},
+					},
+				},
+			},
+		},
 	}
-	deployment.Namespace = o.Namespace
-	deployment.Spec.Template.Spec.Containers[0].Image = o.OperatorImage
 	return deployment
 }
 
 type HyperShiftOperatorServiceAccount struct {
-	Namespace string
+	Namespace *corev1.Namespace
 }
 
 func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
@@ -51,7 +93,7 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 			APIVersion: corev1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Namespace,
+			Namespace: o.Namespace.Name,
 			Name:      "operator",
 		},
 	}
@@ -61,9 +103,95 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 type HyperShiftOperatorClusterRole struct{}
 
 func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
-	role, err := newClusterRole(mustAssetReader("hypershift-operator/operator-clusterrole.yaml"))
-	if err != nil {
-		panic(err)
+	role := &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRole",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-operator",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"config.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"apiextensions.k8s.io"},
+				Resources: []string{"customresourcedefinitions"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{
+					"bootstrap.cluster.x-k8s.io",
+					"controlplane.cluster.x-k8s.io",
+					"infrastructure.cluster.x-k8s.io",
+					"machines.cluster.x-k8s.io",
+					"exp.infrastructure.cluster.x-k8s.io",
+					"addons.cluster.x-k8s.io",
+					"exp.cluster.x-k8s.io",
+					"cluster.x-k8s.io",
+				},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"operator.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"security.openshift.io"},
+				Resources: []string{"securitycontextconstraints"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"rbac.authorization.k8s.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"events",
+					"configmaps",
+					"pods",
+					"pods/log",
+					"secrets",
+					"nodes",
+					"namespaces",
+					"serviceaccounts",
+					"services",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{"apps"},
+				Resources: []string{"deployments"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"etcd.database.coreos.com"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"machine.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+		},
 	}
 	return role
 }
