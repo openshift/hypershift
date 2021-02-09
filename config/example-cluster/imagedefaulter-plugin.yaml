@@ -1,4 +1,0 @@
-apiVersion: hypershiftplugin
-kind: ImageDefaulter
-metadata:
-  name: imagedefaulter
