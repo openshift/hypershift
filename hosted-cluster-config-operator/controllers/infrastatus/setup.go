@@ -13,6 +13,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	hyperapi "openshift.io/hypershift/api"
 	"openshift.io/hypershift/hosted-cluster-config-operator/operator"
 )
 
@@ -21,15 +22,8 @@ const (
 )
 
 var (
-	configScheme = runtime.NewScheme()
-	configCodecs = serializer.NewCodecFactory(configScheme)
+	configCodecs = serializer.NewCodecFactory(hyperapi.Scheme)
 )
-
-func init() {
-	if err := configv1.AddToScheme(configScheme); err != nil {
-		panic(err)
-	}
-}
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
 	infrastructures := cfg.TargetConfigInformers().Config().V1().Infrastructures()

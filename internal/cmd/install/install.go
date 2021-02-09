@@ -20,46 +20,12 @@ import (
 	"fmt"
 	"os"
 
-	configv1 "github.com/openshift/api/config/v1"
-	operatorv1 "github.com/openshift/api/operator/v1"
-	routev1 "github.com/openshift/api/route/v1"
-	securityv1 "github.com/openshift/api/security/v1"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer/json"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 
 	hyperapi "openshift.io/hypershift/api"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/internal/cmd/install/assets"
 )
-
-var (
-	scheme         = runtime.NewScheme()
-	yamlSerializer = json.NewSerializerWithOptions(
-		json.DefaultMetaFactory, scheme, scheme,
-		json.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
-	)
-)
-
-func init() {
-	capiaws.AddToScheme(scheme)
-	clientgoscheme.AddToScheme(scheme)
-	hyperv1.AddToScheme(scheme)
-	capiv1.AddToScheme(scheme)
-	configv1.AddToScheme(scheme)
-	securityv1.AddToScheme(scheme)
-	operatorv1.AddToScheme(scheme)
-	routev1.AddToScheme(scheme)
-	rbacv1.AddToScheme(scheme)
-	corev1.AddToScheme(scheme)
-	apiextensionsv1.AddToScheme(scheme)
-}
 
 type Options struct {
 	Namespace       string
@@ -84,7 +50,7 @@ func NewCommand() *cobra.Command {
 		objects = append(objects, clusterAPIManifests()...)
 
 		for _, object := range objects {
-			err := yamlSerializer.Encode(object, os.Stdout)
+			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
 			if err != nil {
 				panic(err)
 			}
