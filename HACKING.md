@@ -5,22 +5,21 @@
 
 ### Run the HyperShift Operator in a local process
 
-1. Ensure the `KUBECONFIG` evnvironment variable points to a management cluster
+1. Ensure the `KUBECONFIG` environment variable points to a management cluster
    with no HyperShift installed yet.
 
 2. Build HyperShift.
 
-        make build
+        $ make build
 
 3. Install HyperShift with the operator deployment scaled to zero so that it
    doesn't conflict with your local operator process. 
 
-        make install PROFILE=development
+        TODO
 
-4. Run the HyperShift operator locally. Replace `IMAGE` with a custom image,
-   if desired. This image is used for the Control Plane Operator.
+4. Run the HyperShift operator locally.
 
-        make run-local IMAGE=registry.ci.openshift.org/hypershift/hypershift
+        $ bin/hypershift-operator run
 
 ### Run a custom image using the production profile
 
@@ -28,24 +27,20 @@
 
         make IMG=quay.io/my/hypershift:latest docker-build docker-push
 
-2. Deploy the latest production version.
+2. Install HyperShift using the custom image:
 
-        make install PROFILE=production
-
-3. Reconfigure the HyperShift operator deployment to use your custom image.
-   This image will also be used for the control plane operator.
-
-        oc --namespace hypershift set image deployment/operator operator=quay.io/my/hypershift:latest 
+        $ bin/hypershift install --hypershift-image quay.io/my/hypershift:latest | oc apply -f -
 
 ### Run the e2e tests
 
 1. Install HyperShift.
-
-        make install PROFILE=production
-
 2. Run the tests.
 
-        make test-e2e
+        $ make e2e
+        $ bin/test-e2e -v -args --ginkgo.v --ginkgo.trace \
+          --e2e.quick-start.aws-credentials-file /my/aws-credentials \
+          --e2e.quick-start.pull-secret-file /my/pull-secret \
+          --e2e.quick-start.ssh-key-file /my/public-ssh-key \
 
 ### Visualize the Go dependency tree
 

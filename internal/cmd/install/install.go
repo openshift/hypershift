@@ -34,6 +34,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 
+	hyperapi "openshift.io/hypershift/api"
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/internal/cmd/install/assets"
 )
@@ -74,7 +75,7 @@ func NewCommand() *cobra.Command {
 	var opts Options
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
-	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", "registry.ci.openshift.org/hypershift/hypershift:latest", "The HyperShift image to deploy")
+	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", hyperapi.HyperShiftImage, "The HyperShift image to deploy")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		var objects []runtime.Object
