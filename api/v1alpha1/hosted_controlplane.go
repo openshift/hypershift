@@ -41,6 +41,11 @@ type HostedControlPlaneStatus struct {
 	Ready bool `json:"ready"`
 
 	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint"`
+
+	// Version is the semantic version of the release applied by
+	// the hosted control plane operator
+	// +optional
+	Version string `json:"version,omitempty"`
 }
 
 // +kubebuilder:object:root=true

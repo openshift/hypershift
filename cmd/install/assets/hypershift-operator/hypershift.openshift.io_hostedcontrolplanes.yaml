@@ -90,6 +90,9 @@ spec:
                 default: false
                 description: Ready denotes that the HostedControlPlane API Server is ready to receive requests
                 type: boolean
+              version:
+                description: Version is the semantic version of the release applied by the hosted control plane operator
+                type: string
             required:
             - controlPlaneEndpoint
             - ready

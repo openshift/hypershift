@@ -52,9 +52,8 @@ spec:
                     type: string
                 type: object
               release:
+                description: Release specifies the release image to use for this HostedCluster
                 properties:
-                  channel:
-                    type: string
                   image:
                     description: Image is the release image pullspec for the control plane
                     type: string
@@ -84,8 +83,60 @@ spec:
             properties:
               ready:
                 type: boolean
-            required:
-            - ready
+              version:
+                description: Version is the status of the release version applied to the HostedCluster.
+                properties:
+                  desired:
+                    description: desired is the version that the cluster is reconciling towards. If the cluster is not yet fully initialized desired will be set with the information available, which may be an image or a tag.
+                    properties:
+                      image:
+                        description: Image is the release image pullspec for the control plane
+                        type: string
+                    required:
+                    - image
+                    type: object
+                  history:
+                    description: history contains a list of the most recent versions applied to the cluster. This value may be empty during cluster startup, and then will be updated when a new update is being applied. The newest update is first in the list and it is ordered by recency. Updates in the history have state Completed if the rollout completed - if an update was failing or halfway applied the state will be Partial. Only a limited amount of update history is preserved.
+                    items:
+                      description: UpdateHistory is a single attempted update to the cluster.
+                      properties:
+                        completionTime:
+                          description: completionTime, if set, is when the update was fully applied. The update that is currently being applied will have a null completion time. Completion time will always be set for entries that are not the current update (usually to the started time of the next update).
+                          format: date-time
+                          nullable: true
+                          type: string
+                        image:
+                          description: image is a container image location that contains the update. This value is always populated.
+                          type: string
+                        startedTime:
+                          description: startedTime is the time at which the update was started.
+                          format: date-time
+                          type: string
+                        state:
+                          description: state reflects whether the update was fully applied. The Partial state indicates the update is not fully applied, while the Completed state indicates the update was successfully rolled out at least once (all parts of the update successfully applied).
+                          type: string
+                        verified:
+                          description: verified indicates whether the provided update was properly verified before it was installed. If this is false the cluster may not be trusted.
+                          type: boolean
+                        version:
+                          description: version is a semantic versioning identifying the update version. If the requested image does not define a version, or if a failure occurs retrieving the image, this value may be empty.
+                          type: string
+                      required:
+                      - completionTime
+                      - image
+                      - startedTime
+                      - state
+                      - verified
+                      type: object
+                    type: array
+                  observedGeneration:
+                    description: observedGeneration reports which version of the spec is being synced. If this value is not equal to metadata.generation, then the desired and conditions fields may represent a previous version.
+                    format: int64
+                    type: integer
+                required:
+                - desired
+                - observedGeneration
+                type: object
             type: object
         type: object
     served: true

@@ -19,6 +19,7 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -26,24 +27,26 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
-	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 )
 
 const (
 	finalizer               = "hypershift.openshift.io/finalizer"
+	hostedClusterAnnotation = "hypershift.openshift.io/cluster"
 	pullSecretName          = "pull-secret"
 	sshKeySecretName        = "ssh-key"
 	providerCredsSecretName = "provider-creds"
@@ -63,7 +66,9 @@ type HostedClusterReconciler struct {
 func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		Watches(&source.Kind{Type: &hyperv1.ExternalInfraCluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
+		Watches(&source.Kind{Type: &hyperv1.HostedControlPlane{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
+		Watches(&source.Kind{Type: &capiv1.Cluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
@@ -111,6 +116,24 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	if hcluster.Status.Ready {
 		r.Log.Info("Is ready")
+		return ctrl.Result{}, nil
+	}
+
+	if hcluster.Status.Version == nil {
+		hcluster.Status.Version = &hyperv1.ClusterVersionStatus{
+			Desired:            hcluster.Spec.Release,
+			ObservedGeneration: hcluster.Generation,
+			History: []configv1.UpdateHistory{
+				{
+					State:       configv1.PartialUpdate,
+					StartedTime: metav1.Now(),
+					Image:       hcluster.Spec.Release.Image,
+				},
+			},
+		}
+		if err = r.Status().Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update version status for hosted cluster: %w", err)
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -194,6 +217,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
 			Name:      hcluster.GetName(),
+			Annotations: map[string]string{
+				hostedClusterAnnotation: namespacedName(hcluster).String(),
+			},
 		},
 		Spec: capiv1.ClusterSpec{
 			ControlPlaneEndpoint: capiv1.APIEndpoint{},
@@ -211,15 +237,14 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			},
 		},
 	}
-	patchHelper, err := patch.NewHelper(hcluster, r.Client)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to init patch helper: %w", err)
-	}
 
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
 			Name:      hcluster.GetName(),
+			Annotations: map[string]string{
+				hostedClusterAnnotation: namespacedName(hcluster).String(),
+			},
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
 			ProviderCreds: corev1.LocalObjectReference{
@@ -240,6 +265,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
 			Name:      hcluster.GetName(),
+			Annotations: map[string]string{
+				hostedClusterAnnotation: namespacedName(hcluster).String(),
+			},
 		},
 		Spec: hyperv1.ExternalInfraClusterSpec{
 			ComputeReplicas: hcluster.Spec.InitialComputeReplicas,
@@ -259,6 +287,14 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	if hcp.Status.Version != hcluster.Status.Version.History[0].Version {
+		hcluster.Status.Version.History[0].Version = hcp.Status.Version
+		if err = r.Status().Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update version in hosted cluster status: %w", err)
+		}
+		return ctrl.Result{}, nil
+	}
+
 	var currentCluster capiv1.Cluster
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &currentCluster); err != nil {
 		return ctrl.Result{}, err
@@ -267,12 +303,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	ready := currentCluster.Status.ControlPlaneReady && currentCluster.Status.InfrastructureReady
 	if !ready {
-		r.Log.Info("Not ready yet. Requeueing")
-		return ctrl.Result{Requeue: true}, nil
+		r.Log.Info("Not ready yet.")
+		return ctrl.Result{}, nil
 	}
 	hcluster.Status.Ready = ready
-	if err := patchHelper.Patch(ctx, hcluster); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
+	completionTime := metav1.Now()
+	hcluster.Status.Version.History[0].CompletionTime = &completionTime
+	hcluster.Status.Version.History[0].State = configv1.CompletedUpdate
+	if err := r.Status().Update(ctx, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update hosted cluster status: %w", err)
 	}
 
 	if hcluster.Spec.InitialComputeReplicas > 0 {
@@ -420,4 +459,32 @@ func generateSSHSecret(data []byte, namespace string) (*corev1.Secret, error) {
 	secret.Data = map[string][]byte{"id_rsa.pub": data}
 	secret.Type = corev1.SecretTypeOpaque
 	return secret, nil
+}
+
+func namespacedName(obj metav1.Object) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: obj.GetNamespace(),
+		Name:      obj.GetName(),
+	}
+}
+
+func parseNamespacedName(name string) types.NamespacedName {
+	parts := strings.SplitN(name, string(types.Separator), 2)
+	if len(parts) > 1 {
+		return types.NamespacedName{Namespace: parts[0], Name: parts[1]}
+	}
+	return types.NamespacedName{Name: parts[0]}
+}
+
+func enqueueParentHostedCluster(obj ctrlclient.Object) []reconcile.Request {
+	var hostedClusterName string
+	if obj.GetAnnotations() != nil {
+		hostedClusterName = obj.GetAnnotations()[hostedClusterAnnotation]
+	}
+	if hostedClusterName == "" {
+		return []reconcile.Request{}
+	}
+	return []reconcile.Request{
+		{NamespacedName: parseNamespacedName(hostedClusterName)},
+	}
 }
