@@ -1,7 +1,8 @@
 package api
 
 var (
-	// TODO: Is there any way to meaningfully bake this through ldflags?
+	// TODO: This goes away when control-plane-operator becomes another component
+	// in the OCP payload.
 	HyperShiftImage = "registry.ci.openshift.org/hypershift/hypershift:latest"
 
 	// OCPReleaseImage is the latest compatible OCP release, used for defaulting.

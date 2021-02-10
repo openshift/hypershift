@@ -22,8 +22,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	clustercmd "openshift.io/hypershift/internal/cmd/cluster"
-	installcmd "openshift.io/hypershift/internal/cmd/install"
+	clustercmd "openshift.io/hypershift/cmd/cluster"
+	installcmd "openshift.io/hypershift/cmd/install"
 )
 
 func main() {

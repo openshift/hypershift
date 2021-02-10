@@ -37,7 +37,7 @@ verify: build fmt vet
 # Generate Kube manifests (e.g. CRDs)
 .PHONY: hypershift-operator-manifests
 hypershift-operator-manifests:
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=internal/cmd/install/assets/hypershift-operator
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
@@ -70,11 +70,11 @@ hosted-cluster-config-operator:
 .PHONY: hypershift
 hypershift:
 	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
-		-o ./internal/cmd/install/assets/bindata.go \
-		--prefix internal/cmd/install/assets \
+		-o ./cmd/install/assets/bindata.go \
+		--prefix cmd/install/assets \
 		--ignore bindata.go \
-		./internal/cmd/install/assets/...
-	gofmt -s -w ./internal/cmd/install/assets/bindata.go
+		./cmd/install/assets/...
+	gofmt -s -w ./cmd/install/assets/bindata.go
 
 	$(GO_BUILD_RECIPE) -o bin/hypershift .
 

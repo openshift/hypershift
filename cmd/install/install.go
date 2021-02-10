@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	hyperapi "openshift.io/hypershift/api"
-	"openshift.io/hypershift/internal/cmd/install/assets"
+	"openshift.io/hypershift/cmd/install/assets"
 )
 
 type Options struct {

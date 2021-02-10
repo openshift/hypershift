@@ -3,7 +3,7 @@ package cluster
 import (
 	"github.com/spf13/cobra"
 
-	"openshift.io/hypershift/internal/cmd/cluster/example"
+	"openshift.io/hypershift/cmd/cluster/example"
 )
 
 func NewCommand() *cobra.Command {

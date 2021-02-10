@@ -18,7 +18,13 @@ import (
 )
 
 var (
-	Scheme         = runtime.NewScheme()
+	Scheme = runtime.NewScheme()
+	// TODO: Even though an object typer is specified here, serialized objects
+	// are not always getting their TypeMeta set unless explicitly initialized
+	// on the variable declarations.
+	// Investigate https://github.com/kubernetes/cli-runtime/blob/master/pkg/printers/typesetter.go
+	// as a possible solution.
+	// See also: https://github.com/openshift/hive/blob/master/contrib/pkg/createcluster/create.go#L937-L954
 	YamlSerializer = json.NewSerializerWithOptions(
 		json.DefaultMetaFactory, Scheme, Scheme,
 		json.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
