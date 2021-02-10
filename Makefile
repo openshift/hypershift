@@ -45,7 +45,7 @@ hypershift-operator:
 	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
 		-o ./hypershift-operator/controllers/hostedcluster/assets/bindata.go \
 		--prefix hypershift-operator/controllers/hostedcluster/assets \
-		--ignore bindata.go \
+		--ignore '.*\.go' \
 		./hypershift-operator/controllers/hostedcluster/assets/...
 	gofmt -s -w ./hypershift-operator/controllers/hostedcluster/assets/bindata.go
 
@@ -56,7 +56,7 @@ control-plane-operator:
 	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
 		-o ./control-plane-operator/controllers/hostedcontrolplane/assets/bindata.go \
 		--prefix control-plane-operator/controllers/hostedcontrolplane/assets \
-		--ignore bindata.go \
+		--ignore '.*\.go' \
 		./control-plane-operator/controllers/hostedcontrolplane/assets/...
 	gofmt -s -w ./control-plane-operator/controllers/hostedcontrolplane/assets/bindata.go
 
@@ -72,7 +72,7 @@ hypershift:
 	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
 		-o ./cmd/install/assets/bindata.go \
 		--prefix cmd/install/assets \
-		--ignore bindata.go \
+		--ignore '.*\.go' \
 		./cmd/install/assets/...
 	gofmt -s -w ./cmd/install/assets/bindata.go
 
