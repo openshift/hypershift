@@ -32,13 +32,23 @@
 
         $ bin/hypershift install --hypershift-image quay.io/my/hypershift:latest
 
-### Run the e2e tests
+### Run the e2e tests with a compiled binary
 
 1. Install HyperShift.
 2. Run the tests.
 
         $ make e2e
         $ bin/test-e2e -v -args --ginkgo.v --ginkgo.trace \
+          --e2e.quick-start.aws-credentials-file /my/aws-credentials \
+          --e2e.quick-start.pull-secret-file /my/pull-secret \
+          --e2e.quick-start.ssh-key-file /my/public-ssh-key
+
+### Run the e2e tests with the local source tree
+
+1. Install HyperShift.
+2. Run the tests.
+
+        $ go test -tags e2e -v ./test/e2e -args --ginkgo.v --ginkgo.trace \
           --e2e.quick-start.aws-credentials-file /my/aws-credentials \
           --e2e.quick-start.pull-secret-file /my/pull-secret \
           --e2e.quick-start.ssh-key-file /my/public-ssh-key
