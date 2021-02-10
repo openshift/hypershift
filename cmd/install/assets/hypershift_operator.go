@@ -29,6 +29,7 @@ type HyperShiftOperatorDeployment struct {
 	Namespace      *corev1.Namespace
 	OperatorImage  string
 	ServiceAccount *corev1.ServiceAccount
+	Replicas       int32
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -42,7 +43,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Namespace: o.Namespace.Name,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: int32Ptr(1),
+			Replicas: &o.Replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"name": "operator",

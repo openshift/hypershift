@@ -28,8 +28,10 @@ import (
 )
 
 type Options struct {
-	Namespace       string
-	HyperShiftImage string
+	Namespace                  string
+	HyperShiftImage            string
+	HyperShiftOperatorReplicas int32
+	Development                bool
 }
 
 func NewCommand() *cobra.Command {
@@ -42,8 +44,16 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", hyperapi.HyperShiftImage, "The HyperShift image to deploy")
+	cmd.Flags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
+		switch {
+		case opts.Development:
+			opts.HyperShiftOperatorReplicas = 0
+		default:
+			opts.HyperShiftOperatorReplicas = 1
+		}
+
 		var objects []runtime.Object
 
 		objects = append(objects, hyperShiftOperatorManifests(opts)...)
@@ -81,6 +91,7 @@ func hyperShiftOperatorManifests(opts Options) []runtime.Object {
 		Namespace:      operatorNamespace,
 		OperatorImage:  opts.HyperShiftImage,
 		ServiceAccount: operatorServiceAccount,
+		Replicas:       opts.HyperShiftOperatorReplicas,
 	}.Build()
 
 	return []runtime.Object{
