@@ -35,7 +35,7 @@ Prerequisites:
 Install the example cluster:
 
 ```bash
-$ bin/hypershift cluster example \
+$ bin/hypershift create cluster \
     --pull-secret /my/pull-secret \
     --aws-creds /my/aws-credentials \
     --ssh-key /my/ssh-public-key | oc apply -f -

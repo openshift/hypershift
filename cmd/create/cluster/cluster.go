@@ -1,4 +1,4 @@
-package example
+package cluster
 
 import (
 	"fmt"
@@ -23,8 +23,8 @@ type Options struct {
 
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "example",
-		Short: "Creates a working example HostedCluster resource",
+		Use:   "cluster",
+		Short: "Creates basic functional HostedCluster resources",
 	}
 
 	var opts Options

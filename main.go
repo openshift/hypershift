@@ -22,7 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	clustercmd "openshift.io/hypershift/cmd/cluster"
+	createcmd "openshift.io/hypershift/cmd/create"
 	installcmd "openshift.io/hypershift/cmd/install"
 )
 
@@ -35,7 +35,7 @@ func main() {
 		},
 	}
 	cmd.AddCommand(installcmd.NewCommand())
-	cmd.AddCommand(clustercmd.NewCommand())
+	cmd.AddCommand(createcmd.NewCommand())
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
