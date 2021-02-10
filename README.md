@@ -15,13 +15,13 @@ Guest clustering for [OpenShift](https://openshift.io).
 Install HyperShift into the management cluster:
 
 ```bash
-$ bin/hypershift install | oc apply -f -
+$ bin/hypershift install
 ```
 
 Remove HyperShift from the management cluster:
 
 ```bash
-$ bin/hypershift install | oc delete -f -
+$ bin/hypershift install --render | oc delete -f -
 ```
 
 ### Create an example cluster
@@ -38,7 +38,7 @@ Install the example cluster:
 $ bin/hypershift create cluster \
     --pull-secret /my/pull-secret \
     --aws-creds /my/aws-credentials \
-    --ssh-key /my/ssh-public-key | oc apply -f -
+    --ssh-key /my/ssh-public-key
 ```
 
 When the cluster is available, get the guest kubeconfig using:

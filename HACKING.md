@@ -12,16 +12,17 @@
 
         $ make build
 
-3. Install HyperShift with the operator deployment scaled to zero so that it
-   doesn't conflict with your local operator process. 
+3. Install HyperShift in development mode which causes the operator deployment
+   to be deployment scaled to zero so that it doesn't conflict with your local
+   operator process. 
 
-        TODO
+        $ bin/hypershift install --development
 
 4. Run the HyperShift operator locally.
 
         $ bin/hypershift-operator run
 
-### Run a custom image using the production profile
+### Install HyperShift with a custom image
 
 1. Build and push a custom image build to your own repository.
 
@@ -29,7 +30,7 @@
 
 2. Install HyperShift using the custom image:
 
-        $ bin/hypershift install --hypershift-image quay.io/my/hypershift:latest | oc apply -f -
+        $ bin/hypershift install --hypershift-image quay.io/my/hypershift:latest
 
 ### Run the e2e tests
 
@@ -40,7 +41,7 @@
         $ bin/test-e2e -v -args --ginkgo.v --ginkgo.trace \
           --e2e.quick-start.aws-credentials-file /my/aws-credentials \
           --e2e.quick-start.pull-secret-file /my/pull-secret \
-          --e2e.quick-start.ssh-key-file /my/public-ssh-key \
+          --e2e.quick-start.ssh-key-file /my/public-ssh-key
 
 ### Visualize the Go dependency tree
 
