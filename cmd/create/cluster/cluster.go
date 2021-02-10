@@ -1,15 +1,21 @@
 package cluster
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/types"
 
 	hyperapi "openshift.io/hypershift/api"
 	apifixtures "openshift.io/hypershift/api/fixtures"
+
+	cr "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Options struct {
@@ -19,6 +25,7 @@ type Options struct {
 	PullSecretFile     string
 	AWSCredentialsFile string
 	SSHKeyFile         string
+	Render             bool
 }
 
 func NewCommand() *cobra.Command {
@@ -35,6 +42,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", "", "Path to a pull secret")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", "", "Path to an AWS credentials file")
 	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "Path to an SSH key file")
+	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
@@ -50,23 +58,55 @@ func NewCommand() *cobra.Command {
 			panic(err)
 		}
 
-		example := apifixtures.ExampleOptions{
+		exampleObjects := apifixtures.ExampleOptions{
 			Namespace:      opts.Namespace,
 			Name:           opts.Name,
 			ReleaseImage:   opts.ReleaseImage,
 			PullSecret:     pullSecret,
 			AWSCredentials: awsCredentials,
 			SSHKey:         sshKey,
-		}.Resources()
+		}.Resources().AsObjects()
 
-		for _, object := range example.AsObjects() {
-			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+		switch {
+		case opts.Render:
+			render(exampleObjects)
+		default:
+			err := apply(context.TODO(), exampleObjects)
 			if err != nil {
 				panic(err)
 			}
-			fmt.Println("---")
 		}
 	}
 
 	return cmd
+}
+
+func render(objects []crclient.Object) {
+	for _, object := range objects {
+		err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("---")
+	}
+}
+
+func apply(ctx context.Context, objects []crclient.Object) error {
+	client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return fmt.Errorf("failed to create kube client: %w", err)
+	}
+	for _, object := range objects {
+		var objectBytes bytes.Buffer
+		err := hyperapi.YamlSerializer.Encode(object, &objectBytes)
+		if err != nil {
+			return err
+		}
+		err = client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift"))
+		if err != nil {
+			return err
+		}
+		fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+	}
+	return nil
 }

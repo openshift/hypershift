@@ -3,9 +3,10 @@ package fixtures
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ExampleResources struct {
@@ -16,8 +17,8 @@ type ExampleResources struct {
 	Cluster        *hyperv1.HostedCluster
 }
 
-func (o *ExampleResources) AsObjects() []runtime.Object {
-	return []runtime.Object{
+func (o *ExampleResources) AsObjects() []crclient.Object {
+	return []crclient.Object{
 		o.Namespace,
 		o.SSHKey,
 		o.PullSecret,
