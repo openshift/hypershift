@@ -27,7 +27,3 @@ tools/bin
 .envrc
 
 .kube
-
-config/example-cluster/ssh-key
-config/example-cluster/pull-secret
-config/example-cluster/aws-creds
