@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"reflect"
 	"strings"
 	"time"
 
@@ -113,6 +114,67 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return nil
 }
 
+func getConditionByType(conditions []hyperv1.HostedControlPlaneCondition, conditionType hyperv1.ConditionType) *hyperv1.HostedControlPlaneCondition {
+	for k, v := range conditions {
+		if v.Type == conditionType {
+			return &conditions[k]
+		}
+	}
+	return nil
+}
+
+func setConditionByType(conditions *[]hyperv1.HostedControlPlaneCondition, conditionType hyperv1.ConditionType, status hyperv1.ConditionStatus, reason, message string) {
+	existingCondition := getConditionByType(*conditions, conditionType)
+	if existingCondition == nil {
+		newCondition := hyperv1.HostedControlPlaneCondition{
+			Type:    conditionType,
+			Status:  status,
+			Reason:  reason,
+			Message: message,
+		}
+		*conditions = append(*conditions, newCondition)
+	} else {
+		existingCondition.Status = status
+		existingCondition.Reason = reason
+		existingCondition.Message = message
+	}
+}
+
+func (r *HostedControlPlaneReconciler) setAvailableCondition(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, oldStatus *hyperv1.HostedControlPlaneStatus,
+	status hyperv1.ConditionStatus, reason, message string, result ctrl.Result, err error) (ctrl.Result, error) {
+	conditions := &hostedControlPlane.Status.Conditions
+
+	setConditionByType(conditions, hyperv1.Available, status, reason, message)
+
+	// Sync status.ready with Available condition
+	condition := getConditionByType(*conditions, hyperv1.Available)
+	if condition != nil && condition.Status == hyperv1.ConditionTrue {
+		hostedControlPlane.Status.Ready = true
+	} else {
+		hostedControlPlane.Status.Ready = false
+	}
+
+	if reflect.DeepEqual(oldStatus, hostedControlPlane.Status) {
+		// No change to status, nothing to sync
+		return result, err
+	}
+
+	// Check for changed conditions to update LastTransitionTime
+	for k, condition := range *conditions {
+		oldCondition := getConditionByType(oldStatus.Conditions, condition.Type)
+		if oldCondition == nil || *oldCondition != condition {
+			(*conditions)[k].LastTransitionTime = metav1.Now()
+		}
+	}
+
+	if updateErr := r.Status().Update(ctx, hostedControlPlane); updateErr != nil {
+		r.Log.Error(err, "failed to update status")
+		result.Requeue = true
+	}
+
+	return result, err
+}
+
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
 	r.Log.Info("Reconciling")
@@ -127,6 +189,23 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	// Return early if deleted
+	if !hostedControlPlane.DeletionTimestamp.IsZero() {
+		if err := r.delete(ctx, hostedControlPlane); err != nil {
+			r.Log.Error(err, "failed to delete cluster")
+			return ctrl.Result{}, err
+		}
+		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
+			controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
+			if err := r.Update(ctx, hostedControlPlane); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	oldStatus := hostedControlPlane.Status.DeepCopy()
+
 	// Fetch the Cluster.
 	cluster, err := util.GetOwnerCluster(ctx, r.Client, hostedControlPlane.ObjectMeta)
 	if err != nil {
@@ -140,21 +219,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	if util.IsPaused(cluster, hostedControlPlane) {
 		r.Log.Info("HostedControlPlane or linked Cluster is marked as paused. Won't reconcile")
-		return ctrl.Result{}, nil
-	}
-
-	// Return early if deleted
-	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, hostedControlPlane); err != nil {
-			r.Log.Error(err, "failed to delete cluster")
-			return ctrl.Result{}, err
-		}
-		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
-			controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
-			if err := r.Update(ctx, hostedControlPlane); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
-			}
-		}
 		return ctrl.Result{}, nil
 	}
 
@@ -175,21 +239,21 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	if hostedControlPlane.Status.Ready {
 		r.Log.Info("Is ready")
-		return result, nil
+		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionTrue, "AsExpected", "HostedControlPlane is ready", result, nil)
 	}
 
 	r.Log.Info("Creating API services")
 	infraStatus, err := r.ensureInfrastructure(ctx, hostedControlPlane)
 	if err != nil {
 		r.Log.Error(err, "failed to ensure infrastructure")
-		return result, fmt.Errorf("failed to ensure infrastructure: %w", err)
+		r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "InfrastructureEnsureFailed", err.Error(), result, fmt.Errorf("failed to ensure infrastructure: %w", err))
 	}
 
 	// Wait for things like LB services to become available
 	if !infraStatus.IsReady() {
 		result.RequeueAfter = 5 * time.Second
 		r.Log.Info("Cluster infrastructure is still provisioning, will try again later")
-		return result, nil
+		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "WaitingOnInfrastructureReady", "Cluster infrastructure is still provisioning", result, nil)
 	}
 	hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
 		Host: infraStatus.APIAddress,
@@ -198,17 +262,16 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to look up release info: %w", err)
+		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ReleaseInfoLookupFailed", err.Error(), ctrl.Result{}, fmt.Errorf("failed to look up release info: %w", err))
 	}
 	componentVersions, err := releaseImage.ComponentVersions()
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("invalid component versions found in release info: %w", err)
+		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "InvalidComponentVersion", err.Error(), ctrl.Result{}, fmt.Errorf("invalid component versions found in release info: %w", err))
 	}
 	r.Log.Info("found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", releaseImage.ComponentImages(), "componentVersions", componentVersions)
 
 	if hostedControlPlane.Status.Version == "" {
 		hostedControlPlane.Status.Version = releaseImage.Version()
-		return ctrl.Result{}, r.Status().Update(ctx, hostedControlPlane)
 	}
 
 	// Install the control plane into the infrastructure
@@ -216,16 +279,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage)
 	if err != nil {
 		r.Log.Error(err, "failed to ensure control plane")
-		return result, fmt.Errorf("failed to ensure control plane: %w", err)
-	}
-
-	hostedControlPlane.Status.Ready = true
-	if err := r.Status().Update(ctx, hostedControlPlane); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ControlPlaneEnsureFailed", err.Error(), result, fmt.Errorf("failed to ensure control plane: %w", err))
 	}
 
 	r.Log.Info("Successfully reconciled")
-	return ctrl.Result{}, nil
+	return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionTrue, "AsExpected", "HostedControlPlane is ready", ctrl.Result{}, nil)
 }
 
 func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
