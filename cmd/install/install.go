@@ -17,14 +17,19 @@ limitations under the License.
 package install
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 
 	hyperapi "openshift.io/hypershift/api"
 	"openshift.io/hypershift/cmd/install/assets"
+
+	cr "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Options struct {
@@ -32,6 +37,7 @@ type Options struct {
 	HyperShiftImage            string
 	HyperShiftOperatorReplicas int32
 	Development                bool
+	Render                     bool
 }
 
 func NewCommand() *cobra.Command {
@@ -45,6 +51,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", hyperapi.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.Flags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
+	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		switch {
@@ -54,24 +61,56 @@ func NewCommand() *cobra.Command {
 			opts.HyperShiftOperatorReplicas = 1
 		}
 
-		var objects []runtime.Object
+		var objects []crclient.Object
 
 		objects = append(objects, hyperShiftOperatorManifests(opts)...)
 		objects = append(objects, clusterAPIManifests()...)
 
-		for _, object := range objects {
-			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+		switch {
+		case opts.Render:
+			render(objects)
+		default:
+			err := apply(context.TODO(), objects)
 			if err != nil {
 				panic(err)
 			}
-			fmt.Println("---")
 		}
 	}
 
 	return cmd
 }
 
-func hyperShiftOperatorManifests(opts Options) []runtime.Object {
+func render(objects []crclient.Object) {
+	for _, object := range objects {
+		err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("---")
+	}
+}
+
+func apply(ctx context.Context, objects []crclient.Object) error {
+	client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return fmt.Errorf("failed to create kube client: %w", err)
+	}
+	for _, object := range objects {
+		var objectBytes bytes.Buffer
+		err := hyperapi.YamlSerializer.Encode(object, &objectBytes)
+		if err != nil {
+			return err
+		}
+		err = client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift"))
+		if err != nil {
+			return err
+		}
+		fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+	}
+	return nil
+}
+
+func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	hostedClustersCRD := assets.HyperShiftHostedClustersCustomResourceDefinition{}.Build()
 	nodePoolsCRD := assets.HyperShiftNodePoolsCustomResourceDefinition{}.Build()
 	hostedControlPlanesCRD := assets.HyperShiftHostedControlPlaneCustomResourceDefinition{}.Build()
@@ -94,7 +133,7 @@ func hyperShiftOperatorManifests(opts Options) []runtime.Object {
 		Replicas:       opts.HyperShiftOperatorReplicas,
 	}.Build()
 
-	return []runtime.Object{
+	return []crclient.Object{
 		hostedClustersCRD,
 		nodePoolsCRD,
 		hostedControlPlanesCRD,
@@ -107,7 +146,7 @@ func hyperShiftOperatorManifests(opts Options) []runtime.Object {
 	}
 }
 
-func clusterAPIManifests() []runtime.Object {
+func clusterAPIManifests() []crclient.Object {
 	clustersCRD := assets.ClusterAPIClustersCustomResourceDefinition{}.Build()
 	machineDeploymentsCRD := assets.ClusterAPIMachineDeploymentsCustomResourceDefinition{}.Build()
 	machineHealthChecksCRD := assets.ClusterAPIMachineHealthChecksCustomResourceDefinition{}.Build()
@@ -120,7 +159,7 @@ func clusterAPIManifests() []runtime.Object {
 	awsManagedClustersCRD := assets.ClusterAPIAWSManagedClustersCustomResourceDefinition{}.Build()
 	awsManagedMachinePoolsCRD := assets.ClusterAPIAWSManagedMachinePoolsCustomResourceDefinition{}.Build()
 
-	return []runtime.Object{
+	return []crclient.Object{
 		clustersCRD,
 		machineDeploymentsCRD,
 		machineHealthChecksCRD,
