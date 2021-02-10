@@ -12,10 +12,6 @@ func NewCommand() *cobra.Command {
 		Short: "Commands for working with HyperShift clusters",
 	}
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-
-	}
-
 	cmd.AddCommand(example.NewCommand())
 
 	return cmd

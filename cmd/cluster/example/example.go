@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -33,7 +34,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", hyperapi.OCPReleaseImage, "The OCP release image for the cluster")
 	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", "", "Path to a pull secret")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", "", "Path to an AWS credentials file")
-	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", "", "Path to an SSH key file")
+	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "Path to an SSH key file")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)

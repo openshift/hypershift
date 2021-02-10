@@ -4,6 +4,8 @@ package e2e
 
 import (
 	"flag"
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
@@ -31,7 +33,7 @@ type QuickStartSpecOptions struct {
 func init() {
 	flag.StringVar(&quickStartSpecOptions.AWSCredentialsFile, "e2e.quick-start.aws-credentials-file", "", "path to AWS credentials")
 	flag.StringVar(&quickStartSpecOptions.PullSecretFile, "e2e.quick-start.pull-secret-file", "", "path to pull secret")
-	flag.StringVar(&quickStartSpecOptions.SSHKeyFile, "e2e.quick-start.ssh-key-file", "", "path to SSH public key")
+	flag.StringVar(&quickStartSpecOptions.SSHKeyFile, "e2e.quick-start.ssh-key-file", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "path to SSH public key")
 	flag.StringVar(&quickStartSpecOptions.ReleaseImage, "e2e.quick-start.release-image", hyperapi.OCPReleaseImage, "OCP release image to test")
 }
 
