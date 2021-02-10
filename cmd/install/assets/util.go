@@ -19,7 +19,3 @@ func mustCustomResourceDefinition(manifest io.Reader) *apiextensionsv1.CustomRes
 	}
 	return &o
 }
-
-func int32Ptr(i int32) *int32 {
-	return &i
-}
