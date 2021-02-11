@@ -6,40 +6,39 @@ Guest clustering for [OpenShift](https://openshift.io).
 
 * Admin access to an OpenShift cluster (version 4.7).
 * The OpenShift `oc` CLI tool.
-* [Kustomize](https://kustomize.io)
+* The `hypershift` CLI tool:
 
-### Installation
+        $ make hypershift
+
+### Install HyperShift
 
 Install HyperShift into the management cluster:
 
 ```bash
-$ make install
+$ bin/hypershift install
 ```
 
 Remove HyperShift from the management cluster:
 
 ```bash
-$ make uninstall
+$ bin/hypershift install --render | oc delete -f -
 ```
 
-### Create a cluster
+### Create an example cluster
 
-First, create the following files containing secrets used by the example cluster:
+Prerequisites:
 
-- `config/example-cluster/pull-secret` a valid pull secret for image pulls.
-- `config/example-cluster/ssh-key` an SSH public key for guest node access.
-- `config/example-cluster/aws-creds` an [aws credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+- A valid pull secret file for image pulls.
+- An SSH public key file for guest node access.
+- An [aws credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
 
 Install the example cluster:
 
 ```bash
-$ make install-example-cluster
-```
-
-If you want to see but not apply the example cluster resource (i.e. dry run), try:
-
-```bash
-$ make example-cluster
+$ bin/hypershift create cluster \
+    --pull-secret /my/pull-secret \
+    --aws-creds /my/aws-credentials \
+    --ssh-key /my/ssh-public-key
 ```
 
 When the cluster is available, get the guest kubeconfig using:
@@ -54,7 +53,7 @@ To create additional node pools, create a resource like:
 apiVersion: hypershift.openshift.io/v1alpha1
 kind: NodePool
 metadata:
-  namespace: hypershift
+  namespace: clusters
   name: example-extended
 spec:
   clusterName: example
@@ -70,5 +69,5 @@ spec:
 And delete the cluster using:
 
 ```bash
-$ oc delete --namespace hypershift hostedclusters/example
+$ oc delete --namespace clusters
 ```

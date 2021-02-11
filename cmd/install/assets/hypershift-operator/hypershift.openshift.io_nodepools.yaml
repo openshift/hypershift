@@ -1,0 +1,126 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.3.0
+  creationTimestamp: null
+  name: nodepools.hypershift.openshift.io
+spec:
+  group: hypershift.openshift.io
+  names:
+    kind: NodePool
+    listKind: NodePoolList
+    plural: nodepools
+    shortNames:
+    - np
+    - nps
+    singular: nodepool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Available Nodes
+      jsonPath: .status.nodeCount
+      name: NodeCount
+      type: integer
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NodePool defines the desired state of NodePool
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NodePoolSpec defines the desired state of NodePool
+            properties:
+              autoScaling:
+                properties:
+                  max:
+                    type: integer
+                  min:
+                    type: integer
+                required:
+                - max
+                - min
+                type: object
+              clusterName:
+                description: ClusterName is the name of the Cluster this object belongs to.
+                type: string
+              nodeCount:
+                type: integer
+              platform:
+                description: NodePoolPlatform is the platform-specific configuration for a node pool. Only one of the platforms should be set.
+                properties:
+                  aws:
+                    description: AWS is the configuration used when installing on AWS.
+                    properties:
+                      instanceProfile:
+                        type: string
+                      instanceType:
+                        description: InstanceType defines the ec2 instance type. eg. m4-large
+                        type: string
+                      subnet:
+                        description: AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters. Only one of ID, ARN or Filters may be specified. Specifying more than one will result in a validation error.
+                        properties:
+                          arn:
+                            description: ARN of resource
+                            type: string
+                          filters:
+                            description: 'Filters is a set of key/value pairs used to identify a resource They are applied according to the rules defined by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
+                            items:
+                              description: Filter is a filter used to identify an AWS resource
+                              properties:
+                                name:
+                                  description: Name of the filter. Filter names are case-sensitive.
+                                  type: string
+                                values:
+                                  description: Values includes one or more filter values. Filter values are case-sensitive.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - name
+                              - values
+                              type: object
+                            type: array
+                          id:
+                            description: ID of resource
+                            type: string
+                        type: object
+                    required:
+                    - instanceType
+                    type: object
+                type: object
+            required:
+            - clusterName
+            - nodeCount
+            - platform
+            type: object
+          status:
+            description: NodePoolStatus defines the observed state of NodePool
+            properties:
+              nodeCount:
+                description: NodeCount is the most recently observed number of replicas.
+                type: integer
+            required:
+            - nodeCount
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      scale:
+        specReplicasPath: .spec.nodeCount
+        statusReplicasPath: .status.nodeCount
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

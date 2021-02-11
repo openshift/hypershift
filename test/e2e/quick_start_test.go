@@ -5,8 +5,6 @@ package e2e
 import (
 	"context"
 	"io/ioutil"
-	"path/filepath"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -14,32 +12,50 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/yaml"
-	clientcmd "k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/clientcmd"
 
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	hyperapi "openshift.io/hypershift/api"
+	apifixtures "openshift.io/hypershift/api/fixtures"
 	"openshift.io/hypershift/test/e2e/internal/log"
+	"openshift.io/hypershift/version"
 )
 
 var _ = Describe("When following the HyperShift quick-start [PR-Blocking]", func() {
 
 	QuickStartSpec(context.TODO(), func() QuickStartSpecInput {
-		return QuickStartSpecInput{
-			Client:  client,
-			DataDir: dataDir,
+		input := QuickStartSpecInput{
+			Client: client,
 		}
+		var err error
+		input.PullSecret, err = ioutil.ReadFile(quickStartSpecOptions.PullSecretFile)
+		Expect(err).NotTo(HaveOccurred(), "couldn't read pull secret file %q", quickStartSpecOptions.PullSecretFile)
+
+		input.AWSCredentials, err = ioutil.ReadFile(quickStartSpecOptions.AWSCredentialsFile)
+		Expect(err).NotTo(HaveOccurred(), "couldn't read aws credentials file %q", quickStartSpecOptions.AWSCredentialsFile)
+
+		input.SSHKey, err = ioutil.ReadFile(quickStartSpecOptions.SSHKeyFile)
+		Expect(err).NotTo(HaveOccurred(), "couldn't read SSH key file %q", quickStartSpecOptions.SSHKeyFile)
+
+		if len(quickStartSpecOptions.ReleaseImage) == 0 {
+			defaultVersion, err := version.LookupDefaultOCPVersion()
+			Expect(err).NotTo(HaveOccurred(), "couldn't look up default OCP version")
+			input.ReleaseImage = defaultVersion.PullSpec
+		}
+
+		return input
 	})
 
 })
 
 // QuickStartSpecInput is the input for QuickStartSpec.
 type QuickStartSpecInput struct {
-	Client  ctrl.Client
-	DataDir string
+	Client         ctrl.Client
+	ReleaseImage   string
+	AWSCredentials []byte
+	PullSecret     []byte
+	SSHKey         []byte
 }
 
 // QuickStartSpec implements a spec that mimics the operation described in the
@@ -59,61 +75,54 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		Expect(ctx).NotTo(BeNil(), "ctx is required for %s spec", specName)
 		input = inputGetter()
 		Expect(input.Client).ToNot(BeNil(), "Invalid argument. input.Client can't be nil when calling %s spec", specName)
-		Expect(input.DataDir).ToNot(BeEmpty(), "Invalid argument. input.DataDir can't be empty when calling %s spec", specName)
+		Expect(input.ReleaseImage).ToNot(BeEmpty(), "Invalid argument. input.ReleaseImage can't be empty when calling %s spec", specName)
+		Expect(input.AWSCredentials).ToNot(BeEmpty(), "Invalid argument. input.AWSCredentials can't be empty when calling %s spec", specName)
+		Expect(input.PullSecret).ToNot(BeEmpty(), "Invalid argument. input.PullSecret can't be empty when calling %s spec", specName)
+		Expect(input.SSHKey).ToNot(BeEmpty(), "Invalid argument. input.SSHKey can't be empty when calling %s spec", specName)
 	})
 
 	It("Should create a functional guest cluster", func() {
 
 		By("Applying the example cluster resources")
 
-		// Load the example cluster resources
-		exampleClusterPath := filepath.Join(input.DataDir, "example-cluster.yaml")
-		resourceData, err := ioutil.ReadFile(exampleClusterPath)
-		Expect(err).NotTo(HaveOccurred(), "couldn't read example cluster data from %s", exampleClusterPath)
+		log.Logf("Testing OCP release image %s", input.ReleaseImage)
 
 		namespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "e2e-",
 			},
 		}
-		err = input.Client.Create(ctx, namespace)
+		err := input.Client.Create(ctx, namespace)
 		Expect(err).NotTo(HaveOccurred(), "couldn't create namespace")
 		Expect(namespace.Name).NotTo(BeEmpty(), "generated namespace has no name")
 		log.Logf("Created test namespace %s", namespace.Name)
 
-		// Apply each resource into the hypershift namespace individually using
-		// a server-side apply
-		resources := strings.Split(string(resourceData), "---\n")
-		for _, resource := range resources {
-			obj := &unstructured.Unstructured{}
-			Expect(yaml.NewYAMLOrJSONDecoder(strings.NewReader(resource), 100).Decode(obj)).To(Succeed(), "couldn't read resource")
-			obj.SetNamespace(namespace.Name)
-			err := input.Client.Patch(ctx, obj, ctrl.RawPatch(types.ApplyPatchType, []byte(resource)), ctrl.ForceOwnership, ctrl.FieldOwner("hypershift"))
-			Expect(err).NotTo(HaveOccurred(), "couldn't apply resource")
-		}
+		example := apifixtures.ExampleOptions{
+			Namespace:      namespace.Name,
+			Name:           "example",
+			ReleaseImage:   input.ReleaseImage,
+			PullSecret:     input.PullSecret,
+			AWSCredentials: input.AWSCredentials,
+			SSHKey:         input.SSHKey,
+		}.Resources()
 
-		// Get the actual HostedCluster that was created
-		log.Logf("Waiting for cluster resource to exist")
-		cluster := &hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace.Name,
-				Name:      "example",
-			},
-		}
-		Eventually(func() bool {
-			key := ctrl.ObjectKey{
-				Namespace: cluster.Namespace,
-				Name:      cluster.Name,
-			}
-			if err := input.Client.Get(ctx, key, cluster); err != nil {
-				log.Logf("error getting cluster: %s", err)
-				return false
-			}
-			return true
-		}, 30*time.Second, 1*time.Second).Should(BeTrue(), "couldn't find example cluster")
+		err = input.Client.Create(ctx, example.PullSecret)
+		Expect(err).NotTo(HaveOccurred(), "couldn't create pull secret")
+		log.Logf("Created test pull secret %s", example.PullSecret.Name)
+
+		err = input.Client.Create(ctx, example.AWSCredentials)
+		Expect(err).NotTo(HaveOccurred(), "couldn't create aws credentials secret")
+		log.Logf("Created test aws credentials secret %s", example.AWSCredentials.Name)
+
+		err = input.Client.Create(ctx, example.SSHKey)
+		Expect(err).NotTo(HaveOccurred(), "couldn't create ssh key secret")
+		log.Logf("Created test ssh key secret %s", example.SSHKey.Name)
+
+		err = input.Client.Create(ctx, example.Cluster)
+		Expect(err).NotTo(HaveOccurred(), "couldn't create cluster")
+		log.Logf("Created test hostedcluster %s", example.Cluster.Name)
 
 		// Perform some very basic assertions about the guest cluster
-
 		By("Ensuring the guest cluster exposes a valid kubeconfig")
 
 		log.Logf("Waiting for guest kubeconfig to become available")
@@ -121,8 +130,8 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		Eventually(func() bool {
 			key := ctrl.ObjectKey{
 				// TODO: This resource needs extracted into a library function
-				Namespace: cluster.GetName(),
-				Name:      cluster.Name + "-kubeconfig",
+				Namespace: example.Cluster.GetName(),
+				Name:      example.Cluster.Name + "-kubeconfig",
 			}
 			if err := input.Client.Get(ctx, key, guestKubeConfigSecret); err != nil {
 				return false
@@ -139,7 +148,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		By("Establishing a connection to the guest apiserver")
 		var guestClient ctrl.Client
 		Eventually(func() bool {
-			kubeClient, err := ctrl.New(guestConfig, ctrl.Options{Scheme: scheme})
+			kubeClient, err := ctrl.New(guestConfig, ctrl.Options{Scheme: hyperapi.Scheme})
 			if err != nil {
 				return false
 			}

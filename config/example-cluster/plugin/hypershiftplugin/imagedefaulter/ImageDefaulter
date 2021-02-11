@@ -1,6 +1,0 @@
-#!/bin/bash
-set -euo pipefail
-
-FROM="quay.io/openshift-release-dev/ocp-release:4.6.7-x86_64"
-TO="$(oc get clusterversion/version -o jsonpath='{.status.desired.image}')"
-cat | sed s#$FROM#$TO#g

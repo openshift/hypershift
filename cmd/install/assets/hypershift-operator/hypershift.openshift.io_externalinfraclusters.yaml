@@ -1,0 +1,76 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.3.0
+  creationTimestamp: null
+  name: externalinfraclusters.hypershift.openshift.io
+spec:
+  group: hypershift.openshift.io
+  names:
+    categories:
+    - cluster-api
+    kind: ExternalInfraCluster
+    listKind: ExternalInfraClusterList
+    plural: externalinfraclusters
+    shortNames:
+    - eic
+    - eics
+    singular: externalinfracluster
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ExternalInfraCluster is the Schema for the ExternalInfraCluster API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ExternalInfraClusterSpec defines the desired state of ExternalInfraCluster
+            properties:
+              computeReplicas:
+                type: integer
+              controlPlaneEndpoint:
+                description: ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
+                properties:
+                  host:
+                    description: Host is the hostname on which the API server is serving.
+                    type: string
+                  port:
+                    description: Port is the port on which the API server is serving.
+                    format: int32
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
+              region:
+                description: 'TODO (alberto): populate the API and create/consume infrastructure via aws sdk role profile, sg, vpc, subnets.'
+                type: string
+            required:
+            - region
+            type: object
+          status:
+            description: ExternalInfraClusterStatus defines the observed state of ExternalInfraCluster
+            properties:
+              ready:
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

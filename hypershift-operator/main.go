@@ -21,27 +21,18 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
-	"k8s.io/client-go/rest"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
-
-	configv1 "github.com/openshift/api/config/v1"
-	operatorv1 "github.com/openshift/api/operator/v1"
-	routev1 "github.com/openshift/api/route/v1"
-	securityv1 "github.com/openshift/api/security/v1"
-	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/client-go/rest"
 
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	hyperapi "openshift.io/hypershift/api"
 	"openshift.io/hypershift/hypershift-operator/controllers/externalinfracluster"
 	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster"
 	"openshift.io/hypershift/hypershift-operator/controllers/nodepool"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -50,21 +41,8 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
-
-func init() {
-	capiaws.AddToScheme(scheme)
-	clientgoscheme.AddToScheme(scheme)
-	hyperv1.AddToScheme(scheme)
-	capiv1.AddToScheme(scheme)
-	configv1.AddToScheme(scheme)
-	securityv1.AddToScheme(scheme)
-	operatorv1.AddToScheme(scheme)
-	routev1.AddToScheme(scheme)
-	// +kubebuilder:scaffold:scheme
-}
 
 func main() {
 	cmd := &cobra.Command{
@@ -105,7 +83,7 @@ func NewStartCommand() *cobra.Command {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
 		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-			Scheme:             scheme,
+			Scheme:             hyperapi.Scheme,
 			MetricsBindAddress: metricsAddr,
 			Port:               9443,
 			LeaderElection:     enableLeaderElection,
