@@ -19,6 +19,8 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -29,7 +31,8 @@ type HostedClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Release ReleaseSpec `json:"release"`
+	// Release specifies the release image to use for this HostedCluster
+	Release Release `json:"release"`
 
 	InitialComputeReplicas int `json:"initialComputeReplicas"`
 
@@ -45,9 +48,7 @@ type HostedClusterSpec struct {
 	PodCIDR     string `json:"podCIDR"`
 }
 
-type ReleaseSpec struct {
-	// +kubebuilder:validation:Optional
-	Channel string `json:"channel"`
+type Release struct {
 	// Image is the release image pullspec for the control plane
 	// +kubebuilder:validation:Required
 	Image string `json:"image"`
@@ -55,10 +56,46 @@ type ReleaseSpec struct {
 
 // HostedClusterStatus defines the observed state of HostedCluster
 type HostedClusterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 
-	Ready bool `json:"ready"`
+	// Version is the status of the release version applied to the
+	// HostedCluster.
+	// +optional
+	Version *ClusterVersionStatus `json:"version,omitempty"`
+
+	// +optional
+	Ready bool `json:"ready,omitempty"`
+}
+
+// ClusterVersionStatus reports the status of the cluster versioning,
+// including any upgrades that are in progress. The current field will
+// be set to whichever version the cluster is reconciling to, and the
+// conditions array will report whether the update succeeded, is in
+// progress, or is failing.
+// +k8s:deepcopy-gen=true
+type ClusterVersionStatus struct {
+	// desired is the version that the cluster is reconciling towards.
+	// If the cluster is not yet fully initialized desired will be set
+	// with the information available, which may be an image or a tag.
+	// +kubebuilder:validation:Required
+	// +required
+	Desired Release `json:"desired"`
+
+	// history contains a list of the most recent versions applied to the cluster.
+	// This value may be empty during cluster startup, and then will be updated
+	// when a new update is being applied. The newest update is first in the
+	// list and it is ordered by recency. Updates in the history have state
+	// Completed if the rollout completed - if an update was failing or halfway
+	// applied the state will be Partial. Only a limited amount of update history
+	// is preserved.
+	// +optional
+	History []configv1.UpdateHistory `json:"history,omitempty"`
+
+	// observedGeneration reports which version of the spec is being synced.
+	// If this value is not equal to metadata.generation, then the desired
+	// and conditions fields may represent a previous version.
+	// +kubebuilder:validation:Required
+	// +required
+	ObservedGeneration int64 `json:"observedGeneration"`
 }
 
 // +kubebuilder:object:root=true

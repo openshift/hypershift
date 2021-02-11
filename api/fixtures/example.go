@@ -99,7 +99,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			Name:      o.Name,
 		},
 		Spec: hyperv1.HostedClusterSpec{
-			Release: hyperv1.ReleaseSpec{
+			Release: hyperv1.Release{
 				Image: o.ReleaseImage,
 			},
 			InitialComputeReplicas: 2,

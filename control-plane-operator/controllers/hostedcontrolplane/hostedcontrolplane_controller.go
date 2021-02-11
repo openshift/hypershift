@@ -35,7 +35,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -169,11 +168,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	r.Log = r.Log.WithValues("cluster", cluster.Name)
 
-	patchHelper, err := patch.NewHelper(hostedControlPlane, r.Client)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to init patch helper: %w", err)
-	}
-
 	var result ctrl.Result
 	// TODO (alberto):
 	// May be eventually just run a deployment with a CVO running a hostedControlPlane profile
@@ -212,6 +206,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	r.Log.Info("found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", releaseImage.ComponentImages(), "componentVersions", componentVersions)
 
+	if hostedControlPlane.Status.Version == "" {
+		hostedControlPlane.Status.Version = releaseImage.Version()
+		return ctrl.Result{}, r.Status().Update(ctx, hostedControlPlane)
+	}
+
 	// Install the control plane into the infrastructure
 	r.Log.Info("Creating hosted control plane")
 	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage)
@@ -221,8 +220,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	hostedControlPlane.Status.Ready = true
-	if err := patchHelper.Patch(ctx, hostedControlPlane); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
+	if err := r.Status().Update(ctx, hostedControlPlane); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
 
 	r.Log.Info("Successfully reconciled")
