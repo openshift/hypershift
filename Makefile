@@ -12,14 +12,9 @@ RUNTIME ?= docker
 CONTROLLER_GEN=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen
 BINDATA=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/github.com/kevinburke/go-bindata/go-bindata
 
-# Bake in a compatible OCP release image if provided
-ifdef OCP_RELEASE_IMAGE
-GO_LDFLAGS=-ldflags="-X 'openshift.io/hypershift/api.OCPReleaseImage=$(OCP_RELEASE_IMAGE)'"
-endif
-
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOFLAGS=-mod=vendor go
-GO_BUILD_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) $(GO_LDFLAGS)
+GO_BUILD_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))

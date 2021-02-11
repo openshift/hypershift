@@ -13,6 +13,7 @@ import (
 
 	hyperapi "openshift.io/hypershift/api"
 	apifixtures "openshift.io/hypershift/api/fixtures"
+	"openshift.io/hypershift/version"
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,7 +39,7 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "clusters", "A namespace to contain the generated resources")
 	cmd.Flags().StringVar(&opts.Name, "name", "example", "A name for the cluster")
-	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", hyperapi.OCPReleaseImage, "The OCP release image for the cluster")
+	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", "", "The OCP release image for the cluster")
 	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", "", "Path to a pull secret")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", "", "Path to an AWS credentials file")
 	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "Path to an SSH key file")
@@ -56,6 +57,14 @@ func NewCommand() *cobra.Command {
 		sshKey, err := ioutil.ReadFile(opts.SSHKeyFile)
 		if err != nil {
 			panic(err)
+		}
+		if len(opts.ReleaseImage) == 0 {
+			defaultVersion, err := version.LookupDefaultOCPVersion()
+			if err != nil {
+				panic(err)
+			}
+			opts.ReleaseImage = defaultVersion.PullSpec
+			fmt.Printf("using default OCP version %s\n", opts.ReleaseImage)
 		}
 
 		exampleObjects := apifixtures.ExampleOptions{

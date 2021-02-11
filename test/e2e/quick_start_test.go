@@ -19,14 +19,14 @@ import (
 	hyperapi "openshift.io/hypershift/api"
 	apifixtures "openshift.io/hypershift/api/fixtures"
 	"openshift.io/hypershift/test/e2e/internal/log"
+	"openshift.io/hypershift/version"
 )
 
 var _ = Describe("When following the HyperShift quick-start [PR-Blocking]", func() {
 
 	QuickStartSpec(context.TODO(), func() QuickStartSpecInput {
 		input := QuickStartSpecInput{
-			Client:       client,
-			ReleaseImage: quickStartSpecOptions.ReleaseImage,
+			Client: client,
 		}
 		var err error
 		input.PullSecret, err = ioutil.ReadFile(quickStartSpecOptions.PullSecretFile)
@@ -37,6 +37,13 @@ var _ = Describe("When following the HyperShift quick-start [PR-Blocking]", func
 
 		input.SSHKey, err = ioutil.ReadFile(quickStartSpecOptions.SSHKeyFile)
 		Expect(err).NotTo(HaveOccurred(), "couldn't read SSH key file %q", quickStartSpecOptions.SSHKeyFile)
+
+		if len(quickStartSpecOptions.ReleaseImage) == 0 {
+			defaultVersion, err := version.LookupDefaultOCPVersion()
+			Expect(err).NotTo(HaveOccurred(), "couldn't look up default OCP version")
+			input.ReleaseImage = defaultVersion.PullSpec
+		}
+
 		return input
 	})
 
@@ -77,6 +84,8 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 	It("Should create a functional guest cluster", func() {
 
 		By("Applying the example cluster resources")
+
+		log.Logf("Testing OCP release image %s", input.ReleaseImage)
 
 		namespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{

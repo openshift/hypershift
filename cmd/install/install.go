@@ -27,6 +27,7 @@ import (
 
 	hyperapi "openshift.io/hypershift/api"
 	"openshift.io/hypershift/cmd/install/assets"
+	"openshift.io/hypershift/version"
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,7 +50,7 @@ func NewCommand() *cobra.Command {
 	var opts Options
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
-	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", hyperapi.HyperShiftImage, "The HyperShift image to deploy")
+	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.Flags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 
