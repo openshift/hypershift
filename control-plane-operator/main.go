@@ -57,13 +57,16 @@ func NewStartCommand() *cobra.Command {
 	var enableLeaderElection bool
 	var hostedClusterConfigOperatorImage string
 
-	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "", "The name of the deployment of this operator")
 	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0", "The address the metric endpoint binds to.")
 	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image.")
+	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image. (defaults to match this operator if running in a deployment)")
+
+	cmd.MarkFlagRequired("namespace")
+
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 

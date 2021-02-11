@@ -39,11 +39,14 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "clusters", "A namespace to contain the generated resources")
 	cmd.Flags().StringVar(&opts.Name, "name", "example", "A name for the cluster")
-	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", "", "The OCP release image for the cluster")
-	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", "", "Path to a pull secret")
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", "", "Path to an AWS credentials file")
+	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", "", "The OCP release image for the cluster (defaults to the latest release)")
+	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", "", "Path to a pull secret (required)")
+	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", "", "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "Path to an SSH key file")
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
+
+	cmd.MarkFlagRequired("pull-secret")
+	cmd.MarkFlagRequired("aws-creds")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
