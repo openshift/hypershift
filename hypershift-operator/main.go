@@ -78,7 +78,8 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	cmd.Flags().StringVar(&operatorImage, "operator-image", "", "A specific operator image.")
+	cmd.Flags().StringVar(&operatorImage, "operator-image", "", "A control plane operator image to use (defaults to match this operator if running in a deployment)")
+
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
