@@ -38,13 +38,6 @@ hypershift-operator-manifests:
 .PHONY: hypershift-operator
 hypershift-operator:
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
-		-o ./hypershift-operator/controllers/hostedcluster/assets/bindata.go \
-		--prefix hypershift-operator/controllers/hostedcluster/assets \
-		--ignore '.*\.go' \
-		./hypershift-operator/controllers/hostedcluster/assets/...
-	gofmt -s -w ./hypershift-operator/controllers/hostedcluster/assets/bindata.go
-
 	$(GO_BUILD_RECIPE) -o bin/hypershift-operator ./hypershift-operator
 
 .PHONY: control-plane-operator
