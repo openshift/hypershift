@@ -480,7 +480,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.OauthAPIClusterIP = infraStatus.OauthAPIServerAddress
 	params.BaseDomain = baseDomain
 	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
-	params.CloudProvider = string(clusterInfra.Status.PlatformStatus.Type)
+	params.CloudProvider = strings.ToLower(string(clusterInfra.Status.PlatformStatus.Type))
 	params.PlatformType = string(clusterInfra.Status.PlatformStatus.Type)
 	params.InternalAPIPort = APIServerPort
 	params.EtcdClientName = "etcd-client"

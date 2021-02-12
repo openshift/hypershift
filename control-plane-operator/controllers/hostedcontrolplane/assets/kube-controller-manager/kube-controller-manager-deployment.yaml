@@ -70,6 +70,7 @@ spec:
         - "--allocate-node-cidrs=true"
         - "--cert-dir=/var/run/kubernetes"
         - "--cluster-cidr={{ .PodCIDR }}"
+        - "--cloud-provider={{ .CloudProvider }}"
         - "--cluster-signing-cert-file=/etc/kubernetes/secret/cluster-signer.crt"
         - "--cluster-signing-key-file=/etc/kubernetes/secret/cluster-signer.key"
         - "--configure-cloud-routes=false"
