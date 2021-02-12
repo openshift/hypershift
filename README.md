@@ -57,10 +57,25 @@ metadata:
   name: example-extended
 spec:
   clusterName: example
-  autoScaling:
-    max: 0
-    min: 0
   nodeCount: 1
+  platform:
+    aws:
+      instanceType: m5.large
+```
+
+with autoscaling:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1alpha1
+kind: NodePool
+metadata:
+  namespace: clusters
+  name: example-extended
+spec:
+  clusterName: example
+  autoScaling:
+    max: 5
+    min: 1
   platform:
     aws:
       instanceType: m5.large

@@ -27,8 +27,9 @@ type NodePool struct {
 // NodePoolSpec defines the desired state of NodePool
 type NodePoolSpec struct {
 	// ClusterName is the name of the Cluster this object belongs to.
-	ClusterName string              `json:"clusterName"`
-	NodeCount   int                 `json:"nodeCount"`
+	ClusterName string `json:"clusterName"`
+	// +optional
+	NodeCount   *int32              `json:"nodeCount"`
 	AutoScaling NodePoolAutoScaling `json:"autoScaling,omitempty"`
 	Platform    NodePoolPlatform    `json:"platform"`
 }
@@ -48,8 +49,12 @@ type NodePoolList struct {
 }
 
 type NodePoolAutoScaling struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Min *int `json:"min"`
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Max *int `json:"max"`
 }
 
 // NodePoolPlatform is the platform-specific configuration for a node

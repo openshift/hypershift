@@ -39,6 +39,7 @@ func renderControlPlaneManifests(params *ClusterParams) (map[string][]byte, erro
 		userManifests: make(map[string]string),
 	}
 	ctx.capi()
+	ctx.autoscaler()
 	ctx.controlPlaneOperator()
 	return ctx.renderManifests()
 }
@@ -68,6 +69,15 @@ func (c *clusterManifestContext) capi() {
 		"capi/manager-clusterrole.yaml",
 		"capi/manager-clusterrolebinding.yaml",
 		"capi/manager-deployment.yaml",
+	)
+}
+
+func (c *clusterManifestContext) autoscaler() {
+	c.addManifestFiles(
+		"autoscaler/serviceaccount.yaml",
+		"autoscaler/role.yaml",
+		"autoscaler/rolebinding.yaml",
+		"autoscaler/deployment.yaml",
 	)
 }
 
