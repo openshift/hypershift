@@ -44,7 +44,7 @@ $ bin/hypershift create cluster \
 When the cluster is available, get the guest kubeconfig using:
 
 ```bash
-$ oc get secret --namespace example example-kubeconfig --template={{.data.value}} | base64 -D
+$ oc get secret --namespace example admin-kubeconfig --template={{.data.value}} | base64 -D
 ```
 
 To create additional node pools, create a resource like:

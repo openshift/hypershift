@@ -434,7 +434,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
 	r.Log.Info(fmt.Sprintf("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIAddress, APIServerPort)))
-	r.Log.Info(fmt.Sprintf("Kubeconfig is available in secret %q in the %s namespace", fmt.Sprintf("%s-kubeconfig", targetNamespace), hcp.GetNamespace()))
+	r.Log.Info(fmt.Sprintf("Kubeconfig is available in secret admin-kubeconfig in the %s namespace", hcp.GetNamespace()))
 	r.Log.Info(fmt.Sprintf("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", fmt.Sprintf("apps.%s", baseDomain))))
 	r.Log.Info(fmt.Sprintf("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", targetNamespace))
 
@@ -969,7 +969,7 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 func generateKubeconfigSecret(name, namespace string, kubeconfigBytes []byte) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
-	secret.Name = fmt.Sprintf("%s-kubeconfig", name)
+	secret.Name = "admin-kubeconfig"
 	secret.Data = map[string][]byte{"value": kubeconfigBytes}
 	return secret, nil
 }

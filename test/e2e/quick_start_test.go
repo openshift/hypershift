@@ -131,7 +131,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 			key := ctrl.ObjectKey{
 				// TODO: This resource needs extracted into a library function
 				Namespace: example.Cluster.GetName(),
-				Name:      example.Cluster.Name + "-kubeconfig",
+				Name:      "admin-kubeconfig",
 			}
 			if err := input.Client.Get(ctx, key, guestKubeConfigSecret); err != nil {
 				return false
