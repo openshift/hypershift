@@ -35,20 +35,38 @@ func NewCommand() *cobra.Command {
 		Short: "Creates basic functional HostedCluster resources",
 	}
 
-	var opts Options
+	var releaseImage string
+	defaultVersion, err := version.LookupDefaultOCPVersion()
+	if err != nil {
+		fmt.Println("WARN: Unable to lookup default OCP version with error:", err)
+		fmt.Println("WARN: The 'release-image' flag is required in this case.")
+		releaseImage = ""
+	} else {
+		releaseImage = defaultVersion.PullSpec
+	}
 
-	cmd.Flags().StringVar(&opts.Namespace, "namespace", "clusters", "A namespace to contain the generated resources")
-	cmd.Flags().StringVar(&opts.Name, "name", "example", "A name for the cluster")
-	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", "", "The OCP release image for the cluster (defaults to the latest release)")
-	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", "", "Path to a pull secret (required)")
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", "", "Path to an AWS credentials file (required)")
-	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "Path to an SSH key file")
-	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
+	opts := Options{
+		Namespace:          "clusters",
+		Name:               "example",
+		ReleaseImage:       releaseImage,
+		PullSecretFile:     "",
+		AWSCredentialsFile: "",
+		SSHKeyFile:         filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"),
+		Render:             false,
+	}
+
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
+	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Path to a pull secret (required)")
+	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Path to an SSH key file")
+	cmd.Flags().BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
 		if err != nil {
 			panic(err)
@@ -62,12 +80,7 @@ func NewCommand() *cobra.Command {
 			panic(err)
 		}
 		if len(opts.ReleaseImage) == 0 {
-			defaultVersion, err := version.LookupDefaultOCPVersion()
-			if err != nil {
-				panic(err)
-			}
-			opts.ReleaseImage = defaultVersion.PullSpec
-			fmt.Printf("using default OCP version %s\n", opts.ReleaseImage)
+			return fmt.Errorf("release-image flag is required if default can not be fetched")
 		}
 
 		exampleObjects := apifixtures.ExampleOptions{
@@ -88,6 +101,8 @@ func NewCommand() *cobra.Command {
 				panic(err)
 			}
 		}
+
+		return nil
 	}
 
 	return cmd
