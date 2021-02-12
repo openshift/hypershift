@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	k8sutilspointer "k8s.io/utils/pointer"
+
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -323,7 +325,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			},
 			Spec: hyperv1.NodePoolSpec{
 				ClusterName: cluster.GetName(),
-				NodeCount:   hcluster.Spec.InitialComputeReplicas,
+				NodeCount:   k8sutilspointer.Int32Ptr(int32(hcluster.Spec.InitialComputeReplicas)),
 				Platform: hyperv1.NodePoolPlatform{
 					AWS: &hyperv1.AWSNodePoolPlatform{
 						InstanceType: "m5.large",

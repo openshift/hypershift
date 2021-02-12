@@ -41,17 +41,17 @@ spec:
               autoScaling:
                 properties:
                   max:
+                    minimum: 1
                     type: integer
                   min:
+                    minimum: 1
                     type: integer
-                required:
-                - max
-                - min
                 type: object
               clusterName:
                 description: ClusterName is the name of the Cluster this object belongs to.
                 type: string
               nodeCount:
+                format: int32
                 type: integer
               platform:
                 description: NodePoolPlatform is the platform-specific configuration for a node pool. Only one of the platforms should be set.
@@ -98,7 +98,6 @@ spec:
                 type: object
             required:
             - clusterName
-            - nodeCount
             - platform
             type: object
           status:
