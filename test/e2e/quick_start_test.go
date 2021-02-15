@@ -98,12 +98,13 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		log.Logf("Created test namespace %s", namespace.Name)
 
 		example := apifixtures.ExampleOptions{
-			Namespace:      namespace.Name,
-			Name:           "example",
-			ReleaseImage:   input.ReleaseImage,
-			PullSecret:     input.PullSecret,
-			AWSCredentials: input.AWSCredentials,
-			SSHKey:         input.SSHKey,
+			Namespace:        namespace.Name,
+			Name:             "example",
+			ReleaseImage:     input.ReleaseImage,
+			PullSecret:       input.PullSecret,
+			AWSCredentials:   input.AWSCredentials,
+			SSHKey:           input.SSHKey,
+			NodePoolReplicas: 2,
 		}.Resources()
 
 		err = input.Client.Create(ctx, example.PullSecret)
