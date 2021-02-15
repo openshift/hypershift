@@ -28,12 +28,13 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 }
 
 type ExampleOptions struct {
-	Namespace      string
-	Name           string
-	ReleaseImage   string
-	PullSecret     []byte
-	AWSCredentials []byte
-	SSHKey         []byte
+	Namespace        string
+	Name             string
+	ReleaseImage     string
+	PullSecret       []byte
+	AWSCredentials   []byte
+	SSHKey           []byte
+	NodePoolReplicas int
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -102,7 +103,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			Release: hyperv1.Release{
 				Image: o.ReleaseImage,
 			},
-			InitialComputeReplicas: 2,
+			InitialComputeReplicas: o.NodePoolReplicas,
 			ServiceCIDR:            "172.31.0.0/16",
 			PodCIDR:                "10.132.0.0/14",
 			PullSecret:             corev1.LocalObjectReference{Name: pullSecret.Name},
