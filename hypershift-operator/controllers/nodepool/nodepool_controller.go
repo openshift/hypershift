@@ -204,14 +204,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// only reconcile machineSet replicas if autoscaler is not enable.
 		if !isAutoscalingEnabled {
 			wantedMachineSet.Spec.Replicas = nodePool.Spec.NodeCount
-			delete(wantedMachineSet.Labels, "autoscaling")
 			delete(wantedMachineSet.Annotations, autoscalerMinAnnotation)
 			delete(wantedMachineSet.Annotations, autoscalerMaxAnnotation)
 		}
 		if isAutoscalingEnabled {
-			// TODO (alberto): debug controller runtime `CreateOrUpdate` ->
-			// hack: setting this label as changing .Annotations does not trigger the update.
-			wantedMachineSet.Labels["autoscaling"] = "true"
 			wantedMachineSet.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
 			wantedMachineSet.Annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
 		}
@@ -232,6 +228,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			log.Info("Requeueing nodePool", "expected available nodes", *nodePool.Spec.NodeCount, "current available nodes", nodePool.Status.NodeCount)
 			return ctrl.Result{Requeue: true}, nil
 		}
+		return ctrl.Result{}, nil
 	}
 
 	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
