@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
@@ -124,6 +126,10 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		r.Log.Error(err, "Failed to reconcile nodePool")
 		r.recorder.Eventf(nodePool, corev1.EventTypeWarning, "ReconcileError", "%v", err)
+		if err := patchHelper.Patch(ctx, nodePool); err != nil {
+			r.Log.Error(err, "failed to patch")
+			return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
+		}
 		return result, err
 	}
 
@@ -157,8 +163,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	if isAutoscalingEnabled {
 		if err := validateAutoscalingParameters(nodePool); err != nil {
-			// TODO (alberto): set status conditions:
-			// type: AutoscalingEnabled, status: true/false, reason: asExpected/validationFailed
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:    hyperv1.NodePoolAutoscalingEnabledConditionType,
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.NodePoolValidationFailedConditionReason,
+				Message: err.Error(),
+			})
 			return reconcile.Result{}, fmt.Errorf("error validating autoscaling parameters: %w", err)
 		}
 
@@ -215,11 +225,24 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	nodePool.Status.NodeCount = int(wantedMachineSet.Status.AvailableReplicas)
 	if !isAutoscalingEnabled {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:   hyperv1.NodePoolAutoscalingEnabledConditionType,
+			Status: metav1.ConditionFalse,
+			Reason: hyperv1.NodePoolAsExpectedConditionReason,
+		})
+
 		if nodePool.Status.NodeCount != int(*nodePool.Spec.NodeCount) {
 			log.Info("Requeueing nodePool", "expected available nodes", *nodePool.Spec.NodeCount, "current available nodes", nodePool.Status.NodeCount)
 			return ctrl.Result{Requeue: true}, nil
 		}
 	}
+
+	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		Type:    hyperv1.NodePoolAutoscalingEnabledConditionType,
+		Status:  metav1.ConditionTrue,
+		Reason:  hyperv1.NodePoolAsExpectedConditionReason,
+		Message: "Ignoring nodeCount",
+	})
 
 	return ctrl.Result{}, nil
 }
