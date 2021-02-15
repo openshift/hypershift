@@ -167,7 +167,18 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 			if len(nodes.Items) == 0 {
 				return false
 			}
-			log.Logf("found %d nodes", len(nodes.Items))
+			var readyNodes []string
+			for _, node := range nodes.Items {
+				for _, cond := range node.Status.Conditions {
+					if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+						readyNodes = append(readyNodes, node.Name)
+					}
+				}
+			}
+			if len(readyNodes) != example.Cluster.Spec.InitialComputeReplicas {
+				return false
+			}
+			log.Logf("found %d ready nodes", len(nodes.Items))
 			return true
 		}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "guest nodes never became ready")
 	})
