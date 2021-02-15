@@ -35,9 +35,10 @@ type NodePoolSpec struct {
 	// ClusterName is the name of the Cluster this object belongs to.
 	ClusterName string `json:"clusterName"`
 	// +optional
-	NodeCount   *int32              `json:"nodeCount"`
-	AutoScaling NodePoolAutoScaling `json:"autoScaling,omitempty"`
-	Platform    NodePoolPlatform    `json:"platform"`
+	NodeCount *int32 `json:"nodeCount"`
+	// +optional
+	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`
+	Platform    NodePoolPlatform     `json:"platform"`
 }
 
 // NodePoolStatus defines the observed state of NodePool
