@@ -157,10 +157,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	targetNamespace := hcluster.GetName()
 	wantedMachinesetReplicas := Int32PtrDerefOr(nodePool.Spec.NodeCount, 0)
 
-	isAutoscalingEnabled, err := isAutoscalingEnabled(nodePool)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed checking autoscaling parameters: %w", err)
-	}
+	isAutoscalingEnabled := isAutoscalingEnabled(nodePool)
 	if isAutoscalingEnabled {
 		if err := validateAutoscalingParameters(nodePool); err != nil {
 			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
@@ -350,10 +347,12 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 	annotations := map[string]string{
 		"machine.cluster.x-k8s.io/exclude-node-draining": "true",
 	}
-	if nodePool.Spec.AutoScaling.Max != nil &&
-		*nodePool.Spec.AutoScaling.Max > 0 {
-		annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
-		annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
+	if isAutoscalingEnabled(nodePool) {
+		if nodePool.Spec.AutoScaling.Max != nil &&
+			*nodePool.Spec.AutoScaling.Max > 0 {
+			annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
+			annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
+		}
 	}
 	machineSet := &capiv1.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -460,12 +459,8 @@ func hash(s string) string {
 	return result
 }
 
-func isAutoscalingEnabled(nodePool *hyperv1.NodePool) (bool, error) {
-	if nodePool.Spec.AutoScaling.Max != nil && *nodePool.Spec.AutoScaling.Max > 0 &&
-		nodePool.Spec.AutoScaling.Min != nil && *nodePool.Spec.AutoScaling.Min > 0 {
-		return true, nil
-	}
-	return false, nil
+func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
+	return nodePool.Spec.AutoScaling != nil
 }
 
 func validateAutoscalingParameters(nodePool *hyperv1.NodePool) error {

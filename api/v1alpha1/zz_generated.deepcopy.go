@@ -552,7 +552,11 @@ func (in *NodePoolSpec) DeepCopyInto(out *NodePoolSpec) {
 		*out = new(int32)
 		**out = **in
 	}
-	in.AutoScaling.DeepCopyInto(&out.AutoScaling)
+	if in.AutoScaling != nil {
+		in, out := &in.AutoScaling, &out.AutoScaling
+		*out = new(NodePoolAutoScaling)
+		(*in).DeepCopyInto(*out)
+	}
 	in.Platform.DeepCopyInto(&out.Platform)
 }
 
