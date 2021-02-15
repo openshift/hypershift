@@ -22,6 +22,8 @@ type HostedClusterSpec struct {
 
     Release Release
 
+    Networking ClusterNetworking
+
     // NOTE: This might not make sense as control plane
     // inputs can be specific to versions
     ControlPlane ControlPlaneSpec
@@ -30,22 +32,29 @@ type HostedClusterSpec struct {
     // of any nodes associated with this cluster.
     PullSecret LocalObjectReference
 
-    // Provider contains provider-specific details for
+    // ProviderCreds is a reference to a secret containing cloud account info
+    ProviderCreds LocalObjectReference
+
+    // Platform contains platform-specific details for
     // the cluster
-    Provider ProviderSpec `json:"provider"`
+    Platform PlatformSpec `json:"platform"`
+
+    // InfraID is used to identify the cluster in cloud platforms
+    InfraID string `json:"infraID,omitempty"`
 }
 
-type ProviderSpec struct {
+type ClusterNetworking struct {
+    PodCIDR string
+    ServiceCIDR string
+    MachineCIDR string
+}
+
+type PlatformSpec struct {
     // AWS contains AWS-specific settings for the HostedCluster
-    AWS *AWSProviderSpec `json:"aws"`
+    AWS *AWSPlatformSpec `json:"aws"`
 }
 
-type AWSProviderSpec struct {
-    // Reference to a secret containing account info
-    // - Account ID
-    // - Access ID
-    // - Access Key
-    Credentials LocalObjectReference
+type AWSPlatformSpec struct {
 
     // Region is the AWS region for the cluster
     Region string
@@ -53,20 +62,32 @@ type AWSProviderSpec struct {
     // AvailabilityZone is the default availability zone for the cluster
     AvailabilityZone string
 
-    // Network specifies network details for the cluster
-    Network AWSNetworkSpec
-}
-
-type AWSNetworkSpec struct {
-    // VPC is the AWS VPC associated with this HostedCluster
-    VPC AWSVPCSpec `json:"vpc"`
+    // VPC specifies the VPC used for the cluster
+    VPC string `json:"vpc"`
 
     // NodePoolDefaults specifies the default platform
     NodePoolDefaults *AWSNodePoolPlatform `json:"nodePoolDefaults"`
+
+    // ServiceEndpoints list contains custom endpoints which will override default
+    // service endpoint of AWS Services.
+    // There must be only one ServiceEndpoint for a service.
+    // +optional
+    ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 }
 
-type AWSVPCSpec struct {
-    ID string
+// AWSServiceEndpoint stores the configuration for services to
+// override existing defaults of AWS Services.
+type AWSServiceEndpoint struct {
+    // Name is the name of the AWS service.
+    // This must be provided and cannot be empty.
+    Name string `json:"name"`
+
+    // URL is fully qualified URI with scheme https, that overrides the default generated
+    // endpoint for a client.
+    // This must be provided and cannot be empty.
+    //
+    // +kubebuilder:validation:Pattern=`^https://`
+    URL string `json:"url"`
 }
 
 // TODO - block for auth, cidrBlocks
@@ -106,9 +127,6 @@ type HostedClusterStatus struct {
     Endpoint string
     Conditions []HostedClusterCondition
 
-    // InfraID is the identifier generated for this
-    // cluster's cloud resources.
-    InfraID string
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,
@@ -232,7 +250,8 @@ type AWSNodePoolPlatform struct {
 	InstanceType    string                `json:"instanceType"`
 	InstanceProfile string                `json:"instanceProfile,omitempty"`
 	Subnet          *AWSResourceReference `json:"subnet,omitempty"`
-        SecurityGroups  []string              `json:securityGroups,omitempty"`
+	SecurityGroups  []string              `json:"securityGroups,omitempty"`
+	AMI             string                `json:"ami"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
