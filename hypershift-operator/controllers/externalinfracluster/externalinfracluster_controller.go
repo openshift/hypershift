@@ -12,14 +12,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 )
 
 type ExternalInfraClusterReconciler struct {
@@ -37,6 +38,7 @@ func (r *ExternalInfraClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Build(r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
@@ -87,16 +89,11 @@ func (r *ExternalInfraClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Return early if deleted
 	if !externalInfraCluster.DeletionTimestamp.IsZero() {
+		r.Log.Info("externalinfracluster is deleted, skipping reconcile", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 
 	r.Log = r.Log.WithValues("cluster", cluster.Name)
-
-	patchHelper, err := patch.NewHelper(externalInfraCluster, r.Client)
-	if err != nil {
-		r.Log.Error(err, "error building patchHelper")
-		return ctrl.Result{}, err
-	}
 
 	hcp := &hyperv1.HostedControlPlane{}
 	controlPlaneRef := types.NamespacedName{
@@ -112,20 +109,23 @@ func (r *ExternalInfraClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	// TODO (alberto): populate the API and create/consume infrastructure via aws sdk
 	// role profile, sg, vpc, subnets.
 	if !hcp.Status.Ready {
-		r.Log.Info("Control plane is not ready yet. Requeuing")
-		return reconcile.Result{Requeue: true}, nil
+		r.Log.Info("hostedcontrolplane is not yet ready, requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
-
-	// Set the values for upper level controller
-	externalInfraCluster.Status.Ready = true
-	externalInfraCluster.Spec.ControlPlaneEndpoint = hyperv1.APIEndpoint{
-		Host: hcp.Status.ControlPlaneEndpoint.Host,
-		Port: hcp.Status.ControlPlaneEndpoint.Port,
-	}
-
-	if err := patchHelper.Patch(ctx, externalInfraCluster); err != nil {
-		r.Log.Error(err, "failed to patch")
-		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
+	if !externalInfraCluster.Status.Ready {
+		updated := externalInfraCluster.DeepCopy()
+		updated.Status.Ready = true
+		updated.Spec.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+			Host: hcp.Status.ControlPlaneEndpoint.Host,
+			Port: hcp.Status.ControlPlaneEndpoint.Port,
+		}
+		err := r.Client.Status().Update(ctx, updated)
+		if err != nil {
+			r.Log.Error(err, "failed to update externalinfracluster status")
+			return ctrl.Result{}, fmt.Errorf("failed to update externalinfracluster: %w", err)
+		}
+		r.Log.Info("marked externalinfracluster ready")
+		return ctrl.Result{}, nil
 	}
 
 	r.Log.Info("Successfully reconciled")
