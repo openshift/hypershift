@@ -37,6 +37,7 @@ hypershift-operator-manifests:
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
 hypershift-operator:
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
 		-o ./hypershift-operator/controllers/hostedcluster/assets/bindata.go \
 		--prefix hypershift-operator/controllers/hostedcluster/assets \
@@ -48,6 +49,7 @@ hypershift-operator:
 
 .PHONY: control-plane-operator
 control-plane-operator:
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
 		-o ./control-plane-operator/controllers/hostedcontrolplane/assets/bindata.go \
 		--prefix control-plane-operator/controllers/hostedcontrolplane/assets \
@@ -60,6 +62,7 @@ control-plane-operator:
 # Build hosted-cluster-config-operator binary
 .PHONY: hosted-cluster-config-operator
 hosted-cluster-config-operator:
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	$(GO_BUILD_RECIPE) -o bin/hosted-cluster-config-operator ./hosted-cluster-config-operator
 
 .PHONY: hypershift
