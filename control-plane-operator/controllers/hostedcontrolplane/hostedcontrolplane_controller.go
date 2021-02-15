@@ -246,7 +246,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	infraStatus, err := r.ensureInfrastructure(ctx, hostedControlPlane)
 	if err != nil {
 		r.Log.Error(err, "failed to ensure infrastructure")
-		r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "InfrastructureEnsureFailed", err.Error(), result, fmt.Errorf("failed to ensure infrastructure: %w", err))
+		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "InfrastructureEnsureFailed", err.Error(), result, fmt.Errorf("failed to ensure infrastructure: %w", err))
 	}
 
 	// Wait for things like LB services to become available
