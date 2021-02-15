@@ -26,6 +26,7 @@ type Options struct {
 	PullSecretFile     string
 	AWSCredentialsFile string
 	SSHKeyFile         string
+	NodePoolReplicas   int
 	Render             bool
 }
 
@@ -52,6 +53,7 @@ func NewCommand() *cobra.Command {
 		PullSecretFile:     "",
 		AWSCredentialsFile: "",
 		SSHKeyFile:         filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"),
+		NodePoolReplicas:   2,
 		Render:             false,
 	}
 
@@ -61,6 +63,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Path to a pull secret (required)")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Path to an SSH key file")
+	cmd.Flags().IntVar(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If >0, create a default NodePool with this many replicas")
 	cmd.Flags().BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying")
 
 	cmd.MarkFlagRequired("pull-secret")
@@ -84,12 +87,13 @@ func NewCommand() *cobra.Command {
 		}
 
 		exampleObjects := apifixtures.ExampleOptions{
-			Namespace:      opts.Namespace,
-			Name:           opts.Name,
-			ReleaseImage:   opts.ReleaseImage,
-			PullSecret:     pullSecret,
-			AWSCredentials: awsCredentials,
-			SSHKey:         sshKey,
+			Namespace:        opts.Namespace,
+			Name:             opts.Name,
+			ReleaseImage:     opts.ReleaseImage,
+			PullSecret:       pullSecret,
+			AWSCredentials:   awsCredentials,
+			SSHKey:           sshKey,
+			NodePoolReplicas: opts.NodePoolReplicas,
 		}.Resources().AsObjects()
 
 		switch {
