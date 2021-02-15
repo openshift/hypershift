@@ -4,6 +4,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
+	NodePoolAsExpectedConditionReason       = "AsExpected"
+	NodePoolValidationFailedConditionReason = "ValidationFailed"
+)
+
 func init() {
 	SchemeBuilder.Register(&NodePool{})
 	SchemeBuilder.Register(&NodePoolList{})
@@ -37,7 +43,9 @@ type NodePoolSpec struct {
 // NodePoolStatus defines the observed state of NodePool
 type NodePoolStatus struct {
 	// NodeCount is the most recently observed number of replicas.
-	NodeCount int `json:"nodeCount"`
+	// +optional
+	NodeCount  int                `json:"nodeCount"`
+	Conditions []metav1.Condition `json:"conditions"`
 }
 
 // +kubebuilder:object:root=true
