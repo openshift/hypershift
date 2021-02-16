@@ -26,6 +26,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -210,7 +211,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		capiAwsProviderDeployment,
 	}
 
-	err = r.applyObjects(ctx, capiManagerObjects)
+	err = r.applyObjects(ctx, capiManagerObjects...)
 	if err != nil {
 		r.Log.Error(err, "failed to apply cluster api resources")
 		return ctrl.Result{}, err
@@ -285,7 +286,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		controlPlaneOperatorDeployment,
 	}
 
-	err = r.applyObjects(ctx, controlPlaneObjects)
+	err = r.applyObjects(ctx, controlPlaneObjects...)
 	if err != nil {
 		r.Log.Error(err, "failed to apply control plane resources")
 		return ctrl.Result{}, err
@@ -350,34 +351,80 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Roll out an auto scaler
-	// TODO: this should only happen when the HCP is ready and publishes a kubeconfig
-	autoScalerRole := autoscaler.Role{Namespace: targetNamespace}.Build()
-	autoScalerServiceAccount := autoscaler.ServiceAccount{Namespace: targetNamespace}.Build()
-	autoScalerRoleBinding := autoscaler.RoleBinding{
-		Role:           autoScalerRole,
-		ServiceAccount: autoScalerServiceAccount,
-	}.Build()
-	autoScalerDeployment := autoscaler.Deployment{
-		Namespace:      targetNamespace,
-		ServiceAccount: autoScalerServiceAccount,
-		Image:          "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0",
-		//The client used by CAPI machine controller expects the kubeconfig to follow this naming convention
-		//https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
-		TargetClusterKubeconfigSecretName: fmt.Sprintf("%s-kubeconfig", capiCluster.GetName()),
-	}.Build()
-	autoScalerObjects := []ctrlclient.Object{
-		autoScalerRole,
-		autoScalerServiceAccount,
-		autoScalerRoleBinding,
-		autoScalerDeployment,
+	// When the hosted control plane kubeconfig secret is available, copy it to the
+	// hostedcluster namespace and update status
+	if hcp.Status.KubeConfig != nil {
+		var targetKubeConfigSecret corev1.Secret
+		targetKubeConfigSecretName := types.NamespacedName{Namespace: targetNamespace.Name, Name: hcp.Status.KubeConfig.Name}
+		err := r.Client.Get(ctx, targetKubeConfigSecretName, &targetKubeConfigSecret)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get target kubeconfig secret %q: %w", targetKubeConfigSecretName, err)
+		}
+		// Build a kubeconfig secret scoped to the hostedcluster's namespace
+		// which has the same contents as the target secret.
+		// TODO: Leaky abstraction, publish this key through HCP status?
+		targetSecretData, ok := targetKubeConfigSecret.Data["value"]
+		if !ok {
+			return ctrl.Result{}, fmt.Errorf("target kubeconfig secret %q is missing key %q", targetKubeConfigSecretName, "value")
+		}
+		kubeConfigSecret := manifests.KubeConfigSecret{
+			HostedCluster: hcluster,
+			Data:          targetSecretData,
+		}.Build()
+		// Update the hostedcluster's copy of the secret.
+		err = r.applyObjects(ctx, kubeConfigSecret)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to apply kubeconfig secret: %w", err)
+		}
+		// Ensure the hostedcluster has a reference to the secret.
+		updatedReference := &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
+		if !equality.Semantic.DeepEqual(hcluster.Status.KubeConfig, updatedReference) {
+			hcluster.Status.KubeConfig = updatedReference
+			if err = r.Status().Update(ctx, hcluster); err != nil {
+				r.Log.Error(err, "failed to update version in hosted cluster status")
+				return ctrl.Result{}, fmt.Errorf("failed to update version in hosted cluster status: %w", err)
+			}
+			r.Log.Info("updated hostedcluster version, requeueing")
+			return ctrl.Result{Requeue: true}, nil
+		}
 	}
-	err = r.applyObjects(ctx, autoScalerObjects)
-	if err != nil {
-		r.Log.Error(err, "failed to apply auto scaler resources")
-		return ctrl.Result{}, err
+
+	// Roll out an auto scaler once the kubeconfig is available
+	if hcp.Status.KubeConfig != nil {
+		var targetKubeConfigSecret corev1.Secret
+		targetKubeConfigSecretName := types.NamespacedName{Namespace: targetNamespace.Name, Name: hcp.Status.KubeConfig.Name}
+		err := r.Client.Get(ctx, targetKubeConfigSecretName, &targetKubeConfigSecret)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get target kubeconfig secret %q: %w", targetKubeConfigSecretName, err)
+		}
+		autoScalerRole := autoscaler.Role{Namespace: targetNamespace}.Build()
+		autoScalerServiceAccount := autoscaler.ServiceAccount{Namespace: targetNamespace}.Build()
+		autoScalerRoleBinding := autoscaler.RoleBinding{
+			Role:           autoScalerRole,
+			ServiceAccount: autoScalerServiceAccount,
+		}.Build()
+		autoScalerDeployment := autoscaler.Deployment{
+			Namespace:        targetNamespace,
+			ServiceAccount:   autoScalerServiceAccount,
+			Image:            "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0",
+			TargetKubeConfig: &targetKubeConfigSecret,
+		}.Build()
+		autoScalerObjects := []ctrlclient.Object{
+			autoScalerRole,
+			autoScalerServiceAccount,
+			autoScalerRoleBinding,
+			autoScalerDeployment,
+		}
+		err = r.applyObjects(ctx, autoScalerObjects...)
+		if err != nil {
+			r.Log.Error(err, "failed to apply auto scaler resources")
+			return ctrl.Result{}, err
+		}
+		r.Log.Info("created all autoscaler resources")
+	} else {
+		// TODO: status?
+		r.Log.Info("autoscaler rollout pending kubeconfig availability")
 	}
-	r.Log.Info("Created all autoscaler resources")
 
 	// Check for readiness and update status
 	var currentCluster capiv1.Cluster
@@ -406,7 +453,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *HostedClusterReconciler) applyObjects(ctx context.Context, objects []ctrlclient.Object) error {
+func (r *HostedClusterReconciler) applyObjects(ctx context.Context, objects ...ctrlclient.Object) error {
 	for i := range objects {
 		object := objects[i]
 		var objectBytes bytes.Buffer

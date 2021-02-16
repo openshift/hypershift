@@ -64,6 +64,11 @@ type HostedClusterStatus struct {
 
 	// +optional
 	Ready bool `json:"ready,omitempty"`
+
+	// KubeConfig is a reference to the secret containing the default kubeconfig
+	// for the cluster.
+	// +optional
+	KubeConfig *corev1.LocalObjectReference `json:"kubeconfig,omitempty"`
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,

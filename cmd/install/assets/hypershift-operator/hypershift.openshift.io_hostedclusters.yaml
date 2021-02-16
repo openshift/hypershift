@@ -81,6 +81,13 @@ spec:
           status:
             description: HostedClusterStatus defines the observed state of HostedCluster
             properties:
+              kubeconfig:
+                description: KubeConfig is a reference to the secret containing the default kubeconfig for the cluster.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
               ready:
                 type: boolean
               version:
