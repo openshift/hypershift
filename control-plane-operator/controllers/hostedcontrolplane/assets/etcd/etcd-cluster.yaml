@@ -4,7 +4,7 @@ metadata:
   name: etcd
 spec:
   size: 1
-  version: "3.2.13"
+  version: "3.4.9"
   TLS:
     static:
       member:
