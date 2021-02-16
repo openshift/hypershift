@@ -3,7 +3,11 @@ apiVersion: apps/v1
 metadata:
   name: cluster-policy-controller
 spec:
-  replicas: {{ .Replicas }}
+{{ if eq .ControllerAvailabilityPolicy "HighlyAvailable" }}
+  replicas: 3
+{{ else }}
+  replicas: 1
+{{ end }}
   strategy:
     type: RollingUpdate
     rollingUpdate:

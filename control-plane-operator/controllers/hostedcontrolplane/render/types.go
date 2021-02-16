@@ -39,28 +39,31 @@ type PKIParams struct {
 }
 
 type ClusterParams struct {
-	Namespace                              string                 `json:"namespace"`
-	ExternalAPIDNSName                     string                 `json:"externalAPIDNSName"`
-	ExternalAPIAddress                     string                 `json:"externalAPIAddress"`
-	ExternalAPIPort                        uint                   `json:"externalAPIPort"`
-	ExternalOpenVPNAddress                 string                 `json:"externalVPNAddress"`
-	ExternalOpenVPNPort                    uint                   `json:"externalVPNPort"`
-	ExternalOauthDNSName                   string                 `json:"externalOauthDNSName"`
-	ExternalOauthPort                      uint                   `json:"externalOauthPort"`
-	IdentityProviders                      string                 `json:"identityProviders"`
-	ServiceCIDR                            string                 `json:"serviceCIDR"`
-	NamedCerts                             []NamedCert            `json:"namedCerts,omitempty"`
-	PodCIDR                                string                 `json:"podCIDR"`
-	ReleaseImage                           string                 `json:"releaseImage"`
-	IngressSubdomain                       string                 `json:"ingressSubdomain"`
-	OpenShiftAPIClusterIP                  string                 `json:"openshiftAPIClusterIP"`
-	OauthAPIClusterIP                      string                 `json:"oauthAPIClusterIP"`
-	ImageRegistryHTTPSecret                string                 `json:"imageRegistryHTTPSecret"`
-	RouterNodePortHTTP                     string                 `json:"routerNodePortHTTP"`
-	RouterNodePortHTTPS                    string                 `json:"routerNodePortHTTPS"`
-	BaseDomain                             string                 `json:"baseDomain"`
-	NetworkType                            string                 `json:"networkType"`
-	Replicas                               string                 `json:"replicas"`
+	Namespace               string      `json:"namespace"`
+	ExternalAPIDNSName      string      `json:"externalAPIDNSName"`
+	ExternalAPIAddress      string      `json:"externalAPIAddress"`
+	ExternalAPIPort         uint        `json:"externalAPIPort"`
+	ExternalOpenVPNAddress  string      `json:"externalVPNAddress"`
+	ExternalOpenVPNPort     uint        `json:"externalVPNPort"`
+	ExternalOauthDNSName    string      `json:"externalOauthDNSName"`
+	ExternalOauthPort       uint        `json:"externalOauthPort"`
+	IdentityProviders       string      `json:"identityProviders"`
+	ServiceCIDR             string      `json:"serviceCIDR"`
+	NamedCerts              []NamedCert `json:"namedCerts,omitempty"`
+	PodCIDR                 string      `json:"podCIDR"`
+	ReleaseImage            string      `json:"releaseImage"`
+	IngressSubdomain        string      `json:"ingressSubdomain"`
+	OpenShiftAPIClusterIP   string      `json:"openshiftAPIClusterIP"`
+	OauthAPIClusterIP       string      `json:"oauthAPIClusterIP"`
+	ImageRegistryHTTPSecret string      `json:"imageRegistryHTTPSecret"`
+	RouterNodePortHTTP      string      `json:"routerNodePortHTTP"`
+	RouterNodePortHTTPS     string      `json:"routerNodePortHTTPS"`
+	BaseDomain              string      `json:"baseDomain"`
+	NetworkType             string      `json:"networkType"`
+	// APIAvailabilityPolicy defines the availability of components that support end-user facing API requests
+	APIAvailabilityPolicy AvailabilityPolicy `json:"apiAvailabilityPolicy"`
+	// ControllerAvailabilityPolicy defines the availability of controller components for the cluster
+	ControllerAvailabilityPolicy           AvailabilityPolicy     `json:"controllerAvailabilityPolicy"`
 	EtcdClientName                         string                 `json:"etcdClientName"`
 	OriginReleasePrefix                    string                 `json:"originReleasePrefix"`
 	OpenshiftAPIServerCABundle             string                 `json:"openshiftAPIServerCABundle"`
@@ -127,3 +130,10 @@ type ResourceRequest struct {
 	CPU    string `json:"cpu"`
 	Memory string `json:"memory"`
 }
+
+type AvailabilityPolicy string
+
+const (
+	HighlyAvailable AvailabilityPolicy = "HighlyAvailable"
+	SingleReplica   AvailabilityPolicy = "SingleReplica"
+)
