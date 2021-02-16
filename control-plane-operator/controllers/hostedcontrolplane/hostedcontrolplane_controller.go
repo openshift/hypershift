@@ -282,6 +282,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ControlPlaneEnsureFailed", err.Error(), result, fmt.Errorf("failed to ensure control plane: %w", err))
 	}
 
+	hostedControlPlane.Status.KubeConfig = &corev1.LocalObjectReference{
+		Name: fmt.Sprintf("%v-kubeconfig", hostedControlPlane.Name),
+	}
 	r.Log.Info("Successfully reconciled")
 	return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionTrue, "AsExpected", "HostedControlPlane is ready", ctrl.Result{}, nil)
 }
