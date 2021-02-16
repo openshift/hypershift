@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"time"
 
@@ -132,7 +133,7 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 			key := ctrl.ObjectKey{
 				// TODO: This resource needs extracted into a library function
 				Namespace: example.Cluster.GetName(),
-				Name:      "admin-kubeconfig",
+				Name:      fmt.Sprintf("%s-kubeconfig", example.Cluster.GetName()),
 			}
 			if err := input.Client.Get(ctx, key, guestKubeConfigSecret); err != nil {
 				return false

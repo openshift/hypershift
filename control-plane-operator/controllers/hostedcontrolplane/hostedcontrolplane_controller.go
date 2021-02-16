@@ -1027,7 +1027,7 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 func generateKubeconfigSecret(name, namespace string, kubeconfigBytes []byte) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
-	secret.Name = "admin-kubeconfig"
+	secret.Name = fmt.Sprintf("%v-kubeconfig", name)
 	secret.Data = map[string][]byte{"value": kubeconfigBytes}
 	return secret, nil
 }
