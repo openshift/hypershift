@@ -21,7 +21,8 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"github.com/openshift/api/config/v1"
+	configv1 "github.com/openshift/api/config/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -99,7 +100,7 @@ func (in *ClusterVersionStatus) DeepCopyInto(out *ClusterVersionStatus) {
 	out.Desired = in.Desired
 	if in.History != nil {
 		in, out := &in.History, &out.History
-		*out = make([]v1.UpdateHistory, len(*in))
+		*out = make([]configv1.UpdateHistory, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -421,6 +422,11 @@ func (in *HostedControlPlaneSpec) DeepCopy() *HostedControlPlaneSpec {
 func (in *HostedControlPlaneStatus) DeepCopyInto(out *HostedControlPlaneStatus) {
 	*out = *in
 	out.ControlPlaneEndpoint = in.ControlPlaneEndpoint
+	if in.KubeConfig != nil {
+		in, out := &in.KubeConfig, &out.KubeConfig
+		*out = new(v1.LocalObjectReference)
+		**out = **in
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]HostedControlPlaneCondition, len(*in))

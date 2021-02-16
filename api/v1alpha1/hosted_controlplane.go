@@ -90,6 +90,10 @@ type HostedControlPlaneStatus struct {
 	// +kubebuilder:validation:Optional
 	Version string `json:"version,omitempty"`
 
+	// KubeConfig is a reference to the secret containing the default kubeconfig
+	// for this control plane.
+	KubeConfig *corev1.LocalObjectReference `json:"kubeConfig,omitempty"`
+
 	// Condition contains details for one aspect of the current state of the HostedControlPlane.
 	// Current condition types are: "Available"
 	// +kubebuilder:validation:Required
