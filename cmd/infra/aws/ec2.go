@@ -5,10 +5,16 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
+)
+
+const (
+	InvalidNATGatewayError = "InvalidNatGatewayID.NotFound"
 )
 
 func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
@@ -277,21 +283,6 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		}
 		natGateway = gatewayResult.NatGateway
 	}
-	// Wait for NAT gateway to become available
-	err = wait.Poll(5*time.Second, 1*time.Minute, func() (bool, error) {
-		natgw, err := o.existingNATGateway(client, natGatewayName)
-		if err != nil {
-			return false, err
-		}
-		if natgw != nil {
-			return true, nil
-		}
-		return false, nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("NAT gateway failed to become available: %w", err)
-	}
-
 	natGatewayID := aws.StringValue(natGateway.NatGatewayId)
 	return natGatewayID, nil
 }
@@ -337,10 +328,25 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(client ec2iface.EC2API, vpc
 		}
 	}
 	if !o.hasNATGatewayRoute(routeTable, natGatewayID) {
-		_, err = client.CreateRoute(&ec2.CreateRouteInput{
-			RouteTableId:         routeTable.RouteTableId,
-			NatGatewayId:         aws.String(natGatewayID),
-			DestinationCidrBlock: aws.String("0.0.0.0/0"),
+		isRetriable := func(err error) bool {
+			if awsErr, ok := err.(awserr.Error); ok {
+				return awsErr.Code() == InvalidNATGatewayError
+			}
+			return false
+		}
+		backoff := wait.Backoff{
+			Steps:    20,
+			Duration: 3 * time.Second,
+			Factor:   5.0,
+			Jitter:   0.1,
+		}
+		err = retry.OnError(backoff, isRetriable, func() error {
+			_, err = client.CreateRoute(&ec2.CreateRouteInput{
+				RouteTableId:         routeTable.RouteTableId,
+				NatGatewayId:         aws.String(natGatewayID),
+				DestinationCidrBlock: aws.String("0.0.0.0/0"),
+			})
+			return err
 		})
 		if err != nil {
 			return "", fmt.Errorf("cannot create nat gateway route in private route table: %w", err)

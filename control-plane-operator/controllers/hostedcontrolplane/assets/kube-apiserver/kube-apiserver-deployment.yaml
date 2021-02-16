@@ -78,6 +78,11 @@ spec:
         args:
         - "--openshift-config=/etc/kubernetes/apiserver-config/config.yaml"
         workingDir: /var/log/kube-apiserver
+        {{- if eq .CloudProvider "aws" }}
+        env:
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /etc/kubernetes/provider/credentials
+        {{- end }}
         livenessProbe:
           httpGet:
             scheme: HTTPS
@@ -115,6 +120,10 @@ spec:
           name: logs
         - name: apiserver-cm
           mountPath: /etc/kubernetes/audit/
+{{- if .ProviderCredsSecretName }}
+        - name: provider-creds
+          mountPath: /etc/kubernetes/provider
+{{- end }}
       - name: openvpn-client
         image: quay.io/hypershift/openvpn:latest
         imagePullPolicy: Always
@@ -160,3 +169,8 @@ spec:
       - name: apiserver-cm
         configMap:
           name: apiserver-default-audit-cm
+{{- if .ProviderCredsSecretName }}
+      - name: provider-creds
+        secret:
+          secretName: {{ .ProviderCredsSecretName }}
+{{- end }}

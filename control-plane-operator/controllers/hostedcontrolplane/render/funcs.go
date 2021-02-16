@@ -12,6 +12,7 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/vincent-petithory/dataurl"
+	"gopkg.in/ini.v1"
 )
 
 func includeVPNFunc(includeVPN bool) func() bool {
@@ -150,6 +151,22 @@ func cidrMask(cidr string) string {
 		panic("Expecting a 4-byte mask")
 	}
 	return fmt.Sprintf("%d.%d.%d.%d", m[0], m[1], m[2], m[3])
+}
+
+func iniValue(iniContent, section, key string) string {
+	f, err := ini.Load([]byte(iniContent))
+	if err != nil {
+		panic(err.Error())
+	}
+	s, err := f.GetSection(section)
+	if err != nil {
+		panic(err.Error())
+	}
+	k, err := s.GetKey(key)
+	if err != nil {
+		panic(err.Error())
+	}
+	return k.String()
 }
 
 // randomString uses RawURLEncoding to ensure we do not get / characters or trailing ='s

@@ -5,12 +5,4 @@ metadata:
   namespace: kube-system
 data:
   install-config: |
-    apiVersion: v1
-    # read by network-operator
-    controlPlane:
-      replicas: 1
-    networking:
-      machineCIDR: 10.0.0.0/16
-    # read by image-registry-operator and ingress-operator
-    platform:
-      none: {}
+{{ include "install-config/install-config.yaml" 4 }}

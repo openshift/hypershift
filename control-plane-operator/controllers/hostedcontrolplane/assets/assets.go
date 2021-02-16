@@ -3,12 +3,14 @@ package assets
 import "embed"
 
 //go:embed apiserver-haproxy/*
+//go:embed aws/*
 //go:embed cluster-bootstrap/*
 //go:embed cluster-version-operator/*
 //go:embed common/*
 //go:embed etcd/*
 //go:embed hosted-cluster-config-operator/*
 //go:embed ignition-configs/*
+//go:embed install-config/*
 //go:embed kube-apiserver/*
 //go:embed kube-controller-manager/*
 //go:embed kube-scheduler/*

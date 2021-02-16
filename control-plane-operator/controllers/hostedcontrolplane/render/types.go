@@ -49,6 +49,7 @@ type ClusterParams struct {
 	ExternalOauthPort       uint        `json:"externalOauthPort"`
 	IdentityProviders       string      `json:"identityProviders"`
 	ServiceCIDR             string      `json:"serviceCIDR"`
+	MachineCIDR             string      `json:"machineCIDR"`
 	NamedCerts              []NamedCert `json:"namedCerts,omitempty"`
 	PodCIDR                 string      `json:"podCIDR"`
 	ReleaseImage            string      `json:"releaseImage"`
@@ -97,7 +98,16 @@ type ClusterParams struct {
 	HypershiftOperatorControllers          []string               `json:"hypershiftOperatorControllers"`
 	MachineConfigServerAddress             string                 `json:"machineConfigServerAddress"`
 	SSHKey                                 string                 `json:"sshKey"`
+	InfraID                                string                 `json:"infraID"`
+	ProviderCredsSecretName                string                 `json:"providerCredsSecretName"`
+	CloudCredentials                       string                 `json:"cloudCredentials"`
 	DefaultFeatureGates                    []string
+
+	// AWS params
+	AWSZone     string `json:"awsZone"`
+	AWSVPCID    string `json:"awsVPCID"`
+	AWSRegion   string `json:"awsRegion"`
+	AWSSubnetID string `json:"awsSubnetID"`
 
 	// Fields below are are taken from the ROKs type
 	EndpointPublishingStrategyScope string                 `json:"endpointPublishingStrategyScope"`

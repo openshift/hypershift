@@ -25,7 +25,7 @@ func NewCreateIAMCommand() *cobra.Command {
 
 	opts := CreateIAMOptions{
 		Region:      "us-east-1",
-		ProfileName: "worker-profile",
+		ProfileName: "hypershift-worker-profile",
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")

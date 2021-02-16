@@ -107,9 +107,20 @@ type NodePoolPlatform struct {
 type AWSNodePoolPlatform struct {
 	// InstanceType defines the ec2 instance type.
 	// eg. m4-large
-	InstanceType    string                `json:"instanceType"`
-	InstanceProfile string                `json:"instanceProfile,omitempty"`
-	Subnet          *AWSResourceReference `json:"subnet,omitempty"`
+	InstanceType    string `json:"instanceType"`
+	InstanceProfile string `json:"instanceProfile,omitempty"`
+	// Subnet is the subnet to use for instances
+	// +optional
+	Subnet *AWSResourceReference `json:"subnet,omitempty"`
+	// AMI is the image id to use
+	// +optional
+	AMI string `json:"ami,omitempty"`
+	// SecurityGroups is the set of security groups to associate with nodepool machines
+	// +optional
+	SecurityGroups []AWSResourceReference `json:"securityGroups,omitempty"`
+	// Zone is the availability zone where the instances are created
+	// +optional
+	Zone string `json:"zone,omitempty"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.

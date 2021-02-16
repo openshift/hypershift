@@ -13,3 +13,7 @@ data:
 {{ include_pki "combined-ca.crt" 4 }}
   etcd-ca.crt: |-
 {{ include_pki "root-ca.crt" 4 }}
+{{- if eq .CloudProvider "aws" }}
+  aws.conf: |-
+{{ include "aws/aws.conf" 4 }}
+{{- end}}

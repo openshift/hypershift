@@ -50,6 +50,7 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 		"pullSecretBase64":  pullSecretBase64(pullSecret),
 		"atleast_version":   atLeastVersionFunc(versions),
 		"lessthan_version":  lessThanVersionFunc(versions),
+		"ini_value":         iniValue,
 	})
 	return ctx
 }

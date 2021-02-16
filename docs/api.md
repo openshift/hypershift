@@ -59,9 +59,6 @@ type AWSPlatformSpec struct {
     // Region is the AWS region for the cluster
     Region string
 
-    // AvailabilityZone is the default availability zone for the cluster
-    AvailabilityZone string
-
     // VPC specifies the VPC used for the cluster
     VPC string `json:"vpc"`
 
@@ -247,11 +244,12 @@ type NodePoolPlatform struct {
 type AWSNodePoolPlatform struct {
 	// InstanceType defines the ec2 instance type.
 	// eg. m4-large
-	InstanceType    string                `json:"instanceType"`
-	InstanceProfile string                `json:"instanceProfile,omitempty"`
-	Subnet          *AWSResourceReference `json:"subnet,omitempty"`
-	SecurityGroups  []string              `json:"securityGroups,omitempty"`
-	AMI             string                `json:"ami"`
+	Zone            string                 `json:"zone"`
+	InstanceType    string                 `json:"instanceType"`
+	InstanceProfile string                 `json:"instanceProfile,omitempty"`
+	Subnet          *AWSResourceReference  `json:"subnet,omitempty"`
+	SecurityGroups  []AWSResourceReference `json:"securityGroups,omitempty"`
+	AMI             string                 `json:"ami"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
