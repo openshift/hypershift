@@ -362,6 +362,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Namespace:      targetNamespace,
 		ServiceAccount: autoScalerServiceAccount,
 		Image:          "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0",
+		//The client used by CAPI machine controller expects the kubeconfig to follow this naming convention
+		//https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
+		TargetClusterKubeconfigSecretName: fmt.Sprintf("%s-kubeconfig", capiCluster.GetName()),
 	}.Build()
 	autoScalerObjects := []ctrlclient.Object{
 		autoScalerRole,

@@ -9,9 +9,10 @@ import (
 )
 
 type Deployment struct {
-	Namespace      *corev1.Namespace
-	ServiceAccount *corev1.ServiceAccount
-	Image          string
+	Namespace                         *corev1.Namespace
+	ServiceAccount                    *corev1.ServiceAccount
+	Image                             string
+	TargetClusterKubeconfigSecretName string
 }
 
 func (o Deployment) Build() *appsv1.Deployment {
@@ -52,7 +53,7 @@ func (o Deployment) Build() *appsv1.Deployment {
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
 									// TODO: this should come from HCP status
-									SecretName: "admin-kubeconfig",
+									SecretName: o.TargetClusterKubeconfigSecretName,
 									Items: []corev1.KeyToPath{
 										{
 											// TODO: this should come from HCP status
