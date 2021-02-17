@@ -547,7 +547,8 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
-	params.Replicas = "1"
+	params.APIAvailabilityPolicy = render.SingleReplica
+	params.ControllerAvailabilityPolicy = render.SingleReplica
 	params.SSHKey = string(sshKeyData)
 	params.HypershiftOperatorControllers = []string{"route-sync", "auto-approver", "kubeadmin-password", "node"}
 

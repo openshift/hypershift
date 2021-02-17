@@ -5,7 +5,11 @@ metadata:
   labels:
     app: kube-apiserver
 spec:
-  replicas: {{ .Replicas }}
+{{ if eq .APIAvailabilityPolicy "HighlyAvailable" }}
+  replicas: 3
+{{ else }}
+  replicas: 1
+{{ end }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
