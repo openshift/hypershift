@@ -199,7 +199,7 @@ func (o OperatorClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "control-plane-operator",
+			Name: "control-plane-operator-" + o.ServiceAccount.Namespace,
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",

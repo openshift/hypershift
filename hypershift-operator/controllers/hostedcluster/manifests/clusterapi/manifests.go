@@ -152,7 +152,7 @@ func (o ManagerClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster-api",
+			Name: "cluster-api-" + o.ServiceAccount.Namespace,
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
@@ -352,7 +352,7 @@ func (o AWSProviderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "capa-manager-rolebinding",
+			Name: "capa-manager-rolebinding-" + o.ServiceAccount.Namespace,
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
