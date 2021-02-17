@@ -4,7 +4,6 @@ package e2e
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 
 	hyperapi "openshift.io/hypershift/api"
 	apifixtures "openshift.io/hypershift/api/fixtures"
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	"openshift.io/hypershift/test/e2e/internal/log"
 	"openshift.io/hypershift/version"
 )
@@ -128,21 +128,31 @@ func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput)
 		By("Ensuring the guest cluster exposes a valid kubeconfig")
 
 		log.Logf("Waiting for guest kubeconfig to become available")
-		guestKubeConfigSecret := &corev1.Secret{}
+		var guestKubeConfigSecret corev1.Secret
 		Eventually(func() bool {
-			key := ctrl.ObjectKey{
-				// TODO: This resource needs extracted into a library function
-				Namespace: example.Cluster.GetName(),
-				Name:      fmt.Sprintf("%s-kubeconfig", example.Cluster.GetName()),
+			var currentCluster hyperv1.HostedCluster
+			err := input.Client.Get(ctx, ctrl.ObjectKeyFromObject(example.Cluster), &currentCluster)
+			if err != nil {
+				log.Logf("error getting cluster: %w", err)
+				return false
 			}
-			if err := input.Client.Get(ctx, key, guestKubeConfigSecret); err != nil {
+			if currentCluster.Status.KubeConfig == nil {
+				return false
+			}
+			key := ctrl.ObjectKey{
+				Namespace: currentCluster.Namespace,
+				Name:      currentCluster.Status.KubeConfig.Name,
+			}
+			if err := input.Client.Get(ctx, key, &guestKubeConfigSecret); err != nil {
+				log.Logf("error getting guest kubeconfig secret %s: %w", key, err)
 				return false
 			}
 			return true
 		}, 5*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't find guest kubeconfig secret")
 
-		guestKubeConfigSecretData, hasData := guestKubeConfigSecret.Data["value"]
-		Expect(hasData).To(BeTrue(), "guest guest kubeconfig secret is missing value key")
+		// TODO: this key should probably be published or an API constant
+		guestKubeConfigSecretData, hasData := guestKubeConfigSecret.Data["kubeconfig"]
+		Expect(hasData).To(BeTrue(), "guest kubeconfig secret is missing kubeconfig key")
 
 		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 		Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")

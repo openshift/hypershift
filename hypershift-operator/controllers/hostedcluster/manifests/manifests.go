@@ -115,3 +115,24 @@ func (o DefaultNodePool) Build() *hyperv1.NodePool {
 	}
 	return nodePool
 }
+
+type KubeConfigSecret struct {
+	HostedCluster *hyperv1.HostedCluster
+	Data          []byte
+}
+
+func (o KubeConfigSecret) Build() *corev1.Secret {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.HostedCluster.Namespace,
+			Name:      o.HostedCluster.Name + "-admin-kubeconfig",
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{"kubeconfig": o.Data},
+	}
+	return secret
+}
