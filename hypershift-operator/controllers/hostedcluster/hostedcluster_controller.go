@@ -30,7 +30,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -99,9 +98,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Return early if deleted
 	if isMissing || !hcluster.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, req); err != nil {
+		result, err := r.delete(ctx, req)
+		if err != nil {
 			r.Log.Error(err, "failed to delete cluster", "cluster", req.NamespacedName)
 			return ctrl.Result{}, err
+		}
+		if result != nil {
+			return *result, err
 		}
 
 		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
@@ -488,21 +491,23 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 	return filtered, nil
 }
 
-func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) error {
+func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) (*ctrl.Result, error) {
 	targetNamespace := req.Name
 
+	var result *ctrl.Result
+	result = nil
 	nodePools, err := r.listNodePools(req.Namespace, req.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", req.Name, err)
+		return result, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", req.Name, err)
 	}
 
 	for key := range nodePools {
 		if err := r.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete nodePool %q for cluster %q: %w", nodePools[key].GetName(), req.Name, err)
+			return result, fmt.Errorf("failed to delete nodePool %q for cluster %q: %w", nodePools[key].GetName(), req.Name, err)
 		}
 	}
 
-	r.Log.Info("Deleting cluster", "name", req.Name, "namespace", targetNamespace)
+	r.Log.Info("Deleting Cluster", "clusterName", req.Name, "clusterNamespace", targetNamespace)
 	cluster := &capiv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      req.Name,
@@ -510,8 +515,16 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) 
 		},
 	}
 
-	if err := waitForDeletion(ctx, r.Log, r, cluster); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete cluster: %w", err)
+	deleted, err := ensureClusterDeleted(ctx, r.Log, r, cluster)
+	if err != nil {
+		return result, fmt.Errorf("error ensuring Cluster deletion: %w", err)
+	}
+	if !deleted {
+		result = &ctrl.Result{
+			RequeueAfter: time.Duration(5 * time.Second),
+		}
+		r.Log.Info("Waiting for Cluster deletion", "clusterName", req.Name, "clusterNamespace", targetNamespace)
+		return result, nil
 	}
 
 	r.Log.Info("Deleting target namespace", "namespace", targetNamespace)
@@ -519,33 +532,20 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) 
 		ObjectMeta: metav1.ObjectMeta{Name: targetNamespace},
 	}
 	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete namespace: %w", err)
+		return result, fmt.Errorf("failed to delete namespace: %w", err)
 	}
-	return nil
+	return result, nil
 }
 
-func waitForDeletion(ctx context.Context, log logr.Logger, c client.Client, obj client.Object) error {
-	log.WithValues("name", obj.GetName(),
-		"namespace", obj.GetNamespace(), "kind", obj.GetObjectKind())
-	log.Info("Deleting")
-
-	if err := c.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-
-	if err := wait.PollInfinite(5*time.Second, func() (done bool, err error) {
-		if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
-			if apierrors.IsNotFound(err) {
-				return true, nil
-			}
-			log.Error(err, "error getting")
+func ensureClusterDeleted(ctx context.Context, log logr.Logger, c client.Client, obj client.Object) (bool, error) {
+	err := c.Delete(ctx, obj)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, nil
 		}
-		log.Info("still exists")
-		return false, nil
-	}); err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return false, nil
 }
 
 func parseNamespacedName(name string) types.NamespacedName {
