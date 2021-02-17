@@ -98,13 +98,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Return early if deleted
 	if isMissing || !hcluster.DeletionTimestamp.IsZero() {
-		result, err := r.delete(ctx, req)
+		completed, err := r.delete(ctx, hcluster)
 		if err != nil {
 			r.Log.Error(err, "failed to delete cluster", "cluster", req.NamespacedName)
 			return ctrl.Result{}, err
 		}
-		if result != nil {
-			return *result, err
+		if !completed {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
 		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
@@ -491,53 +491,50 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 	return filtered, nil
 }
 
-func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) (*ctrl.Result, error) {
-	targetNamespace := req.Name
-
-	var result *ctrl.Result
-	result = nil
-	nodePools, err := r.listNodePools(req.Namespace, req.Name)
+// delete will try to delete the HostedCluster and all its associated resources.
+// When the deletion is complete, delete will return true, indicating the HostedCluster
+// can safely be finalized. Otherwise returns false.
+func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+	nodePools, err := r.listNodePools(hc.Namespace, hc.Name)
 	if err != nil {
-		return result, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", req.Name, err)
+		return false, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", hc.Name, err)
 	}
 
 	for key := range nodePools {
 		if err := r.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
-			return result, fmt.Errorf("failed to delete nodePool %q for cluster %q: %w", nodePools[key].GetName(), req.Name, err)
+			return false, fmt.Errorf("failed to delete nodePool %q for cluster %q: %w", nodePools[key].GetName(), hc.Name, err)
 		}
 	}
 
-	r.Log.Info("Deleting Cluster", "clusterName", req.Name, "clusterNamespace", targetNamespace)
+	r.Log.Info("Deleting Cluster", "clusterName", hc.Name, "clusterNamespace", hc.Namespace)
 	cluster := &capiv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      req.Name,
-			Namespace: targetNamespace,
+			Name:      hc.Name,
+			Namespace: hc.Namespace,
 		},
 	}
 
-	deleted, err := ensureClusterDeleted(ctx, r.Log, r, cluster)
+	deleted, err := ensureClusterDeleted(ctx, r, cluster)
+
 	if err != nil {
-		return result, fmt.Errorf("error ensuring Cluster deletion: %w", err)
+		return false, fmt.Errorf("error ensuring Cluster deletion: %w", err)
 	}
 	if !deleted {
-		result = &ctrl.Result{
-			RequeueAfter: time.Duration(5 * time.Second),
-		}
-		r.Log.Info("Waiting for Cluster deletion", "clusterName", req.Name, "clusterNamespace", targetNamespace)
-		return result, nil
+		r.Log.Info("waiting for Cluster deletion", "clusterName", hc.Name, "clusterNamespace", hc.Namespace)
+		return false, nil
 	}
 
-	r.Log.Info("Deleting target namespace", "namespace", targetNamespace)
+	r.Log.Info("Deleting target namespace", "namespace", hc.Namespace)
 	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: targetNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: hc.Namespace},
 	}
 	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
-		return result, fmt.Errorf("failed to delete namespace: %w", err)
+		return false, fmt.Errorf("failed to delete namespace: %w", err)
 	}
-	return result, nil
+	return true, nil
 }
 
-func ensureClusterDeleted(ctx context.Context, log logr.Logger, c client.Client, obj client.Object) (bool, error) {
+func ensureClusterDeleted(ctx context.Context, c client.Client, obj client.Object) (bool, error) {
 	err := c.Delete(ctx, obj)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
