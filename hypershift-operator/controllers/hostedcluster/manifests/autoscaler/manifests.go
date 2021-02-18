@@ -56,7 +56,7 @@ func (o Deployment) Build() *appsv1.Deployment {
 									Items: []corev1.KeyToPath{
 										{
 											// TODO: should the key be published on status?
-											Key:  "kubeconfig",
+											Key:  "value",
 											Path: "target-kubeconfig",
 										},
 									},
