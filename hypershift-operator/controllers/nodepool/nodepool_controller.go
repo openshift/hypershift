@@ -340,10 +340,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 		},
 	}
 
-	// TODO (alberto): drop/expose this annotation at the nodePool API
-	annotations := map[string]string{
-		"machine.cluster.x-k8s.io/exclude-node-draining": "true",
-	}
+	annotations := map[string]string{}
 	if isAutoscalingEnabled(nodePool) {
 		if nodePool.Spec.AutoScaling.Max != nil &&
 			*nodePool.Spec.AutoScaling.Max > 0 {
@@ -359,7 +356,6 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 			Labels: map[string]string{
 				capiv1.ClusterLabelName: infraName,
 			},
-			// TODO (alberto): pass autoscaler min/max annotations from nodePool API
 		},
 		TypeMeta: metav1.TypeMeta{},
 		Spec: capiv1.MachineSetSpec{
@@ -375,6 +371,10 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 					Labels: map[string]string{
 						resourcesName:           resourcesName,
 						capiv1.ClusterLabelName: infraName,
+					},
+					// TODO (alberto): drop/expose this annotation at the nodePool API
+					Annotations: map[string]string{
+						"machine.cluster.x-k8s.io/exclude-node-draining": "true",
 					},
 				},
 				Spec: capiv1.MachineSpec{

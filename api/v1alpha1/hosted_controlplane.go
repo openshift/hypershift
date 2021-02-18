@@ -79,6 +79,12 @@ type HostedControlPlaneStatus struct {
 	// +kubebuilder:default=false
 	Ready bool `json:"ready"`
 
+	// ExternalManagedControlPlane indicates to cluster-api that the control plane
+	// is managed by an external service.
+	// https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468
+	// +kubebuilder:default=true
+	ExternalManagedControlPlane *bool `json:"externalManagedControlPlane,omitempty"`
+
 	// ControlPlaneEndpoint contains the endpoint information by which
 	// external clients can access the control plane.  This is populated
 	// after the infrastructure is ready.

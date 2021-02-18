@@ -113,6 +113,10 @@ spec:
                 - host
                 - port
                 type: object
+              externalManagedControlPlane:
+                default: true
+                description: ExternalManagedControlPlane indicates to cluster-api that the control plane is managed by an external service. https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468
+                type: boolean
               kubeConfig:
                 description: KubeConfig is a reference to the secret containing the default kubeconfig for this control plane.
                 properties:
