@@ -21,39 +21,73 @@ type HostedClusterSpec struct {
     ClusterID ClusterID `json:"clusterID"`
 
     Release Release
-    
+
+    Networking ClusterNetworking
+
     // NOTE: This might not make sense as control plane
     // inputs can be specific to versions
     ControlPlane ControlPlaneSpec
-    
+
     // PullSecret is propagated to the container runtime
     // of any nodes associated with this cluster.
     PullSecret LocalObjectReference
+
+    // ProviderCreds is a reference to a secret containing cloud account info
+    ProviderCreds LocalObjectReference
+
+    // Platform contains platform-specific details for
+    // the cluster
+    Platform PlatformSpec `json:"platform"`
+
+    // InfraID is used to identify the cluster in cloud platforms
+    InfraID string `json:"infraID,omitempty"`
 }
 
-type ProviderSpec struct {
-    // Region is inferred from the management cluster.
-    // Managing node pools in a different region is 
-    // not supported.
-    AWS *AWSProviderSpec
+type ClusterNetworking struct {
+    PodCIDR string
+    ServiceCIDR string
+    MachineCIDR string
 }
 
-type AWSProviderSpec struct {
-    // Reference to a secret containing account info
-    // - Account ID
-    // - Access ID
-    // - Access Key
-    Credentials LocalObjectReference
-    
-    Network AWSNetworkSpec
+type PlatformSpec struct {
+    // AWS contains AWS-specific settings for the HostedCluster
+    AWS *AWSPlatformSpec `json:"aws"`
 }
 
-type AWSNetworkSpec struct {
-    VPC AWSVPCSpec
+type AWSPlatformSpec struct {
+
+    // Region is the AWS region for the cluster
+    Region string
+
+    // AvailabilityZone is the default availability zone for the cluster
+    AvailabilityZone string
+
+    // VPC specifies the VPC used for the cluster
+    VPC string `json:"vpc"`
+
+    // NodePoolDefaults specifies the default platform
+    NodePoolDefaults *AWSNodePoolPlatform `json:"nodePoolDefaults"`
+
+    // ServiceEndpoints list contains custom endpoints which will override default
+    // service endpoint of AWS Services.
+    // There must be only one ServiceEndpoint for a service.
+    // +optional
+    ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 }
 
-type AWSVPCSpec struct {
-    ID string
+// AWSServiceEndpoint stores the configuration for services to
+// override existing defaults of AWS Services.
+type AWSServiceEndpoint struct {
+    // Name is the name of the AWS service.
+    // This must be provided and cannot be empty.
+    Name string `json:"name"`
+
+    // URL is fully qualified URI with scheme https, that overrides the default generated
+    // endpoint for a client.
+    // This must be provided and cannot be empty.
+    //
+    // +kubebuilder:validation:Pattern=`^https://`
+    URL string `json:"url"`
 }
 
 // TODO - block for auth, cidrBlocks
@@ -92,6 +126,7 @@ type HostedClusterStatus struct {
     Version ClusterVersionStatus
     Endpoint string
     Conditions []HostedClusterCondition
+
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,
@@ -150,7 +185,7 @@ type UpdateHistory struct {
     // +kubebuilder:validation:Required
     // +required
     StartedTime metav1.Time `json:"startedTime"`
-    
+
     // completionTime, if set, is when the update was fully applied. The update
     // that is currently being applied will have a null completion time.
     // Completion time will always be set for entries that are not the current
@@ -166,7 +201,7 @@ type UpdateHistory struct {
     //
     // +optional
     Version string `json:"version"`
-    
+
     // image is a container image location that contains the update. This value
     // is always populated.
     // +kubebuilder:validation:Required
@@ -196,18 +231,58 @@ type NodePoolSpec struct {
     MachineConfig MachineConfigSpec
 
     Template MachineConfigTemplate
+
+    Platform NodePoolPlatform
+}
+
+// NodePoolPlatform is the platform-specific configuration for a node
+// pool. Only one of the platforms should be set.
+type NodePoolPlatform struct {
+	// AWS is the configuration used when installing on AWS.
+	AWS *AWSNodePoolPlatform `json:"aws,omitempty"`
+}
+
+// AWSNodePoolPlatform stores the configuration for a node pool
+// installed on AWS.
+type AWSNodePoolPlatform struct {
+	// InstanceType defines the ec2 instance type.
+	// eg. m4-large
+	InstanceType    string                `json:"instanceType"`
+	InstanceProfile string                `json:"instanceProfile,omitempty"`
+	Subnet          *AWSResourceReference `json:"subnet,omitempty"`
+	SecurityGroups  []string              `json:"securityGroups,omitempty"`
+	AMI             string                `json:"ami"`
+}
+
+// AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
+// Only one of ID, ARN or Filters may be specified. Specifying more than one will result in
+// a validation error.
+type AWSResourceReference struct {
+	// ID of resource
+	// +optional
+	ID *string `json:"id,omitempty"`
+
+	// ARN of resource
+	// +optional
+	ARN *string `json:"arn,omitempty"`
+
+	// Filters is a set of key/value pairs used to identify a resource
+	// They are applied according to the rules defined by the AWS API:
+	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html
+	// +optional
+	Filters []Filter `json:"filters,omitempty"`
 }
 
 type MachineConfigTemplate struct {
     Provider ProviderMachineConfigSpec
-    
+
     // ? <xyz> | used in boot-your-self flow
     MachineClass string
-    
+
     InitialNodeCount int
-    
+
     AutoScaling *MachineAutoScalingSpec
-    
+
     Management MachineManagementSpec
 }
 
@@ -231,7 +306,7 @@ type MachineAutoScalingSpec struct {
 
 type MachineManagementSpec struct {
     Upgrades MachineUpgradePolicySpec
-    
+
     // drives use of machine health check
     Repair MachineRepairPolicySpec
 }
