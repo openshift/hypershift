@@ -187,15 +187,20 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ClusterRole:    capiManagerClusterRole,
 		ServiceAccount: capiManagerServiceAccount,
 	}.Build()
+	capiManagerRole := clusterapi.ManagerRole{Namespace: targetNamespace}.Build()
+	capiManagerRoleBinding := clusterapi.ManagerRoleBinding{
+		Role:           capiManagerRole,
+		ServiceAccount: capiManagerServiceAccount,
+	}.Build()
 	capiManagerDeployment := clusterapi.ManagerDeployment{
 		Namespace:      targetNamespace,
 		Image:          "quay.io/hypershift/cluster-api:hypershift",
 		ServiceAccount: capiManagerServiceAccount,
 	}.Build()
-	capiAwsProviderClusterRole := clusterapi.AWSProviderClusterRole{}.Build()
+	capiAwsProviderRole := clusterapi.AWSProviderRole{Namespace: targetNamespace}.Build()
 	capiAwsProviderServiceAccount := clusterapi.AWSProviderServiceAccount{Namespace: targetNamespace}.Build()
-	capiAwsProviderClusterRoleBinding := clusterapi.AWSProviderClusterRoleBinding{
-		ClusterRole:    capiAwsProviderClusterRole,
+	capiAwsProviderRoleBinding := clusterapi.AWSProviderRoleBinding{
+		Role:           capiAwsProviderRole,
 		ServiceAccount: capiAwsProviderServiceAccount,
 	}.Build()
 	capiAwsProviderDeployment := clusterapi.AWSProviderDeployment{
@@ -208,10 +213,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		capiManagerClusterRole,
 		capiManagerServiceAccount,
 		capiManagerClusterRoleBinding,
+		capiManagerRole,
+		capiManagerRoleBinding,
 		capiManagerDeployment,
-		capiAwsProviderClusterRole,
+		capiAwsProviderRole,
 		capiAwsProviderServiceAccount,
-		capiAwsProviderClusterRoleBinding,
+		capiAwsProviderRoleBinding,
 		capiAwsProviderDeployment,
 	}
 
@@ -277,6 +284,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ClusterRole:    controlPlaneOperatorClusterRole,
 		ServiceAccount: controlPlaneOperatorServiceAccount,
 	}.Build()
+	controlPlaneOperatorRole := controlplaneoperator.OperatorRole{Namespace: targetNamespace}.Build()
+	controlPlaneOperatorRoleBinding := controlplaneoperator.OperatorRoleBinding{
+		Role:           controlPlaneOperatorRole,
+		ServiceAccount: controlPlaneOperatorServiceAccount,
+	}.Build()
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment{
 		Namespace:      targetNamespace,
 		OperatorImage:  r.OperatorImage,
@@ -287,6 +299,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		controlPlaneOperatorServiceAccount,
 		controlPlaneOperatorClusterRole,
 		controlPlaneOperatorClusterRoleBinding,
+		controlPlaneOperatorRole,
+		controlPlaneOperatorRoleBinding,
 		controlPlaneOperatorDeployment,
 	}
 

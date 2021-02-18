@@ -101,6 +101,56 @@ func (o ManagerClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"customresourcedefinitions"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
+		},
+	}
+	return role
+}
+
+type ManagerClusterRoleBinding struct {
+	ClusterRole    *rbacv1.ClusterRole
+	ServiceAccount *corev1.ServiceAccount
+}
+
+func (o ManagerClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
+	binding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster-api" + o.ServiceAccount.Namespace,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     o.ClusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      o.ServiceAccount.Name,
+				Namespace: o.ServiceAccount.Namespace,
+			},
+		},
+	}
+	return binding
+}
+
+type ManagerRole struct {
+	Namespace *corev1.Namespace
+}
+
+func (o ManagerRole) Build() *rbacv1.Role {
+	role := &rbacv1.Role{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Role",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cluster-api",
+			Namespace: o.Namespace.Name,
+		},
+		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{
 					"bootstrap.cluster.x-k8s.io",
@@ -140,24 +190,25 @@ func (o ManagerClusterRole) Build() *rbacv1.ClusterRole {
 	return role
 }
 
-type ManagerClusterRoleBinding struct {
-	ClusterRole    *rbacv1.ClusterRole
+type ManagerRoleBinding struct {
+	Role           *rbacv1.Role
 	ServiceAccount *corev1.ServiceAccount
 }
 
-func (o ManagerClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
-	binding := &rbacv1.ClusterRoleBinding{
+func (o ManagerRoleBinding) Build() *rbacv1.RoleBinding {
+	binding := &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "ClusterRoleBinding",
+			Kind:       "RoleBinding",
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster-api-" + o.ServiceAccount.Namespace,
+			Namespace: o.Role.Namespace,
+			Name:      "cluster-api",
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     o.ClusterRole.Name,
+			Kind:     "Role",
+			Name:     o.Role.Name,
 		},
 		Subjects: []rbacv1.Subject{
 			{
@@ -296,16 +347,19 @@ func (o AWSProviderServiceAccount) Build() *corev1.ServiceAccount {
 	return sa
 }
 
-type AWSProviderClusterRole struct{}
+type AWSProviderRole struct {
+	Namespace *corev1.Namespace
+}
 
-func (o AWSProviderClusterRole) Build() *rbacv1.ClusterRole {
-	role := &rbacv1.ClusterRole{
+func (o AWSProviderRole) Build() *rbacv1.Role {
+	role := &rbacv1.Role{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "ClusterRole",
+			Kind:       "Role",
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "capa-manager-role",
+			Name:      "capa-manager",
+			Namespace: o.Namespace.Name,
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
@@ -340,24 +394,25 @@ func (o AWSProviderClusterRole) Build() *rbacv1.ClusterRole {
 	return role
 }
 
-type AWSProviderClusterRoleBinding struct {
-	ClusterRole    *rbacv1.ClusterRole
+type AWSProviderRoleBinding struct {
+	Role           *rbacv1.Role
 	ServiceAccount *corev1.ServiceAccount
 }
 
-func (o AWSProviderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
-	binding := &rbacv1.ClusterRoleBinding{
+func (o AWSProviderRoleBinding) Build() *rbacv1.RoleBinding {
+	binding := &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "ClusterRoleBinding",
+			Kind:       "RoleBinding",
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "capa-manager-rolebinding-" + o.ServiceAccount.Namespace,
+			Namespace: o.Role.Namespace,
+			Name:      "capa-manager",
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     o.ClusterRole.Name,
+			Kind:     "Role",
+			Name:     o.Role.Name,
 		},
 		Subjects: []rbacv1.Subject{
 			{

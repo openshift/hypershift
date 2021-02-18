@@ -104,8 +104,8 @@ func (o OperatorClusterRole) Build() *rbacv1.ClusterRole {
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{"hypershift.openshift.io"},
-				Resources: []string{"*"},
+				APIGroups: []string{"apiextensions.k8s.io"},
+				Resources: []string{"customresourcedefinitions"},
 				Verbs:     []string{"*"},
 			},
 			{
@@ -114,8 +114,73 @@ func (o OperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
-				APIGroups: []string{"apiextensions.k8s.io"},
-				Resources: []string{"customresourcedefinitions"},
+				APIGroups: []string{"operator.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"security.openshift.io"},
+				Resources: []string{"securitycontextconstraints"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"rbac.authorization.k8s.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+		},
+	}
+	return role
+}
+
+type OperatorClusterRoleBinding struct {
+	ClusterRole    *rbacv1.ClusterRole
+	ServiceAccount *corev1.ServiceAccount
+}
+
+func (o OperatorClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
+	binding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "control-plane-operator" + o.ServiceAccount.Namespace,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     o.ClusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      o.ServiceAccount.Name,
+				Namespace: o.ServiceAccount.Namespace,
+			},
+		},
+	}
+	return binding
+}
+
+type OperatorRole struct {
+	Namespace *corev1.Namespace
+}
+
+func (o OperatorRole) Build() *rbacv1.Role {
+	role := &rbacv1.Role{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Role",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "control-plane-operator",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{"*"},
 				Verbs:     []string{"*"},
 			},
 			{
@@ -133,22 +198,7 @@ func (o OperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"*"},
 			},
 			{
-				APIGroups: []string{"operator.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			},
-			{
 				APIGroups: []string{"route.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			},
-			{
-				APIGroups: []string{"security.openshift.io"},
-				Resources: []string{"securitycontextconstraints"},
-				Verbs:     []string{"*"},
-			},
-			{
-				APIGroups: []string{"rbac.authorization.k8s.io"},
 				Resources: []string{"*"},
 				Verbs:     []string{"*"},
 			},
@@ -161,7 +211,6 @@ func (o OperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"pods/log",
 					"secrets",
 					"nodes",
-					"namespaces",
 					"serviceaccounts",
 					"services",
 				},
@@ -187,24 +236,25 @@ func (o OperatorClusterRole) Build() *rbacv1.ClusterRole {
 	return role
 }
 
-type OperatorClusterRoleBinding struct {
-	ClusterRole    *rbacv1.ClusterRole
+type OperatorRoleBinding struct {
+	Role           *rbacv1.Role
 	ServiceAccount *corev1.ServiceAccount
 }
 
-func (o OperatorClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
-	binding := &rbacv1.ClusterRoleBinding{
+func (o OperatorRoleBinding) Build() *rbacv1.RoleBinding {
+	binding := &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "ClusterRoleBinding",
+			Kind:       "RoleBinding",
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "control-plane-operator-" + o.ServiceAccount.Namespace,
+			Namespace: o.Role.Namespace,
+			Name:      "control-plane-operator",
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     o.ClusterRole.Name,
+			Kind:     "Role",
+			Name:     o.Role.Name,
 		},
 		Subjects: []rbacv1.Subject{
 			{
