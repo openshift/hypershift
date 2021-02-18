@@ -3,6 +3,7 @@ module openshift.io/hypershift
 go 1.15
 
 require (
+	github.com/aws/aws-sdk-go v1.35.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/go-logr/logr v0.2.1
 	github.com/google/uuid v1.1.2

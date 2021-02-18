@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"openshift.io/hypershift/cmd/create/cluster"
+	"openshift.io/hypershift/cmd/create/infra"
 )
 
 func NewCommand() *cobra.Command {
@@ -13,6 +14,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(cluster.NewCommand())
+	cmd.AddCommand(infra.NewCommand())
 
 	return cmd
 }
