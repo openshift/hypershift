@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -31,6 +30,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	hyperapi "openshift.io/hypershift/api"
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
+	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/autoscaler"
+	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/clusterapi"
+	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/controlplaneoperator"
+	hyperutil "openshift.io/hypershift/hypershift-operator/controllers/util"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,14 +47,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	hyperapi "openshift.io/hypershift/api"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/autoscaler"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/clusterapi"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/controlplaneoperator"
 )
 
 const (
@@ -548,14 +546,6 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) 
 	return true, nil
 }
 
-func parseNamespacedName(name string) types.NamespacedName {
-	parts := strings.SplitN(name, string(types.Separator), 2)
-	if len(parts) > 1 {
-		return types.NamespacedName{Namespace: parts[0], Name: parts[1]}
-	}
-	return types.NamespacedName{Name: parts[0]}
-}
-
 func enqueueParentHostedCluster(obj ctrlclient.Object) []reconcile.Request {
 	var hostedClusterName string
 	if obj.GetAnnotations() != nil {
@@ -565,6 +555,6 @@ func enqueueParentHostedCluster(obj ctrlclient.Object) []reconcile.Request {
 		return []reconcile.Request{}
 	}
 	return []reconcile.Request{
-		{NamespacedName: parseNamespacedName(hostedClusterName)},
+		{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
 	}
 }
