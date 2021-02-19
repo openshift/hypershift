@@ -30,11 +30,15 @@ func getContents(file string) []byte {
 	return b
 }
 
+// getCustomResourceDefinition unmarshals a CRD from file. Note there's a hack
+// here to strip leading YAML document separator which controller-gen creates
+// even though there's only one object in the document.
 func getCustomResourceDefinition(file string) *apiextensionsv1.CustomResourceDefinition {
 	b := getContents(file)
-	o := apiextensionsv1.CustomResourceDefinition{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 100).Decode(&o); err != nil {
+	repaired := bytes.Replace(b, []byte("\n---\n"), []byte(""), 1)
+	crd := apiextensionsv1.CustomResourceDefinition{}
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(repaired), 100).Decode(&crd); err != nil {
 		panic(err)
 	}
-	return &o
+	return &crd
 }
