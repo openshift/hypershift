@@ -60,13 +60,6 @@ hosted-cluster-config-operator:
 
 .PHONY: hypershift
 hypershift:
-	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
-		-o ./cmd/install/assets/bindata.go \
-		--prefix cmd/install/assets \
-		--ignore '.*\.go' \
-		./cmd/install/assets/...
-	gofmt -s -w ./cmd/install/assets/bindata.go
-
 	$(GO_BUILD_RECIPE) -o bin/hypershift .
 
 # Run tests
