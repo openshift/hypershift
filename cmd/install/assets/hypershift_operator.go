@@ -230,19 +230,19 @@ func (o HyperShiftOperatorClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding
 type HyperShiftHostedClustersCustomResourceDefinition struct{}
 
 func (o HyperShiftHostedClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	return mustCustomResourceDefinition(mustAssetReader("hypershift-operator/hypershift.openshift.io_hostedclusters.yaml"))
+	return getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_hostedclusters.yaml")
 }
 
 type HyperShiftNodePoolsCustomResourceDefinition struct{}
 
 func (o HyperShiftNodePoolsCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	return mustCustomResourceDefinition(mustAssetReader("hypershift-operator/hypershift.openshift.io_nodepools.yaml"))
+	return getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_nodepools.yaml")
 }
 
 type HyperShiftHostedControlPlaneCustomResourceDefinition struct{}
 
 func (o HyperShiftHostedControlPlaneCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	crd := mustCustomResourceDefinition(mustAssetReader("hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml"))
+	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml")
 	if crd.Labels == nil {
 		crd.Labels = map[string]string{}
 	}
@@ -253,7 +253,7 @@ func (o HyperShiftHostedControlPlaneCustomResourceDefinition) Build() *apiextens
 type HyperShiftExternalInfraClustersCustomResourceDefinition struct{}
 
 func (o HyperShiftExternalInfraClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	crd := mustCustomResourceDefinition(mustAssetReader("hypershift-operator/hypershift.openshift.io_externalinfraclusters.yaml"))
+	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_externalinfraclusters.yaml")
 	if crd.Labels == nil {
 		crd.Labels = map[string]string{}
 	}
