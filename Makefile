@@ -41,6 +41,7 @@ hypershift-operator:
 
 .PHONY: control-plane-operator
 control-plane-operator:
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	$(GO_BUILD_RECIPE) -o bin/control-plane-operator ./control-plane-operator
 
 # Build hosted-cluster-config-operator binary

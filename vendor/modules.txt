@@ -106,8 +106,6 @@ github.com/jmespath/go-jmespath
 github.com/json-iterator/go
 # github.com/kevinburke/go-bindata v3.21.0+incompatible
 ## explicit
-github.com/kevinburke/go-bindata
-github.com/kevinburke/go-bindata/go-bindata
 # github.com/konsorten/go-windows-terminal-sequences v1.0.3
 github.com/konsorten/go-windows-terminal-sequences
 # github.com/mattn/go-colorable v0.1.8
