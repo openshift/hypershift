@@ -28,31 +28,30 @@ build: hypershift-operator control-plane-operator hosted-cluster-config-operator
 
 verify: build fmt vet
 
-# Generate Kube manifests (e.g. CRDs)
-.PHONY: hypershift-operator-manifests
-hypershift-operator-manifests:
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
-
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
 hypershift-operator:
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	$(GO_BUILD_RECIPE) -o bin/hypershift-operator ./hypershift-operator
 
 .PHONY: control-plane-operator
 control-plane-operator:
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	$(GO_BUILD_RECIPE) -o bin/control-plane-operator ./control-plane-operator
 
 # Build hosted-cluster-config-operator binary
 .PHONY: hosted-cluster-config-operator
 hosted-cluster-config-operator:
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 	$(GO_BUILD_RECIPE) -o bin/hosted-cluster-config-operator ./hosted-cluster-config-operator
 
 .PHONY: hypershift
 hypershift:
 	$(GO_BUILD_RECIPE) -o bin/hypershift .
+
+# Run this when updating any of the types in the api package to regenerate the
+# deepcopy code and CRD manifest files.
+.PHONY: api
+api:
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
 # Run tests
 .PHONY: test
