@@ -10,7 +10,6 @@ CRD_OPTIONS ?= "crd:trivialVersions=true"
 RUNTIME ?= docker
 
 CONTROLLER_GEN=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen
-BINDATA=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/github.com/kevinburke/go-bindata/go-bindata
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOFLAGS=-mod=vendor go
@@ -43,13 +42,6 @@ hypershift-operator:
 .PHONY: control-plane-operator
 control-plane-operator:
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
-	$(BINDATA) -mode 420 -modtime 1 -pkg assets \
-		-o ./control-plane-operator/controllers/hostedcontrolplane/assets/bindata.go \
-		--prefix control-plane-operator/controllers/hostedcontrolplane/assets \
-		--ignore '.*\.go' \
-		./control-plane-operator/controllers/hostedcontrolplane/assets/...
-	gofmt -s -w ./control-plane-operator/controllers/hostedcontrolplane/assets/bindata.go
-
 	$(GO_BUILD_RECIPE) -o bin/control-plane-operator ./control-plane-operator
 
 # Build hosted-cluster-config-operator binary
