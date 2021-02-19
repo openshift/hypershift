@@ -27,3 +27,4 @@ tools/bin
 .envrc
 
 .kube
+kubeconfig
