@@ -23,14 +23,15 @@ type CreateInfraOptions struct {
 }
 
 type CreateInfraOutput struct {
-	Region          string `json:"region"`
-	Zone            string `json:"zone"`
-	InfraID         string `json:"infraID"`
-	ComputeCIDR     string `json:"computeCIDR"`
-	VPCID           string `json:"vpcID"`
-	PrivateSubnetID string `json:"privateSubnetID"`
-	PublicSubnetID  string `json:"publicSubnetID"`
-	SecurityGroupID string `json:"securityGroupID"`
+	Region                string `json:"region"`
+	Zone                  string `json:"zone"`
+	InfraID               string `json:"infraID"`
+	ComputeCIDR           string `json:"computeCIDR"`
+	VPCID                 string `json:"vpcID"`
+	PrivateSubnetID       string `json:"privateSubnetID"`
+	PublicSubnetID        string `json:"publicSubnetID"`
+	SecurityGroupID       string `json:"securityGroupID"`
+	WorkerInstanceProfile string `json:"workerInstanceProfile"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -92,9 +93,10 @@ const (
 func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 	var err error
 	result := &CreateInfraOutput{
-		InfraID:     o.InfraID,
-		ComputeCIDR: DefaultCIDRBlock,
-		Region:      o.Region,
+		InfraID:               o.InfraID,
+		ComputeCIDR:           DefaultCIDRBlock,
+		Region:                o.Region,
+		WorkerInstanceProfile: fmt.Sprintf("%s-worker-profile", o.InfraID),
 	}
 	client, err := o.AWSClient()
 	if err != nil {
@@ -140,6 +142,10 @@ func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 		return nil, err
 	}
 	err = o.CreateVPCS3Endpoint(client.EC2, result.VPCID, privateRouteTable, publicRouteTable)
+	if err != nil {
+		return nil, err
+	}
+	err = o.CreateWorkerInstanceProfile(client.IAM, result.WorkerInstanceProfile)
 	if err != nil {
 		return nil, err
 	}
