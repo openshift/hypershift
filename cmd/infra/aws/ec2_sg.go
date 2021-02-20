@@ -11,15 +11,10 @@ import (
 func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, vpcID string) (string, error) {
 	groupName := fmt.Sprintf("%s-worker-sg", o.InfraID)
 	result, err := client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
-		GroupName:   aws.String(groupName),
-		Description: aws.String("worker security group"),
-		VpcId:       aws.String(vpcID),
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("security-group"),
-				Tags:         ec2Tags(o.InfraID, groupName),
-			},
-		},
+		GroupName:         aws.String(groupName),
+		Description:       aws.String("worker security group"),
+		VpcId:             aws.String(vpcID),
+		TagSpecifications: o.ec2TagSpecifications("security-group", groupName),
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create worker security group: %w", err)

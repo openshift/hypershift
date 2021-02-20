@@ -22,13 +22,8 @@ func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
 
 func (o *CreateInfraOptions) createVPC(client ec2iface.EC2API) (string, error) {
 	createResult, err := client.CreateVpc(&ec2.CreateVpcInput{
-		CidrBlock: aws.String(DefaultCIDRBlock),
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("vpc"),
-				Tags:         ec2Tags(o.InfraID, fmt.Sprintf("%s-vpc", o.InfraID)),
-			},
-		},
+		CidrBlock:         aws.String(DefaultCIDRBlock),
+		TagSpecifications: o.ec2TagSpecifications("vpc", fmt.Sprintf("%s-vpc", o.InfraID)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create VPC: %w", err)
@@ -59,12 +54,7 @@ func (o *CreateInfraOptions) CreateVPCS3Endpoint(client ec2iface.EC2API, vpcID, 
 			aws.String(privateRouteTableId),
 			aws.String(publicRouteTableId),
 		},
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("vpc-endpoint"),
-				Tags:         ec2Tags(o.InfraID, ""),
-			},
-		},
+		TagSpecifications: o.ec2TagSpecifications("vpc-endpoint", ""),
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create VPC S3 endpoint: %w", err)
@@ -88,12 +78,7 @@ func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID str
 				Values: []*string{aws.String("AmazonProvidedDNS")},
 			},
 		},
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("dhcp-options"),
-				Tags:         ec2Tags(o.InfraID, ""),
-			},
-		},
+		TagSpecifications: o.ec2TagSpecifications("dhcp-options", ""),
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create dhcp-options: %w", err)
@@ -110,15 +95,10 @@ func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID str
 
 func (o *CreateInfraOptions) CreatePrivateSubnet(client ec2iface.EC2API, vpcID string, zone string) (string, error) {
 	result, err := client.CreateSubnet(&ec2.CreateSubnetInput{
-		AvailabilityZone: aws.String(zone),
-		VpcId:            aws.String(vpcID),
-		CidrBlock:        aws.String(PrivateSubnetCIDR),
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("subnet"),
-				Tags:         ec2Tags(o.InfraID, fmt.Sprintf("%s-private-%s", o.InfraID, zone)),
-			},
-		},
+		AvailabilityZone:  aws.String(zone),
+		VpcId:             aws.String(vpcID),
+		CidrBlock:         aws.String(PrivateSubnetCIDR),
+		TagSpecifications: o.ec2TagSpecifications("subnet", fmt.Sprintf("%s-private-%s", o.InfraID, zone)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create private subnet: %w", err)
@@ -128,15 +108,10 @@ func (o *CreateInfraOptions) CreatePrivateSubnet(client ec2iface.EC2API, vpcID s
 
 func (o *CreateInfraOptions) CreatePublicSubnet(client ec2iface.EC2API, vpcID string, zone string) (string, error) {
 	result, err := client.CreateSubnet(&ec2.CreateSubnetInput{
-		AvailabilityZone: aws.String(zone),
-		VpcId:            aws.String(vpcID),
-		CidrBlock:        aws.String(PublicSubnetCIDR),
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("subnet"),
-				Tags:         ec2Tags(o.InfraID, fmt.Sprintf("%s-public-%s", o.InfraID, zone)),
-			},
-		},
+		AvailabilityZone:  aws.String(zone),
+		VpcId:             aws.String(vpcID),
+		CidrBlock:         aws.String(PublicSubnetCIDR),
+		TagSpecifications: o.ec2TagSpecifications("subnet", fmt.Sprintf("%s-public-%s", o.InfraID, zone)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create public subnet: %w", err)
@@ -146,12 +121,7 @@ func (o *CreateInfraOptions) CreatePublicSubnet(client ec2iface.EC2API, vpcID st
 
 func (o *CreateInfraOptions) CreateInternetGateway(client ec2iface.EC2API, vpcID string) (string, error) {
 	result, err := client.CreateInternetGateway(&ec2.CreateInternetGatewayInput{
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("internet-gateway"),
-				Tags:         ec2Tags(o.InfraID, fmt.Sprintf("%s-igw", o.InfraID)),
-			},
-		},
+		TagSpecifications: o.ec2TagSpecifications("internet-gateway", fmt.Sprintf("%s-igw", o.InfraID)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create internet gateway: %w", err)
@@ -181,14 +151,9 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		return "", fmt.Errorf("cannot tag NAT gateway EIP: %w", err)
 	}
 	gatewayResult, err := client.CreateNatGateway(&ec2.CreateNatGatewayInput{
-		AllocationId: eipResult.AllocationId,
-		SubnetId:     aws.String(publicSubnetID),
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("natgateway"),
-				Tags:         ec2Tags(o.InfraID, fmt.Sprintf("%s-nat-%s", o.InfraID, availabilityZone)),
-			},
-		},
+		AllocationId:      eipResult.AllocationId,
+		SubnetId:          aws.String(publicSubnetID),
+		TagSpecifications: o.ec2TagSpecifications("natgateway", fmt.Sprintf("%s-nat-%s", o.InfraID, availabilityZone)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create NAT gateway: %w", err)
@@ -198,13 +163,8 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 
 func (o *CreateInfraOptions) CreatePrivateRouteTable(client ec2iface.EC2API, vpcID, natGatewayID, subnetID, zone string) (string, error) {
 	result, err := client.CreateRouteTable(&ec2.CreateRouteTableInput{
-		VpcId: aws.String(vpcID),
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("route-table"),
-				Tags:         ec2Tags(o.InfraID, fmt.Sprintf("%s-private-%s", o.InfraID, zone)),
-			},
-		},
+		VpcId:             aws.String(vpcID),
+		TagSpecifications: o.ec2TagSpecifications("route-table", fmt.Sprintf("%s-private-%s", o.InfraID, zone)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create private route table: %w", err)
@@ -230,13 +190,8 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(client ec2iface.EC2API, vpc
 
 func (o *CreateInfraOptions) CreatePublicRouteTable(client ec2iface.EC2API, vpcID, igwID, subnetID, zone string) (string, error) {
 	result, err := client.CreateRouteTable(&ec2.CreateRouteTableInput{
-		VpcId: aws.String(vpcID),
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("route-table"),
-				Tags:         ec2Tags(o.InfraID, fmt.Sprintf("%s-public-%s", o.InfraID, zone)),
-			},
-		},
+		VpcId:             aws.String(vpcID),
+		TagSpecifications: o.ec2TagSpecifications("route-table", fmt.Sprintf("%s-public-%s", o.InfraID, zone)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create public route table: %w", err)
@@ -293,6 +248,15 @@ func (o *CreateInfraOptions) CreatePublicRouteTable(client ec2iface.EC2API, vpcI
 		return "", fmt.Errorf("cannot create route to internet gateway: %w", err)
 	}
 	return tableID, nil
+}
+
+func (o *CreateInfraOptions) ec2TagSpecifications(resourceType, name string) []*ec2.TagSpecification {
+	return []*ec2.TagSpecification{
+		{
+			ResourceType: aws.String(resourceType),
+			Tags:         ec2Tags(o.InfraID, name),
+		},
+	}
 }
 
 func ec2Tags(infraID, name string) []*ec2.Tag {
