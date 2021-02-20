@@ -33,7 +33,7 @@ type CreateInfraOutput struct {
 	SecurityGroupID string `json:"securityGroupID"`
 }
 
-func NewCommand() *cobra.Command {
+func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "infra",
 		Short: "Creates AWS infrastructure resources for a cluster",
