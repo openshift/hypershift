@@ -27,6 +27,7 @@ import (
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 
 	hyperapi "openshift.io/hypershift/api"
 	"openshift.io/hypershift/hypershift-operator/controllers/externalinfracluster"
@@ -96,9 +97,7 @@ func NewStartCommand() *cobra.Command {
 			// return the updated resource. All client consumers will need audited to
 			// ensure they are tolerant of stale data (or we need a cache or client that
 			// makes stronger coherence guarantees).
-			NewClient: func(_ cache.Cache, config *rest.Config, options client.Options) (client.Client, error) {
-				return client.New(config, options)
-			},
+			ClientBuilder: &uncachedClientBuilder{},
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
@@ -172,4 +171,18 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	return cmd
+}
+
+type uncachedClientBuilder struct{}
+
+func (n *uncachedClientBuilder) WithUncached(_ ...client.Object) cluster.ClientBuilder {
+	return n
+}
+
+func (n *uncachedClientBuilder) Build(_ cache.Cache, config *rest.Config, options client.Options) (client.Client, error) {
+	c, err := client.New(config, options)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
