@@ -7,9 +7,10 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	capiv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 const (

@@ -11,8 +11,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+
+	capiv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	capiaws "openshift.io/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
 
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 )
