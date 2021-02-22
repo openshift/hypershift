@@ -12,14 +12,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	"openshift.io/hypershift/thirdparty/clusterapi/util"
+	"openshift.io/hypershift/thirdparty/clusterapi/util/patch"
 )
 
 type ExternalInfraClusterReconciler struct {

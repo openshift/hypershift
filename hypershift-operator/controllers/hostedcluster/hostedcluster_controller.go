@@ -30,14 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
-	hyperapi "openshift.io/hypershift/api"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/autoscaler"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/clusterapi"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/controlplaneoperator"
-	hyperutil "openshift.io/hypershift/hypershift-operator/controllers/util"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,6 +39,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	hyperapi "openshift.io/hypershift/api"
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
+	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/autoscaler"
+	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/clusterapi"
+	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/controlplaneoperator"
+	hyperutil "openshift.io/hypershift/hypershift-operator/controllers/util"
+	capiv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 const (

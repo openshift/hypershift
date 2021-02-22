@@ -22,12 +22,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	hyperutil "openshift.io/hypershift/hypershift-operator/controllers/util"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
-	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,6 +30,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	hyperutil "openshift.io/hypershift/hypershift-operator/controllers/util"
+	capiv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	"openshift.io/hypershift/thirdparty/clusterapi/util"
+	"openshift.io/hypershift/thirdparty/clusterapi/util/patch"
+	capiaws "openshift.io/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
 )
 
 const (
