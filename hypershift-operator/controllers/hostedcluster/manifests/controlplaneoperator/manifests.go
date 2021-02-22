@@ -6,10 +6,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	k8sutilspointer "k8s.io/utils/pointer"
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -282,7 +282,7 @@ func (o CAPICluster) Build() *capiv1.Cluster {
 			Namespace: o.Namespace.Name,
 			Name:      o.HostedCluster.GetName(),
 			Annotations: map[string]string{
-				hostedClusterAnnotation: namespacedName(o.HostedCluster).String(),
+				hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(o.HostedCluster).String(),
 			},
 		},
 		Spec: capiv1.ClusterSpec{
@@ -322,7 +322,7 @@ func (o HostedControlPlane) Build() *hyperv1.HostedControlPlane {
 			Namespace: o.Namespace.Name,
 			Name:      o.HostedCluster.GetName(),
 			Annotations: map[string]string{
-				hostedClusterAnnotation: namespacedName(o.HostedCluster).String(),
+				hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(o.HostedCluster).String(),
 			},
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
@@ -359,7 +359,7 @@ func (o ExternalInfraCluster) Build() *hyperv1.ExternalInfraCluster {
 			Namespace: o.Namespace.Name,
 			Name:      o.HostedCluster.GetName(),
 			Annotations: map[string]string{
-				hostedClusterAnnotation: namespacedName(o.HostedCluster).String(),
+				hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(o.HostedCluster).String(),
 			},
 		},
 		Spec: hyperv1.ExternalInfraClusterSpec{
@@ -368,11 +368,4 @@ func (o ExternalInfraCluster) Build() *hyperv1.ExternalInfraCluster {
 		},
 	}
 	return eic
-}
-
-func namespacedName(obj metav1.Object) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: obj.GetNamespace(),
-		Name:      obj.GetName(),
-	}
 }

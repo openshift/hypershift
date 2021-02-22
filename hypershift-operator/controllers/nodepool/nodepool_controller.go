@@ -7,20 +7,23 @@ import (
 	"strconv"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	hyperutil "openshift.io/hypershift/hypershift-operator/controllers/util"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha3"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 	"sigs.k8s.io/cluster-api/util"
@@ -30,13 +33,16 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
 	finalizer               = "hypershift.openshift.io/finalizer"
 	autoscalerMaxAnnotation = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
 	autoscalerMinAnnotation = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
+	nodePoolAnnotation      = "hypershift.openshift.io/nodePool"
 )
 
 type NodePoolReconciler struct {
@@ -48,9 +54,11 @@ type NodePoolReconciler struct {
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.NodePool{}).
+		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Build(r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
@@ -90,7 +98,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Ignore deleted nodePools, this can happen when foregroundDeletion
 	// is enabled
 	if !nodePool.DeletionTimestamp.IsZero() {
-		machineSet, _, err := generateScalableResources(r, ctx, infra.Status.InfrastructureName, infra.Status.PlatformStatus.AWS.Region, nodePool, targetNamespace, nil)
+		machineSet, _, err := generateScalableResources(r, ctx, infra.Status.InfrastructureName, infra.Status.PlatformStatus.AWS.Region, nodePool, targetNamespace)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 		}
@@ -153,70 +161,69 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		UID:        hcluster.UID,
 	})
 
-	machineSetName := generateMachineSetName(infra.Status.InfrastructureName, nodePool.Spec.ClusterName, nodePool.GetName())
-	targetNamespace := hcluster.GetName()
-	wantedMachinesetReplicas := Int32PtrDerefOr(nodePool.Spec.NodeCount, 0)
+	// Validate input
+	if err := validate(nodePool); err != nil {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:    hyperv1.NodePoolAutoscalingEnabledConditionType,
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.NodePoolValidationFailedConditionReason,
+			Message: err.Error(),
+		})
+		return reconcile.Result{}, fmt.Errorf("error validating autoscaling parameters: %w", err)
+	}
 
+	// Generate scalable resource for nodePool
+	targetNamespace := hcluster.GetName()
+	scalableResource, AWSMachineTemplate, err := generateScalableResources(r, ctx,
+		infra.Status.InfrastructureName,
+		infra.Status.PlatformStatus.AWS.Region,
+		nodePool,
+		targetNamespace)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
+	}
+
+	// Get wanted replicas
+	wantedReplicas := Int32PtrDerefOr(nodePool.Spec.NodeCount, 0)
 	isAutoscalingEnabled := isAutoscalingEnabled(nodePool)
 	if isAutoscalingEnabled {
-		if err := validateAutoscalingParameters(nodePool); err != nil {
-			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-				Type:    hyperv1.NodePoolAutoscalingEnabledConditionType,
-				Status:  metav1.ConditionFalse,
-				Reason:  hyperv1.NodePoolValidationFailedConditionReason,
-				Message: err.Error(),
-			})
-			return reconcile.Result{}, fmt.Errorf("error validating autoscaling parameters: %w", err)
-		}
-
-		log.Info("NodePool autoscaling is enabled, ignoring nodePool.Spec.NodeCount",
-			"Maximum nodes", *nodePool.Spec.AutoScaling.Max,
-			"Minimum nodes", *nodePool.Spec.AutoScaling.Min)
-		// if autoscaling is enabled always reconcile back NodeCount to nil
-		nodePool.Spec.NodeCount = nil
-
-		currentMachineset := &capiv1.MachineSet{}
-		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Name: machineSetName, Namespace: targetNamespace}, currentMachineset); err != nil {
+		currentMachineDeployment := &capiv1.MachineDeployment{}
+		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{
+			Name:      scalableResource.GetName(),
+			Namespace: scalableResource.GetNamespace()},
+			currentMachineDeployment); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return reconcile.Result{}, err
 			}
 			// if autoscaling is enabled and the machineSet does not exist yet
 			// start with 1 replica as the autoscaler does not support scaling from zero yet.
-			wantedMachinesetReplicas = int32(1)
+			wantedReplicas = int32(1)
 		}
 	}
 
-	// Create a machine scalable resources for the new cluster's worker nodes
-	wantedMachineSet, AWSMachineTemplate, err := generateScalableResources(r, ctx,
-		infra.Status.InfrastructureName,
-		infra.Status.PlatformStatus.AWS.Region,
-		nodePool,
-		targetNamespace,
-		&wantedMachinesetReplicas)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
-	}
-
+	// Persist scalable resource and provider template
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, AWSMachineTemplate, func() error { return nil }); err != nil {
 		return ctrl.Result{}, err
 	}
-	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, wantedMachineSet, func() error {
-		// only reconcile machineSet replicas if autoscaler is not enable.
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, scalableResource, func() error {
 		if !isAutoscalingEnabled {
-			wantedMachineSet.Spec.Replicas = nodePool.Spec.NodeCount
-			delete(wantedMachineSet.Annotations, autoscalerMinAnnotation)
-			delete(wantedMachineSet.Annotations, autoscalerMaxAnnotation)
+			scalableResource.Spec.Replicas = &wantedReplicas
+			scalableResource.Annotations[autoscalerMaxAnnotation] = "0"
+			scalableResource.Annotations[autoscalerMinAnnotation] = "0"
+
 		}
+		// If autoscaling is enabled we don't modify the scalable resource replicas
 		if isAutoscalingEnabled {
-			wantedMachineSet.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
-			wantedMachineSet.Annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
+			scalableResource.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
+			scalableResource.Annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
 		}
 		return nil
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	nodePool.Status.NodeCount = int(wantedMachineSet.Status.AvailableReplicas)
+	// Update Status.nodeCount and conditions
+	nodePool.Status.NodeCount = int(scalableResource.Status.AvailableReplicas)
 	if !isAutoscalingEnabled {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:   hyperv1.NodePoolAutoscalingEnabledConditionType,
@@ -231,11 +238,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
+	log.Info("NodePool autoscaling is enabled",
+		"Maximum nodes", *nodePool.Spec.AutoScaling.Max,
+		"Minimum nodes", *nodePool.Spec.AutoScaling.Min)
+
 	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 		Type:    hyperv1.NodePoolAutoscalingEnabledConditionType,
 		Status:  metav1.ConditionTrue,
 		Reason:  hyperv1.NodePoolAsExpectedConditionReason,
-		Message: "Ignoring nodeCount",
+		Message: fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", *nodePool.Spec.AutoScaling.Max, *nodePool.Spec.AutoScaling.Min),
 	})
 
 	return ctrl.Result{}, nil
@@ -257,7 +268,7 @@ func GetHostedClusterByName(ctx context.Context, c client.Client, namespace, nam
 }
 
 func generateScalableResources(client ctrlclient.Client, ctx context.Context,
-	infraName, region string, nodePool *hyperv1.NodePool, targetNamespace string, machinesetReplicas *int32) (*capiv1.MachineSet, *capiaws.AWSMachineTemplate, error) {
+	infraName, region string, nodePool *hyperv1.NodePool, targetNamespace string) (*capiv1.MachineDeployment, *capiaws.AWSMachineTemplate, error) {
 	// find AMI
 	machineSets := &unstructured.UnstructuredList{}
 	machineSets.SetGroupVersionKind(schema.GroupVersionKind{
@@ -312,7 +323,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 	}
 
 	instanceType := nodePool.Spec.Platform.AWS.InstanceType
-	resourcesName := generateMachineSetName(infraName, nodePool.Spec.ClusterName, nodePool.GetName())
+	resourcesName := generateName(infraName, nodePool.Spec.ClusterName, nodePool.GetName())
 	dataSecretName := fmt.Sprintf("%s-user-data", nodePool.Spec.ClusterName)
 
 	AWSMachineTemplate := &capiaws.AWSMachineTemplate{
@@ -340,7 +351,11 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 		},
 	}
 
-	annotations := map[string]string{}
+	annotations := map[string]string{
+		nodePoolAnnotation: ctrlclient.ObjectKeyFromObject(nodePool).String(),
+	}
+	maxUnavailable := intstr.FromInt(0)
+	maxSurge := intstr.FromInt(1)
 	if isAutoscalingEnabled(nodePool) {
 		if nodePool.Spec.AutoScaling.Max != nil &&
 			*nodePool.Spec.AutoScaling.Max > 0 {
@@ -348,19 +363,25 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 			annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
 		}
 	}
-	machineSet := &capiv1.MachineSet{
+	machineDeployment := &capiv1.MachineDeployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        resourcesName,
 			Namespace:   targetNamespace,
 			Annotations: annotations,
 			Labels: map[string]string{
-				capiv1.ClusterLabelName: infraName,
+				capiv1.ClusterLabelName: nodePool.Spec.ClusterName,
 			},
 		},
 		TypeMeta: metav1.TypeMeta{},
-		Spec: capiv1.MachineSetSpec{
+		Spec: capiv1.MachineDeploymentSpec{
+			Strategy: &capiv1.MachineDeploymentStrategy{
+				Type: capiv1.RollingUpdateMachineDeploymentStrategyType,
+				RollingUpdate: &capiv1.MachineRollingUpdateDeployment{
+					MaxUnavailable: &maxUnavailable,
+					MaxSurge:       &maxSurge,
+				},
+			},
 			ClusterName: nodePool.Spec.ClusterName,
-			Replicas:    machinesetReplicas,
 			Selector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					resourcesName: resourcesName,
@@ -370,7 +391,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 				ObjectMeta: capiv1.ObjectMeta{
 					Labels: map[string]string{
 						resourcesName:           resourcesName,
-						capiv1.ClusterLabelName: infraName,
+						capiv1.ClusterLabelName: nodePool.Spec.ClusterName,
 					},
 					// TODO (alberto): drop/expose this annotation at the nodePool API
 					Annotations: map[string]string{
@@ -393,10 +414,10 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 		},
 	}
 
-	return machineSet, AWSMachineTemplate, nil
+	return machineDeployment, AWSMachineTemplate, nil
 }
 
-func generateMachineSetName(infraName, clusterName, suffix string) string {
+func generateName(infraName, clusterName, suffix string) string {
 	return getName(fmt.Sprintf("%s-%s", infraName, clusterName), suffix, 43)
 }
 
@@ -460,20 +481,26 @@ func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 	return nodePool.Spec.AutoScaling != nil
 }
 
-func validateAutoscalingParameters(nodePool *hyperv1.NodePool) error {
-	max := nodePool.Spec.AutoScaling.Max
-	min := nodePool.Spec.AutoScaling.Min
-
-	if max == nil || min == nil {
-		return fmt.Errorf("max and min must be not nil. Max: %v, Min: %v", max, min)
+func validate(nodePool *hyperv1.NodePool) error {
+	if nodePool.Spec.NodeCount != nil && nodePool.Spec.AutoScaling != nil {
+		return fmt.Errorf("only one of nodePool.Spec.NodeCount or nodePool.Spec.AutoScaling can be set")
 	}
 
-	if *max < *min {
-		return fmt.Errorf("max must be equal or greater than min. Max: %v, Min: %v", *max, *min)
-	}
+	if nodePool.Spec.AutoScaling != nil {
+		max := nodePool.Spec.AutoScaling.Max
+		min := nodePool.Spec.AutoScaling.Min
 
-	if *max == 0 && *min == 0 {
-		return fmt.Errorf("max and min must be not zero. Max: %v, Min: %v", *max, *min)
+		if max == nil || min == nil {
+			return fmt.Errorf("max and min must be not nil. Max: %v, Min: %v", max, min)
+		}
+
+		if *max < *min {
+			return fmt.Errorf("max must be equal or greater than min. Max: %v, Min: %v", *max, *min)
+		}
+
+		if *max == 0 && *min == 0 {
+			return fmt.Errorf("max and min must be not zero. Max: %v, Min: %v", *max, *min)
+		}
 	}
 
 	return nil
@@ -486,4 +513,17 @@ func Int32PtrDerefOr(ptr *int32, def int32) int32 {
 		return *ptr
 	}
 	return def
+}
+
+func enqueueParentNodePool(obj ctrlclient.Object) []reconcile.Request {
+	var nodePoolName string
+	if obj.GetAnnotations() != nil {
+		nodePoolName = obj.GetAnnotations()[nodePoolAnnotation]
+	}
+	if nodePoolName == "" {
+		return []reconcile.Request{}
+	}
+	return []reconcile.Request{
+		{NamespacedName: hyperutil.ParseNamespacedName(nodePoolName)},
+	}
 }
