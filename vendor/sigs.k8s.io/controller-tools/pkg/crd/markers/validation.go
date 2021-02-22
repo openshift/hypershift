@@ -26,6 +26,10 @@ import (
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
 
+const (
+	SchemalessName = "kubebuilder:validation:Schemaless"
+)
+
 // ValidationMarkers lists all available markers that affect CRD schema generation,
 // except for the few that don't make sense as type-level markers (see FieldOnlyMarkers).
 // All markers start with `+kubebuilder:validation:`, and continue with their type name.
@@ -80,10 +84,21 @@ var FieldOnlyMarkers = []*definitionWithHelp{
 	must(markers.MakeAnyTypeDefinition("kubebuilder:default", markers.DescribesField, Default{})).
 		WithHelp(Default{}.Help()),
 
-	must(markers.MakeDefinition("kubebuilder:pruning:PreserveUnknownFields", markers.DescribesField, XPreserveUnknownFields{})).
-		WithHelp(XPreserveUnknownFields{}.Help()),
 	must(markers.MakeDefinition("kubebuilder:validation:EmbeddedResource", markers.DescribesField, XEmbeddedResource{})).
 		WithHelp(XEmbeddedResource{}.Help()),
+
+	must(markers.MakeDefinition(SchemalessName, markers.DescribesField, Schemaless{})).
+		WithHelp(Schemaless{}.Help()),
+}
+
+// ValidationIshMarkers are field-and-type markers that don't fall under the
+// :validation: prefix, and/or don't have a name that directly matches their
+// type.
+var ValidationIshMarkers = []*definitionWithHelp{
+	must(markers.MakeDefinition("kubebuilder:pruning:PreserveUnknownFields", markers.DescribesField, XPreserveUnknownFields{})).
+		WithHelp(XPreserveUnknownFields{}.Help()),
+	must(markers.MakeDefinition("kubebuilder:pruning:PreserveUnknownFields", markers.DescribesType, XPreserveUnknownFields{})).
+		WithHelp(XPreserveUnknownFields{}.Help()),
 }
 
 func init() {
@@ -101,6 +116,7 @@ func init() {
 	}
 
 	AllDefinitions = append(AllDefinitions, FieldOnlyMarkers...)
+	AllDefinitions = append(AllDefinitions, ValidationIshMarkers...)
 }
 
 // +controllertools:marker:generateHelp:category="CRD validation"
@@ -201,6 +217,10 @@ type Default struct {
 // if nested  properties or additionalProperties are specified in the schema.
 // This can either be true or undefined. False
 // is forbidden.
+//
+// NB: The kubebuilder:validation:XPreserveUnknownFields variant is deprecated
+// in favor of the kubebuilder:pruning:PreserveUnknownFields variant.  They function
+// identically.
 type XPreserveUnknownFields struct{}
 
 // +controllertools:marker:generateHelp:category="CRD validation"
@@ -211,6 +231,16 @@ type XPreserveUnknownFields struct{}
 // running apiserver. It is not necessary to add any additional schema for these
 // field, yet it is possible. This can be combined with PreserveUnknownFields.
 type XEmbeddedResource struct{}
+
+// +controllertools:marker:generateHelp:category="CRD validation"
+// Schemaless marks a field as being a schemaless object.
+//
+// Schemaless objects are not introspected, so you must provide
+// any type and validation information yourself. One use for this
+// tag is for embedding fields that hold JSONSchema typed objects.
+// Because this field disables all type checking, it is recommended
+// to be used only as a last resort.
+type Schemaless struct{}
 
 func (m Maximum) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
 	if schema.Type != "integer" {

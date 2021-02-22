@@ -19,11 +19,11 @@ package crd
 import (
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 	"strings"
 
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	crdmarkers "sigs.k8s.io/controller-tools/pkg/crd/markers"
 
 	"sigs.k8s.io/controller-tools/pkg/loader"
 	"sigs.k8s.io/controller-tools/pkg/markers"
@@ -109,11 +109,6 @@ func (c *schemaContext) requestSchema(pkgPath, typeName string) {
 
 // infoToSchema creates a schema for the type in the given set of type information.
 func infoToSchema(ctx *schemaContext) *apiext.JSONSchemaProps {
-	if obj := ctx.pkg.Types.Scope().Lookup(ctx.info.Name); obj != nil && implementsJSONMarshaler(obj.Type()) {
-		schema := &apiext.JSONSchemaProps{Type: "Any"}
-		applyMarkers(ctx, ctx.info.Markers, schema, ctx.info.RawSpec.Type)
-		return schema
-	}
 	return typeToSchema(ctx, ctx.info.RawSpec.Type)
 }
 
@@ -384,7 +379,12 @@ func structToSchema(ctx *schemaContext, structType *ast.StructType) *apiext.JSON
 			}
 		}
 
-		propSchema := typeToSchema(ctx.ForInfo(&markers.TypeInfo{}), field.RawField.Type)
+		var propSchema *apiext.JSONSchemaProps
+		if field.Markers.Get(crdmarkers.SchemalessName) != nil {
+			propSchema = &apiext.JSONSchemaProps{}
+		} else {
+			propSchema = typeToSchema(ctx.ForInfo(&markers.TypeInfo{}), field.RawField.Type)
+		}
 		propSchema.Description = field.Doc
 
 		applyMarkers(ctx, field.Markers, propSchema, field.RawField)
@@ -430,17 +430,4 @@ func builtinToType(basic *types.Basic, allowDangerousTypes bool) (typ string, fo
 	}
 
 	return typ, format, nil
-}
-
-// Open coded go/types representation of encoding/json.Marshaller
-var jsonMarshaler = types.NewInterfaceType([]*types.Func{
-	types.NewFunc(token.NoPos, nil, "MarshalJSON",
-		types.NewSignature(nil, nil,
-			types.NewTuple(
-				types.NewVar(token.NoPos, nil, "", types.NewSlice(types.Universe.Lookup("byte").Type())),
-				types.NewVar(token.NoPos, nil, "", types.Universe.Lookup("error").Type())), false)),
-}, nil).Complete()
-
-func implementsJSONMarshaler(typ types.Type) bool {
-	return types.Implements(typ, jsonMarshaler) || types.Implements(types.NewPointer(typ), jsonMarshaler)
 }
