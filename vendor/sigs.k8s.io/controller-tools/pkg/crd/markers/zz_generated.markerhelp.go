@@ -306,6 +306,17 @@ func (Resource) Help() *markers.DefinitionHelp {
 	}
 }
 
+func (Schemaless) Help() *markers.DefinitionHelp {
+	return &markers.DefinitionHelp{
+		Category: "CRD validation",
+		DetailedHelp: markers.DetailedHelp{
+			Summary: "marks a field as being a schemaless object. ",
+			Details: "Schemaless objects are not introspected, so you must provide any type and validation information yourself. One use for this tag is for embedding fields that hold JSONSchema typed objects. Because this field disables all type checking, it is recommended to be used only as a last resort.",
+		},
+		FieldHelp: map[string]markers.DetailedHelp{},
+	}
+}
+
 func (SkipVersion) Help() *markers.DefinitionHelp {
 	return &markers.DefinitionHelp{
 		Category: "CRD",
@@ -423,7 +434,7 @@ func (XPreserveUnknownFields) Help() *markers.DefinitionHelp {
 		Category: "CRD processing",
 		DetailedHelp: markers.DetailedHelp{
 			Summary: "PreserveUnknownFields stops the apiserver from pruning fields which are not specified. ",
-			Details: "By default the apiserver drops unknown fields from the request payload during the decoding step. This marker stops the API server from doing so. It affects fields recursively, but switches back to normal pruning behaviour if nested  properties or additionalProperties are specified in the schema. This can either be true or undefined. False is forbidden.",
+			Details: "By default the apiserver drops unknown fields from the request payload during the decoding step. This marker stops the API server from doing so. It affects fields recursively, but switches back to normal pruning behaviour if nested  properties or additionalProperties are specified in the schema. This can either be true or undefined. False is forbidden. \n NB: The kubebuilder:validation:XPreserveUnknownFields variant is deprecated in favor of the kubebuilder:pruning:PreserveUnknownFields variant.  They function identically.",
 		},
 		FieldHelp: map[string]markers.DetailedHelp{},
 	}

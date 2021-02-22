@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"os"
 
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextlegacy "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
@@ -160,10 +161,14 @@ func (g Generator) Generate(ctx *genall.GenerationContext) error {
 		}
 
 		for i, crd := range versionedCRDs {
-			// defaults are not allowed to be specified in v1beta1 CRDs, so strip them
-			// before writing to a file
+			// defaults are not allowed to be specified in v1beta1 CRDs and
+			// decriptions are not allowed on the metadata regardless of version
+			// strip them before writing to a file
 			if crdVersions[i] == "v1beta1" {
 				removeDefaultsFromSchemas(crd.(*apiextlegacy.CustomResourceDefinition))
+				removeDescriptionFromMetadataLegacy(crd.(*apiextlegacy.CustomResourceDefinition))
+			} else {
+				removeDescriptionFromMetadata(crd.(*apiext.CustomResourceDefinition))
 			}
 			var fileName string
 			if i == 0 {
@@ -178,6 +183,47 @@ func (g Generator) Generate(ctx *genall.GenerationContext) error {
 	}
 
 	return nil
+}
+
+func removeDescriptionFromMetadata(crd *apiext.CustomResourceDefinition) {
+	for _, versionSpec := range crd.Spec.Versions {
+		if versionSpec.Schema != nil {
+			removeDescriptionFromMetadataProps(versionSpec.Schema.OpenAPIV3Schema)
+		}
+	}
+}
+
+func removeDescriptionFromMetadataProps(v *apiext.JSONSchemaProps) {
+	if m, ok := v.Properties["metadata"]; ok {
+		meta := &m
+		if meta.Description != "" {
+			meta.Description = ""
+			v.Properties["metadata"] = m
+
+		}
+	}
+}
+
+func removeDescriptionFromMetadataLegacy(crd *apiextlegacy.CustomResourceDefinition) {
+	if crd.Spec.Validation != nil {
+		removeDescriptionFromMetadataPropsLegacy(crd.Spec.Validation.OpenAPIV3Schema)
+	}
+	for _, versionSpec := range crd.Spec.Versions {
+		if versionSpec.Schema != nil {
+			removeDescriptionFromMetadataPropsLegacy(versionSpec.Schema.OpenAPIV3Schema)
+		}
+	}
+}
+
+func removeDescriptionFromMetadataPropsLegacy(v *apiextlegacy.JSONSchemaProps) {
+	if m, ok := v.Properties["metadata"]; ok {
+		meta := &m
+		if meta.Description != "" {
+			meta.Description = ""
+			v.Properties["metadata"] = m
+
+		}
+	}
 }
 
 // removeDefaultsFromSchemas will remove all instances of default values being
@@ -201,10 +247,15 @@ func removeDefaultsFromSchemaProps(v *apiextlegacy.JSONSchemaProps) {
 		return
 	}
 
+	if v.Default != nil {
+		fmt.Fprintln(os.Stderr, "Warning: default unsupported in CRD version v1beta1, v1 required. Removing defaults.")
+	}
+
 	// nil-out the default field
 	v.Default = nil
-	for name := range v.Properties {
-		prop := v.Properties[name]
+	for name, prop := range v.Properties {
+		// iter var reference is fine -- we handle the persistence of the modfications on the line below
+		//nolint:gosec
 		removeDefaultsFromSchemaProps(&prop)
 		v.Properties[name] = prop
 	}

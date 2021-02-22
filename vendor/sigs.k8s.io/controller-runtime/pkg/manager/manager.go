@@ -28,19 +28,18 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/config/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	logf "sigs.k8s.io/controller-runtime/pkg/internal/log"
 	intrec "sigs.k8s.io/controller-runtime/pkg/internal/recorder"
 	"sigs.k8s.io/controller-runtime/pkg/leaderelection"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/recorder"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
@@ -50,6 +49,9 @@ import (
 // Manager initializes shared dependencies such as Caches and Clients, and provides them to Runnables.
 // A Manager is required to create Controllers.
 type Manager interface {
+	// Cluster holds a variety of methods to interact with a cluster.
+	cluster.Cluster
+
 	// Add will set requested dependencies on the component, and cause the component to be
 	// started when Start is called.  Add will inject any dependencies for which the argument
 	// implements the inject interface - e.g. inject.Client.
@@ -61,10 +63,6 @@ type Manager interface {
 	// managers, either because it won a leader election or because no leader
 	// election was configured.
 	Elected() <-chan struct{}
-
-	// SetFields will set any dependencies on an object for which the object has implemented the inject
-	// interface - e.g. inject.Client.
-	SetFields(interface{}) error
 
 	// AddMetricsExtraHandler adds an extra handler served on path to the http server that serves metrics.
 	// Might be useful to register some diagnostic endpoints e.g. pprof. Note that these endpoints meant to be
@@ -86,35 +84,6 @@ type Manager interface {
 	// otherwise components that need leader election might continue to run after the leader
 	// lock was lost.
 	Start(ctx context.Context) error
-
-	// GetConfig returns an initialized Config
-	GetConfig() *rest.Config
-
-	// GetScheme returns an initialized Scheme
-	GetScheme() *runtime.Scheme
-
-	// GetClient returns a client configured with the Config. This client may
-	// not be a fully "direct" client -- it may read from a cache, for
-	// instance.  See Options.NewClient for more information on how the default
-	// implementation works.
-	GetClient() client.Client
-
-	// GetFieldIndexer returns a client.FieldIndexer configured with the client
-	GetFieldIndexer() client.FieldIndexer
-
-	// GetCache returns a cache.Cache
-	GetCache() cache.Cache
-
-	// GetEventRecorderFor returns a new EventRecorder for the provided name
-	GetEventRecorderFor(name string) record.EventRecorder
-
-	// GetRESTMapper returns a RESTMapper
-	GetRESTMapper() meta.RESTMapper
-
-	// GetAPIReader returns a reader that will be configured to use the API server.
-	// This should be used sparingly and only when the client does not fit your
-	// use case.
-	GetAPIReader() client.Reader
 
 	// GetWebhookServer returns a webhook.Server
 	GetWebhookServer() *webhook.Server
@@ -235,10 +204,14 @@ type Options struct {
 	// by the manager. If not set this will use the default new cache function.
 	NewCache cache.NewCacheFunc
 
-	// NewClient will create the client to be used by the manager.
+	// ClientBuilder is the builder that creates the client to be used by the manager.
 	// If not set this will create the default DelegatingClient that will
 	// use the cache for reads and the client for writes.
-	NewClient NewClientFunc
+	ClientBuilder ClientBuilder
+
+	// ClientDisableCacheFor tells the client that, if any cache is used, to bypass it
+	// for the given objects.
+	ClientDisableCacheFor []client.Object
 
 	// DryRunClient specifies whether the client should be configured to enforce
 	// dryRun mode.
@@ -254,7 +227,7 @@ type Options struct {
 	// GracefulShutdownTimeout is the duration given to runnable to stop before the manager actually returns on stop.
 	// To disable graceful shutdown, set to time.Duration(0)
 	// To use graceful shutdown without timeout, set to a negative duration, e.G. time.Duration(-1)
-	// The graceful shutdown is skipped for safety reasons in case the leadere election lease is lost.
+	// The graceful shutdown is skipped for safety reasons in case the leader election lease is lost.
 	GracefulShutdownTimeout *time.Duration
 
 	// makeBroadcaster allows deferring the creation of the broadcaster to
@@ -269,9 +242,6 @@ type Options struct {
 	newMetricsListener     func(addr string) (net.Listener, error)
 	newHealthProbeListener func(addr string) (net.Listener, error)
 }
-
-// NewClientFunc allows a user to define how to create a client
-type NewClientFunc func(cache cache.Cache, config *rest.Config, options client.Options) (client.Client, error)
 
 // Runnable allows a component to be started.
 // It's very important that Start blocks until
@@ -302,45 +272,29 @@ type LeaderElectionRunnable interface {
 
 // New returns a new Manager for creating Controllers.
 func New(config *rest.Config, options Options) (Manager, error) {
-	// Initialize a rest.config if none was specified
-	if config == nil {
-		return nil, fmt.Errorf("must specify Config")
-	}
-
 	// Set default values for options fields
 	options = setOptionsDefaults(options)
 
-	// Create the mapper provider
-	mapper, err := options.MapperProvider(config)
-	if err != nil {
-		log.Error(err, "Failed to get API Group-Resources")
-		return nil, err
-	}
-
-	// Create the cache for the cached read client and registering informers
-	cache, err := options.NewCache(config, cache.Options{Scheme: options.Scheme, Mapper: mapper, Resync: options.SyncPeriod, Namespace: options.Namespace})
-	if err != nil {
-		return nil, err
-	}
-
-	apiReader, err := client.New(config, client.Options{Scheme: options.Scheme, Mapper: mapper})
+	cluster, err := cluster.New(config, func(clusterOptions *cluster.Options) {
+		clusterOptions.Scheme = options.Scheme
+		clusterOptions.MapperProvider = options.MapperProvider
+		clusterOptions.Logger = options.Logger
+		clusterOptions.SyncPeriod = options.SyncPeriod
+		clusterOptions.Namespace = options.Namespace
+		clusterOptions.NewCache = options.NewCache
+		clusterOptions.ClientBuilder = options.ClientBuilder
+		clusterOptions.ClientDisableCacheFor = options.ClientDisableCacheFor
+		clusterOptions.DryRunClient = options.DryRunClient
+		clusterOptions.EventBroadcaster = options.EventBroadcaster
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	writeObj, err := options.NewClient(cache, config, client.Options{Scheme: options.Scheme, Mapper: mapper})
-	if err != nil {
-		return nil, err
-	}
-
-	if options.DryRunClient {
-		writeObj = client.NewDryRunClient(writeObj)
 	}
 
 	// Create the recorder provider to inject event recorders for the components.
 	// TODO(directxman12): the log for the event provider should have a context (name, tags, etc) specific
 	// to the particular controller that it's being injected into, rather than a generic one like is here.
-	recorderProvider, err := options.newRecorderProvider(config, options.Scheme, log.WithName("events"), options.makeBroadcaster)
+	recorderProvider, err := options.newRecorderProvider(config, cluster.GetScheme(), options.Logger.WithName("events"), options.makeBroadcaster)
 	if err != nil {
 		return nil, err
 	}
@@ -378,15 +332,9 @@ func New(config *rest.Config, options Options) (Manager, error) {
 	}
 
 	return &controllerManager{
-		config:                  config,
-		scheme:                  options.Scheme,
-		cache:                   cache,
-		fieldIndexes:            cache,
-		client:                  writeObj,
-		apiReader:               apiReader,
+		cluster:                 cluster,
 		recorderProvider:        recorderProvider,
 		resourceLock:            resourceLock,
-		mapper:                  mapper,
 		metricsListener:         metricsListener,
 		metricsExtraHandlers:    metricsExtraHandlers,
 		logger:                  options.Logger,
@@ -402,6 +350,7 @@ func New(config *rest.Config, options Options) (Manager, error) {
 		livenessEndpointName:    options.LivenessEndpointName,
 		gracefulShutdownTimeout: *options.GracefulShutdownTimeout,
 		internalProceduresStop:  make(chan struct{}),
+		leaderElectionStopped:   make(chan struct{}),
 	}, nil
 }
 
@@ -416,7 +365,7 @@ func (o Options) AndFrom(loader config.ControllerManagerConfiguration) (Options,
 		}
 	}
 
-	newObj, err := loader.GetControllerManagerConfiguration()
+	newObj, err := loader.Complete()
 	if err != nil {
 		return o, err
 	}
@@ -503,20 +452,6 @@ func (o Options) setLeaderElectionConfig(obj v1alpha1.ControllerManagerConfigura
 	return o
 }
 
-// DefaultNewClient creates the default caching client
-func DefaultNewClient(cache cache.Cache, config *rest.Config, options client.Options) (client.Client, error) {
-	// Create the Client for Write operations.
-	c, err := client.New(config, options)
-	if err != nil {
-		return nil, err
-	}
-
-	return client.NewDelegatingClient(client.NewDelegatingClientInput{
-		CacheReader: cache,
-		Client:      c,
-	}), nil
-}
-
 // defaultHealthProbeListener creates the default health probes listener bound to the given address
 func defaultHealthProbeListener(addr string) (net.Listener, error) {
 	if addr == "" || addr == "0" {
@@ -532,25 +467,10 @@ func defaultHealthProbeListener(addr string) (net.Listener, error) {
 
 // setOptionsDefaults set default values for Options fields
 func setOptionsDefaults(options Options) Options {
-	// Use the Kubernetes client-go scheme if none is specified
-	if options.Scheme == nil {
-		options.Scheme = scheme.Scheme
-	}
 
-	if options.MapperProvider == nil {
-		options.MapperProvider = func(c *rest.Config) (meta.RESTMapper, error) {
-			return apiutil.NewDynamicRESTMapper(c)
-		}
-	}
-
-	// Allow newClient to be mocked
-	if options.NewClient == nil {
-		options.NewClient = DefaultNewClient
-	}
-
-	// Allow newCache to be mocked
-	if options.NewCache == nil {
-		options.NewCache = cache.New
+	// Allow newResourceLock to be mocked
+	if options.newResourceLock == nil {
+		options.newResourceLock = leaderelection.NewResourceLock
 	}
 
 	// Allow newRecorderProvider to be mocked
@@ -558,9 +478,18 @@ func setOptionsDefaults(options Options) Options {
 		options.newRecorderProvider = intrec.NewProvider
 	}
 
-	// Allow newResourceLock to be mocked
-	if options.newResourceLock == nil {
-		options.newResourceLock = leaderelection.NewResourceLock
+	// This is duplicated with pkg/cluster, we need it here
+	// for the leader election and there to provide the user with
+	// an EventBroadcaster
+	if options.EventBroadcaster == nil {
+		// defer initialization to avoid leaking by default
+		options.makeBroadcaster = func() (record.EventBroadcaster, bool) {
+			return record.NewBroadcaster(), true
+		}
+	} else {
+		options.makeBroadcaster = func() (record.EventBroadcaster, bool) {
+			return options.EventBroadcaster, false
+		}
 	}
 
 	if options.newMetricsListener == nil {
@@ -577,17 +506,6 @@ func setOptionsDefaults(options Options) Options {
 
 	if options.RetryPeriod == nil {
 		options.RetryPeriod = &retryPeriod
-	}
-
-	if options.EventBroadcaster == nil {
-		// defer initialization to avoid leaking by default
-		options.makeBroadcaster = func() (record.EventBroadcaster, bool) {
-			return record.NewBroadcaster(), true
-		}
-	} else {
-		options.makeBroadcaster = func() (record.EventBroadcaster, bool) {
-			return options.EventBroadcaster, false
-		}
 	}
 
 	if options.ReadinessEndpointName == "" {
@@ -608,7 +526,7 @@ func setOptionsDefaults(options Options) Options {
 	}
 
 	if options.Logger == nil {
-		options.Logger = logf.Log
+		options.Logger = logf.RuntimeLog.WithName("manager")
 	}
 
 	return options
