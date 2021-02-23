@@ -15,6 +15,7 @@ func NewCommand() *cobra.Command {
 
 	cmd.AddCommand(cluster.NewCreateCommand())
 	cmd.AddCommand(infra.NewCreateCommand())
+	cmd.AddCommand(infra.NewCreateIAMCommand())
 
 	return cmd
 }

@@ -10,8 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/spf13/cobra"
 )
 
@@ -23,15 +21,14 @@ type CreateInfraOptions struct {
 }
 
 type CreateInfraOutput struct {
-	Region                string `json:"region"`
-	Zone                  string `json:"zone"`
-	InfraID               string `json:"infraID"`
-	ComputeCIDR           string `json:"computeCIDR"`
-	VPCID                 string `json:"vpcID"`
-	PrivateSubnetID       string `json:"privateSubnetID"`
-	PublicSubnetID        string `json:"publicSubnetID"`
-	SecurityGroupID       string `json:"securityGroupID"`
-	WorkerInstanceProfile string `json:"workerInstanceProfile"`
+	Region          string `json:"region"`
+	Zone            string `json:"zone"`
+	InfraID         string `json:"infraID"`
+	ComputeCIDR     string `json:"computeCIDR"`
+	VPCID           string `json:"vpcID"`
+	PrivateSubnetID string `json:"privateSubnetID"`
+	PublicSubnetID  string `json:"publicSubnetID"`
+	SecurityGroupID string `json:"securityGroupID"`
 }
 
 const (
@@ -95,71 +92,61 @@ func (o *CreateInfraOptions) Run() error {
 func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 	var err error
 	result := &CreateInfraOutput{
-		InfraID:               o.InfraID,
-		ComputeCIDR:           DefaultCIDRBlock,
-		Region:                o.Region,
-		WorkerInstanceProfile: fmt.Sprintf("%s-worker-profile", o.InfraID),
+		InfraID:     o.InfraID,
+		ComputeCIDR: DefaultCIDRBlock,
+		Region:      o.Region,
 	}
 	client, err := o.AWSClient()
 	if err != nil {
 		return nil, err
 	}
-	result.Zone, err = o.firstZone(client.EC2)
+	result.Zone, err = o.firstZone(client)
 	if err != nil {
 		return nil, err
 	}
-	result.VPCID, err = o.createVPC(client.EC2)
+	result.VPCID, err = o.createVPC(client)
 	if err != nil {
 		return nil, err
 	}
-	if err = o.CreateDHCPOptions(client.EC2, result.VPCID); err != nil {
+	if err = o.CreateDHCPOptions(client, result.VPCID); err != nil {
 		return nil, err
 	}
-	result.PrivateSubnetID, err = o.CreatePrivateSubnet(client.EC2, result.VPCID, result.Zone)
+	result.PrivateSubnetID, err = o.CreatePrivateSubnet(client, result.VPCID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	result.PublicSubnetID, err = o.CreatePublicSubnet(client.EC2, result.VPCID, result.Zone)
+	result.PublicSubnetID, err = o.CreatePublicSubnet(client, result.VPCID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	igwID, err := o.CreateInternetGateway(client.EC2, result.VPCID)
+	igwID, err := o.CreateInternetGateway(client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	natGatewayID, err := o.CreateNATGateway(client.EC2, result.PublicSubnetID, result.Zone)
+	natGatewayID, err := o.CreateNATGateway(client, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	result.SecurityGroupID, err = o.CreateWorkerSecurityGroup(client.EC2, result.VPCID)
+	result.SecurityGroupID, err = o.CreateWorkerSecurityGroup(client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	privateRouteTable, err := o.CreatePrivateRouteTable(client.EC2, result.VPCID, natGatewayID, result.PrivateSubnetID, result.Zone)
+	privateRouteTable, err := o.CreatePrivateRouteTable(client, result.VPCID, natGatewayID, result.PrivateSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	publicRouteTable, err := o.CreatePublicRouteTable(client.EC2, result.VPCID, igwID, result.PublicSubnetID, result.Zone)
+	publicRouteTable, err := o.CreatePublicRouteTable(client, result.VPCID, igwID, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	err = o.CreateVPCS3Endpoint(client.EC2, result.VPCID, privateRouteTable, publicRouteTable)
-	if err != nil {
-		return nil, err
-	}
-	err = o.CreateWorkerInstanceProfile(client.IAM, result.WorkerInstanceProfile)
+	err = o.CreateVPCS3Endpoint(client, result.VPCID, privateRouteTable, publicRouteTable)
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-type AWSClient struct {
-	EC2 ec2iface.EC2API
-	IAM iamiface.IAMAPI
-}
-
-func (o *CreateInfraOptions) AWSClient() (*AWSClient, error) {
+func (o *CreateInfraOptions) AWSClient() (ec2iface.EC2API, error) {
 	awsConfig := &aws.Config{
 		Region: aws.String(o.Region),
 	}
@@ -168,8 +155,5 @@ func (o *CreateInfraOptions) AWSClient() (*AWSClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client session: %w", err)
 	}
-	return &AWSClient{
-		EC2: ec2.New(s),
-		IAM: iam.New(s),
-	}, nil
+	return ec2.New(s), nil
 }

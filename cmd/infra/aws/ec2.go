@@ -278,7 +278,7 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		natGateway = gatewayResult.NatGateway
 	}
 	// Wait for NAT gateway to become available
-	err = waitForCondition(func() (bool, error) {
+	err = wait.Poll(5*time.Second, 1*time.Minute, func() (bool, error) {
 		natgw, err := o.existingNATGateway(client, natGatewayName)
 		if err != nil {
 			return false, err
@@ -287,7 +287,7 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 			return true, nil
 		}
 		return false, nil
-	}, 5*time.Second, 1*time.Minute)
+	})
 	if err != nil {
 		return "", fmt.Errorf("NAT gateway failed to become available: %w", err)
 	}
@@ -525,14 +525,4 @@ func ec2Tags(infraID, name string) []*ec2.Tag {
 	}
 	return tags
 
-}
-
-func waitForCondition(checkFunc func() (bool, error), interval, timeOut time.Duration) error {
-	t := time.After(timeOut)
-	stopCh := make(chan struct{})
-	go func() {
-		<-t
-		stopCh <- struct{}{}
-	}()
-	return wait.PollImmediateUntil(2*time.Second, wait.ConditionFunc(checkFunc), stopCh)
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 )
 
-func (o *CreateInfraOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, profileName string) error {
+func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, profileName string) error {
 	const (
 		assumeRolePolicy = `{
     "Version": "2012-10-17",
@@ -38,17 +38,16 @@ func (o *CreateInfraOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI,
   ]
 }`
 	)
-	roleName := fmt.Sprintf("%s-worker-role", o.InfraID)
-	workerRole, err := o.existingWorkerRole(client, roleName)
+	roleName := fmt.Sprintf("%s-role", profileName)
+	role, err := o.existingRole(client, roleName)
 	if err != nil {
 		return err
 	}
-	if workerRole == nil {
+	if role == nil {
 		_, err := client.CreateRole(&iam.CreateRoleInput{
 			AssumeRolePolicyDocument: aws.String(assumeRolePolicy),
 			Path:                     aws.String("/"),
 			RoleName:                 aws.String(roleName),
-			Tags:                     iamTags(o.InfraID, roleName),
 		})
 		if err != nil {
 			return fmt.Errorf("cannot create worker role: %w", err)
@@ -64,13 +63,13 @@ func (o *CreateInfraOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI,
 			Path:                aws.String("/"),
 		})
 		if err != nil {
-			return fmt.Errorf("cannot create worker instance profile: %w", err)
+			return fmt.Errorf("cannot create instance profile: %w", err)
 		}
 		instanceProfile = result.InstanceProfile
 	}
 	hasRole := false
 	for _, role := range instanceProfile.Roles {
-		if aws.StringValue(role.RoleName) == aws.StringValue(workerRole.RoleName) {
+		if aws.StringValue(role.RoleName) == aws.StringValue(role.RoleName) {
 			hasRole = true
 		}
 	}
@@ -80,10 +79,10 @@ func (o *CreateInfraOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI,
 			RoleName:            aws.String(roleName),
 		})
 		if err != nil {
-			return fmt.Errorf("cannot add role to worker instance profile: %w", err)
+			return fmt.Errorf("cannot add role to instance profile: %w", err)
 		}
 	}
-	rolePolicyName := fmt.Sprintf("%s-worker-policy", o.InfraID)
+	rolePolicyName := fmt.Sprintf("%s-policy", profileName)
 	hasPolicy, err := o.existingRolePolicy(client, roleName, rolePolicyName)
 	if err != nil {
 		return err
@@ -95,13 +94,13 @@ func (o *CreateInfraOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI,
 			RoleName:       aws.String(roleName),
 		})
 		if err != nil {
-			return fmt.Errorf("cannot create worker policy: %w", err)
+			return fmt.Errorf("cannot create profile policy: %w", err)
 		}
 	}
 	return nil
 }
 
-func (o *CreateInfraOptions) existingWorkerRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
+func (o *CreateIAMOptions) existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
 	result, err := client.GetRole(&iam.GetRoleInput{RoleName: aws.String(roleName)})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
@@ -114,7 +113,7 @@ func (o *CreateInfraOptions) existingWorkerRole(client iamiface.IAMAPI, roleName
 	return result.Role, nil
 }
 
-func (o *CreateInfraOptions) existingInstanceProfile(client iamiface.IAMAPI, profileName string) (*iam.InstanceProfile, error) {
+func (o *CreateIAMOptions) existingInstanceProfile(client iamiface.IAMAPI, profileName string) (*iam.InstanceProfile, error) {
 	result, err := client.GetInstanceProfile(&iam.GetInstanceProfileInput{
 		InstanceProfileName: aws.String(profileName),
 	})
@@ -129,7 +128,7 @@ func (o *CreateInfraOptions) existingInstanceProfile(client iamiface.IAMAPI, pro
 	return result.InstanceProfile, nil
 }
 
-func (o *CreateInfraOptions) existingRolePolicy(client iamiface.IAMAPI, roleName, policyName string) (bool, error) {
+func (o *CreateIAMOptions) existingRolePolicy(client iamiface.IAMAPI, roleName, policyName string) (bool, error) {
 	result, err := client.GetRolePolicy(&iam.GetRolePolicyInput{
 		RoleName:   aws.String(roleName),
 		PolicyName: aws.String(policyName),
