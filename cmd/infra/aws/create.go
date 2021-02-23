@@ -34,6 +34,14 @@ type CreateInfraOutput struct {
 	WorkerInstanceProfile string `json:"workerInstanceProfile"`
 }
 
+const (
+	DefaultCIDRBlock  = "10.0.0.0/16"
+	PrivateSubnetCIDR = "10.0.128.0/20"
+	PublicSubnetCIDR  = "10.0.0.0/20"
+
+	clusterTagValue = "owned"
+)
+
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "aws",
@@ -83,12 +91,6 @@ func (o *CreateInfraOptions) Run() error {
 	}
 	return nil
 }
-
-const (
-	DefaultCIDRBlock  = "10.0.0.0/16"
-	PrivateSubnetCIDR = "10.0.128.0/20"
-	PublicSubnetCIDR  = "10.0.0.0/20"
-)
 
 func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 	var err error
