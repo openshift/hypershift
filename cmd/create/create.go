@@ -3,8 +3,8 @@ package create
 import (
 	"github.com/spf13/cobra"
 
-	"openshift.io/hypershift/cmd/create/cluster"
-	"openshift.io/hypershift/cmd/create/infra"
+	"openshift.io/hypershift/cmd/cluster"
+	"openshift.io/hypershift/cmd/infra"
 )
 
 func NewCommand() *cobra.Command {
@@ -13,8 +13,9 @@ func NewCommand() *cobra.Command {
 		Short: "Commands for creating HyperShift resources",
 	}
 
-	cmd.AddCommand(cluster.NewCommand())
-	cmd.AddCommand(infra.NewCommand())
+	cmd.AddCommand(cluster.NewCreateCommand())
+	cmd.AddCommand(infra.NewCreateCommand())
+	cmd.AddCommand(infra.NewCreateIAMCommand())
 
 	return cmd
 }

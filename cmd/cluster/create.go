@@ -30,7 +30,7 @@ type Options struct {
 	Render             bool
 }
 
-func NewCommand() *cobra.Command {
+func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster",
 		Short: "Creates basic functional HostedCluster resources",
