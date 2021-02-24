@@ -58,7 +58,6 @@ func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
 	c.serviceAdminKubeconfig()
 	c.etcd()
-	c.kubeAPIServer()
 	c.kubeControllerManager()
 	c.kubeScheduler()
 	c.clusterVersionOperator()
@@ -132,21 +131,6 @@ func (c *clusterManifestContext) oauthOpenshiftServer() {
 	)
 	c.addUserManifestFiles(
 		"oauth-openshift/ingress-certs-secret.yaml",
-	)
-}
-
-func (c *clusterManifestContext) kubeAPIServer() {
-	c.addManifestFiles(
-		"kube-apiserver/kube-apiserver-deployment.yaml",
-		"kube-apiserver/kube-apiserver-service.yaml",
-		"kube-apiserver/kube-apiserver-config-configmap.yaml",
-		"kube-apiserver/kube-apiserver-oauth-metadata-configmap.yaml",
-		"kube-apiserver/kube-apiserver-vpnclient-config.yaml",
-		"kube-apiserver/kube-apiserver-secret.yaml",
-		"kube-apiserver/kube-apiserver-configmap.yaml",
-		"kube-apiserver/kube-apiserver-vpnclient-secret.yaml",
-		"kube-apiserver/kube-apiserver-default-audit-policy.yaml",
-		"kube-apiserver/kube-apiserver-localhost-kubeconfig-secret.yaml",
 	)
 }
 

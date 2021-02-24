@@ -617,6 +617,36 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if err != nil {
 		return nil, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
+
+	kubeAPIServerContext := render.NewKubeAPIServerManifestContext(&render.KubeAPIServerParams{
+		PodCIDR:               params.PodCIDR,
+		ServiceCIDR:           params.ServiceCIDR,
+		ExternalAPIAddress:    params.ExternalAPIAddress,
+		APIServerAuditEnabled: params.APIServerAuditEnabled,
+		CloudProvider:         params.CloudProvider,
+		EtcdClientName:        params.EtcdClientName,
+		DefaultFeatureGates:   params.DefaultFeatureGates,
+		ExtraFeatureGates:     params.ExtraFeatureGates,
+		IngressSubdomain:      params.IngressSubdomain,
+		InternalAPIPort:       params.InternalAPIPort,
+		NamedCerts:            params.NamedCerts,
+		PKI:                   pkiSecret.Data,
+		APIAvailabilityPolicy: render.KubeAPIServerParamsAvailabilityPolicy(params.APIAvailabilityPolicy),
+		ClusterID:             params.ClusterID,
+		Images:                releaseImage.ComponentImages(),
+		ApiserverLivenessPath: params.ApiserverLivenessPath,
+		APINodePort:           params.APINodePort,
+		ExternalOauthPort:     params.ExternalOauthPort,
+		ExternalOauthDNSName:  params.ExternalOauthDNSName,
+	})
+	kubeAPIServerManifests, err := kubeAPIServerContext.Render()
+	if err != nil {
+		return nil, fmt.Errorf("failed to render kube apiserver manifests: %w", err)
+	}
+	for k := range kubeAPIServerManifests {
+		manifests[k] = kubeAPIServerManifests[k]
+	}
+
 	return manifests, nil
 }
 
