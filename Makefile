@@ -26,7 +26,12 @@ all: build
 
 build: hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
 
-verify: build fmt vet
+.PHONY: verify
+verify: deps api fmt vet
+	git diff-index --cached --quiet --ignore-submodules HEAD --
+	git diff-files --quiet --ignore-submodules
+	$(eval STATUS = $(shell git status -s))
+	$(if $(strip $(STATUS)),$(error untracked files detected))
 
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
@@ -71,6 +76,13 @@ fmt:
 .PHONY: vet
 vet:
 	$(GO) vet ./...
+
+# Updates Go modules
+.PHONY: deps
+deps:
+	$(GO) mod tidy
+	$(GO) mod vendor
+	$(GO) mod verify
 
 # Build the docker image
 .PHONY: docker-build
