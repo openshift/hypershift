@@ -1,7 +1,5 @@
 # cloud.google.com/go v0.54.0
 cloud.google.com/go/compute/metadata
-# github.com/armon/consul-api v0.0.0-20180202201655-eb2c6b5be1b6
-## explicit
 # github.com/aws/aws-sdk-go v1.35.0
 ## explicit
 github.com/aws/aws-sdk-go/aws
@@ -114,8 +112,6 @@ github.com/mattn/go-colorable
 github.com/mattn/go-isatty
 # github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/moby/spdystream v0.2.0
-## explicit
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.1
@@ -220,13 +216,9 @@ github.com/spf13/pflag
 # github.com/stretchr/testify v1.6.1
 ## explicit
 github.com/stretchr/testify/assert
-# github.com/ugorji/go v1.1.4
-## explicit
 # github.com/vincent-petithory/dataurl v0.0.0-20191104211930-d1553a71de50
 ## explicit
 github.com/vincent-petithory/dataurl
-# github.com/xordataexchange/crypt v0.0.3-0.20170626215501-b2862e3d0a77
-## explicit
 # go.uber.org/atomic v1.6.0
 go.uber.org/atomic
 # go.uber.org/multierr v1.5.0
