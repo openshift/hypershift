@@ -4,221 +4,272 @@ package e2e
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
+	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/clientcmd"
 
-	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperapi "github.com/openshift/hypershift/api"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/test/e2e/internal/log"
 	"github.com/openshift/hypershift/version"
 )
 
-var _ = Describe("When following the HyperShift quick-start [PR-Blocking]", func() {
+// QuickStartOptions are the raw user input used to construct the test input.
+type QuickStartOptions struct {
+	AWSCredentialsFile string
+	PullSecretFile     string
+	SSHKeyFile         string
+	ReleaseImage       string
+}
 
-	QuickStartSpec(context.TODO(), func() QuickStartSpecInput {
-		input := QuickStartSpecInput{
-			Client: client,
-		}
-		var err error
-		input.PullSecret, err = ioutil.ReadFile(quickStartSpecOptions.PullSecretFile)
-		Expect(err).NotTo(HaveOccurred(), "couldn't read pull secret file %q", quickStartSpecOptions.PullSecretFile)
+var quickStartOptions QuickStartOptions
 
-		input.AWSCredentials, err = ioutil.ReadFile(quickStartSpecOptions.AWSCredentialsFile)
-		Expect(err).NotTo(HaveOccurred(), "couldn't read aws credentials file %q", quickStartSpecOptions.AWSCredentialsFile)
+func init() {
+	flag.StringVar(&quickStartOptions.AWSCredentialsFile, "e2e.quick-start.aws-credentials-file", "", "path to AWS credentials")
+	flag.StringVar(&quickStartOptions.PullSecretFile, "e2e.quick-start.pull-secret-file", "", "path to pull secret")
+	flag.StringVar(&quickStartOptions.SSHKeyFile, "e2e.quick-start.ssh-key-file", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "path to SSH public key")
+	flag.StringVar(&quickStartOptions.ReleaseImage, "e2e.quick-start.release-image", "", "OCP release image to test")
+}
 
-		input.SSHKey, err = ioutil.ReadFile(quickStartSpecOptions.SSHKeyFile)
-		Expect(err).NotTo(HaveOccurred(), "couldn't read SSH key file %q", quickStartSpecOptions.SSHKeyFile)
-
-		if len(quickStartSpecOptions.ReleaseImage) == 0 {
-			defaultVersion, err := version.LookupDefaultOCPVersion()
-			Expect(err).NotTo(HaveOccurred(), "couldn't look up default OCP version")
-			input.ReleaseImage = defaultVersion.PullSpec
-		}
-
-		return input
-	})
-
-})
-
-// QuickStartSpecInput is the input for QuickStartSpec.
-type QuickStartSpecInput struct {
-	Client         ctrl.Client
+// QuickStartInput are the validated options for running the test.
+type QuickStartInput struct {
+	Client         crclient.Client
 	ReleaseImage   string
 	AWSCredentials []byte
 	PullSecret     []byte
 	SSHKey         []byte
 }
 
-// QuickStartSpec implements a spec that mimics the operation described in the
+// GetContext builds a QuickStartInput from the options.
+func (o QuickStartOptions) GetContext() (*QuickStartInput, error) {
+	input := &QuickStartInput{}
+
+	var err error
+	input.PullSecret, err = ioutil.ReadFile(o.PullSecretFile)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read pull secret file %q: %w", o.PullSecretFile, err)
+	}
+	if len(input.PullSecret) == 0 {
+		return nil, fmt.Errorf("pull secret is required")
+	}
+
+	input.AWSCredentials, err = ioutil.ReadFile(o.AWSCredentialsFile)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read aws credentials file %q: %w", o.AWSCredentialsFile, err)
+	}
+	if len(input.AWSCredentials) == 0 {
+		return nil, fmt.Errorf("AWS credentials are required")
+	}
+
+	input.SSHKey, err = ioutil.ReadFile(o.SSHKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read SSH key file %q: %w", o.SSHKeyFile, err)
+	}
+	if len(input.SSHKey) == 0 {
+		return nil, fmt.Errorf("SSH key is required")
+	}
+
+	if len(o.ReleaseImage) == 0 {
+		defaultVersion, err := version.LookupDefaultOCPVersion()
+		if err != nil {
+			return nil, fmt.Errorf("couldn't look up default OCP version: %w", err)
+		}
+		input.ReleaseImage = defaultVersion.PullSpec
+	}
+	if len(input.ReleaseImage) == 0 {
+		return nil, fmt.Errorf("release image is required")
+	}
+
+	input.Client, err = crclient.New(ctrl.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kube client: %w", err)
+	}
+
+	return input, nil
+}
+
+// TestQuickStart implements a test that mimics the operation described in the
 // HyperShift quick start (creating a basic guest cluster).
 //
 // This test is meant to provide a first, fast signal to detect regression; it
 // is recommended to use it as a PR blocker test.
-func QuickStartSpec(ctx context.Context, inputGetter func() QuickStartSpecInput) {
-	var (
-		specName = "quick-start"
-		input    QuickStartSpecInput
+func TestQuickStart(t *testing.T) {
+	input, err := quickStartOptions.GetContext()
+	if err != nil {
+		t.Fatalf("failed to create test context: %s", err)
+	}
 
-		namespace *corev1.Namespace
-	)
+	t.Logf("Testing OCP release image %s", input.ReleaseImage)
+	ctx := context.TODO()
 
-	BeforeEach(func() {
-		Expect(ctx).NotTo(BeNil(), "ctx is required for %s spec", specName)
-		input = inputGetter()
-		Expect(input.Client).ToNot(BeNil(), "Invalid argument. input.Client can't be nil when calling %s spec", specName)
-		Expect(input.ReleaseImage).ToNot(BeEmpty(), "Invalid argument. input.ReleaseImage can't be empty when calling %s spec", specName)
-		Expect(input.AWSCredentials).ToNot(BeEmpty(), "Invalid argument. input.AWSCredentials can't be empty when calling %s spec", specName)
-		Expect(input.PullSecret).ToNot(BeEmpty(), "Invalid argument. input.PullSecret can't be empty when calling %s spec", specName)
-		Expect(input.SSHKey).ToNot(BeEmpty(), "Invalid argument. input.SSHKey can't be empty when calling %s spec", specName)
-	})
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "e2e-",
+		},
+	}
+	err = input.Client.Create(ctx, namespace)
+	if err != nil {
+		t.Fatalf("failed to create namespace: %s", err)
+	}
+	if len(namespace.Name) == 0 {
+		t.Fatalf("generated namespace has no name")
+	}
+	t.Logf("Created test namespace %s", namespace.Name)
 
-	It("Should create a functional guest cluster", func() {
-
-		By("Applying the example cluster resources")
-
-		log.Logf("Testing OCP release image %s", input.ReleaseImage)
-
-		namespace = &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "e2e-",
-			},
+	// Clean up the namespace after the test
+	defer func() {
+		err := input.Client.Delete(ctx, namespace, &crclient.DeleteOptions{})
+		if err != nil {
+			t.Fatalf("failed to delete namespace %q: %s", namespace.Name, err)
 		}
-		err := input.Client.Create(ctx, namespace)
-		Expect(err).NotTo(HaveOccurred(), "couldn't create namespace")
-		Expect(namespace.Name).NotTo(BeEmpty(), "generated namespace has no name")
-		log.Logf("Created test namespace %s", namespace.Name)
-
-		example := apifixtures.ExampleOptions{
-			Namespace:        namespace.Name,
-			Name:             "example",
-			ReleaseImage:     input.ReleaseImage,
-			PullSecret:       input.PullSecret,
-			AWSCredentials:   input.AWSCredentials,
-			SSHKey:           input.SSHKey,
-			NodePoolReplicas: 2,
-		}.Resources()
-
-		err = input.Client.Create(ctx, example.PullSecret)
-		Expect(err).NotTo(HaveOccurred(), "couldn't create pull secret")
-		log.Logf("Created test pull secret %s", example.PullSecret.Name)
-
-		err = input.Client.Create(ctx, example.AWSCredentials)
-		Expect(err).NotTo(HaveOccurred(), "couldn't create aws credentials secret")
-		log.Logf("Created test aws credentials secret %s", example.AWSCredentials.Name)
-
-		err = input.Client.Create(ctx, example.SSHKey)
-		Expect(err).NotTo(HaveOccurred(), "couldn't create ssh key secret")
-		log.Logf("Created test ssh key secret %s", example.SSHKey.Name)
-
-		err = input.Client.Create(ctx, example.Cluster)
-		Expect(err).NotTo(HaveOccurred(), "couldn't create cluster")
-		log.Logf("Created test hostedcluster %s", example.Cluster.Name)
-
-		// Perform some very basic assertions about the guest cluster
-		By("Ensuring the guest cluster exposes a valid kubeconfig")
-
-		log.Logf("Waiting for guest kubeconfig to become available")
-		var guestKubeConfigSecret corev1.Secret
-		Eventually(func() bool {
-			var currentCluster hyperv1.HostedCluster
-			err := input.Client.Get(ctx, ctrl.ObjectKeyFromObject(example.Cluster), &currentCluster)
-			if err != nil {
-				log.Logf("error getting cluster: %w", err)
-				return false
-			}
-			if currentCluster.Status.KubeConfig == nil {
-				return false
-			}
-			key := ctrl.ObjectKey{
-				Namespace: currentCluster.Namespace,
-				Name:      currentCluster.Status.KubeConfig.Name,
-			}
-			if err := input.Client.Get(ctx, key, &guestKubeConfigSecret); err != nil {
-				log.Logf("error getting guest kubeconfig secret %s: %w", key, err)
-				return false
-			}
-			return true
-		}, 5*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't find guest kubeconfig secret")
-
-		// TODO: this key should probably be published or an API constant
-		guestKubeConfigSecretData, hasData := guestKubeConfigSecret.Data["kubeconfig"]
-		Expect(hasData).To(BeTrue(), "guest kubeconfig secret is missing kubeconfig key")
-
-		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
-		Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-
-		By("Establishing a connection to the guest apiserver")
-		var guestClient ctrl.Client
-		Eventually(func() bool {
-			kubeClient, err := ctrl.New(guestConfig, ctrl.Options{Scheme: hyperapi.Scheme})
-			if err != nil {
-				return false
-			}
-			guestClient = kubeClient
-			return true
-		}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "couldn't create guest kube client")
-
-		By("Ensuring guest nodes become ready")
-		nodes := &corev1.NodeList{}
-		Eventually(func() bool {
-			err := guestClient.List(ctx, nodes)
-			if err != nil {
-				log.Logf("failed to list nodes: %w", err)
-				return false
-			}
-			if len(nodes.Items) == 0 {
-				return false
-			}
-			var readyNodes []string
-			for _, node := range nodes.Items {
-				for _, cond := range node.Status.Conditions {
-					if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
-						readyNodes = append(readyNodes, node.Name)
-					}
-				}
-			}
-			if len(readyNodes) != example.Cluster.Spec.InitialComputeReplicas {
-				return false
-			}
-			log.Logf("found %d ready nodes", len(nodes.Items))
-			return true
-		}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "guest nodes never became ready")
-	})
-
-	AfterEach(func() {
-		if namespace == nil {
-			return
-		}
-		By("Deleting the example cluster namespace")
-
-		Expect(input.Client.Delete(ctx, namespace, &ctrl.DeleteOptions{})).To(Succeed(), "couldn't clean up test cluster")
-
-		By("Ensuring the example cluster resources are deleted")
-
-		log.Logf("Waiting for the test namespace %q to be deleted", namespace.Name)
-		Eventually(func() bool {
+		t.Logf("Waiting for the test namespace %q to be deleted", namespace.Name)
+		err = wait.Poll(1*time.Second, 10*time.Minute, func() (done bool, err error) {
 			latestNamespace := &corev1.Namespace{}
-			key := ctrl.ObjectKey{
+			key := crclient.ObjectKey{
 				Name: namespace.Name,
 			}
 			if err := input.Client.Get(ctx, key, latestNamespace); err != nil {
 				if errors.IsNotFound(err) {
-					return true
+					return true, nil
 				}
-				log.Logf("error getting namespace %q: %s", latestNamespace.Name, err)
-				return false
+				t.Logf("failed to get namespace %q: %s", latestNamespace.Name, err)
+				return false, nil
 			}
-			return false
-		}, 10*time.Minute, 1*time.Second).Should(BeTrue(), "couldn't clean up example cluster namespace")
+			return false, nil
+		})
+		if err != nil {
+			t.Fatalf("failed to clean up namespace %q: %s", namespace.Name, err)
+		}
+	}()
+
+	example := apifixtures.ExampleOptions{
+		Namespace:        namespace.Name,
+		Name:             "example-" + namespace.Name,
+		ReleaseImage:     input.ReleaseImage,
+		PullSecret:       input.PullSecret,
+		AWSCredentials:   input.AWSCredentials,
+		SSHKey:           input.SSHKey,
+		NodePoolReplicas: 2,
+	}.Resources()
+
+	err = input.Client.Create(ctx, example.PullSecret)
+	if err != nil {
+		t.Fatalf("couldn't create pull secret: %s", err)
+	}
+	t.Logf("Created test pull secret %s", example.PullSecret.Name)
+
+	err = input.Client.Create(ctx, example.AWSCredentials)
+	if err != nil {
+		t.Fatalf("couldn't create aws credentials secret: %s", err)
+	}
+	t.Logf("Created test aws credentials secret %s", example.AWSCredentials.Name)
+
+	err = input.Client.Create(ctx, example.SSHKey)
+	if err != nil {
+		t.Fatalf("couldn't create ssh key secret: %s", err)
+	}
+	t.Logf("Created test ssh key secret %s", example.SSHKey.Name)
+
+	err = input.Client.Create(ctx, example.Cluster)
+	if err != nil {
+		t.Fatalf("couldn't create cluster: %s", err)
+	}
+	t.Logf("Created test hostedcluster %s", example.Cluster.Name)
+
+	// Perform some very basic assertions about the guest cluster
+	t.Logf("Ensuring the guest cluster exposes a valid kubeconfig")
+
+	t.Logf("Waiting for guest kubeconfig to become available")
+	var guestKubeConfigSecret corev1.Secret
+	err = wait.Poll(1*time.Second, 5*time.Minute, func() (done bool, err error) {
+		var currentCluster hyperv1.HostedCluster
+		err = input.Client.Get(ctx, crclient.ObjectKeyFromObject(example.Cluster), &currentCluster)
+		if err != nil {
+			t.Logf("error getting cluster: %s", err)
+			return false, nil
+		}
+		if currentCluster.Status.KubeConfig == nil {
+			return false, nil
+		}
+		key := crclient.ObjectKey{
+			Namespace: currentCluster.Namespace,
+			Name:      currentCluster.Status.KubeConfig.Name,
+		}
+		if err := input.Client.Get(ctx, key, &guestKubeConfigSecret); err != nil {
+			t.Logf("failed to get guest kubeconfig secret %s: %s", key, err)
+			return false, nil
+		}
+		return true, nil
 	})
+	if err != nil {
+		t.Fatalf("guest kubeconfig didn't become available")
+	}
+
+	// TODO: this key should probably be published or an API constant
+	guestKubeConfigSecretData, hasData := guestKubeConfigSecret.Data["kubeconfig"]
+	if !hasData {
+		t.Fatalf("guest kubeconfig secret is missing kubeconfig key")
+	}
+
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	if err != nil {
+		t.Fatalf("couldn't load guest kubeconfig: %s", err)
+	}
+
+	t.Logf("Establishing a connection to the guest apiserver")
+	var guestClient crclient.Client
+	err = wait.Poll(5*time.Second, 5*time.Minute, func() (done bool, err error) {
+		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: hyperapi.Scheme})
+		if err != nil {
+			t.Logf("failed to create kube client: %s", err)
+			return false, nil
+		}
+		guestClient = kubeClient
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to establish a connection to the guest apiserver: %s", err)
+	}
+
+	t.Logf("Ensuring guest nodes become ready")
+	nodes := &corev1.NodeList{}
+	err = wait.Poll(5*time.Second, 10*time.Minute, func() (done bool, err error) {
+		err = guestClient.List(ctx, nodes)
+		if err != nil {
+			t.Logf("failed to list nodes: %s", err)
+			return false, nil
+		}
+		if len(nodes.Items) == 0 {
+			return false, nil
+		}
+		var readyNodes []string
+		for _, node := range nodes.Items {
+			for _, cond := range node.Status.Conditions {
+				if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+					readyNodes = append(readyNodes, node.Name)
+				}
+			}
+		}
+		if len(readyNodes) != example.Cluster.Spec.InitialComputeReplicas {
+			return false, nil
+		}
+		t.Logf("found %d ready nodes", len(nodes.Items))
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to ensure guest nodes became ready: %s", err)
+	}
 }

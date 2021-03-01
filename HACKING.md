@@ -38,7 +38,7 @@
 2. Run the tests.
 
         $ make e2e
-        $ bin/test-e2e -v -args --ginkgo.v --ginkgo.trace \
+        $ bin/test-e2e -v -args \
           --e2e.quick-start.aws-credentials-file /my/aws-credentials \
           --e2e.quick-start.pull-secret-file /my/pull-secret \
           --e2e.quick-start.ssh-key-file /my/public-ssh-key
@@ -48,7 +48,7 @@
 1. Install HyperShift.
 2. Run the tests.
 
-        $ go test -tags e2e -v ./test/e2e -args --ginkgo.v --ginkgo.trace \
+        $ go test -tags e2e -v ./test/e2e -args \
           --e2e.quick-start.aws-credentials-file /my/aws-credentials \
           --e2e.quick-start.pull-secret-file /my/pull-secret \
           --e2e.quick-start.ssh-key-file /my/public-ssh-key
