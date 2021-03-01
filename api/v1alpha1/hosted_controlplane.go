@@ -99,6 +99,9 @@ type HostedControlPlaneStatus struct {
 	// +kubebuilder:validation:Optional
 	Version string `json:"version,omitempty"`
 
+	// ReleaseImage is the release image applied to the hosted control plane.
+	ReleaseImage string `json:"releaseImage,omitempty"`
+
 	// KubeConfig is a reference to the secret containing the default kubeconfig
 	// for this control plane.
 	KubeConfig *corev1.LocalObjectReference `json:"kubeConfig,omitempty"`
