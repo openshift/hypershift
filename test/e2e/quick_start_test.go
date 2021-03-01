@@ -38,6 +38,9 @@ type QuickStartOptions struct {
 var quickStartOptions QuickStartOptions
 
 func init() {
+	flag.Bool("ginkgo.v", false, "Deprecated.")
+	flag.Bool("ginkgo.trace", false, "Deprecated.")
+
 	flag.StringVar(&quickStartOptions.AWSCredentialsFile, "e2e.quick-start.aws-credentials-file", "", "path to AWS credentials")
 	flag.StringVar(&quickStartOptions.PullSecretFile, "e2e.quick-start.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&quickStartOptions.SSHKeyFile, "e2e.quick-start.ssh-key-file", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "path to SSH public key")
