@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 // Getter interface defines methods that a Cluster API object should implement in order to

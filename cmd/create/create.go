@@ -3,8 +3,8 @@ package create
 import (
 	"github.com/spf13/cobra"
 
-	"openshift.io/hypershift/cmd/cluster"
-	"openshift.io/hypershift/cmd/infra"
+	"github.com/openshift/hypershift/cmd/cluster"
+	"github.com/openshift/hypershift/cmd/infra"
 )
 
 func NewCommand() *cobra.Command {

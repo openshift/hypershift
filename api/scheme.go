@@ -12,10 +12,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
-	capiv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiaws "openshift.io/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
+	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
 
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
 var (

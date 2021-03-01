@@ -22,7 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 
-	clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 // Patch defines a list of operations to change a list of conditions into another

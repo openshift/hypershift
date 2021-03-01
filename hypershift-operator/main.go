@@ -29,10 +29,10 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 
-	hyperapi "openshift.io/hypershift/api"
-	"openshift.io/hypershift/hypershift-operator/controllers/externalinfracluster"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster"
-	"openshift.io/hypershift/hypershift-operator/controllers/nodepool"
+	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/externalinfracluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"

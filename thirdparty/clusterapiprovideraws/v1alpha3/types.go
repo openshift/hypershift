@@ -23,7 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha3"
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha3"
 )
 
 const (

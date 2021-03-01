@@ -20,7 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	capierrors "openshift.io/hypershift/thirdparty/clusterapi/errors"
+	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
 )
 
 const (

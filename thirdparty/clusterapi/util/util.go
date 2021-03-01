@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	"openshift.io/hypershift/thirdparty/clusterapi/util/annotations"
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util/annotations"
 )
 
 var (

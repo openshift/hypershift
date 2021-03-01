@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
-	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 )
 
 func GeneratePKI(params *render.PKIParams) (map[string][]byte, error) {

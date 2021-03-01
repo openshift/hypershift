@@ -31,12 +31,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	hyperutil "openshift.io/hypershift/hypershift-operator/controllers/util"
-	capiv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	"openshift.io/hypershift/thirdparty/clusterapi/util"
-	"openshift.io/hypershift/thirdparty/clusterapi/util/patch"
-	capiaws "openshift.io/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
+	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
 )
 
 const (

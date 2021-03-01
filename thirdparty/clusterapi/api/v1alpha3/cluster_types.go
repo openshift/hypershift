@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	capierrors "openshift.io/hypershift/thirdparty/clusterapi/errors"
+	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
 )
 
 const (

@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/types"
 
-	hyperapi "openshift.io/hypershift/api"
-	apifixtures "openshift.io/hypershift/api/fixtures"
-	"openshift.io/hypershift/version"
+	hyperapi "github.com/openshift/hypershift/api"
+	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	"github.com/openshift/hypershift/version"
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"

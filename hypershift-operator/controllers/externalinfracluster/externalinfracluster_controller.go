@@ -18,9 +18,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/thirdparty/clusterapi/util"
-	"openshift.io/hypershift/thirdparty/clusterapi/util/patch"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
 )
 
 type ExternalInfraClusterReconciler struct {

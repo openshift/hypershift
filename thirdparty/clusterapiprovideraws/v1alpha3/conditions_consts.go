@@ -16,7 +16,7 @@ limitations under the License.
 
 package v1alpha3
 
-import clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha3"
+import clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha3"
 
 const (
 	// VpcReady condition reports on the successful reconciliation of a VPC

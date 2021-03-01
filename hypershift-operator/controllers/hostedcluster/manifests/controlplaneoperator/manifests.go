@@ -9,8 +9,8 @@ import (
 	k8sutilspointer "k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	capiv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 const (

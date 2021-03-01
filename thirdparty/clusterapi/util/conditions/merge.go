@@ -21,7 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 // localizedCondition defines a condition with the information of the object the conditions

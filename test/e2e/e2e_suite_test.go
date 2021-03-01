@@ -13,7 +13,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "openshift.io/hypershift/api"
+	hyperapi "github.com/openshift/hypershift/api"
 )
 
 // Test suite globals

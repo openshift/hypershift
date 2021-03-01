@@ -9,8 +9,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"openshift.io/hypershift/hosted-cluster-config-operator/controllers"
-	"openshift.io/hypershift/hosted-cluster-config-operator/operator"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
 )
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {

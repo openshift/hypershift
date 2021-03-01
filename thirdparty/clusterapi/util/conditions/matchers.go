@@ -22,7 +22,7 @@ import (
 	"github.com/onsi/gomega/format"
 	"github.com/onsi/gomega/types"
 
-	clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 func HaveSameStateOf(expected *clusterv1.Condition) types.GomegaMatcher {

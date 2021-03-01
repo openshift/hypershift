@@ -3,7 +3,7 @@ package infra
 import (
 	"github.com/spf13/cobra"
 
-	"openshift.io/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/infra/aws"
 )
 
 func NewCreateCommand() *cobra.Command {
