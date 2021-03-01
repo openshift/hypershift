@@ -25,6 +25,8 @@ import (
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/version"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 // QuickStartOptions are the raw user input used to construct the test input.
@@ -277,5 +279,43 @@ func TestQuickStart(t *testing.T) {
 	}, waitForNodesCtx.Done())
 	if err != nil {
 		t.Fatalf("failed to ensure guest nodes became ready: %s", err)
+	}
+
+	clusterOperators := &configv1.ClusterOperatorList{}
+	waitForClusterOperatorsReadyCtx, _ := context.WithTimeout(ctx, 10*time.Minute)
+	err = wait.PollUntil(10*time.Second, func() (done bool, err error) {
+		err = guestClient.List(waitForClusterOperatorsReadyCtx, clusterOperators)
+		if err != nil {
+			t.Logf("failed to list cluster operators: %v", err)
+			return false, nil
+		}
+		if len(clusterOperators.Items) == 0 {
+			return false, nil
+		}
+		ready := true
+		for _, clusterOperator := range clusterOperators.Items {
+			available := false
+			degraded := true
+			for _, cond := range clusterOperator.Status.Conditions {
+				if cond.Type == configv1.OperatorAvailable && cond.Status == configv1.ConditionTrue {
+					available = true
+				}
+				if cond.Type == configv1.OperatorDegraded && cond.Status == configv1.ConditionFalse {
+					degraded = false
+				}
+			}
+			if !available || degraded {
+				ready = false
+				break
+			}
+		}
+		if !ready {
+			return false, nil
+		}
+		t.Logf("guest cluster operators are ready")
+		return true, nil
+	}, waitForClusterOperatorsReadyCtx.Done())
+	if err != nil {
+		t.Fatalf("failed to ensure guest cluster operators became ready: %v", err)
 	}
 }
