@@ -40,12 +40,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"openshift.io/hypershift/thirdparty/clusterapi/util"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
-	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki"
-	"openshift.io/hypershift/control-plane-operator/releaseinfo"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki"
+	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 )
 
 const (

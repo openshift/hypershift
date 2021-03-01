@@ -7,8 +7,8 @@ import (
 	"strings"
 	"text/template"
 
-	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
-	"openshift.io/hypershift/control-plane-operator/releaseinfo"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
+	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 )
 
 func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, pki map[string][]byte) (map[string][]byte, error) {

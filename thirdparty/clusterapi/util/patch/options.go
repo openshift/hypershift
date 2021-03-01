@@ -16,7 +16,7 @@ limitations under the License.
 
 package patch
 
-import clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+import clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 
 // Option is some configuration that modifies options for a patch request.
 type Option interface {

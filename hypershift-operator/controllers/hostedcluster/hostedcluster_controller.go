@@ -40,14 +40,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	hyperapi "openshift.io/hypershift/api"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/autoscaler"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/clusterapi"
-	"openshift.io/hypershift/hypershift-operator/controllers/hostedcluster/manifests/controlplaneoperator"
-	hyperutil "openshift.io/hypershift/hypershift-operator/controllers/util"
-	capiv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	hyperapi "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/manifests/autoscaler"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/manifests/clusterapi"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/manifests/controlplaneoperator"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 const (

@@ -16,11 +16,11 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "openshift.io/hypershift/api"
-	apifixtures "openshift.io/hypershift/api/fixtures"
-	hyperv1 "openshift.io/hypershift/api/v1alpha1"
-	"openshift.io/hypershift/test/e2e/internal/log"
-	"openshift.io/hypershift/version"
+	hyperapi "github.com/openshift/hypershift/api"
+	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/test/e2e/internal/log"
+	"github.com/openshift/hypershift/version"
 )
 
 var _ = Describe("When following the HyperShift quick-start [PR-Blocking]", func() {

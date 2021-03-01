@@ -22,7 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 
-	clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha3"
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha3"
 )
 
 // Tags defines a map of tags.

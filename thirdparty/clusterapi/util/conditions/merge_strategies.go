@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	clusterv1 "openshift.io/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 // mergeOptions allows to set strategies for merging a set of conditions into a single condition,

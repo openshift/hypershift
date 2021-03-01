@@ -16,9 +16,9 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
-	hyperapi "openshift.io/hypershift/api"
-	"openshift.io/hypershift/control-plane-operator/controllers/hostedcontrolplane"
-	"openshift.io/hypershift/control-plane-operator/releaseinfo"
+	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"

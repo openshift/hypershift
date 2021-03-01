@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	capierrors "openshift.io/hypershift/thirdparty/clusterapi/errors"
+	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
 )
 
 // ANCHOR: MachineSetSpec

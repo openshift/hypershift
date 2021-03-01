@@ -18,8 +18,8 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver"
 	"github.com/openshift/library-go/pkg/operator/events"
 
-	"openshift.io/hypershift/hosted-cluster-config-operator/controllers"
-	"openshift.io/hypershift/hosted-cluster-config-operator/operator"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
 )
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
