@@ -2,6 +2,7 @@ package aws
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -264,7 +265,7 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		// recognizing the EIP as belonging to the cluster
 		_, err = client.CreateTags(&ec2.CreateTagsInput{
 			Resources: []*string{aws.String(allocationID)},
-			Tags:      ec2Tags(o.InfraID, fmt.Sprintf("%s-eip-%s", o.InfraID, availabilityZone)),
+			Tags:      append(ec2Tags(o.InfraID, fmt.Sprintf("%s-eip-%s", o.InfraID, availabilityZone)), o.additionalEC2Tags...),
 		})
 		if err != nil {
 			return "", fmt.Errorf("cannot tag NAT gateway EIP: %w", err)
@@ -491,9 +492,25 @@ func (o *CreateInfraOptions) ec2TagSpecifications(resourceType, name string) []*
 	return []*ec2.TagSpecification{
 		{
 			ResourceType: aws.String(resourceType),
-			Tags:         ec2Tags(o.InfraID, name),
+			Tags:         append(ec2Tags(o.InfraID, name), o.additionalEC2Tags...),
 		},
 	}
+}
+
+func (o *CreateInfraOptions) parseAdditionalTags() error {
+	var ec2Tags []*ec2.Tag
+	for _, tagStr := range o.AdditionalTags {
+		parts := strings.SplitN(tagStr, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
+		}
+		ec2Tags = append(ec2Tags, &ec2.Tag{
+			Key:   aws.String(parts[0]),
+			Value: aws.String(parts[1]),
+		})
+	}
+	o.additionalEC2Tags = ec2Tags
+	return nil
 }
 
 func (o *CreateInfraOptions) ec2Filters(name string) []*ec2.Filter {

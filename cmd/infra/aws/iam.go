@@ -39,7 +39,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 }`
 	)
 	roleName := fmt.Sprintf("%s-role", profileName)
-	role, err := o.existingRole(client, roleName)
+	role, err := existingRole(client, roleName)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 			return fmt.Errorf("cannot create worker role: %w", err)
 		}
 	}
-	instanceProfile, err := o.existingInstanceProfile(client, profileName)
+	instanceProfile, err := existingInstanceProfile(client, profileName)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		}
 	}
 	rolePolicyName := fmt.Sprintf("%s-policy", profileName)
-	hasPolicy, err := o.existingRolePolicy(client, roleName, rolePolicyName)
+	hasPolicy, err := existingRolePolicy(client, roleName, rolePolicyName)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 	return nil
 }
 
-func (o *CreateIAMOptions) existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
+func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
 	result, err := client.GetRole(&iam.GetRoleInput{RoleName: aws.String(roleName)})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
@@ -113,7 +113,7 @@ func (o *CreateIAMOptions) existingRole(client iamiface.IAMAPI, roleName string)
 	return result.Role, nil
 }
 
-func (o *CreateIAMOptions) existingInstanceProfile(client iamiface.IAMAPI, profileName string) (*iam.InstanceProfile, error) {
+func existingInstanceProfile(client iamiface.IAMAPI, profileName string) (*iam.InstanceProfile, error) {
 	result, err := client.GetInstanceProfile(&iam.GetInstanceProfileInput{
 		InstanceProfileName: aws.String(profileName),
 	})
@@ -128,7 +128,7 @@ func (o *CreateIAMOptions) existingInstanceProfile(client iamiface.IAMAPI, profi
 	return result.InstanceProfile, nil
 }
 
-func (o *CreateIAMOptions) existingRolePolicy(client iamiface.IAMAPI, roleName, policyName string) (bool, error) {
+func existingRolePolicy(client iamiface.IAMAPI, roleName, policyName string) (bool, error) {
 	result, err := client.GetRolePolicy(&iam.GetRolePolicyInput{
 		RoleName:   aws.String(roleName),
 		PolicyName: aws.String(policyName),
