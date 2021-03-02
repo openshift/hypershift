@@ -21,22 +21,20 @@ import (
 	"fmt"
 	"os"
 
+	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/externalinfracluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
-
-	hyperapi "github.com/openshift/hypershift/api"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/externalinfracluster"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
@@ -150,6 +148,13 @@ func NewStartCommand() *cobra.Command {
 			Client: mgr.GetClient(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "nodePool")
+			os.Exit(1)
+		}
+
+		if err := (&nodepool.UpgraderReconciler{
+			Client: mgr.GetClient(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "nodePoolUpgrader")
 			os.Exit(1)
 		}
 

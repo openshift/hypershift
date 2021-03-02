@@ -32,6 +32,14 @@ spec:
       jsonPath: .status.conditions[?(@.type=="AutoscalingEnabled")].status
       name: Autoscaling
       type: string
+    - description: Current version
+      jsonPath: .status.version
+      name: Version
+      type: string
+    - description: Upgrade in progress
+      jsonPath: .status.conditions[?(@.type=="Upgrading")].status
+      name: Upgrading
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:

@@ -6,6 +6,7 @@ import (
 
 const (
 	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
+	NodePoolUpgradingConditionType          = "Upgrading"
 	NodePoolAsExpectedConditionReason       = "AsExpected"
 	NodePoolValidationFailedConditionReason = "ValidationFailed"
 )
@@ -24,6 +25,8 @@ func init() {
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
 // +kubebuilder:printcolumn:name="NodeCount",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
 // +kubebuilder:printcolumn:name="Autoscaling",type="string",JSONPath=".status.conditions[?(@.type==\"AutoscalingEnabled\")].status",description="Autoscaling Enabled"
+// +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Current version"
+// +kubebuilder:printcolumn:name="Upgrading",type="string",JSONPath=".status.conditions[?(@.type==\"Upgrading\")].status",description="Upgrade in progress"
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

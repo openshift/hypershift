@@ -7,10 +7,14 @@ import (
 	"strconv"
 	"time"
 
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
+	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,20 +34,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
-	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
 )
 
 const (
-	finalizer               = "hypershift.openshift.io/finalizer"
-	autoscalerMaxAnnotation = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
-	autoscalerMinAnnotation = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
-	nodePoolAnnotation      = "hypershift.openshift.io/nodePool"
+	finalizer                   = "hypershift.openshift.io/finalizer"
+	autoscalerMaxAnnotation     = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
+	autoscalerMinAnnotation     = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
+	nodePoolAnnotation          = "hypershift.openshift.io/nodePool"
+	nodePoolUpgradingAnnotation = "hypershift.openshift.io/nodePoolUpgrading"
 )
 
 type NodePoolReconciler struct {
@@ -59,7 +57,6 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Build(r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
@@ -175,7 +172,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Generate scalable resource for nodePool
 	targetNamespace := hcluster.GetName()
-	scalableResource, AWSMachineTemplate, err := generateScalableResources(r, ctx,
+	machineDeployment, AWSMachineTemplate, err := generateScalableResources(r, ctx,
 		infra.Status.InfrastructureName,
 		infra.Status.PlatformStatus.AWS.Region,
 		nodePool,
@@ -190,8 +187,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if isAutoscalingEnabled {
 		currentMachineDeployment := &capiv1.MachineDeployment{}
 		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{
-			Name:      scalableResource.GetName(),
-			Namespace: scalableResource.GetNamespace()},
+			Name:      machineDeployment.GetName(),
+			Namespace: machineDeployment.GetNamespace()},
 			currentMachineDeployment); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return reconcile.Result{}, err
@@ -206,17 +203,63 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, AWSMachineTemplate, func() error { return nil }); err != nil {
 		return ctrl.Result{}, err
 	}
-	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, scalableResource, func() error {
+	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, machineDeployment, func() error {
+		// This should never happen by design.
+		if nodePool.Spec.Version == nodePool.Status.Version &&
+			nodePool.Spec.Version != StringPtrDeref(machineDeployment.Spec.Template.Spec.Version) {
+
+			return fmt.Errorf("unexpected error. NodePool current version does not match machineDeployment version")
+		}
+		// Propagate version to the machineDeployment
+		if nodePool.Spec.Version == "" {
+			nodePool.Spec.Version = hcluster.Status.Version.History[0].Version
+		}
+		if nodePool.Spec.Version != StringPtrDeref(machineDeployment.Spec.Template.Spec.Version) {
+			log.Info("Starting upgrade", "nodePool", nodePool.GetName(), "targetVersion", nodePool.Spec.Version)
+			// TODO (alberto):
+			// Point to a new InfrastructureRef with the new version AMI. https://github.com/openshift/enhancements/pull/201
+			// Point to the new userdata secret i.e user-data-$version
+			// machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = k8sutilspointer.StringPtr("trigger-upgrade")
+			machineDeployment.Spec.Template.Spec.Version = &nodePool.Spec.Version
+			nodePool.Annotations[nodePoolUpgradingAnnotation] = "true"
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:    hyperv1.NodePoolUpgradingConditionType,
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.NodePoolAsExpectedConditionReason,
+				Message: fmt.Sprintf("Upgrade in progress. Target version: %v", nodePool.Spec.Version),
+			})
+			return nil
+		}
+		if isUpgrading(nodePool) {
+			if !MachineDeploymentComplete(machineDeployment) {
+				log.Info("Upgrading",
+					"nodePool", nodePool.GetName(), "targetVersion", nodePool.Spec.Version)
+			}
+			if MachineDeploymentComplete(machineDeployment) {
+				delete(nodePool.Annotations, nodePoolUpgradingAnnotation)
+				nodePool.Status.Version = nodePool.Spec.Version
+				meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+					Type:    hyperv1.NodePoolUpgradingConditionType,
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.NodePoolAsExpectedConditionReason,
+					Message: "",
+				})
+				log.Info("Upgrade complete",
+					"nodePool", nodePool.GetName(), "targetVersion", nodePool.Spec.Version)
+			}
+		}
+
+		// If autoscaling is not enabled reconcile replicas
 		if !isAutoscalingEnabled {
-			scalableResource.Spec.Replicas = &wantedReplicas
-			scalableResource.Annotations[autoscalerMaxAnnotation] = "0"
-			scalableResource.Annotations[autoscalerMinAnnotation] = "0"
+			machineDeployment.Spec.Replicas = &wantedReplicas
+			machineDeployment.Annotations[autoscalerMaxAnnotation] = "0"
+			machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
 
 		}
 		// If autoscaling is enabled we don't modify the scalable resource replicas
 		if isAutoscalingEnabled {
-			scalableResource.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
-			scalableResource.Annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
+			machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
+			machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
 		}
 		return nil
 	}); err != nil {
@@ -224,7 +267,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Update Status.nodeCount and conditions
-	nodePool.Status.NodeCount = int(scalableResource.Status.AvailableReplicas)
+	nodePool.Status.NodeCount = int(machineDeployment.Status.AvailableReplicas)
 	if !isAutoscalingEnabled {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:   hyperv1.NodePoolAutoscalingEnabledConditionType,
@@ -388,6 +431,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 					resourcesName: resourcesName,
 				},
 			},
+			Replicas: nodePool.Spec.NodeCount,
 			Template: capiv1.MachineTemplateSpec{
 				ObjectMeta: capiv1.ObjectMeta{
 					Labels: map[string]string{
@@ -514,6 +558,13 @@ func Int32PtrDerefOr(ptr *int32, def int32) int32 {
 		return *ptr
 	}
 	return def
+}
+
+func StringPtrDeref(ptr *string) string {
+	if ptr != nil {
+		return *ptr
+	}
+	return ""
 }
 
 func enqueueParentNodePool(obj ctrlclient.Object) []reconcile.Request {
