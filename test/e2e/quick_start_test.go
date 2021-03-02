@@ -57,7 +57,7 @@ type QuickStartInput struct {
 }
 
 // GetContext builds a QuickStartInput from the options.
-func (o QuickStartOptions) GetContext() (*QuickStartInput, error) {
+func (o QuickStartOptions) GetInput() (*QuickStartInput, error) {
 	input := &QuickStartInput{}
 
 	var err error
@@ -110,13 +110,15 @@ func (o QuickStartOptions) GetContext() (*QuickStartInput, error) {
 // This test is meant to provide a first, fast signal to detect regression; it
 // is recommended to use it as a PR blocker test.
 func TestQuickStart(t *testing.T) {
-	input, err := quickStartOptions.GetContext()
+	ctx, cancel := context.WithCancel(GlobalTestContext)
+	defer cancel()
+
+	input, err := quickStartOptions.GetInput()
 	if err != nil {
 		t.Fatalf("failed to create test context: %s", err)
 	}
 
 	t.Logf("Testing OCP release image %s", input.ReleaseImage)
-	ctx := context.TODO()
 
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -134,17 +136,18 @@ func TestQuickStart(t *testing.T) {
 
 	// Clean up the namespace after the test
 	defer func() {
-		err := input.Client.Delete(ctx, namespace, &crclient.DeleteOptions{})
+		cleanupCtx := context.Background()
+		err := input.Client.Delete(cleanupCtx, namespace, &crclient.DeleteOptions{})
 		if err != nil {
 			t.Fatalf("failed to delete namespace %q: %s", namespace.Name, err)
 		}
 		t.Logf("Waiting for the test namespace %q to be deleted", namespace.Name)
-		err = wait.Poll(1*time.Second, 10*time.Minute, func() (done bool, err error) {
+		err = wait.PollInfinite(1*time.Second, func() (done bool, err error) {
 			latestNamespace := &corev1.Namespace{}
 			key := crclient.ObjectKey{
 				Name: namespace.Name,
 			}
-			if err := input.Client.Get(ctx, key, latestNamespace); err != nil {
+			if err := input.Client.Get(cleanupCtx, key, latestNamespace); err != nil {
 				if errors.IsNotFound(err) {
 					return true, nil
 				}
@@ -196,12 +199,13 @@ func TestQuickStart(t *testing.T) {
 	t.Logf("Ensuring the guest cluster exposes a valid kubeconfig")
 
 	t.Logf("Waiting for guest kubeconfig to become available")
+
 	var guestKubeConfigSecret corev1.Secret
-	err = wait.Poll(1*time.Second, 5*time.Minute, func() (done bool, err error) {
+	waitForKubeConfigCtx, _ := context.WithTimeout(ctx, 5*time.Minute)
+	err = wait.PollUntil(1*time.Second, func() (done bool, err error) {
 		var currentCluster hyperv1.HostedCluster
-		err = input.Client.Get(ctx, crclient.ObjectKeyFromObject(example.Cluster), &currentCluster)
+		err = input.Client.Get(waitForKubeConfigCtx, crclient.ObjectKeyFromObject(example.Cluster), &currentCluster)
 		if err != nil {
-			t.Logf("error getting cluster: %s", err)
 			return false, nil
 		}
 		if currentCluster.Status.KubeConfig == nil {
@@ -211,12 +215,11 @@ func TestQuickStart(t *testing.T) {
 			Namespace: currentCluster.Namespace,
 			Name:      currentCluster.Status.KubeConfig.Name,
 		}
-		if err := input.Client.Get(ctx, key, &guestKubeConfigSecret); err != nil {
-			t.Logf("failed to get guest kubeconfig secret %s: %s", key, err)
+		if err := input.Client.Get(waitForKubeConfigCtx, key, &guestKubeConfigSecret); err != nil {
 			return false, nil
 		}
 		return true, nil
-	})
+	}, waitForKubeConfigCtx.Done())
 	if err != nil {
 		t.Fatalf("guest kubeconfig didn't become available")
 	}
@@ -234,25 +237,25 @@ func TestQuickStart(t *testing.T) {
 
 	t.Logf("Establishing a connection to the guest apiserver")
 	var guestClient crclient.Client
-	err = wait.Poll(5*time.Second, 5*time.Minute, func() (done bool, err error) {
+	waitForGuestClientCtx, _ := context.WithTimeout(ctx, 5*time.Minute)
+	err = wait.PollUntil(5*time.Second, func() (done bool, err error) {
 		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: hyperapi.Scheme})
 		if err != nil {
-			t.Logf("failed to create kube client: %s", err)
 			return false, nil
 		}
 		guestClient = kubeClient
 		return true, nil
-	})
+	}, waitForGuestClientCtx.Done())
 	if err != nil {
 		t.Fatalf("failed to establish a connection to the guest apiserver: %s", err)
 	}
 
 	t.Logf("Ensuring guest nodes become ready")
 	nodes := &corev1.NodeList{}
-	err = wait.Poll(5*time.Second, 10*time.Minute, func() (done bool, err error) {
-		err = guestClient.List(ctx, nodes)
+	waitForNodesCtx, _ := context.WithTimeout(ctx, 10*time.Minute)
+	err = wait.PollUntil(5*time.Second, func() (done bool, err error) {
+		err = guestClient.List(waitForNodesCtx, nodes)
 		if err != nil {
-			t.Logf("failed to list nodes: %s", err)
 			return false, nil
 		}
 		if len(nodes.Items) == 0 {
@@ -271,7 +274,7 @@ func TestQuickStart(t *testing.T) {
 		}
 		t.Logf("found %d ready nodes", len(nodes.Items))
 		return true, nil
-	})
+	}, waitForNodesCtx.Done())
 	if err != nil {
 		t.Fatalf("failed to ensure guest nodes became ready: %s", err)
 	}
