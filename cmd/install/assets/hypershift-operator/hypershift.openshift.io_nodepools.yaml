@@ -55,6 +55,23 @@ spec:
               nodeCount:
                 format: int32
                 type: integer
+              nodePoolManagement:
+                default:
+                  maxSurge: 1
+                  maxUnavailable: 0
+                properties:
+                  maxSurge:
+                    default: 1
+                    minimum: 0
+                    type: integer
+                  maxUnavailable:
+                    default: 0
+                    minimum: 0
+                    type: integer
+                required:
+                - maxSurge
+                - maxUnavailable
+                type: object
               platform:
                 description: NodePoolPlatform is the platform-specific configuration for a node pool. Only one of the platforms should be set.
                 properties:
@@ -98,6 +115,9 @@ spec:
                     - instanceType
                     type: object
                 type: object
+              version:
+                description: Version is the semantic version of the release applied by the hosted control plane operator. For a nodePool a given version dictates the ignition config and an image artifact e.g an AMI in AWS.
+                type: string
             required:
             - clusterName
             - platform
@@ -151,6 +171,9 @@ spec:
               nodeCount:
                 description: NodeCount is the most recently observed number of replicas.
                 type: integer
+              version:
+                description: Version is the semantic version of the release applied by the hosted control plane operator. For a nodePool a given version represents the ignition config and an image artifact e.g an AMI in AWS.
+                type: string
             required:
             - conditions
             type: object
