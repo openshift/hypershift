@@ -2,8 +2,7 @@
 
 ## Development How-to Guides
 
-
-### Run the HyperShift Operator in a local process
+### How to run the HyperShift Operator in a local process
 
 1. Ensure the `KUBECONFIG` environment variable points to a management cluster
    with no HyperShift installed yet.
@@ -22,7 +21,7 @@
 
         $ bin/hypershift-operator run
 
-### Install HyperShift with a custom image
+### How to install HyperShift with a custom image
 
 1. Build and push a custom image build to your own repository.
 
@@ -32,23 +31,13 @@
 
         $ bin/hypershift install --hypershift-image quay.io/my/hypershift:latest
 
-### Run the e2e tests with a compiled binary
+### How to run the e2e tests
 
 1. Install HyperShift.
 2. Run the tests.
 
         $ make e2e
-        $ bin/test-e2e -v -args \
-          --e2e.quick-start.aws-credentials-file /my/aws-credentials \
-          --e2e.quick-start.pull-secret-file /my/pull-secret \
-          --e2e.quick-start.ssh-key-file /my/public-ssh-key
-
-### Run the e2e tests with the local source tree
-
-1. Install HyperShift.
-2. Run the tests.
-
-        $ go test -tags e2e -v ./test/e2e -args \
+        $ bin/test-e2e -test.v -test.timeout 0 \
           --e2e.quick-start.aws-credentials-file /my/aws-credentials \
           --e2e.quick-start.pull-secret-file /my/pull-secret \
           --e2e.quick-start.ssh-key-file /my/public-ssh-key
