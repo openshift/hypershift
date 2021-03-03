@@ -19,7 +19,20 @@ spec:
     singular: hostedcluster
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - description: Version
+      jsonPath: .status.version.history[?(@.state=="Completed")].version
+      name: Version
+      type: string
+    - description: Ready
+      jsonPath: .status.ready
+      name: Ready
+      type: string
+    - description: KubeConfig Secret
+      jsonPath: .status.kubeconfig.name
+      name: KubeConfig
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: HostedCluster is the Schema for the hostedclusters API

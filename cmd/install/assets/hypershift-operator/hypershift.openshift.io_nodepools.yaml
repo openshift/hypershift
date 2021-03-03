@@ -20,10 +20,18 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - description: Cluster
+      jsonPath: .spec.clusterName
+      name: Cluster
+      type: string
     - description: Available Nodes
       jsonPath: .status.nodeCount
       name: NodeCount
       type: integer
+    - description: Autoscaling Enabled
+      jsonPath: .status.conditions[?(@.type=="AutoscalingEnabled")].status
+      name: Autoscaling
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:

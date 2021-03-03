@@ -107,6 +107,9 @@ type ClusterVersionStatus struct {
 // +kubebuilder:resource:path=hostedclusters,shortName=hc;hcs,scope=Namespaced
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version.history[?(@.state==\"Completed\")].version",description="Version"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Ready"
+// +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
 // HostedCluster is the Schema for the hostedclusters API
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
