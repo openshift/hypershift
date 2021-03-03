@@ -805,7 +805,6 @@ func createIngressController(c client.Client, hcp *hyperv1.HostedControlPlane, n
 			},
 		},
 	}
-	ic.OwnerReferences = ensureHCPOwnerRef(hcp, ic.OwnerReferences)
 	if err := c.Create(context.TODO(), ic); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create ingress controller for %s: %w", name, err)
 	}
