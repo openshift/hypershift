@@ -6,12 +6,19 @@ metadata:
 spec:
   cloudConfig:
     name: ""
+{{- if eq .PlatformType "AWS" }}
+  platformSpec:
+    aws: {}
+{{- end }}
 status:
   apiServerInternalURI: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
   apiServerURL: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
   etcdDiscoveryDomain: {{ .BaseDomain }}
-  infrastructureName: kubernetes
-  platform: {{ if .PlatformType }}{{ .PlatformType }}{{ else }}None {{ end }}
-  platformStatus: {{ if eq .PlatformType "IBMCloud" }}
-    type: {{ .PlatformType }} {{ else }}
-    type: None {{ end }}
+  infrastructureName: {{ .InfraID }}
+  platform: {{ .PlatformType }}
+  platformStatus:
+    type: {{ .PlatformType }}
+{{- if eq .PlatformType "AWS" }}
+    aws:
+      region: {{ .AWSRegion }}
+{{- end }}

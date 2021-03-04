@@ -1,0 +1,13 @@
+apiVersion: v1
+controlPlane:
+  replicas: 1
+networking:
+  machineNetwork:
+  - cidr: {{ .MachineCIDR }}
+platform:
+{{- if eq .CloudProvider "aws" }}
+  aws:
+    region: {{ .AWSRegion }}
+{{- else }}
+  none: {}
+{{- end }}

@@ -63,6 +63,13 @@ spec:
       containers:
       - name: kube-controller-manager
         image: {{ imageFor "hyperkube" }}
+        {{- if eq .CloudProvider "aws" }}
+        env:
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /etc/kubernetes/provider/credentials
+        - name: AWS_EC2_METADATA_DISABLED
+          value: "true"
+        {{- end }}
         command:
         - hyperkube
         - kube-controller-manager
@@ -73,6 +80,10 @@ spec:
         - "--authorization-kubeconfig=/etc/kubernetes/secret/kubeconfig"
         - "--allocate-node-cidrs=true"
         - "--cert-dir=/var/run/kubernetes"
+{{- if eq .CloudProvider "aws" }}
+        - "--cloud-config=/etc/kubernetes/config/aws.conf"
+{{- end }}
+        - "--cloud-provider={{ .CloudProvider }}"
         - "--cluster-cidr={{ .PodCIDR }}"
         - "--cluster-signing-cert-file=/etc/kubernetes/secret/cluster-signer.crt"
         - "--cluster-signing-key-file=/etc/kubernetes/secret/cluster-signer.key"
@@ -121,6 +132,10 @@ spec:
           name: certdir
         - mountPath: /var/log/kube-controller-manager
           name: logs
+{{- if .ProviderCredsSecretName }}
+        - name: provider-creds
+          mountPath: /etc/kubernetes/provider
+{{- end }}
         workingDir: /var/log/kube-controller-manager
       volumes:
       - secret:
@@ -136,3 +151,8 @@ spec:
         name: logs
       - emptyDir: {}
         name: certdir
+{{- if .ProviderCredsSecretName }}
+      - name: provider-creds
+        secret:
+          secretName: {{ .ProviderCredsSecretName }}
+{{- end }}

@@ -43,7 +43,7 @@ hypershift install --render | oc delete -f -
 
 ## How to create a hosted cluster
 
-The `hypershift` CLI tool comes with a command to help create an example hosted cluster. The cluster will come with a node pool consisting of two workers nodes.
+The `hypershift` CLI tool comes with commands to help create an example hosted cluster. The cluster will come with a node pool consisting of two workers nodes.
 
 **Prerequisites:**
 
@@ -55,14 +55,32 @@ The `hypershift` CLI tool comes with a command to help create an example hosted 
 - An SSH public key file for guest node access
 - An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster
 
+Run the `hypershift` command to create an IAM instance profile for your workers:
+```shell
+hypershift create iam aws --aws-creds /my/aws-credentials
+```
+NOTE: The default profile name is `hypershift-worker-profile`. To use a different name (for example, in a shared account), use the `--profile-name` flag. The worker instance profile only needs to be created once per account and you can reuse it as needed for your clusters.
+
+Run the `hypershift` command to create cloud infrastructure for your cluster:
+NOTE: Infrastructure for a cluster can be created once and reused. However it should only correspond to one cluster at a time.
+```shell
+hypershift create infra aws --aws-creds /my/aws-credentials --infra-id INFRA-ID --region us-east-2 --output-file /tmp/infra.json
+```
+For `INFRA-ID` use a short identifier for your cluster such as `mycluster-1234`. It should be unique in your AWS account.
+For region, the default region is `us-east-1`, specify a different region if desired.
+The output file will contain JSON with the details of your provisioned infrastructure.
+
 Run the `hypershift` command to generate and install the example cluster:
 
 ```shell
 hypershift create cluster \
   --pull-secret /my/pull-secret \
   --aws-creds /my/aws-credentials \
-  --ssh-key /my/ssh-public-key
+  --ssh-key /my/ssh-public-key \
+  --infra-json /tmp/infra.json
 ```
+NOTE: The file specified in the `--infra-json` flag should be the same file you created with the `create infra aws` command above.
+If you created an instance profile named something other than `hypershift-worker-profile`, you need to pass the profile name with the `--instance-profile` flag.
 
 Eventually the cluster's kubeconfig will become available and can be fetched and decoded locally:
 
@@ -77,6 +95,19 @@ To delete the cluster, run:
 
 ```shell
 oc delete --namespace clusters
+```
+
+NOTE: After deleting the cluster, you can use an existing `infra.json` to create a new cluster.
+
+To destroy your AWS infrastructure:
+```shell
+hypershift destroy infra aws --aws-creds /my/aws/credentials --infra-id INFRA-ID --region us-east-2
+```
+Specify the same INFRA-ID and region as your original `create infra` command.
+
+To destroy the IAM instance profile:
+```shell
+hypershift destroy iam aws --aws-creds /my/aws-credentials
 ```
 
 ## How to add node pools to the example cluster

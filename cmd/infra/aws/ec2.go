@@ -2,13 +2,20 @@ package aws
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
+)
+
+const (
+	InvalidNATGatewayError = "InvalidNatGatewayID.NotFound"
 )
 
 func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
@@ -258,7 +265,7 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		// recognizing the EIP as belonging to the cluster
 		_, err = client.CreateTags(&ec2.CreateTagsInput{
 			Resources: []*string{aws.String(allocationID)},
-			Tags:      ec2Tags(o.InfraID, fmt.Sprintf("%s-eip-%s", o.InfraID, availabilityZone)),
+			Tags:      append(ec2Tags(o.InfraID, fmt.Sprintf("%s-eip-%s", o.InfraID, availabilityZone)), o.additionalEC2Tags...),
 		})
 		if err != nil {
 			return "", fmt.Errorf("cannot tag NAT gateway EIP: %w", err)
@@ -277,21 +284,6 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		}
 		natGateway = gatewayResult.NatGateway
 	}
-	// Wait for NAT gateway to become available
-	err = wait.Poll(5*time.Second, 1*time.Minute, func() (bool, error) {
-		natgw, err := o.existingNATGateway(client, natGatewayName)
-		if err != nil {
-			return false, err
-		}
-		if natgw != nil {
-			return true, nil
-		}
-		return false, nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("NAT gateway failed to become available: %w", err)
-	}
-
 	natGatewayID := aws.StringValue(natGateway.NatGatewayId)
 	return natGatewayID, nil
 }
@@ -337,10 +329,25 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(client ec2iface.EC2API, vpc
 		}
 	}
 	if !o.hasNATGatewayRoute(routeTable, natGatewayID) {
-		_, err = client.CreateRoute(&ec2.CreateRouteInput{
-			RouteTableId:         routeTable.RouteTableId,
-			NatGatewayId:         aws.String(natGatewayID),
-			DestinationCidrBlock: aws.String("0.0.0.0/0"),
+		isRetriable := func(err error) bool {
+			if awsErr, ok := err.(awserr.Error); ok {
+				return awsErr.Code() == InvalidNATGatewayError
+			}
+			return false
+		}
+		backoff := wait.Backoff{
+			Steps:    20,
+			Duration: 3 * time.Second,
+			Factor:   5.0,
+			Jitter:   0.1,
+		}
+		err = retry.OnError(backoff, isRetriable, func() error {
+			_, err = client.CreateRoute(&ec2.CreateRouteInput{
+				RouteTableId:         routeTable.RouteTableId,
+				NatGatewayId:         aws.String(natGatewayID),
+				DestinationCidrBlock: aws.String("0.0.0.0/0"),
+			})
+			return err
 		})
 		if err != nil {
 			return "", fmt.Errorf("cannot create nat gateway route in private route table: %w", err)
@@ -485,9 +492,25 @@ func (o *CreateInfraOptions) ec2TagSpecifications(resourceType, name string) []*
 	return []*ec2.TagSpecification{
 		{
 			ResourceType: aws.String(resourceType),
-			Tags:         ec2Tags(o.InfraID, name),
+			Tags:         append(ec2Tags(o.InfraID, name), o.additionalEC2Tags...),
 		},
 	}
+}
+
+func (o *CreateInfraOptions) parseAdditionalTags() error {
+	var ec2Tags []*ec2.Tag
+	for _, tagStr := range o.AdditionalTags {
+		parts := strings.SplitN(tagStr, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
+		}
+		ec2Tags = append(ec2Tags, &ec2.Tag{
+			Key:   aws.String(parts[0]),
+			Value: aws.String(parts[1]),
+		})
+	}
+	o.additionalEC2Tags = ec2Tags
+	return nil
 }
 
 func (o *CreateInfraOptions) ec2Filters(name string) []*ec2.Filter {

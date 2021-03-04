@@ -10,14 +10,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -32,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/machineimage"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
@@ -48,8 +46,9 @@ const (
 
 type NodePoolReconciler struct {
 	ctrlclient.Client
-	recorder record.EventRecorder
-	Log      logr.Logger
+	recorder      record.EventRecorder
+	Log           logr.Logger
+	ImageProvider machineimage.Provider
 }
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -90,16 +89,16 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	var infra configv1.Infrastructure
-	if err := r.Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get cluster infra: %w", err)
-	}
 
 	targetNamespace := hcluster.GetName()
 	// Ignore deleted nodePools, this can happen when foregroundDeletion
 	// is enabled
 	if !nodePool.DeletionTimestamp.IsZero() {
-		machineSet, _, err := generateScalableResources(r, ctx, infra.Status.InfrastructureName, infra.Status.PlatformStatus.AWS.Region, nodePool, targetNamespace)
+		ami, err := r.ImageProvider.Image(hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
+		}
+		machineSet, _, err := generateScalableResources(r, ctx, hcluster.Spec.InfraID, hcluster.Spec.Platform.AWS.Region, ami, nodePool, targetNamespace)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 		}
@@ -131,7 +130,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	result, err := r.reconcile(ctx, hcluster, &infra, nodePool)
+	result, err := r.reconcile(ctx, hcluster, nodePool)
 	if err != nil {
 		r.Log.Error(err, "Failed to reconcile nodePool")
 		r.recorder.Eventf(nodePool, corev1.EventTypeWarning, "ReconcileError", "%v", err)
@@ -151,7 +150,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return result, nil
 }
 
-func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, infra *configv1.Infrastructure, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
+func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconcile nodePool")
 
@@ -175,9 +174,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Generate scalable resource for nodePool
 	targetNamespace := hcluster.GetName()
+	ami, err := r.ImageProvider.Image(hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
+	}
 	scalableResource, AWSMachineTemplate, err := generateScalableResources(r, ctx,
-		infra.Status.InfrastructureName,
-		infra.Status.PlatformStatus.AWS.Region,
+		hcluster.Spec.InfraID,
+		hcluster.Spec.Platform.AWS.Region,
+		ami,
 		nodePool,
 		targetNamespace)
 	if err != nil {
@@ -269,28 +273,7 @@ func GetHostedClusterByName(ctx context.Context, c client.Client, namespace, nam
 }
 
 func generateScalableResources(client ctrlclient.Client, ctx context.Context,
-	infraName, region string, nodePool *hyperv1.NodePool, targetNamespace string) (*capiv1.MachineDeployment, *capiaws.AWSMachineTemplate, error) {
-	// find AMI
-	machineSets := &unstructured.UnstructuredList{}
-	machineSets.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "machine.openshift.io",
-		Version: "v1beta1",
-		Kind:    "MachineSet",
-	})
-	if err := client.List(ctx, machineSets, ctrlclient.InNamespace("openshift-machine-api")); err != nil {
-		return nil, nil, fmt.Errorf("failed to list machinesets: %w", err)
-	}
-	if len(machineSets.Items) == 0 {
-		return nil, nil, fmt.Errorf("no machinesets found")
-	}
-	obj := machineSets.Items[0]
-	object := obj.Object
-
-	AMI, found, err := unstructured.NestedString(object, "spec", "template", "spec", "providerSpec", "value", "ami", "id")
-	if err != nil || !found {
-		return nil, nil, fmt.Errorf("error finding AMI. Found: %v. Error: %v", found, err)
-	}
-
+	infraName, region, ami string, nodePool *hyperv1.NodePool, targetNamespace string) (*capiv1.MachineDeployment, *capiaws.AWSMachineTemplate, error) {
 	subnet := &capiaws.AWSResourceReference{}
 	if nodePool.Spec.Platform.AWS.Subnet != nil {
 		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
@@ -302,20 +285,21 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 			}
 			subnet.Filters = append(subnet.Filters, filter)
 		}
-	} else {
-		// TODO (alberto): remove hardcoded "a" zone and come up with a solution
-		// for automation across az
-		// e.g have a "locations" field in the nodeGroup or expose the subnet in the nodeGroup
-		subnet = &capiaws.AWSResourceReference{
-			Filters: []capiaws.Filter{
-				{
-					Name: "tag:Name",
-					Values: []string{
-						fmt.Sprintf("%s-private-%sa", infraName, region),
-					},
-				},
-			},
+	}
+	securityGroups := []capiaws.AWSResourceReference{}
+	for _, sg := range nodePool.Spec.Platform.AWS.SecurityGroups {
+		filters := []capiaws.Filter{}
+		for _, f := range sg.Filters {
+			filters = append(filters, capiaws.Filter{
+				Name:   f.Name,
+				Values: f.Values,
+			})
 		}
+		securityGroups = append(securityGroups, capiaws.AWSResourceReference{
+			ARN:     sg.ARN,
+			ID:      sg.ID,
+			Filters: filters,
+		})
 	}
 
 	instanceProfile := fmt.Sprintf("%s-worker-profile", infraName)
@@ -344,9 +328,10 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 					IAMInstanceProfile: instanceProfile,
 					InstanceType:       instanceType,
 					AMI: capiaws.AWSResourceReference{
-						ID: k8sutilspointer.StringPtr(AMI),
+						ID: k8sutilspointer.StringPtr(ami),
 					},
-					Subnet: subnet,
+					AdditionalSecurityGroups: securityGroups,
+					Subnet:                   subnet,
 				},
 			},
 		},

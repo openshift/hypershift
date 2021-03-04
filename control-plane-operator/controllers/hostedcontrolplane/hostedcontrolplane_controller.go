@@ -526,10 +526,10 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if err != nil {
 		return nil, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
-
-	var clusterInfra configv1.Infrastructure
-	if err := r.Get(context.Background(), client.ObjectKey{Name: "cluster"}, &clusterInfra); err != nil {
-		return nil, fmt.Errorf("failed to get cluster infra: %w", err)
+	var cloudCreds corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.ProviderCreds.Name}, &cloudCreds)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider credentials secret %s: %w", hcp.Spec.ProviderCreds.Name, err)
 	}
 
 	params := render.NewClusterParams()
@@ -543,14 +543,28 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.ExternalOauthPort = externalOauthPort
 	params.ServiceCIDR = hcp.Spec.ServiceCIDR
 	params.PodCIDR = hcp.Spec.PodCIDR
+	params.MachineCIDR = hcp.Spec.MachineCIDR
 	params.ReleaseImage = hcp.Spec.ReleaseImage
 	params.IngressSubdomain = fmt.Sprintf("apps.%s", baseDomain)
 	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIAddress
 	params.OauthAPIClusterIP = infraStatus.OauthAPIServerAddress
 	params.BaseDomain = baseDomain
 	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
-	params.CloudProvider = string(clusterInfra.Status.PlatformStatus.Type)
-	params.PlatformType = string(clusterInfra.Status.PlatformStatus.Type)
+	params.CloudProvider = cloudProvider(hcp)
+	params.PlatformType = platformType(hcp)
+	params.InfraID = hcp.Spec.InfraID
+	if hcp.Spec.Platform.AWS != nil {
+		params.AWSRegion = hcp.Spec.Platform.AWS.Region
+		params.AWSVPCID = hcp.Spec.Platform.AWS.VPC
+		if hcp.Spec.Platform.AWS.NodePoolDefaults != nil {
+			params.AWSZone = hcp.Spec.Platform.AWS.NodePoolDefaults.Zone
+			if hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID != nil {
+				params.AWSSubnetID = *hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID
+			}
+		}
+	}
+	params.CloudCredentials = string(cloudCreds.Data["credentials"])
+	params.ProviderCredsSecretName = hcp.Spec.ProviderCreds.Name
 	params.InternalAPIPort = APIServerPort
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
@@ -558,7 +572,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.APIAvailabilityPolicy = render.SingleReplica
 	params.ControllerAvailabilityPolicy = render.SingleReplica
 	params.SSHKey = string(sshKeyData)
-	params.HypershiftOperatorControllers = []string{"route-sync", "auto-approver", "kubeadmin-password", "node"}
 
 	// Generate PKI data just once and store it in a secret. PKI generation isn't
 	// deterministic and shouldn't be performed with every reconcile, otherwise
@@ -625,27 +638,40 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		return nil, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
 
-	kubeAPIServerContext := render.NewKubeAPIServerManifestContext(&render.KubeAPIServerParams{
-		PodCIDR:               params.PodCIDR,
-		ServiceCIDR:           params.ServiceCIDR,
-		ExternalAPIAddress:    params.ExternalAPIAddress,
-		APIServerAuditEnabled: params.APIServerAuditEnabled,
-		CloudProvider:         params.CloudProvider,
-		EtcdClientName:        params.EtcdClientName,
-		DefaultFeatureGates:   params.DefaultFeatureGates,
-		ExtraFeatureGates:     params.ExtraFeatureGates,
-		IngressSubdomain:      params.IngressSubdomain,
-		InternalAPIPort:       params.InternalAPIPort,
-		NamedCerts:            params.NamedCerts,
-		PKI:                   pkiSecret.Data,
-		APIAvailabilityPolicy: render.KubeAPIServerParamsAvailabilityPolicy(params.APIAvailabilityPolicy),
-		ClusterID:             params.ClusterID,
-		Images:                releaseImage.ComponentImages(),
-		ApiserverLivenessPath: params.ApiserverLivenessPath,
-		APINodePort:           params.APINodePort,
-		ExternalOauthPort:     params.ExternalOauthPort,
-		ExternalOauthDNSName:  params.ExternalOauthDNSName,
-	})
+	kubeAPIServerParams := &render.KubeAPIServerParams{
+		PodCIDR:                 params.PodCIDR,
+		ServiceCIDR:             params.ServiceCIDR,
+		ExternalAPIAddress:      params.ExternalAPIAddress,
+		APIServerAuditEnabled:   params.APIServerAuditEnabled,
+		CloudProvider:           params.CloudProvider,
+		EtcdClientName:          params.EtcdClientName,
+		DefaultFeatureGates:     params.DefaultFeatureGates,
+		ExtraFeatureGates:       params.ExtraFeatureGates,
+		IngressSubdomain:        params.IngressSubdomain,
+		InternalAPIPort:         params.InternalAPIPort,
+		NamedCerts:              params.NamedCerts,
+		PKI:                     pkiSecret.Data,
+		APIAvailabilityPolicy:   render.KubeAPIServerParamsAvailabilityPolicy(params.APIAvailabilityPolicy),
+		ClusterID:               params.ClusterID,
+		Images:                  releaseImage.ComponentImages(),
+		ApiserverLivenessPath:   params.ApiserverLivenessPath,
+		APINodePort:             params.APINodePort,
+		ExternalOauthPort:       params.ExternalOauthPort,
+		ExternalOauthDNSName:    params.ExternalOauthDNSName,
+		ProviderCredsSecretName: hcp.Spec.ProviderCreds.Name,
+		InfraID:                 hcp.Spec.InfraID,
+	}
+	if hcp.Spec.Platform.AWS != nil {
+		kubeAPIServerParams.AWSRegion = hcp.Spec.Platform.AWS.Region
+		kubeAPIServerParams.AWSVPCID = hcp.Spec.Platform.AWS.VPC
+		if hcp.Spec.Platform.AWS.NodePoolDefaults != nil {
+			kubeAPIServerParams.AWSZone = hcp.Spec.Platform.AWS.NodePoolDefaults.Zone
+			if hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID != nil {
+				kubeAPIServerParams.AWSSubnetID = *hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID
+			}
+		}
+	}
+	kubeAPIServerContext := render.NewKubeAPIServerManifestContext(kubeAPIServerParams)
 	kubeAPIServerManifests, err := kubeAPIServerContext.Render()
 	if err != nil {
 		return nil, fmt.Errorf("failed to render kube apiserver manifests: %w", err)
@@ -1096,4 +1122,22 @@ func generateImageRegistrySecret() string {
 	num := make([]byte, 64)
 	rand.Read(num)
 	return hex.EncodeToString(num)
+}
+
+func platformType(hcp *hyperv1.HostedControlPlane) string {
+	switch {
+	case hcp.Spec.Platform.AWS != nil:
+		return "AWS"
+	default:
+		return "None"
+	}
+}
+
+func cloudProvider(hcp *hyperv1.HostedControlPlane) string {
+	switch {
+	case hcp.Spec.Platform.AWS != nil:
+		return "aws"
+	default:
+		return ""
+	}
 }

@@ -1,6 +1,4 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -271,12 +269,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	r.Log.Info("Created ssh key secret in the target namespace", "namespace", targetNamespace)
 
-	var infra configv1.Infrastructure
-	if err := r.Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
-		r.Log.Error(err, "failed to get cluster infra")
-		return ctrl.Result{}, fmt.Errorf("failed to get cluster infra: %w", err)
-	}
-
 	controlPlaneOperatorServiceAccount := controlplaneoperator.OperatorServiceAccount{Namespace: targetNamespace}.Build()
 	controlPlaneOperatorClusterRole := controlplaneoperator.OperatorClusterRole{}.Build()
 	controlPlaneOperatorClusterRoleBinding := controlplaneoperator.OperatorClusterRoleBinding{
@@ -327,7 +319,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	eic := controlplaneoperator.ExternalInfraCluster{
 		Namespace:     targetNamespace,
 		HostedCluster: hcluster,
-		InfraConfig:   &infra,
 	}.Build()
 	createOnlyObjects := []ctrlclient.Object{
 		capiCluster,

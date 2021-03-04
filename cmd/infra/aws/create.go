@@ -18,6 +18,9 @@ type CreateInfraOptions struct {
 	InfraID            string
 	AWSCredentialsFile string
 	OutputFile         string
+	AdditionalTags     []string
+
+	additionalEC2Tags []*ec2.Tag
 }
 
 type CreateInfraOutput struct {
@@ -53,6 +56,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
+	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
@@ -91,12 +95,15 @@ func (o *CreateInfraOptions) Run() error {
 
 func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 	var err error
+	if err = o.parseAdditionalTags(); err != nil {
+		return nil, err
+	}
 	result := &CreateInfraOutput{
 		InfraID:     o.InfraID,
 		ComputeCIDR: DefaultCIDRBlock,
 		Region:      o.Region,
 	}
-	client, err := o.AWSClient()
+	client, err := AWSClient(o.AWSCredentialsFile, o.Region)
 	if err != nil {
 		return nil, err
 	}
@@ -146,11 +153,11 @@ func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 	return result, nil
 }
 
-func (o *CreateInfraOptions) AWSClient() (ec2iface.EC2API, error) {
+func AWSClient(creds, region string) (ec2iface.EC2API, error) {
 	awsConfig := &aws.Config{
-		Region: aws.String(o.Region),
+		Region: aws.String(region),
 	}
-	awsConfig.Credentials = credentials.NewSharedCredentials(o.AWSCredentialsFile, "default")
+	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
 	s, err := session.NewSession(awsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client session: %w", err)

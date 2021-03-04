@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	createcmd "github.com/openshift/hypershift/cmd/create"
+	destroycmd "github.com/openshift/hypershift/cmd/destroy"
 	installcmd "github.com/openshift/hypershift/cmd/install"
 )
 
@@ -36,6 +37,7 @@ func main() {
 	}
 	cmd.AddCommand(installcmd.NewCommand())
 	cmd.AddCommand(createcmd.NewCommand())
+	cmd.AddCommand(destroycmd.NewCommand())
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

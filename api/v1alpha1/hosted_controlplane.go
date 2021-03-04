@@ -29,8 +29,11 @@ type HostedControlPlaneSpec struct {
 	PullSecret    corev1.LocalObjectReference `json:"pullSecret"`
 	ServiceCIDR   string                      `json:"serviceCIDR"`
 	PodCIDR       string                      `json:"podCIDR"`
+	MachineCIDR   string                      `json:"machineCIDR"`
 	SSHKey        corev1.LocalObjectReference `json:"sshKey"`
 	ProviderCreds corev1.LocalObjectReference `json:"providerCreds"`
+	InfraID       string                      `json:"infraID"`
+	Platform      PlatformSpec                `json:"platform"`
 }
 
 type ConditionType string

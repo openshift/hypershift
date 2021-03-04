@@ -32,6 +32,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/externalinfracluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/machineimage/static"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -147,7 +148,8 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		if err := (&nodepool.NodePoolReconciler{
-			Client: mgr.GetClient(),
+			Client:        mgr.GetClient(),
+			ImageProvider: &static.StaticImageProvider{},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "nodePool")
 			os.Exit(1)

@@ -105,13 +105,11 @@ func (o DefaultNodePool) Build() *hyperv1.NodePool {
 		Spec: hyperv1.NodePoolSpec{
 			ClusterName: o.HostedCluster.GetName(),
 			NodeCount:   k8sutilspointer.Int32Ptr(int32(o.HostedCluster.Spec.InitialComputeReplicas)),
-			Platform: hyperv1.NodePoolPlatform{
-				AWS: &hyperv1.AWSNodePoolPlatform{
-					InstanceType: "m5.large",
-				},
-			},
 		},
 		Status: hyperv1.NodePoolStatus{},
+	}
+	if o.HostedCluster.Spec.Platform.AWS != nil {
+		nodePool.Spec.Platform.AWS = o.HostedCluster.Spec.Platform.AWS.NodePoolDefaults
 	}
 	return nodePool
 }

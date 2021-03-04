@@ -25,14 +25,13 @@ func NewCreateIAMCommand() *cobra.Command {
 
 	opts := CreateIAMOptions{
 		Region:      "us-east-1",
-		ProfileName: "worker-profile",
+		ProfileName: "hypershift-worker-profile",
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.ProfileName, "profile-name", opts.ProfileName, "Name of IAM instance profile to creeate")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 
-	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -51,18 +50,18 @@ func (o *CreateIAMOptions) Run() error {
 
 func (o *CreateIAMOptions) CreateIAM() error {
 	var err error
-	client, err := o.IAMClient()
+	client, err := IAMClient(o.AWSCredentialsFile, o.Region)
 	if err != nil {
 		return err
 	}
 	return o.CreateWorkerInstanceProfile(client, o.ProfileName)
 }
 
-func (o *CreateIAMOptions) IAMClient() (iamiface.IAMAPI, error) {
+func IAMClient(creds, region string) (iamiface.IAMAPI, error) {
 	awsConfig := &aws.Config{
-		Region: aws.String(o.Region),
+		Region: aws.String(region),
 	}
-	awsConfig.Credentials = credentials.NewSharedCredentials(o.AWSCredentialsFile, "default")
+	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
 	s, err := session.NewSession(awsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client session: %w", err)

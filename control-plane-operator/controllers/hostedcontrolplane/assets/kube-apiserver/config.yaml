@@ -49,6 +49,10 @@ apiServerArguments:
   - Node
   client-ca-file:
   - /etc/kubernetes/config/serving-ca.crt
+{{- if eq .CloudProvider "aws" }}
+  cloud-config:
+  - "/etc/kubernetes/config/aws.conf"
+{{- end }}
   cloud-provider:
   - "{{ .CloudProvider }}"
   enable-admission-plugins:

@@ -42,10 +42,61 @@ type HostedClusterSpec struct {
 
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 
+	// ProviderCreds is a reference to a secret containing cloud account info
 	ProviderCreds corev1.LocalObjectReference `json:"providerCreds"`
 
+	// Networking contains network-specific settings for this cluster
+	Networking ClusterNetworking `json:"networking"`
+
+	Platform PlatformSpec `json:"platform"`
+
+	// InfraID is used to identify the cluster in cloud platforms
+	InfraID string `json:"infraID,omitempty"`
+}
+
+type ClusterNetworking struct {
 	ServiceCIDR string `json:"serviceCIDR"`
 	PodCIDR     string `json:"podCIDR"`
+	MachineCIDR string `json:"machineCIDR"`
+}
+
+type PlatformSpec struct {
+	// AWS contains AWS-specific settings for the HostedCluster
+	// +optional
+	AWS *AWSPlatformSpec `json:"aws,omitempty"`
+}
+
+type AWSPlatformSpec struct {
+	// Region is the AWS region for the cluster
+	Region string `json:"region"`
+
+	// VPC specifies the VPC used for the cluster
+	VPC string `json:"vpc"`
+
+	// NodePoolDefaults specifies the default platform
+	// +optional
+	NodePoolDefaults *AWSNodePoolPlatform `json:"nodePoolDefaults,omitempty"`
+
+	// ServiceEndpoints list contains custom endpoints which will override default
+	// service endpoint of AWS Services.
+	// There must be only one ServiceEndpoint for a service.
+	// +optional
+	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
+}
+
+// AWSServiceEndpoint stores the configuration for services to
+// override existing defaults of AWS Services.
+type AWSServiceEndpoint struct {
+	// Name is the name of the AWS service.
+	// This must be provided and cannot be empty.
+	Name string `json:"name"`
+
+	// URL is fully qualified URI with scheme https, that overrides the default generated
+	// endpoint for a client.
+	// This must be provided and cannot be empty.
+	//
+	// +kubebuilder:validation:Pattern=`^https://`
+	URL string `json:"url"`
 }
 
 type Release struct {

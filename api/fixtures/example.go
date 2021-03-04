@@ -35,6 +35,20 @@ type ExampleOptions struct {
 	AWSCredentials   []byte
 	SSHKey           []byte
 	NodePoolReplicas int
+	InfraID          string
+	ComputeCIDR      string
+
+	AWS ExampleAWSOptions
+}
+
+type ExampleAWSOptions struct {
+	Region          string
+	Zone            string
+	VPCID           string
+	SubnetID        string
+	SecurityGroupID string
+	InstanceProfile string
+	InstanceType    string
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -104,11 +118,32 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				Image: o.ReleaseImage,
 			},
 			InitialComputeReplicas: o.NodePoolReplicas,
-			ServiceCIDR:            "172.31.0.0/16",
-			PodCIDR:                "10.132.0.0/14",
-			PullSecret:             corev1.LocalObjectReference{Name: pullSecret.Name},
-			ProviderCreds:          corev1.LocalObjectReference{Name: awsCredsSecret.Name},
-			SSHKey:                 corev1.LocalObjectReference{Name: sshKeySecret.Name},
+			Networking: hyperv1.ClusterNetworking{
+				ServiceCIDR: "172.31.0.0/16",
+				PodCIDR:     "10.132.0.0/14",
+				MachineCIDR: o.ComputeCIDR,
+			},
+			InfraID:       o.InfraID,
+			PullSecret:    corev1.LocalObjectReference{Name: pullSecret.Name},
+			ProviderCreds: corev1.LocalObjectReference{Name: awsCredsSecret.Name},
+			SSHKey:        corev1.LocalObjectReference{Name: sshKeySecret.Name},
+			Platform: hyperv1.PlatformSpec{
+				AWS: &hyperv1.AWSPlatformSpec{
+					Region: o.AWS.Region,
+					VPC:    o.AWS.VPCID,
+					NodePoolDefaults: &hyperv1.AWSNodePoolPlatform{
+						InstanceType:    o.AWS.InstanceType,
+						InstanceProfile: o.AWS.InstanceProfile,
+						Subnet: &hyperv1.AWSResourceReference{
+							ID: &o.AWS.SubnetID,
+						},
+						SecurityGroups: []hyperv1.AWSResourceReference{
+							{ID: &o.AWS.SecurityGroupID},
+						},
+						Zone: o.AWS.Zone,
+					},
+				},
+			},
 		},
 	}
 
