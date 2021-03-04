@@ -60,7 +60,7 @@ const (
 	hypershiftRouteLabel      = "hypershift.openshift.io/cluster"
 	oauthBrandingManifest     = "v4-0-config-system-branding.yaml"
 	DefaultAPIServerIPAddress = "172.20.0.1"
-	externalOauthPort         = 8443
+	externalOauthPort         = 443
 )
 
 var (
@@ -349,7 +349,7 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	r.Log.Info("Created Openshift Oauth API service")
 
 	r.Log.Info("Creating OAuth service")
-	oauthService, err := createOauthService(r, hcp, targetNamespace)
+	_, err = createOauthService(r, hcp, targetNamespace)
 	if err != nil {
 		return status, fmt.Errorf("error creating service for oauth: %w", err)
 	}
@@ -366,15 +366,22 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		return status, fmt.Errorf("failed to create ignition route: %w", err)
 	}
 
+	r.Log.Info("Creating oauth server route")
+	oauthRoute := createOauthServerRoute(targetNamespace)
+	oauthRoute.OwnerReferences = ensureHCPOwnerRef(hcp, oauthRoute.OwnerReferences)
+	if err := r.Create(ctx, oauthRoute); err != nil && !apierrors.IsAlreadyExists(err) {
+		return status, fmt.Errorf("failed to create oauth server route: %w", err)
+	}
+
 	apiAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(apiService))
 	if err != nil {
 		return status, fmt.Errorf("failed to get service: %w", err)
 	}
 	status.APIAddress = apiAddress
 
-	oauthAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(oauthService))
+	oauthAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(oauthRoute))
 	if err != nil {
-		return status, fmt.Errorf("failed to get service: %w", err)
+		return status, fmt.Errorf("failed get get route address: %w", err)
 	}
 	status.OAuthAddress = oauthAddress
 
@@ -749,11 +756,11 @@ func createOauthService(client client.Client, hcp *hyperv1.HostedControlPlane, n
 	svc.Namespace = namespace
 	svc.Name = oauthServiceName
 	svc.Spec.Selector = map[string]string{"app": "oauth-openshift"}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
 			Name:       "https",
-			Port:       8443,
+			Port:       443,
 			Protocol:   corev1.ProtocolTCP,
 			TargetPort: intstr.FromInt(6443),
 		},
@@ -850,6 +857,25 @@ func createIgnitionServerRoute(namespace string) *routev1.Route {
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
 				Name: "machine-config-server",
+			},
+		},
+	}
+}
+
+func createOauthServerRoute(namespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "oauth",
+		},
+		Spec: routev1.RouteSpec{
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: "oauth-openshift",
+			},
+			TLS: &routev1.TLSConfig{
+				Termination:                   routev1.TLSTerminationPassthrough,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
 			},
 		},
 	}
