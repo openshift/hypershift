@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -24,6 +25,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/version"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -35,6 +37,9 @@ type QuickStartOptions struct {
 	PullSecretFile     string
 	SSHKeyFile         string
 	ReleaseImage       string
+	InfraFile          string
+	InstanceProfile    string
+	InstanceType       string
 }
 
 var quickStartOptions QuickStartOptions
@@ -47,15 +52,21 @@ func init() {
 	flag.StringVar(&quickStartOptions.PullSecretFile, "e2e.quick-start.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&quickStartOptions.SSHKeyFile, "e2e.quick-start.ssh-key-file", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"), "path to SSH public key")
 	flag.StringVar(&quickStartOptions.ReleaseImage, "e2e.quick-start.release-image", "", "OCP release image to test")
+	flag.StringVar(&quickStartOptions.InfraFile, "e2e.quick-start.infra-json", "", "File containing infra description")
+	flag.StringVar(&quickStartOptions.InstanceProfile, "e2e.quick-start.instance-profile", "hypershift-worker-profile", "Name of instance profile to use")
+	flag.StringVar(&quickStartOptions.InstanceType, "e2e.quick-start.instance-type", "m4.large", "Instance type to use in tests")
 }
 
 // QuickStartInput are the validated options for running the test.
 type QuickStartInput struct {
-	Client         crclient.Client
-	ReleaseImage   string
-	AWSCredentials []byte
-	PullSecret     []byte
-	SSHKey         []byte
+	Client          crclient.Client
+	ReleaseImage    string
+	AWSCredentials  []byte
+	PullSecret      []byte
+	SSHKey          []byte
+	Infra           awsinfra.CreateInfraOutput
+	InstanceProfile string
+	InstanceType    string
 }
 
 // GetContext builds a QuickStartInput from the options.
@@ -87,6 +98,14 @@ func (o QuickStartOptions) GetInput() (*QuickStartInput, error) {
 		return nil, fmt.Errorf("SSH key is required")
 	}
 
+	infraBytes, err := ioutil.ReadFile(o.InfraFile)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read infra file %q: %w", o.InfraFile, err)
+	}
+	if err = json.Unmarshal(infraBytes, &input.Infra); err != nil {
+		return nil, fmt.Errorf("could parse infra file %q: %w", o.InfraFile, err)
+	}
+
 	if len(o.ReleaseImage) == 0 {
 		defaultVersion, err := version.LookupDefaultOCPVersion()
 		if err != nil {
@@ -102,6 +121,9 @@ func (o QuickStartOptions) GetInput() (*QuickStartInput, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kube client: %w", err)
 	}
+
+	input.InstanceProfile = o.InstanceProfile
+	input.InstanceType = o.InstanceType
 
 	return input, nil
 }
@@ -171,6 +193,17 @@ func TestQuickStart(t *testing.T) {
 		AWSCredentials:   input.AWSCredentials,
 		SSHKey:           input.SSHKey,
 		NodePoolReplicas: 2,
+		InfraID:          input.Infra.InfraID,
+		ComputeCIDR:      input.Infra.ComputeCIDR,
+		AWS: apifixtures.ExampleAWSOptions{
+			Region:          input.Infra.Region,
+			Zone:            input.Infra.Zone,
+			VPCID:           input.Infra.VPCID,
+			SubnetID:        input.Infra.PrivateSubnetID,
+			SecurityGroupID: input.Infra.SecurityGroupID,
+			InstanceProfile: input.InstanceProfile,
+			InstanceType:    input.InstanceType,
+		},
 	}.Resources()
 
 	err = input.Client.Create(ctx, example.PullSecret)
