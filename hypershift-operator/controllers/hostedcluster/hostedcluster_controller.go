@@ -1,4 +1,6 @@
 /*
+
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -15,18 +17,17 @@ limitations under the License.
 package hostedcluster
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,11 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/manifests/autoscaler"
@@ -54,18 +53,33 @@ const (
 	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
 )
 
+// NoopReconcile is just a default mutation function that does nothing.
+var NoopReconcile controllerutil.MutateFn = func() error { return nil }
+
+type realClock struct{}
+
+func (_ realClock) Now() time.Time { return time.Now() }
+
+type Clock interface {
+	Now() time.Time
+}
+
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
 
 	Log           logr.Logger
 	OperatorImage string
+	Clock
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters/status,verbs=get;update;patch
 
 func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Clock == nil {
+		r.Clock = realClock{}
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		Watches(&source.Kind{Type: &hyperv1.ExternalInfraCluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
@@ -74,14 +88,14 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
-	r.Log.Info("Reconciling")
+	r.Log.Info("reconciling")
 
+	// Look up the HostedCluster instance to reconcile
 	hcluster := &hyperv1.HostedCluster{}
 	isMissing := false
 	err := r.Get(ctx, req.NamespacedName, hcluster)
@@ -89,393 +103,640 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if apierrors.IsNotFound(err) {
 			isMissing = true
 		} else {
-			r.Log.Error(err, "failed to get cluster", "cluster", req.NamespacedName)
 			return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 		}
 	}
 
-	// Return early if deleted
+	// If deleted or missing, clean up and return early.
+	// TODO: This should be incorporated with status/reconcile
 	if isMissing || !hcluster.DeletionTimestamp.IsZero() {
+		// Keep trying to delete until we know it's safe to finalize.
 		completed, err := r.delete(ctx, req)
 		if err != nil {
-			r.Log.Error(err, "failed to delete cluster", "cluster", req.NamespacedName)
-			return ctrl.Result{}, err
+			return ctrl.Result{}, fmt.Errorf("failed to delete cluster: %w", err)
 		}
 		if !completed {
+			r.Log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
 			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
 		}
-
+		r.Log.Info("finished deleting hostedcluster", "name", req.NamespacedName)
+		// Now we can remove the finalizer.
 		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
 			controllerutil.RemoveFinalizer(hcluster, finalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
-				r.Log.Error(err, "failed to remove finalizer from cluster", "cluster", req.NamespacedName)
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
+			r.Log.Info("hostedcluster was finalized", "name", req.NamespacedName)
+			return ctrl.Result{}, nil
 		}
-		r.Log.Info("hostedcluster not found, skipping reconcile", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 
-	// Ensure the cluster has a finalizer for cleanup
+	// Part one: update status
+
+	// Set kubeconfig status
+	{
+		kubeConfigSecret := &corev1.Secret{}
+		err := r.Client.Get(ctx, manifests.KubeConfigSecretName(hcluster.Namespace, hcluster.Name), kubeConfigSecret)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeconfig secret: %w", err)
+			}
+		} else {
+			hcluster.Status.KubeConfig = &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
+		}
+	}
+
+	// Set version status
+	{
+		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Name)
+		hcp := &hyperv1.HostedControlPlane{}
+		err := r.Client.Get(ctx, controlplaneoperator.HostedControlPlaneName(controlPlaneNamespaceName.Name, hcluster.Name), hcp)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				hcp = nil
+			} else {
+				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+			}
+		}
+		hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
+	}
+
+	// Set the Available condition
+	{
+		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Name)
+		hcp := &hyperv1.HostedControlPlane{}
+		err := r.Client.Get(ctx, controlplaneoperator.HostedControlPlaneName(controlPlaneNamespaceName.Name, hcluster.Name), hcp)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				hcp = nil
+			} else {
+				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+			}
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
+	}
+
+	// Persist status updates
+	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+
+	// Part two: reconcile the state of the world
+
+	// Ensure the cluster has a finalizer for cleanup and update right away.
 	if !controllerutil.ContainsFinalizer(hcluster, finalizer) {
 		controllerutil.AddFinalizer(hcluster, finalizer)
 		if err := r.Update(ctx, hcluster); err != nil {
-			r.Log.Error(err, "failed to add finalizer from cluster", "cluster", req.NamespacedName)
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
 		}
 	}
 
-	if hcluster.Status.Version == nil {
-		hcluster.Status.Version = &hyperv1.ClusterVersionStatus{
+	// Reconcile the hosted cluster namespace
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace{HostedCluster: hcluster}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneNamespace, NoopReconcile)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
+	}
+
+	// Reconcile the shared provider credentials secret by resolving the reference
+	// from the HostedCluster and syncing the secret in the control plane namespace.
+	var hostedClusterProviderCredsSecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.ProviderCreds.Name}, &hostedClusterProviderCredsSecret)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.ProviderCreds.Name, err)
+	}
+	controlPlaneProviderCredsSecret := manifests.ProviderCredentials{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneProviderCredsSecret, func() error {
+		hostedClusterProviderCredsData, hasProviderCredsData := hostedClusterProviderCredsSecret.Data["credentials"]
+		if !hasProviderCredsData {
+			return fmt.Errorf("hostecsluter provider credentials secret %q must have a credentials key", hostedClusterProviderCredsSecret.Name)
+		}
+		controlPlaneProviderCredsSecret.Data["credentials"] = hostedClusterProviderCredsData
+		return nil
+	})
+
+	// Reconcile the HostedControlPlane pull secret by resolving the source secret
+	// reference from the HostedCluster and syncing the secret in the control plane namespace.
+	var hostedClusterPullSecret corev1.Secret
+	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &hostedClusterPullSecret); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
+	}
+	controlPlanePullSecret := manifests.PullSecret{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlanePullSecret, func() error {
+		hostedClusterPullSecretData, hasPullSecretData := hostedClusterPullSecret.Data[".dockerconfigjson"]
+		if !hasPullSecretData {
+			return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", hostedClusterPullSecret.Name)
+		}
+		controlPlanePullSecret.Data[".dockerconfigjson"] = hostedClusterPullSecretData
+		return nil
+	})
+
+	// Reconcile the HostedControlPlane SSH secret by resolving the source secret reference
+	// from the HostedCluster and syncing the secret in the control plane namespace.
+	var hostedClusterSSHKeySecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &hostedClusterSSHKeySecret)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
+	}
+	controlPlaneSSHKeySecret := manifests.SSHKey{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSSHKeySecret, func() error {
+		hostedClusterSSHKeyData, hasSSHKeyData := hostedClusterSSHKeySecret.Data["id_rsa.pub"]
+		if !hasSSHKeyData {
+			return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", hostedClusterSSHKeySecret.Name)
+		}
+		controlPlaneSSHKeySecret.Data["id_rsa.pub"] = hostedClusterSSHKeyData
+		return nil
+	})
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane ssh secret: %w", err)
+	}
+
+	// Reconcile the default node pool
+	// TODO: Is this really a good idea to have on the API? If you want an initial
+	// node pool, create it through whatever user-oriented tool is consuming the
+	// API.
+	if hcluster.Spec.InitialComputeReplicas > 0 {
+		nodePool := manifests.DefaultNodePool{
+			HostedCluster: hcluster,
+		}.Build()
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, nodePool, NoopReconcile)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile initial node pool: %w", err)
+		}
+	}
+
+	// Reconcile the CAPI Cluster resource
+	capiCluster := controlplaneoperator.CAPICluster{
+		Namespace:     controlPlaneNamespace,
+		HostedCluster: hcluster,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiCluster, NoopReconcile)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+	}
+
+	// Reconcile the CAPI ExternalInfraCluster
+	externalInfraCluster := controlplaneoperator.ExternalInfraCluster{
+		Namespace:     controlPlaneNamespace,
+		HostedCluster: hcluster,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, externalInfraCluster, NoopReconcile)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile externalinfracluster: %w", err)
+	}
+
+	// Reconcile the HostedControlPlane
+	hcp := controlplaneoperator.HostedControlPlane{
+		Namespace:           controlPlaneNamespace,
+		HostedCluster:       hcluster,
+		ProviderCredentials: controlPlaneProviderCredsSecret,
+		PullSecret:          controlPlanePullSecret,
+		SSHKey:              controlPlaneSSHKeySecret,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hcp, func() error {
+		return reconcileHostedControlPlane(hcp, hcluster)
+	})
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
+	}
+
+	// Reconcile the HostedControlPlane kubeconfig if one is reported
+	if hcp.Status.KubeConfig != nil {
+		controlPlaneKubeConfigSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hcp.Namespace,
+				Name:      hcp.Status.KubeConfig.Name,
+			},
+		}
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneKubeConfigSecret), controlPlaneKubeConfigSecret)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret), err)
+		}
+		hostedClusterKubeConfigSecret := manifests.KubeConfigSecret{HostedCluster: hcluster}.Build()
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedClusterKubeConfigSecret, func() error {
+			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data["value"]
+			if !ok {
+				return fmt.Errorf("controlplane kubeconfig secret %q must have a value key", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret))
+			}
+			hostedClusterKubeConfigSecret.Data["kubeconfig"] = controlPlaneKubeConfigData
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster kubeconfig secret: %w", err)
+		}
+	}
+
+	// Reconcile the CAPI manager components
+	err = r.reconcileCAPIManager(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
+	}
+
+	// Reconcile the CAPI AWS provider components
+	err = r.reconcileCAPIAWSProvider(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi aws provider: %w", err)
+	}
+
+	// Reconcile the autoscaler
+	err = r.reconcileAutoscaler(ctx, hcluster, hcp)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
+	}
+
+	// Reconcile the control plane operator
+	err = r.reconcileControlPlaneOperator(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
+	}
+
+	r.Log.Info("successfully reconciled")
+	return ctrl.Result{}, nil
+}
+
+// reconcileHostedControlPlane reconciles the given HostedControlPlane, which
+// will be mutated.
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
+	// Always initialize the HostedControlPlane with an image matching
+	// the HostedCluster.
+	if hcp.ObjectMeta.CreationTimestamp.IsZero() {
+		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
+	}
+
+	rolloutComplete := hcluster.Status.Version != nil &&
+		hcluster.Status.Version.History != nil &&
+		hcluster.Status.Version.History[0].State == configv1.CompletedUpdate
+
+	// Defer rolling out new control planes until existing rollouts have reached
+	// a terminal state.
+	if rolloutComplete {
+		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
+	}
+
+	return nil
+}
+
+// reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
+func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	controlPlaneNamespace := &corev1.Namespace{}
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get control plane namespace: %w", err)
+	}
+
+	// Reconcile CAPI manager cluster role
+	capiManagerClusterRole := clusterapi.ManagerClusterRole{}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerClusterRole, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi manager cluster role: %w", err)
+	}
+
+	// Reconcile CAPI manager service account
+	capiManagerServiceAccount := clusterapi.ManagerServiceAccount{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerServiceAccount, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi manager service account: %w", err)
+	}
+
+	// Reconcile CAPI manager cluster role binding
+	capiManagerClusterRoleBinding := clusterapi.ManagerClusterRoleBinding{
+		ClusterRole:    capiManagerClusterRole,
+		ServiceAccount: capiManagerServiceAccount,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerClusterRoleBinding, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi manager cluster role binding: %w", err)
+	}
+
+	// Reconcile CAPI manager role
+	capiManagerRole := clusterapi.ManagerRole{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerRole, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi manager role: %w", err)
+	}
+
+	// Reconcile CAPI manager role binding
+	capiManagerRoleBinding := clusterapi.ManagerRoleBinding{
+		Role:           capiManagerRole,
+		ServiceAccount: capiManagerServiceAccount,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerRoleBinding, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi manager role: %w", err)
+	}
+
+	// Reconcile CAPI manager deployment
+	capiManagerDeployment := clusterapi.ManagerDeployment{
+		Namespace:      controlPlaneNamespace,
+		Image:          "quay.io/hypershift/cluster-api:hypershift",
+		ServiceAccount: capiManagerServiceAccount,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerDeployment, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
+	}
+
+	return nil
+}
+
+// reconcileCAPIAWSProvider orchestrates reconciliation of the CAPI AWS provider
+// components.
+func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	controlPlaneNamespace := &corev1.Namespace{}
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get control plane namespace: %w", err)
+	}
+
+	providerCredentialsSecret := &corev1.Secret{}
+	err = r.Client.Get(ctx, manifests.ProviderCredentialsName(controlPlaneNamespace.Name), providerCredentialsSecret)
+	if err != nil {
+		return fmt.Errorf("failed to get provider credentials secret: %w", err)
+	}
+
+	// Reconcile CAPI AWS provider role
+	capiAwsProviderRole := clusterapi.AWSProviderRole{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderRole, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi aws provider role: %w", err)
+	}
+
+	// Reconcile CAPI AWS provider service account
+	capiAwsProviderServiceAccount := clusterapi.AWSProviderServiceAccount{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderServiceAccount, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi aws provider service account: %w", err)
+	}
+
+	// Reconcile CAPI AWS provider role binding
+	capiAwsProviderRoleBinding := clusterapi.AWSProviderRoleBinding{
+		Role:           capiAwsProviderRole,
+		ServiceAccount: capiAwsProviderServiceAccount,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderRoleBinding, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi aws provider role binding: %w", err)
+	}
+
+	// Reconcile CAPI AWS provider deployment
+	capiAwsProviderDeployment := clusterapi.AWSProviderDeployment{
+		Namespace:           controlPlaneNamespace,
+		Image:               "quay.io/hypershift/cluster-api-provider-aws:master",
+		ServiceAccount:      capiAwsProviderServiceAccount,
+		ProviderCredentials: providerCredentialsSecret,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderDeployment, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi aws provider deployment: %w", err)
+	}
+
+	return nil
+}
+
+// reconcileControlPlaneOperator orchestrates reconciliation of the control plane
+// operator components.
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	controlPlaneNamespace := &corev1.Namespace{}
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get control plane namespace: %w", err)
+	}
+
+	// Reconcile operator service account
+	controlPlaneOperatorServiceAccount := controlplaneoperator.OperatorServiceAccount{
+		Namespace: controlPlaneNamespace,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorServiceAccount, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
+	}
+
+	// Reconcile operator cluster role
+	controlPlaneOperatorClusterRole := controlplaneoperator.OperatorClusterRole{}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRole, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator cluster role: %w", err)
+	}
+
+	// Reconcile operator cluster role binding
+	controlPlaneOperatorClusterRoleBinding := controlplaneoperator.OperatorClusterRoleBinding{
+		ClusterRole:    controlPlaneOperatorClusterRole,
+		ServiceAccount: controlPlaneOperatorServiceAccount,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRoleBinding, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator clusterrolebinding: %w", err)
+	}
+
+	// Reconcile operator role
+	controlPlaneOperatorRole := controlplaneoperator.OperatorRole{
+		Namespace: controlPlaneNamespace,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorRole, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator clusterrole: %w", err)
+	}
+
+	// Reconcile operator role binding
+	controlPlaneOperatorRoleBinding := controlplaneoperator.OperatorRoleBinding{
+		Role:           controlPlaneOperatorRole,
+		ServiceAccount: controlPlaneOperatorServiceAccount,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorRoleBinding, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
+	}
+
+	// Reconcile operator deployment
+	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment{
+		Namespace:      controlPlaneNamespace,
+		OperatorImage:  r.OperatorImage,
+		ServiceAccount: controlPlaneOperatorServiceAccount,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
+	}
+
+	return nil
+}
+
+// reconcileAutoscaler orchestrates reconciliation of autoscaler components using
+// both the HostedCluster and the HostedControlPlane which the autoscaler takes
+// inputs from.
+func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+	controlPlaneNamespace := &corev1.Namespace{}
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get control plane namespace: %w", err)
+	}
+
+	// Reconcile autoscaler role
+	autoScalerRole := autoscaler.Role{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerRole, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler role: %w", err)
+	}
+
+	// Reconcile autoscaler service account
+	autoScalerServiceAccount := autoscaler.ServiceAccount{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerServiceAccount, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
+	}
+
+	// Reconcile autoscaler role binding
+	autoScalerRoleBinding := autoscaler.RoleBinding{
+		Role:           autoScalerRole,
+		ServiceAccount: autoScalerServiceAccount,
+	}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerRoleBinding, NoopReconcile)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler role binding: %w", err)
+	}
+
+	// The deployment depends on the kubeconfig being reported.
+	if hcp.Status.KubeConfig != nil {
+		// Resolve the kubeconfig secret from the hostedcontrolplane which the
+		// autoscaler is deployed alongside of.
+		hcpKubeConfigSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hcp.Namespace,
+				Name:      hcp.Status.KubeConfig.Name,
+			},
+		}
+		err = r.Client.Get(ctx, client.ObjectKeyFromObject(hcpKubeConfigSecret), hcpKubeConfigSecret)
+		if err != nil {
+			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", hcpKubeConfigSecret.Name, err)
+		}
+
+		// Reconcile autoscaler deployment
+		autoScalerDeployment := autoscaler.Deployment{
+			Namespace:              controlPlaneNamespace,
+			ServiceAccount:         autoScalerServiceAccount,
+			Image:                  "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0",
+			ControlPlaneKubeConfig: hcpKubeConfigSecret,
+		}.Build()
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, NoopReconcile)
+		if err != nil {
+			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// computeClusterVersionStatus determines the ClusterVersionStatus of the
+// given HostedCluster and returns it.
+func computeClusterVersionStatus(clock Clock, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) *hyperv1.ClusterVersionStatus {
+	// If there's no history, rebuild it from scratch.
+	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 {
+		return &hyperv1.ClusterVersionStatus{
 			Desired:            hcluster.Spec.Release,
 			ObservedGeneration: hcluster.Generation,
 			History: []configv1.UpdateHistory{
 				{
 					State:       configv1.PartialUpdate,
-					StartedTime: metav1.Now(),
 					Image:       hcluster.Spec.Release.Image,
+					StartedTime: metav1.NewTime(clock.Now()),
 				},
 			},
 		}
-		if err = r.Status().Update(ctx, hcluster); err != nil {
-			r.Log.Error(err, "failed to update version status for hosted cluster", "cluster", req.NamespacedName)
-			return ctrl.Result{}, fmt.Errorf("failed to update version status for hosted cluster: %w", err)
-		}
-		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// First, create the hosted cluster namespace itself on which all else depends
+	// Reconcile the current version with the latest resource states.
+	version := hcluster.Status.Version.DeepCopy()
 
-	targetNamespace := manifests.HostedControlPlaneNamespace{HostedCluster: hcluster}.Build()
-	if err := r.Create(ctx, targetNamespace); err != nil && !apierrors.IsAlreadyExists(err) {
-		r.Log.Error(err, "failed to create target namespace", "namespace", targetNamespace.Name)
-		return ctrl.Result{}, fmt.Errorf("failed to create target namespace %q: %w", targetNamespace.Name, err)
-	}
-	r.Log.Info("Created target namespace", "namespace", targetNamespace)
-
-	// Create the shared provider credentials secret
-
-	var providerCredsSecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.ProviderCreds.Name}, &providerCredsSecret)
-	if err != nil {
-		r.Log.Error(err, "failed to get provider creds", "name", hcluster.Spec.ProviderCreds.Name)
-		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.ProviderCreds.Name, err)
-	}
-	providerCredsData, hasProviderCredsData := providerCredsSecret.Data["credentials"]
-	if !hasProviderCredsData {
-		r.Log.Error(err, "provider credentials is missing the credentials key", "name", providerCredsSecret.Name)
-		return ctrl.Result{}, fmt.Errorf("provider credentials %s is missing the credentials key", providerCredsSecret.Name)
-	}
-	targetProviderCredsSecret := manifests.ProviderCredentials{
-		Namespace: targetNamespace,
-		Data:      providerCredsData,
-	}.Build()
-	if err := r.Create(ctx, targetProviderCredsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		r.Log.Error(err, "failed to generate providerCreds secret")
-		return ctrl.Result{}, fmt.Errorf("failed to generate providerCreds secret: %v", err)
-	}
-	r.Log.Info("Created provider creds secret in the target namespace", "namespace", targetNamespace)
-
-	// Next, roll out the CAPI machinery
-
-	capiManagerClusterRole := clusterapi.ManagerClusterRole{}.Build()
-	capiManagerServiceAccount := clusterapi.ManagerServiceAccount{Namespace: targetNamespace}.Build()
-	capiManagerClusterRoleBinding := clusterapi.ManagerClusterRoleBinding{
-		ClusterRole:    capiManagerClusterRole,
-		ServiceAccount: capiManagerServiceAccount,
-	}.Build()
-	capiManagerRole := clusterapi.ManagerRole{Namespace: targetNamespace}.Build()
-	capiManagerRoleBinding := clusterapi.ManagerRoleBinding{
-		Role:           capiManagerRole,
-		ServiceAccount: capiManagerServiceAccount,
-	}.Build()
-	capiManagerDeployment := clusterapi.ManagerDeployment{
-		Namespace:      targetNamespace,
-		Image:          "quay.io/hypershift/cluster-api:hypershift",
-		ServiceAccount: capiManagerServiceAccount,
-	}.Build()
-	capiAwsProviderRole := clusterapi.AWSProviderRole{Namespace: targetNamespace}.Build()
-	capiAwsProviderServiceAccount := clusterapi.AWSProviderServiceAccount{Namespace: targetNamespace}.Build()
-	capiAwsProviderRoleBinding := clusterapi.AWSProviderRoleBinding{
-		Role:           capiAwsProviderRole,
-		ServiceAccount: capiAwsProviderServiceAccount,
-	}.Build()
-	capiAwsProviderDeployment := clusterapi.AWSProviderDeployment{
-		Namespace:           targetNamespace,
-		Image:               "quay.io/hypershift/cluster-api-provider-aws:master",
-		ServiceAccount:      capiAwsProviderServiceAccount,
-		ProviderCredentials: targetProviderCredsSecret,
-	}.Build()
-	capiManagerObjects := []ctrlclient.Object{
-		capiManagerClusterRole,
-		capiManagerServiceAccount,
-		capiManagerClusterRoleBinding,
-		capiManagerRole,
-		capiManagerRoleBinding,
-		capiManagerDeployment,
-		capiAwsProviderRole,
-		capiAwsProviderServiceAccount,
-		capiAwsProviderRoleBinding,
-		capiAwsProviderDeployment,
+	// If the hosted control plane doesn't exist, there's no way to assess the
+	// rollout so return early.
+	if hcp == nil {
+		return version
 	}
 
-	err = r.applyObjects(ctx, capiManagerObjects...)
-	if err != nil {
-		r.Log.Error(err, "failed to apply cluster api resources")
-		return ctrl.Result{}, err
-	}
-	r.Log.Info("Created all cluster api resources")
-
-	// Next, role out the control plane itself
-
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		r.Log.Error(err, "failed to get pull secret", "name", hcluster.Spec.PullSecret.Name)
-		return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
-	}
-	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
-	if !hasPullSecretData {
-		r.Log.Error(err, "pull secret is missing the .dockerconfigjson key", "name", hcluster.Spec.PullSecret.Name)
-		return ctrl.Result{}, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcluster.Spec.PullSecret.Name)
-	}
-	targetPullSecret := manifests.PullSecret{
-		Namespace: targetNamespace,
-		Data:      pullSecretData,
-	}.Build()
-	if err := r.Create(ctx, targetPullSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		r.Log.Error(err, "failed to create target pull secret secret", "name", targetPullSecret.Name)
-		return ctrl.Result{}, fmt.Errorf("failed to create target pull secret secret: %v", err)
-	}
-	r.Log.Info("Created pull secret in the target namespace", "namespace", targetNamespace)
-
-	var sshKeySecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &sshKeySecret)
-	if err != nil {
-		r.Log.Error(err, "failed to get SSH key secret", "name", hcluster.Spec.SSHKey.Name)
-		return ctrl.Result{}, fmt.Errorf("failed to get SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
-	}
-	sshKeyData, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
-	if !hasSSHKeyData {
-		r.Log.Error(err, "SSH key secret secret is missing the id_rsa.pub key", "name", hcluster.Spec.SSHKey.Name)
-		return ctrl.Result{}, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcluster.Spec.SSHKey.Name)
-	}
-	targetSSHSecret := manifests.SSHKey{
-		Namespace: targetNamespace,
-		Data:      sshKeyData,
-	}.Build()
-	if err := r.Create(ctx, targetSSHSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		r.Log.Error(err, "failed to create target ssh secret", "name", targetSSHSecret.Name)
-		return ctrl.Result{}, fmt.Errorf("failed to create target ssh secret: %v", err)
-	}
-	r.Log.Info("Created ssh key secret in the target namespace", "namespace", targetNamespace)
-
-	controlPlaneOperatorServiceAccount := controlplaneoperator.OperatorServiceAccount{Namespace: targetNamespace}.Build()
-	controlPlaneOperatorClusterRole := controlplaneoperator.OperatorClusterRole{}.Build()
-	controlPlaneOperatorClusterRoleBinding := controlplaneoperator.OperatorClusterRoleBinding{
-		ClusterRole:    controlPlaneOperatorClusterRole,
-		ServiceAccount: controlPlaneOperatorServiceAccount,
-	}.Build()
-	controlPlaneOperatorRole := controlplaneoperator.OperatorRole{Namespace: targetNamespace}.Build()
-	controlPlaneOperatorRoleBinding := controlplaneoperator.OperatorRoleBinding{
-		Role:           controlPlaneOperatorRole,
-		ServiceAccount: controlPlaneOperatorServiceAccount,
-	}.Build()
-	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment{
-		Namespace:      targetNamespace,
-		OperatorImage:  r.OperatorImage,
-		ServiceAccount: controlPlaneOperatorServiceAccount,
-	}.Build()
-
-	controlPlaneObjects := []ctrlclient.Object{
-		controlPlaneOperatorServiceAccount,
-		controlPlaneOperatorClusterRole,
-		controlPlaneOperatorClusterRoleBinding,
-		controlPlaneOperatorRole,
-		controlPlaneOperatorRoleBinding,
-		controlPlaneOperatorDeployment,
+	// If a rollout is in progress, we need to wait before updating.
+	// TODO: This is a potentially weak check. Conditions checks don't seem
+	// quite right because the intent here is to identify a terminal rollout
+	// state. For now it assumes when status.releaseImage matches, that rollout
+	// is definitely done.
+	hcpRolloutComplete := hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage
+	if !hcpRolloutComplete {
+		return version
 	}
 
-	err = r.applyObjects(ctx, controlPlaneObjects...)
-	if err != nil {
-		r.Log.Error(err, "failed to apply control plane resources")
-		return ctrl.Result{}, err
-	}
-	r.Log.Info("Created all control plane resources")
+	// The rollout is complete, so update the current history entry
+	version.History[0].State = configv1.CompletedUpdate
 
-	// Now create default resources that this controller doesn't reconcile
-
-	capiCluster := controlplaneoperator.CAPICluster{
-		Namespace:     targetNamespace,
-		HostedCluster: hcluster,
-	}.Build()
-	// TODO: This will need actively reconciled
-	hcp := controlplaneoperator.HostedControlPlane{
-		Namespace:           targetNamespace,
-		HostedCluster:       hcluster,
-		ProviderCredentials: targetProviderCredsSecret,
-		PullSecret:          targetPullSecret,
-		SSHKey:              targetSSHSecret,
-	}.Build()
-	eic := controlplaneoperator.ExternalInfraCluster{
-		Namespace:     targetNamespace,
-		HostedCluster: hcluster,
-	}.Build()
-	createOnlyObjects := []ctrlclient.Object{
-		capiCluster,
-		hcp,
-		eic,
-	}
-	if hcluster.Spec.InitialComputeReplicas > 0 {
-		nodePool := manifests.DefaultNodePool{
-			HostedCluster: hcluster,
-		}.Build()
-		createOnlyObjects = append(createOnlyObjects, nodePool)
-	}
-	for _, object := range createOnlyObjects {
-		name := types.NamespacedName{Namespace: object.GetNamespace(), Name: object.GetName()}
-		err := r.Client.Get(ctx, name, object)
-		if err == nil {
-			// already exists, skip it
-			continue
-		}
-		if !apierrors.IsNotFound(err) {
-			r.Log.Error(err, "failed to get object", "name", name)
-			return ctrl.Result{}, fmt.Errorf("failed to get object %s: %w", name, err)
-		}
-		err = r.Client.Create(ctx, object)
-		if err != nil {
-			r.Log.Error(err, "failed to create object", "name", name)
-			return ctrl.Result{}, fmt.Errorf("failed to create object %s: %w", name, err)
-		}
+	// If a new rollout is needed, update the desired version and prepend a new
+	// partial history entry to unblock rollouts.
+	rolloutNeeded := hcluster.Spec.Release.Image != hcluster.Status.Version.Desired.Image
+	if rolloutNeeded {
+		version.Desired.Image = hcluster.Spec.Release.Image
+		version.ObservedGeneration = hcluster.Generation
+		// TODO: leaky
+		version.History = append([]configv1.UpdateHistory{
+			{
+				State:       configv1.PartialUpdate,
+				Image:       hcluster.Spec.Release.Image,
+				StartedTime: metav1.NewTime(clock.Now()),
+			},
+		}, version.History...)
 	}
 
-	if hcp.Status.Version != hcluster.Status.Version.History[0].Version {
-		hcluster.Status.Version.History[0].Version = hcp.Status.Version
-		if err = r.Status().Update(ctx, hcluster); err != nil {
-			r.Log.Error(err, "failed to update version in hosted cluster status")
-			return ctrl.Result{}, fmt.Errorf("failed to update version in hosted cluster status: %w", err)
-		}
-		r.Log.Info("updated hostedcluster version, requeueing")
-		return ctrl.Result{Requeue: true}, nil
-	}
-
-	// When the hosted control plane kubeconfig secret is available, copy it to the
-	// hostedcluster namespace and update status
-	if hcp.Status.KubeConfig != nil {
-		var targetKubeConfigSecret corev1.Secret
-		targetKubeConfigSecretName := types.NamespacedName{Namespace: targetNamespace.Name, Name: hcp.Status.KubeConfig.Name}
-		err := r.Client.Get(ctx, targetKubeConfigSecretName, &targetKubeConfigSecret)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get target kubeconfig secret %q: %w", targetKubeConfigSecretName, err)
-		}
-		// Build a kubeconfig secret scoped to the hostedcluster's namespace
-		// which has the same contents as the target secret.
-		// TODO: Leaky abstraction, publish this key through HCP status?
-		targetSecretData, ok := targetKubeConfigSecret.Data["value"]
-		if !ok {
-			return ctrl.Result{}, fmt.Errorf("target kubeconfig secret %q is missing key %q", targetKubeConfigSecretName, "value")
-		}
-		kubeConfigSecret := manifests.KubeConfigSecret{
-			HostedCluster: hcluster,
-			Data:          targetSecretData,
-		}.Build()
-		// Update the hostedcluster's copy of the secret.
-		err = r.applyObjects(ctx, kubeConfigSecret)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to apply kubeconfig secret: %w", err)
-		}
-		// Ensure the hostedcluster has a reference to the secret.
-		updatedReference := &corev1.LocalObjectReference{Name: kubeConfigSecret.Name}
-		if !equality.Semantic.DeepEqual(hcluster.Status.KubeConfig, updatedReference) {
-			hcluster.Status.KubeConfig = updatedReference
-			if err = r.Status().Update(ctx, hcluster); err != nil {
-				r.Log.Error(err, "failed to update version in hosted cluster status")
-				return ctrl.Result{}, fmt.Errorf("failed to update version in hosted cluster status: %w", err)
-			}
-			r.Log.Info("updated hostedcluster version, requeueing")
-			return ctrl.Result{Requeue: true}, nil
-		}
-	}
-
-	// Roll out an auto scaler once the kubeconfig is available
-	if hcp.Status.KubeConfig != nil {
-		var targetKubeConfigSecret corev1.Secret
-		targetKubeConfigSecretName := types.NamespacedName{Namespace: targetNamespace.Name, Name: hcp.Status.KubeConfig.Name}
-		err := r.Client.Get(ctx, targetKubeConfigSecretName, &targetKubeConfigSecret)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get target kubeconfig secret %q: %w", targetKubeConfigSecretName, err)
-		}
-		autoScalerRole := autoscaler.Role{Namespace: targetNamespace}.Build()
-		autoScalerServiceAccount := autoscaler.ServiceAccount{Namespace: targetNamespace}.Build()
-		autoScalerRoleBinding := autoscaler.RoleBinding{
-			Role:           autoScalerRole,
-			ServiceAccount: autoScalerServiceAccount,
-		}.Build()
-		autoScalerDeployment := autoscaler.Deployment{
-			Namespace:        targetNamespace,
-			ServiceAccount:   autoScalerServiceAccount,
-			Image:            "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0",
-			TargetKubeConfig: &targetKubeConfigSecret,
-		}.Build()
-		autoScalerObjects := []ctrlclient.Object{
-			autoScalerRole,
-			autoScalerServiceAccount,
-			autoScalerRoleBinding,
-			autoScalerDeployment,
-		}
-		err = r.applyObjects(ctx, autoScalerObjects...)
-		if err != nil {
-			r.Log.Error(err, "failed to apply auto scaler resources")
-			return ctrl.Result{}, err
-		}
-		r.Log.Info("created all autoscaler resources")
-	} else {
-		// TODO: status?
-		r.Log.Info("autoscaler rollout pending kubeconfig availability")
-	}
-
-	// Check for readiness and update status
-	var currentCluster capiv1.Cluster
-	if err := r.Get(ctx, client.ObjectKeyFromObject(capiCluster), &currentCluster); err != nil {
-		r.Log.Error(err, "couldn't get CAPI cluster resource", "capiCluster", client.ObjectKeyFromObject(capiCluster))
-		return ctrl.Result{}, err
-	}
-	if !hcluster.Status.Ready {
-		r.Log = r.Log.WithValues("cluster", capiCluster.Name)
-		ready := currentCluster.Status.ControlPlaneReady && currentCluster.Status.InfrastructureReady
-		if !ready {
-			r.Log.Info("Not ready yet.")
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		hcluster.Status.Ready = ready
-		completionTime := metav1.Now()
-		hcluster.Status.Version.History[0].CompletionTime = &completionTime
-		hcluster.Status.Version.History[0].State = configv1.CompletedUpdate
-		if err := r.Status().Update(ctx, hcluster); err != nil {
-			r.Log.Error(err, "failed to update hosted cluster status")
-			return ctrl.Result{}, fmt.Errorf("failed to update hosted cluster status: %w", err)
-		}
-	}
-
-	r.Log.Info("Successfully reconciled")
-	return ctrl.Result{}, nil
+	return version
 }
 
-func (r *HostedClusterReconciler) applyObjects(ctx context.Context, objects ...ctrlclient.Object) error {
-	for i := range objects {
-		object := objects[i]
-		var objectBytes bytes.Buffer
-		err := hyperapi.YamlSerializer.Encode(object, &objectBytes)
-		if err != nil {
-			return fmt.Errorf("failed to encode object %s %s/%s: %w", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName(), err)
+// computeHostedClusterAvailability determines the Available condition for the
+// given HostedCluster and returns it.
+func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) metav1.Condition {
+	// Determine whether the hosted control plane is available.
+	hcpAvailable := false
+	if hcp != nil {
+		for _, cond := range hcp.Status.Conditions {
+			if cond.Type == hyperv1.Available && cond.Status == hyperv1.ConditionTrue {
+				hcpAvailable = true
+				break
+			}
 		}
-		err = r.Client.Patch(ctx, object, ctrlclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), ctrlclient.ForceOwnership, ctrlclient.FieldOwner("hypershift"))
-		if err != nil {
-			return fmt.Errorf("failed to patch object %s %s/%s: %w", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName(), err)
-		}
-		r.Log.Info("applied resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", object.GetNamespace(), "name", object.GetName())
 	}
-	return nil
+
+	// Determine whether the kubeconfig is available.
+	// TODO: is it a good idea to compute hc status based on other field within
+	// the same resource like this? does it imply an ordering requirement that
+	// kubeconfig status must come before availability status? would extracting
+	// the kubeconfig as an argument help by making that dependency explicit?
+	kubeConfigAvailable := hcluster.Status.KubeConfig != nil
+
+	switch {
+	case hcpAvailable && kubeConfigAvailable:
+		return metav1.Condition{
+			Type:               string(hyperv1.Available),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: hcluster.Generation,
+			Reason:             "HostedClusterIsAvailable",
+		}
+	default:
+		var messages []string
+		if !hcpAvailable {
+			messages = append(messages, "the hosted control plane is unavailable")
+		}
+		if !kubeConfigAvailable {
+			messages = append(messages, "the hosted control plane kubeconfig is unavailable")
+		}
+		return metav1.Condition{
+			Type:               string(hyperv1.Available),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: hcluster.Generation,
+			Reason:             "HostedClusterIsUnavailable",
+			Message:            strings.Join(messages, "; "),
+		}
+	}
 }
 
 func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName string) ([]hyperv1.NodePool, error) {
@@ -497,7 +758,7 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 }
 
 func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) (bool, error) {
-	targetNamespace := req.Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceName(req.Name).Name
 
 	nodePools, err := r.listNodePools(req.Namespace, req.Name)
 	if err != nil {
@@ -510,11 +771,11 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) 
 		}
 	}
 
-	r.Log.Info("Deleting Cluster", "clusterName", req.Name, "clusterNamespace", targetNamespace)
+	r.Log.Info("Deleting Cluster", "clusterName", req.Name, "clusterNamespace", controlPlaneNamespace)
 	cluster := &capiv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      req.Name,
-			Namespace: targetNamespace,
+			Namespace: controlPlaneNamespace,
 		},
 	}
 
@@ -524,13 +785,13 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) 
 		}
 		// The advancing case is when Delete() returns an error that the cluster is not found
 	} else {
-		r.Log.Info("Waiting for Cluster deletion", "clusterName", req.Name, "clusterNamespace", targetNamespace)
+		r.Log.Info("Waiting for Cluster deletion", "clusterName", req.Name, "clusterNamespace", controlPlaneNamespace)
 		return false, nil
 	}
 
-	r.Log.Info("Deleting target namespace", "namespace", targetNamespace)
+	r.Log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)
 	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: targetNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
 	}
 	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("failed to delete namespace: %w", err)
