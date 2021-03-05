@@ -549,8 +549,8 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params := render.NewClusterParams()
 	params.Namespace = targetNamespace
 	params.ExternalAPIDNSName = infraStatus.APIAddress
-	params.ExternalAPIPort = APIServerPort
-	params.ExternalAPIAddress = DefaultAPIServerIPAddress
+	params.ExternalAPIPort = hcp.Spec.ApiserverSecurePort
+	params.ExternalAPIAddress = hcp.Spec.ApiserverAdvertisedAddress
 	params.ExternalOpenVPNAddress = infraStatus.VPNAddress
 	params.ExternalOpenVPNPort = 1194
 	params.ExternalOauthDNSName = infraStatus.OAuthAddress
@@ -980,6 +980,7 @@ func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, name
 	return nil
 }
 
+//TL: I believe this we will want to change so we don't get in a case of subdomains being hijacked
 func clusterBaseDomain(c client.Client, ctx context.Context, clusterName string) (string, error) {
 	var dnsConfig configv1.DNS
 	err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, &dnsConfig)

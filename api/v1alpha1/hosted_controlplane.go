@@ -38,6 +38,8 @@ type HostedControlPlaneSpec struct {
 	ControlPlaneNodePortIngressTrafficDomain string                      `json:"controlPlaneNodePortIngressTrafficDomain"`
 	EnabledAssets                            []string                    `json:"enabledAssets"`
 	DisabledAssets                           []string                    `json:"disabledAssets"`
+	ApiserverAdvertisedAddress               string                      `json:"apiserverAdvertisedAddress"`
+	ApiserverSecurePort                      uint                      `json:"apiserverSecurePort"`
 }
 
 type ConditionType string
