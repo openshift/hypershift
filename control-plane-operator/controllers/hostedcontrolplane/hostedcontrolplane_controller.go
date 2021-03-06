@@ -741,7 +741,7 @@ func createKubeAPIServerService(client client.Client, hcp *hyperv1.HostedControl
 		{
 			Port:       6443,
 			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromString(strconv.FormatUint(uint64(hcp.Spec.ApiserverSecurePort), 10)),
+			TargetPort: intstr.FromInt(int(hcp.Spec.ApiserverSecurePort)),
 		},
 	}
 	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
