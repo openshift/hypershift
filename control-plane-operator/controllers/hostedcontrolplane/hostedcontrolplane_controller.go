@@ -77,6 +77,7 @@ var (
 
 type InfrastructureStatus struct {
 	APIAddress              string
+	APIPort                 string
 	OAuthAddress            string
 	VPNAddress              string
 	OpenShiftAPIAddress     string
@@ -254,9 +255,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	switch hostedControlPlane.Spec.ControlPlaneServiceTypeStrategy {
 	case "NodePort":
-		externalAPIPort, _ := strconv.ParseInt(strings.Split(infraStatus.APIAddress, ":")[1], 10, 32)
+		externalAPIPort, _ := strconv.ParseInt(infraStatus.APIPort, 10, 32)
 		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
-			Host: strings.Split(infraStatus.APIAddress, ":")[0],
+			Host: infraStatus.APIAddress,
 			Port: int32(externalAPIPort),
 		}
 	default:
@@ -404,10 +405,12 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	}
 	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
 	case "NodePort":
-		status.APIAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain + ":" + apiAddress
+		status.APIAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
+		status.APIPort = apiAddress
 		status.VPNAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
 	default:
 		status.APIAddress = apiAddress
+		status.APIPort = fmt.Sprint(APIServerPort)
 	}
 
 	vpnEnabled := true
@@ -578,15 +581,9 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 
 	params := render.NewClusterParams()
-	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
-	case "NodePort":
-		externalAPIPort, _ := strconv.ParseUint(strings.Split(infraStatus.APIAddress, ":")[1], 10, 32)
-		params.ExternalAPIPort = uint(externalAPIPort)
-		params.ExternalAPIDNSName = strings.Split(infraStatus.APIAddress, ":")[0]
-	default:
-		params.ExternalAPIDNSName = infraStatus.APIAddress
-		params.ExternalAPIPort = APIServerPort
-	}
+	params.ExternalAPIDNSName = infraStatus.APIAddress
+	externalAPIPort, _ := strconv.ParseUint(infraStatus.APIPort, 10, 32)
+	params.ExternalAPIPort = uint(externalAPIPort)
 	params.Namespace = targetNamespace
 	params.ExternalAPIAddress = hcp.Spec.ApiserverAdvertisedAddress
 	params.ExternalOpenVPNAddress = infraStatus.VPNAddress
