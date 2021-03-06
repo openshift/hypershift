@@ -192,6 +192,12 @@ func TestQuickStart(t *testing.T) {
 		NodePoolReplicas: 2,
 		InfraID:          input.Infra.InfraID,
 		ComputeCIDR:      input.Infra.ComputeCIDR,
+		ApiserverSecurePort: 2040,
+		ApiserverAdvertisedAddress: "172.20.0.1",
+		ControlPlaneNodePortIngressTrafficDomain: "c0.bts-prestg-bare-840615-15b0bf3714b2d9d344c3b8647edb7860-0000.us-south.stg.containers.appdomain.cloud",
+		ControlPlaneServiceTypeStrategy: "NodePort",
+		DisabledAssests: []string{"openvpn"},
+		EnabledAssests: []string{},
 		AWS: apifixtures.ExampleAWSOptions{
 			Region:          input.Infra.Region,
 			Zone:            input.Infra.Zone,
