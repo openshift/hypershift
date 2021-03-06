@@ -238,11 +238,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// May be eventually just run a deployment with a CVO running a hostedControlPlane profile
 	// passing the hostedControlPlane.spec.version through?
 
-	if hostedControlPlane.Status.Ready {
-		r.Log.Info("Is ready")
-		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionTrue, "AsExpected", "HostedControlPlane is ready", result, nil)
-	}
-
 	r.Log.Info("Creating API services")
 	infraStatus, err := r.ensureInfrastructure(ctx, hostedControlPlane)
 	if err != nil {
@@ -275,6 +270,28 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		hostedControlPlane.Status.Version = releaseImage.Version()
 	}
 
+	// During an upgrade, if there's an old bootstrapper pod referring to the old
+	// image, delete the pod to make way for the new one to be rendered. This is
+	// a hack to avoid the refactoring of moving this pod into the hosted cluster
+	// config operator.
+	if hostedControlPlane.Spec.ReleaseImage != hostedControlPlane.Status.ReleaseImage {
+		var bootstrapPod corev1.Pod
+		err := r.Client.Get(ctx, types.NamespacedName{Namespace: hostedControlPlane.Namespace, Name: "manifests-bootstrapper"}, &bootstrapPod)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get manifests bootstrapper pod: %w", err)
+			}
+		} else {
+			if bootstrapPod.Spec.Containers[0].Image != hostedControlPlane.Spec.ReleaseImage {
+				err := r.Client.Delete(ctx, &bootstrapPod)
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to delete manifests bootstrapper pod: %w", err)
+				}
+				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name)
+			}
+		}
+	}
+
 	// Install the control plane into the infrastructure
 	r.Log.Info("Creating hosted control plane")
 	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage)
@@ -286,6 +303,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	hostedControlPlane.Status.KubeConfig = &corev1.LocalObjectReference{
 		Name: fmt.Sprintf("%v-kubeconfig", hostedControlPlane.Name),
 	}
+
+	hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
+
 	r.Log.Info("Successfully reconciled")
 	return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionTrue, "AsExpected", "HostedControlPlane is ready", ctrl.Result{}, nil)
 }

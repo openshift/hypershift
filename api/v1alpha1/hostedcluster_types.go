@@ -127,6 +127,8 @@ type HostedClusterStatus struct {
 	// for the cluster.
 	// +optional
 	KubeConfig *corev1.LocalObjectReference `json:"kubeconfig,omitempty"`
+
+	Conditions []metav1.Condition `json:"conditions"`
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,

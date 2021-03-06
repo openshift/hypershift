@@ -9,10 +9,10 @@ import (
 )
 
 type Deployment struct {
-	Namespace        *corev1.Namespace
-	ServiceAccount   *corev1.ServiceAccount
-	Image            string
-	TargetKubeConfig *corev1.Secret
+	Namespace              *corev1.Namespace
+	ServiceAccount         *corev1.ServiceAccount
+	Image                  string
+	ControlPlaneKubeConfig *corev1.Secret
 }
 
 func (o Deployment) Build() *appsv1.Deployment {
@@ -52,7 +52,7 @@ func (o Deployment) Build() *appsv1.Deployment {
 							Name: "target-kubeconfig",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: o.TargetKubeConfig.Name,
+									SecretName: o.ControlPlaneKubeConfig.Name,
 									Items: []corev1.KeyToPath{
 										{
 											// TODO: should the key be published on status?

@@ -5,6 +5,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	k8sutilspointer "k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -304,6 +305,10 @@ func (o CAPICluster) Build() *capiv1.Cluster {
 	return cluster
 }
 
+func HostedControlPlaneName(namespace string, hostedClusterName string) types.NamespacedName {
+	return types.NamespacedName{Namespace: namespace, Name: hostedClusterName}
+}
+
 type HostedControlPlane struct {
 	Namespace           *corev1.Namespace
 	HostedCluster       *hyperv1.HostedCluster
@@ -313,14 +318,15 @@ type HostedControlPlane struct {
 }
 
 func (o HostedControlPlane) Build() *hyperv1.HostedControlPlane {
+	name := HostedControlPlaneName(o.Namespace.Name, o.HostedCluster.Name)
 	hcp := &hyperv1.HostedControlPlane{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "HostedControlPlane",
 			APIVersion: hyperv1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Namespace.Name,
-			Name:      o.HostedCluster.GetName(),
+			Namespace: name.Namespace,
+			Name:      name.Name,
 			Annotations: map[string]string{
 				hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(o.HostedCluster).String(),
 			},
