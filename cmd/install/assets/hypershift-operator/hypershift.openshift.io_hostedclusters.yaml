@@ -48,6 +48,18 @@ spec:
           spec:
             description: HostedClusterSpec defines the desired state of HostedCluster
             properties:
+              controlPlaneNodePortIngressTrafficDomain:
+                type: string
+              controlPlaneServiceTypeStrategy:
+                type: string
+              disabledAssets:
+                items:
+                  type: string
+                type: array
+              enabledAssets:
+                items:
+                  type: string
+                type: array
               infraID:
                 description: InfraID is used to identify the cluster in cloud platforms
                 type: string
@@ -56,6 +68,10 @@ spec:
               networking:
                 description: Networking contains network-specific settings for this cluster
                 properties:
+                  apiserverAdvertisedAddress:
+                    type: string
+                  apiserverSecurePort:
+                    type: integer
                   machineCIDR:
                     type: string
                   podCIDR:
@@ -63,6 +79,8 @@ spec:
                   serviceCIDR:
                     type: string
                 required:
+                - apiserverAdvertisedAddress
+                - apiserverSecurePort
                 - machineCIDR
                 - podCIDR
                 - serviceCIDR
@@ -207,6 +225,10 @@ spec:
                     type: string
                 type: object
             required:
+            - controlPlaneNodePortIngressTrafficDomain
+            - controlPlaneServiceTypeStrategy
+            - disabledAssets
+            - enabledAssets
             - initialComputeReplicas
             - networking
             - platform
