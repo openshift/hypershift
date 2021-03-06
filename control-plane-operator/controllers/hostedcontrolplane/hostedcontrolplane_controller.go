@@ -396,6 +396,7 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
 	case "NodePort":
 		status.APIAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain + ":" + apiAddress
+		status.VPNAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
 	default:
 		status.APIAddress = apiAddress
 	}
