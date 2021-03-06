@@ -252,9 +252,18 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Log.Info("Cluster infrastructure is still provisioning, will try again later")
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "WaitingOnInfrastructureReady", "Cluster infrastructure is still provisioning", result, nil)
 	}
-	hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
-		Host: infraStatus.APIAddress,
-		Port: APIServerPort,
+	switch hostedControlPlane.Spec.ControlPlaneServiceTypeStrategy {
+	case "NodePort":
+		externalAPIPort, _ := strconv.ParseInt(strings.Split(infraStatus.APIAddress, ":")[1], 10, 32)
+		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+			Host: strings.Split(infraStatus.APIAddress, ":")[0],
+			Port: int32(externalAPIPort),
+		}
+	default:
+		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+			Host: infraStatus.APIAddress,
+			Port: APIServerPort,
+		}
 	}
 
 	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage)
@@ -739,7 +748,7 @@ func createKubeAPIServerService(client client.Client, hcp *hyperv1.HostedControl
 	}
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
-			Port:       6443,
+			Port:       int32(hcp.Spec.ApiserverSecurePort),
 			Protocol:   corev1.ProtocolTCP,
 			TargetPort: intstr.FromInt(int(hcp.Spec.ApiserverSecurePort)),
 		},
