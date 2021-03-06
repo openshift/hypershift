@@ -34,12 +34,12 @@ type HostedControlPlaneSpec struct {
 	ProviderCreds                            corev1.LocalObjectReference `json:"providerCreds"`
 	InfraID                                  string                      `json:"infraID"`
 	Platform                                 PlatformSpec                `json:"platform"`
-	ControlPlaneServiceTypeStrategy          string                      `json:"controlPlaneServiceTypeStrategy"`
-	ControlPlaneNodePortIngressTrafficDomain string                      `json:"controlPlaneNodePortIngressTrafficDomain"`
-	EnabledAssets                            []string                    `json:"enabledAssets"`
-	DisabledAssets                           []string                    `json:"disabledAssets"`
-	ApiserverAdvertisedAddress               string                      `json:"apiserverAdvertisedAddress"`
-	ApiserverSecurePort                      uint                        `json:"apiserverSecurePort"`
+	ControlPlaneServiceTypeStrategy          string                      `json:"controlPlaneServiceTypeStrategy,omitempty"`
+	ControlPlaneNodePortIngressTrafficDomain string                      `json:"controlPlaneNodePortIngressTrafficDomain,omitempty"`
+	EnabledAssets                            []string                    `json:"enabledAssets,omitempty"`
+	DisabledAssets                           []string                    `json:"disabledAssets,omitempty"`
+	ApiserverAdvertisedAddress               string                      `json:"apiserverAdvertisedAddress,omitempty"`
+	ApiserverSecurePort                      uint                        `json:"apiserverSecurePort,omitempty"`
 }
 
 type ConditionType string

@@ -79,8 +79,6 @@ spec:
                   serviceCIDR:
                     type: string
                 required:
-                - apiserverAdvertisedAddress
-                - apiserverSecurePort
                 - machineCIDR
                 - podCIDR
                 - serviceCIDR
@@ -225,10 +223,6 @@ spec:
                     type: string
                 type: object
             required:
-            - controlPlaneNodePortIngressTrafficDomain
-            - controlPlaneServiceTypeStrategy
-            - disabledAssets
-            - enabledAssets
             - initialComputeReplicas
             - networking
             - platform
