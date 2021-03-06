@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -382,21 +383,21 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		return status, fmt.Errorf("failed to create oauth server route: %w", err)
 	}
 
+	oauthAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(oauthRoute))
+	if err != nil {
+		return status, fmt.Errorf("failed get get route address: %w", err)
+	}
+	status.OAuthAddress = oauthAddress
+
+	apiAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(apiService))
+	if err != nil {
+		return status, fmt.Errorf("failed to get service: %w", err)
+	}
 	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
 	case "NodePort":
-		status.APIAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
-		status.OAuthAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
+		status.APIAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain + ":" + apiAddress
 	default:
-		apiAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(apiService))
-		if err != nil {
-			return status, fmt.Errorf("failed to get service: %w", err)
-		}
 		status.APIAddress = apiAddress
-		oauthAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(oauthRoute))
-		if err != nil {
-			return status, fmt.Errorf("failed get get route address: %w", err)
-		}
-		status.OAuthAddress = oauthAddress
 	}
 
 	vpnEnabled := true
@@ -567,9 +568,16 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 
 	params := render.NewClusterParams()
+	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
+	case "NodePort":
+		externalAPIPort, _ := strconv.ParseUint(strings.Split(infraStatus.APIAddress, ":")[1], 10, 32)
+		params.ExternalAPIPort = uint(externalAPIPort)
+		params.ExternalAPIDNSName = strings.Split(infraStatus.APIAddress, ":")[0]
+	default:
+		params.ExternalAPIDNSName = infraStatus.APIAddress
+		params.ExternalAPIPort = APIServerPort
+	}
 	params.Namespace = targetNamespace
-	params.ExternalAPIDNSName = infraStatus.APIAddress
-	params.ExternalAPIPort = hcp.Spec.ApiserverSecurePort
 	params.ExternalAPIAddress = hcp.Spec.ApiserverAdvertisedAddress
 	params.ExternalOpenVPNAddress = infraStatus.VPNAddress
 	params.ExternalOpenVPNPort = 1194
@@ -599,7 +607,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 	params.CloudCredentials = string(cloudCreds.Data["credentials"])
 	params.ProviderCredsSecretName = hcp.Spec.ProviderCreds.Name
-	params.InternalAPIPort = APIServerPort
+	params.InternalAPIPort = hcp.Spec.ApiserverSecurePort
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
@@ -630,9 +638,9 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if needsPkiSecret {
 		pkiParams := &render.PKIParams{
 			ExternalAPIAddress:         infraStatus.APIAddress,
-			NodeInternalAPIServerIP:    DefaultAPIServerIPAddress,
-			ExternalAPIPort:            APIServerPort,
-			InternalAPIPort:            APIServerPort,
+			NodeInternalAPIServerIP:    hcp.Spec.ApiserverAdvertisedAddress,
+			ExternalAPIPort:            params.ExternalAPIPort,
+			InternalAPIPort:            hcp.Spec.ApiserverSecurePort,
 			ServiceCIDR:                hcp.Spec.ServiceCIDR,
 			ExternalOauthAddress:       infraStatus.OAuthAddress,
 			IngressSubdomain:           "apps." + baseDomain,
@@ -732,7 +740,7 @@ func createKubeAPIServerService(client client.Client, hcp *hyperv1.HostedControl
 		{
 			Port:       6443,
 			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(6443),
+			TargetPort: intstr.FromString(strconv.FormatUint(uint64(hcp.Spec.ApiserverSecurePort), 10)),
 		},
 	}
 	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
@@ -959,6 +967,8 @@ func getLoadBalancerServiceAddress(c client.Client, ctx context.Context, key cli
 		case svc.Status.LoadBalancer.Ingress[0].IP != "":
 			addr = svc.Status.LoadBalancer.Ingress[0].IP
 		}
+	} else if svc.Spec.Ports[0].NodePort > 0 {
+		addr = fmt.Sprint(svc.Spec.Ports[0].NodePort)
 	}
 	return addr, nil
 }
