@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/nodebootstrappertoken"
 	"io/ioutil"
 	"os"
 
@@ -51,9 +52,10 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
 	// TODO: non-essential, can't statically link to operator
 	//"openshift-controller-manager": openshiftcontrollermanager.Setup,
-	"route-sync":  routesync.Setup,
-	"infrastatus": infrastatus.Setup,
-	"node":        node.Setup,
+	"route-sync":              routesync.Setup,
+	"infrastatus":             infrastatus.Setup,
+	"node":                    node.Setup,
+	"node-bootstrapper-token": nodebootstrappertoken.Setup,
 }
 
 type HostedClusterConfigOperator struct {

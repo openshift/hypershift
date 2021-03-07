@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -61,6 +62,7 @@ const (
 	hypershiftRouteLabel      = "hypershift.openshift.io/cluster"
 	oauthBrandingManifest     = "v4-0-config-system-branding.yaml"
 	DefaultAPIServerIPAddress = "172.20.0.1"
+	haproxyConfigSecretName   = "machine-config-server-haproxy-config"
 	externalOauthPort         = 443
 )
 
@@ -500,7 +502,17 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	r.Log.Info("successfully applied all manifests")
 
-	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version)
+	// Create the configmap with the pull secret for the guest cluster
+	var nodeBootstrapperSecret corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: targetNamespace, Name: haproxyConfigSecretName}, &nodeBootstrapperSecret); err != nil {
+		return fmt.Errorf("failed to get machine config server haproxy secret conf %s: %w", haproxyConfigSecretName, err)
+	}
+	var nodeBootstrapperTokenData []byte
+	var ok bool
+	if nodeBootstrapperTokenData, ok = nodeBootstrapperSecret.Data["node-bootstrapper-token"]; !ok {
+		return fmt.Errorf("could not find node bootstrapper token in machine config server haproxy secret conf  %s", haproxyConfigSecretName)
+	}
+	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version, nodeBootstrapperTokenData)
 	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to generate user data secret: %w", err)
 	}
@@ -1078,7 +1090,7 @@ func applyManifests(ctx context.Context, c client.Client, log logr.Logger, names
 	return nil
 }
 
-func generateUserDataSecret(name, namespace string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {
+func generateUserDataSecret(name, namespace string, ignitionProviderAddr string, version semver.Version, nodeBootstrapperToken []byte) *corev1.Secret {
 	secret := &corev1.Secret{}
 	secret.Name = fmt.Sprintf("%s-user-data", name)
 	secret.Namespace = namespace
@@ -1090,9 +1102,9 @@ func generateUserDataSecret(name, namespace string, ignitionProviderAddr string,
 	version.Pre = nil
 	version.Build = nil
 	if version.GTE(version46) {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr))
+		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s/config/master?token=%s","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken))))
 	} else {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr))
+		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"http://%s/config/master?token=%s","verification":{}}]},"security":{},"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken))))
 	}
 
 	secret.Data = map[string][]byte{

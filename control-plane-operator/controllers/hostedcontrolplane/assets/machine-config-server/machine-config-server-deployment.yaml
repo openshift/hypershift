@@ -101,7 +101,16 @@ spec:
         - mountPath: /mcs-manifests
           name: mcs-manifests
       containers:
-      - image: {{ imageFor "machine-config-operator" }}
+        - name: haproxy
+          image: {{ imageFor "haproxy-router" }}
+          command:
+            - haproxy
+            - -f
+            - /usr/local/etc/haproxy/haproxy.cfg
+          volumeMounts:
+            - name: haproxy-config
+              mountPath: /usr/local/etc/haproxy
+        - image: {{ imageFor "machine-config-operator" }}
         imagePullPolicy: IfNotPresent
         name: machine-config-server
         command:
@@ -135,6 +144,9 @@ spec:
       - name: mcs-tls
         secret:
           secretName: machine-config-server
+      - name: haproxy-config
+        secret:
+          secretName: machine-config-server-haproxy-config
       - name: mcc-manifests
         emptyDir: {}
       - name: mcs-manifests
