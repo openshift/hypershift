@@ -116,7 +116,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("could not fetch machine config server deployment: %v", err)
 	}
 	if machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations != nil &&
-		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["node-bootstrapper-token-checksum"] == nodeBootstrapperTokenBase64 &&
+		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["node-bootstrapper-token-checksum"] == nodeBootstrapperTokenBase64Hash &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] == machineConfigServerTLSKeyHash &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] == machineConfigServerTLSCertHash {
 		return ctrl.Result{}, nil
@@ -125,7 +125,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 	if machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations == nil {
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 	}
-	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["node-bootstrapper-token-checksum"] = nodeBootstrapperTokenBase64
+	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["node-bootstrapper-token-checksum"] = nodeBootstrapperTokenBase64Hash
 	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] = machineConfigServerTLSKeyHash
 	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] = machineConfigServerTLSCertHash
 	if _, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, machineConfigServerDeployment, metav1.UpdateOptions{}); err != nil {
