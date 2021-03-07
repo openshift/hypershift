@@ -44,7 +44,6 @@ type Options struct {
 	EnabledAssets                            []string
 	ServiceCIDR                              string
 	PodCIDR                                  string
-	ComputeCIDR                              string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -78,7 +77,8 @@ func NewCreateCommand() *cobra.Command {
 		InfraID:                                  "",
 		InstanceType:                             "m4.large",
 		APIServerAdvertisedAddress:               "172.20.0.1",
-		ServiceCIDR:                              "1",
+		ServiceCIDR:                              "172.31.0.0/16",
+		PodCIDR:                                  "10.132.0.0/14",
 		APIServerSecurePort:                      6443,
 		ControlPlaneNodePortIngressTrafficDomain: "",
 		ControlPlaneServiceTypeStrategy:          "",
@@ -101,6 +101,8 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
 	cmd.Flags().StringVar(&opts.APIServerAdvertisedAddress, "apiserver-advertised-address", opts.APIServerAdvertisedAddress, "Advertised Address for kube api server.")
 	cmd.Flags().UintVar(&opts.APIServerSecurePort, "apiserver-secure-port", opts.APIServerSecurePort, "Secure port for API Server.")
+	cmd.Flags().StringVar(&opts.PodCIDR, "pod-cidr", opts.PodCIDR, "Pod CIDR for user cluster.")
+	cmd.Flags().StringVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "Service CIDR for user cluster.")
 	cmd.Flags().StringVar(&opts.ControlPlaneNodePortIngressTrafficDomain, "controlplane-nodeport-ingress-traffic-domain", opts.ControlPlaneNodePortIngressTrafficDomain, "Domain that will expose node port traffic of the controller cluster.")
 	cmd.Flags().StringVar(&opts.ControlPlaneServiceTypeStrategy, "controlplane-servicetype-strategy", opts.ControlPlaneServiceTypeStrategy, "Strategy used for exposing control plane services. Currently supports NodePort for nodePorts otherwise defaults to using LoadBalancer services.")
 	cmd.Flags().StringArrayVar(&opts.DisabledAssets, "disabled-assets", opts.DisabledAssets, "Asset payloads to disable")
