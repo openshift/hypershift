@@ -1120,9 +1120,9 @@ func generateUserDataSecret(name, namespace string, ignitionProviderAddr string,
 	version.Pre = nil
 	version.Build = nil
 	if version.GTE(version46) {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"https://%s/config/master?token=%s","verification":{}}]},"security": { tls: { "certificateAuthorities": [ { "source": "data:text/plain;charset=utf-8;base64,%s", "verification":{} } ] } },"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken)), base64.StdEncoding.EncodeToString([]byte(clusterCA))))
+		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"https://%s/config/master?token=%s","verification":{}}]},"security": { "tls": { "certificateAuthorities": [ { "source": "data:text/plain;charset=utf-8;base64,%s", "verification":{} } ] } },"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken)), base64.StdEncoding.EncodeToString([]byte(clusterCA))))
 	} else {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"https://%s/config/master?token=%s","verification":{}}]},"security":{ tls: { "certificateAuthorities": [ { "source": "data:text/plain;charset=utf-8;base64,%s", "verification":{} } ] } },"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken)), base64.StdEncoding.EncodeToString([]byte(clusterCA))))
+		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"https://%s/config/master?token=%s","verification":{}}]},"security":{ "tls": { "certificateAuthorities": [ { "source": "data:text/plain;charset=utf-8;base64,%s", "verification":{} } ] } },"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken)), base64.StdEncoding.EncodeToString([]byte(clusterCA))))
 	}
 
 	secret.Data = map[string][]byte{
