@@ -110,7 +110,7 @@ spec:
         volumeMounts:
         - name: haproxy-config
           mountPath: /usr/local/etc/haproxy
-      - image: { { imageFor "machine-config-operator" } }
+      - image: {{ imageFor "machine-config-operator" }}
         imagePullPolicy: IfNotPresent
         name: machine-config-server
         command:
