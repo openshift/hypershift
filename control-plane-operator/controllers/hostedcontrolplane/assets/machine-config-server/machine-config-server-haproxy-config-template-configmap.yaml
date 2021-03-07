@@ -7,7 +7,7 @@ data:
     global
       maxconn 7000
     defaults
-      mode tcp
+      mode http
       timeout client 10m
       timeout server 10m
       timeout connect 10s
@@ -16,6 +16,7 @@ data:
       timeout queue 5s
       retries 3
     backend machineconfigserverbackend
+        mode http
         balance roundrobin
         server server1 127.0.0.1:8080
     frontend machineconfigserverfrontend
