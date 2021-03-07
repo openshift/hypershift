@@ -64,8 +64,6 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 	nodeBootstrapperTokenBase64 := base64.StdEncoding.EncodeToString(nodeBootstrapperToken)
-	nodeBootstrapperTokenBase64Hash := calculateHash([]byte(nodeBootstrapperTokenBase64))
-	controllerLog.Info("Calculated node bootstrapper token hash", "hash", nodeBootstrapperTokenBase64Hash)
 
 	haproxyTemplateConfigMapData, err := r.Client.CoreV1().ConfigMaps(r.Namespace).Get(ctx, haproxyTemplateConfigmapName, metav1.GetOptions{})
 	if err != nil {
@@ -92,6 +90,8 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 	machineConfigServerTLSKeyHash := calculateHash(machineConfigServerTLSKey)
 	haproxyTLSPem := bytes.Join([][]byte{machineConfigServerTLSCert, machineConfigServerTLSKey}, []byte("\n"))
 	haproxyConfigData := bytes.Replace([]byte(haproxyConfigTemplateData), []byte("NODE_BOOTSTRAPPER_TOKEN_REPLACE"), []byte(url.QueryEscape(nodeBootstrapperTokenBase64)), -1)
+	haproxyConfigDataHash := calculateHash(haproxyConfigData)
+
 	haproxyConfigSecret := &v1.Secret{
 		Type: v1.SecretTypeOpaque,
 		ObjectMeta: metav1.ObjectMeta{
@@ -116,7 +116,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("could not fetch machine config server deployment: %v", err)
 	}
 	if machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations != nil &&
-		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["node-bootstrapper-token-checksum"] == nodeBootstrapperTokenBase64Hash &&
+		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] == haproxyConfigDataHash &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] == machineConfigServerTLSKeyHash &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] == machineConfigServerTLSCertHash {
 		return ctrl.Result{}, nil
@@ -125,7 +125,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 	if machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations == nil {
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 	}
-	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["node-bootstrapper-token-checksum"] = nodeBootstrapperTokenBase64Hash
+	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] = haproxyConfigDataHash
 	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] = machineConfigServerTLSKeyHash
 	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] = machineConfigServerTLSCertHash
 	if _, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, machineConfigServerDeployment, metav1.UpdateOptions{}); err != nil {
