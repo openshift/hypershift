@@ -256,6 +256,7 @@ func (c *clusterManifestContext) clusterBootstrap() {
 func (c *clusterManifestContext) machineConfigServer() {
 	c.addManifestFiles(
 		"machine-config-server/machine-config-server-configmap.yaml",
+		"machine-config-server/machine-config-server-haproxy-config-template-configmap.yaml",
 		"machine-config-server/machine-config-server-serviceaccount.yaml",
 		"machine-config-server/machine-config-server-rolebinding.yaml",
 		"machine-config-server/machine-config-server-deployment.yaml",
