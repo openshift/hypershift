@@ -445,7 +445,7 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 			status.VPNPort = vpnAddress
 		default:
 			status.VPNAddress = vpnAddress
-			status.VPNPort = fmt.Sprint("1194")
+			status.VPNPort = "1194"
 		}
 	}
 
