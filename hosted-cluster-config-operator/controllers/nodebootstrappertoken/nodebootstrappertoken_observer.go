@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	haproxyTemplateConfigmapName  = "machine-config-server-haproxy-config-template"
-	haproxyConfigSecretName       = "machine-config-server-haproxy-config"
-	nodeBootstrapperTokenPrefix   = "node-bootstrapper-token"
-	machineConfigServerDeployment = "machine-config-server"
-	machineConfigServerTLSSecret  = "machine-config-server"
+	haproxyTemplateConfigmapName       = "machine-config-server-haproxy-config-template"
+	haproxyConfigSecretName            = "machine-config-server-haproxy-config"
+	nodeBootstrapperTokenPrefix        = "node-bootstrapper-token"
+	machineConfigServerDeployment      = "machine-config-server"
+	machineConfigServerTLSSecret       = "machine-config-server"
+	controlPlaneOperatorDeploymentName = "control-plane-operator"
 )
 
 // ManagedCAObserver watches 2 CA configmaps in the target cluster:
@@ -115,21 +116,38 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not fetch machine config server deployment: %v", err)
 	}
-	if machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations != nil &&
+	controlPlaneOperator, err := r.Client.AppsV1().Deployments(r.Namespace).Get(ctx, controlPlaneOperatorDeploymentName, metav1.GetOptions{})
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("could not fetch machine config server deployment: %v", err)
+	}
+
+	if !(machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations != nil &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] == haproxyConfigDataHash &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] == machineConfigServerTLSKeyHash &&
-		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] == machineConfigServerTLSCertHash {
-		return ctrl.Result{}, nil
+		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] == machineConfigServerTLSCertHash) {
+		if machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations == nil {
+			machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+		}
+		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] = haproxyConfigDataHash
+		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] = machineConfigServerTLSKeyHash
+		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] = machineConfigServerTLSCertHash
+		if _, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, machineConfigServerDeployment, metav1.UpdateOptions{}); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
-	r.Log.Info("Updating machine config server deployment checksum annotation")
-	if machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations == nil {
-		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
-	}
-	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] = haproxyConfigDataHash
-	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] = machineConfigServerTLSKeyHash
-	machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] = machineConfigServerTLSCertHash
-	if _, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, machineConfigServerDeployment, metav1.UpdateOptions{}); err != nil {
-		return ctrl.Result{}, err
+	if !(controlPlaneOperator.Spec.Template.ObjectMeta.Annotations != nil &&
+		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] == haproxyConfigDataHash &&
+		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] == machineConfigServerTLSKeyHash &&
+		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] == machineConfigServerTLSCertHash) {
+		if controlPlaneOperator.Spec.Template.ObjectMeta.Annotations == nil {
+			controlPlaneOperator.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+		}
+		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] = haproxyConfigDataHash
+		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] = machineConfigServerTLSKeyHash
+		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] = machineConfigServerTLSCertHash
+		if _, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, controlPlaneOperator, metav1.UpdateOptions{}); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	return ctrl.Result{}, nil
 }
