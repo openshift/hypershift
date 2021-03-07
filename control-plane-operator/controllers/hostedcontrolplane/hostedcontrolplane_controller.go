@@ -1061,6 +1061,8 @@ func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, name
 }
 
 //TL: I believe this we will want to change so we don't get in a case of subdomains being hijacked
+//the "management cluster" and the clusters it hosts should be independent from a DNS perspective. For example: one management
+//cluster can host clusters from a variety of IaaS layers (on prem, IBM Cloud, AWS, etc)
 func clusterBaseDomain(c client.Client, ctx context.Context, clusterName string) (string, error) {
 	var dnsConfig configv1.DNS
 	err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, &dnsConfig)
