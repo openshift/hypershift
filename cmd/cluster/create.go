@@ -23,19 +23,25 @@ import (
 )
 
 type Options struct {
-	Namespace             string
-	Name                  string
-	ReleaseImage          string
-	PullSecretFile        string
-	AWSCredentialsFile    string
-	SSHKeyFile            string
-	NodePoolReplicas      int
-	Render                bool
-	InfraID               string
-	InfrastructureJSON    string
-	WorkerInstanceProfile string
-	InstanceType          string
-	Region                string
+	Namespace                                string
+	Name                                     string
+	ReleaseImage                             string
+	PullSecretFile                           string
+	AWSCredentialsFile                       string
+	SSHKeyFile                               string
+	NodePoolReplicas                         int
+	Render                                   bool
+	InfraID                                  string
+	InfrastructureJSON                       string
+	WorkerInstanceProfile                    string
+	InstanceType                             string
+	Region                                   string
+	APIServerAdvertisedAddress               string
+	APIServerSecurePort                      uint
+	ControlPlaneNodePortIngressTrafficDomain string
+	ControlPlaneServiceTypeStrategy          string
+	DisabledAssets                           []string
+	EnabledAssets                            []string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -55,19 +61,25 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:             "clusters",
-		Name:                  "example",
-		ReleaseImage:          releaseImage,
-		PullSecretFile:        "",
-		AWSCredentialsFile:    "",
-		SSHKeyFile:            filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"),
-		NodePoolReplicas:      2,
-		Render:                false,
-		InfrastructureJSON:    "",
-		WorkerInstanceProfile: "hypershift-worker-profile",
-		Region:                "us-east-1",
-		InfraID:               "",
-		InstanceType:          "m4.large",
+		Namespace:                                "clusters",
+		Name:                                     "example",
+		ReleaseImage:                             releaseImage,
+		PullSecretFile:                           "",
+		AWSCredentialsFile:                       "",
+		SSHKeyFile:                               filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"),
+		NodePoolReplicas:                         2,
+		Render:                                   false,
+		InfrastructureJSON:                       "",
+		WorkerInstanceProfile:                    "hypershift-worker-profile",
+		Region:                                   "us-east-1",
+		InfraID:                                  "",
+		InstanceType:                             "m4.large",
+		APIServerAdvertisedAddress:               "172.20.0.1",
+		APIServerSecurePort:                      6443,
+		ControlPlaneNodePortIngressTrafficDomain: "",
+		ControlPlaneServiceTypeStrategy:          "",
+		DisabledAssets:                           []string{},
+		EnabledAssets:                            []string{},
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -83,6 +95,10 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
+	cmd.Flags().StringVar(&opts.APIServerAdvertisedAddress, "apiserver-advertised-address", opts.APIServerAdvertisedAddress, "Advertised Address for kube api server.")
+	cmd.Flags().UintVar(&opts.APIServerSecurePort, "apiserver-secure-port", opts.APIServerSecurePort, "Secure port for API Server.")
+	cmd.Flags().StringArrayVar(&opts.DisabledAssets, "disabled-assets", opts.DisabledAssets, "Asset payloads to disable")
+	cmd.Flags().StringArrayVar(&opts.EnabledAssets, "enabled-assets", opts.EnabledAssets, "Asset payloads to enable")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -140,12 +156,12 @@ func NewCreateCommand() *cobra.Command {
 			NodePoolReplicas:                         opts.NodePoolReplicas,
 			InfraID:                                  infra.InfraID,
 			ComputeCIDR:                              infra.ComputeCIDR,
-			ApiserverSecurePort:                      2040,
-			ApiserverAdvertisedAddress:               "172.20.0.1",
-			ControlPlaneNodePortIngressTrafficDomain: "c0.bts-prestg-bare-840615-15b0bf3714b2d9d344c3b8647edb7860-0000.us-south.stg.containers.appdomain.cloud",
-			ControlPlaneServiceTypeStrategy:          "NodePort",
-			DisabledAssests:                          []string{"openvpn"},
-			EnabledAssests:                           []string{},
+			ApiserverSecurePort:                      opts.APIServerSecurePort,
+			ApiserverAdvertisedAddress:               opts.APIServerAdvertisedAddress,
+			ControlPlaneNodePortIngressTrafficDomain: opts.ControlPlaneNodePortIngressTrafficDomain,
+			ControlPlaneServiceTypeStrategy:          opts.ControlPlaneServiceTypeStrategy,
+			DisabledAssets:                           opts.DisabledAssets,
+			EnabledAssets:                            opts.EnabledAssets,
 			AWS: apifixtures.ExampleAWSOptions{
 				Region:          infra.Region,
 				Zone:            infra.Zone,

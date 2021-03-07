@@ -37,8 +37,8 @@ type ExampleOptions struct {
 	NodePoolReplicas                         int
 	InfraID                                  string
 	ComputeCIDR                              string
-	DisabledAssests                          []string
-	EnabledAssests                           []string
+	DisabledAssets                           []string
+	EnabledAssets                            []string
 	ControlPlaneServiceTypeStrategy          string
 	ControlPlaneNodePortIngressTrafficDomain string
 	ApiserverAdvertisedAddress               string
@@ -132,8 +132,8 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				ApiserverSecurePort:        o.ApiserverSecurePort,
 			},
 			InfraID:                                  o.InfraID,
-			DisabledAssets:                           o.DisabledAssests,
-			EnabledAssets:                            o.EnabledAssests,
+			DisabledAssets:                           o.DisabledAssets,
+			EnabledAssets:                            o.EnabledAssets,
 			ControlPlaneServiceTypeStrategy:          o.ControlPlaneServiceTypeStrategy,
 			ControlPlaneNodePortIngressTrafficDomain: o.ControlPlaneNodePortIngressTrafficDomain,
 			PullSecret:                               corev1.LocalObjectReference{Name: pullSecret.Name},
