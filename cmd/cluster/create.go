@@ -97,6 +97,8 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
 	cmd.Flags().StringVar(&opts.APIServerAdvertisedAddress, "apiserver-advertised-address", opts.APIServerAdvertisedAddress, "Advertised Address for kube api server.")
 	cmd.Flags().UintVar(&opts.APIServerSecurePort, "apiserver-secure-port", opts.APIServerSecurePort, "Secure port for API Server.")
+	cmd.Flags().StringVar(&opts.ControlPlaneNodePortIngressTrafficDomain, "controlplane-nodeport-ingress-traffic-domain", opts.ControlPlaneNodePortIngressTrafficDomain, "Domain that will expose node port traffic of the controller cluster.")
+	cmd.Flags().StringVar(&opts.ControlPlaneServiceTypeStrategy, "controlplane-servicetype-strategy", opts.ControlPlaneServiceTypeStrategy, "Strategy used for exposing control plane services. Currently supports NodePort for nodePorts otherwise defaults to using LoadBalancer services.")
 	cmd.Flags().StringArrayVar(&opts.DisabledAssets, "disabled-assets", opts.DisabledAssets, "Asset payloads to disable")
 	cmd.Flags().StringArrayVar(&opts.EnabledAssets, "enabled-assets", opts.EnabledAssets, "Asset payloads to enable")
 
