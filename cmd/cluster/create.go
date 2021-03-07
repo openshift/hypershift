@@ -164,6 +164,8 @@ func NewCreateCommand() *cobra.Command {
 			NodePoolReplicas:                         opts.NodePoolReplicas,
 			InfraID:                                  infra.InfraID,
 			ComputeCIDR:                              infra.ComputeCIDR,
+			PodCIDR:                                  opts.PodCIDR,
+			ServiceCIDR:                              opts.ServiceCIDR,
 			ApiserverSecurePort:                      opts.APIServerSecurePort,
 			ApiserverAdvertisedAddress:               opts.APIServerAdvertisedAddress,
 			ControlPlaneNodePortIngressTrafficDomain: opts.ControlPlaneNodePortIngressTrafficDomain,
