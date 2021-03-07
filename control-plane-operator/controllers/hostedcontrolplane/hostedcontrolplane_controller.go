@@ -513,8 +513,12 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("could not find node bootstrapper token in machine config server haproxy secret conf  %s", haproxyConfigSecretName)
 	}
 	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version, nodeBootstrapperTokenData)
-	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate user data secret: %w", err)
+	err = r.Create(ctx, userDataSecret)
+	if apierrors.IsAlreadyExists(err) {
+		err = r.Update(ctx, userDataSecret)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to generate/update user data secret: %w", err)
 	}
 	userDataSecret.OwnerReferences = ensureHCPOwnerRef(hcp, userDataSecret.OwnerReferences)
 
