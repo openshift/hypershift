@@ -28,14 +28,15 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 }
 
 type ExampleOptions struct {
-	Namespace                                string
-	Name                                     string
-	ReleaseImage                             string
-	PullSecret                               []byte
-	AWSCredentials                           []byte
-	SSHKey                                   []byte
-	NodePoolReplicas                         int
-	InfraID                                  string
+	Namespace        string
+	Name             string
+	ReleaseImage     string
+	PullSecret       []byte
+	AWSCredentials   []byte
+	SSHKey           []byte
+	NodePoolReplicas int
+	InfraID          string
+	//TODO: this can be variable/unknown in on prem environments
 	ComputeCIDR                              string
 	DisabledAssets                           []string
 	EnabledAssets                            []string
@@ -43,6 +44,8 @@ type ExampleOptions struct {
 	ControlPlaneNodePortIngressTrafficDomain string
 	ApiserverAdvertisedAddress               string
 	ApiserverSecurePort                      uint
+	ServiceCIDR                              string
+	PodCIDR                                  string
 
 	AWS ExampleAWSOptions
 }
@@ -125,8 +128,8 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			},
 			InitialComputeReplicas: o.NodePoolReplicas,
 			Networking: hyperv1.ClusterNetworking{
-				ServiceCIDR:                "172.31.0.0/16",
-				PodCIDR:                    "10.132.0.0/14",
+				ServiceCIDR:                o.ServiceCIDR,
+				PodCIDR:                    o.PodCIDR,
 				MachineCIDR:                o.ComputeCIDR,
 				ApiserverAdvertisedAddress: o.ApiserverAdvertisedAddress,
 				ApiserverSecurePort:        o.ApiserverSecurePort,

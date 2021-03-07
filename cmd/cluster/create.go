@@ -42,6 +42,9 @@ type Options struct {
 	ControlPlaneServiceTypeStrategy          string
 	DisabledAssets                           []string
 	EnabledAssets                            []string
+	ServiceCIDR                              string
+	PodCIDR                                  string
+	ComputeCIDR                              string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -75,6 +78,7 @@ func NewCreateCommand() *cobra.Command {
 		InfraID:                                  "",
 		InstanceType:                             "m4.large",
 		APIServerAdvertisedAddress:               "172.20.0.1",
+		ServiceCIDR:                              "1",
 		APIServerSecurePort:                      6443,
 		ControlPlaneNodePortIngressTrafficDomain: "",
 		ControlPlaneServiceTypeStrategy:          "",
