@@ -83,6 +83,7 @@ type InfrastructureStatus struct {
 	APIPort                 string
 	OAuthAddress            string
 	VPNAddress              string
+	VPNPort                 string
 	OpenShiftAPIAddress     string
 	OauthAPIServerAddress   string
 	IgnitionProviderAddress string
@@ -410,7 +411,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	case "NodePort":
 		status.APIAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
 		status.APIPort = apiAddress
-		status.VPNAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
 	default:
 		status.APIAddress = apiAddress
 		status.APIPort = fmt.Sprint(APIServerPort)
@@ -439,7 +439,14 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		if err != nil {
 			return status, fmt.Errorf("failed to get service: %w", err)
 		}
-		status.VPNAddress = vpnAddress
+		switch hcp.Spec.ControlPlaneServiceTypeStrategy {
+		case "NodePort":
+			status.VPNAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
+			status.VPNPort = vpnAddress
+		default:
+			status.VPNAddress = vpnAddress
+			status.VPNPort = fmt.Sprint("1194")
+		}
 	}
 
 	ignitionAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(ignitionRoute))
@@ -613,7 +620,8 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.Namespace = targetNamespace
 	params.ExternalAPIAddress = hcp.Spec.ApiserverAdvertisedAddress
 	params.ExternalOpenVPNAddress = infraStatus.VPNAddress
-	params.ExternalOpenVPNPort = 1194
+	externalOpenVPNPort, _ := strconv.ParseUint(infraStatus.VPNPort, 10, 32)
+	params.ExternalOpenVPNPort = uint(externalOpenVPNPort)
 	params.ExternalOauthDNSName = infraStatus.OAuthAddress
 	params.ExternalOauthPort = externalOauthPort
 	params.ServiceCIDR = hcp.Spec.ServiceCIDR
@@ -790,7 +798,12 @@ func createVPNServerService(client client.Client, hcp *hyperv1.HostedControlPlan
 	svc.Namespace = namespace
 	svc.Name = vpnServiceName
 	svc.Spec.Selector = map[string]string{"app": "openvpn-server"}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
+	case "NodePort":
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+	default:
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	}
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
 			Port:       1194,
