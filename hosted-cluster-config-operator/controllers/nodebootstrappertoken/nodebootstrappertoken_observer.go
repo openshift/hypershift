@@ -66,6 +66,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 	}
 	nodeBootstrapperTokenBase64 := base64.StdEncoding.EncodeToString(nodeBootstrapperToken)
 
+	controllerLog.Info("Fetching machine config server haproxy template")
 	haproxyTemplateConfigMapData, err := r.Client.CoreV1().ConfigMaps(r.Namespace).Get(ctx, haproxyTemplateConfigmapName, metav1.GetOptions{})
 	if err != nil {
 		return ctrl.Result{}, err
@@ -76,6 +77,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("haproxy config not found")
 	}
 
+	controllerLog.Info("Fetching machine config server tls info")
 	machineConfigServerSSLCerts, err := r.Client.CoreV1().Secrets(r.Namespace).Get(ctx, machineConfigServerTLSSecret, metav1.GetOptions{})
 	if err != nil {
 		return ctrl.Result{}, err
@@ -92,7 +94,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 	haproxyTLSPem := bytes.Join([][]byte{machineConfigServerTLSCert, machineConfigServerTLSKey}, []byte("\n"))
 	haproxyConfigData := bytes.Replace([]byte(haproxyConfigTemplateData), []byte("NODE_BOOTSTRAPPER_TOKEN_REPLACE"), []byte(url.QueryEscape(nodeBootstrapperTokenBase64)), -1)
 	haproxyConfigDataHash := calculateHash(haproxyConfigData)
-
+	controllerLog.Info("Creating/Updating machine config server haproxy secret")
 	haproxyConfigSecret := &v1.Secret{
 		Type: v1.SecretTypeOpaque,
 		ObjectMeta: metav1.ObjectMeta{
@@ -112,6 +114,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not create/update haproxy config secret: %v", err)
 	}
+	controllerLog.Info("Fetching deployments that potentially need to be restarted to sync these changes")
 	machineConfigServerDeployment, err := r.Client.AppsV1().Deployments(r.Namespace).Get(ctx, machineConfigServerDeployment, metav1.GetOptions{})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not fetch machine config server deployment: %v", err)
@@ -120,11 +123,11 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not fetch machine config server deployment: %v", err)
 	}
-
 	if !(machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations != nil &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] == haproxyConfigDataHash &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] == machineConfigServerTLSKeyHash &&
 		machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] == machineConfigServerTLSCertHash) {
+		controllerLog.Info("Restarting machine config server to pickup new conf")
 		if machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations == nil {
 			machineConfigServerDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
@@ -139,6 +142,7 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["haproxy-config-data-checksum"] == haproxyConfigDataHash &&
 		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-key-checksum"] == machineConfigServerTLSKeyHash &&
 		controlPlaneOperator.Spec.Template.ObjectMeta.Annotations["machine-config-server-tls-cert-checksum"] == machineConfigServerTLSCertHash) {
+		controllerLog.Info("Restarting controlPlaneOperator to pickup new conf")
 		if controlPlaneOperator.Spec.Template.ObjectMeta.Annotations == nil {
 			controlPlaneOperator.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
@@ -153,10 +157,12 @@ func (r *NodeBootstrapperTokenObserver) Reconcile(_ context.Context, req ctrl.Re
 }
 
 func (r *NodeBootstrapperTokenObserver) fetchBootstrapperToken(ctx context.Context, logger logr.Logger) ([]byte, error) {
+	logger.Info("Fetching node bootstrapper service account info")
 	nodeBootstrapperSA, err := r.TargetClient.CoreV1().ServiceAccounts(NodeBootstrapperTokenNamespace).Get(ctx, NodeBootstrapperServiceAccountName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch node bootstrapper token service account: %v", err)
 	}
+	logger.Info("Fetched node bootstrapper service account info. Locating token secret in the service account")
 	secretToFetch := ""
 	for _, i := range nodeBootstrapperSA.Secrets {
 		if strings.HasPrefix(i.Name, nodeBootstrapperTokenPrefix) {
@@ -167,12 +173,14 @@ func (r *NodeBootstrapperTokenObserver) fetchBootstrapperToken(ctx context.Conte
 	if len(secretToFetch) == 0 {
 		return nil, fmt.Errorf("service account token secret doesn't exist for node bootstrapper sa")
 	}
+	logger.Info("Fetching service account token secret")
 	secretData, err := r.TargetClient.CoreV1().Secrets(NodeBootstrapperTokenNamespace).Get(ctx, secretToFetch, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to node bootstrapper token secret data: %v", err)
 	}
 	var tokenData []byte
 	var ok bool
+	logger.Info("Fetched service account token secret. Ensuring token field is present")
 	if tokenData, ok = secretData.Data["token"]; !ok {
 		return nil, fmt.Errorf("token data could not be found in secret")
 	}
