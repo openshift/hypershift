@@ -25,15 +25,21 @@ type HostedControlPlane struct {
 
 // HostedControlPlaneSpec defines the desired state of HostedControlPlane
 type HostedControlPlaneSpec struct {
-	ReleaseImage  string                      `json:"releaseImage"`
-	PullSecret    corev1.LocalObjectReference `json:"pullSecret"`
-	ServiceCIDR   string                      `json:"serviceCIDR"`
-	PodCIDR       string                      `json:"podCIDR"`
-	MachineCIDR   string                      `json:"machineCIDR"`
-	SSHKey        corev1.LocalObjectReference `json:"sshKey"`
-	ProviderCreds corev1.LocalObjectReference `json:"providerCreds"`
-	InfraID       string                      `json:"infraID"`
-	Platform      PlatformSpec                `json:"platform"`
+	ReleaseImage                             string                      `json:"releaseImage"`
+	PullSecret                               corev1.LocalObjectReference `json:"pullSecret"`
+	ServiceCIDR                              string                      `json:"serviceCIDR"`
+	PodCIDR                                  string                      `json:"podCIDR"`
+	MachineCIDR                              string                      `json:"machineCIDR"`
+	SSHKey                                   corev1.LocalObjectReference `json:"sshKey"`
+	ProviderCreds                            corev1.LocalObjectReference `json:"providerCreds"`
+	InfraID                                  string                      `json:"infraID"`
+	Platform                                 PlatformSpec                `json:"platform"`
+	ControlPlaneServiceTypeStrategy          string                      `json:"controlPlaneServiceTypeStrategy,omitempty"`
+	ControlPlaneNodePortIngressTrafficDomain string                      `json:"controlPlaneNodePortIngressTrafficDomain,omitempty"`
+	EnabledAssets                            []string                    `json:"enabledAssets,omitempty"`
+	DisabledAssets                           []string                    `json:"disabledAssets,omitempty"`
+	ApiserverAdvertisedAddress               string                      `json:"apiserverAdvertisedAddress,omitempty"`
+	ApiserverSecurePort                      uint                        `json:"apiserverSecurePort,omitempty"`
 }
 
 type ConditionType string

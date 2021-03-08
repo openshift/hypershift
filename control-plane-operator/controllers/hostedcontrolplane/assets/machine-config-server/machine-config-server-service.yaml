@@ -7,7 +7,7 @@ spec:
   - port: 80
     name: http
     protocol: TCP
-    targetPort: 8080
+    targetPort: 8081
   selector:
     app: machine-config-server
   type: ClusterIP

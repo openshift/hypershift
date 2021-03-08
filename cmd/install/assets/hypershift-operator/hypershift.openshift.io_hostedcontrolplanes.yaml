@@ -37,6 +37,22 @@ spec:
           spec:
             description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
             properties:
+              apiserverAdvertisedAddress:
+                type: string
+              apiserverSecurePort:
+                type: integer
+              controlPlaneNodePortIngressTrafficDomain:
+                type: string
+              controlPlaneServiceTypeStrategy:
+                type: string
+              disabledAssets:
+                items:
+                  type: string
+                type: array
+              enabledAssets:
+                items:
+                  type: string
+                type: array
               infraID:
                 type: string
               machineCIDR:

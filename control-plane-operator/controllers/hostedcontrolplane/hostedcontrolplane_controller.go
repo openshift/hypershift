@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,18 +51,20 @@ import (
 )
 
 const (
-	finalizer                 = "hypershift.openshift.io/finalizer"
-	APIServerPort             = 6443
-	kubeAPIServerServiceName  = "kube-apiserver"
-	vpnServiceName            = "openvpn-server"
-	oauthServiceName          = "oauth-openshift"
-	pullSecretName            = "pull-secret"
-	vpnServiceAccountName     = "vpn"
-	ingressOperatorNamespace  = "openshift-ingress-operator"
-	hypershiftRouteLabel      = "hypershift.openshift.io/cluster"
-	oauthBrandingManifest     = "v4-0-config-system-branding.yaml"
-	DefaultAPIServerIPAddress = "172.20.0.1"
-	externalOauthPort         = 443
+	finalizer                                = "hypershift.openshift.io/finalizer"
+	APIServerPort                            = 6443
+	kubeAPIServerServiceName                 = "kube-apiserver"
+	vpnServiceName                           = "openvpn-server"
+	oauthServiceName                         = "oauth-openshift"
+	pullSecretName                           = "pull-secret"
+	vpnServiceAccountName                    = "vpn"
+	ingressOperatorNamespace                 = "openshift-ingress-operator"
+	hypershiftRouteLabel                     = "hypershift.openshift.io/cluster"
+	oauthBrandingManifest                    = "v4-0-config-system-branding.yaml"
+	DefaultAPIServerIPAddress                = "172.20.0.1"
+	haproxyConfigSecretName                  = "machine-config-server-haproxy-config"
+	hostedClusterConfigOperatorConfigMapName = "hosted-cluster-config-operator"
+	externalOauthPort                        = 443
 )
 
 var (
@@ -76,8 +80,10 @@ var (
 
 type InfrastructureStatus struct {
 	APIAddress              string
+	APIPort                 string
 	OAuthAddress            string
 	VPNAddress              string
+	VPNPort                 string
 	OpenShiftAPIAddress     string
 	OauthAPIServerAddress   string
 	IgnitionProviderAddress string
@@ -251,9 +257,18 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Log.Info("Cluster infrastructure is still provisioning, will try again later")
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "WaitingOnInfrastructureReady", "Cluster infrastructure is still provisioning", result, nil)
 	}
-	hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
-		Host: infraStatus.APIAddress,
-		Port: APIServerPort,
+	switch hostedControlPlane.Spec.ControlPlaneServiceTypeStrategy {
+	case "NodePort":
+		externalAPIPort, _ := strconv.ParseInt(infraStatus.APIPort, 10, 32)
+		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+			Host: infraStatus.APIAddress,
+			Port: int32(externalAPIPort),
+		}
+	default:
+		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+			Host: infraStatus.APIAddress,
+			Port: APIServerPort,
+		}
 	}
 
 	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage)
@@ -329,10 +344,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	status := InfrastructureStatus{}
 
 	targetNamespace := hcp.GetName()
-	// Ensure that we can run privileged pods
-	if err := ensureVPNSCC(r, hcp, targetNamespace); err != nil {
-		return status, fmt.Errorf("failed to ensure privileged SCC for the new namespace: %w", err)
-	}
 
 	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp.Name)
 	if err != nil {
@@ -346,13 +357,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		return status, fmt.Errorf("failed to create Kube API service: %w", err)
 	}
 	r.Log.Info("Created Kube API service")
-
-	r.Log.Info("Creating VPN service")
-	vpnService, err := createVPNServerService(r, hcp, targetNamespace)
-	if err != nil {
-		return status, fmt.Errorf("failed to create vpn server service: %w", err)
-	}
-	r.Log.Info("Created VPN service")
 
 	r.Log.Info("Creating Openshift API service")
 	openshiftAPIService, err := createOpenshiftService(r, hcp, targetNamespace)
@@ -393,23 +397,57 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		return status, fmt.Errorf("failed to create oauth server route: %w", err)
 	}
 
-	apiAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(apiService))
-	if err != nil {
-		return status, fmt.Errorf("failed to get service: %w", err)
-	}
-	status.APIAddress = apiAddress
-
 	oauthAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(oauthRoute))
 	if err != nil {
 		return status, fmt.Errorf("failed get get route address: %w", err)
 	}
 	status.OAuthAddress = oauthAddress
 
-	vpnAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(vpnService))
+	apiAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(apiService))
 	if err != nil {
 		return status, fmt.Errorf("failed to get service: %w", err)
 	}
-	status.VPNAddress = vpnAddress
+	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
+	case "NodePort":
+		status.APIAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
+		status.APIPort = apiAddress
+	default:
+		status.APIAddress = apiAddress
+		status.APIPort = fmt.Sprint(APIServerPort)
+	}
+
+	vpnEnabled := true
+	for _, disabledAsset := range hcp.Spec.DisabledAssets {
+		if disabledAsset == "openvpn" {
+			vpnEnabled = false
+		}
+	}
+	if vpnEnabled {
+		// Ensure that we can run privileged pods
+		if err := ensureVPNSCC(r, hcp, targetNamespace); err != nil {
+			return status, fmt.Errorf("failed to ensure privileged SCC for the new namespace: %w", err)
+		}
+
+		r.Log.Info("Creating VPN service")
+		vpnService, err := createVPNServerService(r, hcp, targetNamespace)
+		if err != nil {
+			return status, fmt.Errorf("failed to create vpn server service: %w", err)
+		}
+		r.Log.Info("Created VPN service")
+
+		vpnAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(vpnService))
+		if err != nil {
+			return status, fmt.Errorf("failed to get service: %w", err)
+		}
+		switch hcp.Spec.ControlPlaneServiceTypeStrategy {
+		case "NodePort":
+			status.VPNAddress = hcp.Spec.ControlPlaneNodePortIngressTrafficDomain
+			status.VPNPort = vpnAddress
+		default:
+			status.VPNAddress = vpnAddress
+			status.VPNPort = "1194"
+		}
+	}
 
 	ignitionAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(ignitionRoute))
 	if err != nil {
@@ -472,9 +510,32 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	r.Log.Info("successfully applied all manifests")
 
-	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version)
-	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate user data secret: %w", err)
+	// Create the configmap with the pull secret for the guest cluster
+	var nodeBootstrapperSecret corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: targetNamespace, Name: haproxyConfigSecretName}, &nodeBootstrapperSecret); err != nil {
+		return fmt.Errorf("failed to get machine config server haproxy secret conf %s: %w", haproxyConfigSecretName, err)
+	}
+	var nodeBootstrapperTokenData []byte
+	var ok bool
+	if nodeBootstrapperTokenData, ok = nodeBootstrapperSecret.Data["node-bootstrapper-token"]; !ok {
+		return fmt.Errorf("could not find node bootstrapper token in machine config server haproxy secret conf  %s", haproxyConfigSecretName)
+	}
+
+	var hostedClusterConfigOperatorConfigMapData corev1.ConfigMap
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: targetNamespace, Name: hostedClusterConfigOperatorConfigMapName}, &hostedClusterConfigOperatorConfigMapData); err != nil {
+		return fmt.Errorf("failed to get hosted cluster config operator configmap %s: %w", hostedClusterConfigOperatorConfigMapName, err)
+	}
+	var combinedCA string
+	if combinedCA, ok = hostedClusterConfigOperatorConfigMapData.Data["initial-ca.crt"]; !ok {
+		return fmt.Errorf("could not find node initial-ca.crt in configmap %s", hostedClusterConfigOperatorConfigMapName)
+	}
+	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version, nodeBootstrapperTokenData, combinedCA)
+	err = r.Create(ctx, userDataSecret)
+	if apierrors.IsAlreadyExists(err) {
+		err = r.Update(ctx, userDataSecret)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to generate/update user data secret: %w", err)
 	}
 	userDataSecret.OwnerReferences = ensureHCPOwnerRef(hcp, userDataSecret.OwnerReferences)
 
@@ -553,12 +614,14 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 
 	params := render.NewClusterParams()
-	params.Namespace = targetNamespace
 	params.ExternalAPIDNSName = infraStatus.APIAddress
-	params.ExternalAPIPort = APIServerPort
-	params.ExternalAPIAddress = DefaultAPIServerIPAddress
+	externalAPIPort, _ := strconv.ParseUint(infraStatus.APIPort, 10, 32)
+	params.ExternalAPIPort = uint(externalAPIPort)
+	params.Namespace = targetNamespace
+	params.ExternalAPIAddress = hcp.Spec.ApiserverAdvertisedAddress
 	params.ExternalOpenVPNAddress = infraStatus.VPNAddress
-	params.ExternalOpenVPNPort = 1194
+	externalOpenVPNPort, _ := strconv.ParseUint(infraStatus.VPNPort, 10, 32)
+	params.ExternalOpenVPNPort = uint(externalOpenVPNPort)
 	params.ExternalOauthDNSName = infraStatus.OAuthAddress
 	params.ExternalOauthPort = externalOauthPort
 	params.ServiceCIDR = hcp.Spec.ServiceCIDR
@@ -585,7 +648,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 	params.CloudCredentials = string(cloudCreds.Data["credentials"])
 	params.ProviderCredsSecretName = hcp.Spec.ProviderCreds.Name
-	params.InternalAPIPort = APIServerPort
+	params.InternalAPIPort = hcp.Spec.ApiserverSecurePort
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
@@ -616,9 +679,9 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if needsPkiSecret {
 		pkiParams := &render.PKIParams{
 			ExternalAPIAddress:         infraStatus.APIAddress,
-			NodeInternalAPIServerIP:    DefaultAPIServerIPAddress,
-			ExternalAPIPort:            APIServerPort,
-			InternalAPIPort:            APIServerPort,
+			NodeInternalAPIServerIP:    hcp.Spec.ApiserverAdvertisedAddress,
+			ExternalAPIPort:            params.ExternalAPIPort,
+			InternalAPIPort:            hcp.Spec.ApiserverSecurePort,
 			ServiceCIDR:                hcp.Spec.ServiceCIDR,
 			ExternalOauthAddress:       infraStatus.OAuthAddress,
 			IngressSubdomain:           "apps." + baseDomain,
@@ -708,12 +771,17 @@ func createKubeAPIServerService(client client.Client, hcp *hyperv1.HostedControl
 	svc.Namespace = namespace
 	svc.Name = kubeAPIServerServiceName
 	svc.Spec.Selector = map[string]string{"app": "kube-apiserver"}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
+	case "NodePort":
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+	default:
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	}
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
-			Port:       6443,
+			Port:       int32(hcp.Spec.ApiserverSecurePort),
 			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(6443),
+			TargetPort: intstr.FromInt(int(hcp.Spec.ApiserverSecurePort)),
 		},
 	}
 	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
@@ -730,7 +798,12 @@ func createVPNServerService(client client.Client, hcp *hyperv1.HostedControlPlan
 	svc.Namespace = namespace
 	svc.Name = vpnServiceName
 	svc.Spec.Selector = map[string]string{"app": "openvpn-server"}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	switch hcp.Spec.ControlPlaneServiceTypeStrategy {
+	case "NodePort":
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+	default:
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	}
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
 			Port:       1194,
@@ -904,6 +977,10 @@ func createIgnitionServerRoute(namespace string) *routev1.Route {
 				Kind: "Service",
 				Name: "machine-config-server",
 			},
+			TLS: &routev1.TLSConfig{
+				Termination:                   routev1.TLSTerminationPassthrough,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+			},
 		},
 	}
 }
@@ -940,6 +1017,8 @@ func getLoadBalancerServiceAddress(c client.Client, ctx context.Context, key cli
 		case svc.Status.LoadBalancer.Ingress[0].IP != "":
 			addr = svc.Status.LoadBalancer.Ingress[0].IP
 		}
+	} else if svc.Spec.Ports[0].NodePort > 0 {
+		addr = fmt.Sprint(svc.Spec.Ports[0].NodePort)
 	}
 	return addr, nil
 }
@@ -981,6 +1060,11 @@ func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, name
 	return nil
 }
 
+//TL: I believe this we will want to change so we don't get in a case of subdomains being hijacked from the control plane in user clusters.
+//the "management cluster" and the clusters it hosts should be independent from a DNS perspective. For example: one management
+//cluster can host clusters from a variety of different tenants and sometimes different providers (IBM Cloud VPC Gen 2 and IBM Cloud Classic in same tugboat)
+// We likely want a user to pass this in explicitly and some automated system can use the data they pass in and adjust the base domain to point to the proper
+// router pod ips when applicable.
 func clusterBaseDomain(c client.Client, ctx context.Context, clusterName string) (string, error) {
 	var dnsConfig configv1.DNS
 	err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, &dnsConfig)
@@ -1041,7 +1125,7 @@ func applyManifests(ctx context.Context, c client.Client, log logr.Logger, names
 	return nil
 }
 
-func generateUserDataSecret(name, namespace string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {
+func generateUserDataSecret(name, namespace string, ignitionProviderAddr string, version semver.Version, nodeBootstrapperToken []byte, clusterCA string) *corev1.Secret {
 	secret := &corev1.Secret{}
 	secret.Name = fmt.Sprintf("%s-user-data", name)
 	secret.Namespace = namespace
@@ -1053,9 +1137,9 @@ func generateUserDataSecret(name, namespace string, ignitionProviderAddr string,
 	version.Pre = nil
 	version.Build = nil
 	if version.GTE(version46) {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr))
+		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"https://%s/config/master?token=%s","verification":{}}]},"security": { "tls": { "certificateAuthorities": [ { "source": "data:text/plain;charset=utf-8;base64,%s", "verification":{} } ] } },"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken)), base64.StdEncoding.EncodeToString([]byte(clusterCA))))
 	} else {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr))
+		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"https://%s/config/master?token=%s","verification":{}}]},"security":{ "tls": { "certificateAuthorities": [ { "source": "data:text/plain;charset=utf-8;base64,%s", "verification":{} } ] } },"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken)), base64.StdEncoding.EncodeToString([]byte(clusterCA))))
 	}
 
 	secret.Data = map[string][]byte{

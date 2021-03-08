@@ -52,12 +52,19 @@ type HostedClusterSpec struct {
 
 	// InfraID is used to identify the cluster in cloud platforms
 	InfraID string `json:"infraID,omitempty"`
+
+	ControlPlaneServiceTypeStrategy          string   `json:"controlPlaneServiceTypeStrategy,omitempty"`
+	ControlPlaneNodePortIngressTrafficDomain string   `json:"controlPlaneNodePortIngressTrafficDomain,omitempty"`
+	EnabledAssets                            []string `json:"enabledAssets,omitempty"`
+	DisabledAssets                           []string `json:"disabledAssets,omitempty"`
 }
 
 type ClusterNetworking struct {
-	ServiceCIDR string `json:"serviceCIDR"`
-	PodCIDR     string `json:"podCIDR"`
-	MachineCIDR string `json:"machineCIDR"`
+	ServiceCIDR                string `json:"serviceCIDR"`
+	PodCIDR                    string `json:"podCIDR"`
+	MachineCIDR                string `json:"machineCIDR"`
+	ApiserverAdvertisedAddress string `json:"apiserverAdvertisedAddress,omitempty"`
+	ApiserverSecurePort        uint   `json:"apiserverSecurePort,omitempty"`
 }
 
 type PlatformSpec struct {
