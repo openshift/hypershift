@@ -3,6 +3,7 @@ package pki
 import (
 	"fmt"
 	"net"
+	"strconv"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -24,7 +25,7 @@ func GeneratePKI(params *render.PKIParams) (map[string][]byte, error) {
 	kubeconfigs := []kubeconfigSpec{
 		kubeconfig("admin", externalAPIServerAddress, "root-ca", "system:admin", "system:masters"),
 		kubeconfig("internal-admin", internalAPIServerAddress, "root-ca", "system:admin", "system:masters"),
-		kubeconfig("localhost-admin", "https://localhost:6443", "root-ca", "system:admin", "system:masters"),
+		kubeconfig("localhost-admin", "https://localhost:"+strconv.FormatUint(uint64(params.InternalAPIPort), 10), "root-ca", "system:admin", "system:masters"),
 		kubeconfig("kubelet-bootstrap", externalAPIServerAddress, "cluster-signer", "system:bootstrapper", "system:bootstrappers"),
 	}
 

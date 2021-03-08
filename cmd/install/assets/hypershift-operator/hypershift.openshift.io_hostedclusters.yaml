@@ -56,6 +56,10 @@ spec:
               networking:
                 description: Networking contains network-specific settings for this cluster
                 properties:
+                  apiserverAdvertisedAddress:
+                    type: string
+                  apiserverSecurePort:
+                    type: integer
                   machineCIDR:
                     type: string
                   podCIDR:

@@ -37,6 +37,10 @@ spec:
           spec:
             description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
             properties:
+              apiserverAdvertisedAddress:
+                type: string
+              apiserverSecurePort:
+                type: integer
               infraID:
                 type: string
               machineCIDR:

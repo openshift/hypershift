@@ -183,15 +183,19 @@ func TestQuickStart(t *testing.T) {
 	}()
 
 	example := apifixtures.ExampleOptions{
-		Namespace:        namespace.Name,
-		Name:             "example-" + namespace.Name,
-		ReleaseImage:     input.ReleaseImage,
-		PullSecret:       input.PullSecret,
-		AWSCredentials:   input.AWSCredentials,
-		SSHKey:           input.SSHKey,
-		NodePoolReplicas: 2,
-		InfraID:          input.Infra.InfraID,
-		ComputeCIDR:      input.Infra.ComputeCIDR,
+		Namespace:                  namespace.Name,
+		Name:                       "example-" + namespace.Name,
+		ReleaseImage:               input.ReleaseImage,
+		PullSecret:                 input.PullSecret,
+		AWSCredentials:             input.AWSCredentials,
+		SSHKey:                     input.SSHKey,
+		NodePoolReplicas:           2,
+		InfraID:                    input.Infra.InfraID,
+		ApiserverSecurePort:        6443,
+		ApiserverAdvertisedAddress: "172.20.0.1",
+		ServiceCIDR:                "172.31.0.0/16",
+		PodCIDR:                    "10.132.0.0/14",
+		ComputeCIDR:                input.Infra.ComputeCIDR,
 		AWS: apifixtures.ExampleAWSOptions{
 			Region:          input.Infra.Region,
 			Zone:            input.Infra.Zone,

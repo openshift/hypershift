@@ -556,7 +556,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.Namespace = targetNamespace
 	params.ExternalAPIDNSName = infraStatus.APIAddress
 	params.ExternalAPIPort = APIServerPort
-	params.ExternalAPIAddress = DefaultAPIServerIPAddress
+	params.ExternalAPIAddress = hcp.Spec.ApiserverAdvertisedAddress
 	params.ExternalOpenVPNAddress = infraStatus.VPNAddress
 	params.ExternalOpenVPNPort = 1194
 	params.ExternalOauthDNSName = infraStatus.OAuthAddress
@@ -585,7 +585,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 	params.CloudCredentials = string(cloudCreds.Data["credentials"])
 	params.ProviderCredsSecretName = hcp.Spec.ProviderCreds.Name
-	params.InternalAPIPort = APIServerPort
+	params.InternalAPIPort = hcp.Spec.ApiserverSecurePort
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
@@ -616,9 +616,9 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if needsPkiSecret {
 		pkiParams := &render.PKIParams{
 			ExternalAPIAddress:         infraStatus.APIAddress,
-			NodeInternalAPIServerIP:    DefaultAPIServerIPAddress,
-			ExternalAPIPort:            APIServerPort,
-			InternalAPIPort:            APIServerPort,
+			NodeInternalAPIServerIP:    hcp.Spec.ApiserverAdvertisedAddress,
+			ExternalAPIPort:            params.ExternalAPIPort,
+			InternalAPIPort:            hcp.Spec.ApiserverSecurePort,
 			ServiceCIDR:                hcp.Spec.ServiceCIDR,
 			ExternalOauthAddress:       infraStatus.OAuthAddress,
 			IngressSubdomain:           "apps." + baseDomain,
@@ -711,9 +711,9 @@ func createKubeAPIServerService(client client.Client, hcp *hyperv1.HostedControl
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
-			Port:       6443,
+			Port:       int32(hcp.Spec.ApiserverSecurePort),
 			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(6443),
+			TargetPort: intstr.FromInt(int(hcp.Spec.ApiserverSecurePort)),
 		},
 	}
 	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
