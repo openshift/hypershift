@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/aws/aws-sdk-go v1.35.0
 	github.com/blang/semver v3.5.1+incompatible
+	github.com/bombsimon/logrusr v1.0.0
 	github.com/go-logr/logr v0.4.0
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/go-cmp v0.5.2
