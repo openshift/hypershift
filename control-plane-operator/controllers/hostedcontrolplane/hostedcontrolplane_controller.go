@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,8 +77,10 @@ var (
 
 type InfrastructureStatus struct {
 	APIAddress              string
+	APIPort                 string
 	OAuthAddress            string
 	VPNAddress              string
+	VPNPort                 string
 	OpenShiftAPIAddress     string
 	OauthAPIServerAddress   string
 	IgnitionProviderAddress string
@@ -251,11 +254,22 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Log.Info("Cluster infrastructure is still provisioning, will try again later")
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "WaitingOnInfrastructureReady", "Cluster infrastructure is still provisioning", result, nil)
 	}
-	hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
-		Host: infraStatus.APIAddress,
-		Port: APIServerPort,
+	switch hostedControlPlane.Spec.ServiceType {
+	case "NodePort":
+		externalAPIPort, err := strconv.ParseInt(infraStatus.APIPort, 10, 32)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to parse APIPort: %w", err)
+		}
+		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+			Host: infraStatus.APIAddress,
+			Port: int32(externalAPIPort),
+		}
+	default:
+		hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+			Host: infraStatus.APIAddress,
+			Port: APIServerPort,
+		}
 	}
-
 	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage)
 	if err != nil {
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ReleaseInfoLookupFailed", err.Error(), ctrl.Result{}, fmt.Errorf("failed to look up release info: %w", err))
@@ -397,7 +411,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	if err != nil {
 		return status, fmt.Errorf("failed to get service: %w", err)
 	}
-	status.APIAddress = apiAddress
 
 	oauthAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(oauthRoute))
 	if err != nil {
@@ -409,7 +422,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	if err != nil {
 		return status, fmt.Errorf("failed to get service: %w", err)
 	}
-	status.VPNAddress = vpnAddress
 
 	ignitionAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(ignitionRoute))
 	if err != nil {
@@ -417,6 +429,18 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	}
 	status.IgnitionProviderAddress = ignitionAddress
 
+	switch hcp.Spec.ServiceType {
+	case "NodePort":
+		status.APIAddress = hcp.Spec.ServiceAddress
+		status.APIPort = apiAddress
+		status.VPNAddress = hcp.Spec.ServiceAddress
+		status.VPNPort = vpnAddress
+	default:
+		status.APIAddress = apiAddress
+		status.APIPort = fmt.Sprint(APIServerPort)
+		status.VPNAddress = vpnAddress
+		status.VPNPort = "1194"
+	}
 	status.OpenShiftAPIAddress = openshiftAPIService.Spec.ClusterIP
 	status.OauthAPIServerAddress = oauthAPIService.Spec.ClusterIP
 
@@ -555,10 +579,18 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params := render.NewClusterParams()
 	params.Namespace = targetNamespace
 	params.ExternalAPIDNSName = infraStatus.APIAddress
-	params.ExternalAPIPort = APIServerPort
 	params.ExternalAPIAddress = DefaultAPIServerIPAddress
+	externalAPIPort, err := strconv.ParseUint(infraStatus.APIPort, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse API Port: %w", err)
+	}
+	params.ExternalAPIPort = uint(externalAPIPort)
+	externalOpenVPNPort, err := strconv.ParseUint(infraStatus.VPNPort, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse VPN Port: %w", err)
+	}
+	params.ExternalOpenVPNPort = uint(externalOpenVPNPort)
 	params.ExternalOpenVPNAddress = infraStatus.VPNAddress
-	params.ExternalOpenVPNPort = 1194
 	params.ExternalOauthDNSName = infraStatus.OAuthAddress
 	params.ExternalOauthPort = externalOauthPort
 	params.ServiceCIDR = hcp.Spec.ServiceCIDR
@@ -617,7 +649,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		pkiParams := &render.PKIParams{
 			ExternalAPIAddress:         infraStatus.APIAddress,
 			NodeInternalAPIServerIP:    DefaultAPIServerIPAddress,
-			ExternalAPIPort:            APIServerPort,
+			ExternalAPIPort:            params.ExternalAPIPort,
 			InternalAPIPort:            APIServerPort,
 			ServiceCIDR:                hcp.Spec.ServiceCIDR,
 			ExternalOauthAddress:       infraStatus.OAuthAddress,
@@ -708,7 +740,12 @@ func createKubeAPIServerService(client client.Client, hcp *hyperv1.HostedControl
 	svc.Namespace = namespace
 	svc.Name = kubeAPIServerServiceName
 	svc.Spec.Selector = map[string]string{"app": "kube-apiserver"}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	switch hcp.Spec.ServiceType {
+	case "NodePort":
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+	default:
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	}
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
 			Port:       6443,
@@ -730,7 +767,12 @@ func createVPNServerService(client client.Client, hcp *hyperv1.HostedControlPlan
 	svc.Namespace = namespace
 	svc.Name = vpnServiceName
 	svc.Spec.Selector = map[string]string{"app": "openvpn-server"}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	switch hcp.Spec.ServiceType {
+	case "NodePort":
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+	default:
+		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	}
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
 			Port:       1194,
@@ -940,6 +982,8 @@ func getLoadBalancerServiceAddress(c client.Client, ctx context.Context, key cli
 		case svc.Status.LoadBalancer.Ingress[0].IP != "":
 			addr = svc.Status.LoadBalancer.Ingress[0].IP
 		}
+	} else if svc.Spec.Ports[0].NodePort > 0 {
+		addr = fmt.Sprint(svc.Spec.Ports[0].NodePort)
 	}
 	return addr, nil
 }

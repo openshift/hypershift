@@ -35,6 +35,9 @@ type HostedClusterSpec struct {
 
 	// InfraID is used to identify the cluster in cloud platforms
 	InfraID string `json:"infraID,omitempty"`
+
+	ControlPlaneServiceType                string `json:"controlPlaneServiceType,omitempty"`
+	ControlPlaneServiceTypeNodePortAddress string `json:"controlPlaneServiceTypeNodePortAddress,omitempty"`
 }
 
 type ClusterNetworking struct {

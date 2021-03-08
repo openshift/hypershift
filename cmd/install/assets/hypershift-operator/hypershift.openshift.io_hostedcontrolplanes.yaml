@@ -168,7 +168,11 @@ spec:
                 type: object
               releaseImage:
                 type: string
+              serviceAddress:
+                type: string
               serviceCIDR:
+                type: string
+              serviceType:
                 type: string
               sshKey:
                 description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.

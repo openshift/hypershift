@@ -341,12 +341,14 @@ func (o HostedControlPlane) Build() *hyperv1.HostedControlPlane {
 			SSHKey: corev1.LocalObjectReference{
 				Name: o.SSHKey.Name,
 			},
-			ServiceCIDR:  o.HostedCluster.Spec.Networking.ServiceCIDR,
-			PodCIDR:      o.HostedCluster.Spec.Networking.PodCIDR,
-			MachineCIDR:  o.HostedCluster.Spec.Networking.MachineCIDR,
-			ReleaseImage: o.HostedCluster.Spec.Release.Image,
-			InfraID:      o.HostedCluster.Spec.InfraID,
-			Platform:     o.HostedCluster.Spec.Platform,
+			ServiceCIDR:    o.HostedCluster.Spec.Networking.ServiceCIDR,
+			PodCIDR:        o.HostedCluster.Spec.Networking.PodCIDR,
+			MachineCIDR:    o.HostedCluster.Spec.Networking.MachineCIDR,
+			ReleaseImage:   o.HostedCluster.Spec.Release.Image,
+			InfraID:        o.HostedCluster.Spec.InfraID,
+			Platform:       o.HostedCluster.Spec.Platform,
+			ServiceType:    o.HostedCluster.Spec.ControlPlaneServiceType,
+			ServiceAddress: o.HostedCluster.Spec.ControlPlaneServiceTypeNodePortAddress,
 		},
 	}
 	return hcp

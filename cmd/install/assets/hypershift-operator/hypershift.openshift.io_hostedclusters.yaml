@@ -48,6 +48,10 @@ spec:
           spec:
             description: HostedClusterSpec defines the desired state of HostedCluster
             properties:
+              controlPlaneServiceType:
+                type: string
+              controlPlaneServiceTypeNodePortAddress:
+                type: string
               infraID:
                 description: InfraID is used to identify the cluster in cloud platforms
                 type: string

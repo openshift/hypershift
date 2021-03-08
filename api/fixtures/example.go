@@ -28,15 +28,17 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 }
 
 type ExampleOptions struct {
-	Namespace        string
-	Name             string
-	ReleaseImage     string
-	PullSecret       []byte
-	AWSCredentials   []byte
-	SSHKey           []byte
-	NodePoolReplicas int
-	InfraID          string
-	ComputeCIDR      string
+	Namespace                              string
+	Name                                   string
+	ReleaseImage                           string
+	PullSecret                             []byte
+	AWSCredentials                         []byte
+	SSHKey                                 []byte
+	NodePoolReplicas                       int
+	InfraID                                string
+	ComputeCIDR                            string
+	ControlPlaneServiceType                string
+	ControlPlaneServiceTypeNodePortAddress string
 
 	AWS ExampleAWSOptions
 }
@@ -123,10 +125,12 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				PodCIDR:     "10.132.0.0/14",
 				MachineCIDR: o.ComputeCIDR,
 			},
-			InfraID:       o.InfraID,
-			PullSecret:    corev1.LocalObjectReference{Name: pullSecret.Name},
-			ProviderCreds: corev1.LocalObjectReference{Name: awsCredsSecret.Name},
-			SSHKey:        corev1.LocalObjectReference{Name: sshKeySecret.Name},
+			InfraID:                                o.InfraID,
+			PullSecret:                             corev1.LocalObjectReference{Name: pullSecret.Name},
+			ProviderCreds:                          corev1.LocalObjectReference{Name: awsCredsSecret.Name},
+			SSHKey:                                 corev1.LocalObjectReference{Name: sshKeySecret.Name},
+			ControlPlaneServiceType:                o.ControlPlaneServiceType,
+			ControlPlaneServiceTypeNodePortAddress: o.ControlPlaneServiceTypeNodePortAddress,
 			Platform: hyperv1.PlatformSpec{
 				AWS: &hyperv1.AWSPlatformSpec{
 					Region: o.AWS.Region,
