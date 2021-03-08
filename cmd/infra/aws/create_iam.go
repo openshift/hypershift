@@ -29,7 +29,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
-	cmd.Flags().StringVar(&opts.ProfileName, "profile-name", opts.ProfileName, "Name of IAM instance profile to creeate")
+	cmd.Flags().StringVar(&opts.ProfileName, "profile-name", opts.ProfileName, "Name of IAM instance profile to create")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 
 	cmd.MarkFlagRequired("aws-creds")
