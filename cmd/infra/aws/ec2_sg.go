@@ -31,6 +31,9 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 			return "", fmt.Errorf("cannot find security group after creation")
 		}
 		securityGroup = sgResult.SecurityGroups[0]
+		o.log.Info("Created security group", "name", groupName, "id", aws.StringValue(securityGroup.GroupId))
+	} else {
+		o.log.Info("Found existing security group", "name", groupName, "id", aws.StringValue(securityGroup.GroupId))
 	}
 	securityGroupID := aws.StringValue(securityGroup.GroupId)
 	sgUserID := aws.StringValue(securityGroup.OwnerId)
@@ -198,6 +201,7 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 		if err != nil {
 			return "", fmt.Errorf("cannot apply security group egress permissions: %w", err)
 		}
+		o.log.Info("Authorized egress rules on security group", "id", securityGroupID)
 	}
 	if len(ingressToAuthorize) > 0 {
 		_, err = client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
@@ -207,6 +211,7 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 		if err != nil {
 			return "", fmt.Errorf("cannot apply security group ingress permissions: %w", err)
 		}
+		o.log.Info("Authorized ingress rules on security group", "id", securityGroupID)
 	}
 	return securityGroupID, nil
 }
