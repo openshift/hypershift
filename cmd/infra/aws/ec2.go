@@ -27,7 +27,9 @@ func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
 		return "", fmt.Errorf("No availability zones found")
 
 	}
-	return aws.StringValue(result.AvailabilityZones[0].ZoneName), nil
+	zone := aws.StringValue(result.AvailabilityZones[0].ZoneName)
+	o.log.Info("Using zone", "zone", zone)
+	return zone, nil
 }
 
 func (o *CreateInfraOptions) createVPC(client ec2iface.EC2API) (string, error) {
@@ -45,6 +47,9 @@ func (o *CreateInfraOptions) createVPC(client ec2iface.EC2API) (string, error) {
 			return "", fmt.Errorf("failed to create VPC: %w", err)
 		}
 		vpcID = aws.StringValue(createResult.Vpc.VpcId)
+		o.log.Info("Created VPC", "id", vpcID)
+	} else {
+		o.log.Info("Found existing VPC", "id", vpcID)
 	}
 	_, err = client.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
 		VpcId:            aws.String(vpcID),
@@ -53,6 +58,7 @@ func (o *CreateInfraOptions) createVPC(client ec2iface.EC2API) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to modify VPC attributes: %w", err)
 	}
+	o.log.Info("Enabled DNS support on VPC", "id", vpcID)
 	_, err = client.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
 		VpcId:              aws.String(vpcID),
 		EnableDnsHostnames: &ec2.AttributeBooleanValue{Value: aws.Bool(true)},
@@ -60,6 +66,7 @@ func (o *CreateInfraOptions) createVPC(client ec2iface.EC2API) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to modify VPC attributes: %w", err)
 	}
+	o.log.Info("Enabled DNS hostnames on VPC", "id", vpcID)
 	return vpcID, nil
 }
 
@@ -82,9 +89,10 @@ func (o *CreateInfraOptions) CreateVPCS3Endpoint(client ec2iface.EC2API, vpcID, 
 		return err
 	}
 	if len(existingEndpoint) > 0 {
+		o.log.Info("Found existing s3 VPC endpoint", "id", existingEndpoint)
 		return nil
 	}
-	_, err = client.CreateVpcEndpoint(&ec2.CreateVpcEndpointInput{
+	result, err := client.CreateVpcEndpoint(&ec2.CreateVpcEndpointInput{
 		VpcId:       aws.String(vpcID),
 		ServiceName: aws.String(fmt.Sprintf("com.amazonaws.%s.s3", o.Region)),
 		RouteTableIds: []*string{
@@ -96,6 +104,7 @@ func (o *CreateInfraOptions) CreateVPCS3Endpoint(client ec2iface.EC2API, vpcID, 
 	if err != nil {
 		return fmt.Errorf("cannot create VPC S3 endpoint: %w", err)
 	}
+	o.log.Info("Created s3 VPC endpoint", "id", aws.StringValue(result.VpcEndpoint.VpcEndpointId))
 	return nil
 }
 
@@ -138,6 +147,9 @@ func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID str
 			return fmt.Errorf("cannot create dhcp-options: %w", err)
 		}
 		optID = aws.StringValue(result.DhcpOptions.DhcpOptionsId)
+		o.log.Info("Created DHCP options", "id", optID)
+	} else {
+		o.log.Info("Found existing DHCP options", "id", optID)
 	}
 	_, err = client.AssociateDhcpOptions(&ec2.AssociateDhcpOptionsInput{
 		DhcpOptionsId: aws.String(optID),
@@ -146,6 +158,7 @@ func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID str
 	if err != nil {
 		return fmt.Errorf("cannot associate dhcp-options to VPC: %w", err)
 	}
+	o.log.Info("Associated DHCP options with VPC", "vpc", vpcID, "dhcp options", optID)
 	return nil
 }
 
@@ -176,6 +189,7 @@ func (o *CreateInfraOptions) CreateSubnet(client ec2iface.EC2API, vpcID, zone, c
 		return "", err
 	}
 	if len(subnetID) > 0 {
+		o.log.Info("Found existing subnet", "name", name, "id", subnetID)
 		return subnetID, nil
 	}
 	result, err := client.CreateSubnet(&ec2.CreateSubnetInput{
@@ -187,7 +201,9 @@ func (o *CreateInfraOptions) CreateSubnet(client ec2iface.EC2API, vpcID, zone, c
 	if err != nil {
 		return "", fmt.Errorf("cannot create public subnet: %w", err)
 	}
-	return aws.StringValue(result.Subnet.SubnetId), nil
+	subnetID = aws.StringValue(result.Subnet.SubnetId)
+	o.log.Info("Created subnet", "name", name, "id", subnetID)
+	return subnetID, nil
 }
 
 func (o *CreateInfraOptions) existingSubnet(client ec2iface.EC2API, name string) (string, error) {
@@ -217,6 +233,9 @@ func (o *CreateInfraOptions) CreateInternetGateway(client ec2iface.EC2API, vpcID
 			return "", fmt.Errorf("cannot create internet gateway: %w", err)
 		}
 		igw = result.InternetGateway
+		o.log.Info("Created internet gateway", "id", aws.StringValue(igw.InternetGatewayId))
+	} else {
+		o.log.Info("Found existing internet gateway", "id", aws.StringValue(igw.InternetGatewayId))
 	}
 	attached := false
 	for _, attachment := range igw.Attachments {
@@ -233,6 +252,7 @@ func (o *CreateInfraOptions) CreateInternetGateway(client ec2iface.EC2API, vpcID
 		if err != nil {
 			return "", fmt.Errorf("cannot attach internet gateway to vpc: %w", err)
 		}
+		o.log.Info("Attached internet gateway to VPC", "internet gateway", aws.StringValue(igw.InternetGatewayId), "vpc", vpcID)
 	}
 	return aws.StringValue(igw.InternetGatewayId), nil
 }
@@ -270,6 +290,9 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		if err != nil {
 			return "", fmt.Errorf("cannot tag NAT gateway EIP: %w", err)
 		}
+		o.log.Info("Created elastic IP for NAT gateway", "id", allocationID)
+	} else {
+		o.log.Info("Found existing elastic IP for NAT gateway", "id", allocationID)
 	}
 	natGatewayName := fmt.Sprintf("%s-nat-%s", o.InfraID, availabilityZone)
 	natGateway, err := o.existingNATGateway(client, natGatewayName)
@@ -283,6 +306,9 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 			return "", fmt.Errorf("cannot create NAT gateway: %w", err)
 		}
 		natGateway = gatewayResult.NatGateway
+		o.log.Info("Created NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
+	} else {
+		o.log.Info("Found existing NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
 	}
 	natGatewayID := aws.StringValue(natGateway.NatGatewayId)
 	return natGatewayID, nil
@@ -352,6 +378,9 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(client ec2iface.EC2API, vpc
 		if err != nil {
 			return "", fmt.Errorf("cannot create nat gateway route in private route table: %w", err)
 		}
+		o.log.Info("Created route to NAT gateway", "route table", aws.StringValue(routeTable.RouteTableId), "nat gateway", natGatewayID)
+	} else {
+		o.log.Info("Found existing route to NAT gateway", "route table", aws.StringValue(routeTable.RouteTableId), "nat gateway", natGatewayID)
 	}
 	if !o.hasAssociatedSubnet(routeTable, subnetID) {
 		_, err = client.AssociateRouteTable(&ec2.AssociateRouteTableInput{
@@ -361,6 +390,9 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(client ec2iface.EC2API, vpc
 		if err != nil {
 			return "", fmt.Errorf("cannot associate private route table with subnet: %w", err)
 		}
+		o.log.Info("Associated subnet with route table", "route table", aws.StringValue(routeTable.RouteTableId), "subnet", subnetID)
+	} else {
+		o.log.Info("Subnet already associated with route table", "route table", aws.StringValue(routeTable.RouteTableId), "subnet", subnetID)
 	}
 	return aws.StringValue(routeTable.RouteTableId), nil
 }
@@ -410,6 +442,7 @@ func (o *CreateInfraOptions) CreatePublicRouteTable(client ec2iface.EC2API, vpcI
 		if err != nil {
 			return "", fmt.Errorf("cannot set vpc main route table: %w", err)
 		}
+		o.log.Info("Set main VPC route table", "route table", tableID, "vpc", vpcID)
 	}
 
 	// Create route to internet gateway
@@ -422,6 +455,9 @@ func (o *CreateInfraOptions) CreatePublicRouteTable(client ec2iface.EC2API, vpcI
 		if err != nil {
 			return "", fmt.Errorf("cannot create route to internet gateway: %w", err)
 		}
+		o.log.Info("Created route to internet gateway", "route table", tableID, "internet gateway", igwID)
+	} else {
+		o.log.Info("Found existing route to internet gateway", "route table", tableID, "internet gateway", igwID)
 	}
 
 	// Associate the route table with the public subnet ID
@@ -433,6 +469,9 @@ func (o *CreateInfraOptions) CreatePublicRouteTable(client ec2iface.EC2API, vpcI
 		if err != nil {
 			return "", fmt.Errorf("cannot associate private route table with subnet: %w", err)
 		}
+		o.log.Info("Associated route table with subnet", "route table", tableID, "subnet", subnetID)
+	} else {
+		o.log.Info("Found existing association between route table and subnet", "route table", tableID, "subnet", subnetID)
 	}
 	return tableID, nil
 }
@@ -445,6 +484,7 @@ func (o *CreateInfraOptions) createRouteTable(client ec2iface.EC2API, vpcID, nam
 	if err != nil {
 		return nil, fmt.Errorf("cannot create route table: %w", err)
 	}
+	o.log.Info("Created route table", "name", name, "id", aws.StringValue(result.RouteTable.RouteTableId))
 	return result.RouteTable, nil
 }
 
@@ -454,6 +494,7 @@ func (o *CreateInfraOptions) existingRouteTable(client ec2iface.EC2API, name str
 		return nil, fmt.Errorf("cannot list route tables: %w", err)
 	}
 	if len(result.RouteTables) > 0 {
+		o.log.Info("Found existing route table", "name", name, "id", aws.StringValue(result.RouteTables[0].RouteTableId))
 		return result.RouteTables[0], nil
 	}
 	return nil, nil
