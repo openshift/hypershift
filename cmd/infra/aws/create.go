@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,7 @@ type CreateInfraOptions struct {
 	AdditionalTags     []string
 
 	additionalEC2Tags []*ec2.Tag
+	log               logr.Logger
 }
 
 type CreateInfraOutput struct {
@@ -50,6 +52,7 @@ func NewCreateCommand() *cobra.Command {
 
 	opts := CreateInfraOptions{
 		Region: "us-east-1",
+		log:    setupLogger(),
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
@@ -61,8 +64,11 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return opts.Run()
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		if err := opts.Run(); err != nil {
+			opts.log.Error(err, "Error")
+			os.Exit(1)
+		}
 	}
 
 	return cmd
