@@ -19,6 +19,15 @@ spec:
           effect: NoSchedule
       serviceAccountName: machine-config-server
       initContainers:
+      - name: haproxy
+        image: {{ imageFor "haproxy-router" }}
+        command:
+        - haproxy
+        - -f
+        - /usr/local/etc/haproxy/haproxy.cfg
+        volumeMounts:
+        - name: haproxy-config
+          mountPath: /usr/local/etc/haproxy
       - image: {{ imageFor "machine-config-operator" }}
         name: machine-config-operator-bootstrap
         command:
@@ -132,6 +141,9 @@ spec:
       - name: kubeconfig
         secret:
           secretName: machine-config-server-kubeconfig
+      - name: haproxy-config
+        secret:
+          secretName: machine-config-server-haproxy-config
       - name: mcs-tls
         secret:
           secretName: machine-config-server

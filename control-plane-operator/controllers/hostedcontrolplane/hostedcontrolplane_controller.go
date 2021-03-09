@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -49,18 +50,20 @@ import (
 )
 
 const (
-	finalizer                 = "hypershift.openshift.io/finalizer"
-	APIServerPort             = 6443
-	kubeAPIServerServiceName  = "kube-apiserver"
-	vpnServiceName            = "openvpn-server"
-	oauthServiceName          = "oauth-openshift"
-	pullSecretName            = "pull-secret"
-	vpnServiceAccountName     = "vpn"
-	ingressOperatorNamespace  = "openshift-ingress-operator"
-	hypershiftRouteLabel      = "hypershift.openshift.io/cluster"
-	oauthBrandingManifest     = "v4-0-config-system-branding.yaml"
-	DefaultAPIServerIPAddress = "172.20.0.1"
-	externalOauthPort         = 443
+	finalizer                                = "hypershift.openshift.io/finalizer"
+	APIServerPort                            = 6443
+	kubeAPIServerServiceName                 = "kube-apiserver"
+	vpnServiceName                           = "openvpn-server"
+	oauthServiceName                         = "oauth-openshift"
+	pullSecretName                           = "pull-secret"
+	vpnServiceAccountName                    = "vpn"
+	ingressOperatorNamespace                 = "openshift-ingress-operator"
+	hypershiftRouteLabel                     = "hypershift.openshift.io/cluster"
+	oauthBrandingManifest                    = "v4-0-config-system-branding.yaml"
+	DefaultAPIServerIPAddress                = "172.20.0.1"
+	externalOauthPort                        = 443
+	haproxyConfigSecretName                  = "machine-config-server-haproxy-config"
+	hostedClusterConfigOperatorConfigMapName = "hosted-cluster-config-operator"
 )
 
 var (
@@ -472,9 +475,33 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	r.Log.Info("successfully applied all manifests")
 
-	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version)
-	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate user data secret: %w", err)
+	r.Log.Info("gathering data to generate machine userdata secret")
+	var nodeBootstrapperSecret corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: targetNamespace, Name: haproxyConfigSecretName}, &nodeBootstrapperSecret); err != nil {
+		return fmt.Errorf("failed to get machine config server haproxy secret conf %s: %w", haproxyConfigSecretName, err)
+	}
+	var nodeBootstrapperTokenData []byte
+	var ok bool
+	if nodeBootstrapperTokenData, ok = nodeBootstrapperSecret.Data["node-bootstrapper-token"]; !ok {
+		return fmt.Errorf("could not find node bootstrapper token in machine config server haproxy secret conf  %s", haproxyConfigSecretName)
+	}
+
+	var hostedClusterConfigOperatorConfigMapData corev1.ConfigMap
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: targetNamespace, Name: hostedClusterConfigOperatorConfigMapName}, &hostedClusterConfigOperatorConfigMapData); err != nil {
+		return fmt.Errorf("failed to get hosted cluster config operator configmap %s: %w", hostedClusterConfigOperatorConfigMapName, err)
+	}
+	var combinedCA string
+	if combinedCA, ok = hostedClusterConfigOperatorConfigMapData.Data["initial-ca.crt"]; !ok {
+		return fmt.Errorf("could not find node initial-ca.crt in configmap %s", hostedClusterConfigOperatorConfigMapName)
+	}
+	r.Log.Info("downstream data for userdata fetched. Generating and applying userdata secret.")
+	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version, nodeBootstrapperTokenData, combinedCA)
+	err = r.Create(ctx, userDataSecret)
+	if apierrors.IsAlreadyExists(err) {
+		err = r.Update(ctx, userDataSecret)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to generate/update user data secret: %w", err)
 	}
 	userDataSecret.OwnerReferences = ensureHCPOwnerRef(hcp, userDataSecret.OwnerReferences)
 
@@ -1041,7 +1068,8 @@ func applyManifests(ctx context.Context, c client.Client, log logr.Logger, names
 	return nil
 }
 
-func generateUserDataSecret(name, namespace string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {
+func generateUserDataSecret(name, namespace string, ignitionProviderAddr string, version semver.Version, nodeBootstrapperToken []byte, clusterCA string) *corev1.Secret {
+
 	secret := &corev1.Secret{}
 	secret.Name = fmt.Sprintf("%s-user-data", name)
 	secret.Namespace = namespace
@@ -1053,9 +1081,9 @@ func generateUserDataSecret(name, namespace string, ignitionProviderAddr string,
 	version.Pre = nil
 	version.Build = nil
 	if version.GTE(version46) {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr))
+		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"https://%s/config/master?token=%s","verification":{}}]},"security": { "tls": { "certificateAuthorities": [ { "source": "data:text/plain;charset=utf-8;base64,%s", "verification":{} } ] } },"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken)), base64.StdEncoding.EncodeToString([]byte(clusterCA))))
 	} else {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr))
+		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"https://%s/config/master?token=%s","verification":{}}]},"security":{ "tls": { "certificateAuthorities": [ { "source": "data:text/plain;charset=utf-8;base64,%s", "verification":{} } ] } },"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr, url.QueryEscape(base64.StdEncoding.EncodeToString(nodeBootstrapperToken)), base64.StdEncoding.EncodeToString([]byte(clusterCA))))
 	}
 
 	secret.Data = map[string][]byte{

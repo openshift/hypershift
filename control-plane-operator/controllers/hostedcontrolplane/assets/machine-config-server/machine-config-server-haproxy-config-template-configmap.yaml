@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: machine-config-server-haproxy-config-template
+data:
+  haproxy.cfg: |
+    global
+      maxconn 7000
+    defaults
+      mode http
+      timeout client 10m
+      timeout server 10m
+      timeout connect 10s
+      timeout client-fin 5s
+      timeout server-fin 5s
+      timeout queue 5s
+      retries 3
+    backend machineconfigserverbackend
+        mode http
+        balance roundrobin
+        server server1 127.0.0.1:8080
+    frontend machineconfigserverfrontend
+        acl mcs_auth_header urlp(token) NODE_BOOTSTRAPPER_TOKEN_REPLACE
+        http-request deny unless mcs_auth_header
+        mode http
+        bind :8081 ssl crt /usr/local/etc/haproxy/tls.pem
+        default_backend machineconfigserverbackend
