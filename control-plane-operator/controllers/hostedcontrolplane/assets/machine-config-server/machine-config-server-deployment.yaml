@@ -19,15 +19,6 @@ spec:
           effect: NoSchedule
       serviceAccountName: machine-config-server
       initContainers:
-      - name: haproxy
-        image: {{ imageFor "haproxy-router" }}
-        command:
-        - haproxy
-        - -f
-        - /usr/local/etc/haproxy/haproxy.cfg
-        volumeMounts:
-        - name: haproxy-config
-          mountPath: /usr/local/etc/haproxy
       - image: {{ imageFor "machine-config-operator" }}
         name: machine-config-operator-bootstrap
         command:
@@ -110,6 +101,15 @@ spec:
         - mountPath: /mcs-manifests
           name: mcs-manifests
       containers:
+      - name: haproxy
+        image: {{ imageFor "haproxy-router" }}
+        command:
+        - haproxy
+        - -f
+        - /usr/local/etc/haproxy/haproxy.cfg
+        volumeMounts:
+        - name: haproxy-config
+          mountPath: /usr/local/etc/haproxy
       - image: {{ imageFor "machine-config-operator" }}
         imagePullPolicy: IfNotPresent
         name: machine-config-server
