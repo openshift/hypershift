@@ -9,6 +9,7 @@ func NewClusterParams() *ClusterParams {
 		"SupportPodPidsLimit=true",
 		"LocalStorageCapacityIsolation=false",
 		"RotateKubeletServerCertificate=true",
+		"LegacyNodeRoleBehavior=false",
 	}
 	p.ImageRegistryHTTPSecret = uuid.New().String()
 	return p
