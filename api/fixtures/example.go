@@ -37,8 +37,8 @@ type ExampleOptions struct {
 	NodePoolReplicas           int
 	InfraID                    string
 	ComputeCIDR                string
-	ApiserverAdvertisedAddress string
-	ApiserverSecurePort        uint
+	APIServerAdvertisedAddress string
+	APIServerSecurePort        uint
 	ServiceCIDR                string
 	PodCIDR                    string
 
@@ -126,8 +126,8 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				ServiceCIDR:                o.ServiceCIDR,
 				PodCIDR:                    o.PodCIDR,
 				MachineCIDR:                o.ComputeCIDR,
-				ApiserverAdvertisedAddress: o.ApiserverAdvertisedAddress,
-				ApiserverSecurePort:        o.ApiserverSecurePort,
+				APIServerAdvertisedAddress: o.APIServerAdvertisedAddress,
+				APIServerSecurePort:        o.APIServerSecurePort,
 			},
 			InfraID:       o.InfraID,
 			PullSecret:    corev1.LocalObjectReference{Name: pullSecret.Name},

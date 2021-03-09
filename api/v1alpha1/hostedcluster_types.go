@@ -41,8 +41,8 @@ type ClusterNetworking struct {
 	ServiceCIDR                string `json:"serviceCIDR"`
 	PodCIDR                    string `json:"podCIDR"`
 	MachineCIDR                string `json:"machineCIDR"`
-	ApiserverAdvertisedAddress string `json:"apiserverAdvertisedAddress,omitempty"`
-	ApiserverSecurePort        uint   `json:"apiserverSecurePort,omitempty"`
+	APIServerAdvertisedAddress string `json:"apiserverAdvertisedAddress,omitempty"`
+	APIServerSecurePort        uint   `json:"apiserverSecurePort,omitempty"`
 }
 
 type PlatformSpec struct {

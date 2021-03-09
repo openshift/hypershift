@@ -154,8 +154,8 @@ func NewCreateCommand() *cobra.Command {
 			ComputeCIDR:                infra.ComputeCIDR,
 			PodCIDR:                    opts.PodCIDR,
 			ServiceCIDR:                opts.ServiceCIDR,
-			ApiserverSecurePort:        opts.APIServerSecurePort,
-			ApiserverAdvertisedAddress: opts.APIServerAdvertisedAddress,
+			APIServerSecurePort:        opts.APIServerSecurePort,
+			APIServerAdvertisedAddress: opts.APIServerAdvertisedAddress,
 			AWS: apifixtures.ExampleAWSOptions{
 				Region:          infra.Region,
 				Zone:            infra.Zone,

@@ -34,8 +34,8 @@ type HostedControlPlaneSpec struct {
 	ProviderCreds              corev1.LocalObjectReference `json:"providerCreds"`
 	InfraID                    string                      `json:"infraID"`
 	Platform                   PlatformSpec                `json:"platform"`
-	ApiserverAdvertisedAddress string                      `json:"apiserverAdvertisedAddress,omitempty"`
-	ApiserverSecurePort        uint                        `json:"apiserverSecurePort,omitempty"`
+	APIServerAdvertisedAddress string                      `json:"apiserverAdvertisedAddress,omitempty"`
+	APIServerSecurePort        uint                        `json:"apiserverSecurePort,omitempty"`
 }
 
 type ConditionType string
