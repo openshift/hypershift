@@ -70,7 +70,6 @@ func (c *clusterManifestContext) setupManifests() {
 	c.openVPN()
 	c.registry()
 	c.userManifestsBootstrapper()
-	c.routerProxy()
 	c.machineConfigServer()
 	c.ignitionConfigs()
 }
@@ -273,17 +272,6 @@ func (c *clusterManifestContext) openVPN() {
 	c.addUserManifestFiles(
 		"openvpn/openvpn-client-deployment.yaml",
 		"openvpn/openvpn-client-configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) routerProxy() {
-	c.addManifestFiles(
-		"router-proxy/router-proxy-deployment.yaml",
-		"router-proxy/router-proxy-configmap.yaml",
-		"router-proxy/router-proxy-vpnclient-configmap.yaml",
-		"router-proxy/router-proxy-http-service.yaml",
-		"router-proxy/router-proxy-https-service.yaml",
-		"router-proxy/router-proxy-vpnclient-secret.yaml",
 	)
 }
 

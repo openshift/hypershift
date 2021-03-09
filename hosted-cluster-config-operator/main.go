@@ -22,7 +22,6 @@ import (
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeletservingca"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/node"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/routesync"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
 )
 
@@ -51,7 +50,6 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
 	// TODO: non-essential, can't statically link to operator
 	//"openshift-controller-manager": openshiftcontrollermanager.Setup,
-	"route-sync":  routesync.Setup,
 	"infrastatus": infrastatus.Setup,
 	"node":        node.Setup,
 }

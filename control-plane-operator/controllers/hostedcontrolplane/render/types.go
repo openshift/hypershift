@@ -61,6 +61,8 @@ type ClusterParams struct {
 	RouterNodePortHTTP      string      `json:"routerNodePortHTTP"`
 	RouterNodePortHTTPS     string      `json:"routerNodePortHTTPS"`
 	BaseDomain              string      `json:"baseDomain"`
+	PublicZoneID            string      `json:"publicZoneID,omitempty"`
+	PrivateZoneID           string      `json:"PrivateZoneID,omitempty"`
 	NetworkType             string      `json:"networkType"`
 	// APIAvailabilityPolicy defines the availability of components that support end-user facing API requests
 	APIAvailabilityPolicy AvailabilityPolicy `json:"apiAvailabilityPolicy"`

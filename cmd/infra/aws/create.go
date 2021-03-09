@@ -10,6 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/elb"
+	"github.com/aws/aws-sdk-go/service/elb/elbiface"
+	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +21,8 @@ type CreateInfraOptions struct {
 	Region             string
 	InfraID            string
 	AWSCredentialsFile string
+	Name               string
+	BaseDomain         string
 	OutputFile         string
 	AdditionalTags     []string
 
@@ -32,6 +38,10 @@ type CreateInfraOutput struct {
 	PrivateSubnetID string `json:"privateSubnetID"`
 	PublicSubnetID  string `json:"publicSubnetID"`
 	SecurityGroupID string `json:"securityGroupID"`
+	Name            string `json:"Name"`
+	BaseDomain      string `json:"baseDomain"`
+	PublicZoneID    string `json:"publicZoneID"`
+	PrivateZoneID   string `json:"privateZoneID"`
 }
 
 const (
@@ -50,6 +60,7 @@ func NewCreateCommand() *cobra.Command {
 
 	opts := CreateInfraOptions{
 		Region: "us-east-1",
+		Name:   "example",
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
@@ -57,9 +68,12 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
+	cmd.MarkFlagRequired("base-domain")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		if err := opts.Run(); err != nil {
@@ -107,8 +121,10 @@ func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 		InfraID:     o.InfraID,
 		ComputeCIDR: DefaultCIDRBlock,
 		Region:      o.Region,
+		Name:        o.Name,
+		BaseDomain:  o.BaseDomain,
 	}
-	client, err := AWSClient(o.AWSCredentialsFile, o.Region)
+	client, err := ec2Client(o.AWSCredentialsFile, o.Region)
 	if err != nil {
 		return nil, err
 	}
@@ -155,10 +171,22 @@ func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 	if err != nil {
 		return nil, err
 	}
+	r53client, err := route53Client(o.AWSCredentialsFile)
+	if err != nil {
+		return nil, err
+	}
+	result.PublicZoneID, err = o.LookupPublicZone(r53client)
+	if err != nil {
+		return nil, err
+	}
+	result.PrivateZoneID, err = o.CreatePrivateZone(r53client, result.VPCID)
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
-func AWSClient(creds, region string) (ec2iface.EC2API, error) {
+func ec2Client(creds, region string) (ec2iface.EC2API, error) {
 	awsConfig := &aws.Config{
 		Region: aws.String(region),
 	}
@@ -168,4 +196,30 @@ func AWSClient(creds, region string) (ec2iface.EC2API, error) {
 		return nil, fmt.Errorf("failed to create client session: %w", err)
 	}
 	return ec2.New(s), nil
+}
+
+func route53Client(creds string) (route53iface.Route53API, error) {
+	awsConfig := &aws.Config{
+		// Route53 is weird about regions
+		// https://github.com/openshift/cluster-ingress-operator/blob/5660b43d66bd63bbe2dcb45fb40df98d8d91347e/pkg/dns/aws/dns.go#L163-L169
+		Region: aws.String("us-east-1"),
+	}
+	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
+	s, err := session.NewSession(awsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client session: %w", err)
+	}
+	return route53.New(s), nil
+}
+
+func elbClient(creds, region string) (elbiface.ELBAPI, error) {
+	awsConfig := &aws.Config{
+		Region: aws.String(region),
+	}
+	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
+	s, err := session.NewSession(awsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client session: %w", err)
+	}
+	return elb.New(s), nil
 }

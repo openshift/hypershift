@@ -35,6 +35,7 @@ type HostedControlPlaneSpec struct {
 	SSHKey       corev1.LocalObjectReference `json:"sshKey"`
 	InfraID      string                      `json:"infraID"`
 	Platform     PlatformSpec                `json:"platform"`
+	DNS          DNSSpec                     `json:"dns"`
 
 	// KubeConfig specifies the name and key for the kubeconfig secret
 	// +optional

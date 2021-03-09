@@ -39,6 +39,9 @@ type Options struct {
 	IAMJSON            string
 	InstanceType       string
 	Region             string
+	BaseDomain         string
+	PublicZoneID       string
+	PrivateZoneID      string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -85,6 +88,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
+	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -143,6 +147,8 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			Region:             opts.Region,
 			InfraID:            infraID,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
+			Name:               opts.Name,
+			BaseDomain:         opts.BaseDomain,
 		}
 		infra, err = opt.CreateInfra()
 		if err != nil {
@@ -174,7 +180,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 
 	exampleObjects := apifixtures.ExampleOptions{
 		Namespace:        opts.Namespace,
-		Name:             opts.Name,
+		Name:             infra.Name,
 		ReleaseImage:     opts.ReleaseImage,
 		PullSecret:       pullSecret,
 		AWSCredentials:   awsCredentials,
@@ -184,6 +190,9 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		NodePoolReplicas: opts.NodePoolReplicas,
 		InfraID:          infra.InfraID,
 		ComputeCIDR:      infra.ComputeCIDR,
+		BaseDomain:       infra.BaseDomain,
+		PublicZoneID:     infra.PublicZoneID,
+		PrivateZoneID:    infra.PrivateZoneID,
 		AWS: apifixtures.ExampleAWSOptions{
 			Region:          infra.Region,
 			Zone:            infra.Zone,

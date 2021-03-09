@@ -36,6 +36,25 @@ type HostedClusterSpec struct {
 
 	// InfraID is used to identify the cluster in cloud platforms
 	InfraID string `json:"infraID,omitempty"`
+
+	// DNS configuration for the cluster
+	DNS DNSSpec `json:"dns,omitempty"`
+}
+
+// DNSSpec specifies the DNS configuration in the cluster
+type DNSSpec struct {
+	// BaseDomain is the base domain of the cluster.
+	BaseDomain string `json:"baseDomain"`
+
+	// PublicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to
+	// the internet exist.
+	// +optional
+	PublicZoneID string `json:"publicZoneID,omitempty"`
+
+	// PrivateZoneID is the Hosted Zone ID where all the DNS records that are only available internally
+	// to the cluster exist.
+	// +optional
+	PrivateZoneID string `json:"privateZoneID,omitempty"`
 }
 
 type ClusterNetworking struct {

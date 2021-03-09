@@ -15,7 +15,6 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
@@ -351,11 +350,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		return status, fmt.Errorf("failed to ensure privileged SCC for the new namespace: %w", err)
 	}
 
-	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp.Name)
-	if err != nil {
-		return status, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
-	}
-
 	// Create Kube APIServer service
 	r.Log.Info("Creating Kube API service")
 	apiService, err := createKubeAPIServerService(r, hcp, targetNamespace)
@@ -389,11 +383,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	_, err = createOauthService(r, hcp, targetNamespace)
 	if err != nil {
 		return status, fmt.Errorf("error creating service for oauth: %w", err)
-	}
-
-	r.Log.Info("Creating router shard")
-	if err := createIngressController(r, hcp, targetNamespace, baseDomain); err != nil {
-		return status, fmt.Errorf("cannot create router shard: %w", err)
 	}
 
 	r.Log.Info("Creating oauth server route")
@@ -523,7 +512,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
 	}
 
-	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp.Name)
+	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
 	if err != nil {
 		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
@@ -552,7 +541,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		sshKeyData = data
 	}
 
-	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp.Name)
+	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
@@ -574,6 +563,8 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIAddress
 	params.OauthAPIClusterIP = infraStatus.OauthAPIServerAddress
 	params.BaseDomain = baseDomain
+	params.PublicZoneID = hcp.Spec.DNS.PublicZoneID
+	params.PrivateZoneID = hcp.Spec.DNS.PrivateZoneID
 	params.CloudProvider = cloudProvider(hcp)
 	params.PlatformType = platformType(hcp)
 	params.InfraID = hcp.Spec.InfraID
@@ -864,32 +855,6 @@ func ensureVPNSCC(c client.Client, hcp *hyperv1.HostedControlPlane, namespace st
 	return nil
 }
 
-func createIngressController(c client.Client, hcp *hyperv1.HostedControlPlane, name string, parentDomain string) error {
-	// First ensure that the default ingress controller doesn't use routes generated for hypershift clusters
-	err := ensureDefaultIngressControllerSelector(c)
-	if err != nil {
-		return err
-	}
-	ic := &operatorv1.IngressController{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ingressOperatorNamespace,
-		},
-		Spec: operatorv1.IngressControllerSpec{
-			Domain: fmt.Sprintf("apps.%s", parentDomain),
-			RouteSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					hypershiftRouteLabel: name,
-				},
-			},
-		},
-	}
-	if err := c.Create(context.TODO(), ic); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create ingress controller for %s: %w", name, err)
-	}
-	return nil
-}
-
 func ensureDefaultIngressControllerSelector(c client.Client) error {
 	defaultIC := &operatorv1.IngressController{}
 	if err := c.Get(context.TODO(), client.ObjectKey{Namespace: ingressOperatorNamespace, Name: "default"}, defaultIC); err != nil {
@@ -992,13 +957,8 @@ func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, name
 	return nil
 }
 
-func clusterBaseDomain(c client.Client, ctx context.Context, clusterName string) (string, error) {
-	var dnsConfig configv1.DNS
-	err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, &dnsConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to get cluster dns config: %w", err)
-	}
-	return fmt.Sprintf("%s.%s", clusterName, dnsConfig.Spec.BaseDomain), nil
+func clusterBaseDomain(c client.Client, ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+	return fmt.Sprintf("%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain), nil
 }
 
 func ensureHCPOwnerRef(hcp *hyperv1.HostedControlPlane, ownerReferences []metav1.OwnerReference) []metav1.OwnerReference {

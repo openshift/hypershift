@@ -22,7 +22,6 @@ import "embed"
 //go:embed openvpn/*
 //go:embed registry/*
 //go:embed roks-metrics/*
-//go:embed router-proxy/*
 //go:embed user-manifests-bootstrapper/*
 var content embed.FS
 

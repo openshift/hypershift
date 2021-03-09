@@ -29,6 +29,7 @@ type GlobalTestOptions struct {
 	IsRunningInCI        bool
 	UpgradeTestsEnabled  bool
 	ArtifactDir          string
+	BaseDomain           string
 }
 
 var GlobalOptions = &GlobalTestOptions{}
@@ -39,6 +40,7 @@ func init() {
 	flag.StringVar(&GlobalOptions.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&GlobalOptions.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
 	flag.StringVar(&GlobalOptions.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
+	flag.StringVar(&GlobalOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
 }
 
 func (o *GlobalTestOptions) SetDefaults() error {
@@ -60,8 +62,14 @@ func (o *GlobalTestOptions) SetDefaults() error {
 
 	o.IsRunningInCI = os.Getenv("OPENSHIFT_CI") == "true"
 
-	if o.IsRunningInCI && len(o.ArtifactDir) == 0 {
-		o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
+	if o.IsRunningInCI {
+		if len(o.ArtifactDir) == 0 {
+			o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
+		}
+		if len(o.BaseDomain) == 0 {
+			// TODO: make this an envvar with change to openshift/release, then change here
+			o.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
+		}
 	}
 
 	return nil
@@ -72,6 +80,10 @@ func (o *GlobalTestOptions) Validate() error {
 
 	if len(o.LatestReleaseImage) == 0 {
 		errs = append(errs, fmt.Errorf("latest release image is required"))
+	}
+
+	if len(o.BaseDomain) == 0 {
+		errs = append(errs, fmt.Errorf("base domain is required"))
 	}
 
 	return errors.NewAggregate(errs)

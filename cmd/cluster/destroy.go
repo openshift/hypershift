@@ -120,6 +120,8 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		Region:             hostedCluster.Spec.Platform.AWS.Region,
 		InfraID:            hostedCluster.Spec.InfraID,
 		AWSCredentialsFile: o.AWSCredentialsFile,
+		Name:               hostedCluster.GetName(),
+		BaseDomain:         hostedCluster.Spec.DNS.BaseDomain,
 	}
 	destroyInfraOpts.Run(ctx)
 

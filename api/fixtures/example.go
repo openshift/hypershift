@@ -44,6 +44,9 @@ type ExampleOptions struct {
 	NodePoolReplicas int
 	InfraID          string
 	ComputeCIDR      string
+	BaseDomain       string
+	PublicZoneID     string
+	PrivateZoneID    string
 
 	AWS ExampleAWSOptions
 }
@@ -155,6 +158,11 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			SigningKey: corev1.LocalObjectReference{Name: signingKeySecret.Name},
 			IssuerURL:  o.IssuerURL,
 			SSHKey:     sshKeyReference,
+			DNS: hyperv1.DNSSpec{
+				BaseDomain:    o.BaseDomain,
+				PublicZoneID:  o.PublicZoneID,
+				PrivateZoneID: o.PrivateZoneID,
+			},
 			Platform: hyperv1.PlatformSpec{
 				Type: hyperv1.AWSPlatform,
 				AWS: &hyperv1.AWSPlatformSpec{
