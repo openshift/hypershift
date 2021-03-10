@@ -283,12 +283,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, fmt.Errorf("failed to get manifests bootstrapper pod: %w", err)
 			}
 		} else {
-			if bootstrapPod.Spec.Containers[0].Image != hostedControlPlane.Spec.ReleaseImage {
+			currentImage := bootstrapPod.Spec.Containers[0].Image
+			latestImage, latestImageFound := releaseImage.ComponentImages()["cli"]
+			if latestImageFound && currentImage != latestImage {
 				err := r.Client.Delete(ctx, &bootstrapPod)
 				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to delete manifests bootstrapper pod: %w", err)
 				}
-				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name)
+				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name, "from", currentImage, "to", latestImage)
 			}
 		}
 	}
