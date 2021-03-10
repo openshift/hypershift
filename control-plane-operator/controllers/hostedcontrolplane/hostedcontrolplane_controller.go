@@ -49,19 +49,20 @@ import (
 )
 
 const (
-	finalizer                 = "hypershift.openshift.io/finalizer"
-	APIServerPort             = 6443
-	adminKubeconfigName       = "admin-kubeconfig"
-	kubeAPIServerServiceName  = "kube-apiserver"
-	vpnServiceName            = "openvpn-server"
-	oauthServiceName          = "oauth-openshift"
-	pullSecretName            = "pull-secret"
-	vpnServiceAccountName     = "vpn"
-	ingressOperatorNamespace  = "openshift-ingress-operator"
-	hypershiftRouteLabel      = "hypershift.openshift.io/cluster"
-	oauthBrandingManifest     = "v4-0-config-system-branding.yaml"
-	DefaultAPIServerIPAddress = "172.20.0.1"
-	externalOauthPort         = 443
+	finalizer                  = "hypershift.openshift.io/finalizer"
+	APIServerPort              = 6443
+	DefaultAdminKubeconfigName = "admin-kubeconfig"
+	DefaultAdminKubeconfigKey  = "kubeconfig"
+	kubeAPIServerServiceName   = "kube-apiserver"
+	vpnServiceName             = "openvpn-server"
+	oauthServiceName           = "oauth-openshift"
+	pullSecretName             = "pull-secret"
+	vpnServiceAccountName      = "vpn"
+	ingressOperatorNamespace   = "openshift-ingress-operator"
+	hypershiftRouteLabel       = "hypershift.openshift.io/cluster"
+	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
+	DefaultAPIServerIPAddress  = "172.20.0.1"
+	externalOauthPort          = 443
 )
 
 var (
@@ -303,8 +304,13 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ControlPlaneEnsureFailed", err.Error(), result, fmt.Errorf("failed to ensure control plane: %w", err))
 	}
 
-	hostedControlPlane.Status.KubeConfig = &corev1.LocalObjectReference{
-		Name: adminKubeconfigName,
+	if hostedControlPlane.Spec.KubeConfig != nil {
+		hostedControlPlane.Status.KubeConfig = hostedControlPlane.Spec.KubeConfig
+	} else {
+		hostedControlPlane.Status.KubeConfig = &hyperv1.KubeconfigSecretRef{
+			Name: DefaultAdminKubeconfigName,
+			Key:  DefaultAdminKubeconfigKey,
+		}
 	}
 
 	hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
@@ -512,7 +518,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to get pki secret: %w", err)
 	}
 
-	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetNamespace(), pkiSecret.Data["admin.kubeconfig"])
+	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetNamespace(), hcp.Spec.KubeConfig, pkiSecret.Data["admin.kubeconfig"])
 	if err != nil {
 		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
 	}
@@ -1138,11 +1144,19 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	return secret
 }
 
-func generateKubeconfigSecret(namespace string, kubeconfigBytes []byte) (*corev1.Secret, error) {
+func generateKubeconfigSecret(namespace string, ref *hyperv1.KubeconfigSecretRef, kubeconfigBytes []byte) (*corev1.Secret, error) {
+	var name, key string
+	if ref != nil {
+		name = ref.Name
+		key = ref.Key
+	} else {
+		name = DefaultAdminKubeconfigName
+		key = DefaultAdminKubeconfigKey
+	}
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
-	secret.Name = adminKubeconfigName
-	secret.Data = map[string][]byte{"kubeconfig": kubeconfigBytes}
+	secret.Name = name
+	secret.Data = map[string][]byte{key: kubeconfigBytes}
 	return secret, nil
 }
 

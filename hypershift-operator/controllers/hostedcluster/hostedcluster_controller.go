@@ -326,23 +326,16 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		hostedClusterKubeConfigSecret := manifests.KubeConfigSecret{HostedCluster: hcluster}.Build()
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedClusterKubeConfigSecret, func() error {
-			hostedClusterKubeConfigSecret.Data = controlPlaneKubeConfigSecret.Data
+			key := hcp.Status.KubeConfig.Key
+			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data[key]
+			if !ok {
+				return fmt.Errorf("controlplane kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret), key)
+			}
+			hostedClusterKubeConfigSecret.Data["kubeconfig"] = controlPlaneKubeConfigData
 			return nil
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster kubeconfig secret: %w", err)
-		}
-		capiClusterKubeConfigSecret := manifests.CAPIKubeConfigSecret{HostedCluster: hcluster}.Build()
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiClusterKubeConfigSecret, func() error {
-			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data["kubeconfig"]
-			if !ok {
-				return fmt.Errorf("controlplane kubeconfig secret %q must have a kubeconfig key", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret))
-			}
-			capiClusterKubeConfigSecret.Data = map[string][]byte{"value": controlPlaneKubeConfigData}
-			return nil
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile CAPI cluster kubeconfig secret: %w", err)
 		}
 	}
 

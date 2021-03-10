@@ -1,8 +1,6 @@
 package manifests
 
 import (
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -143,34 +141,6 @@ type KubeConfigSecret struct {
 
 func (o KubeConfigSecret) Build() *corev1.Secret {
 	name := KubeConfigSecretName(o.HostedCluster.Namespace, o.HostedCluster.Name)
-	secret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: name.Namespace,
-			Name:      name.Name,
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{},
-	}
-	return secret
-}
-
-func CAPIKubeConfigSecretName(hc *hyperv1.HostedCluster) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: hc.Name,
-		Name:      fmt.Sprintf("%s-kubeconfig", hc.Spec.InfraID),
-	}
-}
-
-type CAPIKubeConfigSecret struct {
-	HostedCluster *hyperv1.HostedCluster
-}
-
-func (o CAPIKubeConfigSecret) Build() *corev1.Secret {
-	name := CAPIKubeConfigSecretName(o.HostedCluster)
 	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
