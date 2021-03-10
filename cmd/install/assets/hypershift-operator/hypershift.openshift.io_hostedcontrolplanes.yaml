@@ -39,6 +39,17 @@ spec:
             properties:
               infraID:
                 type: string
+              kubeconfig:
+                description: KubeConfig specifies the name and key for the kubeconfig secret
+                properties:
+                  key:
+                    type: string
+                  name:
+                    type: string
+                required:
+                - key
+                - name
+                type: object
               machineCIDR:
                 type: string
               platform:
@@ -238,9 +249,13 @@ spec:
               kubeConfig:
                 description: KubeConfig is a reference to the secret containing the default kubeconfig for this control plane.
                 properties:
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                  key:
                     type: string
+                  name:
+                    type: string
+                required:
+                - key
+                - name
                 type: object
               ready:
                 default: false

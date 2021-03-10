@@ -1,6 +1,8 @@
 package controlplaneoperator
 
 import (
+	"fmt"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -344,6 +346,10 @@ func (o HostedControlPlane) Build() *hyperv1.HostedControlPlane {
 			ReleaseImage: o.HostedCluster.Spec.Release.Image,
 			InfraID:      o.HostedCluster.Spec.InfraID,
 			Platform:     o.HostedCluster.Spec.Platform,
+			KubeConfig: &hyperv1.KubeconfigSecretRef{
+				Name: fmt.Sprintf("%s-kubeconfig", o.HostedCluster.Spec.InfraID),
+				Key:  "value",
+			},
 		},
 	}
 	if o.SSHKey != nil {

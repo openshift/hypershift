@@ -34,6 +34,15 @@ type HostedControlPlaneSpec struct {
 	ProviderCreds corev1.LocalObjectReference `json:"providerCreds"`
 	InfraID       string                      `json:"infraID"`
 	Platform      PlatformSpec                `json:"platform"`
+
+	// KubeConfig specifies the name and key for the kubeconfig secret
+	// +optional
+	KubeConfig *KubeconfigSecretRef `json:"kubeconfig,omitempty"`
+}
+
+type KubeconfigSecretRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
 }
 
 type ConditionType string
@@ -104,7 +113,7 @@ type HostedControlPlaneStatus struct {
 
 	// KubeConfig is a reference to the secret containing the default kubeconfig
 	// for this control plane.
-	KubeConfig *corev1.LocalObjectReference `json:"kubeConfig,omitempty"`
+	KubeConfig *KubeconfigSecretRef `json:"kubeConfig,omitempty"`
 
 	// Condition contains details for one aspect of the current state of the HostedControlPlane.
 	// Current condition types are: "Available"
