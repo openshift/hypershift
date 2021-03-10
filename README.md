@@ -28,6 +28,7 @@ HyperShift is deployed into an existing OpenShift cluster which will host the ma
 * Admin access to an OpenShift cluster (version 4.7+) specified by the `KUBECONFIG` environment variable
 * The OpenShift `oc` CLI tool
 * The `hypershift` CLI tool
+- An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster
 
 Install HyperShift into the management cluster:
 
@@ -35,10 +36,25 @@ Install HyperShift into the management cluster:
 hypershift install
 ```
 
+Create an IAM instance profile for your workers:
+```shell
+hypershift create iam aws --aws-creds ~/.aws/credentials
+```
+NOTE: The default profile name is `hypershift-worker-profile`. To use a different name 
+(for example, in a shared account), use the `--profile-name` flag and then refer
+to that profile using the `--instance-profile` argument to the the `create cluster`
+command when creating clusters. The worker instance profile only needs to be created
+once per account and you can reuse it as needed for your clusters.
+
 To uninstall HyperShift, run:
 
 ```shell
 hypershift install --render | oc delete -f -
+```
+
+To destroy the IAM instance profile, run:
+```shell
+hypershift destroy iam aws --aws-creds ~/.aws/credentials
 ```
 
 ## How to create a hosted cluster
@@ -52,16 +68,6 @@ The `hypershift` CLI tool comes with commands to help create an example hosted c
 - The `hypershift` CLI tool
 - The OpenShift `oc` CLI tool.
 - A valid pull secret file for the `quay.io/openshift-release-dev` repository
-- An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster
-
-Run the `hypershift` command to create an IAM instance profile for your workers:
-```shell
-hypershift create iam aws --aws-creds ~/.aws/credentials
-```
-NOTE: The default profile name is `hypershift-worker-profile`. To use a different name 
-(for example, in a shared account), use the `--profile-name` flag. The worker instance
-profile only needs to be created once per account and you can reuse it as needed
-for your clusters.
 
 Run the `hypershift` command to create a cluster named `example` in the `clusters`
 namespace, including the cloud infrastructure to support it.
@@ -86,11 +92,6 @@ hypershift destroy cluster \
   --aws-creds ~/.aws/credentials \
   --namespace clusters \
   --name example
-```
-
-To destroy the IAM instance profile, run:
-```shell
-hypershift destroy iam aws --aws-creds ~/.aws/credentials
 ```
 
 ## How to add node pools to the example cluster
