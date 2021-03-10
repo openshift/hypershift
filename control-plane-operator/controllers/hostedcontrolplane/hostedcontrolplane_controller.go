@@ -51,6 +51,7 @@ import (
 const (
 	finalizer                 = "hypershift.openshift.io/finalizer"
 	APIServerPort             = 6443
+	adminKubeconfigName       = "admin-kubeconfig"
 	kubeAPIServerServiceName  = "kube-apiserver"
 	vpnServiceName            = "openvpn-server"
 	oauthServiceName          = "oauth-openshift"
@@ -301,7 +302,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	hostedControlPlane.Status.KubeConfig = &corev1.LocalObjectReference{
-		Name: fmt.Sprintf("%v-kubeconfig", hostedControlPlane.Name),
+		Name: adminKubeconfigName,
 	}
 
 	hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
@@ -509,7 +510,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to get pki secret: %w", err)
 	}
 
-	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetName(), hcp.GetNamespace(), pkiSecret.Data["admin.kubeconfig"])
+	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetNamespace(), pkiSecret.Data["admin.kubeconfig"])
 	if err != nil {
 		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
 	}
@@ -1130,11 +1131,11 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	return secret
 }
 
-func generateKubeconfigSecret(name, namespace string, kubeconfigBytes []byte) (*corev1.Secret, error) {
+func generateKubeconfigSecret(namespace string, kubeconfigBytes []byte) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
-	secret.Name = fmt.Sprintf("%v-kubeconfig", name)
-	secret.Data = map[string][]byte{"value": kubeconfigBytes}
+	secret.Name = adminKubeconfigName
+	secret.Data = map[string][]byte{"kubeconfig": kubeconfigBytes}
 	return secret, nil
 }
 

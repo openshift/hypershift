@@ -281,7 +281,7 @@ func (o CAPICluster) Build() *capiv1.Cluster {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: o.Namespace.Name,
-			Name:      o.HostedCluster.GetName(),
+			Name:      o.HostedCluster.Spec.InfraID,
 			Annotations: map[string]string{
 				hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(o.HostedCluster).String(),
 			},
