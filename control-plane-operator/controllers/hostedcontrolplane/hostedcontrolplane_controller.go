@@ -931,6 +931,10 @@ func createIgnitionServerRoute(namespace string) *routev1.Route {
 				Kind: "Service",
 				Name: "machine-config-server",
 			},
+			TLS: &routev1.TLSConfig{
+				Termination:                   routev1.TLSTerminationPassthrough,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+			},
 		},
 	}
 }
