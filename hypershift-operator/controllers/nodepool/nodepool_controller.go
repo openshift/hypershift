@@ -355,7 +355,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 			Namespace:   targetNamespace,
 			Annotations: annotations,
 			Labels: map[string]string{
-				capiv1.ClusterLabelName: nodePool.Spec.ClusterName,
+				capiv1.ClusterLabelName: infraName,
 			},
 		},
 		TypeMeta: metav1.TypeMeta{},
@@ -367,7 +367,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 					MaxSurge:       &maxSurge,
 				},
 			},
-			ClusterName: nodePool.Spec.ClusterName,
+			ClusterName: infraName,
 			Selector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					resourcesName: resourcesName,
@@ -377,7 +377,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 				ObjectMeta: capiv1.ObjectMeta{
 					Labels: map[string]string{
 						resourcesName:           resourcesName,
-						capiv1.ClusterLabelName: nodePool.Spec.ClusterName,
+						capiv1.ClusterLabelName: infraName,
 					},
 					// TODO (alberto): drop/expose this annotation at the nodePool API
 					Annotations: map[string]string{
