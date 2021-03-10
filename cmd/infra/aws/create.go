@@ -104,6 +104,10 @@ func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 	if err = o.parseAdditionalTags(); err != nil {
 		return nil, err
 	}
+	// hack for where we compose command
+	if o.log == nil {
+		o.log = setupLogger()
+	}
 	result := &CreateInfraOutput{
 		InfraID:     o.InfraID,
 		ComputeCIDR: DefaultCIDRBlock,

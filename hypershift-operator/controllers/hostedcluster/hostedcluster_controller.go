@@ -111,7 +111,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// TODO: This should be incorporated with status/reconcile
 	if isMissing || !hcluster.DeletionTimestamp.IsZero() {
 		// Keep trying to delete until we know it's safe to finalize.
-		completed, err := r.delete(ctx, req)
+		completed, err := r.delete(ctx, req, hcluster)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete cluster: %w", err)
 		}
@@ -321,15 +321,23 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		hostedClusterKubeConfigSecret := manifests.KubeConfigSecret{HostedCluster: hcluster}.Build()
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedClusterKubeConfigSecret, func() error {
-			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data["value"]
-			if !ok {
-				return fmt.Errorf("controlplane kubeconfig secret %q must have a value key", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret))
-			}
-			hostedClusterKubeConfigSecret.Data["kubeconfig"] = controlPlaneKubeConfigData
+			hostedClusterKubeConfigSecret.Data = controlPlaneKubeConfigSecret.Data
 			return nil
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster kubeconfig secret: %w", err)
+		}
+		capiClusterKubeConfigSecret := manifests.CAPIKubeConfigSecret{HostedCluster: hcluster}.Build()
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiClusterKubeConfigSecret, func() error {
+			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data["kubeconfig"]
+			if !ok {
+				return fmt.Errorf("controlplane kubeconfig secret %q must have a kubeconfig key", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret))
+			}
+			capiClusterKubeConfigSecret.Data = map[string][]byte{"value": controlPlaneKubeConfigData}
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile CAPI cluster kubeconfig secret: %w", err)
 		}
 	}
 
@@ -757,7 +765,7 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 	return filtered, nil
 }
 
-func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) (bool, error) {
+func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, hc *hyperv1.HostedCluster) (bool, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceName(req.Name).Name
 
 	nodePools, err := r.listNodePools(req.Namespace, req.Name)
@@ -771,22 +779,24 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request) 
 		}
 	}
 
-	r.Log.Info("Deleting Cluster", "clusterName", req.Name, "clusterNamespace", controlPlaneNamespace)
-	cluster := &capiv1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      req.Name,
-			Namespace: controlPlaneNamespace,
-		},
-	}
-
-	if err := r.Delete(ctx, cluster); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("error deleting Cluster: %w", err)
+	if len(hc.Spec.InfraID) > 0 {
+		r.Log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
+		cluster := &capiv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hc.Spec.InfraID,
+				Namespace: controlPlaneNamespace,
+			},
 		}
-		// The advancing case is when Delete() returns an error that the cluster is not found
-	} else {
-		r.Log.Info("Waiting for Cluster deletion", "clusterName", req.Name, "clusterNamespace", controlPlaneNamespace)
-		return false, nil
+
+		if err := r.Delete(ctx, cluster); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return false, fmt.Errorf("error deleting Cluster: %w", err)
+			}
+			// The advancing case is when Delete() returns an error that the cluster is not found
+		} else {
+			r.Log.Info("Waiting for Cluster deletion", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
+			return false, nil
+		}
 	}
 
 	r.Log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)
