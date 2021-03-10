@@ -52,9 +52,9 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot create worker role: %w", err)
 		}
-		o.log.Info("Created role", "name", roleName)
+		log.Info("Created role", "name", roleName)
 	} else {
-		o.log.Info("Found existing role", "name", roleName)
+		log.Info("Found existing role", "name", roleName)
 	}
 	instanceProfile, err := existingInstanceProfile(client, profileName)
 	if err != nil {
@@ -69,9 +69,9 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 			return fmt.Errorf("cannot create instance profile: %w", err)
 		}
 		instanceProfile = result.InstanceProfile
-		o.log.Info("Created instance profile", "name", profileName)
+		log.Info("Created instance profile", "name", profileName)
 	} else {
-		o.log.Info("Found existing instance profile", "name", profileName)
+		log.Info("Found existing instance profile", "name", profileName)
 	}
 	hasRole := false
 	for _, role := range instanceProfile.Roles {
@@ -87,7 +87,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot add role to instance profile: %w", err)
 		}
-		o.log.Info("Added role to instance profile", "role", roleName, "profile", profileName)
+		log.Info("Added role to instance profile", "role", roleName, "profile", profileName)
 	}
 	rolePolicyName := fmt.Sprintf("%s-policy", profileName)
 	hasPolicy, err := existingRolePolicy(client, roleName, rolePolicyName)
@@ -103,7 +103,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		if err != nil {
 			return fmt.Errorf("cannot create profile policy: %w", err)
 		}
-		o.log.Info("Created role policy", "name", rolePolicyName)
+		log.Info("Created role policy", "name", rolePolicyName)
 	}
 	return nil
 }
