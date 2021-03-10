@@ -338,9 +338,6 @@ func (o HostedControlPlane) Build() *hyperv1.HostedControlPlane {
 			PullSecret: corev1.LocalObjectReference{
 				Name: o.PullSecret.Name,
 			},
-			SSHKey: corev1.LocalObjectReference{
-				Name: o.SSHKey.Name,
-			},
 			ServiceCIDR:  o.HostedCluster.Spec.Networking.ServiceCIDR,
 			PodCIDR:      o.HostedCluster.Spec.Networking.PodCIDR,
 			MachineCIDR:  o.HostedCluster.Spec.Networking.MachineCIDR,
@@ -348,6 +345,11 @@ func (o HostedControlPlane) Build() *hyperv1.HostedControlPlane {
 			InfraID:      o.HostedCluster.Spec.InfraID,
 			Platform:     o.HostedCluster.Spec.Platform,
 		},
+	}
+	if o.SSHKey != nil {
+		hcp.Spec.SSHKey = corev1.LocalObjectReference{
+			Name: o.SSHKey.Name,
+		}
 	}
 	return hcp
 }

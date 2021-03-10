@@ -52,7 +52,6 @@ The `hypershift` CLI tool comes with commands to help create an example hosted c
 - The `hypershift` CLI tool
 - The OpenShift `oc` CLI tool.
 - A valid pull secret file for the `quay.io/openshift-release-dev` repository
-- An SSH public key file for guest node access
 - An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster
 
 Run the `hypershift` command to create an IAM instance profile for your workers:
@@ -76,7 +75,6 @@ Run the `hypershift` command to generate and install the example cluster:
 hypershift create cluster \
   --pull-secret /my/pull-secret \
   --aws-creds /my/aws-credentials \
-  --ssh-key /my/ssh-public-key \
   --infra-json /tmp/infra.json
 ```
 NOTE: The file specified in the `--infra-json` flag should be the same file you created with the `create infra aws` command above.

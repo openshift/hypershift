@@ -240,22 +240,27 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane SSH secret by resolving the source secret reference
 	// from the HostedCluster and syncing the secret in the control plane namespace.
-	var hostedClusterSSHKeySecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &hostedClusterSSHKeySecret)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
-	}
-	controlPlaneSSHKeySecret := manifests.SSHKey{Namespace: controlPlaneNamespace}.Build()
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSSHKeySecret, func() error {
-		hostedClusterSSHKeyData, hasSSHKeyData := hostedClusterSSHKeySecret.Data["id_rsa.pub"]
-		if !hasSSHKeyData {
-			return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", hostedClusterSSHKeySecret.Name)
+	var controlPlaneSSHKeySecret *corev1.Secret
+	if len(hcluster.Spec.SSHKey.Name) > 0 {
+		var hostedClusterSSHKeySecret corev1.Secret
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &hostedClusterSSHKeySecret)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 		}
-		controlPlaneSSHKeySecret.Data["id_rsa.pub"] = hostedClusterSSHKeyData
-		return nil
-	})
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane ssh secret: %w", err)
+		controlPlaneSSHKeySecret = manifests.SSHKey{Namespace: controlPlaneNamespace}.Build()
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSSHKeySecret, func() error {
+			hostedClusterSSHKeyData, hasSSHKeyData := hostedClusterSSHKeySecret.Data["id_rsa.pub"]
+			if !hasSSHKeyData {
+				return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", hostedClusterSSHKeySecret.Name)
+			}
+			controlPlaneSSHKeySecret.Data["id_rsa.pub"] = hostedClusterSSHKeyData
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane ssh secret: %w", err)
+		}
+	} else {
+		controlPlaneSSHKeySecret = nil
 	}
 
 	// Reconcile the default node pool

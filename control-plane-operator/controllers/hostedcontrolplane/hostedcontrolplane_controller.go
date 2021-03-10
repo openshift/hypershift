@@ -534,15 +534,20 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
 	targetNamespace := hcp.GetName()
 
-	var sshKeySecret corev1.Secret
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
+	var sshKeyData []byte
+	if len(hcp.Spec.SSHKey.Name) > 0 {
+		var sshKeySecret corev1.Secret
+		err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
+		}
+		data, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
+		if !hasSSHKeyData {
+			return nil, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
+		}
+		sshKeyData = data
 	}
-	sshKeyData, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
-	if !hasSSHKeyData {
-		return nil, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
-	}
+
 	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp.Name)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)

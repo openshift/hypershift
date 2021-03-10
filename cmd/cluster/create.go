@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/types"
@@ -60,7 +59,7 @@ func NewCreateCommand() *cobra.Command {
 		ReleaseImage:          releaseImage,
 		PullSecretFile:        "",
 		AWSCredentialsFile:    "",
-		SSHKeyFile:            filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub"),
+		SSHKeyFile:            "",
 		NodePoolReplicas:      2,
 		Render:                false,
 		InfrastructureJSON:    "",
@@ -96,9 +95,13 @@ func NewCreateCommand() *cobra.Command {
 		if err != nil {
 			panic(err)
 		}
-		sshKey, err := ioutil.ReadFile(opts.SSHKeyFile)
-		if err != nil {
-			panic(err)
+		var sshKey []byte
+		if len(opts.SSHKeyFile) > 0 {
+			key, err := ioutil.ReadFile(opts.SSHKeyFile)
+			if err != nil {
+				panic(err)
+			}
+			sshKey = key
 		}
 		if len(opts.ReleaseImage) == 0 {
 			return fmt.Errorf("release-image flag is required if default can not be fetched")

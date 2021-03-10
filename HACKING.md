@@ -46,6 +46,5 @@
         $ bin/test-e2e -test.v -test.timeout 0 \
           --e2e.quick-start.aws-credentials-file /my/aws-credentials \
           --e2e.quick-start.pull-secret-file /my/pull-secret \
-          --e2e.quick-start.ssh-key-file /my/public-ssh-key \
           --e2e.quick-start.infra-json /tmp/infra.json
    ```
