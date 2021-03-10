@@ -74,7 +74,6 @@ Run the `hypershift` command to generate and install the example cluster:
 ```shell
 hypershift create cluster \
   --pull-secret /my/pull-secret \
-  --aws-creds /my/aws-credentials \
   --infra-json /tmp/infra.json
 ```
 NOTE: The file specified in the `--infra-json` flag should be the same file you created with the `create infra aws` command above.

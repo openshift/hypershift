@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -84,14 +85,9 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
 
 	cmd.MarkFlagRequired("pull-secret")
-	cmd.MarkFlagRequired("aws-creds")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
-		if err != nil {
-			panic(err)
-		}
-		awsCredentials, err := ioutil.ReadFile(opts.AWSCredentialsFile)
 		if err != nil {
 			panic(err)
 		}
@@ -133,12 +129,17 @@ func NewCreateCommand() *cobra.Command {
 			}
 		}
 
+		awsCreds, err := getAWSCredentials(opts.AWSCredentialsFile)
+		if err != nil {
+			panic(err)
+		}
+
 		exampleObjects := apifixtures.ExampleOptions{
 			Namespace:        opts.Namespace,
 			Name:             opts.Name,
 			ReleaseImage:     opts.ReleaseImage,
 			PullSecret:       pullSecret,
-			AWSCredentials:   awsCredentials,
+			AWSCredentials:   awsCreds,
 			SSHKey:           sshKey,
 			NodePoolReplicas: opts.NodePoolReplicas,
 			InfraID:          infra.InfraID,
@@ -168,6 +169,35 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	return cmd
+}
+
+func getAWSCredentials(explicitCredsFile string) ([]byte, error) {
+	sessionOpts := session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	}
+	if len(explicitCredsFile) > 0 {
+		sessionOpts.SharedConfigFiles = []string{explicitCredsFile}
+	}
+	sess, err := session.NewSessionWithOptions(sessionOpts)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't create AWS client session: %w", err)
+	}
+	credValue, err := sess.Config.Credentials.Get()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't get aws session credentials: %w", err)
+	}
+	accessKeyId := credValue.AccessKeyID
+	accessKey := credValue.SecretAccessKey
+	if len(accessKeyId) == 0 {
+		return nil, fmt.Errorf("couldn't get aws access key ID")
+	}
+	if len(accessKey) == 0 {
+		return nil, fmt.Errorf("couldn't get aws access key")
+	}
+	return []byte(fmt.Sprintf(`[default]
+aws_access_key_id = %s
+aws_secret_access_key = %s
+`, credValue.AccessKeyID, credValue.SecretAccessKey)), nil
 }
 
 func render(objects []crclient.Object) {
