@@ -509,6 +509,7 @@ func (in *HostedControlPlaneStatus) DeepCopyInto(out *HostedControlPlaneStatus) 
 		**out = **in
 	}
 	out.ControlPlaneEndpoint = in.ControlPlaneEndpoint
+	in.LastReleaseImageTransitionTime.DeepCopyInto(&out.LastReleaseImageTransitionTime)
 	if in.KubeConfig != nil {
 		in, out := &in.KubeConfig, &out.KubeConfig
 		*out = new(KubeconfigSecretRef)

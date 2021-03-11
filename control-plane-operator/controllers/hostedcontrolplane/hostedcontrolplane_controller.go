@@ -171,7 +171,7 @@ func (r *HostedControlPlaneReconciler) setAvailableCondition(ctx context.Context
 	}
 
 	if updateErr := r.Status().Update(ctx, hostedControlPlane); updateErr != nil {
-		r.Log.Error(err, "failed to update status")
+		r.Log.Error(updateErr, "failed to update status")
 		result.Requeue = true
 	}
 
@@ -313,7 +313,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
+	// At this point the latest image is considered to be rolled out. If we're transitioning
+	// from one image to another, record that on status and note the time.
+	// TODO: This is an extremely weak check and doesn't take into account the actual
+	// state of any of the managed components. It's basically a placeholder to prove
+	// the orchestration of upgrades works at all.
+	if hostedControlPlane.Status.ReleaseImage != hostedControlPlane.Spec.ReleaseImage {
+		hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
+		hostedControlPlane.Status.LastReleaseImageTransitionTime = metav1.NewTime(time.Now())
+	}
 
 	r.Log.Info("Successfully reconciled")
 	return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionTrue, "AsExpected", "HostedControlPlane is ready", ctrl.Result{}, nil)
