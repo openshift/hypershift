@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -89,115 +91,111 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
-		if err != nil {
-			panic(err)
-		}
-		awsCredentials, err := ioutil.ReadFile(opts.AWSCredentialsFile)
-		if err != nil {
-			panic(err)
-		}
-		var sshKey []byte
-		if len(opts.SSHKeyFile) > 0 {
-			key, err := ioutil.ReadFile(opts.SSHKeyFile)
-			if err != nil {
-				panic(err)
-			}
-			sshKey = key
-		}
-		if len(opts.ReleaseImage) == 0 {
-			return fmt.Errorf("release-image flag is required if default can not be fetched")
-		}
-		var infra *awsinfra.CreateInfraOutput
-		if len(opts.InfrastructureJSON) > 0 {
-			rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
-			if err != nil {
-				panic(err)
-			}
-			infra = &awsinfra.CreateInfraOutput{}
-			if err = json.Unmarshal(rawInfra, infra); err != nil {
-				panic(err)
-			}
-		}
-		if infra == nil {
-			infraID := opts.InfraID
-			if len(infraID) == 0 {
-				infraID = generateID(opts.Name)
-			}
-			opt := awsinfra.CreateInfraOptions{
-				Region:             opts.Region,
-				InfraID:            infraID,
-				AWSCredentialsFile: opts.AWSCredentialsFile,
-			}
-			infra, err = opt.CreateInfra()
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		exampleObjects := apifixtures.ExampleOptions{
-			Namespace:        opts.Namespace,
-			Name:             opts.Name,
-			ReleaseImage:     opts.ReleaseImage,
-			PullSecret:       pullSecret,
-			AWSCredentials:   awsCredentials,
-			SSHKey:           sshKey,
-			NodePoolReplicas: opts.NodePoolReplicas,
-			InfraID:          infra.InfraID,
-			ComputeCIDR:      infra.ComputeCIDR,
-			AWS: apifixtures.ExampleAWSOptions{
-				Region:          infra.Region,
-				Zone:            infra.Zone,
-				VPCID:           infra.VPCID,
-				SubnetID:        infra.PrivateSubnetID,
-				SecurityGroupID: infra.SecurityGroupID,
-				InstanceProfile: opts.WorkerInstanceProfile,
-				InstanceType:    opts.InstanceType,
-			},
-		}.Resources().AsObjects()
-
-		switch {
-		case opts.Render:
-			render(exampleObjects)
-		default:
-			err := apply(context.TODO(), exampleObjects)
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		return nil
+		ctx, cancel := context.WithCancel(context.Background())
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+		}()
+		return CreateCluster(ctx, opts)
 	}
 
 	return cmd
 }
 
-func render(objects []crclient.Object) {
-	for _, object := range objects {
-		err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("---")
-	}
-}
-
-func apply(ctx context.Context, objects []crclient.Object) error {
-	client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
+func CreateCluster(ctx context.Context, opts Options) error {
+	pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
 	if err != nil {
-		return fmt.Errorf("failed to create kube client: %w", err)
+		return fmt.Errorf("failed to read pull secret file: %w", err)
 	}
-	for _, object := range objects {
-		key := crclient.ObjectKeyFromObject(object)
-		_, err = controllerutil.CreateOrUpdate(ctx, client, object, NoopReconcile)
+	awsCredentials, err := ioutil.ReadFile(opts.AWSCredentialsFile)
+	if err != nil {
+		return fmt.Errorf("failed to read aws credentials: %w", err)
+	}
+	var sshKey []byte
+	if len(opts.SSHKeyFile) > 0 {
+		key, err := ioutil.ReadFile(opts.SSHKeyFile)
 		if err != nil {
-			return fmt.Errorf("failed to create object %q: %w", key, err)
+			return fmt.Errorf("failed to read ssh key file: %w", err)
 		}
-		log.Info("applied resource", "key", key)
+		sshKey = key
 	}
-	return nil
-}
+	if len(opts.ReleaseImage) == 0 {
+		return fmt.Errorf("release-image flag is required if default can not be fetched")
+	}
+	var infra *awsinfra.CreateInfraOutput
+	if len(opts.InfrastructureJSON) > 0 {
+		rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
+		if err != nil {
+			return fmt.Errorf("failed to read infra json file: %w", err)
+		}
+		infra = &awsinfra.CreateInfraOutput{}
+		if err = json.Unmarshal(rawInfra, infra); err != nil {
+			return fmt.Errorf("failed to load infra json: %w", err)
+		}
+	}
+	if infra == nil {
+		infraID := opts.InfraID
+		if len(infraID) == 0 {
+			infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
+		}
+		opt := awsinfra.CreateInfraOptions{
+			Region:             opts.Region,
+			InfraID:            infraID,
+			AWSCredentialsFile: opts.AWSCredentialsFile,
+		}
+		infra, err = opt.CreateInfra()
+		if err != nil {
+			return fmt.Errorf("failed to create infra: %w", err)
+		}
+	}
 
-func generateID(name string) string {
-	return fmt.Sprintf("%s-%s", name, utilrand.String(5))
+	exampleObjects := apifixtures.ExampleOptions{
+		Namespace:        opts.Namespace,
+		Name:             opts.Name,
+		ReleaseImage:     opts.ReleaseImage,
+		PullSecret:       pullSecret,
+		AWSCredentials:   awsCredentials,
+		SSHKey:           sshKey,
+		NodePoolReplicas: opts.NodePoolReplicas,
+		InfraID:          infra.InfraID,
+		ComputeCIDR:      infra.ComputeCIDR,
+		AWS: apifixtures.ExampleAWSOptions{
+			Region:          infra.Region,
+			Zone:            infra.Zone,
+			VPCID:           infra.VPCID,
+			SubnetID:        infra.PrivateSubnetID,
+			SecurityGroupID: infra.SecurityGroupID,
+			InstanceProfile: opts.WorkerInstanceProfile,
+			InstanceType:    opts.InstanceType,
+		},
+	}.Resources().AsObjects()
+
+	switch {
+	case opts.Render:
+		for _, object := range exampleObjects {
+			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("failed to encode objects: %w", err)
+			}
+			fmt.Println("---")
+		}
+	default:
+		client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
+		if err != nil {
+			return fmt.Errorf("failed to create kube client: %w", err)
+		}
+		for _, object := range exampleObjects {
+			key := crclient.ObjectKeyFromObject(object)
+			_, err = controllerutil.CreateOrUpdate(ctx, client, object, NoopReconcile)
+			if err != nil {
+				return fmt.Errorf("failed to create object %q: %w", key, err)
+			}
+			log.Info("applied resource", "key", key)
+		}
+		return nil
+	}
+
+	return nil
 }

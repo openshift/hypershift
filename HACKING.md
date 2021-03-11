@@ -34,17 +34,11 @@
 ### How to run the e2e tests
 
 1. Install HyperShift.
-2. Create IAM and Infra
-   ```shell
-   bin/hypershift create iam aws --aws-creds /my/aws-credentials
-   bin/hyperhisft create infra aws --aws-creds /my/aws-credentials --infra-id my-infra-id --output-file /tmp/infra.json
-   ```
 2. Run the tests.
 
    ```shell
         $ make e2e
         $ bin/test-e2e -test.v -test.timeout 0 \
-          --e2e.quick-start.aws-credentials-file /my/aws-credentials \
-          --e2e.quick-start.pull-secret-file /my/pull-secret \
-          --e2e.quick-start.infra-json /tmp/infra.json
+          --e2e.aws-credentials-file /my/aws-credentials \
+          --e2e.pull-secret-file /my/pull-secret
    ```
