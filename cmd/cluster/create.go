@@ -58,21 +58,21 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:             "clusters",
-		Name:                  "example",
-		ReleaseImage:          releaseImage,
-		PullSecretFile:        "",
-		AWSCredentialsFile:    "",
-		SSHKeyFile:            "",
-		NodePoolReplicas:      2,
-		Render:                false,
-		InfrastructureJSON:    "",
-		WorkerInstanceProfile: "hypershift-worker-profile",
-		Region:                "us-east-1",
-		InfraID:               "",
-		InstanceType:          "m4.large",
-ControlPlaneServiceType:                "",
-ControlPlaneServiceTypeNodePortAddress: "",
+		Namespace:                              "clusters",
+		Name:                                   "example",
+		ReleaseImage:                           releaseImage,
+		PullSecretFile:                         "",
+		AWSCredentialsFile:                     "",
+		SSHKeyFile:                             "",
+		NodePoolReplicas:                       2,
+		Render:                                 false,
+		InfrastructureJSON:                     "",
+		WorkerInstanceProfile:                  "hypershift-worker-profile",
+		Region:                                 "us-east-1",
+		InfraID:                                "",
+		InstanceType:                           "m4.large",
+		ControlPlaneServiceType:                "",
+		ControlPlaneServiceTypeNodePortAddress: "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
