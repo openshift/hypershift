@@ -257,6 +257,10 @@ spec:
                 - key
                 - name
                 type: object
+              lastReleaseImageTransitionTime:
+                description: lastReleaseImageTransitionTime is the time of the last update to the current releaseImage property.
+                format: date-time
+                type: string
               ready:
                 default: false
                 description: Ready denotes that the HostedControlPlane API Server is ready to receive requests
@@ -269,6 +273,7 @@ spec:
                 type: string
             required:
             - conditions
+            - lastReleaseImageTransitionTime
             - ready
             type: object
         type: object

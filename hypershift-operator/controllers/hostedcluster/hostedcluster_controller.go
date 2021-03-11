@@ -679,6 +679,9 @@ func computeClusterVersionStatus(clock Clock, hcluster *hyperv1.HostedCluster, h
 	// The rollout is complete, so update the current history entry
 	version.History[0].State = configv1.CompletedUpdate
 	version.History[0].Version = hcp.Status.Version
+	if !hcp.Status.LastReleaseImageTransitionTime.IsZero() {
+		version.History[0].CompletionTime = hcp.Status.LastReleaseImageTransitionTime.DeepCopy()
+	}
 
 	// If a new rollout is needed, update the desired version and prepend a new
 	// partial history entry to unblock rollouts.
