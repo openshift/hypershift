@@ -95,9 +95,6 @@ type HostedClusterStatus struct {
 	// +optional
 	Version *ClusterVersionStatus `json:"version,omitempty"`
 
-	// +optional
-	Ready bool `json:"ready,omitempty"`
-
 	// KubeConfig is a reference to the secret containing the default kubeconfig
 	// for the cluster.
 	// +optional
@@ -143,8 +140,8 @@ type ClusterVersionStatus struct {
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version.history[?(@.state==\"Completed\")].version",description="Version"
-// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Ready"
 // +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
+// +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
 // HostedCluster is the Schema for the hostedclusters API
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
