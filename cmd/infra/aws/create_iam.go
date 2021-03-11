@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +16,6 @@ type CreateIAMOptions struct {
 	Region             string
 	AWSCredentialsFile string
 	ProfileName        string
-	log                logr.Logger
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -29,7 +27,6 @@ func NewCreateIAMCommand() *cobra.Command {
 	opts := CreateIAMOptions{
 		Region:      "us-east-1",
 		ProfileName: "hypershift-worker-profile",
-		log:         setupLogger(),
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
@@ -40,7 +37,7 @@ func NewCreateIAMCommand() *cobra.Command {
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		if err := opts.CreateIAM(); err != nil {
-			opts.log.Error(err, "Error")
+			log.Error(err, "Error")
 			os.Exit(1)
 		}
 	}

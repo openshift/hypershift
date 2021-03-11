@@ -50,19 +50,20 @@ import (
 )
 
 const (
-	finalizer                 = "hypershift.openshift.io/finalizer"
-	APIServerPort             = 6443
-	adminKubeconfigName       = "admin-kubeconfig"
-	kubeAPIServerServiceName  = "kube-apiserver"
-	vpnServiceName            = "openvpn-server"
-	oauthServiceName          = "oauth-openshift"
-	pullSecretName            = "pull-secret"
-	vpnServiceAccountName     = "vpn"
-	ingressOperatorNamespace  = "openshift-ingress-operator"
-	hypershiftRouteLabel      = "hypershift.openshift.io/cluster"
-	oauthBrandingManifest     = "v4-0-config-system-branding.yaml"
-	DefaultAPIServerIPAddress = "172.20.0.1"
-	externalOauthPort         = 443
+	finalizer                  = "hypershift.openshift.io/finalizer"
+	APIServerPort              = 6443
+	DefaultAdminKubeconfigName = "admin-kubeconfig"
+	DefaultAdminKubeconfigKey  = "kubeconfig"
+	kubeAPIServerServiceName   = "kube-apiserver"
+	vpnServiceName             = "openvpn-server"
+	oauthServiceName           = "oauth-openshift"
+	pullSecretName             = "pull-secret"
+	vpnServiceAccountName      = "vpn"
+	ingressOperatorNamespace   = "openshift-ingress-operator"
+	hypershiftRouteLabel       = "hypershift.openshift.io/cluster"
+	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
+	DefaultAPIServerIPAddress  = "172.20.0.1"
+	externalOauthPort          = 443
 )
 
 var (
@@ -173,7 +174,7 @@ func (r *HostedControlPlaneReconciler) setAvailableCondition(ctx context.Context
 	}
 
 	if updateErr := r.Status().Update(ctx, hostedControlPlane); updateErr != nil {
-		r.Log.Error(err, "failed to update status")
+		r.Log.Error(updateErr, "failed to update status")
 		result.Requeue = true
 	}
 
@@ -297,12 +298,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, fmt.Errorf("failed to get manifests bootstrapper pod: %w", err)
 			}
 		} else {
-			if bootstrapPod.Spec.Containers[0].Image != hostedControlPlane.Spec.ReleaseImage {
+			currentImage := bootstrapPod.Spec.Containers[0].Image
+			latestImage, latestImageFound := releaseImage.ComponentImages()["cli"]
+			if latestImageFound && currentImage != latestImage {
 				err := r.Client.Delete(ctx, &bootstrapPod)
 				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to delete manifests bootstrapper pod: %w", err)
 				}
-				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name)
+				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name, "from", currentImage, "to", latestImage)
 			}
 		}
 	}
@@ -315,11 +318,24 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ControlPlaneEnsureFailed", err.Error(), result, fmt.Errorf("failed to ensure control plane: %w", err))
 	}
 
-	hostedControlPlane.Status.KubeConfig = &corev1.LocalObjectReference{
-		Name: adminKubeconfigName,
+	if hostedControlPlane.Spec.KubeConfig != nil {
+		hostedControlPlane.Status.KubeConfig = hostedControlPlane.Spec.KubeConfig
+	} else {
+		hostedControlPlane.Status.KubeConfig = &hyperv1.KubeconfigSecretRef{
+			Name: DefaultAdminKubeconfigName,
+			Key:  DefaultAdminKubeconfigKey,
+		}
 	}
 
-	hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
+	// At this point the latest image is considered to be rolled out. If we're transitioning
+	// from one image to another, record that on status and note the time.
+	// TODO: This is an extremely weak check and doesn't take into account the actual
+	// state of any of the managed components. It's basically a placeholder to prove
+	// the orchestration of upgrades works at all.
+	if hostedControlPlane.Status.ReleaseImage != hostedControlPlane.Spec.ReleaseImage {
+		hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
+		hostedControlPlane.Status.LastReleaseImageTransitionTime = metav1.NewTime(time.Now())
+	}
 
 	r.Log.Info("Successfully reconciled")
 	return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionTrue, "AsExpected", "HostedControlPlane is ready", ctrl.Result{}, nil)
@@ -534,7 +550,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to get pki secret: %w", err)
 	}
 
-	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetNamespace(), pkiSecret.Data["admin.kubeconfig"])
+	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetNamespace(), hcp.Spec.KubeConfig, pkiSecret.Data["admin.kubeconfig"])
 	if err != nil {
 		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
 	}
@@ -558,15 +574,20 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
 	targetNamespace := hcp.GetName()
 
-	var sshKeySecret corev1.Secret
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
+	var sshKeyData []byte
+	if len(hcp.Spec.SSHKey.Name) > 0 {
+		var sshKeySecret corev1.Secret
+		err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
+		}
+		data, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
+		if !hasSSHKeyData {
+			return nil, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
+		}
+		sshKeyData = data
 	}
-	sshKeyData, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
-	if !hasSSHKeyData {
-		return nil, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
-	}
+
 	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp.Name)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
@@ -1175,11 +1196,19 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	return secret
 }
 
-func generateKubeconfigSecret(namespace string, kubeconfigBytes []byte) (*corev1.Secret, error) {
+func generateKubeconfigSecret(namespace string, ref *hyperv1.KubeconfigSecretRef, kubeconfigBytes []byte) (*corev1.Secret, error) {
+	var name, key string
+	if ref != nil {
+		name = ref.Name
+		key = ref.Key
+	} else {
+		name = DefaultAdminKubeconfigName
+		key = DefaultAdminKubeconfigKey
+	}
 	secret := &corev1.Secret{}
 	secret.Namespace = namespace
-	secret.Name = adminKubeconfigName
-	secret.Data = map[string][]byte{"kubeconfig": kubeconfigBytes}
+	secret.Name = name
+	secret.Data = map[string][]byte{key: kubeconfigBytes}
 	return secret, nil
 }
 

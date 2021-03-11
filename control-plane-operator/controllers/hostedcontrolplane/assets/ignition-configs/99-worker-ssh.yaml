@@ -11,6 +11,8 @@ spec:
     passwd:
       users:
       - name: core
+        {{ if .SSHKey }}
         sshAuthorizedKeys:
         - |-
           {{ .SSHKey }}
+        {{ end }}

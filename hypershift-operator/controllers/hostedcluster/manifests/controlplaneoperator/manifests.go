@@ -1,6 +1,8 @@
 package controlplaneoperator
 
 import (
+	"fmt"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -338,18 +340,24 @@ func (o HostedControlPlane) Build() *hyperv1.HostedControlPlane {
 			PullSecret: corev1.LocalObjectReference{
 				Name: o.PullSecret.Name,
 			},
-			SSHKey: corev1.LocalObjectReference{
-				Name: o.SSHKey.Name,
+			ServiceCIDR:  o.HostedCluster.Spec.Networking.ServiceCIDR,
+			PodCIDR:      o.HostedCluster.Spec.Networking.PodCIDR,
+			MachineCIDR:  o.HostedCluster.Spec.Networking.MachineCIDR,
+			ReleaseImage: o.HostedCluster.Spec.Release.Image,
+			InfraID:      o.HostedCluster.Spec.InfraID,
+			Platform:     o.HostedCluster.Spec.Platform,
+ServiceType:    o.HostedCluster.Spec.ControlPlaneServiceType,
+ServiceAddress: o.HostedCluster.Spec.ControlPlaneServiceTypeNodePortAddress,
+			KubeConfig: &hyperv1.KubeconfigSecretRef{
+				Name: fmt.Sprintf("%s-kubeconfig", o.HostedCluster.Spec.InfraID),
+				Key:  "value",
 			},
-			ServiceCIDR:    o.HostedCluster.Spec.Networking.ServiceCIDR,
-			PodCIDR:        o.HostedCluster.Spec.Networking.PodCIDR,
-			MachineCIDR:    o.HostedCluster.Spec.Networking.MachineCIDR,
-			ReleaseImage:   o.HostedCluster.Spec.Release.Image,
-			InfraID:        o.HostedCluster.Spec.InfraID,
-			Platform:       o.HostedCluster.Spec.Platform,
-			ServiceType:    o.HostedCluster.Spec.ControlPlaneServiceType,
-			ServiceAddress: o.HostedCluster.Spec.ControlPlaneServiceTypeNodePortAddress,
 		},
+	}
+	if o.SSHKey != nil {
+		hcp.Spec.SSHKey = corev1.LocalObjectReference{
+			Name: o.SSHKey.Name,
+		}
 	}
 	return hcp
 }

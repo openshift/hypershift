@@ -1,4 +1,4 @@
-package aws
+package cluster
 
 import (
 	"github.com/bombsimon/logrusr"
