@@ -116,6 +116,7 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	nodePoolsCRD := assets.HyperShiftNodePoolsCustomResourceDefinition{}.Build()
 	hostedControlPlanesCRD := assets.HyperShiftHostedControlPlaneCustomResourceDefinition{}.Build()
 	externalInfraClustersCRD := assets.HyperShiftExternalInfraClustersCustomResourceDefinition{}.Build()
+	machineConfigServersCRD := assets.HyperShiftMachineConfigServersCustomResourceDefinition{}.Build()
 	operatorNamespace := assets.HyperShiftNamespace{
 		Name: opts.Namespace,
 	}.Build()
@@ -139,6 +140,7 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		nodePoolsCRD,
 		hostedControlPlanesCRD,
 		externalInfraClustersCRD,
+		machineConfigServersCRD,
 		operatorNamespace,
 		operatorServiceAccount,
 		operatorClusterRole,
