@@ -67,7 +67,7 @@ func NewCreateCommand() *cobra.Command {
 		NodePoolReplicas:      2,
 		Render:                false,
 		InfrastructureJSON:    "",
-		WorkerInstanceProfile: "hypershift-worker-profile",
+		WorkerInstanceProfile: "",
 		Region:                "us-east-1",
 		InfraID:               "",
 		InstanceType:          "m4.large",
@@ -151,6 +151,20 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		}
 	}
 
+	instanceProfile := opts.WorkerInstanceProfile
+	if len(instanceProfile) == 0 {
+		instanceProfile = awsinfra.DefaultIAMName(infra.InfraID)
+		opt := awsinfra.CreateIAMOptions{
+			Region:             opts.Region,
+			AWSCredentialsFile: opts.AWSCredentialsFile,
+			ProfileName:        instanceProfile,
+		}
+		err := opt.CreateIAM()
+		if err != nil {
+			return fmt.Errorf("failed to create iam: %w", err)
+		}
+	}
+
 	exampleObjects := apifixtures.ExampleOptions{
 		Namespace:        opts.Namespace,
 		Name:             opts.Name,
@@ -167,7 +181,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			VPCID:           infra.VPCID,
 			SubnetID:        infra.PrivateSubnetID,
 			SecurityGroupID: infra.SecurityGroupID,
-			InstanceProfile: opts.WorkerInstanceProfile,
+			InstanceProfile: instanceProfile,
 			InstanceType:    opts.InstanceType,
 		},
 	}.Resources().AsObjects()

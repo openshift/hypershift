@@ -9,6 +9,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 )
 
+func DefaultIAMName(infraID string) string {
+	return infraID + "-default-iam"
+}
+
 func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, profileName string) error {
 	const (
 		assumeRolePolicy = `{
