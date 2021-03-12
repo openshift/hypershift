@@ -82,11 +82,10 @@ func TestControlPlaneUpgrade(t *testing.T) {
 		PullSecretFile:     opts.PullSecretFile,
 		AWSCredentialsFile: opts.AWSCredentialsFile,
 		// TODO: generate a key on the fly
-		SSHKeyFile:            "",
-		NodePoolReplicas:      0,
-		WorkerInstanceProfile: "hypershift-worker-profile",
-		Region:                "us-east-1",
-		InstanceType:          "m4.large",
+		SSHKeyFile:       "",
+		NodePoolReplicas: 0,
+		Region:           "us-east-1",
+		InstanceType:     "m4.large",
 	}
 	err = cmdcluster.CreateCluster(ctx, createClusterOpts)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
