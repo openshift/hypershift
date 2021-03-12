@@ -97,6 +97,8 @@ func (o *CreateInfraOptions) Run() error {
 }
 
 func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
+	log.Info("Creating infrastructure", "id", o.InfraID)
+
 	var err error
 	if err = o.parseAdditionalTags(); err != nil {
 		return nil, err

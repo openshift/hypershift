@@ -60,13 +60,13 @@ func NewDestroyCommand() *cobra.Command {
 			cancel()
 		}()
 
-		return opts.destroy(ctx)
+		return DestroyCluster(ctx, &opts)
 	}
 
 	return cmd
 }
 
-func (o DestroyOptions) destroy(ctx context.Context) error {
+func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	c, err := crclient.New(ctrl.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		return fmt.Errorf("failed to create kube client: %w", err)
@@ -74,7 +74,7 @@ func (o DestroyOptions) destroy(ctx context.Context) error {
 
 	var hostedCluster hyperv1.HostedCluster
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
-		log.Info("hostedcluster not found")
+		log.Info("hostedcluster not found, nothing to do", "namespace", o.Namespace, "name", o.Name)
 		return nil
 	}
 
