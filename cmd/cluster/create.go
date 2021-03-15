@@ -60,22 +60,21 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:             "clusters",
-		Name:                  "example",
-		ReleaseImage:          releaseImage,
-		PullSecretFile:        "",
-		AWSCredentialsFile:    "",
-		SSHKeyFile:            "",
-		NodePoolReplicas:      2,
-		Render:                false,
-		InfrastructureJSON:    "",
-		WorkerInstanceProfile: "",
-		Region:                "us-east-1",
-		InfraID:               "",
-		InstanceType:          "m4.large",
-ControlPlaneServiceType:                "",
-ControlPlaneServiceTypeNodePortAddress: "",
-
+		Namespace:                              "clusters",
+		Name:                                   "example",
+		ReleaseImage:                           releaseImage,
+		PullSecretFile:                         "",
+		AWSCredentialsFile:                     "",
+		SSHKeyFile:                             "",
+		NodePoolReplicas:                       2,
+		Render:                                 false,
+		InfrastructureJSON:                     "",
+		WorkerInstanceProfile:                  "",
+		Region:                                 "us-east-1",
+		InfraID:                                "",
+		InstanceType:                           "m4.large",
+		ControlPlaneServiceType:                "",
+		ControlPlaneServiceTypeNodePortAddress: "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -173,17 +172,17 @@ func CreateCluster(ctx context.Context, opts Options) error {
 	}
 
 	exampleObjects := apifixtures.ExampleOptions{
-		Namespace:        opts.Namespace,
-		Name:             opts.Name,
-		ReleaseImage:     opts.ReleaseImage,
-		PullSecret:       pullSecret,
-		AWSCredentials:   awsCredentials,
-		SSHKey:           sshKey,
-		NodePoolReplicas: opts.NodePoolReplicas,
-		InfraID:          infra.InfraID,
-		ComputeCIDR:      infra.ComputeCIDR,
-ControlPlaneServiceTypeNodePortAddress: opts.ControlPlaneServiceTypeNodePortAddress,
-ControlPlaneServiceType:                opts.ControlPlaneServiceType,
+		Namespace:                              opts.Namespace,
+		Name:                                   opts.Name,
+		ReleaseImage:                           opts.ReleaseImage,
+		PullSecret:                             pullSecret,
+		AWSCredentials:                         awsCredentials,
+		SSHKey:                                 sshKey,
+		NodePoolReplicas:                       opts.NodePoolReplicas,
+		InfraID:                                infra.InfraID,
+		ComputeCIDR:                            infra.ComputeCIDR,
+		ControlPlaneServiceTypeNodePortAddress: opts.ControlPlaneServiceTypeNodePortAddress,
+		ControlPlaneServiceType:                opts.ControlPlaneServiceType,
 		AWS: apifixtures.ExampleAWSOptions{
 			Region:          infra.Region,
 			Zone:            infra.Zone,
