@@ -336,7 +336,7 @@ func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.
 	if err != nil {
 		return nil
 	}
-	if err := deleteManifests(ctx, r, r.Log, hcp.GetName(), manifests); err != nil {
+	if err := deleteManifests(ctx, r, r.Log, hcp.GetNamespace(), manifests); err != nil {
 		return err
 	}
 	return nil
