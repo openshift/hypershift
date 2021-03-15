@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -20,8 +19,6 @@ type DestroyInfraOptions struct {
 	Region             string
 	InfraID            string
 	AWSCredentialsFile string
-
-	log logr.Logger
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -32,7 +29,6 @@ func NewDestroyCommand() *cobra.Command {
 
 	opts := DestroyInfraOptions{
 		Region: "us-east-1",
-		log:    setupLogger(),
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
@@ -44,7 +40,7 @@ func NewDestroyCommand() *cobra.Command {
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		opts.Run(context.Background())
-		opts.log.Info("Successfully destroyed AWS infra")
+		log.Info("Successfully destroyed AWS infra")
 	}
 
 	return cmd
@@ -91,7 +87,7 @@ func (o *DestroyInfraOptions) DestroyVPCEndpoints(ctx context.Context, client ec
 				for _, id := range ids {
 					epIDs = append(epIDs, aws.StringValue(id))
 				}
-				o.log.Info("Deleted VPC endpoints", "IDs", strings.Join(epIDs, " "))
+				log.Info("Deleted VPC endpoints", "IDs", strings.Join(epIDs, " "))
 			}
 		}
 		return true
@@ -121,7 +117,7 @@ func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2
 					if err != nil {
 						routeErrs = append(routeErrs, err)
 					} else {
-						o.log.Info("Deleted route from route table", "table", aws.StringValue(routeTable.RouteTableId), "destination", aws.StringValue(route.DestinationCidrBlock))
+						log.Info("Deleted route from route table", "table", aws.StringValue(routeTable.RouteTableId), "destination", aws.StringValue(route.DestinationCidrBlock))
 					}
 				}
 			}
@@ -142,7 +138,7 @@ func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2
 				if err != nil {
 					assocErrs = append(assocErrs, err)
 				} else {
-					o.log.Info("Removed route table association", "table", aws.StringValue(routeTable.RouteTableId), "association", aws.StringValue(assoc.RouteTableId))
+					log.Info("Removed route table association", "table", aws.StringValue(routeTable.RouteTableId), "association", aws.StringValue(assoc.RouteTableId))
 				}
 			}
 			if len(assocErrs) > 0 {
@@ -158,7 +154,7 @@ func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				o.log.Info("Deleted route table", "table", aws.StringValue(routeTable.RouteTableId))
+				log.Info("Deleted route table", "table", aws.StringValue(routeTable.RouteTableId))
 			}
 		}
 		return false
@@ -186,7 +182,7 @@ func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client 
 				if err != nil {
 					permissionErrs = append(permissionErrs, err)
 				} else {
-					o.log.Info("Revoked security group ingress permissions", "group", aws.StringValue(sg.GroupId))
+					log.Info("Revoked security group ingress permissions", "group", aws.StringValue(sg.GroupId))
 				}
 			}
 
@@ -198,7 +194,7 @@ func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client 
 				if err != nil {
 					permissionErrs = append(permissionErrs, err)
 				} else {
-					o.log.Info("Revoked security group egress permissions", "group", aws.StringValue(sg.GroupId))
+					log.Info("Revoked security group egress permissions", "group", aws.StringValue(sg.GroupId))
 				}
 			}
 			if len(permissionErrs) > 0 {
@@ -214,7 +210,7 @@ func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client 
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				o.log.Info("Deleted security group", "group", aws.StringValue(sg.GroupId))
+				log.Info("Deleted security group", "group", aws.StringValue(sg.GroupId))
 			}
 		}
 
@@ -240,7 +236,7 @@ func (o *DestroyInfraOptions) DestroyNATGateways(ctx context.Context, client ec2
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				o.log.Info("Deleted NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
+				log.Info("Deleted NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
 			}
 		}
 		return true
@@ -267,7 +263,7 @@ func (o *DestroyInfraOptions) DestroyInternetGateways(ctx context.Context, clien
 				if err != nil {
 					detachErrs = append(detachErrs, err)
 				} else {
-					o.log.Info("Detached internet gateway from VPC", "gateway id", aws.StringValue(igw.InternetGatewayId), "vpc", aws.StringValue(attachment.VpcId))
+					log.Info("Detached internet gateway from VPC", "gateway id", aws.StringValue(igw.InternetGatewayId), "vpc", aws.StringValue(attachment.VpcId))
 				}
 			}
 			if len(detachErrs) > 0 {
@@ -280,7 +276,7 @@ func (o *DestroyInfraOptions) DestroyInternetGateways(ctx context.Context, clien
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				o.log.Info("Deleted internet gateway", "id", aws.StringValue(igw.InternetGatewayId))
+				log.Info("Deleted internet gateway", "id", aws.StringValue(igw.InternetGatewayId))
 			}
 		}
 		return true
@@ -305,7 +301,7 @@ func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2ifac
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				o.log.Info("Deleted subnet", "id", aws.StringValue(subnet.SubnetId))
+				log.Info("Deleted subnet", "id", aws.StringValue(subnet.SubnetId))
 			}
 		}
 		return true
@@ -339,7 +335,7 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, client ec2iface.E
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				o.log.Info("Deleted VPC", "id", aws.StringValue(vpc.VpcId))
+				log.Info("Deleted VPC", "id", aws.StringValue(vpc.VpcId))
 			}
 		}
 		return true
@@ -364,7 +360,7 @@ func (o *DestroyInfraOptions) DestroyDHCPOptions(ctx context.Context, client ec2
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				o.log.Info("Deleted DHCP options", "id", aws.StringValue(dhcpOpt.DhcpOptionsId))
+				log.Info("Deleted DHCP options", "id", aws.StringValue(dhcpOpt.DhcpOptionsId))
 			}
 		}
 		return true
@@ -395,7 +391,7 @@ func (o *DestroyInfraOptions) DestroyEIPs(ctx context.Context, client ec2iface.E
 		if err != nil {
 			errs = append(errs, err)
 		} else {
-			o.log.Info("Deleted EIP", "id", aws.StringValue(addr.AllocationId))
+			log.Info("Deleted EIP", "id", aws.StringValue(addr.AllocationId))
 		}
 	}
 	return errs

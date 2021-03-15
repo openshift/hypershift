@@ -24,13 +24,13 @@ spec:
       jsonPath: .status.version.history[?(@.state=="Completed")].version
       name: Version
       type: string
-    - description: Ready
-      jsonPath: .status.ready
-      name: Ready
-      type: string
     - description: KubeConfig Secret
       jsonPath: .status.kubeconfig.name
       name: KubeConfig
+      type: string
+    - description: Available
+      jsonPath: .status.conditions[?(@.type=="Available")].status
+      name: Available
       type: string
     name: v1alpha1
     schema:
@@ -272,8 +272,6 @@ spec:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
-              ready:
-                type: boolean
               version:
                 description: Version is the status of the release version applied to the HostedCluster.
                 properties:
