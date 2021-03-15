@@ -30,6 +30,7 @@ type DestroyOptions struct {
 	Namespace          string
 	Name               string
 	AWSCredentialsFile string
+	PreserveIAM        bool
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -42,11 +43,13 @@ func NewDestroyCommand() *cobra.Command {
 		Namespace:          "clusters",
 		Name:               "",
 		AWSCredentialsFile: "",
+		PreserveIAM:        false,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A cluster name")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().BoolVar(&opts.PreserveIAM, "preserve-iam", opts.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("aws-creds")
@@ -60,13 +63,13 @@ func NewDestroyCommand() *cobra.Command {
 			cancel()
 		}()
 
-		return opts.destroy(ctx)
+		return DestroyCluster(ctx, &opts)
 	}
 
 	return cmd
 }
 
-func (o DestroyOptions) destroy(ctx context.Context) error {
+func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	c, err := crclient.New(ctrl.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		return fmt.Errorf("failed to create kube client: %w", err)
@@ -74,7 +77,7 @@ func (o DestroyOptions) destroy(ctx context.Context) error {
 
 	var hostedCluster hyperv1.HostedCluster
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
-		log.Info("hostedcluster not found")
+		log.Info("hostedcluster not found, nothing to do", "namespace", o.Namespace, "name", o.Name)
 		return nil
 	}
 
@@ -111,6 +114,19 @@ func (o DestroyOptions) destroy(ctx context.Context) error {
 		AWSCredentialsFile: o.AWSCredentialsFile,
 	}
 	destroyInfraOpts.Run(ctx)
+
+	if !o.PreserveIAM {
+		log.Info("destroying IAM")
+		destroyOpts := awsinfra.DestroyIAMOptions{
+			Region:             hostedCluster.Spec.Platform.AWS.Region,
+			AWSCredentialsFile: o.AWSCredentialsFile,
+			ProfileName:        awsinfra.DefaultIAMName(hostedCluster.Spec.InfraID),
+		}
+		err := destroyOpts.DestroyIAM()
+		if err != nil {
+			return fmt.Errorf("failed to destroy IAM: %w", err)
+		}
+	}
 
 	controllerutil.RemoveFinalizer(&hostedCluster, destroyFinalizer)
 	if err := c.Update(ctx, &hostedCluster); err != nil {

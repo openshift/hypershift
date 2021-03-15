@@ -25,8 +25,9 @@ func NewCreateIAMCommand() *cobra.Command {
 	}
 
 	opts := CreateIAMOptions{
-		Region:      "us-east-1",
-		ProfileName: "hypershift-worker-profile",
+		Region:             "us-east-1",
+		AWSCredentialsFile: "",
+		ProfileName:        "",
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
@@ -34,6 +35,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 
 	cmd.MarkFlagRequired("aws-creds")
+	cmd.MarkFlagRequired("profile-name")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		if err := opts.CreateIAM(); err != nil {
@@ -51,7 +53,12 @@ func (o *CreateIAMOptions) CreateIAM() error {
 	if err != nil {
 		return err
 	}
-	return o.CreateWorkerInstanceProfile(client, o.ProfileName)
+	err = o.CreateWorkerInstanceProfile(client, o.ProfileName)
+	if err != nil {
+		return err
+	}
+	log.Info("Created IAM profile", "name", o.ProfileName, "region", o.Region)
+	return nil
 }
 
 func IAMClient(creds, region string) (iamiface.IAMAPI, error) {

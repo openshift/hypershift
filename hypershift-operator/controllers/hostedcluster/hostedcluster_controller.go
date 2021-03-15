@@ -149,7 +149,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set version status
 	{
-		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Name)
+		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name)
 		hcp := &hyperv1.HostedControlPlane{}
 		err := r.Client.Get(ctx, controlplaneoperator.HostedControlPlaneName(controlPlaneNamespaceName.Name, hcluster.Name), hcp)
 		if err != nil {
@@ -164,7 +164,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set the Available condition
 	{
-		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Name)
+		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name)
 		hcp := &hyperv1.HostedControlPlane{}
 		err := r.Client.Get(ctx, controlplaneoperator.HostedControlPlaneName(controlPlaneNamespaceName.Name, hcluster.Name), hcp)
 		if err != nil {
@@ -199,7 +199,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the hosted cluster namespace
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace{HostedCluster: hcluster}.Build()
+	controlPlaneNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name).Name,
+		},
+	}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneNamespace, NoopReconcile)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
@@ -392,7 +396,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
 func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -456,7 +460,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hclu
 // components.
 func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -510,7 +514,7 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 // operator components.
 func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -579,7 +583,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 // inputs from.
 func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -768,7 +772,7 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 }
 
 func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, hc *hyperv1.HostedCluster) (bool, error) {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceName(req.Name).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceName(req.Namespace, req.Name).Name
 
 	nodePools, err := r.listNodePools(req.Namespace, req.Name)
 	if err != nil {

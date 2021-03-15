@@ -36,25 +36,10 @@ Install HyperShift into the management cluster:
 hypershift install
 ```
 
-Create an IAM instance profile for your workers:
-```shell
-hypershift create iam aws --aws-creds ~/.aws/credentials
-```
-NOTE: The default profile name is `hypershift-worker-profile`. To use a different name 
-(for example, in a shared account), use the `--profile-name` flag and then refer
-to that profile using the `--instance-profile` argument to the the `create cluster`
-command when creating clusters. The worker instance profile only needs to be created
-once per account and you can reuse it as needed for your clusters.
-
 To uninstall HyperShift, run:
 
 ```shell
 hypershift install --render | oc delete -f -
-```
-
-To destroy the IAM instance profile, run:
-```shell
-hypershift destroy iam aws --aws-creds ~/.aws/credentials
 ```
 
 ## How to create a hosted cluster

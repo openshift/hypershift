@@ -23,8 +23,9 @@ func NewDestroyIAMCommand() *cobra.Command {
 	}
 
 	opts := DestroyIAMOptions{
-		Region:      "us-east-1",
-		ProfileName: "hypershift-worker-profile",
+		Region:             "us-east-1",
+		AWSCredentialsFile: "",
+		ProfileName:        "",
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
@@ -32,6 +33,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra lives")
 
 	cmd.MarkFlagRequired("aws-creds")
+	cmd.MarkFlagRequired("profile-name")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		if err := opts.DestroyIAM(); err != nil {
