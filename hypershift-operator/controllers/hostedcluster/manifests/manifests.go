@@ -1,6 +1,8 @@
 package manifests
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -9,26 +11,10 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
-func HostedControlPlaneNamespaceName(hostedClusterName string) types.NamespacedName {
-	return types.NamespacedName{Name: hostedClusterName}
-}
-
-type HostedControlPlaneNamespace struct {
-	HostedCluster *hyperv1.HostedCluster
-}
-
-func (o HostedControlPlaneNamespace) Build() *corev1.Namespace {
-	name := HostedControlPlaneNamespaceName(o.HostedCluster.Name)
-	namespace := &corev1.Namespace{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Namespace",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name.Name,
-		},
+func HostedControlPlaneNamespaceName(hostedClusterNamespace, hostedClusterName string) types.NamespacedName {
+	return types.NamespacedName{
+		Name: fmt.Sprintf("%s-%s", hostedClusterNamespace, hostedClusterName),
 	}
-	return namespace
 }
 
 func ProviderCredentialsName(hostedControlPlaneNamespace string) types.NamespacedName {

@@ -345,7 +345,7 @@ func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.
 func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
 	status := InfrastructureStatus{}
 
-	targetNamespace := hcp.GetName()
+	targetNamespace := hcp.GetNamespace()
 	// Ensure that we can run privileged pods
 	if err := ensureVPNSCC(r, hcp, targetNamespace); err != nil {
 		return status, fmt.Errorf("failed to ensure privileged SCC for the new namespace: %w", err)
@@ -443,7 +443,7 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) error {
 	r.Log.Info("ensuring control plane for cluster", "cluster", hcp.Name)
 
-	targetNamespace := hcp.GetName()
+	targetNamespace := hcp.GetNamespace()
 	version, err := semver.Parse(releaseImage.Version())
 	if err != nil {
 		return fmt.Errorf("cannot parse release version (%s): %v", releaseImage.Version(), err)
@@ -548,7 +548,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 }
 
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
-	targetNamespace := hcp.GetName()
+	targetNamespace := hcp.GetNamespace()
 
 	var sshKeyData []byte
 	if len(hcp.Spec.SSHKey.Name) > 0 {
