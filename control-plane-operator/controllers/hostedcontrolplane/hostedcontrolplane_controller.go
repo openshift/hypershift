@@ -50,22 +50,22 @@ import (
 )
 
 const (
-	finalizer                  = "hypershift.openshift.io/finalizer"
-	APIServerPort              = 6443
-	DefaultAdminKubeconfigName = "admin-kubeconfig"
-	DefaultAdminKubeconfigKey  = "kubeconfig"
-	kubeAPIServerServiceName   = "kube-apiserver"
-	vpnServiceName             = "openvpn-server"
-	oauthServiceName           = "oauth-openshift"
-	pullSecretName             = "pull-secret"
-	vpnServiceAccountName      = "vpn"
-	ingressOperatorNamespace   = "openshift-ingress-operator"
-	hypershiftRouteLabel       = "hypershift.openshift.io/cluster"
-	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
-	DefaultAPIServerIPAddress  = "172.20.0.1"
-	externalOauthPort          = 443
-haproxyConfigSecretName                  = "machine-config-server-haproxy-config"
-hostedClusterConfigOperatorConfigMapName = "hosted-cluster-config-operator"
+	finalizer                                = "hypershift.openshift.io/finalizer"
+	APIServerPort                            = 6443
+	DefaultAdminKubeconfigName               = "admin-kubeconfig"
+	DefaultAdminKubeconfigKey                = "kubeconfig"
+	kubeAPIServerServiceName                 = "kube-apiserver"
+	vpnServiceName                           = "openvpn-server"
+	oauthServiceName                         = "oauth-openshift"
+	pullSecretName                           = "pull-secret"
+	vpnServiceAccountName                    = "vpn"
+	ingressOperatorNamespace                 = "openshift-ingress-operator"
+	hypershiftRouteLabel                     = "hypershift.openshift.io/cluster"
+	oauthBrandingManifest                    = "v4-0-config-system-branding.yaml"
+	DefaultAPIServerIPAddress                = "172.20.0.1"
+	externalOauthPort                        = 443
+	haproxyConfigSecretName                  = "machine-config-server-haproxy-config"
+	hostedClusterConfigOperatorConfigMapName = "hosted-cluster-config-operator"
 )
 
 var (
