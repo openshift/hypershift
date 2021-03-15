@@ -149,7 +149,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set version status
 	{
-		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Name)
+		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name)
 		hcp := &hyperv1.HostedControlPlane{}
 		err := r.Client.Get(ctx, controlplaneoperator.HostedControlPlaneName(controlPlaneNamespaceName.Name, hcluster.Name), hcp)
 		if err != nil {
@@ -164,7 +164,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set the Available condition
 	{
-		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Name)
+		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name)
 		hcp := &hyperv1.HostedControlPlane{}
 		err := r.Client.Get(ctx, controlplaneoperator.HostedControlPlaneName(controlPlaneNamespaceName.Name, hcluster.Name), hcp)
 		if err != nil {
@@ -199,7 +199,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the hosted cluster namespace
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace{HostedCluster: hcluster}.Build()
+	controlPlaneNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name).Name,
+		},
+	}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneNamespace, NoopReconcile)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
@@ -240,22 +244,27 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane SSH secret by resolving the source secret reference
 	// from the HostedCluster and syncing the secret in the control plane namespace.
-	var hostedClusterSSHKeySecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &hostedClusterSSHKeySecret)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
-	}
-	controlPlaneSSHKeySecret := manifests.SSHKey{Namespace: controlPlaneNamespace}.Build()
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSSHKeySecret, func() error {
-		hostedClusterSSHKeyData, hasSSHKeyData := hostedClusterSSHKeySecret.Data["id_rsa.pub"]
-		if !hasSSHKeyData {
-			return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", hostedClusterSSHKeySecret.Name)
+	var controlPlaneSSHKeySecret *corev1.Secret
+	if len(hcluster.Spec.SSHKey.Name) > 0 {
+		var hostedClusterSSHKeySecret corev1.Secret
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &hostedClusterSSHKeySecret)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 		}
-		controlPlaneSSHKeySecret.Data["id_rsa.pub"] = hostedClusterSSHKeyData
-		return nil
-	})
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane ssh secret: %w", err)
+		controlPlaneSSHKeySecret = manifests.SSHKey{Namespace: controlPlaneNamespace}.Build()
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSSHKeySecret, func() error {
+			hostedClusterSSHKeyData, hasSSHKeyData := hostedClusterSSHKeySecret.Data["id_rsa.pub"]
+			if !hasSSHKeyData {
+				return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", hostedClusterSSHKeySecret.Name)
+			}
+			controlPlaneSSHKeySecret.Data["id_rsa.pub"] = hostedClusterSSHKeyData
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane ssh secret: %w", err)
+		}
+	} else {
+		controlPlaneSSHKeySecret = nil
 	}
 
 	// Reconcile the default node pool
@@ -321,23 +330,16 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		hostedClusterKubeConfigSecret := manifests.KubeConfigSecret{HostedCluster: hcluster}.Build()
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedClusterKubeConfigSecret, func() error {
-			hostedClusterKubeConfigSecret.Data = controlPlaneKubeConfigSecret.Data
+			key := hcp.Status.KubeConfig.Key
+			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data[key]
+			if !ok {
+				return fmt.Errorf("controlplane kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret), key)
+			}
+			hostedClusterKubeConfigSecret.Data["kubeconfig"] = controlPlaneKubeConfigData
 			return nil
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster kubeconfig secret: %w", err)
-		}
-		capiClusterKubeConfigSecret := manifests.CAPIKubeConfigSecret{HostedCluster: hcluster}.Build()
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiClusterKubeConfigSecret, func() error {
-			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data["kubeconfig"]
-			if !ok {
-				return fmt.Errorf("controlplane kubeconfig secret %q must have a kubeconfig key", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret))
-			}
-			capiClusterKubeConfigSecret.Data = map[string][]byte{"value": controlPlaneKubeConfigData}
-			return nil
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile CAPI cluster kubeconfig secret: %w", err)
 		}
 	}
 
@@ -394,7 +396,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
 func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -458,7 +460,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hclu
 // components.
 func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -512,7 +514,7 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 // operator components.
 func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -581,7 +583,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 // inputs from.
 func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Name), controlPlaneNamespace)
+	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -680,6 +682,10 @@ func computeClusterVersionStatus(clock Clock, hcluster *hyperv1.HostedCluster, h
 
 	// The rollout is complete, so update the current history entry
 	version.History[0].State = configv1.CompletedUpdate
+	version.History[0].Version = hcp.Status.Version
+	if !hcp.Status.LastReleaseImageTransitionTime.IsZero() {
+		version.History[0].CompletionTime = hcp.Status.LastReleaseImageTransitionTime.DeepCopy()
+	}
 
 	// If a new rollout is needed, update the desired version and prepend a new
 	// partial history entry to unblock rollouts.
@@ -766,7 +772,7 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 }
 
 func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, hc *hyperv1.HostedCluster) (bool, error) {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceName(req.Name).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceName(req.Namespace, req.Name).Name
 
 	nodePools, err := r.listNodePools(req.Namespace, req.Name)
 	if err != nil {

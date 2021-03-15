@@ -11,26 +11,10 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
-func HostedControlPlaneNamespaceName(hostedClusterName string) types.NamespacedName {
-	return types.NamespacedName{Name: hostedClusterName}
-}
-
-type HostedControlPlaneNamespace struct {
-	HostedCluster *hyperv1.HostedCluster
-}
-
-func (o HostedControlPlaneNamespace) Build() *corev1.Namespace {
-	name := HostedControlPlaneNamespaceName(o.HostedCluster.Name)
-	namespace := &corev1.Namespace{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Namespace",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name.Name,
-		},
+func HostedControlPlaneNamespaceName(hostedClusterNamespace, hostedClusterName string) types.NamespacedName {
+	return types.NamespacedName{
+		Name: fmt.Sprintf("%s-%s", hostedClusterNamespace, hostedClusterName),
 	}
-	return namespace
 }
 
 func ProviderCredentialsName(hostedControlPlaneNamespace string) types.NamespacedName {
@@ -143,34 +127,6 @@ type KubeConfigSecret struct {
 
 func (o KubeConfigSecret) Build() *corev1.Secret {
 	name := KubeConfigSecretName(o.HostedCluster.Namespace, o.HostedCluster.Name)
-	secret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: name.Namespace,
-			Name:      name.Name,
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{},
-	}
-	return secret
-}
-
-func CAPIKubeConfigSecretName(hc *hyperv1.HostedCluster) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: hc.Name,
-		Name:      fmt.Sprintf("%s-kubeconfig", hc.Spec.InfraID),
-	}
-}
-
-type CAPIKubeConfigSecret struct {
-	HostedCluster *hyperv1.HostedCluster
-}
-
-func (o CAPIKubeConfigSecret) Build() *corev1.Secret {
-	name := CAPIKubeConfigSecretName(o.HostedCluster)
 	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",

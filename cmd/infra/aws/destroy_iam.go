@@ -7,7 +7,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +14,6 @@ type DestroyIAMOptions struct {
 	Region             string
 	AWSCredentialsFile string
 	ProfileName        string
-	log                logr.Logger
 }
 
 func NewDestroyIAMCommand() *cobra.Command {
@@ -25,9 +23,9 @@ func NewDestroyIAMCommand() *cobra.Command {
 	}
 
 	opts := DestroyIAMOptions{
-		Region:      "us-east-1",
-		ProfileName: "hypershift-worker-profile",
-		log:         setupLogger(),
+		Region:             "us-east-1",
+		AWSCredentialsFile: "",
+		ProfileName:        "",
 	}
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
@@ -35,10 +33,11 @@ func NewDestroyIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra lives")
 
 	cmd.MarkFlagRequired("aws-creds")
+	cmd.MarkFlagRequired("profile-name")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		if err := opts.DestroyIAM(); err != nil {
-			opts.log.Error(err, "Error")
+			log.Error(err, "Error")
 			os.Exit(1)
 		}
 	}
@@ -69,7 +68,7 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 			if err != nil {
 				return fmt.Errorf("cannot remove role %s from instance profile %s: %w", aws.StringValue(role.RoleName), o.ProfileName, err)
 			}
-			o.log.Info("Removed role from instance profile", "profile", o.ProfileName, "role", aws.StringValue(role.RoleName))
+			log.Info("Removed role from instance profile", "profile", o.ProfileName, "role", aws.StringValue(role.RoleName))
 		}
 		_, err := client.DeleteInstanceProfile(&iam.DeleteInstanceProfileInput{
 			InstanceProfileName: aws.String(o.ProfileName),
@@ -77,7 +76,7 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 		if err != nil {
 			return fmt.Errorf("cannot delete instance profile %s: %w", o.ProfileName, err)
 		}
-		o.log.Info("Deleted instance profile", "profile", o.ProfileName)
+		log.Info("Deleted instance profile", "profile", o.ProfileName)
 	}
 	roleName := fmt.Sprintf("%s-role", o.ProfileName)
 	policyName := fmt.Sprintf("%s-policy", o.ProfileName)
@@ -98,7 +97,7 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 			if err != nil {
 				return fmt.Errorf("cannot delete role policy %s from role %s: %w", policyName, roleName, err)
 			}
-			o.log.Info("Deleted role policy", "role", roleName, "policy", policyName)
+			log.Info("Deleted role policy", "role", roleName, "policy", policyName)
 		}
 		_, err = client.DeleteRole(&iam.DeleteRoleInput{
 			RoleName: aws.String(roleName),
@@ -106,7 +105,7 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 		if err != nil {
 			return fmt.Errorf("cannot delete role %s: %w", roleName, err)
 		}
-		o.log.Info("Deleted role", "role", roleName)
+		log.Info("Deleted role", "role", roleName)
 	}
 	return nil
 }

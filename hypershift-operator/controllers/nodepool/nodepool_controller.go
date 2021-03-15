@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/machineimage"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
@@ -90,7 +91,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	targetNamespace := hcluster.GetName()
+	targetNamespace := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name).Name
 	// Ignore deleted nodePools, this can happen when foregroundDeletion
 	// is enabled
 	if !nodePool.DeletionTimestamp.IsZero() {
@@ -173,7 +174,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Generate scalable resource for nodePool
-	targetNamespace := hcluster.GetName()
+	targetNamespace := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name).Name
 	ami, err := r.ImageProvider.Image(hcluster)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)

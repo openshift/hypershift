@@ -18,13 +18,16 @@ type ExampleResources struct {
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
-	return []crclient.Object{
+	objects := []crclient.Object{
 		o.Namespace,
-		o.SSHKey,
 		o.PullSecret,
 		o.AWSCredentials,
 		o.Cluster,
 	}
+	if o.SSHKey != nil {
+		objects = append(objects, o.SSHKey)
+	}
+	return objects
 }
 
 type ExampleOptions struct {
@@ -90,18 +93,23 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		},
 	}
 
-	sshKeySecret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace.Name,
-			Name:      o.Name + "-ssh-key",
-		},
-		Data: map[string][]byte{
-			"id_rsa.pub": o.SSHKey,
-		},
+	var sshKeySecret *corev1.Secret
+	var sshKeyReference corev1.LocalObjectReference
+	if len(o.SSHKey) > 0 {
+		sshKeySecret = &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Secret",
+				APIVersion: corev1.SchemeGroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace.Name,
+				Name:      o.Name + "-ssh-key",
+			},
+			Data: map[string][]byte{
+				"id_rsa.pub": o.SSHKey,
+			},
+		}
+		sshKeyReference = corev1.LocalObjectReference{Name: sshKeySecret.Name}
 	}
 
 	cluster := &hyperv1.HostedCluster{
@@ -126,7 +134,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			InfraID:       o.InfraID,
 			PullSecret:    corev1.LocalObjectReference{Name: pullSecret.Name},
 			ProviderCreds: corev1.LocalObjectReference{Name: awsCredsSecret.Name},
-			SSHKey:        corev1.LocalObjectReference{Name: sshKeySecret.Name},
+			SSHKey:        sshKeyReference,
 			Platform: hyperv1.PlatformSpec{
 				AWS: &hyperv1.AWSPlatformSpec{
 					Region: o.AWS.Region,
