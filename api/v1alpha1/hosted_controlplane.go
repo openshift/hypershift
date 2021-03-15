@@ -25,17 +25,17 @@ type HostedControlPlane struct {
 
 // HostedControlPlaneSpec defines the desired state of HostedControlPlane
 type HostedControlPlaneSpec struct {
-	ReleaseImage  string                      `json:"releaseImage"`
-	PullSecret    corev1.LocalObjectReference `json:"pullSecret"`
-	ServiceCIDR   string                      `json:"serviceCIDR"`
-	PodCIDR       string                      `json:"podCIDR"`
-	MachineCIDR   string                      `json:"machineCIDR"`
-	SSHKey        corev1.LocalObjectReference `json:"sshKey"`
-	ProviderCreds corev1.LocalObjectReference `json:"providerCreds"`
-	InfraID       string                      `json:"infraID"`
-	Platform      PlatformSpec                `json:"platform"`
-APIServerAdvertisedAddress string                      `json:"apiserverAdvertisedAddress,omitempty"`
-APIServerSecurePort        uint                        `json:"apiserverSecurePort,omitempty"`
+	ReleaseImage               string                      `json:"releaseImage"`
+	PullSecret                 corev1.LocalObjectReference `json:"pullSecret"`
+	ServiceCIDR                string                      `json:"serviceCIDR"`
+	PodCIDR                    string                      `json:"podCIDR"`
+	MachineCIDR                string                      `json:"machineCIDR"`
+	SSHKey                     corev1.LocalObjectReference `json:"sshKey"`
+	ProviderCreds              corev1.LocalObjectReference `json:"providerCreds"`
+	InfraID                    string                      `json:"infraID"`
+	Platform                   PlatformSpec                `json:"platform"`
+	APIServerAdvertisedAddress string                      `json:"apiserverAdvertisedAddress,omitempty"`
+	APIServerSecurePort        uint                        `json:"apiserverSecurePort,omitempty"`
 
 	// KubeConfig specifies the name and key for the kubeconfig secret
 	// +optional

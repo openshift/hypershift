@@ -76,14 +76,14 @@ func TestQuickStart(t *testing.T) {
 		PullSecretFile:     opts.PullSecretFile,
 		AWSCredentialsFile: opts.AWSCredentialsFile,
 		// TODO: generate a key on the fly
-		SSHKeyFile:       "",
-		NodePoolReplicas: 2,
-		Region:           "us-east-1",
-		InstanceType:     "m4.large",
-APIServerSecurePort:        6443,
-APIServerAdvertisedAddress: "172.20.0.1",
-ServiceCIDR:                "172.31.0.0/16",
-PodCIDR:                    "10.132.0.0/14",
+		SSHKeyFile:                 "",
+		NodePoolReplicas:           2,
+		Region:                     "us-east-1",
+		InstanceType:               "m4.large",
+		APIServerSecurePort:        6443,
+		APIServerAdvertisedAddress: "172.20.0.1",
+		ServiceCIDR:                "172.31.0.0/16",
+		PodCIDR:                    "10.132.0.0/14",
 	}
 	err = cmdcluster.CreateCluster(ctx, createClusterOpts)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
