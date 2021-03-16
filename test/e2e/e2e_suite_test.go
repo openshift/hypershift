@@ -28,6 +28,7 @@ type GlobalTestOptions struct {
 	PreviousReleaseImage string
 	IsRunningInCI        bool
 	UpgradeTestsEnabled  bool
+	ArtifactDir          string
 }
 
 var GlobalOptions = &GlobalTestOptions{}
@@ -37,6 +38,7 @@ func init() {
 	flag.StringVar(&GlobalOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&GlobalOptions.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&GlobalOptions.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
+	flag.StringVar(&GlobalOptions.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
 }
 
 func (o *GlobalTestOptions) SetDefaults() error {
@@ -57,6 +59,10 @@ func (o *GlobalTestOptions) SetDefaults() error {
 	}
 
 	o.IsRunningInCI = os.Getenv("OPENSHIFT_CI") == "true"
+
+	if o.IsRunningInCI && len(o.ArtifactDir) == 0 {
+		o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
+	}
 
 	return nil
 }

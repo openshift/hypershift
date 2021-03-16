@@ -38,7 +38,18 @@ func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client
 	return namespace
 }
 
-func DestroyCluster(t *testing.T, ctx context.Context, opts *cmdcluster.DestroyOptions) {
+func DestroyCluster(t *testing.T, ctx context.Context, opts *cmdcluster.DestroyOptions, artifactDir string) {
+	if len(artifactDir) > 0 {
+		err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
+			Namespace:   opts.Namespace,
+			Name:        opts.Name,
+			ArtifactDir: artifactDir,
+		})
+		if err != nil {
+			t.Logf("error dumping cluster contents: %s", err)
+		}
+	}
+
 	g := NewWithT(t)
 
 	t.Logf("Waiting for hostedcluster %s/%s to be destroyed", opts.Namespace, opts.Name)
