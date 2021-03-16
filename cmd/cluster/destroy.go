@@ -120,7 +120,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		destroyOpts := awsinfra.DestroyIAMOptions{
 			Region:             hostedCluster.Spec.Platform.AWS.Region,
 			AWSCredentialsFile: o.AWSCredentialsFile,
-			ProfileName:        awsinfra.DefaultIAMName(hostedCluster.Spec.InfraID),
+			InfraID:            hostedCluster.Spec.InfraID,
 		}
 		err := destroyOpts.DestroyIAM()
 		if err != nil {

@@ -153,11 +153,10 @@ func CreateCluster(ctx context.Context, opts Options) error {
 
 	instanceProfile := opts.WorkerInstanceProfile
 	if len(instanceProfile) == 0 {
-		instanceProfile = awsinfra.DefaultIAMName(infra.InfraID)
 		opt := awsinfra.CreateIAMOptions{
 			Region:             opts.Region,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
-			ProfileName:        instanceProfile,
+			InfraID:            infra.InfraID,
 		}
 		err := opt.CreateIAM()
 		if err != nil {
