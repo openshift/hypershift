@@ -273,7 +273,6 @@ spec:
                 type: string
             required:
             - conditions
-            - lastReleaseImageTransitionTime
             - ready
             type: object
         type: object

@@ -320,7 +320,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// the orchestration of upgrades works at all.
 	if hostedControlPlane.Status.ReleaseImage != hostedControlPlane.Spec.ReleaseImage {
 		hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
-		hostedControlPlane.Status.LastReleaseImageTransitionTime = metav1.NewTime(time.Now())
+		now := metav1.NewTime(time.Now())
+		hostedControlPlane.Status.LastReleaseImageTransitionTime = &now
 	}
 
 	r.Log.Info("Successfully reconciled")

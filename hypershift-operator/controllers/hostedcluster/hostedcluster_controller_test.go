@@ -141,7 +141,7 @@ func TestComputeClusterVersionStatus(t *testing.T) {
 			},
 			ControlPlane: hyperv1.HostedControlPlane{
 				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a", Version: "1.0.0", LastReleaseImageTransitionTime: Later},
+				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a", Version: "1.0.0", LastReleaseImageTransitionTime: &Later},
 			},
 			ExpectedStatus: hyperv1.ClusterVersionStatus{
 				Desired: hyperv1.Release{Image: "a"},
@@ -164,7 +164,7 @@ func TestComputeClusterVersionStatus(t *testing.T) {
 			},
 			ControlPlane: hyperv1.HostedControlPlane{
 				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a", Version: "1.0.0", LastReleaseImageTransitionTime: Later},
+				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a", Version: "1.0.0", LastReleaseImageTransitionTime: &Later},
 			},
 			ExpectedStatus: hyperv1.ClusterVersionStatus{
 				Desired: hyperv1.Release{Image: "b"},
