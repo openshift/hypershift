@@ -26,19 +26,19 @@ import (
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type Options struct {
-	Namespace             string
-	Name                  string
-	ReleaseImage          string
-	PullSecretFile        string
-	AWSCredentialsFile    string
-	SSHKeyFile            string
-	NodePoolReplicas      int
-	Render                bool
-	InfraID               string
-	InfrastructureJSON    string
-	WorkerInstanceProfile string
-	InstanceType          string
-	Region                string
+	Namespace          string
+	Name               string
+	ReleaseImage       string
+	PullSecretFile     string
+	AWSCredentialsFile string
+	SSHKeyFile         string
+	NodePoolReplicas   int
+	Render             bool
+	InfraID            string
+	InfrastructureJSON string
+	IAMJSON            string
+	InstanceType       string
+	Region             string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -58,19 +58,18 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:             "clusters",
-		Name:                  "example",
-		ReleaseImage:          releaseImage,
-		PullSecretFile:        "",
-		AWSCredentialsFile:    "",
-		SSHKeyFile:            "",
-		NodePoolReplicas:      2,
-		Render:                false,
-		InfrastructureJSON:    "",
-		WorkerInstanceProfile: "",
-		Region:                "us-east-1",
-		InfraID:               "",
-		InstanceType:          "m4.large",
+		Namespace:          "clusters",
+		Name:               "example",
+		ReleaseImage:       releaseImage,
+		PullSecretFile:     "",
+		AWSCredentialsFile: "",
+		SSHKeyFile:         "",
+		NodePoolReplicas:   2,
+		Render:             false,
+		InfrastructureJSON: "",
+		Region:             "us-east-1",
+		InfraID:            "",
+		InstanceType:       "m4.large",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -82,7 +81,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().IntVar(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If >0, create a default NodePool with this many replicas")
 	cmd.Flags().BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying")
 	cmd.Flags().StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster. If not specified, infrastructure will be created")
-	cmd.Flags().StringVar(&opts.WorkerInstanceProfile, "instance-profile", opts.WorkerInstanceProfile, "Name of the AWS instance profile to use for workers.")
+	cmd.Flags().StringVar(&opts.IAMJSON, "iam-json", opts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
@@ -151,14 +150,23 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		}
 	}
 
-	instanceProfile := opts.WorkerInstanceProfile
-	if len(instanceProfile) == 0 {
+	var iamInfo *awsinfra.CreateIAMOutput
+	if len(opts.IAMJSON) > 0 {
+		rawIAM, err := ioutil.ReadFile(opts.IAMJSON)
+		if err != nil {
+			return fmt.Errorf("failed to read iam json file: %w", err)
+		}
+		iamInfo = &awsinfra.CreateIAMOutput{}
+		if err = json.Unmarshal(rawIAM, iamInfo); err != nil {
+			return fmt.Errorf("failed to load infra json: %w", err)
+		}
+	} else {
 		opt := awsinfra.CreateIAMOptions{
 			Region:             opts.Region,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
 		}
-		err := opt.CreateIAM()
+		iamInfo, err = opt.CreateIAM()
 		if err != nil {
 			return fmt.Errorf("failed to create iam: %w", err)
 		}
@@ -180,7 +188,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			VPCID:           infra.VPCID,
 			SubnetID:        infra.PrivateSubnetID,
 			SecurityGroupID: infra.SecurityGroupID,
-			InstanceProfile: instanceProfile,
+			InstanceProfile: iamInfo.ProfileName,
 			InstanceType:    opts.InstanceType,
 		},
 	}.Resources().AsObjects()
