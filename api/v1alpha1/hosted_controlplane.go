@@ -113,7 +113,8 @@ type HostedControlPlaneStatus struct {
 
 	// lastReleaseImageTransitionTime is the time of the last update to the current
 	// releaseImage property.
-	LastReleaseImageTransitionTime metav1.Time `json:"lastReleaseImageTransitionTime"`
+	// +kubebuilder:validation:Optional
+	LastReleaseImageTransitionTime *metav1.Time `json:"lastReleaseImageTransitionTime,omitempty"`
 
 	// KubeConfig is a reference to the secret containing the default kubeconfig
 	// for this control plane.
