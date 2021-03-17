@@ -24,6 +24,7 @@ type CreateIAMOptions struct {
 
 type CreateIAMOutput struct {
 	Region                   string `json:"region"`
+	ProfileName              string `json:"profileName"`
 	InfraID                  string `json:"infraID"`
 	IssuerURL                string `json:"issuerURL"`
 	ServiceAccountSigningKey []byte `json:"serviceAccountSigningKey"`
@@ -53,7 +54,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("infra-id")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		if err := opts.CreateIAM(); err != nil {
+		if err := opts.Run(); err != nil {
 			log.Error(err, "Error")
 			os.Exit(1)
 		}
@@ -62,27 +63,11 @@ func NewCreateIAMCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *CreateIAMOptions) CreateIAM() error {
-	var err error
-	iamClient, err := IAMClient(o.AWSCredentialsFile, o.Region)
+func (o *CreateIAMOptions) Run() error {
+	results, err := o.CreateIAM()
 	if err != nil {
 		return err
 	}
-	s3client, err := S3Client(o.AWSCredentialsFile, o.Region)
-	if err != nil {
-		return err
-	}
-	results, err := o.CreateOIDCResources(iamClient, s3client)
-	if err != nil {
-		return err
-	}
-	profileName := DefaultProfileName(o.InfraID)
-	err = o.CreateWorkerInstanceProfile(iamClient, profileName)
-	if err != nil {
-		return err
-	}
-	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
-
 	// Write out stateful information
 	out := os.Stdout
 	if len(o.OutputFile) > 0 {
@@ -102,6 +87,31 @@ func (o *CreateIAMOptions) CreateIAM() error {
 		return fmt.Errorf("failed to write result: %w", err)
 	}
 	return nil
+}
+
+func (o *CreateIAMOptions) CreateIAM() (*CreateIAMOutput, error) {
+	var err error
+	iamClient, err := IAMClient(o.AWSCredentialsFile, o.Region)
+	if err != nil {
+		return nil, err
+	}
+	s3client, err := S3Client(o.AWSCredentialsFile, o.Region)
+	if err != nil {
+		return nil, err
+	}
+	results, err := o.CreateOIDCResources(iamClient, s3client)
+	if err != nil {
+		return nil, err
+	}
+	profileName := DefaultProfileName(o.InfraID)
+	results.ProfileName = profileName
+	err = o.CreateWorkerInstanceProfile(iamClient, profileName)
+	if err != nil {
+		return nil, err
+	}
+	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
+	return results, nil
+
 }
 
 func IAMClient(creds, region string) (iamiface.IAMAPI, error) {
