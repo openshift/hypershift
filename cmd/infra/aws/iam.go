@@ -192,8 +192,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 
 	bucketName := o.InfraID
 	issuerURL := fmt.Sprintf("s3.%s.amazonaws.com/%s", o.Region, bucketName)
-	output.IssuerURL = issuerURL
 	issuerURLWithProto := fmt.Sprintf("https://%s", issuerURL)
+	output.IssuerURL = issuerURLWithProto
 
 	_, err = s3Client.CreateBucket(&s3.CreateBucketInput{
 		Bucket: aws.String(bucketName),

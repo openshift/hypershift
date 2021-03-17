@@ -45,6 +45,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki"
+	pkiutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki/util"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 )
 
@@ -609,6 +610,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.CloudCredentials = string(cloudCreds.Data["credentials"])
 	params.ProviderCredsSecretName = hcp.Spec.ProviderCreds.Name
 	params.InternalAPIPort = APIServerPort
+	params.IssuerURL = hcp.Spec.IssuerURL
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
@@ -676,6 +678,26 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if !hasPullSecretData {
 		return nil, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
 	}
+
+	var signingKeySecret corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.SigningKey.Name}, &signingKeySecret); err != nil {
+		return nil, fmt.Errorf("failed to get signing key %s: %w", hcp.Spec.SigningKey.Name, err)
+	}
+	signingKeySecretData, hasSigningKeySecretData := signingKeySecret.Data["key"]
+	if !hasSigningKeySecretData {
+		return nil, fmt.Errorf("signing key secret %s is missing the key key", hcp.Spec.SigningKey.Name)
+	}
+	privKey, err := pkiutil.PemToPrivateKey(signingKeySecretData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to PEM decode private key %s: %w", hcp.Spec.SigningKey.Name, err)
+	}
+	pubPEMKey, err := pkiutil.PublicKeyToPem(&privKey.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to PEM encode public key %s: %w", hcp.Spec.SigningKey.Name, err)
+	}
+	pkiSecret.Data["service-account.key"] = signingKeySecretData
+	pkiSecret.Data["service-account.pub"] = pubPEMKey
+
 	manifests, err := render.RenderClusterManifests(params, releaseImage, pullSecretData, pkiSecret.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
@@ -692,6 +714,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		ExtraFeatureGates:       params.ExtraFeatureGates,
 		IngressSubdomain:        params.IngressSubdomain,
 		InternalAPIPort:         params.InternalAPIPort,
+		IssuerURL:               params.IssuerURL,
 		NamedCerts:              params.NamedCerts,
 		PKI:                     pkiSecret.Data,
 		APIAvailabilityPolicy:   render.KubeAPIServerParamsAvailabilityPolicy(params.APIAvailabilityPolicy),

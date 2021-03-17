@@ -147,21 +147,6 @@ func serializeCombinedCA(cas []string, caMap map[string]*util.CA, fileName strin
 	return nil
 }
 
-func serializeRSAKey(name string, output map[string][]byte) error {
-	key, err := util.PrivateKey()
-	if err != nil {
-		return errors.Wrapf(err, "cannot generate a private key")
-	}
-	privateKeyBytes := util.PrivateKeyToPem(key)
-	publicKeyBytes, err := util.PublicKeyToPem(&key.PublicKey)
-	if err != nil {
-		errors.Wrapf(err, "cannot serialize RSA key public key")
-	}
-	output[name+".key"] = privateKeyBytes
-	output[name+".pub"] = publicKeyBytes
-	return nil
-}
-
 func nextIP(ip net.IP) net.IP {
 	nextIP := net.IP(make([]byte, len(ip)))
 	copy(nextIP, ip)

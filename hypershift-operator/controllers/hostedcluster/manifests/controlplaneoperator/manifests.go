@@ -316,6 +316,7 @@ type HostedControlPlane struct {
 	HostedCluster       *hyperv1.HostedCluster
 	ProviderCredentials *corev1.Secret
 	PullSecret          *corev1.Secret
+	SigningKey          *corev1.Secret
 	SSHKey              *corev1.Secret
 }
 
@@ -340,6 +341,10 @@ func (o HostedControlPlane) Build() *hyperv1.HostedControlPlane {
 			PullSecret: corev1.LocalObjectReference{
 				Name: o.PullSecret.Name,
 			},
+			SigningKey: corev1.LocalObjectReference{
+				Name: o.SigningKey.Name,
+			},
+			IssuerURL:    o.HostedCluster.Spec.IssuerURL,
 			ServiceCIDR:  o.HostedCluster.Spec.Networking.ServiceCIDR,
 			PodCIDR:      o.HostedCluster.Spec.Networking.PodCIDR,
 			MachineCIDR:  o.HostedCluster.Spec.Networking.MachineCIDR,

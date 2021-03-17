@@ -353,6 +353,7 @@ func (in *HostedClusterSpec) DeepCopyInto(out *HostedClusterSpec) {
 	*out = *in
 	out.Release = in.Release
 	out.PullSecret = in.PullSecret
+	out.SigningKey = in.SigningKey
 	out.SSHKey = in.SSHKey
 	out.ProviderCreds = in.ProviderCreds
 	out.Networking = in.Networking
@@ -480,6 +481,7 @@ func (in *HostedControlPlaneList) DeepCopyObject() runtime.Object {
 func (in *HostedControlPlaneSpec) DeepCopyInto(out *HostedControlPlaneSpec) {
 	*out = *in
 	out.PullSecret = in.PullSecret
+	out.SigningKey = in.SigningKey
 	out.SSHKey = in.SSHKey
 	out.ProviderCreds = in.ProviderCreds
 	in.Platform.DeepCopyInto(&out.Platform)

@@ -169,7 +169,7 @@ apiServerArguments:
   runtime-config:
   - flowcontrol.apiserver.k8s.io/v1alpha1=true
   service-account-issuer:
-  - https://kubernetes.default.svc
+  - {{ .IssuerURL }}
   service-account-lookup:
   - 'true'
   service-account-signing-key-file:

@@ -156,9 +156,6 @@ func GeneratePKI(params *render.PKIParams) (map[string][]byte, error) {
 	if err := serializeCombinedCA([]string{"root-ca", "cluster-signer"}, caMap, "combined-ca.crt", result); err != nil {
 		return nil, err
 	}
-	if err := serializeRSAKey("service-account", result); err != nil {
-		return nil, err
-	}
 	return result, nil
 }
 

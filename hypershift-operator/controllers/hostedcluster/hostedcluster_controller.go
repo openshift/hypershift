@@ -220,7 +220,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneProviderCredsSecret, func() error {
 		hostedClusterProviderCredsData, hasProviderCredsData := hostedClusterProviderCredsSecret.Data["credentials"]
 		if !hasProviderCredsData {
-			return fmt.Errorf("hostecsluter provider credentials secret %q must have a credentials key", hostedClusterProviderCredsSecret.Name)
+			return fmt.Errorf("hostedcluster provider credentials secret %q must have a credentials key", hostedClusterProviderCredsSecret.Name)
 		}
 		controlPlaneProviderCredsSecret.Data["credentials"] = hostedClusterProviderCredsData
 		return nil
@@ -239,6 +239,22 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", hostedClusterPullSecret.Name)
 		}
 		controlPlanePullSecret.Data[".dockerconfigjson"] = hostedClusterPullSecretData
+		return nil
+	})
+
+	// Reconcile the HostedControlPlane signing key by resolving the source secret
+	// reference from the HostedCluster and syncing the secret in the control plane namespace.
+	var hostedClusterSigningKeySecret corev1.Secret
+	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &hostedClusterSigningKeySecret); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get signing key %s: %w", hcluster.Spec.SigningKey.Name, err)
+	}
+	controlPlaneSigningKeySecret := manifests.SigningKey{Namespace: controlPlaneNamespace}.Build()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSigningKeySecret, func() error {
+		hostedClusterSigningKeySecretData, hasSigningKeyData := hostedClusterSigningKeySecret.Data["key"]
+		if !hasSigningKeyData {
+			return fmt.Errorf("hostedcluster signing key %q must have a key key", hostedClusterSigningKeySecret.Name)
+		}
+		controlPlaneSigningKeySecret.Data["key"] = hostedClusterSigningKeySecretData
 		return nil
 	})
 
@@ -307,6 +323,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		HostedCluster:       hcluster,
 		ProviderCredentials: controlPlaneProviderCredsSecret,
 		PullSecret:          controlPlanePullSecret,
+		SigningKey:          controlPlaneSigningKeySecret,
 		SSHKey:              controlPlaneSSHKeySecret,
 	}.Build()
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hcp, func() error {
