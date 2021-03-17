@@ -205,7 +205,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			if err != nil {
 				return fmt.Errorf("failed to create object %q: %w", key, err)
 			}
-			log.Info("applied resource", "key", key)
+			log.Info("applied resource", "namespace", key.Namespace, "name", key.Name)
 		}
 		return nil
 	}
