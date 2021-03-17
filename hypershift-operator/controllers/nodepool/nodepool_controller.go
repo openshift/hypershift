@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/machineimage"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
@@ -303,7 +304,7 @@ func generateScalableResources(client ctrlclient.Client, ctx context.Context,
 		})
 	}
 
-	instanceProfile := fmt.Sprintf("%s-worker-profile", infraName)
+	instanceProfile := awsinfra.DefaultProfileName(infraName)
 	if nodePool.Spec.Platform.AWS.InstanceProfile != "" {
 		instanceProfile = nodePool.Spec.Platform.AWS.InstanceProfile
 	}
