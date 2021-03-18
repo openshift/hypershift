@@ -1,426 +1,73 @@
 package clusterapi
 
 import (
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/apimachinery/pkg/types"
 )
 
-type ManagerDeployment struct {
-	Namespace      *corev1.Namespace
-	Image          string
-	ServiceAccount *corev1.ServiceAccount
-}
-
-func (o ManagerDeployment) Build() *appsv1.Deployment {
-	deployment := &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: appsv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cluster-api",
-			Namespace: o.Namespace.Name,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: k8sutilspointer.Int32Ptr(1),
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"name": "cluster-api",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"name": "cluster-api",
-					},
-				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: o.ServiceAccount.Name,
-					Containers: []corev1.Container{
-						{
-							Name:            "manager",
-							Image:           o.Image,
-							ImagePullPolicy: corev1.PullAlways,
-							Env: []corev1.EnvVar{
-								{
-									Name: "MY_NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-							},
-							Command: []string{"/manager"},
-							Args:    []string{"--namespace", "$(MY_NAMESPACE)", "--alsologtostderr", "--v=4"},
-						},
-					},
-				},
-			},
-		},
+func ClusterAPIManagerDeploymentName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: controlPlaneNamespace,
+		Name:      "cluster-api",
 	}
-	return deployment
 }
 
-type ManagerServiceAccount struct {
-	Namespace *corev1.Namespace
-}
-
-func (o ManagerServiceAccount) Build() *corev1.ServiceAccount {
-	sa := &corev1.ServiceAccount{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ServiceAccount",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Namespace.Name,
-			Name:      "cluster-api",
-		},
+func CAPIManagerServiceAccountName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: controlPlaneNamespace,
+		Name:      "cluster-api",
 	}
-	return sa
 }
 
-type ManagerClusterRole struct{}
-
-func (o ManagerClusterRole) Build() *rbacv1.ClusterRole {
-	role := &rbacv1.ClusterRole{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ClusterRole",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster-api",
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"apiextensions.k8s.io"},
-				Resources: []string{"customresourcedefinitions"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-		},
+func CAPIManagerClusterRoleName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Name: "cluster-api",
 	}
-	return role
 }
 
-type ManagerClusterRoleBinding struct {
-	ClusterRole    *rbacv1.ClusterRole
-	ServiceAccount *corev1.ServiceAccount
-}
-
-func (o ManagerClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
-	binding := &rbacv1.ClusterRoleBinding{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ClusterRoleBinding",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster-api" + o.ServiceAccount.Namespace,
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     o.ClusterRole.Name,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      o.ServiceAccount.Name,
-				Namespace: o.ServiceAccount.Namespace,
-			},
-		},
+func CAPIManagerClusterRoleBindingName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Name: "cluster-api-" + controlPlaneNamespace,
 	}
-	return binding
 }
 
-type ManagerRole struct {
-	Namespace *corev1.Namespace
-}
-
-func (o ManagerRole) Build() *rbacv1.Role {
-	role := &rbacv1.Role{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Role",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cluster-api",
-			Namespace: o.Namespace.Name,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{
-					"bootstrap.cluster.x-k8s.io",
-					"controlplane.cluster.x-k8s.io",
-					"infrastructure.cluster.x-k8s.io",
-					"machines.cluster.x-k8s.io",
-					"exp.infrastructure.cluster.x-k8s.io",
-					"addons.cluster.x-k8s.io",
-					"exp.cluster.x-k8s.io",
-					"cluster.x-k8s.io",
-				},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			},
-			{
-				APIGroups: []string{"hypershift.openshift.io"},
-				Resources: []string{
-					"hostedcontrolplanes",
-					"hostedcontrolplanes/status",
-					"externalinfraclusters",
-					"externalinfraclusters/status",
-				},
-				Verbs: []string{"*"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{
-					"configmaps",
-					"events",
-					"nodes",
-					"secrets",
-				},
-				Verbs: []string{"*"},
-			},
-		},
+func CAPIManagerRoleName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: controlPlaneNamespace,
+		Name:      "cluster-api",
 	}
-	return role
 }
 
-type ManagerRoleBinding struct {
-	Role           *rbacv1.Role
-	ServiceAccount *corev1.ServiceAccount
-}
-
-func (o ManagerRoleBinding) Build() *rbacv1.RoleBinding {
-	binding := &rbacv1.RoleBinding{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "RoleBinding",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Role.Namespace,
-			Name:      "cluster-api",
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     o.Role.Name,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      o.ServiceAccount.Name,
-				Namespace: o.ServiceAccount.Namespace,
-			},
-		},
+func CAPIManagerRoleBindingName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: controlPlaneNamespace,
+		Name:      "cluster-api",
 	}
-	return binding
 }
 
-type AWSProviderDeployment struct {
-	Namespace           *corev1.Namespace
-	Image               string
-	ServiceAccount      *corev1.ServiceAccount
-	ProviderCredentials *corev1.Secret
-}
-
-func (o AWSProviderDeployment) Build() *appsv1.Deployment {
-	deployment := &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: appsv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "capa-controller-manager",
-			Namespace: o.Namespace.Name,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: k8sutilspointer.Int32Ptr(1),
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"control-plane": "capa-controller-manager",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"control-plane": "capa-controller-manager",
-					},
-				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName:            o.ServiceAccount.Name,
-					TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
-					Tolerations: []corev1.Toleration{
-						{
-							Key:    "node-role.kubernetes.io/master",
-							Effect: corev1.TaintEffectNoSchedule,
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "credentials",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: o.ProviderCredentials.Name,
-								},
-							},
-						},
-					},
-					Containers: []corev1.Container{
-						{
-							Name:            "manager",
-							Image:           o.Image,
-							ImagePullPolicy: corev1.PullAlways,
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "credentials",
-									MountPath: "/home/.aws",
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "MY_NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-								{
-									Name:  "AWS_SHARED_CREDENTIALS_FILE",
-									Value: "/home/.aws/credentials",
-								},
-							},
-							Command: []string{"/manager"},
-							Args:    []string{"--namespace", "$(MY_NAMESPACE)", "--alsologtostderr", "--v=4"},
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "healthz",
-									ContainerPort: 9440,
-									Protocol:      corev1.ProtocolTCP,
-								},
-							},
-							LivenessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/healthz",
-										Port: intstr.FromString("healthz"),
-									},
-								},
-							},
-							ReadinessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/readyz",
-										Port: intstr.FromString("healthz"),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+func CAPIAWSProviderDeploymentName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: controlPlaneNamespace,
+		Name:      "capa-controller-manager",
 	}
-	return deployment
 }
 
-type AWSProviderServiceAccount struct {
-	Namespace *corev1.Namespace
-}
-
-func (o AWSProviderServiceAccount) Build() *corev1.ServiceAccount {
-	sa := &corev1.ServiceAccount{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ServiceAccount",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Namespace.Name,
-			Name:      "capa-controller-manager",
-		},
+func CAPIAWSProviderServiceAccountName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: controlPlaneNamespace,
+		Name:      "capa-controller-manager",
 	}
-	return sa
 }
 
-type AWSProviderRole struct {
-	Namespace *corev1.Namespace
-}
-
-func (o AWSProviderRole) Build() *rbacv1.Role {
-	role := &rbacv1.Role{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Role",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "capa-manager",
-			Namespace: o.Namespace.Name,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{""},
-				Resources: []string{
-					"events",
-					"secrets",
-				},
-				Verbs: []string{"*"},
-			},
-			{
-				APIGroups: []string{
-					"bootstrap.cluster.x-k8s.io",
-					"controlplane.cluster.x-k8s.io",
-					"infrastructure.cluster.x-k8s.io",
-					"machines.cluster.x-k8s.io",
-					"exp.infrastructure.cluster.x-k8s.io",
-					"addons.cluster.x-k8s.io",
-					"exp.cluster.x-k8s.io",
-					"cluster.x-k8s.io",
-				},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			},
-			{
-				APIGroups: []string{"hypershift.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			},
-		},
+func CAPIAWSProviderRoleName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: controlPlaneNamespace,
+		Name:      "capa-manager",
 	}
-	return role
 }
 
-type AWSProviderRoleBinding struct {
-	Role           *rbacv1.Role
-	ServiceAccount *corev1.ServiceAccount
-}
-
-func (o AWSProviderRoleBinding) Build() *rbacv1.RoleBinding {
-	binding := &rbacv1.RoleBinding{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "RoleBinding",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Role.Namespace,
-			Name:      "capa-manager",
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     o.Role.Name,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      o.ServiceAccount.Name,
-				Namespace: o.ServiceAccount.Namespace,
-			},
-		},
+func CAPIAWSProviderRoleBindingName(controlPlaneNamespace string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: controlPlaneNamespace,
+		Name:      "capa-manager",
 	}
-	return binding
 }

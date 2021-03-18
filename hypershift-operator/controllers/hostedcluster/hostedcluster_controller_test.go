@@ -93,7 +93,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster)
+			err := reconcileHostedControlPlane(updated, &test.Cluster, nil, nil, nil, nil)
 			if err != nil {
 				t.Error(err)
 			}
