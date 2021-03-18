@@ -79,13 +79,13 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(iamClient iamiface.IAMAPI, s3Cl
 	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != s3.ErrCodeNoSuchBucket ||
+			if aerr.Code() != s3.ErrCodeNoSuchBucket &&
 				aerr.Code() != s3.ErrCodeNoSuchKey {
-				log.Error(aerr, "Error deleting OIDC discovery document", bucketName, "key", discoveryURI)
+				log.Error(aerr, "Error deleting OIDC discovery document", "bucket", bucketName, "key", discoveryURI)
 				return aerr
 			}
 		} else {
-			log.Error(err, "Error deleting OIDC discovery document", bucketName, "key", discoveryURI)
+			log.Error(err, "Error deleting OIDC discovery document", "bucket", bucketName, "key", discoveryURI)
 			return err
 		}
 	} else {
@@ -98,13 +98,13 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(iamClient iamiface.IAMAPI, s3Cl
 	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != s3.ErrCodeNoSuchBucket ||
+			if aerr.Code() != s3.ErrCodeNoSuchBucket &&
 				aerr.Code() != s3.ErrCodeNoSuchKey {
-				log.Error(aerr, "Error deleting JWKS document", bucketName, "key", jwksURI)
+				log.Error(aerr, "Error deleting JWKS document", "bucket", bucketName, "key", jwksURI)
 				return aerr
 			}
 		} else {
-			log.Error(err, "Error deleting JWKS document", bucketName, "key", jwksURI)
+			log.Error(err, "Error deleting JWKS document", "bucket", bucketName, "key", jwksURI)
 			return err
 		}
 	} else {
@@ -116,7 +116,8 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(iamClient iamiface.IAMAPI, s3Cl
 	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			if aerr.Code() != iam.ErrCodeNoSuchEntityException &&
+				aerr.Code() != s3.ErrCodeNoSuchBucket {
 				log.Error(aerr, "Error deleting OIDC discovery endpoint", "bucket", bucketName)
 				return aerr
 			}
