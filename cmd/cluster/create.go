@@ -192,6 +192,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			SecurityGroupID: infra.SecurityGroupID,
 			InstanceProfile: iamInfo.ProfileName,
 			InstanceType:    opts.InstanceType,
+			Roles:           iamInfo.Roles,
 		},
 	}.Resources().AsObjects()
 
