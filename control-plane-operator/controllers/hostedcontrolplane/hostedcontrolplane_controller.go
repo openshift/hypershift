@@ -468,6 +468,18 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate targetPullSecret: %v", err)
 	}
 
+	if hcp.Spec.Platform.AWS != nil {
+		for _, role := range hcp.Spec.Platform.AWS.Roles {
+			targetCredentialsSecret, err := generateTargetCredentialsSecret(r.Scheme(), role, targetNamespace)
+			if err != nil {
+				return fmt.Errorf("failed to create credentials secret manifest for target cluster: %w", err)
+			}
+			if err := r.Create(ctx, targetCredentialsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+				return fmt.Errorf("failed to generate roleSecret: %v", err)
+			}
+		}
+	}
+
 	manifests, err := r.generateControlPlaneManifests(ctx, hcp, infraStatus, releaseImage)
 	if err != nil {
 		return err
@@ -1058,6 +1070,29 @@ func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace str
 	configMap := &corev1.ConfigMap{}
 	configMap.Namespace = namespace
 	configMap.Name = "user-manifest-pullsecret"
+	configMap.Data = map[string]string{"data": string(secretBytes)}
+	return configMap, nil
+}
+
+const awsCredentialsTemplate = `[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`
+
+func generateTargetCredentialsSecret(scheme *runtime.Scheme, creds hyperv1.AWSRoleCredentials, namespace string) (*corev1.ConfigMap, error) {
+	secret := &corev1.Secret{}
+	secret.Name = creds.Name
+	secret.Namespace = creds.Namespace
+	credentials := fmt.Sprintf(awsCredentialsTemplate, creds.ARN)
+	secret.Data = map[string][]byte{"credentials": []byte(credentials)}
+	secret.Type = corev1.SecretTypeOpaque
+	secretBytes, err := runtime.Encode(serializer.NewCodecFactory(scheme).LegacyCodec(corev1.SchemeGroupVersion), secret)
+	if err != nil {
+		return nil, err
+	}
+	configMap := &corev1.ConfigMap{}
+	configMap.Namespace = namespace
+	configMap.Name = fmt.Sprintf("user-manifest-%s-%s", creds.Namespace, creds.Name)
 	configMap.Data = map[string]string{"data": string(secretBytes)}
 	return configMap, nil
 }

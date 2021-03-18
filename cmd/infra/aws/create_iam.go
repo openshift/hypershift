@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
 type CreateIAMOptions struct {
@@ -23,14 +25,12 @@ type CreateIAMOptions struct {
 }
 
 type CreateIAMOutput struct {
-	Region                   string `json:"region"`
-	ProfileName              string `json:"profileName"`
-	InfraID                  string `json:"infraID"`
-	IssuerURL                string `json:"issuerURL"`
-	ServiceAccountSigningKey []byte `json:"serviceAccountSigningKey"`
-	IngressRoleARN           string `json:"ingressRoleARN"`
-	ImageRegistryRoleARN     string `json:"imageRegistryRoleARN"`
-	AWSEBSCSIRoleARN         string `json:"awsEBSCSIRoleARN"`
+	Region                   string                       `json:"region"`
+	ProfileName              string                       `json:"profileName"`
+	InfraID                  string                       `json:"infraID"`
+	IssuerURL                string                       `json:"issuerURL"`
+	ServiceAccountSigningKey []byte                       `json:"serviceAccountSigningKey"`
+	Roles                    []hyperv1.AWSRoleCredentials `json:"roles"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {

@@ -56,6 +56,7 @@ type ExampleAWSOptions struct {
 	SecurityGroupID string
 	InstanceProfile string
 	InstanceType    string
+	Roles           []hyperv1.AWSRoleCredentials
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -158,6 +159,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			Platform: hyperv1.PlatformSpec{
 				AWS: &hyperv1.AWSPlatformSpec{
 					Region: o.AWS.Region,
+					Roles:  o.AWS.Roles,
 					VPC:    o.AWS.VPCID,
 					NodePoolDefaults: &hyperv1.AWSNodePoolPlatform{
 						InstanceType:    o.AWS.InstanceType,

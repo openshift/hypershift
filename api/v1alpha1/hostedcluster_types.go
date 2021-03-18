@@ -69,6 +69,14 @@ type AWSPlatformSpec struct {
 	// There must be only one ServiceEndpoint for a service.
 	// +optional
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
+
+	Roles []AWSRoleCredentials `json:"roles,omitempty"`
+}
+
+type AWSRoleCredentials struct {
+	ARN       string `json:"arn"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 // AWSServiceEndpoint stores the configuration for services to

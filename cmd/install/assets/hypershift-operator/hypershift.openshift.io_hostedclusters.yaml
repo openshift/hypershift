@@ -153,6 +153,21 @@ spec:
                       region:
                         description: Region is the AWS region for the cluster
                         type: string
+                      roles:
+                        items:
+                          properties:
+                            arn:
+                              type: string
+                            name:
+                              type: string
+                            namespace:
+                              type: string
+                          required:
+                          - arn
+                          - name
+                          - namespace
+                          type: object
+                        type: array
                       serviceEndpoints:
                         description: ServiceEndpoints list contains custom endpoints which will override default service endpoint of AWS Services. There must be only one ServiceEndpoint for a service.
                         items:
