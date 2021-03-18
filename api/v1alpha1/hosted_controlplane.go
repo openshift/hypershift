@@ -27,6 +27,8 @@ type HostedControlPlane struct {
 type HostedControlPlaneSpec struct {
 	ReleaseImage  string                      `json:"releaseImage"`
 	PullSecret    corev1.LocalObjectReference `json:"pullSecret"`
+	SigningKey    corev1.LocalObjectReference `json:"signingKey"`
+	IssuerURL     string                      `json:"issuerURL"`
 	ServiceCIDR   string                      `json:"serviceCIDR"`
 	PodCIDR       string                      `json:"podCIDR"`
 	MachineCIDR   string                      `json:"machineCIDR"`

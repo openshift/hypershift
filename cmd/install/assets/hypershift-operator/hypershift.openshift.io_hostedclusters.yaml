@@ -53,6 +53,8 @@ spec:
                 type: string
               initialComputeReplicas:
                 type: integer
+              issuerURL:
+                type: string
               networking:
                 description: Networking contains network-specific settings for this cluster
                 properties:
@@ -199,6 +201,13 @@ spec:
                 required:
                 - image
                 type: object
+              signingKey:
+                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
               sshKey:
                 description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
                 properties:
@@ -208,11 +217,13 @@ spec:
                 type: object
             required:
             - initialComputeReplicas
+            - issuerURL
             - networking
             - platform
             - providerCreds
             - pullSecret
             - release
+            - signingKey
             - sshKey
             type: object
           status:

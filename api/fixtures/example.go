@@ -13,6 +13,7 @@ type ExampleResources struct {
 	Namespace      *corev1.Namespace
 	PullSecret     *corev1.Secret
 	AWSCredentials *corev1.Secret
+	SigningKey     *corev1.Secret
 	SSHKey         *corev1.Secret
 	Cluster        *hyperv1.HostedCluster
 }
@@ -22,6 +23,7 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 		o.Namespace,
 		o.PullSecret,
 		o.AWSCredentials,
+		o.SigningKey,
 		o.Cluster,
 	}
 	if o.SSHKey != nil {
@@ -36,6 +38,8 @@ type ExampleOptions struct {
 	ReleaseImage     string
 	PullSecret       []byte
 	AWSCredentials   []byte
+	SigningKey       []byte
+	IssuerURL        string
 	SSHKey           []byte
 	NodePoolReplicas int
 	InfraID          string
@@ -93,6 +97,20 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		},
 	}
 
+	signingKeySecret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace.Name,
+			Name:      o.Name + "-signing-key",
+		},
+		Data: map[string][]byte{
+			"key": o.SigningKey,
+		},
+	}
+
 	var sshKeySecret *corev1.Secret
 	var sshKeyReference corev1.LocalObjectReference
 	if len(o.SSHKey) > 0 {
@@ -134,6 +152,8 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			InfraID:       o.InfraID,
 			PullSecret:    corev1.LocalObjectReference{Name: pullSecret.Name},
 			ProviderCreds: corev1.LocalObjectReference{Name: awsCredsSecret.Name},
+			SigningKey:    corev1.LocalObjectReference{Name: signingKeySecret.Name},
+			IssuerURL:     o.IssuerURL,
 			SSHKey:        sshKeyReference,
 			Platform: hyperv1.PlatformSpec{
 				AWS: &hyperv1.AWSPlatformSpec{
@@ -159,6 +179,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		Namespace:      namespace,
 		PullSecret:     pullSecret,
 		AWSCredentials: awsCredsSecret,
+		SigningKey:     signingKeySecret,
 		SSHKey:         sshKeySecret,
 		Cluster:        cluster,
 	}

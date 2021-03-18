@@ -72,6 +72,7 @@ type ClusterParams struct {
 	OauthAPIServerCABundle                 string                 `json:"oauthAPIServerCABundle"`
 	CloudProvider                          string                 `json:"cloudProvider"`
 	CVOSetupImage                          string                 `json:"cvoSetupImage"`
+	IssuerURL                              string                 `json:"issuerURL"`
 	InternalAPIPort                        uint                   `json:"internalAPIPort"`
 	RouterServiceType                      string                 `json:"routerServiceType"`
 	KubeAPIServerResources                 []ResourceRequirements `json:"kubeAPIServerResources"`

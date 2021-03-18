@@ -178,6 +178,8 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		ReleaseImage:     opts.ReleaseImage,
 		PullSecret:       pullSecret,
 		AWSCredentials:   awsCredentials,
+		SigningKey:       iamInfo.ServiceAccountSigningKey,
+		IssuerURL:        iamInfo.IssuerURL,
 		SSHKey:           sshKey,
 		NodePoolReplicas: opts.NodePoolReplicas,
 		InfraID:          infra.InfraID,

@@ -13,6 +13,7 @@ type KubeAPIServerParams struct {
 	ExtraFeatureGates       []string
 	InfraID                 string
 	IngressSubdomain        string
+	IssuerURL               string
 	InternalAPIPort         uint
 	NamedCerts              []NamedCert
 	PKI                     map[string][]byte

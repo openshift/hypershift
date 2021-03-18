@@ -67,6 +67,27 @@ func (o PullSecret) Build() *corev1.Secret {
 	return secret
 }
 
+type SigningKey struct {
+	Namespace *corev1.Namespace
+	Data      []byte
+}
+
+func (o SigningKey) Build() *corev1.Secret {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "signing-key",
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{"key": o.Data},
+	}
+	return secret
+}
+
 type SSHKey struct {
 	Namespace *corev1.Namespace
 	Data      []byte
