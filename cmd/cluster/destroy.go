@@ -31,6 +31,7 @@ type DestroyOptions struct {
 	Name               string
 	AWSCredentialsFile string
 	PreserveIAM        bool
+	ClusterGracePeriod time.Duration
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -44,12 +45,14 @@ func NewDestroyCommand() *cobra.Command {
 		Name:               "",
 		AWSCredentialsFile: "",
 		PreserveIAM:        false,
+		ClusterGracePeriod: 10 * time.Minute,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A cluster name")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().BoolVar(&opts.PreserveIAM, "preserve-iam", opts.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
+	cmd.Flags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
 
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("aws-creds")
@@ -86,6 +89,9 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		return fmt.Errorf("failed to add finalizer, won't destroy: %w", err)
 	}
 
+	// Cluster deletion will be subject to a timeout so that it's possible to
+	// try and tear down infra even if the cluster never finalizes; this is an
+	// attempt to reduce resource leakage in such cases.
 	log.Info("deleting hostedcluster")
 	if err := c.Delete(ctx, &hostedCluster); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -95,16 +101,18 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 			return fmt.Errorf("failed to delete hostedcluster: %w", err)
 		}
 	}
+	clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
+	defer clusterDeleteCtxCancel()
 	err = wait.PollUntil(1*time.Second, func() (bool, error) {
-		if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
+		if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 			log.Error(err, "failed to get hostedcluster")
 			return false, nil
 		}
 		done := len(hostedCluster.Finalizers) == 1 && hostedCluster.Finalizers[0] == destroyFinalizer
 		return done, nil
-	}, ctx.Done())
+	}, clusterDeleteCtx.Done())
 	if err != nil {
-		return fmt.Errorf("error while waiting for hostedcluster to be deleted")
+		log.Error(err, "hostedcluster wasn't successfully deleted")
 	}
 
 	log.Info("destroying infrastructure", "infraID", hostedCluster.Spec.InfraID)
