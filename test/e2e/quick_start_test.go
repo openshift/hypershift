@@ -20,6 +20,7 @@ type QuickStartOptions struct {
 	AWSCredentialsFile string
 	PullSecretFile     string
 	ReleaseImage       string
+	ArtifactDir        string
 }
 
 func NewQuickStartOptions(globalOptions *GlobalTestOptions) QuickStartOptions {
@@ -27,6 +28,7 @@ func NewQuickStartOptions(globalOptions *GlobalTestOptions) QuickStartOptions {
 		AWSCredentialsFile: globalOptions.AWSCredentialsFile,
 		PullSecretFile:     globalOptions.PullSecretFile,
 		ReleaseImage:       globalOptions.LatestReleaseImage,
+		ArtifactDir:        globalOptions.ArtifactDir,
 	}
 }
 
@@ -64,7 +66,7 @@ func TestQuickStart(t *testing.T) {
 			Namespace:          hostedCluster.Namespace,
 			Name:               hostedCluster.Name,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
-		})
+		}, opts.ArtifactDir)
 		DeleteNamespace(t, context.Background(), client, namespace.Name)
 	}()
 

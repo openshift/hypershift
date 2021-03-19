@@ -24,6 +24,7 @@ import (
 
 	createcmd "github.com/openshift/hypershift/cmd/create"
 	destroycmd "github.com/openshift/hypershift/cmd/destroy"
+	dumpcmd "github.com/openshift/hypershift/cmd/dump"
 	installcmd "github.com/openshift/hypershift/cmd/install"
 )
 
@@ -38,6 +39,7 @@ func main() {
 	cmd.AddCommand(installcmd.NewCommand())
 	cmd.AddCommand(createcmd.NewCommand())
 	cmd.AddCommand(destroycmd.NewCommand())
+	cmd.AddCommand(dumpcmd.NewCommand())
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

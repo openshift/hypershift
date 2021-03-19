@@ -23,6 +23,7 @@ type ControlPlaneUpgradeOptions struct {
 	PullSecretFile     string
 	FromReleaseImage   string
 	ToReleaseImage     string
+	ArtifactDir        string
 }
 
 func NewControlPlaneUpgradeOptions(globalOptions *GlobalTestOptions) ControlPlaneUpgradeOptions {
@@ -31,6 +32,7 @@ func NewControlPlaneUpgradeOptions(globalOptions *GlobalTestOptions) ControlPlan
 		PullSecretFile:     globalOptions.PullSecretFile,
 		FromReleaseImage:   globalOptions.PreviousReleaseImage,
 		ToReleaseImage:     globalOptions.LatestReleaseImage,
+		ArtifactDir:        globalOptions.ArtifactDir,
 	}
 }
 
@@ -70,7 +72,7 @@ func TestControlPlaneUpgrade(t *testing.T) {
 			Namespace:          hostedCluster.Namespace,
 			Name:               hostedCluster.Name,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
-		})
+		}, opts.ArtifactDir)
 		DeleteNamespace(t, context.Background(), client, namespace.Name)
 	}()
 
