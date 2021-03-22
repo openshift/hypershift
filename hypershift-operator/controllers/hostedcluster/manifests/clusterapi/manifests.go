@@ -1,73 +1,96 @@
 package clusterapi
 
 import (
-	"k8s.io/apimachinery/pkg/types"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func ClusterAPIManagerDeploymentName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: controlPlaneNamespace,
-		Name:      "cluster-api",
+func ClusterAPIManagerDeployment(controlPlaneNamespace string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cluster-api",
+		},
 	}
 }
 
-func CAPIManagerServiceAccountName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: controlPlaneNamespace,
-		Name:      "cluster-api",
+func CAPIManagerServiceAccount(controlPlaneNamespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cluster-api",
+		},
 	}
 }
 
-func CAPIManagerClusterRoleName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Name: "cluster-api",
+func CAPIManagerClusterRole(controlPlaneNamespace string) *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster-api",
+		},
 	}
 }
 
-func CAPIManagerClusterRoleBindingName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Name: "cluster-api-" + controlPlaneNamespace,
+func CAPIManagerClusterRoleBinding(controlPlaneNamespace string) *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster-api-" + controlPlaneNamespace,
+		},
 	}
 }
 
-func CAPIManagerRoleName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: controlPlaneNamespace,
-		Name:      "cluster-api",
+func CAPIManagerRole(controlPlaneNamespace string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cluster-api",
+		},
 	}
 }
 
-func CAPIManagerRoleBindingName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: controlPlaneNamespace,
-		Name:      "cluster-api",
+func CAPIManagerRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cluster-api",
+		},
 	}
 }
 
-func CAPIAWSProviderDeploymentName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: controlPlaneNamespace,
-		Name:      "capa-controller-manager",
+func CAPIAWSProviderDeployment(controlPlaneNamespace string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capa-controller-manager",
+		},
 	}
 }
 
-func CAPIAWSProviderServiceAccountName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: controlPlaneNamespace,
-		Name:      "capa-controller-manager",
+func CAPIAWSProviderServiceAccount(controlPlaneNamespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capa-controller-manager",
+		},
 	}
 }
 
-func CAPIAWSProviderRoleName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: controlPlaneNamespace,
-		Name:      "capa-manager",
+func CAPIAWSProviderRole(controlPlaneNamespace string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capa-manager",
+		},
 	}
 }
 
-func CAPIAWSProviderRoleBindingName(controlPlaneNamespace string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: controlPlaneNamespace,
-		Name:      "capa-manager",
+func CAPIAWSProviderRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capa-manager",
+		},
 	}
 }

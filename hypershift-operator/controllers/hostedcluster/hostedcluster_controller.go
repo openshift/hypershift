@@ -30,6 +30,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -60,21 +61,13 @@ const (
 // NoopReconcile is just a default mutation function that does nothing.
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
-type realClock struct{}
-
-func (_ realClock) Now() time.Time { return time.Now() }
-
-type Clock interface {
-	Now() time.Time
-}
-
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
 
 	Log           logr.Logger
 	OperatorImage string
-	Clock
+	Clock         clock.Clock
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -82,7 +75,7 @@ type HostedClusterReconciler struct {
 
 func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Clock == nil {
-		r.Clock = realClock{}
+		r.Clock = clock.RealClock{}
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
@@ -140,8 +133,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set kubeconfig status
 	{
-		kubeConfigSecret := &corev1.Secret{}
-		err := r.Client.Get(ctx, manifests.KubeConfigSecretName(hcluster.Namespace, hcluster.Name), kubeConfigSecret)
+		kubeConfigSecret := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeConfigSecret), kubeConfigSecret)
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeconfig secret: %w", err)
@@ -153,9 +146,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set version status
 	{
-		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name)
-		hcp := &hyperv1.HostedControlPlane{}
-		err := r.Client.Get(ctx, controlplaneoperator.HostedControlPlaneName(controlPlaneNamespaceName.Name, hcluster.Name), hcp)
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				hcp = nil
@@ -168,9 +161,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set the Available condition
 	{
-		controlPlaneNamespaceName := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name)
-		hcp := &hyperv1.HostedControlPlane{}
-		err := r.Client.Get(ctx, controlplaneoperator.HostedControlPlaneName(controlPlaneNamespaceName.Name, hcluster.Name), hcp)
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				hcp = nil
@@ -203,11 +196,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the hosted cluster namespace
-	controlPlaneNamespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name).Name,
-		},
-	}
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneNamespace, NoopReconcile)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
@@ -220,14 +209,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.ProviderCreds.Name, err)
 	}
-	controlPlaneProviderCredsSecretName := controlplaneoperator.ProviderCredentialsName(controlPlaneNamespace.Name)
-	controlPlaneProviderCredsSecret := corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneProviderCredsSecretName.Namespace,
-			Name:      controlPlaneProviderCredsSecretName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneProviderCredsSecret, func() error {
+	controlPlaneProviderCredsSecret := controlplaneoperator.ProviderCredentials(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneProviderCredsSecret, func() error {
 		hostedClusterProviderCredsData, hasProviderCredsData := hostedClusterProviderCredsSecret.Data["credentials"]
 		if !hasProviderCredsData {
 			return fmt.Errorf("hostedcluster provider credentials secret %q must have a credentials key", hostedClusterProviderCredsSecret.Name)
@@ -246,14 +229,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &hostedClusterPullSecret); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 	}
-	controlPlaneSecretName := controlplaneoperator.PullSecretName(controlPlaneNamespace.Name)
-	controlPlanePullSecret := corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneSecretName.Namespace,
-			Name:      controlPlaneSecretName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlanePullSecret, func() error {
+	controlPlanePullSecret := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlanePullSecret, func() error {
 		hostedClusterPullSecretData, hasPullSecretData := hostedClusterPullSecret.Data[".dockerconfigjson"]
 		if !hasPullSecretData {
 			return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", hostedClusterPullSecret.Name)
@@ -272,14 +249,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &hostedClusterSigningKeySecret); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get signing key %s: %w", hcluster.Spec.SigningKey.Name, err)
 	}
-	controlPlaneSigningKeySecretName := controlplaneoperator.SigningKeyName(controlPlaneNamespace.Name)
-	controlPlaneSigningKeySecret := corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneSigningKeySecretName.Namespace,
-			Name:      controlPlaneSigningKeySecretName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneSigningKeySecret, func() error {
+	controlPlaneSigningKeySecret := controlplaneoperator.SigningKey(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSigningKeySecret, func() error {
 		hostedClusterSigningKeySecretData, hasSigningKeyData := hostedClusterSigningKeySecret.Data["key"]
 		if !hasSigningKeyData {
 			return fmt.Errorf("hostedcluster signing key %q must have a key key", hostedClusterSigningKeySecret.Name)
@@ -301,14 +272,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 		}
-		controlPlaneSSHKeySecretName := controlplaneoperator.SSHKeyName(controlPlaneNamespace.Name)
-		controlPlaneSSHKeySecret := corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: controlPlaneSSHKeySecretName.Namespace,
-				Name:      controlPlaneSSHKeySecretName.Name,
-			},
-		}
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneSSHKeySecret, func() error {
+		controlPlaneSSHKeySecret := controlplaneoperator.SSHKey(controlPlaneNamespace.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSSHKeySecret, func() error {
 			hostedClusterSSHKeyData, hasSSHKeyData := hostedClusterSSHKeySecret.Data["id_rsa.pub"]
 			if !hasSSHKeyData {
 				return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", hostedClusterSSHKeySecret.Name)
@@ -332,15 +297,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// node pool, create it through whatever user-oriented tool is consuming the
 	// API.
 	if hcluster.Spec.InitialComputeReplicas > 0 {
-		nodePoolName := manifests.DefaultNodePoolName(hcluster.Namespace, hcluster.Name)
-		nodePool := hyperv1.NodePool{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: nodePoolName.Namespace,
-				Name:      nodePoolName.Name,
-			},
-		}
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &nodePool, func() error {
-			return reconcileDefaultNodePool(&nodePool, hcluster)
+		nodePool := manifests.DefaultNodePool(hcluster.Namespace, hcluster.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, nodePool, func() error {
+			return reconcileDefaultNodePool(nodePool, hcluster)
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile initial node pool: %w", err)
@@ -348,45 +307,27 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI ExternalInfraCluster
-	externalInfraClusterName := controlplaneoperator.ExternalInfraClusterName(controlPlaneNamespace.Name, hcluster.Name)
-	externalInfraCluster := hyperv1.ExternalInfraCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: externalInfraClusterName.Namespace,
-			Name:      externalInfraClusterName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &externalInfraCluster, func() error {
-		return reconcileExternalInfraCluster(&externalInfraCluster, hcluster)
+	externalInfraCluster := controlplaneoperator.ExternalInfraCluster(controlPlaneNamespace.Name, hcluster.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, externalInfraCluster, func() error {
+		return reconcileExternalInfraCluster(externalInfraCluster, hcluster)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile externalinfracluster: %w", err)
 	}
 
 	// Reconcile the HostedControlPlane
-	hcpName := controlplaneoperator.HostedControlPlaneName(controlPlaneNamespace.Name, hcluster.Name)
-	hcp := hyperv1.HostedControlPlane{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: hcpName.Namespace,
-			Name:      hcpName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &hcp, func() error {
-		return reconcileHostedControlPlane(&hcp, hcluster, &controlPlaneProviderCredsSecret, &controlPlanePullSecret, &controlPlaneSigningKeySecret, controlPlaneSSHKeySecret)
+	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hcp, func() error {
+		return reconcileHostedControlPlane(hcp, hcluster, controlPlaneProviderCredsSecret, controlPlanePullSecret, controlPlaneSigningKeySecret, controlPlaneSSHKeySecret)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
 	}
 
 	// Reconcile the CAPI Cluster resource
-	capiClusterName := controlplaneoperator.CAPIClusterName(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
-	capiCluster := capiv1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiClusterName.Namespace,
-			Name:      capiClusterName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiCluster, func() error {
-		return reconcileCAPICluster(&capiCluster, hcluster, &hcp, &externalInfraCluster)
+	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiCluster, func() error {
+		return reconcileCAPICluster(capiCluster, hcluster, hcp, externalInfraCluster)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
@@ -404,14 +345,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret), err)
 		}
-		hostedClusterKubeConfigSecretName := manifests.KubeConfigSecretName(hcluster.Namespace, hcluster.Name)
-		hostedClusterKubeConfigSecret := corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: hostedClusterKubeConfigSecretName.Namespace,
-				Name:      hostedClusterKubeConfigSecretName.Name,
-			},
-		}
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &hostedClusterKubeConfigSecret, func() error {
+		hostedClusterKubeConfigSecret := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedClusterKubeConfigSecret, func() error {
 			key := hcp.Status.KubeConfig.Key
 			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data[key]
 			if !ok {
@@ -442,7 +377,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the autoscaler
-	err = r.reconcileAutoscaler(ctx, hcluster, &hcp)
+	err = r.reconcileAutoscaler(ctx, hcluster, hcp)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
 	}
@@ -519,93 +454,59 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
 func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
 	// Reconcile CAPI manager service account
-	capiManagerServiceAccountName := clusterapi.CAPIManagerServiceAccountName(controlPlaneNamespace.Name)
-	capiManagerServiceAccount := corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiManagerServiceAccountName.Namespace,
-			Name:      capiManagerServiceAccountName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiManagerServiceAccount, NoopReconcile)
+	capiManagerServiceAccount := clusterapi.CAPIManagerServiceAccount(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerServiceAccount, NoopReconcile)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager service account: %w", err)
 	}
 
 	// Reconcile CAPI manager cluster role
-	capiManagerClusterRoleName := clusterapi.CAPIManagerClusterRoleName(controlPlaneNamespace.Name)
-	capiManagerClusterRole := rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: capiManagerClusterRoleName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiManagerClusterRole, func() error {
-		return reconcileCAPIManagerClusterRole(&capiManagerClusterRole)
+	capiManagerClusterRole := clusterapi.CAPIManagerClusterRole(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerClusterRole, func() error {
+		return reconcileCAPIManagerClusterRole(capiManagerClusterRole)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager cluster role: %w", err)
 	}
 
 	// Reconcile CAPI manager cluster role binding
-	capiManagerClusterRoleBindingName := clusterapi.CAPIManagerClusterRoleBindingName(controlPlaneNamespace.Name)
-	capiManagerClusterRoleBinding := rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: capiManagerClusterRoleBindingName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiManagerClusterRoleBinding, func() error {
-		return reconcileCAPIManagerClusterRoleBinding(&capiManagerClusterRoleBinding, &capiManagerClusterRole, &capiManagerServiceAccount)
+	capiManagerClusterRoleBinding := clusterapi.CAPIManagerClusterRoleBinding(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerClusterRoleBinding, func() error {
+		return reconcileCAPIManagerClusterRoleBinding(capiManagerClusterRoleBinding, capiManagerClusterRole, capiManagerServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager cluster role binding: %w", err)
 	}
 
 	// Reconcile CAPI manager role
-	capiManagerRoleName := clusterapi.CAPIManagerRoleName(controlPlaneNamespace.Name)
-	capiManagerRole := rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiManagerRoleName.Namespace,
-			Name:      capiManagerRoleName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiManagerRole, func() error {
-		return reconcileCAPIManagerRole(&capiManagerRole)
+	capiManagerRole := clusterapi.CAPIManagerRole(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerRole, func() error {
+		return reconcileCAPIManagerRole(capiManagerRole)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager role: %w", err)
 	}
 
 	// Reconcile CAPI manager role binding
-	capiManagerRoleBindingName := clusterapi.CAPIManagerRoleBindingName(controlPlaneNamespace.Name)
-	capiManagerRoleBinding := rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiManagerRoleBindingName.Namespace,
-			Name:      capiManagerRoleBindingName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiManagerRoleBinding, func() error {
-		return reconcileCAPIManagerRoleBinding(&capiManagerRoleBinding, &capiManagerRole, &capiManagerServiceAccount)
+	capiManagerRoleBinding := clusterapi.CAPIManagerRoleBinding(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerRoleBinding, func() error {
+		return reconcileCAPIManagerRoleBinding(capiManagerRoleBinding, capiManagerRole, capiManagerServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager role: %w", err)
 	}
 
 	// Reconcile CAPI manager deployment
-	capiManagerDeploymentName := clusterapi.ClusterAPIManagerDeploymentName(controlPlaneNamespace.Name)
-	capiManagerDeployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiManagerDeploymentName.Namespace,
-			Name:      capiManagerDeploymentName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiManagerDeployment, func() error {
-		return reconcileCAPIManagerDeployment(&capiManagerDeployment, &capiManagerServiceAccount, "quay.io/hypershift/cluster-api:hypershift")
+	capiManagerDeployment := clusterapi.ClusterAPIManagerDeployment(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, capiManagerServiceAccount, "quay.io/hypershift/cluster-api:hypershift")
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -617,71 +518,47 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hclu
 // reconcileCAPIAWSProvider orchestrates reconciliation of the CAPI AWS provider
 // components.
 func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
-	providerCredentialsSecret := &corev1.Secret{}
-	err = r.Client.Get(ctx, controlplaneoperator.ProviderCredentialsName(controlPlaneNamespace.Name), providerCredentialsSecret)
+	providerCredentialsSecret := controlplaneoperator.ProviderCredentials(controlPlaneNamespace.Name)
+	err = r.Client.Get(ctx, client.ObjectKeyFromObject(providerCredentialsSecret), providerCredentialsSecret)
 	if err != nil {
 		return fmt.Errorf("failed to get provider credentials secret: %w", err)
 	}
 
 	// Reconcile CAPI AWS provider role
-	capiAwsProviderRoleName := clusterapi.CAPIAWSProviderRoleName(controlPlaneNamespace.Name)
-	capiAwsProviderRole := rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiAwsProviderRoleName.Namespace,
-			Name:      capiAwsProviderRoleName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiAwsProviderRole, func() error {
-		return reconcileCAPIAWSProviderRole(&capiAwsProviderRole)
+	capiAwsProviderRole := clusterapi.CAPIAWSProviderRole(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderRole, func() error {
+		return reconcileCAPIAWSProviderRole(capiAwsProviderRole)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider role: %w", err)
 	}
 
 	// Reconcile CAPI AWS provider service account
-	capiAwsProviderServiceAccountName := clusterapi.CAPIAWSProviderServiceAccountName(controlPlaneNamespace.Name)
-	capiAwsProviderServiceAccount := corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiAwsProviderServiceAccountName.Namespace,
-			Name:      capiAwsProviderServiceAccountName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiAwsProviderServiceAccount, NoopReconcile)
+	capiAwsProviderServiceAccount := clusterapi.CAPIAWSProviderServiceAccount(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderServiceAccount, NoopReconcile)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider service account: %w", err)
 	}
 
 	// Reconcile CAPI AWS provider role binding
-	capiAwsProviderRoleBindingName := clusterapi.CAPIAWSProviderRoleBindingName(controlPlaneNamespace.Name)
-	capiAwsProviderRoleBinding := rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiAwsProviderRoleBindingName.Namespace,
-			Name:      capiAwsProviderRoleBindingName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiAwsProviderRoleBinding, func() error {
-		return reconcileCAPIAWSProviderRoleBinding(&capiAwsProviderRoleBinding, &capiAwsProviderRole, &capiAwsProviderServiceAccount)
+	capiAwsProviderRoleBinding := clusterapi.CAPIAWSProviderRoleBinding(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderRoleBinding, func() error {
+		return reconcileCAPIAWSProviderRoleBinding(capiAwsProviderRoleBinding, capiAwsProviderRole, capiAwsProviderServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider role binding: %w", err)
 	}
 
 	// Reconcile CAPI AWS provider deployment
-	capiAwsProviderDeploymentName := clusterapi.CAPIAWSProviderDeploymentName(controlPlaneNamespace.Name)
-	capiAwsProviderDeployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: capiAwsProviderDeploymentName.Namespace,
-			Name:      capiAwsProviderDeploymentName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &capiAwsProviderDeployment, func() error {
-		return reconcileCAPIAWSProviderDeployment(&capiAwsProviderDeployment, &capiAwsProviderServiceAccount, providerCredentialsSecret, "quay.io/hypershift/cluster-api-provider-aws:master")
+	capiAwsProviderDeployment := clusterapi.CAPIAWSProviderDeployment(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderDeployment, func() error {
+		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, capiAwsProviderServiceAccount, providerCredentialsSecret, "quay.io/hypershift/cluster-api-provider-aws:master")
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider deployment: %w", err)
@@ -693,93 +570,59 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
 func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
 	// Reconcile operator service account
-	controlPlaneOperatorServiceAccountName := controlplaneoperator.OperatorServiceAccountName(controlPlaneNamespace.Name)
-	controlPlaneOperatorServiceAccount := corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneOperatorServiceAccountName.Namespace,
-			Name:      controlPlaneOperatorServiceAccountName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneOperatorServiceAccount, NoopReconcile)
+	controlPlaneOperatorServiceAccount := controlplaneoperator.OperatorServiceAccount(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorServiceAccount, NoopReconcile)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
 	}
 
 	// Reconcile operator cluster role
-	controlPlaneOperatorClusterRoleName := controlplaneoperator.OperatorClusterRoleName()
-	controlPlaneOperatorClusterRole := rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: controlPlaneOperatorClusterRoleName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneOperatorClusterRole, func() error {
-		return reconcileControlPlaneOperatorClusterRole(&controlPlaneOperatorClusterRole)
+	controlPlaneOperatorClusterRole := controlplaneoperator.OperatorClusterRole()
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRole, func() error {
+		return reconcileControlPlaneOperatorClusterRole(controlPlaneOperatorClusterRole)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator cluster role: %w", err)
 	}
 
 	// Reconcile operator cluster role binding
-	controlPlaneOperatorClusterRoleBindingName := controlplaneoperator.OperatorClusterRoleBindingName(controlPlaneNamespace.Name)
-	controlPlaneOperatorClusterRoleBinding := rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: controlPlaneOperatorClusterRoleBindingName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneOperatorClusterRoleBinding, func() error {
-		return reconcileControlPlaneOperatorClusterRoleBinding(&controlPlaneOperatorClusterRoleBinding, &controlPlaneOperatorClusterRole, &controlPlaneOperatorServiceAccount)
+	controlPlaneOperatorClusterRoleBinding := controlplaneoperator.OperatorClusterRoleBinding(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRoleBinding, func() error {
+		return reconcileControlPlaneOperatorClusterRoleBinding(controlPlaneOperatorClusterRoleBinding, controlPlaneOperatorClusterRole, controlPlaneOperatorServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator clusterrolebinding: %w", err)
 	}
 
 	// Reconcile operator role
-	controlPlaneOperatorRoleName := controlplaneoperator.OperatorRoleName(controlPlaneNamespace.Name)
-	controlPlaneOperatorRole := rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneOperatorRoleName.Namespace,
-			Name:      controlPlaneOperatorRoleName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneOperatorRole, func() error {
-		return reconcileControlPlaneOperatorRole(&controlPlaneOperatorRole)
+	controlPlaneOperatorRole := controlplaneoperator.OperatorRole(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorRole, func() error {
+		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator clusterrole: %w", err)
 	}
 
 	// Reconcile operator role binding
-	controlPlaneOperatorRoleBindingName := controlplaneoperator.OperatorRoleBindingName(controlPlaneNamespace.Name)
-	controlPlaneOperatorRoleBinding := rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneOperatorRoleBindingName.Namespace,
-			Name:      controlPlaneOperatorRoleBindingName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneOperatorRoleBinding, func() error {
-		return reconcileControlPlaneOperatorRoleBinding(&controlPlaneOperatorRoleBinding, &controlPlaneOperatorRole, &controlPlaneOperatorServiceAccount)
+	controlPlaneOperatorRoleBinding := controlplaneoperator.OperatorRoleBinding(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorRoleBinding, func() error {
+		return reconcileControlPlaneOperatorRoleBinding(controlPlaneOperatorRoleBinding, controlPlaneOperatorRole, controlPlaneOperatorServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
 	}
 
 	// Reconcile operator deployment
-	controlPlaneOperatorDeploymentName := controlplaneoperator.OperatorDeploymentName(controlPlaneNamespace.Name)
-	controlPlaneOperatorDeployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneOperatorDeploymentName.Namespace,
-			Name:      controlPlaneOperatorDeploymentName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(&controlPlaneOperatorDeployment, r.OperatorImage, &controlPlaneOperatorServiceAccount)
+	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, r.OperatorImage, controlPlaneOperatorServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -792,50 +635,32 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 // both the HostedCluster and the HostedControlPlane which the autoscaler takes
 // inputs from.
 func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
-	controlPlaneNamespace := &corev1.Namespace{}
-	err := r.Client.Get(ctx, manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name), controlPlaneNamespace)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
 	// Reconcile autoscaler role
-	autoScalerRoleName := autoscaler.AutoScalerRoleName(controlPlaneNamespace.Name)
-	autoScalerRole := rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: autoScalerRoleName.Namespace,
-			Name:      autoScalerRoleName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &autoScalerRole, func() error {
-		return reconcileAutoScalerRole(&autoScalerRole)
+	autoScalerRole := autoscaler.AutoScalerRole(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerRole, func() error {
+		return reconcileAutoScalerRole(autoScalerRole)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler role: %w", err)
 	}
 
 	// Reconcile autoscaler service account
-	autoScalerServiceAccountName := autoscaler.AutoScalerServiceAccountName(controlPlaneNamespace.Name)
-	autoScalerServiceAccount := corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: autoScalerServiceAccountName.Namespace,
-			Name:      autoScalerServiceAccountName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &autoScalerServiceAccount, NoopReconcile)
+	autoScalerServiceAccount := autoscaler.AutoScalerServiceAccount(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerServiceAccount, NoopReconcile)
 	if err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
 	}
 
 	// Reconcile autoscaler role binding
-	autoScalerRoleBindingName := autoscaler.AutoScalerRoleBindingName(controlPlaneNamespace.Name)
-	autoScalerRoleBinding := rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: autoScalerRoleBindingName.Namespace,
-			Name:      autoScalerRoleBindingName.Name,
-		},
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &autoScalerRoleBinding, func() error {
-		return reconcileAutoScalerRoleBinding(&autoScalerRoleBinding, &autoScalerRole, &autoScalerServiceAccount)
+	autoScalerRoleBinding := autoscaler.AutoScalerRoleBinding(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerRoleBinding, func() error {
+		return reconcileAutoScalerRoleBinding(autoScalerRoleBinding, autoScalerRole, autoScalerServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler role binding: %w", err)
@@ -857,15 +682,9 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 		}
 
 		// Reconcile autoscaler deployment
-		autoScalerDeploymentName := autoscaler.AutoScalerDeploymentName(controlPlaneNamespace.Name)
-		autoScalerDeployment := appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: autoScalerDeploymentName.Namespace,
-				Name:      autoScalerDeploymentName.Name,
-			},
-		}
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(&autoScalerDeployment, &autoScalerServiceAccount, hcpKubeConfigSecret, "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0")
+		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
+			return reconcileAutoScalerDeployment(autoScalerDeployment, autoScalerServiceAccount, hcpKubeConfigSecret, "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0")
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -1494,7 +1313,7 @@ func reconcileAutoScalerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Ro
 
 // computeClusterVersionStatus determines the ClusterVersionStatus of the
 // given HostedCluster and returns it.
-func computeClusterVersionStatus(clock Clock, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) *hyperv1.ClusterVersionStatus {
+func computeClusterVersionStatus(clock clock.Clock, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) *hyperv1.ClusterVersionStatus {
 	// If there's no history, rebuild it from scratch.
 	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 {
 		return &hyperv1.ClusterVersionStatus{
@@ -1621,7 +1440,7 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 }
 
 func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, hc *hyperv1.HostedCluster) (bool, error) {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceName(req.Namespace, req.Name).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(req.Namespace, req.Name).Name
 
 	nodePools, err := r.listNodePools(req.Namespace, req.Name)
 	if err != nil {

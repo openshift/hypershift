@@ -9,16 +9,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/clock"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
 var Now = metav1.NewTime(time.Now())
 var Later = metav1.NewTime(Now.Add(5 * time.Minute))
-
-type fixedClock struct{}
-
-func (_ fixedClock) Now() time.Time { return Now.Time }
 
 func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	// TODO: the spec/status comparison of control plane is a weak check; the
@@ -201,7 +198,7 @@ func TestComputeClusterVersionStatus(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			actualStatus := computeClusterVersionStatus(fixedClock{}, &test.Cluster, &test.ControlPlane)
+			actualStatus := computeClusterVersionStatus(clock.NewFakeClock(Now.Time), &test.Cluster, &test.ControlPlane)
 			if !equality.Semantic.DeepEqual(&test.ExpectedStatus, actualStatus) {
 				t.Errorf(cmp.Diff(&test.ExpectedStatus, actualStatus))
 			}

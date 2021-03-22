@@ -91,7 +91,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	}
 	cmd.WithNamespace(opts.Namespace).Run(objectNames...)
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceName(opts.Namespace, opts.Name).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
 
 	resources := []client.Object{
 		&appsv1.DaemonSet{},
