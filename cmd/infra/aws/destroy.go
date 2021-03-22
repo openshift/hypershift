@@ -50,6 +50,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) {
 	wait.PollUntil(5*time.Second, func() (bool, error) {
 		err := o.DestroyInfra(ctx)
 		if err != nil {
+			log.Error(err, "error destroying infra")
 			return false, nil
 		}
 		return true, nil
