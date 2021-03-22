@@ -26,19 +26,20 @@ import (
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type Options struct {
-	Namespace          string
-	Name               string
-	ReleaseImage       string
-	PullSecretFile     string
-	AWSCredentialsFile string
-	SSHKeyFile         string
-	NodePoolReplicas   int
-	Render             bool
-	InfraID            string
-	InfrastructureJSON string
-	IAMJSON            string
-	InstanceType       string
-	Region             string
+	Namespace                 string
+	Name                      string
+	ReleaseImage              string
+	PullSecretFile            string
+	AWSCredentialsFile        string
+	ClusterAWSCredentialsFile string
+	SSHKeyFile                string
+	NodePoolReplicas          int
+	Render                    bool
+	InfraID                   string
+	InfrastructureJSON        string
+	IAMJSON                   string
+	InstanceType              string
+	Region                    string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -58,25 +59,27 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:          "clusters",
-		Name:               "example",
-		ReleaseImage:       releaseImage,
-		PullSecretFile:     "",
-		AWSCredentialsFile: "",
-		SSHKeyFile:         "",
-		NodePoolReplicas:   2,
-		Render:             false,
-		InfrastructureJSON: "",
-		Region:             "us-east-1",
-		InfraID:            "",
-		InstanceType:       "m4.large",
+		Namespace:                 "clusters",
+		Name:                      "example",
+		ReleaseImage:              releaseImage,
+		PullSecretFile:            "",
+		AWSCredentialsFile:        "",
+		ClusterAWSCredentialsFile: "",
+		SSHKeyFile:                "",
+		NodePoolReplicas:          2,
+		Render:                    false,
+		InfrastructureJSON:        "",
+		Region:                    "us-east-1",
+		InfraID:                   "",
+		InstanceType:              "m4.large",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Path to a pull secret (required)")
-	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file used for infrastructure (required)")
+	cmd.Flags().StringVar(&opts.ClusterAWSCredentialsFile, "cluster-aws-creds", opts.ClusterAWSCredentialsFile, "Path to an AWS credentials file used for the hosted cluster. If unspecified, use aws-creds by default.")
 	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Path to an SSH key file")
 	cmd.Flags().IntVar(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If >0, create a default NodePool with this many replicas")
 	cmd.Flags().BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying")
@@ -108,10 +111,25 @@ func CreateCluster(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("failed to read pull secret file: %w", err)
 	}
+
 	awsCredentials, err := ioutil.ReadFile(opts.AWSCredentialsFile)
 	if err != nil {
 		return fmt.Errorf("failed to read aws credentials: %w", err)
 	}
+
+	var clusterAwsCredentials []byte
+	if len(opts.ClusterAWSCredentialsFile) > 0 {
+		creds, err := ioutil.ReadFile(opts.ClusterAWSCredentialsFile)
+		if err != nil {
+			return fmt.Errorf("failed to read cluster aws credentials: %w", err)
+		}
+		clusterAwsCredentials = creds
+		log.Info("using cluster aws credentials", "file", opts.ClusterAWSCredentialsFile)
+	} else {
+		clusterAwsCredentials = awsCredentials
+		log.Info("using cluster aws credentials", "file", opts.AWSCredentialsFile)
+	}
+
 	var sshKey []byte
 	if len(opts.SSHKeyFile) > 0 {
 		key, err := ioutil.ReadFile(opts.SSHKeyFile)
@@ -177,7 +195,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		Name:             opts.Name,
 		ReleaseImage:     opts.ReleaseImage,
 		PullSecret:       pullSecret,
-		AWSCredentials:   awsCredentials,
+		AWSCredentials:   clusterAwsCredentials,
 		SigningKey:       iamInfo.ServiceAccountSigningKey,
 		IssuerURL:        iamInfo.IssuerURL,
 		SSHKey:           sshKey,
