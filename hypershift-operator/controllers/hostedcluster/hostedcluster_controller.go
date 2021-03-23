@@ -204,16 +204,16 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the shared provider credentials secret by resolving the reference
 	// from the HostedCluster and syncing the secret in the control plane namespace.
-	var hostedClusterProviderCredsSecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.ProviderCreds.Name}, &hostedClusterProviderCredsSecret)
+	var cloudControllerCreds corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name}, &cloudControllerCreds)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.ProviderCreds.Name, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name, err)
 	}
 	controlPlaneProviderCredsSecret := controlplaneoperator.ProviderCredentials(controlPlaneNamespace.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneProviderCredsSecret, func() error {
-		hostedClusterProviderCredsData, hasProviderCredsData := hostedClusterProviderCredsSecret.Data["credentials"]
+		hostedClusterProviderCredsData, hasProviderCredsData := cloudControllerCreds.Data["credentials"]
 		if !hasProviderCredsData {
-			return fmt.Errorf("hostedcluster provider credentials secret %q must have a credentials key", hostedClusterProviderCredsSecret.Name)
+			return fmt.Errorf("hostedcluster provider credentials secret %q must have a credentials key", cloudControllerCreds.Name)
 		}
 		controlPlaneProviderCredsSecret.Type = corev1.SecretTypeOpaque
 		if controlPlaneProviderCredsSecret.Data == nil {
@@ -405,9 +405,12 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
 	}
 
-	if providerCreds != nil {
-		hcp.Spec.ProviderCreds = corev1.LocalObjectReference{
-			Name: providerCreds.Name,
+	if hcluster.Spec.Platform.AWS != nil {
+		hcp.Spec.Platform.AWS = hcluster.Spec.Platform.AWS.DeepCopy()
+		if providerCreds != nil {
+			hcp.Spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{
+				Name: providerCreds.Name,
+			}
 		}
 	}
 
@@ -434,7 +437,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
 	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
-	hcp.Spec.Platform = hcluster.Spec.Platform
 	hcp.Spec.KubeConfig = &hyperv1.KubeconfigSecretRef{
 		Name: fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
 		Key:  "value",
@@ -524,12 +526,6 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
-	providerCredentialsSecret := controlplaneoperator.ProviderCredentials(controlPlaneNamespace.Name)
-	err = r.Client.Get(ctx, client.ObjectKeyFromObject(providerCredentialsSecret), providerCredentialsSecret)
-	if err != nil {
-		return fmt.Errorf("failed to get provider credentials secret: %w", err)
-	}
-
 	// Reconcile CAPI AWS provider role
 	capiAwsProviderRole := clusterapi.CAPIAWSProviderRole(controlPlaneNamespace.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderRole, func() error {
@@ -556,9 +552,14 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 	}
 
 	// Reconcile CAPI AWS provider deployment
+	var nodePoolCredsSecret corev1.Secret
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.AWS.NodePoolManagementCreds.Name}, &nodePoolCredsSecret)
+	if err != nil {
+		return fmt.Errorf("failed to get node pool provider creds: %w", err)
+	}
 	capiAwsProviderDeployment := clusterapi.CAPIAWSProviderDeployment(controlPlaneNamespace.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderDeployment, func() error {
-		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, capiAwsProviderServiceAccount, providerCredentialsSecret, "quay.io/hypershift/cluster-api-provider-aws:master")
+		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, capiAwsProviderServiceAccount, &nodePoolCredsSecret, "quay.io/hypershift/cluster-api-provider-aws:master")
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider deployment: %w", err)

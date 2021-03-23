@@ -74,6 +74,13 @@ spec:
                   aws:
                     description: AWS contains AWS-specific settings for the HostedCluster
                     properties:
+                      kubeCloudControllerCreds:
+                        description: KubeCloudControllerCreds is a reference to a secret containing cloud credentials with permissions matching the Kube cloud controller policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
                       nodePoolDefaults:
                         description: NodePoolDefaults specifies the default platform
                         properties:
@@ -150,6 +157,13 @@ spec:
                         required:
                         - instanceType
                         type: object
+                      nodePoolManagementCreds:
+                        description: NodePoolManagementCreds is a reference to a secret containing cloud credentials with permissions matching the noe pool management policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
                       region:
                         description: Region is the AWS region for the cluster
                         type: string
@@ -189,16 +203,11 @@ spec:
                         description: VPC specifies the VPC used for the cluster
                         type: string
                     required:
+                    - kubeCloudControllerCreds
+                    - nodePoolManagementCreds
                     - region
                     - vpc
                     type: object
-                type: object
-              providerCreds:
-                description: ProviderCreds is a reference to a secret containing cloud account info
-                properties:
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
-                    type: string
                 type: object
               pullSecret:
                 description: PullSecret is a pull secret injected into the container runtime of guest workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
@@ -235,7 +244,6 @@ spec:
             - issuerURL
             - networking
             - platform
-            - providerCreds
             - pullSecret
             - release
             - signingKey

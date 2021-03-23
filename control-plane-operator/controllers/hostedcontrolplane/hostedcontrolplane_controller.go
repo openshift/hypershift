@@ -587,7 +587,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 			}
 		}
 	}
-	params.ProviderCredsSecretName = hcp.Spec.ProviderCreds.Name
+	params.ProviderCredsSecretName = hcp.Spec.Platform.AWS.KubeCloudControllerCreds.Name
 	params.InternalAPIPort = APIServerPort
 	params.IssuerURL = hcp.Spec.IssuerURL
 	params.EtcdClientName = "etcd-client"

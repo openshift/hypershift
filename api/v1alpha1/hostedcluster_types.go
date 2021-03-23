@@ -29,9 +29,6 @@ type HostedClusterSpec struct {
 
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 
-	// ProviderCreds is a reference to a secret containing cloud account info
-	ProviderCreds corev1.LocalObjectReference `json:"providerCreds"`
-
 	// Networking contains network-specific settings for this cluster
 	Networking ClusterNetworking `json:"networking"`
 
@@ -71,6 +68,18 @@ type AWSPlatformSpec struct {
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
 	Roles []AWSRoleCredentials `json:"roles,omitempty"`
+
+	// KubeCloudControllerCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the Kube cloud controller policy.
+	// The secret should have exactly one key, `credentials`, whose value is
+	// an AWS credentials file.
+	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
+
+	// NodePoolManagementCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the noe pool management policy.
+	// The secret should have exactly one key, `credentials`, whose value is
+	// an AWS credentials file.
+	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 }
 
 type AWSRoleCredentials struct {
