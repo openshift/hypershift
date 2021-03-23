@@ -91,7 +91,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	targetNamespace := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name).Name
+	targetNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 	// Ignore deleted nodePools, this can happen when foregroundDeletion
 	// is enabled
 	if !nodePool.DeletionTimestamp.IsZero() {
@@ -178,7 +178,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Generate scalable resource for nodePool
-	targetNamespace := manifests.HostedControlPlaneNamespaceName(hcluster.Namespace, hcluster.Name).Name
+	targetNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 	ami, err := r.ImageProvider.Image(hcluster)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)

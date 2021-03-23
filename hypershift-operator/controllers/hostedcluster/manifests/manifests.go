@@ -3,25 +3,34 @@ package manifests
 import (
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/types"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
-func HostedControlPlaneNamespaceName(hostedClusterNamespace, hostedClusterName string) types.NamespacedName {
-	return types.NamespacedName{
-		Name: fmt.Sprintf("%s-%s", hostedClusterNamespace, hostedClusterName),
+func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName string) *corev1.Namespace {
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-%s", hostedClusterNamespace, hostedClusterName),
+		},
 	}
 }
 
-func KubeConfigSecretName(hostedClusterNamespace string, hostedClusterName string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: hostedClusterNamespace,
-		Name:      hostedClusterName + "-admin-kubeconfig",
+func KubeConfigSecret(hostedClusterNamespace string, hostedClusterName string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedClusterNamespace,
+			Name:      hostedClusterName + "-admin-kubeconfig",
+		},
 	}
 }
 
-func DefaultNodePoolName(hostedClusterNamespace, hostedClusterName string) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: hostedClusterNamespace,
-		Name:      hostedClusterName,
+func DefaultNodePool(hostedClusterNamespace, hostedClusterName string) *hyperv1.NodePool {
+	return &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedClusterNamespace,
+			Name:      hostedClusterName,
+		},
 	}
 }
