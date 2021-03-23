@@ -78,19 +78,17 @@ var (
 )
 
 type InfrastructureStatus struct {
-	APIAddress              string
-	OAuthAddress            string
-	VPNAddress              string
-	OpenShiftAPIAddress     string
-	OauthAPIServerAddress   string
-	IgnitionProviderAddress string
+	APIAddress            string
+	OAuthAddress          string
+	VPNAddress            string
+	OpenShiftAPIAddress   string
+	OauthAPIServerAddress string
 }
 
 func (s InfrastructureStatus) IsReady() bool {
 	return len(s.APIAddress) > 0 &&
 		len(s.OAuthAddress) > 0 &&
-		len(s.VPNAddress) > 0 &&
-		len(s.IgnitionProviderAddress) > 0
+		len(s.VPNAddress) > 0
 }
 
 type HostedControlPlaneReconciler struct {
@@ -398,13 +396,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		return status, fmt.Errorf("cannot create router shard: %w", err)
 	}
 
-	r.Log.Info("Creating ignition provider route")
-	ignitionRoute := createIgnitionServerRoute(targetNamespace)
-	ignitionRoute.OwnerReferences = ensureHCPOwnerRef(hcp, ignitionRoute.OwnerReferences)
-	if err := r.Create(ctx, ignitionRoute); err != nil && !apierrors.IsAlreadyExists(err) {
-		return status, fmt.Errorf("failed to create ignition route: %w", err)
-	}
-
 	r.Log.Info("Creating oauth server route")
 	oauthRoute := createOauthServerRoute(targetNamespace)
 	oauthRoute.OwnerReferences = ensureHCPOwnerRef(hcp, oauthRoute.OwnerReferences)
@@ -429,13 +420,6 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 		return status, fmt.Errorf("failed to get service: %w", err)
 	}
 	status.VPNAddress = vpnAddress
-
-	ignitionAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(ignitionRoute))
-	if err != nil {
-		return status, fmt.Errorf("failed get get route address: %w", err)
-	}
-	status.IgnitionProviderAddress = ignitionAddress
-
 	status.OpenShiftAPIAddress = openshiftAPIService.Spec.ClusterIP
 	status.OauthAPIServerAddress = oauthAPIService.Spec.ClusterIP
 
@@ -446,10 +430,6 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	r.Log.Info("ensuring control plane for cluster", "cluster", hcp.Name)
 
 	targetNamespace := hcp.GetNamespace()
-	version, err := semver.Parse(releaseImage.Version())
-	if err != nil {
-		return fmt.Errorf("cannot parse release version (%s): %v", releaseImage.Version(), err)
-	}
 
 	// Create the configmap with the pull secret for the guest cluster
 	var pullSecret corev1.Secret
@@ -502,12 +482,6 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return err
 	}
 	r.Log.Info("successfully applied all manifests")
-
-	userDataSecret := generateUserDataSecret(hcp.GetName(), hcp.GetNamespace(), infraStatus.IgnitionProviderAddress, version)
-	if err := r.Create(ctx, userDataSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate user data secret: %w", err)
-	}
-	userDataSecret.OwnerReferences = ensureHCPOwnerRef(hcp, userDataSecret.OwnerReferences)
 
 	kubeadminPassword, err := generateKubeadminPassword()
 	if err != nil {
@@ -605,7 +579,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIAddress
 	params.OauthAPIClusterIP = infraStatus.OauthAPIServerAddress
 	params.BaseDomain = baseDomain
-	params.MachineConfigServerAddress = infraStatus.IgnitionProviderAddress
 	params.CloudProvider = cloudProvider(hcp)
 	params.PlatformType = platformType(hcp)
 	params.InfraID = hcp.Spec.InfraID
@@ -652,16 +625,15 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 	if needsPkiSecret {
 		pkiParams := &render.PKIParams{
-			ExternalAPIAddress:         infraStatus.APIAddress,
-			NodeInternalAPIServerIP:    DefaultAPIServerIPAddress,
-			ExternalAPIPort:            APIServerPort,
-			InternalAPIPort:            APIServerPort,
-			ServiceCIDR:                hcp.Spec.ServiceCIDR,
-			ExternalOauthAddress:       infraStatus.OAuthAddress,
-			IngressSubdomain:           "apps." + baseDomain,
-			MachineConfigServerAddress: infraStatus.IgnitionProviderAddress,
-			ExternalOpenVPNAddress:     infraStatus.VPNAddress,
-			Namespace:                  targetNamespace,
+			ExternalAPIAddress:      infraStatus.APIAddress,
+			NodeInternalAPIServerIP: DefaultAPIServerIPAddress,
+			ExternalAPIPort:         APIServerPort,
+			InternalAPIPort:         APIServerPort,
+			ServiceCIDR:             hcp.Spec.ServiceCIDR,
+			ExternalOauthAddress:    infraStatus.OAuthAddress,
+			IngressSubdomain:        "apps." + baseDomain,
+			ExternalOpenVPNAddress:  infraStatus.VPNAddress,
+			Namespace:               targetNamespace,
 		}
 		r.Log.Info("generating PKI secret data")
 		data, err := pki.GeneratePKI(pkiParams)
@@ -951,21 +923,6 @@ func ensureDefaultIngressControllerSelector(c client.Client) error {
 	return nil
 }
 
-func createIgnitionServerRoute(namespace string) *routev1.Route {
-	return &routev1.Route{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      "ignition-provider",
-		},
-		Spec: routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: "machine-config-server",
-			},
-		},
-	}
-}
-
 func createOauthServerRoute(namespace string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1120,30 +1077,6 @@ func applyManifests(ctx context.Context, c client.Client, log logr.Logger, names
 		return fmt.Errorf("failed to apply some manifests: %w", errs)
 	}
 	return nil
-}
-
-func generateUserDataSecret(name, namespace string, ignitionProviderAddr string, version semver.Version) *corev1.Secret {
-	secret := &corev1.Secret{}
-	secret.Name = fmt.Sprintf("%s-user-data", name)
-	secret.Namespace = namespace
-
-	disableTemplatingValue := []byte(base64.StdEncoding.EncodeToString([]byte("true")))
-	var userDataValue []byte
-
-	// Clear any version modifiers for this comparison
-	version.Pre = nil
-	version.Build = nil
-	if version.GTE(version46) {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr))
-	} else {
-		userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionProviderAddr))
-	}
-
-	secret.Data = map[string][]byte{
-		"disableTemplating": disableTemplatingValue,
-		"value":             userDataValue,
-	}
-	return secret
 }
 
 func generateKubeadminPassword() (string, error) {

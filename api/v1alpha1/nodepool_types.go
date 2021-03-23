@@ -8,6 +8,7 @@ const (
 	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
 	NodePoolAsExpectedConditionReason       = "AsExpected"
 	NodePoolValidationFailedConditionReason = "ValidationFailed"
+	NodePoolUpgradingConditionType          = "Upgrading"
 )
 
 func init() {
@@ -24,6 +25,8 @@ func init() {
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
 // +kubebuilder:printcolumn:name="NodeCount",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
 // +kubebuilder:printcolumn:name="Autoscaling",type="string",JSONPath=".status.conditions[?(@.type==\"AutoscalingEnabled\")].status",description="Autoscaling Enabled"
+// +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Current version"
+// +kubebuilder:printcolumn:name="Upgrading",type="string",JSONPath=".status.conditions[?(@.type==\"Upgrading\")].status",description="Upgrade in progress"
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -46,12 +49,12 @@ type NodePoolSpec struct {
 	Management NodePoolManagement `json:"nodePoolManagement"`
 	Platform   NodePoolPlatform   `json:"platform"`
 
-	// Version is the semantic version of the release applied by
-	// the hosted control plane operator.
+	// +kubebuilder:validation:Optional
+	// Release specifies the release image to use for this NodePool
 	// For a nodePool a given version dictates the ignition config and
 	// an image artifact e.g an AMI in AWS.
-	// +kubebuilder:validation:Optional
-	Version string `json:"version,omitempty"`
+	// Release specifies the release image to use for this HostedCluster
+	Release Release `json:"release"`
 }
 
 // NodePoolStatus defines the observed state of NodePool

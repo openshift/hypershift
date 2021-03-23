@@ -260,3 +260,14 @@ func (o HyperShiftExternalInfraClustersCustomResourceDefinition) Build() *apiext
 	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
 	return crd
 }
+
+type HyperShiftMachineConfigServersCustomResourceDefinition struct{}
+
+func (o HyperShiftMachineConfigServersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
+	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_machineconfigservers.yaml")
+	if crd.Labels == nil {
+		crd.Labels = map[string]string{}
+	}
+	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
+	return crd
+}
