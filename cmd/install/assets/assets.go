@@ -11,6 +11,7 @@ import (
 
 //go:embed cluster-api/*
 //go:embed hypershift-operator/*
+//go:embed etcd/*
 var content embed.FS
 
 func getContents(file string) []byte {

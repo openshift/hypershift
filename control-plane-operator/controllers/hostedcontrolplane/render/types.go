@@ -37,6 +37,10 @@ type PKIParams struct {
 
 	// Common
 	Namespace string // Used to generate internal DNS names for services.
+
+	// TEMPORARY - this is here during the transition away from templates in the hosted control plane controller
+	RootCACert []byte
+	RootCAKey  []byte
 }
 
 type ClusterParams struct {

@@ -7,7 +7,6 @@ import "embed"
 //go:embed cluster-bootstrap/*
 //go:embed cluster-version-operator/*
 //go:embed common/*
-//go:embed etcd/*
 //go:embed hosted-cluster-config-operator/*
 //go:embed ignition-configs/*
 //go:embed install-config/*

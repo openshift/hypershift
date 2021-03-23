@@ -58,6 +58,12 @@ api:
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
+# Target to generate deepcopy code and CRDs for etcd types in thirdparty package
+.PHONY: etcd-api
+etcd-api:
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./thirdparty/etcd/..."
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./thirdparty/etcd/..." output:crd:artifacts:config=cmd/install/assets/etcd
+
 # Run tests
 .PHONY: test
 test: build
