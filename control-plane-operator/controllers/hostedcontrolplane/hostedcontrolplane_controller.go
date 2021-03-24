@@ -556,11 +556,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if err != nil {
 		return nil, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
-	var cloudCreds corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.ProviderCreds.Name}, &cloudCreds)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get provider credentials secret %s: %w", hcp.Spec.ProviderCreds.Name, err)
-	}
 
 	params := render.NewClusterParams()
 	params.Namespace = targetNamespace
@@ -592,7 +587,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 			}
 		}
 	}
-	params.CloudCredentials = string(cloudCreds.Data["credentials"])
 	params.ProviderCredsSecretName = hcp.Spec.ProviderCreds.Name
 	params.InternalAPIPort = APIServerPort
 	params.IssuerURL = hcp.Spec.IssuerURL
@@ -688,28 +682,27 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 
 	kubeAPIServerParams := &render.KubeAPIServerParams{
-		PodCIDR:                 params.PodCIDR,
-		ServiceCIDR:             params.ServiceCIDR,
-		ExternalAPIAddress:      params.ExternalAPIAddress,
-		APIServerAuditEnabled:   params.APIServerAuditEnabled,
-		CloudProvider:           params.CloudProvider,
-		EtcdClientName:          params.EtcdClientName,
-		DefaultFeatureGates:     params.DefaultFeatureGates,
-		ExtraFeatureGates:       params.ExtraFeatureGates,
-		IngressSubdomain:        params.IngressSubdomain,
-		InternalAPIPort:         params.InternalAPIPort,
-		IssuerURL:               params.IssuerURL,
-		NamedCerts:              params.NamedCerts,
-		PKI:                     pkiSecret.Data,
-		APIAvailabilityPolicy:   render.KubeAPIServerParamsAvailabilityPolicy(params.APIAvailabilityPolicy),
-		ClusterID:               params.ClusterID,
-		Images:                  releaseImage.ComponentImages(),
-		ApiserverLivenessPath:   params.ApiserverLivenessPath,
-		APINodePort:             params.APINodePort,
-		ExternalOauthPort:       params.ExternalOauthPort,
-		ExternalOauthDNSName:    params.ExternalOauthDNSName,
-		ProviderCredsSecretName: hcp.Spec.ProviderCreds.Name,
-		InfraID:                 hcp.Spec.InfraID,
+		PodCIDR:               params.PodCIDR,
+		ServiceCIDR:           params.ServiceCIDR,
+		ExternalAPIAddress:    params.ExternalAPIAddress,
+		APIServerAuditEnabled: params.APIServerAuditEnabled,
+		CloudProvider:         params.CloudProvider,
+		EtcdClientName:        params.EtcdClientName,
+		DefaultFeatureGates:   params.DefaultFeatureGates,
+		ExtraFeatureGates:     params.ExtraFeatureGates,
+		IngressSubdomain:      params.IngressSubdomain,
+		InternalAPIPort:       params.InternalAPIPort,
+		IssuerURL:             params.IssuerURL,
+		NamedCerts:            params.NamedCerts,
+		PKI:                   pkiSecret.Data,
+		APIAvailabilityPolicy: render.KubeAPIServerParamsAvailabilityPolicy(params.APIAvailabilityPolicy),
+		ClusterID:             params.ClusterID,
+		Images:                releaseImage.ComponentImages(),
+		ApiserverLivenessPath: params.ApiserverLivenessPath,
+		APINodePort:           params.APINodePort,
+		ExternalOauthPort:     params.ExternalOauthPort,
+		ExternalOauthDNSName:  params.ExternalOauthDNSName,
+		InfraID:               hcp.Spec.InfraID,
 	}
 	if hcp.Spec.Platform.AWS != nil {
 		kubeAPIServerParams.AWSRegion = hcp.Spec.Platform.AWS.Region

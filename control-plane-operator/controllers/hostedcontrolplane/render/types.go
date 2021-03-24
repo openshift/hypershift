@@ -102,7 +102,6 @@ type ClusterParams struct {
 	SSHKey                                 string                 `json:"sshKey"`
 	InfraID                                string                 `json:"infraID"`
 	ProviderCredsSecretName                string                 `json:"providerCredsSecretName"`
-	CloudCredentials                       string                 `json:"cloudCredentials"`
 	DefaultFeatureGates                    []string
 
 	// AWS params
