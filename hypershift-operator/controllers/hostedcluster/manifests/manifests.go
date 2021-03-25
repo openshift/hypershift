@@ -34,3 +34,21 @@ func DefaultNodePool(hostedClusterNamespace, hostedClusterName string) *hyperv1.
 		},
 	}
 }
+
+func AWSKubeCloudControllerCreds(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "provider-creds",
+		},
+	}
+}
+
+func AWSNodePoolManagementCreds(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "node-provider-creds",
+		},
+	}
+}

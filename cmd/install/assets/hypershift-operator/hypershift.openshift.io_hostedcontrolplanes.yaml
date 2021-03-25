@@ -59,6 +59,13 @@ spec:
                   aws:
                     description: AWS contains AWS-specific settings for the HostedCluster
                     properties:
+                      kubeCloudControllerCreds:
+                        description: KubeCloudControllerCreds is a reference to a secret containing cloud credentials with permissions matching the Kube cloud controller policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
                       nodePoolDefaults:
                         description: NodePoolDefaults specifies the default platform
                         properties:
@@ -135,6 +142,13 @@ spec:
                         required:
                         - instanceType
                         type: object
+                      nodePoolManagementCreds:
+                        description: NodePoolManagementCreds is a reference to a secret containing cloud credentials with permissions matching the noe pool management policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
                       region:
                         description: Region is the AWS region for the cluster
                         type: string
@@ -174,19 +188,21 @@ spec:
                         description: VPC specifies the VPC used for the cluster
                         type: string
                     required:
+                    - kubeCloudControllerCreds
+                    - nodePoolManagementCreds
                     - region
                     - vpc
                     type: object
+                  type:
+                    description: Type is the underlying infrastructure provider for the cluster.
+                    enum:
+                    - AWS
+                    type: string
+                required:
+                - type
                 type: object
               podCIDR:
                 type: string
-              providerCreds:
-                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
-                properties:
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
-                    type: string
-                type: object
               pullSecret:
                 description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
                 properties:
@@ -218,7 +234,6 @@ spec:
             - machineCIDR
             - platform
             - podCIDR
-            - providerCreds
             - pullSecret
             - releaseImage
             - serviceCIDR

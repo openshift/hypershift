@@ -577,9 +577,12 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.CloudProvider = cloudProvider(hcp)
 	params.PlatformType = platformType(hcp)
 	params.InfraID = hcp.Spec.InfraID
-	if hcp.Spec.Platform.AWS != nil {
+
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
 		params.AWSRegion = hcp.Spec.Platform.AWS.Region
 		params.AWSVPCID = hcp.Spec.Platform.AWS.VPC
+		params.ProviderCredsSecretName = hcp.Spec.Platform.AWS.KubeCloudControllerCreds.Name
 		if hcp.Spec.Platform.AWS.NodePoolDefaults != nil {
 			params.AWSZone = hcp.Spec.Platform.AWS.NodePoolDefaults.Zone
 			if hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID != nil {
@@ -587,7 +590,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 			}
 		}
 	}
-	params.ProviderCredsSecretName = hcp.Spec.ProviderCreds.Name
+
 	params.InternalAPIPort = APIServerPort
 	params.IssuerURL = hcp.Spec.IssuerURL
 	params.EtcdClientName = "etcd-client"

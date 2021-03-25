@@ -202,94 +202,124 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
 	}
 
-	// Reconcile the shared provider credentials secret by resolving the reference
-	// from the HostedCluster and syncing the secret in the control plane namespace.
-	var hostedClusterProviderCredsSecret corev1.Secret
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.ProviderCreds.Name}, &hostedClusterProviderCredsSecret)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.ProviderCreds.Name, err)
+	// Reconcile the platform provider cloud controller credentials secret by resolving
+	// the reference from the HostedCluster and syncing the secret in the control
+	// plane namespace.
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		var src corev1.Secret
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name}, &src)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name, err)
+		}
+		dest := manifests.AWSKubeCloudControllerCreds(controlPlaneNamespace.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["credentials"]
+			if !srcHasData {
+				return fmt.Errorf("hostedcluster provider credentials secret %q must have a credentials key", src.Name)
+			}
+			dest.Type = corev1.SecretTypeOpaque
+			if dest.Data == nil {
+				dest.Data = map[string][]byte{}
+			}
+			dest.Data["credentials"] = srcData
+			return nil
+		})
 	}
-	controlPlaneProviderCredsSecret := controlplaneoperator.ProviderCredentials(controlPlaneNamespace.Name)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneProviderCredsSecret, func() error {
-		hostedClusterProviderCredsData, hasProviderCredsData := hostedClusterProviderCredsSecret.Data["credentials"]
-		if !hasProviderCredsData {
-			return fmt.Errorf("hostedcluster provider credentials secret %q must have a credentials key", hostedClusterProviderCredsSecret.Name)
+
+	// Reconcile the platform provider node pool management credentials secret by
+	// resolving  the reference from the HostedCluster and syncing the secret in
+	// the control plane namespace.
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		var src corev1.Secret
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.NodePoolManagementCreds.Name}, &src)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get node pool provider creds %s: %w", hcluster.Spec.Platform.AWS.NodePoolManagementCreds.Name, err)
 		}
-		controlPlaneProviderCredsSecret.Type = corev1.SecretTypeOpaque
-		if controlPlaneProviderCredsSecret.Data == nil {
-			controlPlaneProviderCredsSecret.Data = map[string][]byte{}
-		}
-		controlPlaneProviderCredsSecret.Data["credentials"] = hostedClusterProviderCredsData
-		return nil
-	})
+		dest := manifests.AWSNodePoolManagementCreds(controlPlaneNamespace.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["credentials"]
+			if !srcHasData {
+				return fmt.Errorf("node pool provider credentials secret %q is missing credentials key", src.Name)
+			}
+			dest.Type = corev1.SecretTypeOpaque
+			if dest.Data == nil {
+				dest.Data = map[string][]byte{}
+			}
+			dest.Data["credentials"] = srcData
+			return nil
+		})
+	}
 
 	// Reconcile the HostedControlPlane pull secret by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
-	var hostedClusterPullSecret corev1.Secret
-	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &hostedClusterPullSecret); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
+	{
+		var src corev1.Secret
+		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
+		}
+		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dst, func() error {
+			srcData, srcHasData := src.Data[".dockerconfigjson"]
+			if !srcHasData {
+				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+			}
+			dst.Type = corev1.SecretTypeDockerConfigJson
+			if dst.Data == nil {
+				dst.Data = map[string][]byte{}
+			}
+			dst.Data[".dockerconfigjson"] = srcData
+			return nil
+		})
 	}
-	controlPlanePullSecret := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlanePullSecret, func() error {
-		hostedClusterPullSecretData, hasPullSecretData := hostedClusterPullSecret.Data[".dockerconfigjson"]
-		if !hasPullSecretData {
-			return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", hostedClusterPullSecret.Name)
-		}
-		controlPlanePullSecret.Type = corev1.SecretTypeDockerConfigJson
-		if controlPlanePullSecret.Data == nil {
-			controlPlanePullSecret.Data = map[string][]byte{}
-		}
-		controlPlanePullSecret.Data[".dockerconfigjson"] = hostedClusterPullSecretData
-		return nil
-	})
 
 	// Reconcile the HostedControlPlane signing key by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
-	var hostedClusterSigningKeySecret corev1.Secret
-	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &hostedClusterSigningKeySecret); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get signing key %s: %w", hcluster.Spec.SigningKey.Name, err)
+	{
+		var src corev1.Secret
+		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &src); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get signing key %s: %w", hcluster.Spec.SigningKey.Name, err)
+		}
+		dest := controlplaneoperator.SigningKey(controlPlaneNamespace.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["key"]
+			if !srcHasData {
+				return fmt.Errorf("hostedcluster signing key %q must have a key key", src.Name)
+			}
+			dest.Type = corev1.SecretTypeOpaque
+			if dest.Data == nil {
+				dest.Data = map[string][]byte{}
+			}
+			dest.Data["key"] = srcData
+			return nil
+		})
 	}
-	controlPlaneSigningKeySecret := controlplaneoperator.SigningKey(controlPlaneNamespace.Name)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSigningKeySecret, func() error {
-		hostedClusterSigningKeySecretData, hasSigningKeyData := hostedClusterSigningKeySecret.Data["key"]
-		if !hasSigningKeyData {
-			return fmt.Errorf("hostedcluster signing key %q must have a key key", hostedClusterSigningKeySecret.Name)
-		}
-		controlPlaneSigningKeySecret.Type = corev1.SecretTypeOpaque
-		if controlPlaneSigningKeySecret.Data == nil {
-			controlPlaneSigningKeySecret.Data = map[string][]byte{}
-		}
-		controlPlaneSigningKeySecret.Data["key"] = hostedClusterSigningKeySecretData
-		return nil
-	})
 
 	// Reconcile the HostedControlPlane SSH secret by resolving the source secret reference
 	// from the HostedCluster and syncing the secret in the control plane namespace.
-	var controlPlaneSSHKeySecret *corev1.Secret
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
-		var hostedClusterSSHKeySecret corev1.Secret
-		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &hostedClusterSSHKeySecret)
+		var src corev1.Secret
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &src)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 		}
-		controlPlaneSSHKeySecret := controlplaneoperator.SSHKey(controlPlaneNamespace.Name)
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneSSHKeySecret, func() error {
-			hostedClusterSSHKeyData, hasSSHKeyData := hostedClusterSSHKeySecret.Data["id_rsa.pub"]
-			if !hasSSHKeyData {
-				return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", hostedClusterSSHKeySecret.Name)
+		dest := controlplaneoperator.SSHKey(controlPlaneNamespace.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["id_rsa.pub"]
+			if !srcHasData {
+				return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", src.Name)
 			}
-			controlPlaneSSHKeySecret.Type = corev1.SecretTypeOpaque
-			if controlPlaneSSHKeySecret.Data == nil {
-				controlPlaneSSHKeySecret.Data = map[string][]byte{}
+			dest.Type = corev1.SecretTypeOpaque
+			if dest.Data == nil {
+				dest.Data = map[string][]byte{}
 			}
-			controlPlaneSSHKeySecret.Data["id_rsa.pub"] = hostedClusterSSHKeyData
+			dest.Data["id_rsa.pub"] = srcData
 			return nil
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane ssh secret: %w", err)
 		}
-	} else {
-		controlPlaneSSHKeySecret = nil
 	}
 
 	// Reconcile the default node pool
@@ -318,7 +348,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the HostedControlPlane
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, controlPlaneProviderCredsSecret, controlPlanePullSecret, controlPlaneSigningKeySecret, controlPlaneSSHKeySecret)
+		return reconcileHostedControlPlane(hcp, hcluster)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -335,28 +365,28 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane kubeconfig if one is reported
 	if hcp.Status.KubeConfig != nil {
-		controlPlaneKubeConfigSecret := &corev1.Secret{
+		src := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: hcp.Namespace,
 				Name:      hcp.Status.KubeConfig.Name,
 			},
 		}
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneKubeConfigSecret), controlPlaneKubeConfigSecret)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret), err)
+			return ctrl.Result{}, fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
 		}
-		hostedClusterKubeConfigSecret := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedClusterKubeConfigSecret, func() error {
+		dest := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
 			key := hcp.Status.KubeConfig.Key
-			controlPlaneKubeConfigData, ok := controlPlaneKubeConfigSecret.Data[key]
-			if !ok {
-				return fmt.Errorf("controlplane kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(controlPlaneKubeConfigSecret), key)
+			srcData, srcHasData := src.Data[key]
+			if !srcHasData {
+				return fmt.Errorf("controlplane kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(src), key)
 			}
-			hostedClusterKubeConfigSecret.Type = corev1.SecretTypeOpaque
-			if hostedClusterKubeConfigSecret.Data == nil {
-				hostedClusterKubeConfigSecret.Data = map[string][]byte{}
+			dest.Type = corev1.SecretTypeOpaque
+			if dest.Data == nil {
+				dest.Data = map[string][]byte{}
 			}
-			hostedClusterKubeConfigSecret.Data["kubeconfig"] = controlPlaneKubeConfigData
+			dest.Data["kubeconfig"] = srcData
 			return nil
 		})
 		if err != nil {
@@ -394,7 +424,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, providerCreds *corev1.Secret, pullSecret *corev1.Secret, signingKey *corev1.Secret, sshKey *corev1.Secret) error {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
 	// Always initialize the HostedControlPlane with an image matching
 	// the HostedCluster.
 	if hcp.ObjectMeta.CreationTimestamp.IsZero() {
@@ -405,39 +435,32 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
 	}
 
-	if providerCreds != nil {
-		hcp.Spec.ProviderCreds = corev1.LocalObjectReference{
-			Name: providerCreds.Name,
-		}
+	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
+	hcp.Spec.SigningKey = corev1.LocalObjectReference{Name: controlplaneoperator.SigningKey(hcp.Namespace).Name}
+	if len(hcluster.Spec.SSHKey.Name) > 0 {
+		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
 	}
-
-	if pullSecret != nil {
-		hcp.Spec.PullSecret = corev1.LocalObjectReference{
-			Name: pullSecret.Name,
-		}
-	}
-
-	if signingKey != nil {
-		hcp.Spec.SigningKey = corev1.LocalObjectReference{
-			Name: signingKey.Name,
-		}
-	}
-
-	if sshKey != nil {
-		hcp.Spec.SSHKey = corev1.LocalObjectReference{
-			Name: sshKey.Name,
-		}
-	}
-
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
 	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
 	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
 	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
-	hcp.Spec.Platform = hcluster.Spec.Platform
 	hcp.Spec.KubeConfig = &hyperv1.KubeconfigSecretRef{
 		Name: fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
 		Key:  "value",
+	}
+
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		hcp.Spec.Platform.Type = hyperv1.AWSPlatform
+		hcp.Spec.Platform.AWS = hcluster.Spec.Platform.AWS.DeepCopy()
+		hcp.Spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{
+			Name: manifests.AWSKubeCloudControllerCreds(hcp.Namespace).Name,
+		}
+		// TODO: Not actually used by the control plane operator...
+		hcp.Spec.Platform.AWS.NodePoolManagementCreds = corev1.LocalObjectReference{
+			Name: manifests.AWSNodePoolManagementCreds(hcp.Namespace).Name,
+		}
 	}
 
 	// Only update release image (triggering a new rollout) after existing rollouts
@@ -524,12 +547,6 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
-	providerCredentialsSecret := controlplaneoperator.ProviderCredentials(controlPlaneNamespace.Name)
-	err = r.Client.Get(ctx, client.ObjectKeyFromObject(providerCredentialsSecret), providerCredentialsSecret)
-	if err != nil {
-		return fmt.Errorf("failed to get provider credentials secret: %w", err)
-	}
-
 	// Reconcile CAPI AWS provider role
 	capiAwsProviderRole := clusterapi.CAPIAWSProviderRole(controlPlaneNamespace.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderRole, func() error {
@@ -558,7 +575,7 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 	// Reconcile CAPI AWS provider deployment
 	capiAwsProviderDeployment := clusterapi.CAPIAWSProviderDeployment(controlPlaneNamespace.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderDeployment, func() error {
-		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, capiAwsProviderServiceAccount, providerCredentialsSecret, "quay.io/hypershift/cluster-api-provider-aws:master")
+		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, capiAwsProviderServiceAccount, "quay.io/hypershift/cluster-api-provider-aws:master")
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider deployment: %w", err)
@@ -1050,7 +1067,7 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 	return nil
 }
 
-func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, providerCreds *corev1.Secret, image string) error {
+func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, image string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -1078,7 +1095,7 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, sa *corev
 						Name: "credentials",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: providerCreds.Name,
+								SecretName: manifests.AWSNodePoolManagementCreds(deployment.Namespace).Name,
 							},
 						},
 					},
