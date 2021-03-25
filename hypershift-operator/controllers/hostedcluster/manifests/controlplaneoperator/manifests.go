@@ -89,15 +89,6 @@ func ExternalInfraCluster(controlPlaneNamespace string, hostedClusterName string
 	}
 }
 
-func ProviderCredentials(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      "provider-creds",
-		},
-	}
-}
-
 func PullSecret(controlPlaneNamespace string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

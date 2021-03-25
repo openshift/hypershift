@@ -156,6 +156,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			IssuerURL:  o.IssuerURL,
 			SSHKey:     sshKeyReference,
 			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
 				AWS: &hyperv1.AWSPlatformSpec{
 					Region: o.AWS.Region,
 					Roles:  o.AWS.Roles,

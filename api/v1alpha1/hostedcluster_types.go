@@ -44,7 +44,15 @@ type ClusterNetworking struct {
 	MachineCIDR string `json:"machineCIDR"`
 }
 
+type PlatformType string
+
+const (
+	AWSPlatform PlatformType = "aws"
+)
+
 type PlatformSpec struct {
+	Type PlatformType `json:"type"`
+
 	// AWS contains AWS-specific settings for the HostedCluster
 	// +optional
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`

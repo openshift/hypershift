@@ -193,6 +193,10 @@ spec:
                     - region
                     - vpc
                     type: object
+                  type:
+                    type: string
+                required:
+                - type
                 type: object
               podCIDR:
                 type: string

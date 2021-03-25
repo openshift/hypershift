@@ -170,21 +170,19 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
-		mcsService.Spec = corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "http",
-					Protocol:   corev1.ProtocolTCP,
-					Port:       80,
-					TargetPort: intstr.FromInt(8080),
-					NodePort:   0,
-				},
+		mcsService.Spec.Ports = []corev1.ServicePort{
+			{
+				Name:       "http",
+				Protocol:   corev1.ProtocolTCP,
+				Port:       80,
+				TargetPort: intstr.FromInt(8080),
+				NodePort:   0,
 			},
-			Selector: map[string]string{
-				"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
-			},
-			Type: corev1.ServiceTypeClusterIP,
 		}
+		mcsService.Spec.Selector = map[string]string{
+			"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
+		}
+		mcsService.Spec.Type = corev1.ServiceTypeClusterIP
 		return nil
 	})
 	if err != nil {
@@ -193,11 +191,9 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	r.Log.Info("Creating ignition provider route")
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionRoute, func() error {
-		ignitionRoute.Spec = routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: fmt.Sprintf("machine-config-server-%s", mcs.Name),
-			},
+		ignitionRoute.Spec.To = routev1.RouteTargetReference{
+			Kind: "Service",
+			Name: fmt.Sprintf("machine-config-server-%s", mcs.Name),
 		}
 		return nil
 	})
