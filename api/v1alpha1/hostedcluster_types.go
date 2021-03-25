@@ -44,13 +44,19 @@ type ClusterNetworking struct {
 	MachineCIDR string `json:"machineCIDR"`
 }
 
+// PlatformType is a specific supported infrastructure provider.
+// +kubebuilder:validation:Enum=AWS
 type PlatformType string
 
 const (
-	AWSPlatform PlatformType = "aws"
+	// AWSPlatformType represents Amazon Web Services infrastructure.
+	AWSPlatform PlatformType = "AWS"
 )
 
 type PlatformSpec struct {
+	// Type is the underlying infrastructure provider for the cluster.
+	//
+	// +unionDiscriminator
 	Type PlatformType `json:"type"`
 
 	// AWS contains AWS-specific settings for the HostedCluster

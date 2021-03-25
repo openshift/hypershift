@@ -194,6 +194,9 @@ spec:
                     - vpc
                     type: object
                   type:
+                    description: Type is the underlying infrastructure provider for the cluster.
+                    enum:
+                    - AWS
                     type: string
                 required:
                 - type
