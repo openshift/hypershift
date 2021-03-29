@@ -14,7 +14,6 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(infra.NewDestroyCommand())
-	cmd.AddCommand(infra.NewDestroyIAMCommand())
 	cmd.AddCommand(cluster.NewDestroyCommand())
 
 	return cmd

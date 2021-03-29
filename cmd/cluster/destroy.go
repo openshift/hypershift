@@ -30,7 +30,6 @@ type DestroyOptions struct {
 	Namespace          string
 	Name               string
 	AWSCredentialsFile string
-	PreserveIAM        bool
 	ClusterGracePeriod time.Duration
 }
 
@@ -44,14 +43,12 @@ func NewDestroyCommand() *cobra.Command {
 		Namespace:          "clusters",
 		Name:               "",
 		AWSCredentialsFile: "",
-		PreserveIAM:        false,
 		ClusterGracePeriod: 10 * time.Minute,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A cluster name")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
-	cmd.Flags().BoolVar(&opts.PreserveIAM, "preserve-iam", opts.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 	cmd.Flags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
 
 	cmd.MarkFlagRequired("name")
@@ -66,7 +63,14 @@ func NewDestroyCommand() *cobra.Command {
 			cancel()
 		}()
 
-		return DestroyCluster(ctx, &opts)
+		err := DestroyCluster(ctx, &opts)
+		if err != nil {
+			log.Error(err, "Cluster deletion failed. If the HostedCluster resource "+
+				"still exists, you can retry this command. Otherwise run the `delete infra` "+
+				"command to clean up the infrastructure for the cluster using its infrastructure ID.")
+			return err
+		}
+		return nil
 	}
 
 	return cmd
@@ -84,6 +88,8 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		return nil
 	}
 
+	log.Info("Destroying cluster", "name", hostedCluster.Name, "infraID", hostedCluster.Spec.InfraID)
+
 	controllerutil.AddFinalizer(&hostedCluster, destroyFinalizer)
 	if err := c.Update(ctx, &hostedCluster); err != nil {
 		return fmt.Errorf("failed to add finalizer, won't destroy: %w", err)
@@ -92,7 +98,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	// Cluster deletion will be subject to a timeout so that it's possible to
 	// try and tear down infra even if the cluster never finalizes; this is an
 	// attempt to reduce resource leakage in such cases.
-	log.Info("deleting hostedcluster")
 	if err := c.Delete(ctx, &hostedCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("WARNING: hostedcluster was finalized before infrastructure was deleted; resources may have been leaked")
@@ -115,27 +120,15 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		log.Error(err, "hostedcluster wasn't successfully deleted")
 	}
 
-	log.Info("destroying infrastructure", "infraID", hostedCluster.Spec.InfraID)
+	log.Info("Destroying infrastructure", "id", hostedCluster.Spec.InfraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
+		AWSCredentialsFile: o.AWSCredentialsFile,
 		Region:             hostedCluster.Spec.Platform.AWS.Region,
 		InfraID:            hostedCluster.Spec.InfraID,
-		AWSCredentialsFile: o.AWSCredentialsFile,
-		Name:               hostedCluster.GetName(),
-		BaseDomain:         hostedCluster.Spec.DNS.BaseDomain,
 	}
-	destroyInfraOpts.Run(ctx)
-
-	if !o.PreserveIAM {
-		log.Info("destroying IAM")
-		destroyOpts := awsinfra.DestroyIAMOptions{
-			Region:             hostedCluster.Spec.Platform.AWS.Region,
-			AWSCredentialsFile: o.AWSCredentialsFile,
-			InfraID:            hostedCluster.Spec.InfraID,
-		}
-		err := destroyOpts.DestroyIAM()
-		if err != nil {
-			return fmt.Errorf("failed to destroy IAM: %w", err)
-		}
+	err = destroyInfraOpts.DestroyInfra(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to destroy infrastructure: %w", err)
 	}
 
 	controllerutil.RemoveFinalizer(&hostedCluster, destroyFinalizer)
@@ -143,6 +136,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		return fmt.Errorf("failed to remove finalizer: %w", err)
 	}
 
-	log.Info("successfully destroyed cluster and infrastructure")
+	log.Info("Destroyed cluster and infrastructure", "name", hostedCluster.Name, "infraID", hostedCluster.Spec.InfraID)
 	return nil
 }

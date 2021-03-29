@@ -10,11 +10,13 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	hyperapi "github.com/openshift/hypershift/api"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/version"
 
@@ -26,22 +28,21 @@ import (
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type Options struct {
-	Namespace          string
-	Name               string
-	ReleaseImage       string
-	PullSecretFile     string
-	AWSCredentialsFile string
-	SSHKeyFile         string
-	NodePoolReplicas   int
-	Render             bool
-	InfraID            string
-	InfrastructureJSON string
-	IAMJSON            string
-	InstanceType       string
-	Region             string
-	BaseDomain         string
-	PublicZoneID       string
-	PrivateZoneID      string
+	Namespace              string
+	Name                   string
+	ReleaseImage           string
+	PullSecretFile         string
+	AWSCredentialsFile     string
+	SSHKeyFile             string
+	NodePoolReplicas       int
+	Render                 bool
+	InfraID                string
+	InfrastructureJSON     string
+	InstanceType           string
+	Region                 string
+	BaseDomain             string
+	Overwrite              bool
+	PreserveInfraOnFailure bool
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -61,18 +62,20 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:          "clusters",
-		Name:               "example",
-		ReleaseImage:       releaseImage,
-		PullSecretFile:     "",
-		AWSCredentialsFile: "",
-		SSHKeyFile:         "",
-		NodePoolReplicas:   2,
-		Render:             false,
-		InfrastructureJSON: "",
-		Region:             "us-east-1",
-		InfraID:            "",
-		InstanceType:       "m4.large",
+		Namespace:              "clusters",
+		Name:                   "example",
+		ReleaseImage:           releaseImage,
+		PullSecretFile:         "",
+		AWSCredentialsFile:     "",
+		SSHKeyFile:             "",
+		NodePoolReplicas:       2,
+		Render:                 false,
+		InfrastructureJSON:     "",
+		Region:                 "us-east-1",
+		InfraID:                "",
+		InstanceType:           "m4.large",
+		Overwrite:              false,
+		PreserveInfraOnFailure: false,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -84,14 +87,16 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().IntVar(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If >0, create a default NodePool with this many replicas")
 	cmd.Flags().BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying")
 	cmd.Flags().StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster. If not specified, infrastructure will be created")
-	cmd.Flags().StringVar(&opts.IAMJSON, "iam-json", opts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
-	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
+	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The base domain for the cluster")
+	cmd.Flags().BoolVar(&opts.Overwrite, "overwrite", opts.Overwrite, "If an existing cluster exists, overwrite it")
+	cmd.Flags().BoolVar(&opts.PreserveInfraOnFailure, "preserve-infra-on-failure", opts.PreserveInfraOnFailure, "Preserve infrastructure if creation fails and is rolled back")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
+	cmd.MarkFlagRequired("base-domain")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -108,14 +113,20 @@ func NewCreateCommand() *cobra.Command {
 }
 
 func CreateCluster(ctx context.Context, opts Options) error {
+	if len(opts.ReleaseImage) == 0 {
+		return fmt.Errorf("release-image flag is required if default can not be fetched")
+	}
+
 	pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
 	if err != nil {
 		return fmt.Errorf("failed to read pull secret file: %w", err)
 	}
+
 	awsCredentials, err := ioutil.ReadFile(opts.AWSCredentialsFile)
 	if err != nil {
 		return fmt.Errorf("failed to read aws credentials: %w", err)
 	}
+
 	var sshKey []byte
 	if len(opts.SSHKeyFile) > 0 {
 		key, err := ioutil.ReadFile(opts.SSHKeyFile)
@@ -124,11 +135,31 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		}
 		sshKey = key
 	}
-	if len(opts.ReleaseImage) == 0 {
-		return fmt.Errorf("release-image flag is required if default can not be fetched")
+
+	client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
 	}
+
+	// If creating the cluster directly, fail early unless overwrite is specified
+	// as updates aren't really part of the design intent and may not work.
+	if !opts.Render {
+		existingCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: opts.Namespace,
+				Name:      opts.Name,
+			},
+		}
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(existingCluster), existingCluster)
+		if err == nil && !opts.Overwrite {
+			return fmt.Errorf("hostedcluster already exists")
+		}
+	}
+
+	// Load or create infrastructure for the cluster
 	var infra *awsinfra.CreateInfraOutput
 	if len(opts.InfrastructureJSON) > 0 {
+		// Load the specified infra spec from disk
 		rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
 			return fmt.Errorf("failed to read infra json file: %w", err)
@@ -137,78 +168,71 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		if err = json.Unmarshal(rawInfra, infra); err != nil {
 			return fmt.Errorf("failed to load infra json: %w", err)
 		}
-	}
-	if opts.BaseDomain == "" {
-		if infra != nil {
-			opts.BaseDomain = infra.BaseDomain
-		} else {
-			return fmt.Errorf("base-domain flag is required if infra-json is not provided")
+	} else {
+		// No infra was provided, so create it from scratch
+		if len(opts.BaseDomain) == 0 {
+			return fmt.Errorf("base domain is required")
 		}
-	}
-	if infra == nil {
 		infraID := opts.InfraID
 		if len(infraID) == 0 {
 			infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
 		}
+		subdomain := fmt.Sprintf("%s-%s.%s", opts.Namespace, opts.Name, opts.BaseDomain)
 		opt := awsinfra.CreateInfraOptions{
-			Region:             opts.Region,
-			InfraID:            infraID,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
-			Name:               opts.Name,
+			InfraID:            infraID,
+			Region:             opts.Region,
 			BaseDomain:         opts.BaseDomain,
+			Subdomain:          subdomain,
+			PreserveOnFailure:  opts.PreserveInfraOnFailure,
 		}
-		infra, err = opt.CreateInfra()
+		newInfra, err := opt.Run(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
-	}
-
-	var iamInfo *awsinfra.CreateIAMOutput
-	if len(opts.IAMJSON) > 0 {
-		rawIAM, err := ioutil.ReadFile(opts.IAMJSON)
-		if err != nil {
-			return fmt.Errorf("failed to read iam json file: %w", err)
-		}
-		iamInfo = &awsinfra.CreateIAMOutput{}
-		if err = json.Unmarshal(rawIAM, iamInfo); err != nil {
-			return fmt.Errorf("failed to load infra json: %w", err)
-		}
-	} else {
-		opt := awsinfra.CreateIAMOptions{
-			Region:             opts.Region,
-			AWSCredentialsFile: opts.AWSCredentialsFile,
-			InfraID:            infra.InfraID,
-		}
-		iamInfo, err = opt.CreateIAM()
-		if err != nil {
-			return fmt.Errorf("failed to create iam: %w", err)
-		}
+		infra = newInfra
 	}
 
 	exampleObjects := apifixtures.ExampleOptions{
 		Namespace:        opts.Namespace,
-		Name:             infra.Name,
+		Name:             opts.Name,
 		ReleaseImage:     opts.ReleaseImage,
 		PullSecret:       pullSecret,
 		AWSCredentials:   awsCredentials,
-		SigningKey:       iamInfo.ServiceAccountSigningKey,
-		IssuerURL:        iamInfo.IssuerURL,
+		SigningKey:       infra.ServiceAccountSigningKey,
+		IssuerURL:        infra.OIDCIssuerURL,
 		SSHKey:           sshKey,
 		NodePoolReplicas: opts.NodePoolReplicas,
 		InfraID:          infra.InfraID,
 		ComputeCIDR:      infra.ComputeCIDR,
-		BaseDomain:       infra.BaseDomain,
-		PublicZoneID:     infra.PublicZoneID,
-		PrivateZoneID:    infra.PrivateZoneID,
+		BaseDomain:       infra.Subdomain,
+		PublicZoneID:     infra.SubdomainPublicZoneID,
+		PrivateZoneID:    infra.SubdomainPrivateZoneID,
 		AWS: apifixtures.ExampleAWSOptions{
 			Region:          infra.Region,
 			Zone:            infra.Zone,
 			VPCID:           infra.VPCID,
 			SubnetID:        infra.PrivateSubnetID,
-			SecurityGroupID: infra.SecurityGroupID,
-			InstanceProfile: iamInfo.ProfileName,
+			SecurityGroupID: infra.WorkerSecurityGroupID,
+			InstanceProfile: infra.WorkerInstanceProfileID,
 			InstanceType:    opts.InstanceType,
-			Roles:           iamInfo.Roles,
+			Roles: []hyperv1.AWSRoleCredentials{
+				{
+					ARN:       infra.OIDCIngressRoleArn,
+					Namespace: "openshift-ingress-operator",
+					Name:      "cloud-credentials",
+				},
+				{
+					ARN:       infra.OIDCImageRegistryRoleArn,
+					Namespace: "openshift-image-registry",
+					Name:      "installer-cloud-credentials",
+				},
+				{
+					ARN:       infra.OIDCCSIDriverRoleArn,
+					Namespace: "openshift-cluster-csi-drivers",
+					Name:      "ebs-cloud-credentials",
+				},
+			},
 		},
 	}.Resources().AsObjects()
 
@@ -222,17 +246,13 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			fmt.Println("---")
 		}
 	default:
-		client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
-		if err != nil {
-			return fmt.Errorf("failed to create kube client: %w", err)
-		}
 		for _, object := range exampleObjects {
 			key := crclient.ObjectKeyFromObject(object)
 			_, err = controllerutil.CreateOrUpdate(ctx, client, object, NoopReconcile)
 			if err != nil {
 				return fmt.Errorf("failed to create object %q: %w", key, err)
 			}
-			log.Info("applied resource", "namespace", key.Namespace, "name", key.Name)
+			log.Info("Applied Kube resource", "kind", object.GetObjectKind(), "namespace", key.Namespace, "name", key.Name)
 		}
 		return nil
 	}
