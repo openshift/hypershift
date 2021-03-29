@@ -24,9 +24,13 @@ type HostedClusterSpec struct {
 
     Networking ClusterNetworking
 
+    // Autoscaling for compute nodes only, does not cover control plane
+    Autoscaling ClusterAutoscaling
+
     // NOTE: This might not make sense as control plane
     // inputs can be specific to versions
     ControlPlane ControlPlaneSpec
+
 
     // PullSecret is propagated to the container runtime
     // of any nodes associated with this cluster.
@@ -106,7 +110,6 @@ type ControlPlaneAuthSpec struct {
 // - Values: nested 'Enabled' field
 type AddonsSpec struct {
     Console *ConsoleAddonSpec
-    AutoScaler *AutoScalerAddonSpec
     IdentityProviders *IdentityProviderAddonSpec
     Telemetry *TelemetryAddonSpec
     Monitoring *MonitoringAddonSpec
@@ -115,8 +118,26 @@ type AddonsSpec struct {
 }
 
 // TODO maybe we have profiles for scaling behaviors
-type AutoScalerAddonSpec struct {
-    ResourceLimits LimitRange
+type ClusterAutoscaling struct {
+    // Maximum number of nodes in all node groups.
+    // Cluster autoscaler will not grow the cluster beyond this number.
+    // +kubebuilder:validation:Minimum=0
+    MaxNodesTotal int32 `json:"maxNodesTotal"`
+
+    // Gives pods graceful termination time before scaling down
+    // default: 600 seconds
+    MaxPodGracePeriod *int32 `json:"maxPodGracePeriod,omitempty"`
+
+    // Maximum time CA waits for node to be provisioned
+    // default: 15 minutes
+    // +kubebuilder:validation:Pattern=^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+    MaxNodeProvisionTime string `json:"maxNodeProvisionTime,omitempty"`
+
+    // To allow users to schedule "best-effort" pods, which shouldn't trigger
+    // Cluster Autoscaler actions, but only run when there are spare resources available,
+    // default: -10
+    // More info: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
+    PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
 }
 
 type HostedClusterStatus struct {
@@ -279,7 +300,7 @@ type MachineConfigTemplate struct {
 
     InitialNodeCount int
 
-    AutoScaling *MachineAutoScalingSpec
+    Autoscaling *MachineAutoscalingSpec
 
     Management MachineManagementSpec
 }
@@ -297,7 +318,7 @@ type AWSProviderMachineConfigSpec struct {
     Network AWSMachineNetwork
 }
 
-type MachineAutoScalingSpec struct {
+type MachineAutoscalingSpec struct {
     Min int
     Max int
 }
