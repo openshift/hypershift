@@ -16,11 +16,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
+)
+
+const (
+	hostedClusterAnnotation = "hypershift.openshift.io/cluster"
 )
 
 type ExternalInfraClusterReconciler struct {
@@ -31,10 +40,9 @@ type ExternalInfraClusterReconciler struct {
 }
 
 func (r *ExternalInfraClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// TODO (alberto): watch hostedControlPlane events too.
-	// So when controlPlane.Status.Ready it triggers a reconcile here.
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.ExternalInfraCluster{}).
+		Watches(&source.Kind{Type: &hyperv1.HostedControlPlane{}}, handler.EnqueueRequestsFromMapFunc(enqueueExternalInfraForControlPlane)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
@@ -113,8 +121,8 @@ func (r *ExternalInfraClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	// TODO (alberto): populate the API and create/consume infrastructure via aws sdk
 	// role profile, sg, vpc, subnets.
 	if !hcp.Status.Ready {
-		r.Log.Info("Control plane is not ready yet. Requeuing")
-		return reconcile.Result{Requeue: true}, nil
+		r.Log.Info("Control plane is not ready yet.")
+		return reconcile.Result{}, nil
 	}
 
 	// Set the values for upper level controller
@@ -131,4 +139,20 @@ func (r *ExternalInfraClusterReconciler) Reconcile(ctx context.Context, req ctrl
 
 	r.Log.Info("Successfully reconciled")
 	return ctrl.Result{}, nil
+}
+
+func enqueueExternalInfraForControlPlane(obj ctrlclient.Object) []reconcile.Request {
+	var hostedClusterName string
+	if obj.GetAnnotations() != nil {
+		hostedClusterName = obj.GetAnnotations()[hostedClusterAnnotation]
+	}
+	if hostedClusterName == "" {
+		return []reconcile.Request{}
+	}
+	hClusterName := hyperutil.ParseNamespacedName(hostedClusterName)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hClusterName.Namespace, hClusterName.Name)
+	externalInfraCluster := controlplaneoperator.ExternalInfraCluster(controlPlaneNamespace.Name, hClusterName.Name)
+	return []reconcile.Request{
+		{NamespacedName: types.NamespacedName{Namespace: externalInfraCluster.Namespace, Name: externalInfraCluster.Name}},
+	}
 }
