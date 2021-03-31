@@ -217,6 +217,13 @@ func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crcl
 				if cond.Type == configv1.OperatorDegraded && cond.Status == configv1.ConditionFalse {
 					degraded = false
 				}
+				// TODO: This is a bug in the console operator where it doesn't do its route
+				// health check periodically https://bugzilla.redhat.com/show_bug.cgi?id=1945326
+				// Fortunately, the ingress operator also does a canary route check that ensures
+				// that direct ingress is working so we still have coverage.
+				if clusterOperator.GetName() == "console" {
+					degraded = false
+				}
 			}
 			if !available || degraded {
 				ready = false

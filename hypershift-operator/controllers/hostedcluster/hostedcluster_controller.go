@@ -445,6 +445,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
 	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
+	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.KubeConfig = &hyperv1.KubeconfigSecretRef{
 		Name: fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
 		Key:  "value",

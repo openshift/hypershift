@@ -5,4 +5,12 @@ metadata:
   name: cluster
 spec:
   baseDomain: {{ .BaseDomain }}
+{{- if ne .PublicZoneID "" }}
+  publicZone:
+    id: {{ .PublicZoneID }}
+{{- end }}
+{{- if ne .PrivateZoneID "" }}
+  privateZone:
+    id: {{ .PrivateZoneID }}
+{{- end }}
 status: {}

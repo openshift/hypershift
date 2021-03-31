@@ -128,7 +128,6 @@ func GeneratePKI(params *render.PKIParams) (map[string][]byte, error) {
 		// oauth server
 		cert("ingress-openshift", "root-ca", "openshift-ingress", "openshift", ingressHostNames, ingressNumericIPs),
 		cert("openvpn-kube-apiserver-client", "openvpn-ca", "kube-apiserver", "kubernetes", nil, nil),
-		cert("openvpn-router-proxy-client", "openvpn-ca", "router-proxy", "kubernetes", nil, nil),
 		cert("openvpn-worker-client", "openvpn-ca", "worker", "kubernetes", nil, nil),
 	}
 	caMap, err := generateCAs(cas)

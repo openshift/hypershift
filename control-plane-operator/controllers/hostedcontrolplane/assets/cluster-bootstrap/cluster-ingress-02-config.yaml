@@ -6,6 +6,6 @@ metadata:
 spec:
   domain: {{ .IngressSubdomain }}
   endpointPublishingStrategy:
-    type: Private
+    type: LoadBalancerService
   defaultCertificate:
     name: default-ingress-cert

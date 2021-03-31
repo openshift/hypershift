@@ -9,6 +9,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/elb"
+	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"github.com/spf13/cobra"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -19,6 +21,8 @@ type DestroyInfraOptions struct {
 	Region             string
 	InfraID            string
 	AWSCredentialsFile string
+	Name               string
+	BaseDomain         string
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -29,14 +33,18 @@ func NewDestroyCommand() *cobra.Command {
 
 	opts := DestroyInfraOptions{
 		Region: "us-east-1",
+		Name:   "example",
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
+	cmd.MarkFlagRequired("base-domain")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		opts.Run(context.Background())
@@ -59,15 +67,51 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) {
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	var errs []error
-	client, err := AWSClient(o.AWSCredentialsFile, o.Region)
+	ec2client, err := ec2Client(o.AWSCredentialsFile, o.Region)
 	if err != nil {
 		return err
 	}
-	errs = append(errs, o.DestroyInternetGateways(ctx, client)...)
-	errs = append(errs, o.DestroyVPCs(ctx, client)...)
-	errs = append(errs, o.DestroyDHCPOptions(ctx, client)...)
-	errs = append(errs, o.DestroyEIPs(ctx, client)...)
+	route53client, err := route53Client(o.AWSCredentialsFile)
+	if err != nil {
+		return err
+	}
+	elbclient, err := elbClient(o.AWSCredentialsFile, o.Region)
+	if err != nil {
+		return err
+	}
+	errs = append(errs, o.DestroyInternetGateways(ctx, ec2client)...)
+	errs = append(errs, o.DestroyVPCs(ctx, ec2client, elbclient)...)
+	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2client)...)
+	errs = append(errs, o.DestroyEIPs(ctx, ec2client)...)
+	errs = append(errs, o.DestroyDNS(ctx, route53client)...)
 	return utilerrors.NewAggregate(errs)
+}
+
+func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
+	var errs []error
+	deleteLBs := func(out *elb.DescribeLoadBalancersOutput, _ bool) bool {
+		for _, lb := range out.LoadBalancerDescriptions {
+			if *lb.VPCId != *vpcID {
+				continue
+			}
+			_, err := client.DeleteLoadBalancerWithContext(ctx, &elb.DeleteLoadBalancerInput{
+				LoadBalancerName: lb.LoadBalancerName,
+			})
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				log.Info("Deleted ELB", "name", lb.LoadBalancerName)
+			}
+		}
+		return true
+	}
+	err := client.DescribeLoadBalancersPagesWithContext(ctx,
+		&elb.DescribeLoadBalancersInput{},
+		deleteLBs)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return errs
 }
 
 func (o *DestroyInfraOptions) DestroyVPCEndpoints(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
@@ -316,21 +360,22 @@ func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2ifac
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, client ec2iface.EC2API) []error {
+func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2iface.EC2API, elbclient elbiface.ELBAPI) []error {
 	var errs []error
 	deleteVPC := func(out *ec2.DescribeVpcsOutput, _ bool) bool {
 		for _, vpc := range out.Vpcs {
 			var childErrs []error
-			childErrs = append(errs, o.DestroyVPCEndpoints(ctx, client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroyRouteTables(ctx, client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroySecurityGroups(ctx, client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroyNATGateways(ctx, client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroySubnets(ctx, client, vpc.VpcId)...)
+			childErrs = append(errs, o.DestroyELBs(ctx, elbclient, vpc.VpcId)...)
+			childErrs = append(errs, o.DestroyVPCEndpoints(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(errs, o.DestroyRouteTables(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(errs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(errs, o.DestroyNATGateways(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(errs, o.DestroySubnets(ctx, ec2client, vpc.VpcId)...)
 			if len(childErrs) > 0 {
 				errs = append(errs, childErrs...)
 				continue
 			}
-			_, err := client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
+			_, err := ec2client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
 				VpcId: vpc.VpcId,
 			})
 			if err != nil {
@@ -341,7 +386,7 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, client ec2iface.E
 		}
 		return true
 	}
-	err := client.DescribeVpcsPagesWithContext(ctx,
+	err := ec2client.DescribeVpcsPagesWithContext(ctx,
 		&ec2.DescribeVpcsInput{Filters: o.ec2Filters()},
 		deleteVPC)
 

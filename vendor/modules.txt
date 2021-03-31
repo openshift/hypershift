@@ -46,8 +46,12 @@ github.com/aws/aws-sdk-go/private/protocol/restxml
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
 github.com/aws/aws-sdk-go/service/ec2
 github.com/aws/aws-sdk-go/service/ec2/ec2iface
+github.com/aws/aws-sdk-go/service/elb
+github.com/aws/aws-sdk-go/service/elb/elbiface
 github.com/aws/aws-sdk-go/service/iam
 github.com/aws/aws-sdk-go/service/iam/iamiface
+github.com/aws/aws-sdk-go/service/route53
+github.com/aws/aws-sdk-go/service/route53/route53iface
 github.com/aws/aws-sdk-go/service/s3
 github.com/aws/aws-sdk-go/service/s3/s3iface
 github.com/aws/aws-sdk-go/service/sts
@@ -162,16 +166,6 @@ github.com/openshift/client-go/config/informers/externalversions/config
 github.com/openshift/client-go/config/informers/externalversions/config/v1
 github.com/openshift/client-go/config/informers/externalversions/internalinterfaces
 github.com/openshift/client-go/config/listers/config/v1
-github.com/openshift/client-go/route/clientset/versioned
-github.com/openshift/client-go/route/clientset/versioned/fake
-github.com/openshift/client-go/route/clientset/versioned/scheme
-github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
-github.com/openshift/client-go/route/clientset/versioned/typed/route/v1/fake
-github.com/openshift/client-go/route/informers/externalversions
-github.com/openshift/client-go/route/informers/externalversions/internalinterfaces
-github.com/openshift/client-go/route/informers/externalversions/route
-github.com/openshift/client-go/route/informers/externalversions/route/v1
-github.com/openshift/client-go/route/listers/route/v1
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors

@@ -21,6 +21,7 @@ type QuickStartOptions struct {
 	PullSecretFile     string
 	ReleaseImage       string
 	ArtifactDir        string
+	BaseDomain         string
 }
 
 func NewQuickStartOptions(globalOptions *GlobalTestOptions) QuickStartOptions {
@@ -29,6 +30,7 @@ func NewQuickStartOptions(globalOptions *GlobalTestOptions) QuickStartOptions {
 		PullSecretFile:     globalOptions.PullSecretFile,
 		ReleaseImage:       globalOptions.LatestReleaseImage,
 		ArtifactDir:        globalOptions.ArtifactDir,
+		BaseDomain:         globalOptions.BaseDomain,
 	}
 }
 
@@ -51,12 +53,13 @@ func TestQuickStart(t *testing.T) {
 
 	// Create a namespace in which to place hostedclusters
 	namespace := GenerateNamespace(t, ctx, client, "e2e-clusters-")
+	name := SimpleNameGenerator.GenerateName("example-")
 
 	// Define the cluster we'll be testing
 	hostedCluster := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      "example",
+			Name:      name,
 		},
 	}
 
@@ -82,6 +85,7 @@ func TestQuickStart(t *testing.T) {
 		NodePoolReplicas: 2,
 		Region:           "us-east-1",
 		InstanceType:     "m4.large",
+		BaseDomain:       opts.BaseDomain,
 	}
 	err = cmdcluster.CreateCluster(ctx, createClusterOpts)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")

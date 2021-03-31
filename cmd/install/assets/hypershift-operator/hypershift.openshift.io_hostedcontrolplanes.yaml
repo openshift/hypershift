@@ -37,6 +37,21 @@ spec:
           spec:
             description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
             properties:
+              dns:
+                description: DNSSpec specifies the DNS configuration in the cluster
+                properties:
+                  baseDomain:
+                    description: BaseDomain is the base domain of the cluster.
+                    type: string
+                  privateZoneID:
+                    description: PrivateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
+                    type: string
+                  publicZoneID:
+                    description: PublicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
+                    type: string
+                required:
+                - baseDomain
+                type: object
               infraID:
                 type: string
               issuerURL:
@@ -229,6 +244,7 @@ spec:
                     type: string
                 type: object
             required:
+            - dns
             - infraID
             - issuerURL
             - machineCIDR

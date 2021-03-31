@@ -50,7 +50,7 @@ func MachineConfigServerIgnitionRoute(machineConfigServerNamespace, machineConfi
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: machineConfigServerNamespace,
-			Name:      fmt.Sprintf("ignition-provider-%s", machineConfigServerName),
+			Name:      fmt.Sprintf("ignition-%s", machineConfigServerName),
 		},
 	}
 }
