@@ -2,10 +2,14 @@ package aws
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 )
 
 func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, vpcID string) (string, error) {
@@ -24,11 +28,25 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 		if err != nil {
 			return "", fmt.Errorf("cannot create worker security group: %w", err)
 		}
-		sgResult, err := client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
-			GroupIds: []*string{result.GroupId},
+		backoff := wait.Backoff{
+			Steps:    10,
+			Duration: 3 * time.Second,
+			Factor:   1.0,
+			Jitter:   0.1,
+		}
+		var sgResult *ec2.DescribeSecurityGroupsOutput
+		err = retry.OnError(backoff, func(error) bool { return true }, func() error {
+			var err error
+			sgResult, err = client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
+				GroupIds: []*string{result.GroupId},
+			})
+			if err != nil || len(sgResult.SecurityGroups) == 0 {
+				return fmt.Errorf("not found yet")
+			}
+			return nil
 		})
-		if len(sgResult.SecurityGroups) == 0 {
-			return "", fmt.Errorf("cannot find security group after creation")
+		if err != nil {
+			return "", fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(result.GroupId))
 		}
 		securityGroup = sgResult.SecurityGroups[0]
 		log.Info("Created security group", "name", groupName, "id", aws.StringValue(securityGroup.GroupId))
