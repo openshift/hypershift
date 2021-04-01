@@ -138,6 +138,13 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			return fmt.Errorf("failed to load infra json: %w", err)
 		}
 	}
+	if opts.BaseDomain == "" {
+		if infra != nil {
+			opts.BaseDomain = infra.BaseDomain
+		} else {
+			return fmt.Errorf("base-domain flag is required if infra-json is not provided")
+		}
+	}
 	if infra == nil {
 		infraID := opts.InfraID
 		if len(infraID) == 0 {

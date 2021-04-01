@@ -53,6 +53,7 @@ The `hypershift` CLI tool comes with commands to help create an example hosted c
 - The `hypershift` CLI tool
 - The OpenShift `oc` CLI tool.
 - A valid pull secret file for the `quay.io/openshift-release-dev` repository
+- A Route53 public zone for the `base-domain`
 
 Run the `hypershift` command to create a cluster named `example` in the `clusters`
 namespace, including the cloud infrastructure to support it.
@@ -61,6 +62,8 @@ namespace, including the cloud infrastructure to support it.
 hypershift create cluster \
   --pull-secret /my/pull-secret \
   --aws-creds ~/.aws/credentials
+  --name example \
+  --base-domain hypershift.example.com
 ```
 
 Eventually the cluster's kubeconfig will become available and can be printed to
@@ -76,7 +79,8 @@ To delete the cluster and the infrastructure created earlier, run:
 hypershift destroy cluster \
   --aws-creds ~/.aws/credentials \
   --namespace clusters \
-  --name example
+  --name example \
+  --base-domain hypershift.example.com
 ```
 
 ## How to add node pools to the example cluster
