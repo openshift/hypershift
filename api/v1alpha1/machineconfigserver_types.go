@@ -13,6 +13,10 @@ type MachineConfigServerSpec struct {
 
 	// Release specifies the release image to use for this MachineConfigServer
 	ReleaseImage string `json:"releaseImage"`
+
+	// PublishingStrategy can be used to define how services are exposed in the management cluster. If not specified
+	// the default publishing strategy is used.
+	PublishingStrategy ControlPlanePublishingStrategy `json:"publishingStrategy,omitempty"`
 }
 
 // MachineConfigServerStatus defines the observed state of MachineConfigServer
@@ -25,6 +29,9 @@ type MachineConfigServerStatus struct {
 
 	// +kubebuilder:validation:Optional
 	Host string `json:"host,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	Port int32 `json:"port,omitempty"`
 }
 
 // +kubebuilder:object:root=true

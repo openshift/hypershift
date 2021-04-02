@@ -450,6 +450,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		Name: fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
 		Key:  "value",
 	}
+	hcp.Spec.PublishingStrategy = hcluster.Spec.PublishingStrategy
 
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:

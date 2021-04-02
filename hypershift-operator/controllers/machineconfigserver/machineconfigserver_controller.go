@@ -113,8 +113,14 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{}, err
 		}
 
-		if err := r.Delete(ctx, ignitionRoute); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, err
+		switch mcs.Spec.PublishingStrategy.Type {
+		case hyperv1.NodePortStrategyType:
+			r.Log.Info("No extra components to delete in node port strategy")
+		default:
+			r.Log.Info("Removing ignition route")
+			if err := r.Delete(ctx, ignitionRoute); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, err
+			}
 		}
 
 		if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
@@ -169,43 +175,12 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
-		mcsService.Spec.Ports = []corev1.ServicePort{
-			{
-				Name:       "http",
-				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(8080),
-				NodePort:   0,
-			},
-		}
-		mcsService.Spec.Selector = map[string]string{
-			"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
-		}
-		mcsService.Spec.Type = corev1.ServiceTypeClusterIP
-		return nil
-	})
-	if err != nil {
+	r.Log.Info("Reconciling mcs service")
+	reconcileResult, err := r.reconcileMCSService(ctx, mcs, mcsService, ignitionRoute)
+	if reconcileResult != nil {
+		return *reconcileResult, err
+	} else if err != nil {
 		return ctrl.Result{}, err
-	}
-
-	r.Log.Info("Creating ignition provider route")
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionRoute, func() error {
-		ignitionRoute.Spec.To = routev1.RouteTargetReference{
-			Kind: "Service",
-			Name: fmt.Sprintf("machine-config-server-%s", mcs.Name),
-		}
-		return nil
-	})
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(ignitionRoute), ignitionRoute); err != nil {
-		return ctrl.Result{}, err
-	}
-	if ignitionRoute.Spec.Host == "" {
-		r.Log.Info("Waiting for ignition route to be available")
-		return ctrl.Result{Requeue: true}, nil
 	}
 
 	r.Log.Info("Creating userdata secret")
@@ -226,9 +201,9 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		semversion.Pre = nil
 		semversion.Build = nil
 		if semversion.GTE(semver.MustParse("4.6.0")) {
-			userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionRoute.Spec.Host))
+			userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s:%d/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, mcs.Status.Host, mcs.Status.Port))
 		} else {
-			userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"http://%s/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, ignitionRoute.Spec.Host))
+			userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"http://%s:%d/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, mcs.Status.Host, mcs.Status.Port))
 		}
 
 		userDataSecret.Data = map[string][]byte{
@@ -242,12 +217,113 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	mcs.Status.Version = releaseImage.Version()
-	mcs.Status.Host = ignitionRoute.Spec.Host
 	if err := r.Status().Update(ctx, mcs); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *MachineConfigServerReconciler) reconcileMCSServiceNodePort(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service) (*ctrl.Result, error) {
+	//Check for existing node port
+	var existingNodePort int32 = 0
+	var machineConfigServerServiceData corev1.Service
+	r.Log.Info("Checking for existing service", "serviceName", mcsService.Name, "namespace", mcsService.Namespace)
+	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: mcsService.Namespace, Name: mcsService.Name}, &machineConfigServerServiceData); err != nil && !apierrors.IsNotFound(err) {
+		return &ctrl.Result{}, err
+	}
+	if len(machineConfigServerServiceData.Spec.Ports) > 0 && machineConfigServerServiceData.Spec.Ports[0].NodePort > 0 {
+		r.Log.Info("Existing node port exists for service. Preserving it", "nodePort", existingNodePort)
+		existingNodePort = machineConfigServerServiceData.Spec.Ports[0].NodePort
+	}
+	r.Log.Info("Creating MCS Service")
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
+		mcsService.Spec.Ports = []corev1.ServicePort{
+			{
+				Name:       "http",
+				Protocol:   corev1.ProtocolTCP,
+				Port:       80,
+				TargetPort: intstr.FromInt(8080),
+			},
+		}
+		if existingNodePort > 0 {
+			mcsService.Spec.Ports[0].NodePort = existingNodePort
+		}
+		mcsService.Spec.Selector = map[string]string{
+			"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
+		}
+		mcsService.Spec.Type = corev1.ServiceTypeNodePort
+		return nil
+	})
+	if err != nil {
+		return &ctrl.Result{}, err
+	}
+	r.Log.Info("Retrieving MCS Service to get node port value")
+	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: mcsService.Namespace, Name: mcsService.Name}, mcsService); err != nil {
+		return &ctrl.Result{}, err
+	}
+	if !(mcsService.Spec.Ports[0].NodePort > 0) {
+		r.Log.Info("Waiting for node port to populate")
+		return &ctrl.Result{Requeue: true}, nil
+	}
+	mcs.Status.Host = mcs.Spec.PublishingStrategy.NodePort.Address
+	mcs.Status.Port = mcsService.Spec.Ports[0].NodePort
+	return nil, nil
+}
+
+func (r *MachineConfigServerReconciler) reconcileMCSServiceRoute(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service, ignitionRoute *routev1.Route) (*ctrl.Result, error) {
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
+		mcsService.Spec.Ports = []corev1.ServicePort{
+			{
+				Name:       "http",
+				Protocol:   corev1.ProtocolTCP,
+				Port:       80,
+				TargetPort: intstr.FromInt(8080),
+				NodePort:   0,
+			},
+		}
+		mcsService.Spec.Selector = map[string]string{
+			"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
+		}
+		mcsService.Spec.Type = corev1.ServiceTypeClusterIP
+		return nil
+	})
+	if err != nil {
+		return &ctrl.Result{}, err
+	}
+	r.Log.Info("Creating ignition provider route")
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionRoute, func() error {
+		ignitionRoute.Spec.To = routev1.RouteTargetReference{
+			Kind: "Service",
+			Name: fmt.Sprintf("machine-config-server-%s", mcs.Name),
+		}
+		return nil
+	})
+	if err != nil {
+		return &ctrl.Result{}, err
+	}
+	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(ignitionRoute), ignitionRoute); err != nil {
+		return &ctrl.Result{}, err
+	}
+	if ignitionRoute.Spec.Host == "" {
+		r.Log.Info("Waiting for ignition route to be available")
+		return &ctrl.Result{Requeue: true}, nil
+	}
+	mcs.Status.Host = ignitionRoute.Spec.Host
+	mcs.Status.Port = int32(80)
+	return nil, nil
+}
+
+func (r *MachineConfigServerReconciler) reconcileMCSService(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service, ignitionRoute *routev1.Route) (*ctrl.Result, error) {
+	publishingStrategy := mcs.Spec.PublishingStrategy.Type
+	switch publishingStrategy {
+	case hyperv1.NodePortStrategyType:
+		r.Log.Info("Reconciling nodePort service")
+		return r.reconcileMCSServiceNodePort(ctx, mcs, mcsService)
+	default:
+		r.Log.Info("Reconciling route")
+		return r.reconcileMCSServiceRoute(ctx, mcs, mcsService, ignitionRoute)
+	}
 }
 
 func reconcileMCSDeployment(deployment *appsv1.Deployment, mcs *hyperv1.MachineConfigServer, sa *corev1.ServiceAccount, images map[string]string) error {

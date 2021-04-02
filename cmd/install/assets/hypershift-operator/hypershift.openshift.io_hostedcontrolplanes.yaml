@@ -218,6 +218,39 @@ spec:
                 type: object
               podCIDR:
                 type: string
+              publishingStrategy:
+                description: PublishingStrategy can be used to define how services are exposed in the management cluster. If not specified the default publishing strategy is used.
+                properties:
+                  nodePort:
+                    description: NodePort defines a strategy for exposing control plane endpoints with node ports over an address.
+                    properties:
+                      address:
+                        description: Address defines the hostname or ip that node port traffic is exposed over.
+                        type: string
+                      servicePorts:
+                        description: ServicePorts define optional mappings that can be used to define what node port a given service uses.
+                        items:
+                          description: ServicePortMapping define  mappings that can be used to define what node port a given service uses at initial creation time.
+                          properties:
+                            port:
+                              description: Port is the desired nodePort to expose the service with.
+                              format: int32
+                              type: integer
+                            service:
+                              description: Service is a supported service that allows node port value to be specified at initial service creation time.
+                              type: string
+                          required:
+                          - port
+                          - service
+                          type: object
+                        type: array
+                    required:
+                    - address
+                    type: object
+                  type:
+                    description: Type is an enum representing different strategies.
+                    type: string
+                type: object
               pullSecret:
                 description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
                 properties:

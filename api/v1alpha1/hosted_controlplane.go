@@ -40,6 +40,10 @@ type HostedControlPlaneSpec struct {
 	// KubeConfig specifies the name and key for the kubeconfig secret
 	// +optional
 	KubeConfig *KubeconfigSecretRef `json:"kubeconfig,omitempty"`
+
+	// PublishingStrategy can be used to define how services are exposed in the management cluster. If not specified
+	// the default publishing strategy is used.
+	PublishingStrategy ControlPlanePublishingStrategy `json:"publishingStrategy,omitempty"`
 }
 
 type KubeconfigSecretRef struct {

@@ -11,6 +11,15 @@ func init() {
 	SchemeBuilder.Register(&HostedCluster{}, &HostedClusterList{})
 }
 
+// ControlPlanePublishingStrategyType is an enum defining strategies to expose user control plane components
+// over a network.
+type ControlPlanePublishingStrategyType string
+
+const (
+	// NodePortStrategyType exposes the control plane endpoints with node ports.
+	NodePortStrategyType ControlPlanePublishingStrategyType = "NodePort"
+)
+
 // HostedClusterSpec defines the desired state of HostedCluster
 type HostedClusterSpec struct {
 
@@ -39,6 +48,47 @@ type HostedClusterSpec struct {
 
 	// DNS configuration for the cluster
 	DNS DNSSpec `json:"dns,omitempty"`
+
+	// PublishingStrategy can be used to define how services are exposed in the management cluster. If not specified
+	// the default publishing strategy is used.
+	PublishingStrategy ControlPlanePublishingStrategy `json:"publishingStrategy,omitempty"`
+}
+
+// ControlPlanePublishingStrategy defines a strategy for exposing user cluster control plane components
+type ControlPlanePublishingStrategy struct {
+	// Type is an enum representing different strategies.
+	Type ControlPlanePublishingStrategyType `json:"type,omitempty"`
+
+	// NodePort defines a strategy for exposing control plane endpoints with node ports
+	// over an address.
+	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
+}
+
+// NodePortPublishingStrategy
+type NodePortPublishingStrategy struct {
+	// Address defines the hostname or ip that node port traffic is exposed over.
+	Address string `json:"address"`
+	// ServicePorts define optional mappings that can be used to define what node port a given service
+	// uses.
+	ServicePorts []ServicePortMapping `json:"servicePorts,omitempty"`
+}
+
+type ServiceNameType string
+
+const (
+	// ServiceNameType provides enums for services that can be used to control the ports the services use
+	KubeAPIServerServiceName ServiceNameType = "kube-apiserver"
+	VPNServiceName           ServiceNameType = "openvpn-server"
+	OauthServiceName         ServiceNameType = "oauth-openshift"
+)
+
+// ServicePortMapping define  mappings that can be used to define what node port a given service
+// uses at initial creation time.
+type ServicePortMapping struct {
+	// Service is a supported service that allows node port value to be specified at initial service creation time.
+	Service ServiceNameType `json:"service"` // where this is an enum of KubeAPI, VPN, etc
+	// Port is the desired nodePort to expose the service with.
+	Port int32 `json:"port"`
 }
 
 // DNSSpec specifies the DNS configuration in the cluster

@@ -106,7 +106,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.Delete(ctx, machineDeployment); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete nodePool: %w", err)
 		}
-		mcs := generateMachineConfigServer(nodePool, targetNamespace)
+		mcs := generateMachineConfigServer(nodePool, targetNamespace, hcluster)
 		if err := r.Delete(ctx, mcs); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete machineConfigServer: %w", err)
 		}
@@ -232,7 +232,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	targetVersion := releaseImage.Version()
 
 	// Ensure MachineConfigServer for the nodePool release
-	mcs := generateMachineConfigServer(nodePool, targetNamespace)
+	mcs := generateMachineConfigServer(nodePool, targetNamespace, hcluster)
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, mcs, func() error {
 		mcs.Spec.ReleaseImage = nodePool.Spec.Release.Image
 		return nil
@@ -414,7 +414,7 @@ func generateMachineHealthCheck(nodePool *hyperv1.NodePool, targetNamespace, inf
 	}
 }
 
-func generateMachineConfigServer(nodePool *hyperv1.NodePool, targetNamespace string) *hyperv1.MachineConfigServer {
+func generateMachineConfigServer(nodePool *hyperv1.NodePool, targetNamespace string, hostedCluster *hyperv1.HostedCluster) *hyperv1.MachineConfigServer {
 	return &hyperv1.MachineConfigServer{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -422,7 +422,8 @@ func generateMachineConfigServer(nodePool *hyperv1.NodePool, targetNamespace str
 			Namespace: targetNamespace,
 		},
 		Spec: hyperv1.MachineConfigServerSpec{
-			ReleaseImage: nodePool.Spec.Release.Image,
+			ReleaseImage:       nodePool.Spec.Release.Image,
+			PublishingStrategy: hostedCluster.Spec.PublishingStrategy,
 		},
 	}
 }
