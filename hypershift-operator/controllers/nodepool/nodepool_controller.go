@@ -99,16 +99,21 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
 		}
-		machineSet, _, err := generateMachineScalableResources(hcluster.Spec.InfraID, ami, nodePool, targetNamespace)
+		machineDeployment, _, err := generateMachineScalableResources(hcluster.Spec.InfraID, ami, nodePool, targetNamespace)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
 		}
-		if err := r.Delete(ctx, machineSet); err != nil && !apierrors.IsNotFound(err) {
+		if err := r.Delete(ctx, machineDeployment); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete nodePool: %w", err)
 		}
 		mcs := generateMachineConfigServer(nodePool, targetNamespace)
 		if err := r.Delete(ctx, mcs); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete machineConfigServer: %w", err)
+		}
+
+		mhc := generateMachineHealthCheck(nodePool, targetNamespace, hcluster.Spec.InfraID)
+		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
 		}
 
 		if controllerutil.ContainsFinalizer(nodePool, finalizer) {
@@ -117,7 +122,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from nodePool: %w", err)
 			}
 		}
-		r.Log.Info("Deleted machineSet", "machineset", machineSet.GetName())
+		r.Log.Info("Deleted nodePool")
 		return ctrl.Result{}, nil
 	}
 
@@ -236,6 +241,30 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	// TODO (alberto): check mcs status
 
+	// Ensure MachineHealthCheck
+	mhc := generateMachineHealthCheck(nodePool, targetNamespace, hcluster.Spec.InfraID)
+	if nodePool.Spec.Management.AutoRepair {
+		if _, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, err
+		}
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:   hyperv1.NodePoolAutorepairEnabledConditionType,
+			Status: metav1.ConditionTrue,
+			Reason: hyperv1.NodePoolAsExpectedConditionReason,
+		})
+	} else {
+		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:   hyperv1.NodePoolAutorepairEnabledConditionType,
+			Status: metav1.ConditionFalse,
+			Reason: hyperv1.NodePoolAsExpectedConditionReason,
+		})
+	}
+
 	// Persist machineDeployment
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, machineDeployment, func() error {
 		// Propagate version to the machineDeployment.
@@ -341,6 +370,48 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 		newStatus.Replicas == *(deployment.Spec.Replicas) &&
 		newStatus.AvailableReplicas == *(deployment.Spec.Replicas) &&
 		newStatus.ObservedGeneration >= deployment.Generation
+}
+
+func generateMachineHealthCheck(nodePool *hyperv1.NodePool, targetNamespace, infraID string) *capiv1.MachineHealthCheck {
+	maxUnhealthy := intstr.FromInt(2)
+	resourcesName := generateName(infraID, nodePool.Spec.ClusterName, nodePool.GetName())
+	return &capiv1.MachineHealthCheck{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nodePool.GetName(),
+			Namespace: targetNamespace,
+		},
+		// Opinionated spec based on https://github.com/openshift/managed-cluster-config/blob/14d4255ec75dc263ffd3d897dfccc725cb2b7072/deploy/osd-machine-api/011-machine-api.srep-worker-healthcheck.MachineHealthCheck.yaml
+		// TODO (alberto): possibly expose this config at the nodePool API.
+		Spec: capiv1.MachineHealthCheckSpec{
+			ClusterName: infraID,
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					resourcesName: resourcesName,
+				},
+			},
+			UnhealthyConditions: []capiv1.UnhealthyCondition{
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionFalse,
+					Timeout: metav1.Duration{
+						Duration: 8 * time.Minute,
+					},
+				},
+				{
+					Type:   corev1.NodeReady,
+					Status: corev1.ConditionUnknown,
+					Timeout: metav1.Duration{
+						Duration: 8 * time.Minute,
+					},
+				},
+			},
+			MaxUnhealthy: &maxUnhealthy,
+			NodeStartupTimeout: &metav1.Duration{
+				Duration: 10 * time.Minute,
+			},
+		},
+	}
 }
 
 func generateMachineConfigServer(nodePool *hyperv1.NodePool, targetNamespace string) *hyperv1.MachineConfigServer {
