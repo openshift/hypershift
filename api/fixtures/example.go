@@ -185,6 +185,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				},
 			},
 		},
+		Status: hyperv1.HostedClusterStatus{
+			Conditions: []metav1.Condition{},
+		},
 	}
 
 	return &ExampleResources{
