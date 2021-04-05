@@ -1,4 +1,4 @@
-FROM registry.svc.ci.openshift.org/openshift/release:golang-1.16 as builder
+FROM registry.ci.openshift.org/openshift/release:golang-1.16 as builder
 
 WORKDIR /hypershift
 
