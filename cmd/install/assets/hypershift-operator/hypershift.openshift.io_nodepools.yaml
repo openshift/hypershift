@@ -32,6 +32,10 @@ spec:
       jsonPath: .status.conditions[?(@.type=="AutoscalingEnabled")].status
       name: Autoscaling
       type: string
+    - description: Node Autorepair Enabled
+      jsonPath: .status.conditions[?(@.type=="AutorepairEnabled")].status
+      name: Autorepair
+      type: string
     - description: Current version
       jsonPath: .status.version
       name: Version
@@ -73,9 +77,12 @@ spec:
                 type: integer
               nodePoolManagement:
                 default:
+                  autoRepair: false
                   maxSurge: 1
                   maxUnavailable: 0
                 properties:
+                  autoRepair:
+                    type: boolean
                   maxSurge:
                     default: 1
                     minimum: 0
@@ -84,9 +91,6 @@ spec:
                     default: 0
                     minimum: 0
                     type: integer
-                required:
-                - maxSurge
-                - maxUnavailable
                 type: object
               platform:
                 description: NodePoolPlatform is the platform-specific configuration for a node pool. Only one of the platforms should be set.

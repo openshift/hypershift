@@ -6,6 +6,7 @@ import (
 
 const (
 	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
+	NodePoolAutorepairEnabledConditionType  = "AutorepairEnabled"
 	NodePoolAsExpectedConditionReason       = "AsExpected"
 	NodePoolValidationFailedConditionReason = "ValidationFailed"
 	NodePoolUpgradingConditionType          = "Upgrading"
@@ -25,6 +26,7 @@ func init() {
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
 // +kubebuilder:printcolumn:name="NodeCount",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
 // +kubebuilder:printcolumn:name="Autoscaling",type="string",JSONPath=".status.conditions[?(@.type==\"AutoscalingEnabled\")].status",description="Autoscaling Enabled"
+// +kubebuilder:printcolumn:name="Autorepair",type="string",JSONPath=".status.conditions[?(@.type==\"AutorepairEnabled\")].status",description="Node Autorepair Enabled"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Current version"
 // +kubebuilder:printcolumn:name="Upgrading",type="string",JSONPath=".status.conditions[?(@.type==\"Upgrading\")].status",description="Upgrade in progress"
 type NodePool struct {
@@ -45,7 +47,7 @@ type NodePoolSpec struct {
 	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`
 
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={maxSurge: 1, maxUnavailable: 0}
+	// +kubebuilder:default={maxSurge: 1, maxUnavailable: 0, autoRepair: false}
 	Management NodePoolManagement `json:"nodePoolManagement"`
 	Platform   NodePoolPlatform   `json:"platform"`
 
@@ -81,12 +83,17 @@ type NodePoolList struct {
 }
 
 type NodePoolManagement struct {
+	// +optional
 	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
 	MaxUnavailable int `json:"maxUnavailable"`
+	// +optional
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=0
 	MaxSurge int `json:"maxSurge"`
+
+	// +optional
+	AutoRepair bool `json:"autoRepair"`
 }
 
 type NodePoolAutoScaling struct {
