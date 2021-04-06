@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster"
 	"github.com/openshift/hypershift/cmd/infra"
 	"github.com/openshift/hypershift/cmd/kubeconfig"
+	"github.com/openshift/hypershift/cmd/nodepool"
 )
 
 func NewCommand() *cobra.Command {
@@ -18,6 +19,7 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(infra.NewCreateCommand())
 	cmd.AddCommand(infra.NewCreateIAMCommand())
 	cmd.AddCommand(kubeconfig.NewCreateCommand())
+	cmd.AddCommand(nodepool.NewCreateCommand())
 
 	return cmd
 }
