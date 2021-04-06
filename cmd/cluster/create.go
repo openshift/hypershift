@@ -175,7 +175,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		}
 	} else {
 		opt := awsinfra.CreateIAMOptions{
-			Region:             opts.Region,
+			Region:             infra.Region,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
 		}
