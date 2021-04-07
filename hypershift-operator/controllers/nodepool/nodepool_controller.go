@@ -10,8 +10,8 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/machineconfigserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/machineimage"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
@@ -56,10 +55,10 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.NodePool{}).
 		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&source.Kind{Type: &hyperv1.MachineConfigServer{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Build(r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
@@ -91,27 +90,25 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	targetNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
-	// Ignore deleted nodePools, this can happen when foregroundDeletion
-	// is enabled
+	mcs := machineConfigServer(nodePool)
+	md := machineDeployment(nodePool, mcs, hcluster.Spec.InfraID)
+	ami, err := r.ImageProvider.Image(hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
+	}
+	awsMachineTemplate := AWSMachineTemplate(hcluster.Spec.InfraID, ami, nodePool)
+	mhc := machineHealthCheck(nodePool)
+
 	if !nodePool.DeletionTimestamp.IsZero() {
-		ami, err := r.ImageProvider.Image(hcluster)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
-		}
-		machineDeployment, _, err := generateMachineScalableResources(hcluster.Spec.InfraID, ami, nodePool, targetNamespace)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
-		}
-		if err := r.Delete(ctx, machineDeployment); err != nil && !apierrors.IsNotFound(err) {
+		if err := r.Delete(ctx, md); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete nodePool: %w", err)
 		}
-		mcs := generateMachineConfigServer(nodePool, targetNamespace)
+		if err := r.Delete(ctx, awsMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to delete nodePool: %w", err)
+		}
 		if err := r.Delete(ctx, mcs); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete machineConfigServer: %w", err)
 		}
-
-		mhc := generateMachineHealthCheck(nodePool, targetNamespace, hcluster.Spec.InfraID)
 		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
@@ -157,19 +154,25 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	r.Log.Info("Successfully reconciled")
-	return result, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconcile nodePool")
-
 	nodePool.OwnerReferences = util.EnsureOwnerRef(nodePool.OwnerReferences, metav1.OwnerReference{
 		APIVersion: hyperv1.GroupVersion.String(),
 		Kind:       "HostedCluster",
 		Name:       hcluster.Name,
 		UID:        hcluster.UID,
 	})
+
+	mcs := machineConfigServer(nodePool)
+	md := machineDeployment(nodePool, mcs, hcluster.Spec.InfraID)
+	ami, err := r.ImageProvider.Image(hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
+	}
+	awsMachineTemplate := AWSMachineTemplate(hcluster.Spec.InfraID, ami, nodePool)
+	mhc := machineHealthCheck(nodePool)
 
 	// Validate input
 	if err := validate(nodePool); err != nil {
@@ -182,72 +185,70 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return reconcile.Result{}, fmt.Errorf("error validating autoscaling parameters: %w", err)
 	}
 
-	// Generate scalable resource for nodePool
-	targetNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
-	ami, err := r.ImageProvider.Image(hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
-	}
-	machineDeployment, AWSMachineTemplate, err := generateMachineScalableResources(
-		hcluster.Spec.InfraID,
-		ami,
-		nodePool,
-		targetNamespace)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to generate worker machineset: %w", err)
-	}
-
-	// Get wanted replicas
-	wantedReplicas := Int32PtrDerefOr(nodePool.Spec.NodeCount, 0)
-	isAutoscalingEnabled := isAutoscalingEnabled(nodePool)
-	if isAutoscalingEnabled {
-		currentMachineDeployment := &capiv1.MachineDeployment{}
-		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{
-			Name:      machineDeployment.GetName(),
-			Namespace: machineDeployment.GetNamespace()},
-			currentMachineDeployment); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, err
-			}
-			// if autoscaling is enabled and the machineSet does not exist yet
-			// start with 1 replica as the autoscaler does not support scaling from zero yet.
-			wantedReplicas = int32(1)
-		}
-	}
-
-	// Persist provider template
-	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, AWSMachineTemplate, func() error { return nil }); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Default release image to latest hostedCluster
+	// Default input: if release image is empty set it to the latest hostedCluster
 	if nodePool.Spec.Release.Image == "" {
 		nodePool.Spec.Release.Image = hcluster.Status.Version.History[0].Image
 	}
 
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, nodePool.Spec.Release.Image)
+	releaseImage, err := r.ReleaseProvider.Lookup(context.Background(), nodePool.Spec.Release.Image)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	targetVersion := releaseImage.Version()
 
-	// Ensure MachineConfigServer for the nodePool release
-	mcs := generateMachineConfigServer(nodePool, targetNamespace)
-	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, mcs, func() error {
+	if isUpgrading(nodePool, targetVersion) {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:    hyperv1.NodePoolUpgradingConditionType,
+			Status:  metav1.ConditionTrue,
+			Reason:  hyperv1.NodePoolAsExpectedConditionReason,
+			Message: fmt.Sprintf("Upgrade in progress. Target version: %v", targetVersion),
+		})
+		r.Log.Info("New nodePool version set. Upgrading", "targetVersion", targetVersion)
+	}
+
+	// Reconcile machineConfigServer for the given nodePool release
+	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, mcs, func() error {
+		if mcs.GetAnnotations() == nil {
+			mcs.Annotations = map[string]string{}
+		}
+		mcs.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
 		mcs.Spec.ReleaseImage = nodePool.Spec.Release.Image
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile machineConfigServer %q: %w",
+			ctrlclient.ObjectKeyFromObject(mcs).String(), err)
+	}
+	if mcs.Status.Version != targetVersion {
+		r.Log.Info("machineConfigServer status version does not match nodePool target version yet, waiting",
+			"machineConfigServer", ctrlclient.ObjectKeyFromObject(mcs).String())
+		return ctrl.Result{}, nil
+	}
+
+	// Reconcile AWSMachineTemplate
+	// TODO (alberto): If a change happens to the nodePool AWSNodePoolPlatform we should
+	// delete the existing awsMachineTemplate, create a new one with a new name
+	// and pass it to the machineDeployment. This will trigger a rolling upgrade.
+	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, awsMachineTemplate, func() error {
 		return nil
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
-	// TODO (alberto): check mcs status
 
-	// Ensure MachineHealthCheck
-	mhc := generateMachineHealthCheck(nodePool, targetNamespace, hcluster.Spec.InfraID)
+	// Reconcile machineDeployment
+	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
+		return r.reconcileMachineDeployment(md, nodePool, mcs, awsMachineTemplate, hcluster.Spec.InfraID)
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile machineDeployment %q: %w",
+			ctrlclient.ObjectKeyFromObject(md).String(), err)
+	}
+
+	// Reconcile MachineHealthCheck
 	if nodePool.Spec.Management.AutoRepair {
 		if _, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
-			return nil
+			return r.reconcileMachineHealthCheck(mhc, nodePool, hcluster.Spec.InfraID)
 		}); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile machineHealthCheck %q: %w",
+				ctrlclient.ObjectKeyFromObject(mhc).String(), err)
 		}
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:   hyperv1.NodePoolAutorepairEnabledConditionType,
@@ -264,97 +265,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Reason: hyperv1.NodePoolAsExpectedConditionReason,
 		})
 	}
-
-	// Persist machineDeployment
-	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, machineDeployment, func() error {
-		// Propagate version to the machineDeployment.
-		if targetVersion == nodePool.Status.Version &&
-			targetVersion != StringPtrDeref(machineDeployment.Spec.Template.Spec.Version) {
-			// This should never happen by design.
-			return fmt.Errorf("unexpected error. NodePool current version does not match machineDeployment version")
-		}
-
-		maxUnavailable := intstr.FromInt(nodePool.Spec.Management.MaxUnavailable)
-		maxSurge := intstr.FromInt(nodePool.Spec.Management.MaxSurge)
-		machineDeployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &maxUnavailable
-		machineDeployment.Spec.Strategy.RollingUpdate.MaxSurge = &maxSurge
-
-		if targetVersion != StringPtrDeref(machineDeployment.Spec.Template.Spec.Version) {
-			log.Info("Starting upgrade", "nodePool", nodePool.GetName(), "releaseImage", nodePool.Spec.Release.Image, "targetVersion", targetVersion)
-			// TODO (alberto): Point to a new InfrastructureRef with the new version AMI
-			// https://github.com/openshift/enhancements/pull/201
-			machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = k8sutilspointer.StringPtr(fmt.Sprintf("user-data-%s", mcs.GetName()))
-			machineDeployment.Spec.Template.Spec.Version = &targetVersion
-			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-				Type:    hyperv1.NodePoolUpgradingConditionType,
-				Status:  metav1.ConditionTrue,
-				Reason:  hyperv1.NodePoolAsExpectedConditionReason,
-				Message: fmt.Sprintf("Upgrade in progress. Target version: %v", targetVersion),
-			})
-			return nil
-		}
-
-		if isUpgrading(nodePool, targetVersion) {
-			if !MachineDeploymentComplete(machineDeployment) {
-				log.Info("Upgrading",
-					"nodePool", nodePool.GetName(), "targetVersion", targetVersion)
-			}
-			if MachineDeploymentComplete(machineDeployment) {
-				nodePool.Status.Version = targetVersion
-				log.Info("Upgrade complete",
-					"nodePool", nodePool.GetName(), "targetVersion", targetVersion)
-				meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-					Type:    hyperv1.NodePoolUpgradingConditionType,
-					Status:  metav1.ConditionFalse,
-					Reason:  hyperv1.NodePoolAsExpectedConditionReason,
-					Message: "",
-				})
-			}
-		}
-
-		if !isAutoscalingEnabled {
-			machineDeployment.Spec.Replicas = &wantedReplicas
-			machineDeployment.Annotations[autoscalerMaxAnnotation] = "0"
-			machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
-
-		}
-		// If autoscaling is enabled we don't modify the scalable resource replicas
-		if isAutoscalingEnabled {
-			machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
-			machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
-		}
-		return nil
-	}); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Update Status.nodeCount and conditions
-	nodePool.Status.NodeCount = int(machineDeployment.Status.AvailableReplicas)
-	if !isAutoscalingEnabled {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:   hyperv1.NodePoolAutoscalingEnabledConditionType,
-			Status: metav1.ConditionFalse,
-			Reason: hyperv1.NodePoolAsExpectedConditionReason,
-		})
-
-		if nodePool.Status.NodeCount != int(*nodePool.Spec.NodeCount) {
-			log.Info("Requeueing nodePool", "expected available nodes", *nodePool.Spec.NodeCount, "current available nodes", nodePool.Status.NodeCount)
-			return ctrl.Result{Requeue: true}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
-	log.Info("NodePool autoscaling is enabled",
-		"Maximum nodes", *nodePool.Spec.AutoScaling.Max,
-		"Minimum nodes", *nodePool.Spec.AutoScaling.Min)
-
-	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-		Type:    hyperv1.NodePoolAutoscalingEnabledConditionType,
-		Status:  metav1.ConditionTrue,
-		Reason:  hyperv1.NodePoolAsExpectedConditionReason,
-		Message: fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", *nodePool.Spec.AutoScaling.Max, *nodePool.Spec.AutoScaling.Min),
-	})
-
 	return ctrl.Result{}, nil
 }
 
@@ -372,61 +282,6 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 		newStatus.ObservedGeneration >= deployment.Generation
 }
 
-func generateMachineHealthCheck(nodePool *hyperv1.NodePool, targetNamespace, infraID string) *capiv1.MachineHealthCheck {
-	maxUnhealthy := intstr.FromInt(2)
-	resourcesName := generateName(infraID, nodePool.Spec.ClusterName, nodePool.GetName())
-	return &capiv1.MachineHealthCheck{
-		TypeMeta: metav1.TypeMeta{},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      nodePool.GetName(),
-			Namespace: targetNamespace,
-		},
-		// Opinionated spec based on https://github.com/openshift/managed-cluster-config/blob/14d4255ec75dc263ffd3d897dfccc725cb2b7072/deploy/osd-machine-api/011-machine-api.srep-worker-healthcheck.MachineHealthCheck.yaml
-		// TODO (alberto): possibly expose this config at the nodePool API.
-		Spec: capiv1.MachineHealthCheckSpec{
-			ClusterName: infraID,
-			Selector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					resourcesName: resourcesName,
-				},
-			},
-			UnhealthyConditions: []capiv1.UnhealthyCondition{
-				{
-					Type:   corev1.NodeReady,
-					Status: corev1.ConditionFalse,
-					Timeout: metav1.Duration{
-						Duration: 8 * time.Minute,
-					},
-				},
-				{
-					Type:   corev1.NodeReady,
-					Status: corev1.ConditionUnknown,
-					Timeout: metav1.Duration{
-						Duration: 8 * time.Minute,
-					},
-				},
-			},
-			MaxUnhealthy: &maxUnhealthy,
-			NodeStartupTimeout: &metav1.Duration{
-				Duration: 10 * time.Minute,
-			},
-		},
-	}
-}
-
-func generateMachineConfigServer(nodePool *hyperv1.NodePool, targetNamespace string) *hyperv1.MachineConfigServer {
-	return &hyperv1.MachineConfigServer{
-		TypeMeta: metav1.TypeMeta{},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      nodePool.GetName(),
-			Namespace: targetNamespace,
-		},
-		Spec: hyperv1.MachineConfigServerSpec{
-			ReleaseImage: nodePool.Spec.Release.Image,
-		},
-	}
-}
-
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
 func GetHostedClusterByName(ctx context.Context, c client.Client, namespace, name string) (*hyperv1.HostedCluster, error) {
 	hcluster := &hyperv1.HostedCluster{}
@@ -440,138 +295,6 @@ func GetHostedClusterByName(ctx context.Context, c client.Client, namespace, nam
 	}
 
 	return hcluster, nil
-}
-
-func generateMachineScalableResources(infraName, ami string, nodePool *hyperv1.NodePool, targetNamespace string) (*capiv1.MachineDeployment, *capiaws.AWSMachineTemplate, error) {
-	subnet := &capiaws.AWSResourceReference{}
-	if nodePool.Spec.Platform.AWS.Subnet != nil {
-		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
-		subnet.ARN = nodePool.Spec.Platform.AWS.Subnet.ARN
-		for k := range nodePool.Spec.Platform.AWS.Subnet.Filters {
-			filter := capiaws.Filter{
-				Name:   nodePool.Spec.Platform.AWS.Subnet.Filters[k].Name,
-				Values: nodePool.Spec.Platform.AWS.Subnet.Filters[k].Values,
-			}
-			subnet.Filters = append(subnet.Filters, filter)
-		}
-	}
-	securityGroups := []capiaws.AWSResourceReference{}
-	for _, sg := range nodePool.Spec.Platform.AWS.SecurityGroups {
-		filters := []capiaws.Filter{}
-		for _, f := range sg.Filters {
-			filters = append(filters, capiaws.Filter{
-				Name:   f.Name,
-				Values: f.Values,
-			})
-		}
-		securityGroups = append(securityGroups, capiaws.AWSResourceReference{
-			ARN:     sg.ARN,
-			ID:      sg.ID,
-			Filters: filters,
-		})
-	}
-
-	instanceProfile := fmt.Sprintf("%s-worker-profile", infraName)
-	if nodePool.Spec.Platform.AWS.InstanceProfile != "" {
-		instanceProfile = nodePool.Spec.Platform.AWS.InstanceProfile
-	}
-
-	instanceType := nodePool.Spec.Platform.AWS.InstanceType
-	resourcesName := generateName(infraName, nodePool.Spec.ClusterName, nodePool.GetName())
-	dataSecretName := fmt.Sprintf("%s-user-data", nodePool.Spec.ClusterName)
-
-	AWSMachineTemplate := &capiaws.AWSMachineTemplate{
-		TypeMeta: metav1.TypeMeta{},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      resourcesName,
-			Namespace: targetNamespace,
-		},
-		Spec: capiaws.AWSMachineTemplateSpec{
-			Template: capiaws.AWSMachineTemplateResource{
-				Spec: capiaws.AWSMachineSpec{
-					UncompressedUserData: k8sutilspointer.BoolPtr(true),
-					CloudInit: capiaws.CloudInit{
-						InsecureSkipSecretsManager: true,
-						SecureSecretsBackend:       "secrets-manager",
-					},
-					IAMInstanceProfile: instanceProfile,
-					InstanceType:       instanceType,
-					AMI: capiaws.AWSResourceReference{
-						ID: k8sutilspointer.StringPtr(ami),
-					},
-					AdditionalSecurityGroups: securityGroups,
-					Subnet:                   subnet,
-				},
-			},
-		},
-	}
-
-	annotations := map[string]string{
-		nodePoolAnnotation: ctrlclient.ObjectKeyFromObject(nodePool).String(),
-	}
-	maxUnavailable := intstr.FromInt(nodePool.Spec.Management.MaxUnavailable)
-	maxSurge := intstr.FromInt(nodePool.Spec.Management.MaxSurge)
-	if isAutoscalingEnabled(nodePool) {
-		if nodePool.Spec.AutoScaling.Max != nil &&
-			*nodePool.Spec.AutoScaling.Max > 0 {
-			annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
-			annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
-		}
-	}
-	machineDeployment := &capiv1.MachineDeployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        resourcesName,
-			Namespace:   targetNamespace,
-			Annotations: annotations,
-			Labels: map[string]string{
-				capiv1.ClusterLabelName: infraName,
-			},
-		},
-		TypeMeta: metav1.TypeMeta{},
-		Spec: capiv1.MachineDeploymentSpec{
-			Replicas: nodePool.Spec.NodeCount,
-			Strategy: &capiv1.MachineDeploymentStrategy{
-				Type: capiv1.RollingUpdateMachineDeploymentStrategyType,
-				RollingUpdate: &capiv1.MachineRollingUpdateDeployment{
-					MaxUnavailable: &maxUnavailable,
-					MaxSurge:       &maxSurge,
-				},
-			},
-			ClusterName: infraName,
-			Selector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					resourcesName: resourcesName,
-				},
-			},
-			Template: capiv1.MachineTemplateSpec{
-				ObjectMeta: capiv1.ObjectMeta{
-					Labels: map[string]string{
-						resourcesName:           resourcesName,
-						capiv1.ClusterLabelName: infraName,
-					},
-					// TODO (alberto): drop/expose this annotation at the nodePool API
-					Annotations: map[string]string{
-						"machine.cluster.x-k8s.io/exclude-node-draining": "true",
-					},
-				},
-
-				Spec: capiv1.MachineSpec{
-					Bootstrap: capiv1.Bootstrap{
-						DataSecretName: &dataSecretName,
-					},
-					ClusterName: nodePool.Spec.ClusterName,
-					InfrastructureRef: corev1.ObjectReference{
-						Namespace:  nodePool.GetNamespace(),
-						Name:       resourcesName,
-						APIVersion: "infrastructure.cluster.x-k8s.io/v1alpha3",
-						Kind:       "AWSMachineTemplate",
-					},
-				},
-			},
-		},
-	}
-
-	return machineDeployment, AWSMachineTemplate, nil
 }
 
 func generateName(infraName, clusterName, suffix string) string {
@@ -663,15 +386,6 @@ func validate(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
-// Int32PtrDerefOr dereference the int32 ptr and returns it if not nil,
-// else returns def.
-func Int32PtrDerefOr(ptr *int32, def int32) int32 {
-	if ptr != nil {
-		return *ptr
-	}
-	return def
-}
-
 func enqueueParentNodePool(obj ctrlclient.Object) []reconcile.Request {
 	var nodePoolName string
 	if obj.GetAnnotations() != nil {
@@ -685,9 +399,196 @@ func enqueueParentNodePool(obj ctrlclient.Object) []reconcile.Request {
 	}
 }
 
-func StringPtrDeref(ptr *string) string {
-	if ptr != nil {
-		return *ptr
+func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv1.MachineDeployment,
+	nodePool *hyperv1.NodePool,
+	mcs *hyperv1.MachineConfigServer,
+	awsMachineTemplate *capiaws.AWSMachineTemplate,
+	CAPIClusterName string) error {
+
+	// Set annotations and labels
+	if machineDeployment.GetAnnotations() == nil {
+		machineDeployment.Annotations = map[string]string{}
 	}
-	return ""
+	machineDeployment.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
+	if machineDeployment.GetLabels() == nil {
+		machineDeployment.Labels = map[string]string{}
+	}
+	machineDeployment.Labels[capiv1.ClusterLabelName] = CAPIClusterName
+
+	// Set upgrade strategy
+	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
+	maxUnavailable := intstr.FromInt(nodePool.Spec.Management.MaxUnavailable)
+	maxSurge := intstr.FromInt(nodePool.Spec.Management.MaxSurge)
+	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32Ptr(int32(0))
+	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{
+		Type: capiv1.RollingUpdateMachineDeploymentStrategyType,
+		RollingUpdate: &capiv1.MachineRollingUpdateDeployment{
+			MaxUnavailable: &maxUnavailable,
+			MaxSurge:       &maxSurge,
+		},
+	}
+
+	// Set selector and template
+	machineDeployment.Spec.ClusterName = CAPIClusterName
+	if machineDeployment.Spec.Selector.MatchLabels == nil {
+		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
+	}
+	machineDeployment.Spec.Selector.MatchLabels[resourcesName] = resourcesName
+	machineDeployment.Spec.Template = capiv1.MachineTemplateSpec{
+		ObjectMeta: capiv1.ObjectMeta{
+			Labels: map[string]string{
+				resourcesName:           resourcesName,
+				capiv1.ClusterLabelName: CAPIClusterName,
+			},
+			// TODO (alberto): drop/expose this annotation at the nodePool API
+			Annotations: map[string]string{
+				"machine.cluster.x-k8s.io/exclude-node-draining": "true",
+			},
+		},
+
+		Spec: capiv1.MachineSpec{
+			ClusterName: CAPIClusterName,
+			Bootstrap: capiv1.Bootstrap{
+				DataSecretName: k8sutilspointer.StringPtr(machineconfigserver.MachineConfigServerUserDataSecret(mcs).GetName()),
+			},
+			InfrastructureRef: corev1.ObjectReference{
+				Kind:       "AWSMachineTemplate",
+				APIVersion: "infrastructure.cluster.x-k8s.io/v1alpha3",
+				Namespace:  awsMachineTemplate.GetNamespace(),
+				Name:       awsMachineTemplate.GetName(),
+			},
+			// don't stamp version given by the nodePool
+			Version: machineDeployment.Spec.Template.Spec.Version,
+		},
+	}
+
+	// Propagate version to the machineDeployment.
+	releaseImage, err := r.ReleaseProvider.Lookup(context.Background(), nodePool.Spec.Release.Image)
+	if err != nil {
+		return err
+	}
+	targetVersion := releaseImage.Version()
+	if targetVersion == nodePool.Status.Version &&
+		targetVersion != k8sutilspointer.StringPtrDerefOr(machineDeployment.Spec.Template.Spec.Version, "") {
+		// This should never happen by design.
+		return fmt.Errorf("unexpected error. NodePool current version does not match machineDeployment version")
+	}
+
+	if targetVersion != mcs.Status.Version {
+		// This should never happen by design.
+		return fmt.Errorf("unexpected error. NodePool target version: %v, has no machineConfigServer available: %v", targetVersion, mcs.Status.Version)
+	}
+
+	if targetVersion != k8sutilspointer.StringPtrDerefOr(machineDeployment.Spec.Template.Spec.Version, "") {
+		r.Log.Info("Propagating new version to the machineDeployment. Starting upgrade",
+			"releaseImage", nodePool.Spec.Release.Image, "targetVersion", targetVersion)
+		// TODO (alberto): Point to a new InfrastructureRef with the new version AMI
+		// https://github.com/openshift/enhancements/pull/201
+		machineDeployment.Spec.Template.Spec.Version = &targetVersion
+
+		// We return early here during a version upgrade to persist the resource.
+		// So in the next reconciling loop we get a new MachineDeployment.Generation
+		// and we do a legit MachineDeploymentComplete/MachineDeployment.Status.ObservedGeneration check.
+		// If the nodePool is brand new we want to make sure the replica number is set so the machineDeployment controller
+		// does not panic.
+		if machineDeployment.Spec.Replicas == nil {
+			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 1))
+		}
+		return nil
+	}
+
+	if MachineDeploymentComplete(machineDeployment) {
+		if nodePool.Status.Version != targetVersion {
+			nodePool.Status.Version = targetVersion
+			r.Log.Info("Upgrade complete", "targetVersion", targetVersion)
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:    hyperv1.NodePoolUpgradingConditionType,
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.NodePoolAsExpectedConditionReason,
+				Message: "",
+			})
+		}
+	}
+
+	// Set wanted replicas:
+	// If autoscaling is enabled we reconcile min/max annotations and leave replicas untouched.
+	if isAutoscalingEnabled(nodePool) {
+		r.Log.Info("NodePool autoscaling is enabled",
+			"Maximum nodes", *nodePool.Spec.AutoScaling.Max,
+			"Minimum nodes", *nodePool.Spec.AutoScaling.Min)
+
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:    hyperv1.NodePoolAutoscalingEnabledConditionType,
+			Status:  metav1.ConditionTrue,
+			Reason:  hyperv1.NodePoolAsExpectedConditionReason,
+			Message: fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", *nodePool.Spec.AutoScaling.Max, *nodePool.Spec.AutoScaling.Min),
+		})
+
+		if !machineDeployment.CreationTimestamp.IsZero() {
+			// if autoscaling is enabled and the machineDeployment does not exist yet
+			// we start with 1 replica as the autoscaler does not support scaling from zero yet.
+			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
+		}
+		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
+		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
+	}
+
+	// If autoscaling is NOT enabled we reset min/max annotations and reconcile replicas.
+	if !isAutoscalingEnabled(nodePool) {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:   hyperv1.NodePoolAutoscalingEnabledConditionType,
+			Status: metav1.ConditionFalse,
+			Reason: hyperv1.NodePoolAsExpectedConditionReason,
+		})
+
+		machineDeployment.Annotations[autoscalerMaxAnnotation] = "0"
+		machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
+		machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
+	}
+
+	nodePool.Status.NodeCount = int(machineDeployment.Status.AvailableReplicas)
+	return nil
+}
+
+func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHealthCheck,
+	nodePool *hyperv1.NodePool,
+	CAPIClusterName string) error {
+	// Opinionated spec based on
+	// https://github.com/openshift/managed-cluster-config/blob/14d4255ec75dc263ffd3d897dfccc725cb2b7072/deploy/osd-machine-api/011-machine-api.srep-worker-healthcheck.MachineHealthCheck.yaml
+	// TODO (alberto): possibly expose this config at the nodePool API.
+	maxUnhealthy := intstr.FromInt(2)
+	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
+	mhc.Spec = capiv1.MachineHealthCheckSpec{
+		ClusterName: CAPIClusterName,
+		Selector: metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				resourcesName: resourcesName,
+			},
+		},
+		UnhealthyConditions: []capiv1.UnhealthyCondition{
+			{
+				Type:   corev1.NodeReady,
+				Status: corev1.ConditionFalse,
+				Timeout: metav1.Duration{
+					Duration: 8 * time.Minute,
+				},
+			},
+			{
+				Type:   corev1.NodeReady,
+				Status: corev1.ConditionUnknown,
+				Timeout: metav1.Duration{
+					Duration: 8 * time.Minute,
+				},
+			},
+		},
+		MaxUnhealthy: &maxUnhealthy,
+		NodeStartupTimeout: &metav1.Duration{
+			Duration: 10 * time.Minute,
+		},
+	}
+	return nil
+}
+
+func targetNamespace(nodePool *hyperv1.NodePool) string {
+	return fmt.Sprintf("%s-%s", nodePool.GetNamespace(), nodePool.Spec.ClusterName)
 }
