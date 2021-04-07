@@ -121,8 +121,9 @@ type AddonsSpec struct {
 type ClusterAutoscaling struct {
     // Maximum number of nodes in all node groups.
     // Cluster autoscaler will not grow the cluster beyond this number.
+    // default: 0 (unlimited)
     // +kubebuilder:validation:Minimum=0
-    MaxNodesTotal int32 `json:"maxNodesTotal"`
+    MaxNodesTotal *int32 `json:"maxNodesTotal,omitempty"`
 
     // Gives pods graceful termination time before scaling down
     // default: 600 seconds

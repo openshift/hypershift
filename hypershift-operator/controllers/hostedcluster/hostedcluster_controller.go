@@ -702,7 +702,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 		// Reconcile autoscaler deployment
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, autoScalerServiceAccount, hcpKubeConfigSecret, "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0")
+			return reconcileAutoScalerDeployment(autoScalerDeployment, autoScalerServiceAccount, hcpKubeConfigSecret, "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0", hcluster.Spec.Autoscaling)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -1210,7 +1210,38 @@ func reconcileCAPIAWSProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, hcpKubeConfigSecret *corev1.Secret, image string) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, hcpKubeConfigSecret *corev1.Secret, image string, options hyperv1.ClusterAutoscaling) error {
+	args := []string{
+		"--cloud-provider=clusterapi",
+		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
+		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+		"--clusterapi-cloud-config-authoritative",
+		"--alsologtostderr",
+		"--v=4",
+	}
+
+	// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
+	// from the cluster-autoscaler-operator and create some utility functions for these assignments.
+	if options.MaxNodesTotal != nil {
+		arg := fmt.Sprintf("%s=%d", "--max-nodes-total", *options.MaxNodesTotal)
+		args = append(args, arg)
+	}
+
+	if options.MaxPodGracePeriod != nil {
+		arg := fmt.Sprintf("%s=%d", "--max-graceful-termination-sec", *options.MaxPodGracePeriod)
+		args = append(args, arg)
+	}
+
+	if options.MaxNodeProvisionTime != "" {
+		arg := fmt.Sprintf("%s=%s", "--max-node-provision-time", options.MaxNodeProvisionTime)
+		args = append(args, arg)
+	}
+
+	if options.PodPriorityThreshold != nil {
+		arg := fmt.Sprintf("%s=%d", "--expendable-pods-priority-cutoff", *options.PodPriorityThreshold)
+		args = append(args, arg)
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -1272,14 +1303,7 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.Ser
 							},
 						},
 						Command: []string{"/cluster-autoscaler"},
-						Args: []string{
-							"--cloud-provider=clusterapi",
-							"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
-							"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-							"--clusterapi-cloud-config-authoritative",
-							"--alsologtostderr",
-							"--v=4",
-						},
+						Args:    args,
 					},
 				},
 			},

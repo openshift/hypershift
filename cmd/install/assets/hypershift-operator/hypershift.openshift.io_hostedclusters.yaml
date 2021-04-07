@@ -48,6 +48,28 @@ spec:
           spec:
             description: HostedClusterSpec defines the desired state of HostedCluster
             properties:
+              autoscaling:
+                description: Autoscaling for compute nodes only, does not cover control plane
+                properties:
+                  maxNodeProvisionTime:
+                    description: 'Maximum time CA waits for node to be provisioned default: 15 minutes'
+                    pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+                    type: string
+                  maxNodesTotal:
+                    description: Maximum number of nodes in all node groups. Cluster autoscaler will not grow the cluster beyond this number.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  maxPodGracePeriod:
+                    description: 'Gives pods graceful termination time before scaling down default: 600 seconds'
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  podPriorityThreshold:
+                    description: 'To allow users to schedule "best-effort" pods, which shouldn''t trigger Cluster Autoscaler actions, but only run when there are spare resources available, default: -10 More info: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption'
+                    format: int32
+                    type: integer
+                type: object
               dns:
                 description: DNS configuration for the cluster
                 properties:
@@ -262,6 +284,7 @@ spec:
                     type: string
                 type: object
             required:
+            - autoscaling
             - initialComputeReplicas
             - issuerURL
             - networking
