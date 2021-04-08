@@ -93,7 +93,7 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	ignitionRoute := MachineConfigServerIgnitionRoute(mcs.Namespace, mcs.Name)
 
-	userDataSecret := MachineConfigServerUserDataSecret(mcs.Namespace, mcs.Name)
+	userDataSecret := MachineConfigServerUserDataSecret(mcs)
 
 	// Return early if deleted
 	if !mcs.DeletionTimestamp.IsZero() {
@@ -188,7 +188,7 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 	if err != nil {
 		return ctrl.Result{}, nil
 	}
-	userDataSecret = MachineConfigServerUserDataSecret(mcs.Namespace, mcs.Name)
+	userDataSecret = MachineConfigServerUserDataSecret(mcs)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
 		// For now, only create and never update this secret
 		if !userDataSecret.CreationTimestamp.IsZero() {
