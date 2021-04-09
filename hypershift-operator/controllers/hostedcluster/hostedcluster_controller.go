@@ -1471,7 +1471,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 		}
 	}
 
-	if len(hc.Spec.InfraID) > 0 {
+	if hc != nil && len(hc.Spec.InfraID) > 0 {
 		r.Log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
 		cluster := &capiv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{

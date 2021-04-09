@@ -8,13 +8,13 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki/util"
 )
 
 func GeneratePKI(params *render.PKIParams) (map[string][]byte, error) {
 	log.Info("Generating PKI artifacts")
 
 	cas := []caSpec{
-		ca("root-ca", "root-ca", "openshift"),
 		ca("cluster-signer", "cluster-signer", "openshift"),
 		ca("openvpn-ca", "openvpn-ca", "openshift"),
 	}
@@ -134,6 +134,16 @@ func GeneratePKI(params *render.PKIParams) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	rootCACert, err := util.PemToCertificate(params.RootCACert)
+	if err != nil {
+		return nil, err
+	}
+	rootCAKey, err := util.PemToPrivateKey(params.RootCAKey)
+	if err != nil {
+		return nil, err
+	}
+	caMap["root-ca"] = &util.CA{Key: rootCAKey, Cert: rootCACert}
+
 	kubeconfigMap, err := generateKubeconfigs(kubeconfigs, caMap)
 	if err != nil {
 		return nil, err

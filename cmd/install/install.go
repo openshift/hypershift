@@ -1,6 +1,4 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -66,6 +64,7 @@ func NewCommand() *cobra.Command {
 
 		objects = append(objects, hyperShiftOperatorManifests(opts)...)
 		objects = append(objects, clusterAPIManifests()...)
+		objects = append(objects, etcdManifests()...)
 
 		switch {
 		case opts.Render:
@@ -174,5 +173,17 @@ func clusterAPIManifests() []crclient.Object {
 		awsMachineTemplatesCRD,
 		awsManagedClustersCRD,
 		awsManagedMachinePoolsCRD,
+	}
+}
+
+func etcdManifests() []crclient.Object {
+	clustersCRD := assets.EtcdClustersCustomResourceDefinition{}.Build()
+	backupsCRD := assets.EtcdBackupsCustomResourceDefinition{}.Build()
+	restoresCRD := assets.EtcdRestoresCustomResourceDefinition{}.Build()
+
+	return []crclient.Object{
+		clustersCRD,
+		backupsCRD,
+		restoresCRD,
 	}
 }
