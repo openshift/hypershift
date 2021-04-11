@@ -39,18 +39,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki"
+	renderpki "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki"
 	pkiutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki/util"
+	hcputil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
+	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 )
 
 const (
 	finalizer                  = "hypershift.openshift.io/finalizer"
+	controlPlaneAnnotation     = "hypershift.openshift.io/hosted-control-plane"
 	APIServerPort              = 6443
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
@@ -65,6 +72,12 @@ const (
 	DefaultAPIServerIPAddress  = "172.20.0.1"
 	externalOauthPort          = 443
 	vpnServicePort             = 1194
+
+	etcdOperatorImage          = "quay.io/coreos/etcd-operator:v0.9.4"
+	etcdVersion                = "3.4.9"
+	etcdClusterSize            = 1
+	etcdDeleteCheckInterval    = 10 * time.Second
+	etcdAvailableCheckInterval = 10 * time.Second
 )
 
 var (
@@ -77,6 +90,9 @@ var (
 
 	version46 = semver.MustParse("4.6.0")
 )
+
+// NoopReconcile is just a default mutation function that does nothing.
+var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type InfrastructureStatus struct {
 	APIAddress            string
@@ -113,6 +129,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
+		Watches(&source.Kind{Type: &etcdv1.EtcdCluster{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager %w", err)
@@ -299,6 +316,48 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				}
 				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name, "from", currentImage, "to", latestImage)
 			}
+		}
+	}
+
+	// Reconcile etcd cluster status
+	{
+		etcdCluster := etcd.Cluster(hostedControlPlane.Namespace)
+		var err error
+		if err = r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to fetch etcd cluster %s/%s: %w", etcdCluster.Namespace, etcdCluster.Name, err)
+		}
+		if apierrors.IsNotFound(err) {
+			etcdCluster = nil
+		} else if !etcdCluster.DeletionTimestamp.IsZero() {
+			// Wait til etcd cluster is gone in case it's being deleted
+			return ctrl.Result{RequeueAfter: etcdDeleteCheckInterval}, nil
+		}
+		err = etcd.ReconcileEtcdClusterStatus(ctx, r.Client, hostedControlPlane, etcdCluster)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Reconcile root CA
+	rootCASecret := pki.RootCASecret(hostedControlPlane.Namespace)
+	if _, err = controllerutil.CreateOrUpdate(ctx, r, rootCASecret, func() error {
+		rootCASecret.OwnerReferences = ensureHCPOwnerRef(hostedControlPlane, rootCASecret.OwnerReferences)
+		return pki.ReconcileRootCA(rootCASecret)
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile root CA: %w", err)
+	}
+
+	// Reconcile etcd
+	r.Log.Info("Reconciling Etcd")
+	if err = r.reconcileEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
+		r.Log.Error(err, "failed to reconcile etcd")
+		return ctrl.Result{}, err
+	}
+	{
+		etcdAvailable := getConditionByType(hostedControlPlane.Status.Conditions, hyperv1.EtcdAvailable)
+		if etcdAvailable == nil || etcdAvailable.Status != hyperv1.ConditionTrue {
+			r.Log.Info("etcd is not yet available")
+			return ctrl.Result{RequeueAfter: etcdAvailableCheckInterval}, nil
 		}
 	}
 
@@ -612,6 +671,93 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	rootCASecret := pki.RootCASecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
+		return fmt.Errorf("cannot get root CA secret: %w", err)
+	}
+
+	// Etcd client secret
+	clientSecret := etcd.ClientSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, clientSecret, func() error {
+		clientSecret.OwnerReferences = ensureHCPOwnerRef(hcp, clientSecret.OwnerReferences)
+		return etcd.ReconcileClientSecret(clientSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
+	}
+
+	// Etcd server secret
+	serverSecret := etcd.ServerSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverSecret, func() error {
+		serverSecret.OwnerReferences = ensureHCPOwnerRef(hcp, serverSecret.OwnerReferences)
+		return etcd.ReconcileServerSecret(serverSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd server secret: %w", err)
+	}
+
+	// Etcd peer secret
+	peerSecret := etcd.PeerSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, peerSecret, func() error {
+		peerSecret.OwnerReferences = ensureHCPOwnerRef(hcp, peerSecret.OwnerReferences)
+		return etcd.ReconcilePeerSecret(peerSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
+	}
+
+	// Etcd Operator ServiceAccount
+	operatorServiceAccount := etcd.OperatorServiceAccount(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorServiceAccount, func() error {
+		operatorServiceAccount.OwnerReferences = ensureHCPOwnerRef(hcp, operatorServiceAccount.OwnerReferences)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator service account: %w", err)
+	}
+
+	// Etcd operator role
+	operatorRole := etcd.OperatorRole(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRole, func() error {
+		operatorRole.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRole.OwnerReferences)
+		return etcd.ReconcileOperatorRole(operatorRole)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator role: %w", err)
+	}
+
+	// Etcd operator rolebinding
+	operatorRoleBinding := etcd.OperatorRoleBinding(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRoleBinding, func() error {
+		operatorRoleBinding.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRoleBinding.OwnerReferences)
+		return etcd.ReconcileOperatorRoleBinding(operatorRoleBinding)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator role binding: %w", err)
+	}
+
+	// Etcd operator deployment
+	operatorDeployment := etcd.OperatorDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorDeployment, func() error {
+		operatorDeployment.OwnerReferences = ensureHCPOwnerRef(hcp, operatorDeployment.OwnerReferences)
+		return etcd.ReconcileOperatorDeployment(operatorDeployment, etcdOperatorImage)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator deployment: %w", err)
+	}
+
+	// Etcd cluster
+	etcdCluster := etcd.Cluster(hcp.Namespace)
+	etcdAvailableCond := hcputil.GetConditionByType(hcp.Status.Conditions, hyperv1.EtcdAvailable)
+	if etcdAvailableCond != nil && etcdAvailableCond.Status == hyperv1.ConditionFalse && etcdAvailableCond.Reason == etcd.EtcdReasonFailed {
+		if err := r.Delete(ctx, etcdCluster); err != nil {
+			return fmt.Errorf("failed to delete etcd cluster: %w", err)
+		}
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdCluster, func() error {
+		etcdCluster.OwnerReferences = ensureHCPOwnerRef(hcp, etcdCluster.OwnerReferences)
+		return etcd.ReconcileCluster(etcdCluster, etcdClusterSize, etcdVersion)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
+	}
+
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
 	targetNamespace := hcp.GetNamespace()
 
@@ -700,6 +846,10 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		r.Log.Info("using existing pki secret")
 	}
 	if needsPkiSecret {
+		rootCA := pki.RootCASecret(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+			return nil, fmt.Errorf("failed to read Root CA secret: %w", err)
+		}
 		pkiParams := &render.PKIParams{
 			ExternalAPIAddress:      infraStatus.APIAddress,
 			NodeInternalAPIServerIP: params.ExternalAPIAddress,
@@ -710,9 +860,11 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 			IngressSubdomain:        "apps." + baseDomain,
 			ExternalOpenVPNAddress:  infraStatus.VPNAddress,
 			Namespace:               targetNamespace,
+			RootCACert:              rootCA.Data[pki.CASignerCertMapKey],
+			RootCAKey:               rootCA.Data[pki.CASignerKeyMapKey],
 		}
 		r.Log.Info("generating PKI secret data")
-		data, err := pki.GeneratePKI(pkiParams)
+		data, err := renderpki.GeneratePKI(pkiParams)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate PKI data: %w", err)
 		}

@@ -127,8 +127,11 @@ func NewStartCommand() *cobra.Command {
 		setupLog.Info("using operator image", "operator-image", hostedClusterConfigOperatorImage)
 
 		releaseProvider := &releaseinfo.StaticProviderDecorator{
-			Delegate: &releaseinfo.PodProvider{
-				Pods: kubeClient.CoreV1().Pods(namespace),
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.PodProvider{
+					Pods: kubeClient.CoreV1().Pods(namespace),
+				},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 			ComponentImages: map[string]string{
 				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,

@@ -54,7 +54,8 @@ type KubeconfigSecretRef struct {
 type ConditionType string
 
 const (
-	Available ConditionType = "Available"
+	Available     ConditionType = "Available"
+	EtcdAvailable ConditionType = "EtcdAvailable"
 )
 
 type ConditionStatus string

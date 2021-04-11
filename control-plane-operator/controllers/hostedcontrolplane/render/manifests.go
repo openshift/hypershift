@@ -58,7 +58,6 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
 	c.serviceAdminKubeconfig()
-	c.etcd()
 	c.kubeControllerManager()
 	c.kubeScheduler()
 	c.clusterVersionOperator()
