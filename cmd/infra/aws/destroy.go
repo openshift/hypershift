@@ -3,26 +3,31 @@ package aws
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
+	awserrors "github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/cloudformation"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
+	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	s3service "github.com/aws/aws-sdk-go/service/s3"
 	"github.com/spf13/cobra"
-
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type DestroyInfraOptions struct {
+	AWSCredentialsFile string
 	Region             string
 	InfraID            string
-	AWSCredentialsFile string
-	Name               string
-	BaseDomain         string
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -33,75 +38,144 @@ func NewDestroyCommand() *cobra.Command {
 
 	opts := DestroyInfraOptions{
 		Region: "us-east-1",
-		Name:   "example",
 	}
 
-	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
+	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "The cluster infrastructure ID to destroy (required)")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
-	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
-	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
-	cmd.MarkFlagRequired("base-domain")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		opts.Run(context.Background())
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, cancel := context.WithCancel(context.Background())
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+		}()
+		err := opts.DestroyInfra(ctx)
+		if err != nil {
+			return err
+		}
 		log.Info("Successfully destroyed AWS infra")
+		return nil
 	}
 
 	return cmd
 }
 
-func (o *DestroyInfraOptions) Run(ctx context.Context) {
-	wait.PollUntil(5*time.Second, func() (bool, error) {
-		err := o.DestroyInfra(ctx)
-		if err != nil {
-			log.Error(err, "error destroying infra")
-			return false, nil
-		}
-		return true, nil
-	}, ctx.Done())
-}
-
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
-	var errs []error
-	ec2client, err := ec2Client(o.AWSCredentialsFile, o.Region)
+	awsConfig := aws.NewConfig().WithRegion(o.Region).WithCredentials(credentials.NewSharedCredentials(o.AWSCredentialsFile, "default"))
+	awsSession := session.Must(session.NewSession())
+	cf := cloudformation.New(awsSession, awsConfig)
+	s3 := s3service.New(awsSession, awsConfig)
+	// Route53 is weird about regions
+	// https://github.com/openshift/cluster-ingress-operator/blob/5660b43d66bd63bbe2dcb45fb40df98d8d91347e/pkg/dns/aws/dns.go#L163-L169
+	r53 := route53.New(awsSession, awsConfig.WithRegion("us-east-1"))
+	elbclient := elb.New(awsSession, awsConfig)
+	ec2client := ec2.New(awsSession, awsConfig)
+
+	stack, err := getStack(cf, o.InfraID)
 	if err != nil {
-		return err
+		if awserr, ok := err.(awserrors.Error); ok {
+			// TODO: Where is this code constant in the aws sdk?
+			if awserr.Code() == "ValidationError" {
+				log.Info("Stack already deleted", "id", o.InfraID)
+				return nil
+			}
+			return awserr
+		}
+		return fmt.Errorf("failed to get stack: %w", err)
 	}
-	route53client, err := route53Client(o.AWSCredentialsFile)
+	log.Info("Found stack", "id", *stack.StackId)
+
+	// Clean up the OIDC S3 bucket so it can be deleted along with the stack
+	bucket := getStackOutput(stack, "OIDCBucketName")
+	if err := emptyBucket(ctx, bucket, s3); err != nil {
+		return fmt.Errorf("failed to empty the OIDC bucket: %w", err)
+	}
+	log.Info("Emptied OIDC bucket", "id", bucket)
+
+	// Delete the NS record from the base domain hosted zone
+	baseDomainZoneID := getStackOutput(stack, "BaseDomainHostedZoneId")
+	subdomain := getStackOutput(stack, "Subdomain")
+	if err := deleteRecord(ctx, r53, baseDomainZoneID, "NS", subdomain); err != nil {
+		return fmt.Errorf("failed to clean up the base domain zone: %w", err)
+	}
+	log.Info("Cleaned up the base domain hosted zone", "id", baseDomainZoneID, "subdomain", subdomain)
+
+	// Find and delete any non-default unmanaged DNS records
+	subdomainPrivateZoneID := getStackOutput(stack, "SubdomainPrivateZoneId")
+	if err := deleteNonDefaultRecords(ctx, r53, subdomainPrivateZoneID); err != nil {
+		return fmt.Errorf("failed to clean up the subdomain private zone: %w", err)
+	}
+	log.Info("Cleaned up the subdomain private zone", "zone", subdomainPrivateZoneID)
+	subdomainPublicZoneID := getStackOutput(stack, "SubdomainPublicZoneId")
+	err = deleteNonDefaultRecords(ctx, r53, subdomainPublicZoneID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to clean up the subdomain public zone: %w", err)
 	}
-	elbclient, err := elbClient(o.AWSCredentialsFile, o.Region)
-	if err != nil {
-		return err
+	log.Info("Cleaned up the subdomain public zone", "zone", subdomainPublicZoneID)
+
+	vpcID := getStackOutput(stack, "VPCId")
+
+	// Find and delete any unmanaged leaked load balancers
+	if err := deleteUnmanagedELBs(ctx, elbclient, vpcID); err != nil {
+		return fmt.Errorf("failed to delete unmanaged ELBs: %w", err)
 	}
-	errs = append(errs, o.DestroyInternetGateways(ctx, ec2client)...)
-	errs = append(errs, o.DestroyVPCs(ctx, ec2client, elbclient)...)
-	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2client)...)
-	errs = append(errs, o.DestroyEIPs(ctx, ec2client)...)
-	errs = append(errs, o.DestroyDNS(ctx, route53client)...)
-	return utilerrors.NewAggregate(errs)
+	log.Info("Cleaned up unmanaged ELBs")
+
+	// Find and delete any unmanaged leaked security groups
+	if err := deleteUnmanagedSecurityGroups(ctx, ec2client, vpcID); err != nil {
+		return fmt.Errorf("failed to delete unmanaged security groups: %w", err)
+	}
+	log.Info("Cleaned up unmanaged security groups")
+
+	// Delete the stack itself
+	if err := deleteStack(ctx, cf, stack); err != nil {
+		return fmt.Errorf("failed to delete stack: %w", err)
+	}
+	log.Info("Deleted the stack", "id", *stack.StackId)
+
+	return nil
 }
 
-func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
+func deleteUnmanagedELBs(ctx context.Context, client elbiface.ELBAPI, vpcID string) error {
 	var errs []error
 	deleteLBs := func(out *elb.DescribeLoadBalancersOutput, _ bool) bool {
 		for _, lb := range out.LoadBalancerDescriptions {
-			if *lb.VPCId != *vpcID {
+			if *lb.VPCId != vpcID {
 				continue
 			}
-			_, err := client.DeleteLoadBalancerWithContext(ctx, &elb.DeleteLoadBalancerInput{
+			tags, err := client.DescribeTags(&elb.DescribeTagsInput{
+				LoadBalancerNames: []*string{lb.LoadBalancerName},
+			})
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to describe tags for load balancer %s: %w", *lb.LoadBalancerName, err))
+				continue
+			}
+			isManaged := false
+			for _, tagDescription := range tags.TagDescriptions {
+				for _, tag := range tagDescription.Tags {
+					if *tag.Key == "hypershift.openshift.io/infra" && *tag.Value == "owned" {
+						isManaged = true
+					}
+				}
+			}
+			if isManaged {
+				log.Info("Ignoring managed load balancer", "name", *lb.LoadBalancerName, "vpcID", vpcID)
+				continue
+			}
+			_, err = client.DeleteLoadBalancerWithContext(ctx, &elb.DeleteLoadBalancerInput{
 				LoadBalancerName: lb.LoadBalancerName,
 			})
 			if err != nil {
-				errs = append(errs, err)
-			} else {
-				log.Info("Deleted ELB", "name", lb.LoadBalancerName)
+				errs = append(errs, fmt.Errorf("failed to delete load balancer %s: %w", *lb.LoadBalancerName, err))
+				continue
 			}
+			log.Info("Deleted unmanaged load balancer", "name", *lb.LoadBalancerName, "vpcID", vpcID)
 		}
 		return true
 	}
@@ -109,354 +183,143 @@ func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.E
 		&elb.DescribeLoadBalancersInput{},
 		deleteLBs)
 	if err != nil {
-		errs = append(errs, err)
+		errs = append(errs, fmt.Errorf("failed to delete load balancers: %w", err))
 	}
-	return errs
+	return errors.NewAggregate(errs)
 }
 
-func (o *DestroyInfraOptions) DestroyVPCEndpoints(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
-	var errs []error
-	deleteVPCEndpoints := func(out *ec2.DescribeVpcEndpointsOutput, _ bool) bool {
-		ids := make([]*string, 0, len(out.VpcEndpoints))
-		for _, ep := range out.VpcEndpoints {
-			ids = append(ids, ep.VpcEndpointId)
-		}
-		if len(ids) > 0 {
-			_, err := client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
-				VpcEndpointIds: ids,
-			})
-			if err != nil {
-				errs = append(errs, err)
-			} else {
-				epIDs := make([]string, 0, len(ids))
-				for _, id := range ids {
-					epIDs = append(epIDs, aws.StringValue(id))
+func deleteUnmanagedSecurityGroups(ctx context.Context, client ec2iface.EC2API, vpcID string) error {
+	managedGroups := sets.NewString()
+	unmanagedGroups := sets.NewString()
+	err := client.DescribeSecurityGroupsPagesWithContext(ctx,
+		&ec2.DescribeSecurityGroupsInput{Filters: vpcFilter(vpcID)},
+		func(out *ec2.DescribeSecurityGroupsOutput, _ bool) bool {
+			for _, sg := range out.SecurityGroups {
+				if *sg.GroupName == "default" {
+					continue
 				}
-				log.Info("Deleted VPC endpoints", "IDs", strings.Join(epIDs, " "))
+				isManaged := false
+				for _, tag := range sg.Tags {
+					if *tag.Key == "hypershift.openshift.io/infra" && *tag.Value == "owned" {
+						isManaged = true
+					}
+				}
+				if isManaged {
+					managedGroups.Insert(*sg.GroupId)
+				} else {
+					unmanagedGroups.Insert(*sg.GroupId)
+				}
 			}
-		}
-		return true
-	}
-	err := client.DescribeVpcEndpointsPagesWithContext(ctx,
-		&ec2.DescribeVpcEndpointsInput{Filters: vpcFilter(vpcID)},
-		deleteVPCEndpoints)
+			return false
+		})
 	if err != nil {
-		errs = append(errs, err)
+		return fmt.Errorf("failed to describe security groups: %w", err)
 	}
-	return errs
-}
 
-func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
 	var errs []error
-	deleteRouteTables := func(out *ec2.DescribeRouteTablesOutput, _ bool) bool {
-		for _, routeTable := range out.RouteTables {
-			var routeErrs []error
-			for _, route := range routeTable.Routes {
-				if aws.StringValue(route.Origin) == "CreateRoute" {
-					_, err := client.DeleteRouteWithContext(ctx, &ec2.DeleteRouteInput{
-						RouteTableId:             routeTable.RouteTableId,
-						DestinationCidrBlock:     route.DestinationCidrBlock,
-						DestinationIpv6CidrBlock: route.DestinationIpv6CidrBlock,
-						DestinationPrefixListId:  route.DestinationPrefixListId,
+
+	// Revoke all managed group ingress rules that reference unmanaged groups
+	// so the unmanaged groups can be deleted
+	err = client.DescribeSecurityGroupsPagesWithContext(ctx,
+		&ec2.DescribeSecurityGroupsInput{Filters: vpcFilter(vpcID)},
+		func(out *ec2.DescribeSecurityGroupsOutput, _ bool) bool {
+			for i := range out.SecurityGroups {
+				sg := out.SecurityGroups[i]
+				if !managedGroups.Has(*sg.GroupId) {
+					continue
+				}
+				var unmanagedPermissions []*ec2.IpPermission
+				for _, perm := range sg.IpPermissions {
+					for _, pair := range perm.UserIdGroupPairs {
+						if !managedGroups.Has(*pair.GroupId) {
+							unmanagedPermissions = append(unmanagedPermissions, perm)
+							break
+						}
+					}
+				}
+				if len(unmanagedPermissions) > 0 {
+					_, err := client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
+						GroupId:       sg.GroupId,
+						IpPermissions: unmanagedPermissions,
 					})
 					if err != nil {
-						routeErrs = append(routeErrs, err)
+						errs = append(errs, fmt.Errorf("failed to revoke unmanaged security group ingress from managed group %s: %w", *sg.GroupId, err))
 					} else {
-						log.Info("Deleted route from route table", "table", aws.StringValue(routeTable.RouteTableId), "destination", aws.StringValue(route.DestinationCidrBlock))
+						log.Info("Cleaned up unmanaged security group ingress permissions", "id", *sg.GroupId, "permissions", unmanagedPermissions)
 					}
 				}
 			}
-			if len(routeErrs) > 0 {
-				errs = append(errs, routeErrs...)
-				continue
-			}
-			hasMain := false
-			var assocErrs []error
-			for _, assoc := range routeTable.Associations {
-				if aws.BoolValue(assoc.Main) {
-					hasMain = true
+			return false
+		})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to revoke security group ingress rules: %w", err))
+	}
+
+	// Delete unmanaged security groups
+	err = client.DescribeSecurityGroupsPagesWithContext(ctx,
+		&ec2.DescribeSecurityGroupsInput{Filters: vpcFilter(vpcID)},
+		func(out *ec2.DescribeSecurityGroupsOutput, _ bool) bool {
+			for _, sg := range out.SecurityGroups {
+				if !unmanagedGroups.Has(*sg.GroupId) {
 					continue
 				}
-				_, err := client.DisassociateRouteTableWithContext(ctx, &ec2.DisassociateRouteTableInput{
-					AssociationId: assoc.RouteTableAssociationId,
+				_, err := client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
+					GroupId: sg.GroupId,
 				})
 				if err != nil {
-					assocErrs = append(assocErrs, err)
-				} else {
-					log.Info("Removed route table association", "table", aws.StringValue(routeTable.RouteTableId), "association", aws.StringValue(assoc.RouteTableId))
+					errs = append(errs, fmt.Errorf("failed to delete security group %s: %w", *sg.GroupId, err))
+					continue
 				}
+				log.Info("Deleted unmanaged security group", "id", *sg.GroupId)
 			}
-			if len(assocErrs) > 0 {
-				errs = append(errs, assocErrs...)
+			return true
+		})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to delete security groups: %w", err))
+	}
+
+	return errors.NewAggregate(errs)
+}
+
+func deleteNonDefaultRecords(ctx context.Context, client route53iface.Route53API, zoneID string) error {
+	typesToPreserve := sets.NewString("SOA", "NS")
+
+	input := &route53.ListResourceRecordSetsInput{
+		HostedZoneId: aws.String(zoneID),
+	}
+	var recordsToDelete []*route53.ResourceRecordSet
+	err := client.ListResourceRecordSetsPagesWithContext(ctx, input, func(resp *route53.ListResourceRecordSetsOutput, lastPage bool) bool {
+		for i, rrs := range resp.ResourceRecordSets {
+			if typesToPreserve.Has(*rrs.Type) {
 				continue
 			}
-			if hasMain {
-				continue
-			}
-			_, err := client.DeleteRouteTableWithContext(ctx, &ec2.DeleteRouteTableInput{
-				RouteTableId: routeTable.RouteTableId,
-			})
-			if err != nil {
-				errs = append(errs, err)
-			} else {
-				log.Info("Deleted route table", "table", aws.StringValue(routeTable.RouteTableId))
-			}
+			recordsToDelete = append(recordsToDelete, resp.ResourceRecordSets[i])
 		}
 		return false
+	})
+	if len(recordsToDelete) == 0 {
+		return nil
 	}
 
-	err := client.DescribeRouteTablesPagesWithContext(ctx,
-		&ec2.DescribeRouteTablesInput{Filters: vpcFilter(vpcID)},
-		deleteRouteTables)
-	if err != nil {
-		errs = append(errs, err)
+	// Change batch for deleting
+	changeBatch := &route53.ChangeBatch{
+		Changes: []*route53.Change{},
 	}
-	return errs
-}
-
-func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
-	var errs []error
-	deleteSecurityGroups := func(out *ec2.DescribeSecurityGroupsOutput, _ bool) bool {
-		for _, sg := range out.SecurityGroups {
-			var permissionErrs []error
-			if len(sg.IpPermissions) > 0 {
-				_, err := client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
-					GroupId:       sg.GroupId,
-					IpPermissions: sg.IpPermissions,
-				})
-				if err != nil {
-					permissionErrs = append(permissionErrs, err)
-				} else {
-					log.Info("Revoked security group ingress permissions", "group", aws.StringValue(sg.GroupId))
-				}
-			}
-
-			if len(sg.IpPermissionsEgress) > 0 {
-				_, err := client.RevokeSecurityGroupEgressWithContext(ctx, &ec2.RevokeSecurityGroupEgressInput{
-					GroupId:       sg.GroupId,
-					IpPermissions: sg.IpPermissionsEgress,
-				})
-				if err != nil {
-					permissionErrs = append(permissionErrs, err)
-				} else {
-					log.Info("Revoked security group egress permissions", "group", aws.StringValue(sg.GroupId))
-				}
-			}
-			if len(permissionErrs) > 0 {
-				errs = append(errs, permissionErrs...)
-				continue
-			}
-			if aws.StringValue(sg.GroupName) == "default" {
-				continue
-			}
-			_, err := client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
-				GroupId: sg.GroupId,
-			})
-			if err != nil {
-				errs = append(errs, err)
-			} else {
-				log.Info("Deleted security group", "group", aws.StringValue(sg.GroupId))
-			}
-		}
-
-		return true
+	for i, rec := range recordsToDelete {
+		changeBatch.Changes = append(changeBatch.Changes, &route53.Change{
+			Action:            aws.String("DELETE"),
+			ResourceRecordSet: recordsToDelete[i],
+		})
+		log.Info("Deleting unmanaged record", "zone", zoneID, "name", *rec.Name)
 	}
 
-	err := client.DescribeSecurityGroupsPagesWithContext(ctx,
-		&ec2.DescribeSecurityGroupsInput{Filters: vpcFilter(vpcID)},
-		deleteSecurityGroups)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	return errs
-}
-
-func (o *DestroyInfraOptions) DestroyNATGateways(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
-	var errs []error
-	deleteNATGateways := func(out *ec2.DescribeNatGatewaysOutput, _ bool) bool {
-		for _, natGateway := range out.NatGateways {
-			_, err := client.DeleteNatGatewayWithContext(ctx, &ec2.DeleteNatGatewayInput{
-				NatGatewayId: natGateway.NatGatewayId,
-			})
-			if err != nil {
-				errs = append(errs, err)
-			} else {
-				log.Info("Deleted NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
-			}
-		}
-		return true
-	}
-	err := client.DescribeNatGatewaysPagesWithContext(ctx,
-		&ec2.DescribeNatGatewaysInput{Filter: vpcFilter(vpcID)},
-		deleteNATGateways)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	return errs
-}
-
-func (o *DestroyInfraOptions) DestroyInternetGateways(ctx context.Context, client ec2iface.EC2API) []error {
-	var errs []error
-	deleteInternetGateways := func(out *ec2.DescribeInternetGatewaysOutput, _ bool) bool {
-		for _, igw := range out.InternetGateways {
-			var detachErrs []error
-			for _, attachment := range igw.Attachments {
-				_, err := client.DetachInternetGatewayWithContext(ctx, &ec2.DetachInternetGatewayInput{
-					InternetGatewayId: igw.InternetGatewayId,
-					VpcId:             attachment.VpcId,
-				})
-				if err != nil {
-					detachErrs = append(detachErrs, err)
-				} else {
-					log.Info("Detached internet gateway from VPC", "gateway id", aws.StringValue(igw.InternetGatewayId), "vpc", aws.StringValue(attachment.VpcId))
-				}
-			}
-			if len(detachErrs) > 0 {
-				errs = append(errs, detachErrs...)
-				continue
-			}
-			_, err := client.DeleteInternetGatewayWithContext(ctx, &ec2.DeleteInternetGatewayInput{
-				InternetGatewayId: igw.InternetGatewayId,
-			})
-			if err != nil {
-				errs = append(errs, err)
-			} else {
-				log.Info("Deleted internet gateway", "id", aws.StringValue(igw.InternetGatewayId))
-			}
-		}
-		return true
-	}
-
-	err := client.DescribeInternetGatewaysPagesWithContext(ctx,
-		&ec2.DescribeInternetGatewaysInput{Filters: o.ec2Filters()},
-		deleteInternetGateways)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	return nil
-}
-
-func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
-	var errs []error
-	deleteSubnets := func(out *ec2.DescribeSubnetsOutput, _ bool) bool {
-		for _, subnet := range out.Subnets {
-			_, err := client.DeleteSubnetWithContext(ctx, &ec2.DeleteSubnetInput{
-				SubnetId: subnet.SubnetId,
-			})
-			if err != nil {
-				errs = append(errs, err)
-			} else {
-				log.Info("Deleted subnet", "id", aws.StringValue(subnet.SubnetId))
-			}
-		}
-		return true
-	}
-	err := client.DescribeSubnetsPagesWithContext(ctx,
-		&ec2.DescribeSubnetsInput{Filters: vpcFilter(vpcID)},
-		deleteSubnets)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	return errs
-}
-
-func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2iface.EC2API, elbclient elbiface.ELBAPI) []error {
-	var errs []error
-	deleteVPC := func(out *ec2.DescribeVpcsOutput, _ bool) bool {
-		for _, vpc := range out.Vpcs {
-			var childErrs []error
-			childErrs = append(errs, o.DestroyELBs(ctx, elbclient, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroyVPCEndpoints(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroyRouteTables(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroyNATGateways(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroySubnets(ctx, ec2client, vpc.VpcId)...)
-			if len(childErrs) > 0 {
-				errs = append(errs, childErrs...)
-				continue
-			}
-			_, err := ec2client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
-				VpcId: vpc.VpcId,
-			})
-			if err != nil {
-				errs = append(errs, err)
-			} else {
-				log.Info("Deleted VPC", "id", aws.StringValue(vpc.VpcId))
-			}
-		}
-		return true
-	}
-	err := ec2client.DescribeVpcsPagesWithContext(ctx,
-		&ec2.DescribeVpcsInput{Filters: o.ec2Filters()},
-		deleteVPC)
-
-	if err != nil {
-		errs = append(errs, err)
-	}
-	return errs
-}
-
-func (o *DestroyInfraOptions) DestroyDHCPOptions(ctx context.Context, client ec2iface.EC2API) []error {
-	var errs []error
-	deleteDHCPOptions := func(out *ec2.DescribeDhcpOptionsOutput, _ bool) bool {
-		for _, dhcpOpt := range out.DhcpOptions {
-			_, err := client.DeleteDhcpOptionsWithContext(ctx, &ec2.DeleteDhcpOptionsInput{
-				DhcpOptionsId: dhcpOpt.DhcpOptionsId,
-			})
-			if err != nil {
-				errs = append(errs, err)
-			} else {
-				log.Info("Deleted DHCP options", "id", aws.StringValue(dhcpOpt.DhcpOptionsId))
-			}
-		}
-		return true
-	}
-	err := client.DescribeDhcpOptionsPagesWithContext(ctx,
-		&ec2.DescribeDhcpOptionsInput{Filters: o.ec2Filters()},
-		deleteDHCPOptions)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	return errs
-}
-
-func (o *DestroyInfraOptions) DestroyEIPs(ctx context.Context, client ec2iface.EC2API) []error {
-	var errs []error
-	out, err := client.DescribeAddressesWithContext(ctx, &ec2.DescribeAddressesInput{
-		Filters: o.ec2Filters(),
+	_, err = client.ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
+		HostedZoneId: aws.String(zoneID),
+		ChangeBatch:  changeBatch,
 	})
 	if err != nil {
-		errs = append(errs, err)
-		return errs
+		return fmt.Errorf("failed to delete records: %w", err)
 	}
-
-	for _, addr := range out.Addresses {
-		_, err := client.ReleaseAddressWithContext(ctx, &ec2.ReleaseAddressInput{
-			AllocationId: addr.AllocationId,
-		})
-		if err != nil {
-			errs = append(errs, err)
-		} else {
-			log.Info("Deleted EIP", "id", aws.StringValue(addr.AllocationId))
-		}
-	}
-	return errs
-}
-
-func (o *DestroyInfraOptions) ec2Filters() []*ec2.Filter {
-	return []*ec2.Filter{
-		{
-			Name:   aws.String(fmt.Sprintf("tag:%s", clusterTag(o.InfraID))),
-			Values: []*string{aws.String(clusterTagValue)},
-		},
-	}
-}
-
-func vpcFilter(vpcID *string) []*ec2.Filter {
-	return []*ec2.Filter{
-		{
-			Name:   aws.String("vpc-id"),
-			Values: []*string{vpcID},
-		},
-	}
+	log.Info("Deleted unmanaged non-default records from zone", "zone", zoneID)
+	return nil
 }
