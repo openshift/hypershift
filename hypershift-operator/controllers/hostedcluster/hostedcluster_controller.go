@@ -1498,6 +1498,18 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("failed to delete namespace: %w", err)
 	}
+
+	secretSuffixesToRemove := []string{"pull-secret", "provider-creds", "signing-key", "ssh-key", "admin-kubeconfig"}
+	for _, secretSuffix := range secretSuffixesToRemove {
+		secretName := fmt.Sprintf("%s-%s", hc.Name, secretSuffix)
+		r.Log.Info("Deleting secret", "name", secretName)
+		secretMetadata := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: hc.Namespace},
+		}
+		if err := r.Delete(ctx, secretMetadata); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("failed to delete secret: %w", err)
+		}
+	}
 	return true, nil
 }
 
