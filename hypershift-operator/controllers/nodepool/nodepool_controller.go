@@ -19,6 +19,7 @@ import (
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,6 +57,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&hyperv1.NodePool{}).
 		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &hyperv1.MachineConfigServer{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
@@ -92,25 +94,26 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	mcs := machineConfigServer(nodePool)
 	md := machineDeployment(nodePool, mcs, hcluster.Spec.InfraID)
-	ami, err := r.ImageProvider.Image(hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
-	}
-	awsMachineTemplate := AWSMachineTemplate(hcluster.Spec.InfraID, ami, nodePool)
 	mhc := machineHealthCheck(nodePool)
 
 	if !nodePool.DeletionTimestamp.IsZero() {
-		if err := r.Delete(ctx, md); err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to delete nodePool: %w", err)
+		awsMachineTemplates, err := r.listAWSMachineTemplates(nodePool)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to list AWSMachineTemplates: %w", err)
 		}
-		if err := r.Delete(ctx, awsMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to delete nodePool: %w", err)
+		for k := range awsMachineTemplates {
+			if err := r.Delete(ctx, &awsMachineTemplates[k]); err != nil && !apierrors.IsNotFound(err) {
+				return reconcile.Result{}, fmt.Errorf("failed to delete AWSMachineTemplate: %w", err)
+			}
+		}
+		if err := r.Delete(ctx, md); err != nil && !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to delete machineDeployment: %w", err)
 		}
 		if err := r.Delete(ctx, mcs); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete machineConfigServer: %w", err)
 		}
 		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, err
+			return ctrl.Result{}, fmt.Errorf("failed to delete machineHealthCheck: %w", err)
 		}
 
 		if controllerutil.ContainsFinalizer(nodePool, finalizer) {
@@ -225,13 +228,51 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Reconcile AWSMachineTemplate
-	// TODO (alberto): If a change happens to the nodePool AWSNodePoolPlatform we should
-	// delete the existing awsMachineTemplate, create a new one with a new name
+	// If a change happens to the nodePool AWSNodePoolPlatform we delete the existing awsMachineTemplate,
+	// create a new one with a new name
 	// and pass it to the machineDeployment. This will trigger a rolling upgrade.
-	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, awsMachineTemplate, func() error {
-		return nil
-	}); err != nil {
-		return ctrl.Result{}, err
+	currentMD := &capiv1.MachineDeployment{}
+	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(md), currentMD); err != nil && !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, fmt.Errorf("failed to get machineDeployment: %w", err)
+	}
+
+	// If the machineDeployment has not been created yet, create new awsMachineTemplate.
+	if currentMD.CreationTimestamp.IsZero() {
+		r.Log.Info("Creating new AWSMachineTemplate", "AWSMachineTemplate", ctrlclient.ObjectKeyFromObject(awsMachineTemplate).String())
+		if _, err := controllerutil.CreateOrPatch(ctx, r.Client, awsMachineTemplate, func() error {
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("error creating new AWSMachineTemplate: %w", err)
+		}
+	}
+
+	if !currentMD.CreationTimestamp.IsZero() {
+		currentAWSMachineTemplate := &capiaws.AWSMachineTemplate{}
+		if err := r.Get(ctx, client.ObjectKey{
+			Namespace: currentMD.Spec.Template.Spec.InfrastructureRef.Namespace,
+			Name:      currentMD.Spec.Template.Spec.InfrastructureRef.Name,
+		}, currentAWSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+
+		if !equality.Semantic.DeepEqual(currentAWSMachineTemplate.Spec.Template.Spec, awsMachineTemplate.Spec.Template.Spec) {
+			r.Log.Info("AWS config has changed. This will trigger a rolling upgrade")
+			r.Log.Info("Creating new AWSMachineTemplate", "AWSMachineTemplate", ctrlclient.ObjectKeyFromObject(awsMachineTemplate).String())
+			// Create new template
+			if _, err := controllerutil.CreateOrPatch(ctx, r.Client, awsMachineTemplate, func() error {
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("error creating new AWSMachineTemplate: %w", err)
+			}
+			// Delete existing template
+			r.Log.Info("Deleting existing AWSMachineTemplate", "AWSMachineTemplate", ctrlclient.ObjectKeyFromObject(currentAWSMachineTemplate).String())
+			if err := r.Delete(ctx, currentAWSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("error deleting existing AWSMachineTemplate: %w", err)
+			}
+		} else {
+			// We pass the existing one to reconcileMachineDeployment.
+			awsMachineTemplate = currentAWSMachineTemplate
+		}
 	}
 
 	// Reconcile machineDeployment
@@ -591,4 +632,28 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 
 func targetNamespace(nodePool *hyperv1.NodePool) string {
 	return fmt.Sprintf("%s-%s", nodePool.GetNamespace(), nodePool.Spec.ClusterName)
+}
+
+func hashStruct(o interface{}) string {
+	hash := fnv.New32a()
+	hash.Write([]byte(fmt.Sprintf("%v", o)))
+	intHash := hash.Sum32()
+	return fmt.Sprintf("%08x", intHash)
+}
+
+func (r *NodePoolReconciler) listAWSMachineTemplates(nodePool *hyperv1.NodePool) ([]capiaws.AWSMachineTemplate, error) {
+	awsMachineTemplateList := &capiaws.AWSMachineTemplateList{}
+	if err := r.List(context.Background(), awsMachineTemplateList); err != nil {
+		return nil, fmt.Errorf("failed to list AWSMachineTemplates: %w", err)
+	}
+	filtered := []capiaws.AWSMachineTemplate{}
+	for i, AWSMachineTemplate := range awsMachineTemplateList.Items {
+		if AWSMachineTemplate.GetAnnotations() != nil {
+			if annotation, ok := AWSMachineTemplate.GetAnnotations()[nodePoolAnnotation]; ok &&
+				annotation == ctrlclient.ObjectKeyFromObject(nodePool).String() {
+				filtered = append(filtered, awsMachineTemplateList.Items[i])
+			}
+		}
+	}
+	return filtered, nil
 }
