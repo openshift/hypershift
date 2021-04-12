@@ -1509,6 +1509,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 		if err := r.Delete(ctx, secretMetadata); err != nil && !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("failed to delete secret: %w", err)
 		}
+		r.Log.Info("Deleted secret", "name", secretName)
 	}
 	return true, nil
 }
