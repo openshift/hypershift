@@ -8,6 +8,7 @@ import (
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func machineDeployment(nodePool *hyperv1.NodePool, mcs *hyperv1.MachineConfigServer, clusterName string) *capiv1.MachineDeployment {
@@ -76,12 +77,13 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool) *capi
 	}
 
 	instanceType := nodePool.Spec.Platform.AWS.InstanceType
-	resourcesName := generateName(infraName, nodePool.Spec.ClusterName, nodePool.GetName())
 
-	return &capiaws.AWSMachineTemplate{
+	awsMachineTemplate := &capiaws.AWSMachineTemplate{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      resourcesName,
+			Annotations: map[string]string{
+				nodePoolAnnotation: ctrlclient.ObjectKeyFromObject(nodePool).String(),
+			},
 			Namespace: targetNamespace(nodePool),
 		},
 		Spec: capiaws.AWSMachineTemplateSpec{
@@ -103,4 +105,8 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool) *capi
 			},
 		},
 	}
+	specHash := hashStruct(awsMachineTemplate.Spec.Template.Spec)
+	awsMachineTemplate.SetName(fmt.Sprintf("%s-%s", nodePool.GetName(), specHash))
+
+	return awsMachineTemplate
 }

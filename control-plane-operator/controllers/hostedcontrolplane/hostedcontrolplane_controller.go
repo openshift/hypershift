@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	errors2 "github.com/pkg/errors"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"math/big"
 	"math/rand"
 	"reflect"
@@ -18,8 +19,6 @@ import (
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	securityv1 "github.com/openshift/api/security/v1"
-
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -1174,22 +1173,32 @@ func createOauthServiceNodePort(client client.Client, hcp *hyperv1.HostedControl
 }
 
 func ensureVPNSCC(c client.Client, hcp *hyperv1.HostedControlPlane, namespace string) error {
-	scc := &securityv1.SecurityContextConstraints{}
-	if err := c.Get(context.TODO(), client.ObjectKey{Name: "privileged"}, scc); err != nil {
-		return fmt.Errorf("failed to get privileged scc: %w", err)
+	sccBinding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("system:serviceaccount:%s:%s:scc:privileged", namespace, vpnServiceAccountName),
+		},
 	}
-	userSet := sets.NewString(scc.Users...)
-	svcAccount := fmt.Sprintf("system:serviceaccount:%s:%s", namespace, vpnServiceAccountName)
-	if userSet.Has(svcAccount) {
+	_, err := controllerutil.CreateOrUpdate(context.TODO(), c, sccBinding, func() error {
+		sccBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "system:openshift:scc:privileged",
+		}
+		sccBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      vpnServiceAccountName,
+				Namespace: namespace,
+			},
+		}
+		sccBinding.OwnerReferences = ensureHCPOwnerRef(hcp, sccBinding.OwnerReferences)
 		return nil
-	}
-	userSet.Insert(svcAccount)
-	scc.Users = userSet.List()
-	scc.OwnerReferences = ensureHCPOwnerRef(hcp, scc.OwnerReferences)
-	if err := c.Update(context.TODO(), scc); err != nil {
-		return fmt.Errorf("failed to update privileged scc: %w", err)
-	}
-	return nil
+	})
+	return err
 }
 
 func ensureDefaultIngressControllerSelector(c client.Client) error {
