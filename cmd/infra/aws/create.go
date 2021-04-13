@@ -46,26 +46,30 @@ type CreateInfraOptions struct {
 }
 
 type CreateInfraOutput struct {
-	StackID                  string `json:"stackID"`
-	Region                   string `json:"region"`
-	Zone                     string `json:"zone"`
-	InfraID                  string `json:"infraID"`
-	ComputeCIDR              string `json:"computeCIDR"`
-	VPCID                    string `json:"vpcID"`
-	PrivateSubnetID          string `json:"privateSubnetID"`
-	PublicSubnetID           string `json:"publicSubnetID"`
-	WorkerSecurityGroupID    string `json:"workerSecurityGroupID"`
-	WorkerInstanceProfileID  string `json:"workerInstanceProfileID"`
-	BaseDomainZoneID         string `json:"baseDomainZoneID"`
-	Subdomain                string `json:"subdomain"`
-	SubdomainPrivateZoneID   string `json:"subdomainPrivateZoneID"`
-	SubdomainPublicZoneID    string `json:"subdomainPublicZoneID"`
-	OIDCIngressRoleArn       string `json:"oidcIngressRoleArn"`
-	OIDCImageRegistryRoleArn string `json:"oidcImageRegistryRoleArn"`
-	OIDCCSIDriverRoleArn     string `json:"oidcCSIDriverRoleArn"`
-	OIDCIssuerURL            string `json:"oidcIssuerURL"`
-	OIDCBucketName           string `json:"oidcBucketName"`
-	ServiceAccountSigningKey []byte `json:"serviceAccountSigningKey"`
+	StackID                                string `json:"stackID"`
+	Region                                 string `json:"region"`
+	Zone                                   string `json:"zone"`
+	InfraID                                string `json:"infraID"`
+	ComputeCIDR                            string `json:"computeCIDR"`
+	VPCID                                  string `json:"vpcID"`
+	PrivateSubnetID                        string `json:"privateSubnetID"`
+	PublicSubnetID                         string `json:"publicSubnetID"`
+	WorkerSecurityGroupID                  string `json:"workerSecurityGroupID"`
+	WorkerInstanceProfileID                string `json:"workerInstanceProfileID"`
+	BaseDomainZoneID                       string `json:"baseDomainZoneID"`
+	Subdomain                              string `json:"subdomain"`
+	SubdomainPrivateZoneID                 string `json:"subdomainPrivateZoneID"`
+	SubdomainPublicZoneID                  string `json:"subdomainPublicZoneID"`
+	OIDCIngressRoleArn                     string `json:"oidcIngressRoleArn"`
+	OIDCImageRegistryRoleArn               string `json:"oidcImageRegistryRoleArn"`
+	OIDCCSIDriverRoleArn                   string `json:"oidcCSIDriverRoleArn"`
+	OIDCIssuerURL                          string `json:"oidcIssuerURL"`
+	OIDCBucketName                         string `json:"oidcBucketName"`
+	ServiceAccountSigningKey               []byte `json:"serviceAccountSigningKey"`
+	KubeCloudControllerUserAccessKeyID     string `json:"kubeCloudControllerUserAccessKeyID"`
+	KubeCloudControllerUserAccessKeySecret string `json:"kubeCloudControllerUserAccessKeySecret"`
+	NodePoolManagementUserAccessKeyID      string `json:"nodePoolManagementUserAccessKeyID"`
+	NodePoolManagementUserAccessKeySecret  string `json:"nodePoolManagementUserAccessKeySecret"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -177,25 +181,29 @@ func (o *CreateInfraOptions) getOrCreateStack(ctx context.Context, cf *cloudform
 	}
 
 	output := &CreateInfraOutput{
-		InfraID:                  o.InfraID,
-		StackID:                  *stack.StackId,
-		Region:                   getStackOutput(stack, "Region"),
-		Zone:                     getStackOutput(stack, "Zone"),
-		ComputeCIDR:              getStackOutput(stack, "ComputeCIDR"),
-		VPCID:                    getStackOutput(stack, "VPCId"),
-		PrivateSubnetID:          getStackOutput(stack, "PrivateSubnetId"),
-		PublicSubnetID:           getStackOutput(stack, "PublicSubnetId"),
-		WorkerSecurityGroupID:    getStackOutput(stack, "WorkerSecurityGroupId"),
-		WorkerInstanceProfileID:  getStackOutput(stack, "WorkerInstanceProfileId"),
-		BaseDomainZoneID:         getStackOutput(stack, "BaseDomainHostedZoneId"),
-		Subdomain:                getStackOutput(stack, "Subdomain"),
-		SubdomainPrivateZoneID:   getStackOutput(stack, "SubdomainPrivateZoneId"),
-		SubdomainPublicZoneID:    getStackOutput(stack, "SubdomainPublicZoneId"),
-		OIDCIngressRoleArn:       getStackOutput(stack, "OIDCIngressRoleArn"),
-		OIDCImageRegistryRoleArn: getStackOutput(stack, "OIDCImageRegistryRoleArn"),
-		OIDCCSIDriverRoleArn:     getStackOutput(stack, "OIDCCSIDriverRoleArn"),
-		OIDCIssuerURL:            getStackOutput(stack, "OIDCIssuerURL"),
-		OIDCBucketName:           getStackOutput(stack, "OIDCBucketName"),
+		InfraID:                                o.InfraID,
+		StackID:                                *stack.StackId,
+		Region:                                 getStackOutput(stack, "Region"),
+		Zone:                                   getStackOutput(stack, "Zone"),
+		ComputeCIDR:                            getStackOutput(stack, "ComputeCIDR"),
+		VPCID:                                  getStackOutput(stack, "VPCId"),
+		PrivateSubnetID:                        getStackOutput(stack, "PrivateSubnetId"),
+		PublicSubnetID:                         getStackOutput(stack, "PublicSubnetId"),
+		WorkerSecurityGroupID:                  getStackOutput(stack, "WorkerSecurityGroupId"),
+		WorkerInstanceProfileID:                getStackOutput(stack, "WorkerInstanceProfileId"),
+		BaseDomainZoneID:                       getStackOutput(stack, "BaseDomainHostedZoneId"),
+		Subdomain:                              getStackOutput(stack, "Subdomain"),
+		SubdomainPrivateZoneID:                 getStackOutput(stack, "SubdomainPrivateZoneId"),
+		SubdomainPublicZoneID:                  getStackOutput(stack, "SubdomainPublicZoneId"),
+		OIDCIngressRoleArn:                     getStackOutput(stack, "OIDCIngressRoleArn"),
+		OIDCImageRegistryRoleArn:               getStackOutput(stack, "OIDCImageRegistryRoleArn"),
+		OIDCCSIDriverRoleArn:                   getStackOutput(stack, "OIDCCSIDriverRoleArn"),
+		OIDCIssuerURL:                          getStackOutput(stack, "OIDCIssuerURL"),
+		OIDCBucketName:                         getStackOutput(stack, "OIDCBucketName"),
+		KubeCloudControllerUserAccessKeyID:     getStackOutput(stack, "KubeCloudControllerUserAccessKeyId"),
+		KubeCloudControllerUserAccessKeySecret: getStackOutput(stack, "KubeCloudControllerUserAccessKeySecret"),
+		NodePoolManagementUserAccessKeyID:      getStackOutput(stack, "NodePoolManagementUserAccessKeyId"),
+		NodePoolManagementUserAccessKeySecret:  getStackOutput(stack, "NodePoolManagementUserAccessKeySecret"),
 	}
 
 	return output, nil
