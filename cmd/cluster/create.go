@@ -28,21 +28,21 @@ import (
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type Options struct {
-	Namespace              string
-	Name                   string
-	ReleaseImage           string
-	PullSecretFile         string
-	AWSCredentialsFile     string
-	SSHKeyFile             string
-	NodePoolReplicas       int
-	Render                 bool
-	InfraID                string
-	InfrastructureJSON     string
-	InstanceType           string
-	Region                 string
-	BaseDomain             string
-	Overwrite              bool
-	PreserveInfraOnFailure bool
+	Namespace          string
+	Name               string
+	ReleaseImage       string
+	PullSecretFile     string
+	AWSCredentialsFile string
+	SSHKeyFile         string
+	NodePoolReplicas   int
+	Render             bool
+	InfraID            string
+	InfrastructureJSON string
+	InstanceType       string
+	Region             string
+	BaseDomain         string
+	Overwrite          bool
+	DeleteOnFailure    bool
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -62,20 +62,20 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:              "clusters",
-		Name:                   "example",
-		ReleaseImage:           releaseImage,
-		PullSecretFile:         "",
-		AWSCredentialsFile:     "",
-		SSHKeyFile:             "",
-		NodePoolReplicas:       2,
-		Render:                 false,
-		InfrastructureJSON:     "",
-		Region:                 "us-east-1",
-		InfraID:                "",
-		InstanceType:           "m4.large",
-		Overwrite:              false,
-		PreserveInfraOnFailure: false,
+		Namespace:          "clusters",
+		Name:               "example",
+		ReleaseImage:       releaseImage,
+		PullSecretFile:     "",
+		AWSCredentialsFile: "",
+		SSHKeyFile:         "",
+		NodePoolReplicas:   2,
+		Render:             false,
+		InfrastructureJSON: "",
+		Region:             "us-east-1",
+		InfraID:            "",
+		InstanceType:       "m4.large",
+		Overwrite:          false,
+		DeleteOnFailure:    false,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -92,7 +92,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The base domain for the cluster")
 	cmd.Flags().BoolVar(&opts.Overwrite, "overwrite", opts.Overwrite, "If an existing cluster exists, overwrite it")
-	cmd.Flags().BoolVar(&opts.PreserveInfraOnFailure, "preserve-infra-on-failure", opts.PreserveInfraOnFailure, "Preserve infrastructure if creation fails and is rolled back")
+	cmd.Flags().BoolVar(&opts.DeleteOnFailure, "delete-infra-on-failure", opts.DeleteOnFailure, "Delete the infra stack if creation fails")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -105,7 +105,11 @@ func NewCreateCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-		return CreateCluster(ctx, opts)
+		err := CreateCluster(ctx, opts)
+		if err != nil {
+			return fmt.Errorf("failed to create cluster. Before trying to create it again, please run `destroy cluster`.\nInternal Error: %w", err)
+		}
+		return nil
 	}
 
 	return cmd
@@ -183,11 +187,11 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			Region:             opts.Region,
 			BaseDomain:         opts.BaseDomain,
 			Subdomain:          subdomain,
-			PreserveOnFailure:  opts.PreserveInfraOnFailure,
+			DeleteOnFailure:    opts.DeleteOnFailure,
 		}
 		newInfra, err := opt.Run(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
+			return fmt.Errorf("failed to create infrastructure: %w", err)
 		}
 		infra = newInfra
 	}

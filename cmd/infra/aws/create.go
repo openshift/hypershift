@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -41,7 +42,7 @@ type CreateInfraOptions struct {
 	Subdomain      string
 	AdditionalTags []string
 
-	PreserveOnFailure bool
+	DeleteOnFailure bool
 }
 
 type CreateInfraOutput struct {
@@ -74,8 +75,8 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
-		Region:            "us-east-1",
-		PreserveOnFailure: false,
+		Region:          "us-east-1",
+		DeleteOnFailure: false,
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
@@ -84,7 +85,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The base domain for the cluster")
 	cmd.Flags().StringVar(&opts.Subdomain, "subdomain", opts.Subdomain, "The subdomain for the cluster")
-	cmd.Flags().BoolVar(&opts.PreserveOnFailure, "preserve-on-failure", opts.PreserveOnFailure, "Preserve the stack if creation fails and is rolled back")
+	cmd.Flags().BoolVar(&opts.DeleteOnFailure, "delete-on-failure", opts.DeleteOnFailure, "Delete the infra stack if creation fails")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
@@ -227,8 +228,10 @@ func (o *CreateInfraOptions) createStack(ctx context.Context, cf *cloudformation
 		},
 	}
 
-	if !o.PreserveOnFailure {
+	if o.DeleteOnFailure {
 		createStackInput.OnFailure = aws.String(cloudformation.OnFailureDelete)
+	} else {
+		createStackInput.OnFailure = aws.String(cloudformation.OnFailureRollback)
 	}
 
 	createStackOutput, err := cf.CreateStack(createStackInput)
@@ -261,6 +264,27 @@ func (o *CreateInfraOptions) createStack(ctx context.Context, cf *cloudformation
 		}
 	}, ctx.Done())
 	if err != nil {
+		// If anything went wrong and the stack exists, save te user a trip to AWS
+		// by dumping events which usually describe the specific failure.
+		if stack != nil {
+			if out, err := cf.DescribeStackEvents(&cloudformation.DescribeStackEventsInput{
+				StackName: stack.StackName,
+			}); err != nil {
+				log.Error(err, "failed to describe stack events")
+			} else {
+				events := sortableStackEvents(out.StackEvents)
+				sort.Sort(events)
+				for _, event := range events {
+					log.Info("found stack event",
+						"Timestamp", aws.TimeValue(event.Timestamp),
+						"ResourceType", aws.StringValue(event.ResourceType),
+						"LogicalResourceId", aws.StringValue(event.LogicalResourceId),
+						"ResourceStatus", aws.StringValue(event.ResourceStatus),
+						"ResourceStatusReason", aws.StringValue(event.ResourceStatusReason))
+				}
+			}
+		}
+
 		return nil, err
 	}
 	return stack, nil
