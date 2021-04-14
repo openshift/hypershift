@@ -1,6 +1,8 @@
 package fixtures
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -10,19 +12,21 @@ import (
 )
 
 type ExampleResources struct {
-	Namespace      *corev1.Namespace
-	PullSecret     *corev1.Secret
-	AWSCredentials *corev1.Secret
-	SigningKey     *corev1.Secret
-	SSHKey         *corev1.Secret
-	Cluster        *hyperv1.HostedCluster
+	Namespace                   *corev1.Namespace
+	PullSecret                  *corev1.Secret
+	KubeCloudControllerAWSCreds *corev1.Secret
+	NodePoolManagementAWSCreds  *corev1.Secret
+	SigningKey                  *corev1.Secret
+	SSHKey                      *corev1.Secret
+	Cluster                     *hyperv1.HostedCluster
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
 	objects := []crclient.Object{
 		o.Namespace,
 		o.PullSecret,
-		o.AWSCredentials,
+		o.KubeCloudControllerAWSCreds,
+		o.NodePoolManagementAWSCreds,
 		o.SigningKey,
 		o.Cluster,
 	}
@@ -37,7 +41,6 @@ type ExampleOptions struct {
 	Name             string
 	ReleaseImage     string
 	PullSecret       []byte
-	AWSCredentials   []byte
 	SigningKey       []byte
 	IssuerURL        string
 	SSHKey           []byte
@@ -52,14 +55,18 @@ type ExampleOptions struct {
 }
 
 type ExampleAWSOptions struct {
-	Region          string
-	Zone            string
-	VPCID           string
-	SubnetID        string
-	SecurityGroupID string
-	InstanceProfile string
-	InstanceType    string
-	Roles           []hyperv1.AWSRoleCredentials
+	Region                                 string
+	Zone                                   string
+	VPCID                                  string
+	SubnetID                               string
+	SecurityGroupID                        string
+	InstanceProfile                        string
+	InstanceType                           string
+	Roles                                  []hyperv1.AWSRoleCredentials
+	KubeCloudControllerUserAccessKeyID     string
+	KubeCloudControllerUserAccessKeySecret string
+	NodePoolManagementUserAccessKeyID      string
+	NodePoolManagementUserAccessKeySecret  string
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -87,19 +94,32 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		},
 	}
 
-	awsCredsSecret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace.Name,
-			Name:      o.Name + "-provider-creds",
-		},
-		Data: map[string][]byte{
-			"credentials": o.AWSCredentials,
-		},
+	buildAWSCreds := func(name, id, key string) *corev1.Secret {
+		return &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Secret",
+				APIVersion: corev1.SchemeGroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace.Name,
+				Name:      name,
+			},
+			Data: map[string][]byte{
+				"credentials": []byte(fmt.Sprintf(`[default]
+aws_access_key_id = %s
+aws_secret_access_key = %s
+`, id, key)),
+			},
+		}
 	}
+	kubeCloudControllerCredsSecret := buildAWSCreds(
+		o.Name+"-cloud-ctrl-creds",
+		o.AWS.KubeCloudControllerUserAccessKeyID,
+		o.AWS.KubeCloudControllerUserAccessKeySecret)
+	nodePoolManagementCredsSecret := buildAWSCreds(
+		o.Name+"-node-mgmt-creds",
+		o.AWS.NodePoolManagementUserAccessKeyID,
+		o.AWS.NodePoolManagementUserAccessKeySecret)
 
 	signingKeySecret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
@@ -180,8 +200,8 @@ func (o ExampleOptions) Resources() *ExampleResources {
 						},
 						Zone: o.AWS.Zone,
 					},
-					KubeCloudControllerCreds: corev1.LocalObjectReference{Name: awsCredsSecret.Name},
-					NodePoolManagementCreds:  corev1.LocalObjectReference{Name: awsCredsSecret.Name},
+					KubeCloudControllerCreds: corev1.LocalObjectReference{Name: kubeCloudControllerCredsSecret.Name},
+					NodePoolManagementCreds:  corev1.LocalObjectReference{Name: nodePoolManagementCredsSecret.Name},
 				},
 			},
 		},
@@ -191,11 +211,12 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	}
 
 	return &ExampleResources{
-		Namespace:      namespace,
-		PullSecret:     pullSecret,
-		AWSCredentials: awsCredsSecret,
-		SigningKey:     signingKeySecret,
-		SSHKey:         sshKeySecret,
-		Cluster:        cluster,
+		Namespace:                   namespace,
+		PullSecret:                  pullSecret,
+		KubeCloudControllerAWSCreds: kubeCloudControllerCredsSecret,
+		NodePoolManagementAWSCreds:  nodePoolManagementCredsSecret,
+		SigningKey:                  signingKeySecret,
+		SSHKey:                      sshKeySecret,
+		Cluster:                     cluster,
 	}
 }
