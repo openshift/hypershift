@@ -126,7 +126,8 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	s3client := s3.New(awsSession, awsConfig)
 	// Route53 is weird about regions
 	// https://github.com/openshift/cluster-ingress-operator/blob/5660b43d66bd63bbe2dcb45fb40df98d8d91347e/pkg/dns/aws/dns.go#L163-L169
-	r53 := route53.New(awsSession, awsConfig.WithRegion("us-east-1"))
+	r53Config := aws.NewConfig().WithRegion("us-east-1").WithCredentials(credentials.NewSharedCredentials(o.AWSCredentialsFile, "default"))
+	r53 := route53.New(awsSession, r53Config)
 
 	// Create or get an existing stack
 	infra, err := o.getOrCreateStack(ctx, cf, r53)
