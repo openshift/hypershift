@@ -248,3 +248,17 @@ func vpcFilter(vpcID string) []*ec2.Filter {
 		},
 	}
 }
+
+type sortableStackEvents []*cloudformation.StackEvent
+
+func (e sortableStackEvents) Len() int {
+	return len(e)
+}
+
+func (e sortableStackEvents) Less(i, j int) bool {
+	return (*e[i].Timestamp).Before(*e[j].Timestamp)
+}
+
+func (e sortableStackEvents) Swap(i, j int) {
+	e[i], e[j] = e[j], e[i]
+}
