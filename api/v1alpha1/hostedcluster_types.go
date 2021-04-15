@@ -45,6 +45,11 @@ type HostedClusterSpec struct {
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
 	Services []ServicePublishingStrategyMapping `json:"services"`
+
+	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
+	// Defaults to SingleReplica when not set.
+	// +optional
+	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 }
 
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.

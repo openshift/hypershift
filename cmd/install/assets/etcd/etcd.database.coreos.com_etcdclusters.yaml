@@ -722,8 +722,6 @@ spec:
                           type: string
                       type: object
                     type: array
-                required:
-                - ClusterDomain
                 type: object
               repository:
                 description: "Repository is the name of the repository that hosts etcd container images. It should be direct clone of the repository in official release:   https://github.com/coreos/etcd/releases That means, it should have exact same tags and the same meaning for the tags. \n By default, it is `quay.io/coreos/etcd`."

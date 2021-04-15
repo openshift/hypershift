@@ -3,22 +3,17 @@ package assets
 import "embed"
 
 //go:embed apiserver-haproxy/*
-//go:embed aws/*
 //go:embed cluster-bootstrap/*
 //go:embed cluster-version-operator/*
-//go:embed common/*
 //go:embed hosted-cluster-config-operator/*
 //go:embed ignition-configs/*
 //go:embed install-config/*
-//go:embed kube-apiserver/*
-//go:embed kube-controller-manager/*
 //go:embed kube-scheduler/*
 //go:embed machine-config-server/*
 //go:embed oauth-apiserver/*
 //go:embed oauth-openshift/*
 //go:embed openshift-apiserver/*
 //go:embed openshift-controller-manager/*
-//go:embed openvpn/*
 //go:embed registry/*
 //go:embed roks-metrics/*
 //go:embed user-manifests-bootstrapper/*

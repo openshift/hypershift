@@ -4,4 +4,4 @@ metadata:
   name: oauth-openshift
 data:
   ca.crt: |-
-{{ include_pki "combined-ca.crt" 4 }}
+{{ include_pki "configmap" "combined-ca" "ca.crt" 4 }}

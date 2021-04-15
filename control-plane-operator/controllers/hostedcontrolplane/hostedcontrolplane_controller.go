@@ -44,12 +44,16 @@ import (
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
-	renderpki "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki"
-	pkiutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render/pki/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	hcputil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/vpn"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 )
@@ -59,17 +63,16 @@ const (
 	controlPlaneAnnotation     = "hypershift.openshift.io/hosted-control-plane"
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
-	pullSecretName             = "pull-secret"
-	vpnServiceAccountName      = "vpn"
 	ingressOperatorNamespace   = "openshift-ingress-operator"
 	hypershiftRouteLabel       = "hypershift.openshift.io/cluster"
 	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
 	DefaultAPIServerIPAddress  = "172.20.0.1"
-	etcdOperatorImage          = "quay.io/coreos/etcd-operator:v0.9.4"
-	etcdVersion                = "3.4.9"
 	etcdClusterSize            = 1
 	etcdDeleteCheckInterval    = 10 * time.Second
 	etcdAvailableCheckInterval = 10 * time.Second
+	kasAvailableCheckInterval  = 10 * time.Second
+
+	kubeAPIServerPort = 6443
 )
 
 var (
@@ -316,7 +319,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Reconcile etcd cluster status
 	{
-		etcdCluster := etcd.Cluster(hostedControlPlane.Namespace)
+		etcdCluster := manifests.EtcdCluster(hostedControlPlane.Namespace)
 		var err error
 		if err = r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("failed to fetch etcd cluster %s/%s: %w", etcdCluster.Namespace, etcdCluster.Name, err)
@@ -332,14 +335,32 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, err
 		}
 	}
+	// Reconcile Kube APIServer status
+	{
+		kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
+		var err error
+		if err = r.Get(ctx, client.ObjectKeyFromObject(kubeAPIServerDeployment), kubeAPIServerDeployment); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to fetch Kube APIServer deployment %s/%s: %w", kubeAPIServerDeployment.Namespace, kubeAPIServerDeployment.Name, err)
+		}
+		if apierrors.IsNotFound(err) {
+			kubeAPIServerDeployment = nil
+		}
+		err = kas.ReconcileKubeAPIServerDeploymentStatus(ctx, r.Client, hostedControlPlane, kubeAPIServerDeployment)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
-	// Reconcile root CA
-	rootCASecret := pki.RootCASecret(hostedControlPlane.Namespace)
-	if _, err = controllerutil.CreateOrUpdate(ctx, r, rootCASecret, func() error {
-		rootCASecret.OwnerReferences = ensureHCPOwnerRef(hostedControlPlane, rootCASecret.OwnerReferences)
-		return pki.ReconcileRootCA(rootCASecret)
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile root CA: %w", err)
+	// Reconcile PKI
+	r.Log.Info("Reconciling PKI")
+	if err = r.reconcilePKI(ctx, hostedControlPlane, infraStatus); err != nil {
+		r.Log.Error(err, "failed to reconcile PKI")
+	}
+
+	// Reconcile Cloud Provider Config
+	r.Log.Info("Reconciling cloud provider config")
+	if err = r.reconcileCloudProviderConfig(ctx, hostedControlPlane); err != nil {
+		r.Log.Error(err, "failed to reconcile cloud provider config")
 	}
 
 	// Reconcile OIDC Route
@@ -371,9 +392,41 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{RequeueAfter: etcdAvailableCheckInterval}, nil
 		}
 	}
+	// Reconcile VPN
+	r.Log.Info("Reconciling VPN")
+	if err = r.reconcileVPN(ctx, hostedControlPlane, releaseImage, infraStatus.VPNAddress, infraStatus.VPNPort); err != nil {
+		r.Log.Error(err, "failed to reconcile vpn")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile kube apiserver
+	r.Log.Info("Reconciling Kube API Server")
+	if err = r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.OAuthAddress, infraStatus.OAuthPort); err != nil {
+		r.Log.Error(err, "failed to reconcile kube apiserver")
+		return ctrl.Result{}, err
+	}
+	{
+		kasAvailable := getConditionByType(hostedControlPlane.Status.Conditions, hyperv1.KubeAPIServerAvailable)
+		if kasAvailable == nil || kasAvailable.Status != hyperv1.ConditionTrue {
+			r.Log.Info("Kube API server is not yet available")
+			return ctrl.Result{RequeueAfter: kasAvailableCheckInterval}, nil
+		}
+	}
+	// Reconcile kube controller manager
+	r.Log.Info("Reconciling Kube Controller Manager")
+	if err = r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImage); err != nil {
+		r.Log.Error(err, "failed to reconcile kube controller manager")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile kube scheduler
+	if err = r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImage); err != nil {
+		r.Log.Error(err, "failed to reconcile kube controller manager")
+		return ctrl.Result{}, err
+	}
 
 	// Install the control plane into the infrastructure
-	r.Log.Info("Creating hosted control plane")
+	r.Log.Info("Reconciling hosted control plane")
 	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage)
 	if err != nil {
 		r.Log.Error(err, "failed to ensure control plane")
@@ -541,13 +594,13 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	targetNamespace := hcp.GetNamespace()
 
 	// Create the configmap with the pull secret for the guest cluster
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: targetNamespace, Name: pullSecretName}, &pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret %s: %w", pullSecretName, err)
+	pullSecret := common.PullSecret(targetNamespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret %s: %w", pullSecret.Name, err)
 	}
 	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
 	if !hasPullSecretData {
-		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", pullSecretName)
+		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", pullSecret.Data)
 	}
 	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), pullSecretData, targetNamespace)
 	if err != nil {
@@ -612,26 +665,6 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate kubeadminPasswordSecret: %w", err)
 	}
 
-	pkiSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: targetNamespace,
-			Name:      "pki",
-		},
-		Data: map[string][]byte{},
-	}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(pkiSecret), pkiSecret); err != nil {
-		return fmt.Errorf("failed to get pki secret: %w", err)
-	}
-
-	kubeconfigSecret, err := generateKubeconfigSecret(hcp.GetNamespace(), hcp.Spec.KubeConfig, pkiSecret.Data["admin.kubeconfig"])
-	if err != nil {
-		return fmt.Errorf("failed to create kubeconfig secret manifest for management cluster: %w", err)
-	}
-	kubeconfigSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeconfigSecret.OwnerReferences)
-	if err := r.Create(ctx, kubeconfigSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate kubeconfigSecret: %w", err)
-	}
-
 	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
 	if err != nil {
 		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
@@ -644,77 +677,237 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	rootCASecret := pki.RootCASecret(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
-		return fmt.Errorf("cannot get root CA secret: %w", err)
+func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus) error {
+	p := pki.NewPKIParams(hcp, infraStatus.APIAddress, infraStatus.OAuthAddress, infraStatus.VPNAddress)
+
+	// Root CA
+	rootCASecret := manifests.RootCASecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, rootCASecret, func() error {
+		return p.ReconcileRootCA(rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile root CA: %w", err)
+	}
+	// Signer CA
+	signerCASecret := manifests.ClusterSignerCASecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, signerCASecret, func() error {
+		return p.ReconcileClusterSignerCA(signerCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile signer CA: %w", err)
+	}
+	// Combined CA
+	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, combinedCA, func() error {
+		return p.ReconcileCombinedCA(combinedCA, rootCASecret, signerCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile combined CA: %w", err)
 	}
 
 	// Etcd client secret
-	clientSecret := etcd.ClientSecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, clientSecret, func() error {
-		clientSecret.OwnerReferences = ensureHCPOwnerRef(hcp, clientSecret.OwnerReferences)
-		return etcd.ReconcileClientSecret(clientSecret, rootCASecret)
+	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdClientSecret, func() error {
+		return p.ReconcileEtcdClientSecret(etcdClientSecret, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
 	}
 
 	// Etcd server secret
-	serverSecret := etcd.ServerSecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverSecret, func() error {
-		serverSecret.OwnerReferences = ensureHCPOwnerRef(hcp, serverSecret.OwnerReferences)
-		return etcd.ReconcileServerSecret(serverSecret, rootCASecret)
+	etcdServerSecret := manifests.EtcdServerSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdServerSecret, func() error {
+		return p.ReconcileEtcdServerSecret(etcdServerSecret, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd server secret: %w", err)
 	}
 
 	// Etcd peer secret
-	peerSecret := etcd.PeerSecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, peerSecret, func() error {
-		peerSecret.OwnerReferences = ensureHCPOwnerRef(hcp, peerSecret.OwnerReferences)
-		return etcd.ReconcilePeerSecret(peerSecret, rootCASecret)
+	etcdPeerSecret := manifests.EtcdPeerSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdPeerSecret, func() error {
+		return p.ReconcileEtcdPeerSecret(etcdPeerSecret, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
 	}
 
+	// VPN CA
+	vpnCASecret := manifests.VPNSignerCASecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, vpnCASecret, func() error {
+		return p.ReconcileVPNSignerCA(vpnCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn CA: %w", err)
+	}
+	// VPN server cert
+	vpnServerCert := manifests.VPNServerCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, vpnServerCert, func() error {
+		return p.ReconcileVPNServerCertSecret(vpnServerCert, vpnCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn server cert: %w", err)
+	}
+	// VPN KAS client cert
+	vpnKASClientCert := manifests.VPNKubeAPIServerClientSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, vpnKASClientCert, func() error {
+		return p.ReconcileVPNKubeAPIServerClientSecret(vpnKASClientCert, vpnCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn kas client cert: %w", err)
+	}
+	// VPN worker client cert
+	vpnWorkerClientCert := manifests.VPNWorkerClientSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, vpnWorkerClientCert, func() error {
+		return p.ReconcileVPNWorkerClientSecret(vpnWorkerClientCert, vpnCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn worker client secret: %w", err)
+	}
+
+	// KAS server secret
+	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kasServerSecret, func() error {
+		return p.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
+	}
+
+	// KAS kubelet client secret
+	kasKubeletClientSecret := manifests.KASKubeletClientCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kasKubeletClientSecret, func() error {
+		return p.ReconcileKASKubeletClientCertSecret(kasKubeletClientSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas kubelet client secret: %w", err)
+	}
+
+	// KAS aggregator cert secret
+	kasAggregatorCertSecret := manifests.KASAggregatorCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kasAggregatorCertSecret, func() error {
+		return p.ReconcileKASAggregatorCertSecret(kasAggregatorCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas aggregator secret: %w", err)
+	}
+
+	// KAS admin client cert secret
+	kasAdminClientCertSecret := manifests.KASAdminClientCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kasAdminClientCertSecret, func() error {
+		return p.ReconcileKASAdminClientCertSecret(kasAdminClientCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
+	}
+
+	// KAS bootstrap client cert secret
+	kasBootstrapClientCertSecret := manifests.KASMachineBootstrapClientCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kasBootstrapClientCertSecret, func() error {
+		return p.ReconcileKASMachineBootstrapClientCertSecret(kasBootstrapClientCertSecret, signerCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas bootstrap client secret: %w", err)
+	}
+
+	// Service account signing key secret
+	serviceAccountSigningKeySecret := manifests.ServiceAccountSigningKeySecret(hcp.Namespace)
+	var signingKeySecret *corev1.Secret
+	if len(hcp.Spec.SigningKey.Name) > 0 {
+		signingKeySecret = &corev1.Secret{}
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.SigningKey.Name}, signingKeySecret); err != nil {
+			return fmt.Errorf("failed to get signing key %s: %w", hcp.Spec.SigningKey.Name, err)
+		}
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serviceAccountSigningKeySecret, func() error {
+		return p.ReconcileServiceAccountSigningKeySecret(serviceAccountSigningKeySecret, signingKeySecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server service account key secret: %w", err)
+	}
+
+	// OpenShift APIServer
+	openshiftAPIServerCertSecret := manifests.OpenShiftAPIServerCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, openshiftAPIServerCertSecret, func() error {
+		return p.ReconcileOpenShiftAPIServerCertSecret(openshiftAPIServerCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
+	}
+
+	// OpenShift OAuth APIServer
+	openshiftOAuthAPIServerCertSecret := manifests.OpenShiftOAuthAPIServerCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, openshiftOAuthAPIServerCertSecret, func() error {
+		return p.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift oauth apiserver cert: %w", err)
+	}
+
+	// OpenShift ControllerManager Cert
+	openshiftControllerManagerCertSecret := manifests.OpenShiftControllerManagerCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, openshiftControllerManagerCertSecret, func() error {
+		return p.ReconcileOpenShiftControllerManagerCertSecret(openshiftControllerManagerCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager cert: %w", err)
+	}
+
+	// Ingress Cert
+	ingressCert := manifests.IngressCert(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, ingressCert, func() error {
+		return p.ReconcileIngressCert(ingressCert, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
+	}
+
+	// MCS Cert
+	machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, machineConfigServerCert, func() error {
+		return p.ReconcileMachineConfigServerCert(machineConfigServerCert, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		p := aws.NewAWSParams(hcp)
+		awsProviderConfig := manifests.AWSProviderConfig(hcp.Namespace)
+		if _, err := controllerutil.CreateOrUpdate(ctx, r, awsProviderConfig, func() error {
+			return p.ReconcileCloudConfig(awsProviderConfig)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile aws provider config: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+
+	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
+
 	// Etcd Operator ServiceAccount
-	operatorServiceAccount := etcd.OperatorServiceAccount(hcp.Namespace)
+	operatorServiceAccount := manifests.EtcdOperatorServiceAccount(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorServiceAccount, func() error {
-		operatorServiceAccount.OwnerReferences = ensureHCPOwnerRef(hcp, operatorServiceAccount.OwnerReferences)
-		return nil
+		return p.ReconcileOperatorServiceAccount(operatorServiceAccount)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd operator service account: %w", err)
 	}
 
 	// Etcd operator role
-	operatorRole := etcd.OperatorRole(hcp.Namespace)
+	operatorRole := manifests.EtcdOperatorRole(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRole, func() error {
 		operatorRole.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRole.OwnerReferences)
-		return etcd.ReconcileOperatorRole(operatorRole)
+		return p.ReconcileOperatorRole(operatorRole)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd operator role: %w", err)
 	}
 
 	// Etcd operator rolebinding
-	operatorRoleBinding := etcd.OperatorRoleBinding(hcp.Namespace)
+	operatorRoleBinding := manifests.EtcdOperatorRoleBinding(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRoleBinding, func() error {
 		operatorRoleBinding.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRoleBinding.OwnerReferences)
-		return etcd.ReconcileOperatorRoleBinding(operatorRoleBinding)
+		return p.ReconcileOperatorRoleBinding(operatorRoleBinding)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd operator role binding: %w", err)
 	}
 
 	// Etcd operator deployment
-	operatorDeployment := etcd.OperatorDeployment(hcp.Namespace)
+	operatorDeployment := manifests.EtcdOperatorDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorDeployment, func() error {
 		operatorDeployment.OwnerReferences = ensureHCPOwnerRef(hcp, operatorDeployment.OwnerReferences)
-		return etcd.ReconcileOperatorDeployment(operatorDeployment, etcdOperatorImage)
+		return p.ReconcileOperatorDeployment(operatorDeployment)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd operator deployment: %w", err)
 	}
 
 	// Etcd cluster
-	etcdCluster := etcd.Cluster(hcp.Namespace)
+	etcdCluster := manifests.EtcdCluster(hcp.Namespace)
 	etcdAvailableCond := hcputil.GetConditionByType(hcp.Status.Conditions, hyperv1.EtcdAvailable)
 	if etcdAvailableCond != nil && etcdAvailableCond.Status == hyperv1.ConditionFalse && etcdAvailableCond.Reason == etcd.EtcdReasonFailed {
 		if err := r.Delete(ctx, etcdCluster); err != nil {
@@ -723,11 +916,184 @@ func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *h
 	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdCluster, func() error {
 		etcdCluster.OwnerReferences = ensureHCPOwnerRef(hcp, etcdCluster.OwnerReferences)
-		return etcd.ReconcileCluster(etcdCluster, etcdClusterSize, etcdVersion)
+		return p.ReconcileCluster(etcdCluster)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
 	}
 
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileVPN(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, address string, port int32) error {
+	r.Log.Info("Reconciling VPN")
+	p := vpn.NewVPNParams(hcp, releaseImage.ComponentImages(), address, port)
+	serviceAccount := manifests.VPNServiceAccount(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serviceAccount, func() error {
+		return p.ReconcileVPNServiceAccount(serviceAccount)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn service account: %w", err)
+	}
+	serverConfig := manifests.VPNServerConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverConfig, func() error {
+		return p.ReconcileVPNServerConfig(serverConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn server config: %w", err)
+	}
+	serverClientConfig := manifests.VPNServerClientConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverClientConfig, func() error {
+		return p.ReconcileVPNServerClientConfig(serverClientConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn server client config: %w", err)
+	}
+	kubeAPIServerConfig := manifests.VPNKubeAPIServerClientConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerConfig, func() error {
+		return p.ReconcileKubeAPIServerClientConfig(kubeAPIServerConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn kas client config: %w", err)
+	}
+	clientConfig := manifests.VPNWorkerClientConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, clientConfig, func() error {
+		return p.ReconcileWorkerClientConfig(clientConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn worker client config: %w", err)
+	}
+	serverDeployment := manifests.VPNServerDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
+		return p.ReconcileServerDeployment(serverDeployment)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn server deployment: %w", err)
+	}
+	clientDeployment := manifests.VPNWorkerClientDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, clientDeployment, func() error {
+		return p.ReconcileWorkerClientDeployment(clientDeployment)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile vpn client deployment: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, oauthAddress string, oauthPort int32) error {
+	p := kas.NewKubeAPIServerParams(hcp, releaseImage.ComponentImages(), oauthAddress, oauthPort)
+
+	rootCA := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+
+	clientCertSecret := manifests.KASAdminClientCertSecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(clientCertSecret), clientCertSecret); err != nil {
+		return fmt.Errorf("failed to get admin client cert secret: %w", err)
+	}
+	bootstrapClientCertSecret := manifests.KASMachineBootstrapClientCertSecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(bootstrapClientCertSecret), bootstrapClientCertSecret); err != nil {
+		return fmt.Errorf("failed to get bootstrap client cert secret: %w", err)
+	}
+
+	serviceKubeconfigSecret := manifests.KASServiceKubeconfigSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serviceKubeconfigSecret, func() error {
+		return p.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile service admin kubeconfig secret: %w", err)
+	}
+
+	localhostKubeconfigSecret := manifests.KASLocalhostKubeconfigSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, localhostKubeconfigSecret, func() error {
+		return p.ReconcileLocalhostKubeconfigSecret(localhostKubeconfigSecret, clientCertSecret, rootCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile localhost kubeconfig secret: %w", err)
+	}
+
+	externalKubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, externalKubeconfigSecret, func() error {
+		return p.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
+	}
+
+	bootstrapKubeconfigSecret := manifests.KASBootstrapKubeconfigSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, bootstrapKubeconfigSecret, func() error {
+		return p.ReconcileBootstrapKubeconfigSecret(bootstrapKubeconfigSecret, bootstrapClientCertSecret, rootCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile bootstrap kubeconfig secret: %w", err)
+	}
+
+	kubeAPIServerAuditConfig := manifests.KASAuditConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerAuditConfig, func() error {
+		return p.ReconcileAuditConfig(kubeAPIServerAuditConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server audit config: %w", err)
+	}
+
+	kubeAPIServerConfig := manifests.KASConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerConfig, func() error {
+		return p.ReconcileConfig(kubeAPIServerConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server config: %w", err)
+	}
+
+	oauthMetadata := manifests.KASOAuthMetadata(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthMetadata, func() error {
+		return p.ReconcileOauthMetadata(oauthMetadata)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth metadata: %w", err)
+	}
+
+	kubeAPIServerDeployment := manifests.KASDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
+		return p.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := kcm.NewKubeControllerManagerParams(hcp, releaseImage.ComponentImages())
+
+	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
+		return fmt.Errorf("failed to fetch combined ca configmap: %w", err)
+	}
+	serviceServingCA := manifests.KCMServiceServingCA(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serviceServingCA, func() error {
+		return p.ReconcileKCMServiceServingCA(serviceServingCA, combinedCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm serving ca: %w", err)
+	}
+
+	kcmConfig := manifests.KCMConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kcmConfig, func() error {
+		return p.ReconcileConfig(kcmConfig, serviceServingCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm config: %w", err)
+	}
+
+	kcmDeployment := manifests.KCMDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kcmDeployment, func() error {
+		return p.ReconcileDeployment(kcmDeployment, serviceServingCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm deployment: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := scheduler.NewKubeSchedulerParams(hcp, releaseImage.ComponentImages())
+
+	schedulerConfig := manifests.SchedulerConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, schedulerConfig, func() error {
+		return p.ReconcileConfig(schedulerConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile scheduler config: %w", err)
+	}
+
+	schedulerDeployment := manifests.SchedulerDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, schedulerDeployment, func() error {
+		return p.ReconcileDeployment(schedulerDeployment)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile scheduler deployment: %w", err)
+	}
 	return nil
 }
 
@@ -798,61 +1164,15 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.ControllerAvailabilityPolicy = render.SingleReplica
 	params.SSHKey = string(sshKeyData)
 
-	// Generate PKI data just once and store it in a secret. PKI generation isn't
-	// deterministic and shouldn't be performed with every reconcile, otherwise
-	// we're effectively doing an uncontrolled cert rotation each generation.
-	pkiSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: targetNamespace,
-			Name:      "pki",
-		},
-		Data: map[string][]byte{},
+	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
+		return nil, fmt.Errorf("cannot get combined ca secret: %w", err)
 	}
-	needsPkiSecret := false
-	if err := r.Get(ctx, client.ObjectKeyFromObject(pkiSecret), pkiSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			needsPkiSecret = true
-		} else {
-			return nil, fmt.Errorf("failed to get pki secret: %w", err)
-		}
-	} else {
-		r.Log.Info("using existing pki secret")
-	}
-	if needsPkiSecret {
-		rootCA := pki.RootCASecret(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-			return nil, fmt.Errorf("failed to read Root CA secret: %w", err)
-		}
-		pkiParams := &render.PKIParams{
-			ExternalAPIAddress:      infraStatus.APIAddress,
-			NodeInternalAPIServerIP: params.ExternalAPIAddress,
-			ExternalAPIPort:         params.ExternalAPIPort,
-			InternalAPIPort:         params.InternalAPIPort,
-			ServiceCIDR:             hcp.Spec.ServiceCIDR,
-			ExternalOauthAddress:    infraStatus.OAuthAddress,
-			IngressSubdomain:        "apps." + baseDomain,
-			ExternalOpenVPNAddress:  infraStatus.VPNAddress,
-			Namespace:               targetNamespace,
-			RootCACert:              rootCA.Data[pki.CASignerCertMapKey],
-			RootCAKey:               rootCA.Data[pki.CASignerKeyMapKey],
-		}
-		r.Log.Info("generating PKI secret data")
-		data, err := renderpki.GeneratePKI(pkiParams)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate PKI data: %w", err)
-		}
-		pkiSecret.Data = data
-		if err := r.Create(ctx, pkiSecret); err != nil {
-			return nil, fmt.Errorf("failed to create pki secret: %w", err)
-		}
-		r.Log.Info("created pki secret")
-	}
-
-	caBytes, hasData := pkiSecret.Data["combined-ca.crt"]
+	caBytes, hasData := combinedCA.Data[pki.CASignerCertMapKey]
 	if !hasData {
-		return nil, fmt.Errorf("pki secret %q is missing combined-ca.crt key", pkiSecret.Name)
+		return nil, fmt.Errorf("pki secret %q is missing a %s key", combinedCA.Name, pki.CASignerCertMapKey)
 	}
-	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString(caBytes)
+	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString([]byte(caBytes))
 	params.OauthAPIServerCABundle = params.OpenshiftAPIServerCABundle
 
 	var pullSecret corev1.Secret
@@ -864,72 +1184,20 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		return nil, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
 	}
 
-	var signingKeySecret corev1.Secret
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.SigningKey.Name}, &signingKeySecret); err != nil {
-		return nil, fmt.Errorf("failed to get signing key %s: %w", hcp.Spec.SigningKey.Name, err)
+	secrets := &corev1.SecretList{}
+	if err = r.List(ctx, secrets, client.InNamespace(hcp.Namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list secrets in current namespace: %w", err)
 	}
-	signingKeySecretData, hasSigningKeySecretData := signingKeySecret.Data["key"]
-	if !hasSigningKeySecretData {
-		return nil, fmt.Errorf("signing key secret %s is missing the key key", hcp.Spec.SigningKey.Name)
-	}
-	privKey, err := pkiutil.PemToPrivateKey(signingKeySecretData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to PEM decode private key %s: %w", hcp.Spec.SigningKey.Name, err)
-	}
-	pubPEMKey, err := pkiutil.PublicKeyToPem(&privKey.PublicKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to PEM encode public key %s: %w", hcp.Spec.SigningKey.Name, err)
-	}
-	pkiSecret.Data["service-account.key"] = signingKeySecretData
-	pkiSecret.Data["service-account.pub"] = pubPEMKey
 
-	manifests, err := render.RenderClusterManifests(params, releaseImage, pullSecretData, pkiSecret.Data)
+	configMaps := &corev1.ConfigMapList{}
+	if err = r.List(ctx, configMaps, client.InNamespace(hcp.Namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list configmaps in current namespace: %w", err)
+	}
+
+	manifests, err := render.RenderClusterManifests(params, releaseImage, pullSecretData, secrets, configMaps)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
-
-	kubeAPIServerParams := &render.KubeAPIServerParams{
-		PodCIDR:               params.PodCIDR,
-		ServiceCIDR:           params.ServiceCIDR,
-		ExternalAPIAddress:    params.ExternalAPIAddress,
-		APIServerAuditEnabled: params.APIServerAuditEnabled,
-		CloudProvider:         params.CloudProvider,
-		EtcdClientName:        params.EtcdClientName,
-		DefaultFeatureGates:   params.DefaultFeatureGates,
-		ExtraFeatureGates:     params.ExtraFeatureGates,
-		IngressSubdomain:      params.IngressSubdomain,
-		InternalAPIPort:       params.InternalAPIPort,
-		IssuerURL:             params.IssuerURL,
-		NamedCerts:            params.NamedCerts,
-		PKI:                   pkiSecret.Data,
-		APIAvailabilityPolicy: render.KubeAPIServerParamsAvailabilityPolicy(params.APIAvailabilityPolicy),
-		ClusterID:             params.ClusterID,
-		Images:                releaseImage.ComponentImages(),
-		ApiserverLivenessPath: params.ApiserverLivenessPath,
-		APINodePort:           params.APINodePort,
-		ExternalOauthPort:     params.ExternalOauthPort,
-		ExternalOauthDNSName:  params.ExternalOauthDNSName,
-		InfraID:               hcp.Spec.InfraID,
-	}
-	if hcp.Spec.Platform.AWS != nil {
-		kubeAPIServerParams.AWSRegion = hcp.Spec.Platform.AWS.Region
-		kubeAPIServerParams.AWSVPCID = hcp.Spec.Platform.AWS.VPC
-		if hcp.Spec.Platform.AWS.NodePoolDefaults != nil {
-			kubeAPIServerParams.AWSZone = hcp.Spec.Platform.AWS.NodePoolDefaults.Zone
-			if hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID != nil {
-				kubeAPIServerParams.AWSSubnetID = *hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID
-			}
-		}
-	}
-	kubeAPIServerContext := render.NewKubeAPIServerManifestContext(kubeAPIServerParams)
-	kubeAPIServerManifests, err := kubeAPIServerContext.Render()
-	if err != nil {
-		return nil, fmt.Errorf("failed to render kube apiserver manifests: %w", err)
-	}
-	for k := range kubeAPIServerManifests {
-		manifests[k] = kubeAPIServerManifests[k]
-	}
-
 	return manifests, nil
 }
 
@@ -1089,7 +1357,7 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 	route := manifests.OIDCRoute(hcp.GetNamespace())
 	r.Log.Info("Updating OIDC route")
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-		rootCASecret := pki.RootCASecret(hcp.Namespace)
+		rootCASecret := manifests.RootCASecret(hcp.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
 			return err
 		}
@@ -1118,7 +1386,7 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 }
 
 func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceLoadBalancerResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, status *InfrastructureStatus) error {
-	svc := manifests.VPNServerService(namespace)
+	svc := manifests.VPNService(namespace)
 	var existingNodePort int32 = 0
 	var vpnServerServiceData corev1.Service
 	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
@@ -1149,7 +1417,7 @@ func reconcileVPNServerServiceLoadBalancer(svc *corev1.Service, existingNodePort
 
 func (r *HostedControlPlaneReconciler) updateStatusVPNServerServiceLoadBalancer(ctx context.Context, namespace string, status *InfrastructureStatus) error {
 	r.Log.Info("Retrieving openVPN service to get load balancer info")
-	svc := manifests.VPNServerService(namespace)
+	svc := manifests.VPNService(namespace)
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
 		return err
 	}
@@ -1170,7 +1438,7 @@ func (r *HostedControlPlaneReconciler) updateStatusVPNServerServiceLoadBalancer(
 
 func (r *HostedControlPlaneReconciler) updateStatusVPNServerServiceNodePort(ctx context.Context, namespace string, servicePublishingStrategyMapping hyperv1.ServicePublishingStrategyMapping, status *InfrastructureStatus) error {
 	r.Log.Info("Retrieving openVPN service to get nodePort value")
-	svc := manifests.VPNServerService(namespace)
+	svc := manifests.VPNService(namespace)
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
 		return err
 	}
@@ -1184,7 +1452,7 @@ func (r *HostedControlPlaneReconciler) updateStatusVPNServerServiceNodePort(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceNodePortResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) error {
-	svc := manifests.VPNServerService(namespace)
+	svc := manifests.VPNService(namespace)
 	var nodePort int32
 	if nodePortMetadata.Port > 0 {
 		nodePort = nodePortMetadata.Port
@@ -1321,7 +1589,7 @@ func ensureVPNSCC(c client.Client, hcp *hyperv1.HostedControlPlane, namespace st
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("system:serviceaccount:%s:%s:scc:privileged", namespace, vpnServiceAccountName),
+			Name: fmt.Sprintf("system:serviceaccount:%s:%s:scc:privileged", namespace, manifests.VPNServiceAccount(namespace).Name),
 		},
 	}
 	_, err := controllerutil.CreateOrUpdate(context.TODO(), c, sccBinding, func() error {
@@ -1333,7 +1601,7 @@ func ensureVPNSCC(c client.Client, hcp *hyperv1.HostedControlPlane, namespace st
 		sccBinding.Subjects = []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      vpnServiceAccountName,
+				Name:      manifests.VPNServiceAccount(namespace).Name,
 				Namespace: namespace,
 			},
 		}
