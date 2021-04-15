@@ -31,7 +31,6 @@ type DestroyOptions struct {
 	Name               string
 	AWSCredentialsFile string
 	ClusterGracePeriod time.Duration
-	KubeConfig         string
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -45,14 +44,12 @@ func NewDestroyCommand() *cobra.Command {
 		Name:               "",
 		AWSCredentialsFile: "",
 		ClusterGracePeriod: 15 * time.Minute,
-		KubeConfig:         os.Getenv("KUBECONFIG"),
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A cluster name")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
-	cmd.Flags().StringVar(&opts.KubeConfig, "kubeconfig", opts.KubeConfig, "Path to kubeconfig")
 
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("aws-creds")
@@ -80,10 +77,6 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
-	if err := os.Setenv("KUBECONFIG", o.KubeConfig); err != nil {
-		return fmt.Errorf("failed to set kubeconfig")
-	}
-
 	c, err := crclient.New(ctrl.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		return fmt.Errorf("failed to create kube client: %w", err)
