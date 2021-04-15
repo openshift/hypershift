@@ -9,8 +9,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	awserrors "github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
@@ -67,15 +65,14 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
-	awsConfig := aws.NewConfig().WithRegion(o.Region).WithCredentials(credentials.NewSharedCredentials(o.AWSCredentialsFile, "default"))
-	awsSession := session.Must(session.NewSession())
+	awsSession := newSession()
+	awsConfig := newConfig(o.AWSCredentialsFile, o.Region)
+	r53Config := newConfig(o.AWSCredentialsFile, "us-east-1")
+
 	cf := cloudformation.New(awsSession, awsConfig)
 	s3 := s3service.New(awsSession, awsConfig)
 	elbclient := elb.New(awsSession, awsConfig)
 	ec2client := ec2.New(awsSession, awsConfig)
-	// Route53 is weird about regions
-	// https://github.com/openshift/cluster-ingress-operator/blob/5660b43d66bd63bbe2dcb45fb40df98d8d91347e/pkg/dns/aws/dns.go#L163-L169
-	r53Config := aws.NewConfig().WithRegion("us-east-1").WithCredentials(credentials.NewSharedCredentials(o.AWSCredentialsFile, "default"))
 	r53 := route53.New(awsSession, r53Config)
 
 	stack, err := getStack(cf, o.InfraID)
