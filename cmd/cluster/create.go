@@ -43,6 +43,7 @@ type Options struct {
 	BaseDomain         string
 	Overwrite          bool
 	DeleteOnFailure    bool
+	KubeConfig         string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -76,6 +77,7 @@ func NewCreateCommand() *cobra.Command {
 		InstanceType:       "m4.large",
 		Overwrite:          false,
 		DeleteOnFailure:    false,
+		KubeConfig:         os.Getenv("KUBECONFIG"),
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -93,6 +95,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The base domain for the cluster")
 	cmd.Flags().BoolVar(&opts.Overwrite, "overwrite", opts.Overwrite, "If an existing cluster exists, overwrite it")
 	cmd.Flags().BoolVar(&opts.DeleteOnFailure, "delete-infra-on-failure", opts.DeleteOnFailure, "Delete the infra stack if creation fails")
+	cmd.Flags().StringVar(&opts.KubeConfig, "kubeconfig", opts.KubeConfig, "Path to kubeconfig")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -118,6 +121,10 @@ func NewCreateCommand() *cobra.Command {
 func CreateCluster(ctx context.Context, opts Options) error {
 	if len(opts.ReleaseImage) == 0 {
 		return fmt.Errorf("release-image flag is required if default can not be fetched")
+	}
+
+	if err := os.Setenv("KUBECONFIG", opts.KubeConfig); err != nil {
+		return fmt.Errorf("failed to set kubeconfig")
 	}
 
 	pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
