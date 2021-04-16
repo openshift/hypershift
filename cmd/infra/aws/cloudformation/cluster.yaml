@@ -89,7 +89,7 @@ Resources:
                 "Action": "sts:AssumeRoleWithWebIdentity",
                 "Condition": {
                   "StringEquals": {
-                    "${URL}": "openshift"
+                    "${URL}:sub": "system:serviceaccount:openshift-ingress-operator:ingress-operator"
                   }
                 }
               }
@@ -97,7 +97,7 @@ Resources:
           }
         - Principal: !Ref OIDCProvider
           # TODO: Assumes the name of the bucket
-          URL: !Join ["", ["s3.", !Ref "AWS::Region", ".amazonaws.com/", !Ref InfrastructureName, ":aud"]]
+          URL: !Join ["", ["s3.", !Ref "AWS::Region", ".amazonaws.com/", !Ref InfrastructureName]]
       Policies:
       - PolicyName: !Join ["", [!Ref InfrastructureName, "-openshift-ingress"]]
         PolicyDocument:
@@ -134,7 +134,7 @@ Resources:
                 "Action": "sts:AssumeRoleWithWebIdentity",
                 "Condition": {
                   "StringEquals": {
-                    "${URL}": "openshift"
+                    "${URL}:sub": "system:serviceaccount:openshift-image-registry:cluster-image-registry-operator"
                   }
                 }
               }
@@ -142,7 +142,7 @@ Resources:
           }
         - Principal: !Ref OIDCProvider
           # TODO: Assumes the name of the bucket
-          URL: !Join ["", ["s3.", !Ref "AWS::Region", ".amazonaws.com/", !Ref InfrastructureName, ":aud"]]
+          URL: !Join ["", ["s3.", !Ref "AWS::Region", ".amazonaws.com/", !Ref InfrastructureName]]
       Policies:
       - PolicyName: !Join ["", [!Ref InfrastructureName, "-openshift-image-registry"]]
         PolicyDocument:
@@ -193,7 +193,7 @@ Resources:
                 "Action": "sts:AssumeRoleWithWebIdentity",
                 "Condition": {
                   "StringEquals": {
-                    "${URL}": "openshift"
+                    "${URL}:sub": "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator"
                   }
                 }
               }
@@ -201,7 +201,7 @@ Resources:
           }
         - Principal: !Ref OIDCProvider
           # TODO: Assumes the name of the bucket
-          URL: !Join ["", ["s3.", !Ref "AWS::Region", ".amazonaws.com/", !Ref InfrastructureName, ":aud"]]
+          URL: !Join ["", ["s3.", !Ref "AWS::Region", ".amazonaws.com/", !Ref InfrastructureName]]
       Policies:
       - PolicyName: !Join ["", [!Ref InfrastructureName, "-csi-driver"]]
         PolicyDocument:
