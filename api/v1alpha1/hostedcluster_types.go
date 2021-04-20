@@ -39,6 +39,56 @@ type HostedClusterSpec struct {
 
 	// DNS configuration for the cluster
 	DNS DNSSpec `json:"dns,omitempty"`
+
+	// Services defines metadata about how control plane services are published
+	// in the management cluster.
+	Services []ServicePublishingStrategyMapping `json:"services"`
+}
+
+// ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
+type ServicePublishingStrategyMapping struct {
+	// Service identifies the type of service being published
+	// +kubebuilder:validation:Enum=APIServer;VPN;OAuthServer
+	Service                   ServiceType `json:"service"`
+	ServicePublishingStrategy `json:"servicePublishingStrategy"`
+}
+
+// ServicePublishingStrategy defines metadata around how a service is published
+type ServicePublishingStrategy struct {
+	// Type defines the publishing strategy used for the service.
+	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route
+	Type PublishingStrategyType `json:"type"`
+	// NodePort is used to define extra metadata for the NodePort publishing strategy.
+	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
+}
+
+// PublishingStrategyType defines publishing strategies for services.
+type PublishingStrategyType string
+
+var (
+	// LoadBalancer exposes  a service with a LoadBalancer kube service.
+	LoadBalancer PublishingStrategyType = "LoadBalancer"
+	// NodePort exposes a service with a NodePort kube service.
+	NodePort PublishingStrategyType = "NodePort"
+	// Route exposes services with a Route + ClusterIP kube service.
+	Route PublishingStrategyType = "Route"
+)
+
+// ServiceType defines what control plane services can be exposed from the management control plane
+type ServiceType string
+
+var (
+	APIServer   ServiceType = "APIServer"
+	VPN         ServiceType = "VPN"
+	OAuthServer ServiceType = "OAuthServer"
+)
+
+// NodePortPublishingStrategy defines the network endpoint that can be used to contact the NodePort service
+type NodePortPublishingStrategy struct {
+	// Address is the host/ip that the nodePort service is exposed over
+	Address string `json:"address"`
+	// Port is the nodePort of the service. If <=0 the nodePort is dynamically assigned when the service is created
+	Port int32 `json:"port,omitempty"`
 }
 
 // DNSSpec specifies the DNS configuration in the cluster

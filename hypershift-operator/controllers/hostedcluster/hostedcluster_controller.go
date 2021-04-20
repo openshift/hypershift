@@ -450,6 +450,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		Name: fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
 		Key:  "value",
 	}
+	hcp.Spec.Services = hcluster.Spec.Services
 
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -720,6 +721,9 @@ func reconcileDefaultNodePool(nodePool *hyperv1.NodePool, hcluster *hyperv1.Host
 	nodePool.Spec = hyperv1.NodePoolSpec{
 		ClusterName: hcluster.GetName(),
 		NodeCount:   k8sutilspointer.Int32Ptr(int32(hcluster.Spec.InitialComputeReplicas)),
+		IgnitionService: hyperv1.ServicePublishingStrategy{
+			Type: hyperv1.Route,
+		},
 	}
 	nodePool.Status = hyperv1.NodePoolStatus{}
 	if hcluster.Spec.Platform.AWS != nil {

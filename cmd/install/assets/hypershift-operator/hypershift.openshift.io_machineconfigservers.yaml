@@ -44,10 +44,37 @@ spec:
           spec:
             description: MachineConfigServerSpec defines the desired state of MachineConfigServer
             properties:
+              ignitionService:
+                description: IgnitionService defines how the MachineConfigServer service is published in the management cluster
+                properties:
+                  nodePort:
+                    description: NodePort is used to define extra metadata for the NodePort publishing strategy.
+                    properties:
+                      address:
+                        description: Address is the host/ip that the nodePort service is exposed over
+                        type: string
+                      port:
+                        description: Port is the nodePort of the service. If <=0 the nodePort is dynamically assigned when the service is created
+                        format: int32
+                        type: integer
+                    required:
+                    - address
+                    type: object
+                  type:
+                    description: Type defines the publishing strategy used for the service.
+                    enum:
+                    - LoadBalancer
+                    - NodePort
+                    - Route
+                    type: string
+                required:
+                - type
+                type: object
               releaseImage:
                 description: Release specifies the release image to use for this MachineConfigServer
                 type: string
             required:
+            - ignitionService
             - releaseImage
             type: object
           status:
@@ -55,6 +82,9 @@ spec:
             properties:
               host:
                 type: string
+              port:
+                format: int32
+                type: integer
               version:
                 description: Version is the semantic version of the release used by the mcs. For a mcs a given version represents the ignition config served by the ignition endpoint referenced in the userdata secret.
                 type: string

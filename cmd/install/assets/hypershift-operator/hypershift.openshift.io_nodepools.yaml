@@ -72,6 +72,32 @@ spec:
               clusterName:
                 description: ClusterName is the name of the Cluster this object belongs to.
                 type: string
+              ignitionService:
+                description: IgnitionService defines how the MachineConfigServer service is published in the management cluster
+                properties:
+                  nodePort:
+                    description: NodePort is used to define extra metadata for the NodePort publishing strategy.
+                    properties:
+                      address:
+                        description: Address is the host/ip that the nodePort service is exposed over
+                        type: string
+                      port:
+                        description: Port is the nodePort of the service. If <=0 the nodePort is dynamically assigned when the service is created
+                        format: int32
+                        type: integer
+                    required:
+                    - address
+                    type: object
+                  type:
+                    description: Type defines the publishing strategy used for the service.
+                    enum:
+                    - LoadBalancer
+                    - NodePort
+                    - Route
+                    type: string
+                required:
+                - type
+                type: object
               nodeCount:
                 format: int32
                 type: integer
@@ -183,6 +209,7 @@ spec:
                 type: object
             required:
             - clusterName
+            - ignitionService
             - platform
             type: object
           status:

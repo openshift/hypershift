@@ -247,6 +247,49 @@ spec:
                 required:
                 - image
                 type: object
+              services:
+                description: Services defines metadata about how control plane services are published in the management cluster.
+                items:
+                  description: ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
+                  properties:
+                    service:
+                      description: Service identifies the type of service being published
+                      enum:
+                      - APIServer
+                      - VPN
+                      - OAuthServer
+                      type: string
+                    servicePublishingStrategy:
+                      description: ServicePublishingStrategy defines metadata around how a service is published
+                      properties:
+                        nodePort:
+                          description: NodePort is used to define extra metadata for the NodePort publishing strategy.
+                          properties:
+                            address:
+                              description: Address is the host/ip that the nodePort service is exposed over
+                              type: string
+                            port:
+                              description: Port is the nodePort of the service. If <=0 the nodePort is dynamically assigned when the service is created
+                              format: int32
+                              type: integer
+                          required:
+                          - address
+                          type: object
+                        type:
+                          description: Type defines the publishing strategy used for the service.
+                          enum:
+                          - LoadBalancer
+                          - NodePort
+                          - Route
+                          type: string
+                      required:
+                      - type
+                      type: object
+                  required:
+                  - service
+                  - servicePublishingStrategy
+                  type: object
+                type: array
               signingKey:
                 description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
                 properties:
@@ -268,6 +311,7 @@ spec:
             - platform
             - pullSecret
             - release
+            - services
             - signingKey
             - sshKey
             type: object

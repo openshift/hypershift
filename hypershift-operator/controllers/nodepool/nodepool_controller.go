@@ -216,6 +216,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		mcs.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
 		mcs.Spec.ReleaseImage = nodePool.Spec.Release.Image
+		mcs.Spec.IgnitionService = nodePool.Spec.IgnitionService
 		return nil
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machineConfigServer %q: %w",
