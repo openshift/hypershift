@@ -253,11 +253,10 @@ func CreateCluster(ctx context.Context, opts Options) error {
 	default:
 		for _, object := range exampleObjects {
 			key := crclient.ObjectKeyFromObject(object)
-			_, err = controllerutil.CreateOrUpdate(ctx, client, object, NoopReconcile)
-			if err != nil {
-				return fmt.Errorf("failed to create object %q: %w", key, err)
+			if err := client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli")); err != nil {
+				return fmt.Errorf("failed to apply object %q: %w", key, err)
 			}
-			log.Info("Applied Kube resource", "kind", object.GetObjectKind(), "namespace", key.Namespace, "name", key.Name)
+			log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
 		}
 		return nil
 	}
