@@ -17,7 +17,7 @@ spec:
       successThreshold: 1
       tcpSocket:
         host: {{ .ExternalAPIAddress }}
-        port: 6443
+        port: {{ .InternalAPIPort }}
       timeoutSeconds: 60
     command:
     - haproxy

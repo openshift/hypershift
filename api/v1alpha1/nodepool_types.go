@@ -57,6 +57,9 @@ type NodePoolSpec struct {
 	// an image artifact e.g an AMI in AWS.
 	// Release specifies the release image to use for this HostedCluster
 	Release Release `json:"release"`
+
+	// IgnitionService defines how the MachineConfigServer service is published in the management cluster
+	IgnitionService ServicePublishingStrategy `json:"ignitionService"`
 }
 
 // NodePoolStatus defines the observed state of NodePool

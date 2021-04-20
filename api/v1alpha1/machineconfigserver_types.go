@@ -13,6 +13,9 @@ type MachineConfigServerSpec struct {
 
 	// Release specifies the release image to use for this MachineConfigServer
 	ReleaseImage string `json:"releaseImage"`
+
+	// IgnitionService defines how the MachineConfigServer service is published in the management cluster
+	IgnitionService ServicePublishingStrategy `json:"ignitionService"`
 }
 
 // MachineConfigServerStatus defines the observed state of MachineConfigServer
@@ -25,6 +28,9 @@ type MachineConfigServerStatus struct {
 
 	// +kubebuilder:validation:Optional
 	Host string `json:"host,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	Port int32 `json:"port,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -40,6 +40,10 @@ type HostedControlPlaneSpec struct {
 	// KubeConfig specifies the name and key for the kubeconfig secret
 	// +optional
 	KubeConfig *KubeconfigSecretRef `json:"kubeconfig,omitempty"`
+
+	// Services defines metadata about how control plane services are published
+	// in the management cluster.
+	Services []ServicePublishingStrategyMapping `json:"services"`
 }
 
 type KubeconfigSecretRef struct {

@@ -173,6 +173,26 @@ aws_secret_access_key = %s
 				PodCIDR:     "10.132.0.0/14",
 				MachineCIDR: o.ComputeCIDR,
 			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				hyperv1.ServicePublishingStrategyMapping{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
+					},
+				},
+				hyperv1.ServicePublishingStrategyMapping{
+					Service: hyperv1.VPN,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
+					},
+				},
+				hyperv1.ServicePublishingStrategyMapping{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
 			InfraID:    o.InfraID,
 			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
 			SigningKey: corev1.LocalObjectReference{Name: signingKeySecret.Name},
