@@ -9,6 +9,7 @@
 
 2. Build HyperShift.
 
+        # requires go v1.16+
         $ make build
 
 3. Install HyperShift in development mode which causes the operator deployment
