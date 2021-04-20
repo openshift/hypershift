@@ -14,12 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 const (
@@ -86,10 +83,7 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
-	c, err := crclient.New(ctrl.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create kube client: %w", err)
-	}
+	c := util.GetClientOrDie()
 
 	var hostedCluster hyperv1.HostedCluster
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
@@ -117,7 +111,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	}
 	clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
 	defer clusterDeleteCtxCancel()
-	err = wait.PollUntil(1*time.Second, func() (bool, error) {
+	err := wait.PollUntil(1*time.Second, func() (bool, error) {
 		if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 			if apierrors.IsNotFound(err) {
 				return true, nil

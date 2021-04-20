@@ -12,13 +12,11 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/util"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-
-	cr "sigs.k8s.io/controller-runtime"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type CreateNodePoolOptions struct {
@@ -64,13 +62,10 @@ func NewCreateCommand() *cobra.Command {
 }
 
 func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
-	client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create kube client: %w", err)
-	}
+	client := util.GetClientOrDie()
 
 	hcluster := &hyperv1.HostedCluster{}
-	err = client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.ClusterName}, hcluster)
+	err := client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.ClusterName}, hcluster)
 	if err != nil {
 		return fmt.Errorf("failed to get HostedCluster %s/%s: %w", o.Namespace, o.Name, err)
 	}

@@ -20,7 +20,7 @@ import (
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/version"
 
-	cr "sigs.k8s.io/controller-runtime"
+	"github.com/openshift/hypershift/cmd/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -138,10 +138,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		sshKey = key
 	}
 
-	client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err)
-	}
+	client := util.GetClientOrDie()
 
 	// If creating the cluster directly, fail early unless overwrite is specified
 	// as updates aren't really part of the design intent and may not work.

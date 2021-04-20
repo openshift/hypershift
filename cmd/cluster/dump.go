@@ -16,11 +16,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
@@ -65,11 +65,8 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
 	}
-	cfg := ctrl.GetConfigOrDie()
-	c, err := client.New(cfg, client.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create management cluster client: %w", err)
-	}
+	cfg := util.GetConfigOrDie()
+	c := util.GetClientOrDie()
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
 		log.Error(err, "Cannot list nodepools")

@@ -14,12 +14,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	kubejson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 // TODO: NEXT: incorporate into an fzf workflow
@@ -68,11 +67,7 @@ func render(ctx context.Context) error {
 		kubejson.DefaultMetaFactory, scheme, scheme,
 		kubejson.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
 	)
-	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create kube client: %w", err)
-	}
-
+	c := util.GetClientOrDie()
 	kubeConfig, err := buildCombinedConfig(ctx, c)
 	if err != nil {
 		return fmt.Errorf("failed to make kubeconfig: %w", err)
