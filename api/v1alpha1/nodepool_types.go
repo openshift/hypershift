@@ -59,6 +59,7 @@ type NodePoolSpec struct {
 	Release Release `json:"release"`
 
 	// IgnitionService defines how the MachineConfigServer service is published in the management cluster
+	// +kubebuilder:default={type:"Route"}
 	IgnitionService ServicePublishingStrategy `json:"ignitionService"`
 }
 

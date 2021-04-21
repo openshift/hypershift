@@ -86,9 +86,6 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 			Name:      o.Name,
 		},
 		Spec: hyperv1.NodePoolSpec{
-			IgnitionService: hyperv1.ServicePublishingStrategy{
-				Type: hyperv1.Route,
-			},
 			ClusterName: o.ClusterName,
 			NodeCount:   &o.NodeCount,
 			Platform: hyperv1.NodePoolPlatform{

@@ -248,6 +248,16 @@ spec:
                 - image
                 type: object
               services:
+                default:
+                - service: APIServer
+                  servicePublishingStrategy:
+                    type: LoadBalancer
+                - service: VPN
+                  servicePublishingStrategy:
+                    type: LoadBalancer
+                - service: OAuthServer
+                  servicePublishingStrategy:
+                    type: Route
                 description: Services defines metadata about how control plane services are published in the management cluster.
                 items:
                   description: ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
