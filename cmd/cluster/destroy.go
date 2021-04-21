@@ -27,6 +27,7 @@ type DestroyOptions struct {
 	Namespace          string
 	Name               string
 	AWSCredentialsFile string
+	PreserveIAM        bool
 	ClusterGracePeriod time.Duration
 }
 
@@ -40,12 +41,14 @@ func NewDestroyCommand() *cobra.Command {
 		Namespace:          "clusters",
 		Name:               "",
 		AWSCredentialsFile: "",
-		ClusterGracePeriod: 15 * time.Minute,
+		PreserveIAM:        false,
+		ClusterGracePeriod: 10 * time.Minute,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A cluster name")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().BoolVar(&opts.PreserveIAM, "preserve-iam", opts.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 	cmd.Flags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
 
 	cmd.MarkFlagRequired("name")
@@ -60,23 +63,7 @@ func NewDestroyCommand() *cobra.Command {
 			cancel()
 		}()
 
-		t := time.NewTicker(5 * time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				log.Info("Cluster deletion was cancelled. If the HostedCluster resource " +
-					"still exists, you can retry this command. Otherwise run the `delete infra` " +
-					"command to clean up the infrastructure for the cluster using its infrastructure ID.")
-				return nil
-			case <-t.C:
-				if err := DestroyCluster(ctx, &opts); err != nil {
-					log.Error(err, "failed to destroy cluster, will retry")
-				} else {
-					log.Info("Successfully destroyed cluster")
-					return nil
-				}
-			}
-		}
+		return DestroyCluster(ctx, &opts)
 	}
 
 	return cmd
@@ -91,8 +78,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		return nil
 	}
 
-	log.Info("Destroying cluster", "name", hostedCluster.Name, "infraID", hostedCluster.Spec.InfraID)
-
 	controllerutil.AddFinalizer(&hostedCluster, destroyFinalizer)
 	if err := c.Update(ctx, &hostedCluster); err != nil {
 		return fmt.Errorf("failed to add finalizer, won't destroy: %w", err)
@@ -101,6 +86,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	// Cluster deletion will be subject to a timeout so that it's possible to
 	// try and tear down infra even if the cluster never finalizes; this is an
 	// attempt to reduce resource leakage in such cases.
+	log.Info("deleting hostedcluster")
 	if err := c.Delete(ctx, &hostedCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("WARNING: hostedcluster was finalized before infrastructure was deleted; resources may have been leaked")
@@ -113,9 +99,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	defer clusterDeleteCtxCancel()
 	err := wait.PollUntil(1*time.Second, func() (bool, error) {
 		if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
-			if apierrors.IsNotFound(err) {
-				return true, nil
-			}
 			log.Error(err, "failed to get hostedcluster")
 			return false, nil
 		}
@@ -123,18 +106,30 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		return done, nil
 	}, clusterDeleteCtx.Done())
 	if err != nil {
-		return fmt.Errorf("hostedcluster was never finalized: %w", err)
+		log.Error(err, "hostedcluster wasn't successfully deleted")
 	}
 
-	log.Info("Destroying infrastructure", "id", hostedCluster.Spec.InfraID)
+	log.Info("destroying infrastructure", "infraID", hostedCluster.Spec.InfraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
-		AWSCredentialsFile: o.AWSCredentialsFile,
 		Region:             hostedCluster.Spec.Platform.AWS.Region,
 		InfraID:            hostedCluster.Spec.InfraID,
+		AWSCredentialsFile: o.AWSCredentialsFile,
+		Name:               hostedCluster.GetName(),
+		BaseDomain:         hostedCluster.Spec.DNS.BaseDomain,
 	}
-	err = destroyInfraOpts.DestroyInfra(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to destroy infrastructure: %w", err)
+	destroyInfraOpts.Run(ctx)
+
+	if !o.PreserveIAM {
+		log.Info("destroying IAM")
+		destroyOpts := awsinfra.DestroyIAMOptions{
+			Region:             hostedCluster.Spec.Platform.AWS.Region,
+			AWSCredentialsFile: o.AWSCredentialsFile,
+			InfraID:            hostedCluster.Spec.InfraID,
+		}
+		err := destroyOpts.DestroyIAM()
+		if err != nil {
+			return fmt.Errorf("failed to destroy IAM: %w", err)
+		}
 	}
 
 	controllerutil.RemoveFinalizer(&hostedCluster, destroyFinalizer)
@@ -142,6 +137,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		return fmt.Errorf("failed to remove finalizer: %w", err)
 	}
 
-	log.Info("Destroyed cluster and infrastructure", "name", hostedCluster.Name, "infraID", hostedCluster.Spec.InfraID)
+	log.Info("successfully destroyed cluster and infrastructure")
 	return nil
 }
