@@ -60,23 +60,14 @@ func NewDestroyCommand() *cobra.Command {
 			cancel()
 		}()
 
-		t := time.NewTicker(5 * time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				log.Info("Cluster deletion was cancelled. If the HostedCluster resource " +
-					"still exists, you can retry this command. Otherwise run the `delete infra` " +
-					"command to clean up the infrastructure for the cluster using its infrastructure ID.")
-				return nil
-			case <-t.C:
-				if err := DestroyCluster(ctx, &opts); err != nil {
-					log.Error(err, "failed to destroy cluster, will retry")
-				} else {
-					log.Info("Successfully destroyed cluster")
-					return nil
-				}
-			}
+		err := DestroyCluster(ctx, &opts)
+		if err != nil {
+			log.Error(err, "Cluster deletion failed. If the HostedCluster resource "+
+				"still exists, you can retry this command. Otherwise run the `delete infra` "+
+				"command to clean up the infrastructure for the cluster using its infrastructure ID.")
+			return err
 		}
+		return nil
 	}
 
 	return cmd

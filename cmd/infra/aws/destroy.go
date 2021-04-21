@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	awserrors "github.com/aws/aws-sdk-go/aws/awserr"
@@ -54,22 +53,14 @@ func NewDestroyCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-		t := time.NewTicker(5 * time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				log.Info("Destroy was cancelled")
-				return nil
-			case <-t.C:
-				if err := opts.DestroyInfra(ctx); err != nil {
-					log.Error(err, "failed to destroy infrastructure, will retry")
-				} else {
-					log.Info("Successfully destroyed AWS infra")
-					return nil
-				}
-			}
+		err := opts.DestroyInfra(ctx)
+		if err != nil {
+			return err
 		}
+		log.Info("Successfully destroyed AWS infra")
+		return nil
 	}
+
 	return cmd
 }
 
@@ -89,7 +80,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 		if awserr, ok := err.(awserrors.Error); ok {
 			// TODO: Where is this code constant in the aws sdk?
 			if awserr.Code() == "ValidationError" {
-				log.Error(err, "stack already deleted", "id", o.InfraID)
+				log.Info("Stack already deleted", "id", o.InfraID)
 				return nil
 			}
 			return awserr
