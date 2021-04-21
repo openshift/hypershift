@@ -21,7 +21,7 @@ func TestImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if image != "ami-0d5f9982f029fbc14" {
+	if image != "ami-0afb11ab25ba2b81f" {
 		t.Fatalf("unexpected image: %s", image)
 	}
 }

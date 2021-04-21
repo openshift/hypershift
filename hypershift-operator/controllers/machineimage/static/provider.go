@@ -25,8 +25,11 @@ func (p *StaticImageProvider) Image(cluster *hyperv1.HostedCluster) (string, err
 	if cluster.Spec.Platform.AWS == nil {
 		return "", fmt.Errorf("unsupported platform, only AWS is supported")
 	}
-	// TODO: Support other versions, other archs. Currently only 4.7 amd64 is supported.
-	imageData := MustAsset("4.7/rhcos-amd64.json")
+
+	// TODO: Support other versions, other archs. Currently only 4.8 amd64 is supported.
+	// This JSON document is synced with
+	// https://github.com/openshift/installer/blob/master/data/data/rhcos-amd64.json
+	imageData := MustAsset("4.8/rhcos-amd64.json")
 	images := &staticImages{}
 	if err := json.Unmarshal(imageData, images); err != nil {
 		return "", fmt.Errorf("cannot decode image data: %w", err)

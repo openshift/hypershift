@@ -3,6 +3,7 @@ package static
 import "embed"
 
 //go:embed 4.7/*
+//go:embed 4.8/*
 
 var content embed.FS
 
