@@ -1,9 +1,12 @@
 package aws
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -39,17 +42,21 @@ func NewDestroyIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("infra-id")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		if err := opts.DestroyIAM(); err != nil {
-			log.Error(err, "Error")
-			os.Exit(1)
-		}
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, cancel := context.WithCancel(context.Background())
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+		}()
+		return opts.DestroyIAM(ctx)
 	}
 
 	return cmd
 }
 
-func (o *DestroyIAMOptions) DestroyIAM() error {
+func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	var err error
 	iamClient, err := IAMClient(o.AWSCredentialsFile, o.Region)
 	if err != nil {
@@ -59,7 +66,7 @@ func (o *DestroyIAMOptions) DestroyIAM() error {
 	if err != nil {
 		return err
 	}
-	err = o.DestroyOIDCResources(iamClient, s3Client)
+	err = o.DestroyOIDCResources(ctx, iamClient, s3Client)
 	if err != nil {
 		return err
 	}
@@ -70,7 +77,7 @@ func (o *DestroyIAMOptions) DestroyIAM() error {
 	return nil
 }
 
-func (o *DestroyIAMOptions) DestroyOIDCResources(iamClient iamiface.IAMAPI, s3Client s3iface.S3API) error {
+func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient iamiface.IAMAPI, s3Client s3iface.S3API) error {
 	bucketName := o.InfraID
 
 	_, err := s3Client.DeleteObject(&s3.DeleteObjectInput{
@@ -158,6 +165,21 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(iamClient iamiface.IAMAPI, s3Cl
 	err = o.DestroyOIDCRole(iamClient, "openshift-ingress")
 	err = o.DestroyOIDCRole(iamClient, "openshift-image-registry")
 	err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-operator")
+
+	cloudControllerUserName := fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller")
+	nodePoolUserName := fmt.Sprintf("%s-%s", o.InfraID, "node-pool")
+	if err := o.DestroyUser(ctx, iamClient, cloudControllerUserName); err != nil {
+		return err
+	}
+	if err := o.DestroyUser(ctx, iamClient, nodePoolUserName); err != nil {
+		return err
+	}
+	if err := o.DestroyPolicy(ctx, iamClient, cloudControllerUserName); err != nil {
+		return err
+	}
+	if err := o.DestroyPolicy(ctx, iamClient, nodePoolUserName); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -257,4 +279,96 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 		log.Info("Deleted role", "role", roleName)
 	}
 	return nil
+}
+
+func (o *DestroyIAMOptions) DestroyUser(ctx context.Context, client iamiface.IAMAPI, userName string) error {
+	// Tear down any access keys for the user
+	if output, err := client.ListAccessKeysWithContext(ctx, &iam.ListAccessKeysInput{
+		UserName: aws.String(userName),
+	}); err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
+				return nil
+			}
+		}
+		return fmt.Errorf("failed to list access keys: %w", err)
+	} else {
+		for _, key := range output.AccessKeyMetadata {
+			if _, err := client.DeleteAccessKeyWithContext(ctx, &iam.DeleteAccessKeyInput{
+				AccessKeyId: key.AccessKeyId,
+				UserName:    key.UserName,
+			}); err != nil {
+				if awsErr, ok := err.(awserr.Error); ok {
+					if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
+						continue
+					}
+				}
+				return fmt.Errorf("failed to delete access key: %w", err)
+			} else {
+				log.Info("Deleted access key", "id", key.AccessKeyId, "user", userName)
+			}
+		}
+	}
+
+	// Detach any policies from the user
+	if output, err := client.ListAttachedUserPoliciesWithContext(ctx, &iam.ListAttachedUserPoliciesInput{
+		UserName: aws.String(userName),
+	}); err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() != iam.ErrCodeNoSuchEntityException {
+				return fmt.Errorf("failed to list user policies: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to list user policies: %w", err)
+		}
+	} else {
+		for _, policy := range output.AttachedPolicies {
+			if _, err := client.DetachUserPolicyWithContext(ctx, &iam.DetachUserPolicyInput{
+				PolicyArn: policy.PolicyArn,
+				UserName:  aws.String(userName),
+			}); err != nil {
+				return fmt.Errorf("failed to detach policy from user: %w", err)
+			} else {
+				log.Info("Detached user policy", "user", userName, "policyArn", aws.StringValue(policy.PolicyArn), "policyName", aws.StringValue(policy.PolicyName))
+			}
+		}
+	}
+
+	// Now the user can be deleted
+	if _, err := client.DeleteUserWithContext(ctx, &iam.DeleteUserInput{UserName: aws.String(userName)}); err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
+				return nil
+			}
+		}
+		return fmt.Errorf("failed to delete user: %w", err)
+	} else {
+		log.Info("Deleted user")
+	}
+	return nil
+}
+
+func (o *DestroyIAMOptions) DestroyPolicy(ctx context.Context, client iamiface.IAMAPI, name string) (result error) {
+	return client.ListPoliciesPagesWithContext(ctx, &iam.ListPoliciesInput{}, func(output *iam.ListPoliciesOutput, _ bool) bool {
+		for _, policy := range output.Policies {
+			if aws.StringValue(policy.PolicyName) != name {
+				continue
+			}
+			if _, err := client.DeletePolicyWithContext(ctx, &iam.DeletePolicyInput{
+				PolicyArn: policy.Arn,
+			}); err != nil {
+				if awsErr, ok := err.(awserr.Error); ok {
+					if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
+						return true
+					}
+				}
+				result = fmt.Errorf("failed to delete policy: %w", err)
+				return true
+			} else {
+				log.Info("Deleted policy", "name", name, "arn", aws.StringValue(policy.Arn))
+				return true
+			}
+		}
+		return true
+	})
 }
