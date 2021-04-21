@@ -25,9 +25,9 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/cmd/install/assets"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/version"
 
-	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -91,10 +91,7 @@ func render(objects []crclient.Object) {
 }
 
 func apply(ctx context.Context, objects []crclient.Object) error {
-	client, err := crclient.New(cr.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create kube client: %w", err)
-	}
+	client := util.GetClientOrDie()
 	for _, object := range objects {
 		var objectBytes bytes.Buffer
 		err := hyperapi.YamlSerializer.Encode(object, &objectBytes)
