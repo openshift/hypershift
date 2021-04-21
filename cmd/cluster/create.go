@@ -121,7 +121,8 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to read pull secret file: %w", err)
 	}
 
-	if _, err := ioutil.ReadFile(opts.AWSCredentialsFile); err != nil {
+	awsCredentials, err := ioutil.ReadFile(opts.AWSCredentialsFile)
+	if err != nil {
 		return fmt.Errorf("failed to read aws credentials: %w", err)
 	}
 
@@ -193,6 +194,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		Name:             opts.Name,
 		ReleaseImage:     opts.ReleaseImage,
 		PullSecret:       pullSecret,
+		AWSCredentials:   awsCredentials,
 		SigningKey:       infra.ServiceAccountSigningKey,
 		IssuerURL:        infra.OIDCIssuerURL,
 		SSHKey:           sshKey,
@@ -227,10 +229,6 @@ func CreateCluster(ctx context.Context, opts Options) error {
 					Name:      "ebs-cloud-credentials",
 				},
 			},
-			KubeCloudControllerUserAccessKeyID:     infra.KubeCloudControllerUserAccessKeyID,
-			KubeCloudControllerUserAccessKeySecret: infra.KubeCloudControllerUserAccessKeySecret,
-			NodePoolManagementUserAccessKeyID:      infra.NodePoolManagementUserAccessKeyID,
-			NodePoolManagementUserAccessKeySecret:  infra.NodePoolManagementUserAccessKeySecret,
 		},
 	}.Resources().AsObjects()
 

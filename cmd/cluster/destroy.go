@@ -40,7 +40,7 @@ func NewDestroyCommand() *cobra.Command {
 		Namespace:          "clusters",
 		Name:               "",
 		AWSCredentialsFile: "",
-		ClusterGracePeriod: 15 * time.Minute,
+		ClusterGracePeriod: 10 * time.Minute,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
@@ -104,9 +104,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	defer clusterDeleteCtxCancel()
 	err := wait.PollUntil(1*time.Second, func() (bool, error) {
 		if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
-			if apierrors.IsNotFound(err) {
-				return true, nil
-			}
 			log.Error(err, "failed to get hostedcluster")
 			return false, nil
 		}
@@ -114,7 +111,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		return done, nil
 	}, clusterDeleteCtx.Done())
 	if err != nil {
-		return fmt.Errorf("hostedcluster was never finalized: %w", err)
+		log.Error(err, "hostedcluster wasn't successfully deleted")
 	}
 
 	log.Info("Destroying infrastructure", "id", hostedCluster.Spec.InfraID)

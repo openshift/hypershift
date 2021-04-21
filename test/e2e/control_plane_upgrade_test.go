@@ -72,7 +72,6 @@ func TestControlPlaneUpgrade(t *testing.T) {
 			Namespace:          hostedCluster.Namespace,
 			Name:               hostedCluster.Name,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
-			ClusterGracePeriod: 15 * time.Minute,
 		}, opts.ArtifactDir)
 		DeleteNamespace(t, context.Background(), client, namespace.Name)
 	}()
