@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -15,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 type DestroyIAMOptions struct {
@@ -50,10 +52,25 @@ func NewDestroyIAMCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-		return opts.DestroyIAM(ctx)
+		if err := opts.DestroyIAM(ctx); err != nil {
+			return err
+		}
+		log.Info("Successfully destroyed IAM infra")
+		return nil
 	}
 
 	return cmd
+}
+
+func (o *DestroyIAMOptions) Run(ctx context.Context) error {
+	return wait.PollUntil(5*time.Second, func() (bool, error) {
+		err := o.DestroyIAM(ctx)
+		if err != nil {
+			log.Info("WARNING: error during destroy, will retry", "error", err)
+			return false, nil
+		}
+		return true, nil
+	}, ctx.Done())
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
