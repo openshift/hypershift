@@ -9,8 +9,6 @@ import (
 	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -18,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
 
 type CreateIAMOptions struct {
@@ -25,6 +24,9 @@ type CreateIAMOptions struct {
 	AWSCredentialsFile string
 	InfraID            string
 	OutputFile         string
+
+	IAMClient iamiface.IAMAPI
+	S3Client  s3iface.S3API
 }
 
 type CreateIAMOutput struct {
@@ -61,7 +63,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("infra-id")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
@@ -69,7 +71,16 @@ func NewCreateIAMCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-		return opts.Run(ctx)
+
+		awsSession := awsutil.NewSession()
+		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
+		opts.IAMClient = iam.New(awsSession, awsConfig)
+		opts.S3Client = s3.New(awsSession, awsConfig)
+
+		if err := opts.Run(ctx); err != nil {
+			log.Error(err, "Failed to create infrastructure")
+			os.Exit(1)
+		}
 	}
 
 	return cmd
@@ -103,34 +114,27 @@ func (o *CreateIAMOptions) Run(ctx context.Context) error {
 
 func (o *CreateIAMOptions) CreateIAM(ctx context.Context) (*CreateIAMOutput, error) {
 	var err error
-	iamClient, err := IAMClient(o.AWSCredentialsFile, o.Region)
-	if err != nil {
-		return nil, err
-	}
-	s3client, err := S3Client(o.AWSCredentialsFile, o.Region)
-	if err != nil {
-		return nil, err
-	}
-	results, err := o.CreateOIDCResources(iamClient, s3client)
+
+	results, err := o.CreateOIDCResources(o.IAMClient, o.S3Client)
 	if err != nil {
 		return nil, err
 	}
 	profileName := DefaultProfileName(o.InfraID)
 	results.ProfileName = profileName
-	err = o.CreateWorkerInstanceProfile(iamClient, profileName)
+	err = o.CreateWorkerInstanceProfile(o.IAMClient, profileName)
 	if err != nil {
 		return nil, err
 	}
 	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
 
-	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller"), cloudControllerPolicy); err != nil {
+	if key, err := o.CreateCredentialedUserWithPolicy(ctx, o.IAMClient, fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller"), cloudControllerPolicy); err != nil {
 		return nil, err
 	} else {
 		results.KubeCloudControllerUserAccessKeyID = aws.StringValue(key.AccessKeyId)
 		results.KubeCloudControllerUserAccessKeySecret = aws.StringValue(key.SecretAccessKey)
 	}
 
-	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "node-pool"), nodePoolPolicy); err != nil {
+	if key, err := o.CreateCredentialedUserWithPolicy(ctx, o.IAMClient, fmt.Sprintf("%s-%s", o.InfraID, "node-pool"), nodePoolPolicy); err != nil {
 		return nil, err
 	} else {
 		results.NodePoolManagementUserAccessKeyID = aws.StringValue(key.AccessKeyId)
@@ -138,28 +142,4 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context) (*CreateIAMOutput, err
 	}
 
 	return results, nil
-}
-
-func IAMClient(creds, region string) (iamiface.IAMAPI, error) {
-	awsConfig := &aws.Config{
-		Region: aws.String(region),
-	}
-	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
-	s, err := session.NewSession(awsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client session: %w", err)
-	}
-	return iam.New(s), nil
-}
-
-func S3Client(creds, region string) (s3iface.S3API, error) {
-	awsConfig := &aws.Config{
-		Region: aws.String(region),
-	}
-	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
-	s, err := session.NewSession(awsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client session: %w", err)
-	}
-	return s3.New(s), nil
 }

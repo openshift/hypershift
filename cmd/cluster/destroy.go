@@ -8,6 +8,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/elb"
+	"github.com/aws/aws-sdk-go/service/elb/elbiface"
+	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/iam/iamiface"
+	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -16,6 +26,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 )
 
@@ -26,9 +37,16 @@ const (
 type DestroyOptions struct {
 	Namespace          string
 	Name               string
+	Region             string
 	AWSCredentialsFile string
 	PreserveIAM        bool
 	ClusterGracePeriod time.Duration
+
+	EC2Client     ec2iface.EC2API
+	Route53Client route53iface.Route53API
+	ELBClient     elbiface.ELBAPI
+	IAMClient     iamiface.IAMAPI
+	S3Client      s3iface.S3API
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -42,6 +60,7 @@ func NewDestroyCommand() *cobra.Command {
 		Name:               "",
 		AWSCredentialsFile: "",
 		PreserveIAM:        false,
+		Region:             "us-east-1",
 		ClusterGracePeriod: 10 * time.Minute,
 	}
 
@@ -50,11 +69,12 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().BoolVar(&opts.PreserveIAM, "preserve-iam", opts.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 	cmd.Flags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
+	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("aws-creds")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
@@ -63,7 +83,18 @@ func NewDestroyCommand() *cobra.Command {
 			cancel()
 		}()
 
-		return DestroyCluster(ctx, &opts)
+		awsSession := awsutil.NewSession()
+		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
+		opts.EC2Client = ec2.New(awsSession, awsConfig)
+		opts.ELBClient = elb.New(awsSession, awsConfig)
+		opts.Route53Client = route53.New(awsSession, awsutil.NewConfig(opts.AWSCredentialsFile, "us-east-1"))
+		opts.IAMClient = iam.New(awsSession, awsConfig)
+		opts.S3Client = s3.New(awsSession, awsConfig)
+
+		if err := DestroyCluster(ctx, &opts); err != nil {
+			log.Error(err, "Failed to destroy cluster")
+			os.Exit(1)
+		}
 	}
 
 	return cmd
@@ -119,6 +150,9 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		AWSCredentialsFile: o.AWSCredentialsFile,
 		Name:               hostedCluster.GetName(),
 		BaseDomain:         hostedCluster.Spec.DNS.BaseDomain,
+		EC2Client:          o.EC2Client,
+		Route53Client:      o.Route53Client,
+		ELBClient:          o.ELBClient,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		return fmt.Errorf("failed to destroy infrastructure: %w", err)
@@ -130,6 +164,8 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 			Region:             hostedCluster.Spec.Platform.AWS.Region,
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			InfraID:            hostedCluster.Spec.InfraID,
+			IAMClient:          o.IAMClient,
+			S3Client:           o.S3Client,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)

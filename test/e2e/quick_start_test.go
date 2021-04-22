@@ -69,7 +69,14 @@ func TestQuickStart(t *testing.T) {
 		DestroyCluster(t, context.Background(), &cmdcluster.DestroyOptions{
 			Namespace:          hostedCluster.Namespace,
 			Name:               hostedCluster.Name,
+			Region:             GlobalOptions.Region,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
+			EC2Client:          GlobalOptions.EC2Client,
+			Route53Client:      GlobalOptions.Route53Client,
+			ELBClient:          GlobalOptions.ELBClient,
+			IAMClient:          GlobalOptions.IAMClient,
+			S3Client:           GlobalOptions.S3Client,
+			PreserveIAM:        false,
 			ClusterGracePeriod: 15 * time.Minute,
 		}, opts.ArtifactDir)
 		DeleteNamespace(t, context.Background(), client, namespace.Name)
@@ -82,10 +89,15 @@ func TestQuickStart(t *testing.T) {
 		ReleaseImage:       opts.ReleaseImage,
 		PullSecretFile:     opts.PullSecretFile,
 		AWSCredentialsFile: opts.AWSCredentialsFile,
+		Region:             GlobalOptions.Region,
+		EC2Client:          GlobalOptions.EC2Client,
+		Route53Client:      GlobalOptions.Route53Client,
+		ELBClient:          GlobalOptions.ELBClient,
+		IAMClient:          GlobalOptions.IAMClient,
+		S3Client:           GlobalOptions.S3Client,
 		// TODO: generate a key on the fly
 		SSHKeyFile:       "",
 		NodePoolReplicas: 2,
-		Region:           "us-east-1",
 		InstanceType:     "m4.large",
 		BaseDomain:       opts.BaseDomain,
 	}
