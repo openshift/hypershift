@@ -228,21 +228,8 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 }
 
 func (r *MachineConfigServerReconciler) reconcileMCSServiceNodePort(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service) (*ctrl.Result, error) {
-	var serviceNodePort int32 = 0
-	var machineConfigServerServiceData corev1.Service
-	if mcs.Spec.IgnitionService.NodePort != nil && mcs.Spec.IgnitionService.NodePort.Port > 0 {
-		serviceNodePort = mcs.Spec.IgnitionService.NodePort.Port
-	}
-	r.Log.Info("Checking for existing service", "serviceName", mcsService.Name, "namespace", mcsService.Namespace)
-	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: mcsService.Namespace, Name: mcsService.Name}, &machineConfigServerServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return &ctrl.Result{}, err
-	}
-	if len(machineConfigServerServiceData.Spec.Ports) > 0 && machineConfigServerServiceData.Spec.Ports[0].NodePort > 0 {
-		r.Log.Info("Preserving existing node port for service", "nodePort", machineConfigServerServiceData.Spec.Ports[0].NodePort)
-		serviceNodePort = machineConfigServerServiceData.Spec.Ports[0].NodePort
-	}
 	r.Log.Info("Creating MCS Service")
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
+	_, err := controllerutil.CreateOrPatch(ctx, r.Client, mcsService, func() error {
 		mcsService.Spec.Ports = []corev1.ServicePort{
 			{
 				Name:       "http",
@@ -251,20 +238,24 @@ func (r *MachineConfigServerReconciler) reconcileMCSServiceNodePort(ctx context.
 				TargetPort: intstr.FromInt(8080),
 			},
 		}
-		if serviceNodePort > 0 {
-			mcsService.Spec.Ports[0].NodePort = serviceNodePort
-		}
 		mcsService.Spec.Selector = map[string]string{
 			"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
 		}
 		mcsService.Spec.Type = corev1.ServiceTypeNodePort
+
+		// If there's user input nodePort and there's no existing one, we set it.
+		if (mcs.Spec.IgnitionService.NodePort != nil && mcs.Spec.IgnitionService.NodePort.Port > 0) &&
+			mcsService.Spec.Ports[0].NodePort <= 0 {
+			mcsService.Spec.Ports[0].NodePort = mcs.Spec.IgnitionService.NodePort.Port
+		}
+
 		return nil
 	})
 	if err != nil {
 		return &ctrl.Result{}, err
 	}
 	r.Log.Info("Retrieving MCS Service to get node port value")
-	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: mcsService.Namespace, Name: mcsService.Name}, mcsService); err != nil {
+	if err := r.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsService), mcsService); err != nil {
 		return &ctrl.Result{}, err
 	}
 	if !(mcsService.Spec.Ports[0].NodePort > 0) {
