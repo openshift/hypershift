@@ -1,0 +1,186 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: packageserver
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: packageserver
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        include.release.openshift.io/self-managed-high-availability: "true"
+      labels:
+        app: packageserver
+    spec:
+      serviceAccount: vpn
+      dnsPolicy: None
+      dnsConfig:
+        # dnsmasq in the pod configured to check guest + host dns servers
+        nameservers:
+        - 127.0.0.1
+        # searches configured to match kube defaults
+        searches:
+        - {{ .Namespace }}.svc.cluster.local
+        - svc.cluster.local
+        - cluster.local
+        - ec2.internal
+        options:
+        - name: ndots
+          value: '5'
+      containers:
+      - command:
+        - /bin/package-server
+        - -v=4
+        - --secure-port
+        - "5443"
+        - --global-namespace
+        - openshift-marketplace
+        - --kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        - --authentication-kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        - --authorization-kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        env:
+        - name: OPERATOR_CONDITION_NAME
+          value: packageserver
+        image: {{ imageFor "operator-lifecycle-manager" }}
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 5443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: packageserver
+        ports:
+        - containerPort: 5443
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 5443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmpfs
+        - mountPath: /apiserver.local.config/certificates
+          name: apiservice-cert
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: webhook-cert
+        - mountPath: /etc/openshift/kubeconfig
+          name: kubeconfig
+          readOnly: true
+      - name: openvpn-client
+        terminationMessagePath: /dev/termination-log
+        command:
+          - /usr/sbin/openvpn
+        securityContext:
+          privileged: true
+        imagePullPolicy: Always
+        volumeMounts:
+          - name: vpnsecret
+            mountPath: /etc/openvpn/secret
+          - name: vpnconfig
+            mountPath: /etc/openvpn/config
+        terminationMessagePolicy: File
+        image: 'quay.io/hypershift/openvpn:latest'
+        workingDir: /etc/openvpn/
+        args:
+          - '--config'
+          - /etc/openvpn/config/client.conf
+      - name: dnsmasq
+        securityContext:
+          privileged: true
+        imagePullPolicy: Always
+        volumeMounts:
+          - name: dnsmasq-conf
+            mountPath: /etc/dnsmasq.conf
+            subPath: dnsmasq.conf
+          - name: resolv-dnsmasq
+            mountPath: /etc/resolv.dnsmasq
+            subPath: resolv.dnsmasq
+        terminationMessagePolicy: FallbackToLogsOnError
+        image: 4km3/dnsmasq
+      nodeSelector:
+        kubernetes.io/os: linux
+        node-role.kubernetes.io/master: ""
+      priorityClassName: system-cluster-critical
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 120
+      volumes:
+      - emptyDir: {}
+        name: tmpfs
+      - name: apiservice-cert
+        secret:
+          defaultMode: 420
+          items:
+          - key: server.crt
+            path: apiserver.crt
+          - key: server.key
+            path: apiserver.key
+          secretName: packageserver
+      - name: webhook-cert
+        secret:
+          defaultMode: 420
+          items:
+          - key: server.crt
+            path: tls.crt
+          - key: server.key
+            path: tls.key
+          secretName: packageserver
+      - name: kubeconfig
+        secret:
+          secretName: service-network-admin-kubeconfig
+      - name: vpnconfig
+        configMap:
+          name: openvpn-kube-apiserver-client
+          defaultMode: 420
+      - name: vpnsecret
+        secret:
+          secretName: openvpn-kube-apiserver-client
+          defaultMode: 420
+      - name: dnsmasq-conf
+        configMap:
+          name: dnsmasq-conf
+          defaultMode: 420
+      - name: resolv-dnsmasq
+        configMap:
+          name: resolv-dnsmasq
+          defaultMode: 420

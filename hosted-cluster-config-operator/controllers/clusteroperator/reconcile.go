@@ -233,6 +233,13 @@ var clusterOperators = []ClusterOperatorInfo{
 			},
 		},
 	},
+	{
+		Name: "operator-lifecycle-manager-packageserver",
+		VersionMapping: map[string]string{
+			"operator": "release",
+		},
+		RelatedObjects: []configv1.ObjectReference{},
+	},
 }
 
 var clusterOperatorNames sets.String

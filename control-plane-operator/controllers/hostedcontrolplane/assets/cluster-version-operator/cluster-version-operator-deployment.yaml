@@ -17,6 +17,43 @@ spec:
       imagePullSecrets:
       - name: pull-secret
       automountServiceAccountToken: false
+      initContainers:
+      - name: prepare-payload
+        image: {{ .ReleaseImage }}
+        imagePullPolicy: Always
+        command:
+        - /bin/bash
+        args:
+        - -c
+        - |-
+          cp -R /manifests /var/payload/
+          cp -R /release-manifests /var/payload/
+          # Delete any manifests you want to exclude from /var/payload/release-manifests
+          # ie. rm /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.yaml
+
+          # rm /var/payload/release-manifests/0000_50_olm_00-namespace.yaml
+          rm /var/payload/release-manifests/0000_50_olm_01-olm-operator.serviceaccount.yaml
+          rm /var/payload/release-manifests/0000_50_olm_02-services.yaml
+          rm /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml
+          rm /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.yaml
+          rm /var/payload/release-manifests/0000_50_olm_08-catalog-operator.deployment.ibm-cloud-managed.yaml
+          rm /var/payload/release-manifests/0000_50_olm_08-catalog-operator.deployment.yaml
+          rm /var/payload/release-manifests/0000_50_olm_15-packageserver.clusterserviceversion.yaml
+          rm /var/payload/release-manifests/0000_50_olm_99-operatorstatus.yaml
+          rm /var/payload/release-manifests/0000_90_olm_00-service-monitor.yaml
+          rm /var/payload/release-manifests/0000_90_olm_01-prometheus-rule.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_04_service_account.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_05_role.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_06_role_binding.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_07_configmap.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_08_service.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_09_operator-ibm-cloud-managed.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_09_operator.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_10_clusteroperator.yaml
+          rm /var/payload/release-manifests/0000_50_operator-marketplace_11_service_monitor.yaml
+        volumeMounts:
+        - name: payload
+          mountPath: /var/payload
       containers:
         - name: cluster-version-operator
           image: {{ .ReleaseImage }}
@@ -39,7 +76,11 @@ spec:
             - mountPath: /etc/openshift/kubeconfig
               name: kubeconfig
               readOnly: true
+            - mountPath: /var/payload
+              name: payload
           env:
+            - name: PAYLOAD_OVERRIDE
+              value: /var/payload
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
@@ -71,3 +112,5 @@ spec:
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig
+        - name: payload
+          emptyDir: {}

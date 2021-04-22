@@ -202,3 +202,12 @@ func MachineConfigServerCert(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func OLMPackageServerCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "packageserver-cert",
+			Namespace: ns,
+		},
+	}
+}

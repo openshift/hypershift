@@ -10,22 +10,28 @@ import (
 const (
 	OpenShiftAPIServerPort  = 8443
 	OpenShiftAPIServicePort = 443
+	OLMPackageServerPort    = 5443
 )
 
 var (
 	openshiftAPIServerLabels = map[string]string{"app": "openshift-apiserver"}
 	oauthAPIServerLabels     = map[string]string{"app": "openshift-oauth-apiserver"}
+	olmPackageServerLabels   = map[string]string{"app": "packageserver"}
 )
 
 func (p *OpenShiftAPIServerServiceParams) ReconcileOpenShiftAPIService(svc *corev1.Service) error {
-	return p.reconcileAPIService(svc, openshiftAPIServerLabels)
+	return p.reconcileAPIService(svc, openshiftAPIServerLabels, OpenShiftAPIServerPort)
 }
 
 func (p *OpenShiftAPIServerServiceParams) ReconcileOAuthAPIService(svc *corev1.Service) error {
-	return p.reconcileAPIService(svc, oauthAPIServerLabels)
+	return p.reconcileAPIService(svc, oauthAPIServerLabels, OpenShiftAPIServerPort)
 }
 
-func (p *OpenShiftAPIServerServiceParams) reconcileAPIService(svc *corev1.Service, labels map[string]string) error {
+func (p *OpenShiftAPIServerServiceParams) ReconcileOLMPackageServerService(svc *corev1.Service) error {
+	return p.reconcileAPIService(svc, olmPackageServerLabels, OLMPackageServerPort)
+}
+
+func (p *OpenShiftAPIServerServiceParams) reconcileAPIService(svc *corev1.Service, labels map[string]string, targetPort int) error {
 	util.EnsureOwnerRef(svc, p.OwnerReference)
 	svc.Spec.Selector = labels
 	var portSpec corev1.ServicePort
@@ -37,7 +43,7 @@ func (p *OpenShiftAPIServerServiceParams) reconcileAPIService(svc *corev1.Servic
 	portSpec.Name = "https"
 	portSpec.Port = int32(OpenShiftAPIServicePort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(OpenShiftAPIServerPort)
+	portSpec.TargetPort = intstr.FromInt(targetPort)
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.Ports[0] = portSpec
 	return nil

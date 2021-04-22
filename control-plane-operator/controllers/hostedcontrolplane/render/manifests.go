@@ -40,6 +40,7 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 		"base64String":      base64StringEncode,
 		"indent":            indent,
 		"address":           cidrAddress,
+		"dns":               dnsForCidr,
 		"mask":              cidrMask,
 		"include":           includeFileFunc(params, ctx.renderContext),
 		"includeVPN":        includeVPNFunc(true),
@@ -65,7 +66,9 @@ func (c *clusterManifestContext) setupManifests() {
 	c.openshiftControllerManager()
 	c.clusterBootstrap()
 	c.oauthOpenshiftServer()
+	c.dnsmasq()
 	c.registry()
+	c.operatorLifecycleManager()
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
 	c.ignitionConfigs()
@@ -240,6 +243,13 @@ func (c *clusterManifestContext) machineConfigServer() {
 	)
 }
 
+func (c *clusterManifestContext) dnsmasq() {
+	c.addManifestFiles(
+		"dnsmasq/dnsmasq-conf.configmap.yaml",
+		"dnsmasq/resolv-dnsmasq.configmap.yaml",
+	)
+}
+
 func (c *clusterManifestContext) roksMetrics() {
 	c.addUserManifestFiles(
 		"roks-metrics/roks-metrics-00-namespace.yaml",
@@ -322,6 +332,46 @@ func (c *clusterManifestContext) ignitionConfigs() {
 		}
 		c.addManifest(name+".yaml", cm)
 	}
+}
+
+func (c *clusterManifestContext) operatorLifecycleManager() {
+	c.addManifestFiles(
+		"olm/catalog-metrics-service.yaml",
+		"olm/olm-metrics-service.yaml",
+		"olm/olm-operator-deployment.yaml",
+		"olm/catalog-operator-deployment.yaml",
+		"olm/packageserver-secret.yaml",
+		"olm/packageserver-deployment.yaml",
+		"olm/catalog-redhat-operators.deployment.yaml",
+		"olm/catalog-redhat-operators.imagestream.yaml",
+		"olm/catalog-redhat-operators.service.yaml",
+		"olm/catalog-certified.deployment.yaml",
+		"olm/catalog-certified.imagestream.yaml",
+		"olm/catalog-certified.service.yaml",
+		"olm/catalog-community.deployment.yaml",
+		"olm/catalog-community.imagestream.yaml",
+		"olm/catalog-community.service.yaml",
+		"olm/catalog-redhat-marketplace.deployment.yaml",
+		"olm/catalog-redhat-marketplace.imagestream.yaml",
+		"olm/catalog-redhat-marketplace.service.yaml",
+	)
+	c.addUserManifestFiles(
+		"olm/packageserver-service-guest.yaml",
+		"olm/packageserver-endpoint-guest.yaml",
+		"olm/catalog-certified-operators-catalogsource-guest.yaml",
+		"olm/catalog-community-operators-catalogsource-guest.yaml",
+		"olm/catalog-redhat-marketplace-catalogsource-guest.yaml",
+		"olm/catalog-redhat-operators-catalogsource-guest.yaml",
+	)
+
+	params := map[string]string{
+		"PackageServerCABundle": c.params.(*ClusterParams).PackageServerCABundle,
+	}
+	entry, err := c.substituteParams(params, "olm/packageserver-apiservice-template.yaml")
+	if err != nil {
+		panic(err.Error())
+	}
+	c.addUserManifest("packageserver-apiservice.yaml", string(entry))
 }
 
 func (c *clusterManifestContext) addUserManifestFiles(name ...string) {

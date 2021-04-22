@@ -1,0 +1,15 @@
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: redhat-marketplace-catalogs
+spec:
+  dockerImageRepository: registry.redhat.io/redhat/redhat-marketplace-index
+  tags:
+  - name: v4.8
+    from:
+      kind: DockerImage
+      name: 'registry.redhat.io/redhat/redhat-marketplace-index:v4.8'
+    importPolicy:
+      scheduled: true
+    referencePolicy:
+      type: Source

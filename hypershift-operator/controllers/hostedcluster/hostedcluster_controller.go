@@ -849,6 +849,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Resources: []string{"*"},
 			Verbs:     []string{"*"},
 		},
+		{
+			APIGroups: []string{"image.openshift.io"},
+			Resources: []string{"imagestreams"},
+			Verbs:     []string{"*"},
+		},
 	}
 	return nil
 }

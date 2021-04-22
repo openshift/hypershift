@@ -93,14 +93,15 @@ var (
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type InfrastructureStatus struct {
-	APIHost            string
-	APIPort            int32
-	OAuthHost          string
-	OAuthPort          int32
-	VPNHost            string
-	VPNPort            int32
-	OpenShiftAPIHost   string
-	OauthAPIServerHost string
+	APIHost                 string
+	APIPort                 int32
+	OAuthHost               string
+	OAuthPort               int32
+	VPNHost                 string
+	VPNPort                 int32
+	OpenShiftAPIHost        string
+	OauthAPIServerHost      string
+	PackageServerAPIAddress string
 }
 
 func (s InfrastructureStatus) IsReady() bool {
@@ -553,6 +554,18 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthAPIServerService(ctx contex
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	svc := manifests.OLMPackageServerService(hcp.Namespace)
+	p := oapi.NewOpenShiftAPIServerServiceParams(hcp)
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		return p.ReconcileOLMPackageServerService(svc)
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileInfrastructure(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	// Ensure that we can run privileged pods
 	if err := ensureVPNSCC(r, hcp, hcp.Namespace); err != nil {
@@ -576,6 +589,10 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructure(ctx context.Conte
 	if err := r.reconcileOAuthAPIServerService(ctx, hcp); err != nil {
 		return fmt.Errorf("failed to reconcile OpenShift OAuth api service: %w", err)
 	}
+	if err := r.reconcileOLMPackageServerService(ctx, hcp); err != nil {
+		return fmt.Errorf("failed to reconcile OLM PackageServer service: %w", err)
+	}
+
 	return nil
 }
 
@@ -597,6 +614,10 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatus(ctx context
 	if infraStatus.OauthAPIServerHost, err = r.reconcileOAuthAPIServerServiceStatus(ctx, hcp); err != nil {
 		return infraStatus, err
 	}
+	if infraStatus.PackageServerAPIAddress, err = r.reconcileOLMPackageServerServiceStatus(ctx, hcp); err != nil {
+		return infraStatus, err
+	}
+
 	return infraStatus, nil
 }
 
@@ -676,6 +697,11 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServerServiceStatus(
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthAPIServerServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
 	svc := manifests.OauthAPIServerService(hcp.Namespace)
+	return r.reconcileClusterIPServiceStatus(ctx, svc)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+	svc := manifests.OLMPackageServerService(hcp.Namespace)
 	return r.reconcileClusterIPServiceStatus(ctx, svc)
 }
 
@@ -949,6 +975,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return p.ReconcileMachineConfigServerCert(machineConfigServerCert, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
+	}
+
+	// OLM PackageServer Cert
+	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, packageServerCertSecret, func() error {
+		return p.ReconcileOLMPackageServerCertSecret(packageServerCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile packageserver cert: %w", err)
 	}
 
 	return nil
@@ -1255,6 +1289,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.IngressSubdomain = fmt.Sprintf("apps.%s", baseDomain)
 	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIHost
 	params.OauthAPIClusterIP = infraStatus.OauthAPIServerHost
+	params.PackageServerAPIClusterIP = infraStatus.PackageServerAPIAddress
 	params.BaseDomain = baseDomain
 	params.PublicZoneID = hcp.Spec.DNS.PublicZoneID
 	params.PrivateZoneID = hcp.Spec.DNS.PrivateZoneID
@@ -1294,6 +1329,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString([]byte(caBytes))
 	params.OauthAPIServerCABundle = params.OpenshiftAPIServerCABundle
+	params.PackageServerCABundle = params.OpenshiftAPIServerCABundle
 
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.PullSecret.Name}, &pullSecret); err != nil {
@@ -1430,32 +1466,6 @@ func (r *HostedControlPlaneReconciler) updateStatusOauthServerServiceRoute(ctx c
 	r.Log.Info("Retrieved route  info", "routeName", routeInstance.Name, "address", addr)
 	status.OAuthHost = addr
 	status.OAuthPort = 443
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileOauthServerServiceRouteResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string) error {
-	svc := manifests.OauthServerService(namespace)
-	r.Log.Info("Updating oauth service")
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-		return r.reconcileOauthServiceClusterIP(svc)
-	})
-	if err != nil {
-		return err
-	}
-	r.Log.Info("Updated oauth service. Proceeding to update oauth route")
-	routeInstance := manifests.OauthServerRoute(namespace)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, routeInstance, func() error {
-		routeInstance.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-		return reconcileOauthServerRoute(routeInstance)
-	})
-	return err
-}
-
-func (r *HostedControlPlaneReconciler) reconcileOauthServiceClusterIP(svc *corev1.Service) error {
-	svc.Spec.Ports = OauthServerServicePorts()
-	svc.Spec.Selector = OauthServerServiceSelector()
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	return nil
 }
 

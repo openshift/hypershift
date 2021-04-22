@@ -1,0 +1,157 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-operator
+  labels:
+    app: catalog-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+spec:
+  strategy:
+    type: RollingUpdate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-operator
+  template:
+    metadata:
+      annotations:
+        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        app: catalog-operator
+    spec:
+      priorityClassName: "system-cluster-critical"
+      serviceAccount: vpn
+      dnsPolicy: None
+      dnsConfig:
+        # dnsmasq in the pod configured to check guest + host dns servers
+        nameservers:
+        - 127.0.0.1
+        # searches configured to match kube defaults
+        searches:
+        - {{ .Namespace }}.svc.cluster.local
+        - svc.cluster.local
+        - cluster.local
+        - ec2.internal
+        options:
+        - name: ndots
+          value: '5'
+      containers:
+        - name: catalog-operator
+          command:
+            - /bin/catalog
+          args:
+            - '-namespace'
+            - openshift-marketplace
+            - -configmapServerImage={{ imageFor "operator-registry" }}
+            - -util-image
+            - {{ imageFor "operator-lifecycle-manager" }}
+            - -writeStatusName
+            - operator-lifecycle-manager-catalog
+            - -tls-cert
+            - /var/run/secrets/serving-cert/tls.crt
+            - -tls-key
+            - /var/run/secrets/serving-cert/tls.key
+            - -kubeconfig
+            - /etc/openshift/kubeconfig/kubeconfig
+          image: {{ imageFor "operator-lifecycle-manager" }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+            - containerPort: 8081
+              name: metrics
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          terminationMessagePolicy: FallbackToLogsOnError
+          env:
+            - name: RELEASE_VERSION
+              value: {{ version "release" }}
+            - name: KUBECONFIG
+              value: /etc/openshift/kubeconfig/kubeconfig
+          resources:
+            requests:
+              cpu: 10m
+              memory: 80Mi
+          volumeMounts:
+            - mountPath: /var/run/secrets/serving-cert
+              name: serving-cert
+            - mountPath: /etc/openshift/kubeconfig
+              name: kubeconfig
+              readOnly: true
+        - name: openvpn-client
+          terminationMessagePath: /dev/termination-log
+          command:
+            - /usr/sbin/openvpn
+          securityContext:
+            privileged: true
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: vpnsecret
+              mountPath: /etc/openvpn/secret
+            - name: vpnconfig
+              mountPath: /etc/openvpn/config
+          terminationMessagePolicy: File
+          image: 'quay.io/hypershift/openvpn:latest'
+          workingDir: /etc/openvpn/
+          args:
+            - '--config'
+            - /etc/openvpn/config/client.conf
+        - name: dnsmasq
+          securityContext:
+            privileged: true
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: dnsmasq-conf
+              mountPath: /etc/dnsmasq.conf
+              subPath: dnsmasq.conf
+            - name: resolv-dnsmasq
+              mountPath: /etc/resolv.dnsmasq
+              subPath: resolv.dnsmasq
+          terminationMessagePolicy: FallbackToLogsOnError
+          image: 4km3/dnsmasq
+      volumes:
+        - name: serving-cert
+          secret:
+            secretName: catalog-operator-serving-cert
+        - name: kubeconfig
+          secret:
+            secretName: service-network-admin-kubeconfig
+        - name: vpnconfig
+          configMap:
+            name: openvpn-kube-apiserver-client
+            defaultMode: 420
+        - name: vpnsecret
+          secret:
+            secretName: openvpn-kube-apiserver-client
+            defaultMode: 420
+        - name: dnsmasq-conf
+          configMap:
+            name: dnsmasq-conf
+            defaultMode: 420
+        - name: resolv-dnsmasq
+          configMap:
+            name: resolv-dnsmasq
+            defaultMode: 420
+      nodeSelector:
+        kubernetes.io/os: linux
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+          operator: Exists
+        - effect: NoExecute
+          key: node.kubernetes.io/unreachable
+          operator: Exists
+          tolerationSeconds: 120
+        - effect: NoExecute
+          key: node.kubernetes.io/not-ready
+          operator: Exists
+          tolerationSeconds: 120
