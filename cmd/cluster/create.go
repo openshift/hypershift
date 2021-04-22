@@ -112,10 +112,6 @@ func CreateCluster(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("failed to read pull secret file: %w", err)
 	}
-	awsCredentials, err := ioutil.ReadFile(opts.AWSCredentialsFile)
-	if err != nil {
-		return fmt.Errorf("failed to read aws credentials: %w", err)
-	}
 	var sshKey []byte
 	if len(opts.SSHKeyFile) > 0 {
 		key, err := ioutil.ReadFile(opts.SSHKeyFile)
@@ -180,7 +176,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
 		}
-		iamInfo, err = opt.CreateIAM()
+		iamInfo, err = opt.CreateIAM(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create iam: %w", err)
 		}
@@ -191,7 +187,6 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		Name:             infra.Name,
 		ReleaseImage:     opts.ReleaseImage,
 		PullSecret:       pullSecret,
-		AWSCredentials:   awsCredentials,
 		SigningKey:       iamInfo.ServiceAccountSigningKey,
 		IssuerURL:        iamInfo.IssuerURL,
 		SSHKey:           sshKey,
@@ -202,14 +197,18 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		PublicZoneID:     infra.PublicZoneID,
 		PrivateZoneID:    infra.PrivateZoneID,
 		AWS: apifixtures.ExampleAWSOptions{
-			Region:          infra.Region,
-			Zone:            infra.Zone,
-			VPCID:           infra.VPCID,
-			SubnetID:        infra.PrivateSubnetID,
-			SecurityGroupID: infra.SecurityGroupID,
-			InstanceProfile: iamInfo.ProfileName,
-			InstanceType:    opts.InstanceType,
-			Roles:           iamInfo.Roles,
+			Region:                                 infra.Region,
+			Zone:                                   infra.Zone,
+			VPCID:                                  infra.VPCID,
+			SubnetID:                               infra.PrivateSubnetID,
+			SecurityGroupID:                        infra.SecurityGroupID,
+			InstanceProfile:                        iamInfo.ProfileName,
+			InstanceType:                           opts.InstanceType,
+			Roles:                                  iamInfo.Roles,
+			KubeCloudControllerUserAccessKeyID:     iamInfo.KubeCloudControllerUserAccessKeyID,
+			KubeCloudControllerUserAccessKeySecret: iamInfo.KubeCloudControllerUserAccessKeySecret,
+			NodePoolManagementUserAccessKeyID:      iamInfo.NodePoolManagementUserAccessKeyID,
+			NodePoolManagementUserAccessKeySecret:  iamInfo.NodePoolManagementUserAccessKeySecret,
 		},
 	}.Resources().AsObjects()
 

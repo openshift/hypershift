@@ -129,7 +129,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			InfraID:            hostedCluster.Spec.InfraID,
 		}
-		err := destroyOpts.DestroyIAM()
+		err := destroyOpts.DestroyIAM(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)
 		}

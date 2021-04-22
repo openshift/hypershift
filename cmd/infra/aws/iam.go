@@ -2,6 +2,7 @@ package aws
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -139,6 +140,157 @@ const (
 		"iss",
 		"sub"
 	]
+}`
+
+	cloudControllerPolicy = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeImages",
+        "ec2:DescribeRegions",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVolumes",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateTags",
+        "ec2:CreateVolume",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyVolume",
+        "ec2:AttachVolume",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CreateRoute",
+        "ec2:DeleteRoute",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteVolume",
+        "ec2:DetachVolume",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:DescribeVpcs",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:AttachLoadBalancerToSubnets",
+        "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "elasticloadbalancing:CreateLoadBalancerPolicy",
+        "elasticloadbalancing:CreateLoadBalancerListeners",
+        "elasticloadbalancing:ConfigureHealthCheck",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:DeleteLoadBalancerListeners",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+        "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+        "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:CreateListener",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:DescribeListeners",
+        "elasticloadbalancing:DescribeLoadBalancerPolicies",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:ModifyListener",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        "iam:CreateServiceLinkedRole",
+        "kms:DescribeKey"
+      ],
+      "Resource": [
+        "*"
+      ],
+      "Effect": "Allow"
+    }
+  ]
+}`
+
+	nodePoolPolicy = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "ec2:AllocateAddress",
+        "ec2:AssociateRouteTable",
+        "ec2:AttachInternetGateway",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CreateInternetGateway",
+        "ec2:CreateNatGateway",
+        "ec2:CreateRoute",
+        "ec2:CreateRouteTable",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateSubnet",
+        "ec2:CreateTags",
+        "ec2:DeleteInternetGateway",
+        "ec2:DeleteNatGateway",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteTags",
+        "ec2:DescribeAccountAttributes",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeNatGateways",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeNetworkInterfaceAttribute",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeVolumes",
+        "ec2:DetachInternetGateway",
+        "ec2:DisassociateRouteTable",
+        "ec2:DisassociateAddress",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyNetworkInterfaceAttribute",
+        "ec2:ModifySubnetAttribute",
+        "ec2:ReleaseAddress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "tag:GetResources",
+        "ec2:CreateLaunchTemplate",
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:DescribeLaunchTemplates",
+        "ec2:DescribeLaunchTemplateVersions",
+        "ec2:DeleteLaunchTemplate",
+        "ec2:DeleteLaunchTemplateVersions"
+      ],
+      "Resource": [
+        "*"
+      ],
+      "Effect": "Allow"
+    },
+    {
+      "Condition": {
+        "StringLike": {
+          "iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"
+        }
+      },
+      "Action": [
+        "iam:CreateServiceLinkedRole"
+      ],
+      "Resource": [
+        "arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
+      ],
+      "Effect": "Allow"
+    },
+    {
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:*:iam::*:role/*-worker-role"
+      ],
+      "Effect": "Allow"
+    }
+  ]
 }`
 )
 
@@ -449,6 +601,47 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		log.Info("Created role policy", "name", rolePolicyName)
 	}
 	return nil
+}
+
+func (o *CreateIAMOptions) CreateCredentialedUserWithPolicy(ctx context.Context, client iamiface.IAMAPI, userName, policyDocument string) (*iam.AccessKey, error) {
+	var user *iam.User
+	if output, err := client.CreateUserWithContext(ctx, &iam.CreateUserInput{
+		UserName: aws.String(userName),
+		Tags:     iamTags(o.InfraID, userName),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	} else {
+		user = output.User
+	}
+	log.Info("Created user", "user", userName)
+
+	var policy *iam.Policy
+	if output, err := client.CreatePolicyWithContext(ctx, &iam.CreatePolicyInput{
+		PolicyName:     aws.String(userName),
+		PolicyDocument: aws.String(policyDocument),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create policy: %w", err)
+	} else {
+		policy = output.Policy
+	}
+	log.Info("Created policy", "name", aws.StringValue(policy.PolicyName), "arn", aws.StringValue(policy.Arn))
+
+	if _, err := client.AttachUserPolicyWithContext(ctx, &iam.AttachUserPolicyInput{
+		UserName:  user.UserName,
+		PolicyArn: policy.Arn,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to attach user policy: %w", err)
+	}
+	log.Info("Attached user to policy", "user", aws.StringValue(user.UserName), "policy", aws.StringValue(policy.Arn))
+
+	if output, err := client.CreateAccessKeyWithContext(ctx, &iam.CreateAccessKeyInput{
+		UserName: user.UserName,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create access key: %w", err)
+	} else {
+		log.Info("Created access key", "user", aws.StringValue(user.UserName))
+		return output.AccessKey, nil
+	}
 }
 
 func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
