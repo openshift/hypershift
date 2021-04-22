@@ -22,6 +22,7 @@ import "embed"
 //go:embed registry/*
 //go:embed roks-metrics/*
 //go:embed user-manifests-bootstrapper/*
+//go:embed olm/*
 var content embed.FS
 
 func AssetDir(name string) ([]string, error) {

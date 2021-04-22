@@ -71,6 +71,7 @@ func (c *clusterManifestContext) setupManifests() {
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
 	c.ignitionConfigs()
+	c.operatorLifecycleManager()
 }
 
 func (c *clusterManifestContext) hostedClusterConfigOperator() {
@@ -356,6 +357,21 @@ func (c *clusterManifestContext) ignitionConfigs() {
 		}
 		c.addManifest(name+".yaml", cm)
 	}
+}
+
+func (c *clusterManifestContext) operatorLifecycleManager() {
+	c.addManifestFiles(
+		"olm/catalog-metrics-service.yaml",
+		"olm/olm-metrics-service.yaml",
+		"olm/0000_50_olm_07-olm-operator.deployment.yaml",
+		"olm/0000_50_olm_08-catalog-operator.deployment.yaml",
+		"olm/packageserver.deployment.yaml",
+	)
+	/*
+		c.addUserManifestFiles(
+			"olm/",
+		)
+	*/
 }
 
 func (c *clusterManifestContext) addUserManifestFiles(name ...string) {
