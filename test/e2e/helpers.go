@@ -58,6 +58,7 @@ func DestroyCluster(t *testing.T, ctx context.Context, opts *cmdcluster.DestroyO
 			Namespace:          opts.Namespace,
 			Name:               opts.Name,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
+			ClusterGracePeriod: opts.ClusterGracePeriod,
 		})
 		if err != nil {
 			t.Logf("error destroying cluster, will retry: %s", err)

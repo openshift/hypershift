@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,6 +70,7 @@ func TestQuickStart(t *testing.T) {
 			Namespace:          hostedCluster.Namespace,
 			Name:               hostedCluster.Name,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
+			ClusterGracePeriod: 15 * time.Minute,
 		}, opts.ArtifactDir)
 		DeleteNamespace(t, context.Background(), client, namespace.Name)
 	}()
