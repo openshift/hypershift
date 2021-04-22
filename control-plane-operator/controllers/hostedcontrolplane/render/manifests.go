@@ -256,6 +256,7 @@ func (c *clusterManifestContext) machineConfigServer() {
 		"machine-config-server/machine-config-server-configmap.yaml",
 		"machine-config-server/machine-config-server-secret.yaml",
 		"machine-config-server/machine-config-server-kubeconfig-secret.yaml",
+		"machine-config-server/machine-config-server-haproxy-config-template-configmap.yaml",
 	)
 }
 
