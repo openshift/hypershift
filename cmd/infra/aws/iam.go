@@ -38,7 +38,7 @@ const (
 					"Action": "sts:AssumeRoleWithWebIdentity",
 				"Condition": {
 					"StringEquals": {
-						"%s:aud": "openshift"
+						"%s:sub": "%s"
 					}
 				}
 			}
@@ -271,11 +271,10 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		log.Info("OIDC provider created", "provider", providerARN)
 	}
 
-	oidcTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL)
-
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
-	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", oidcTrustPolicy, ingressPermPolicy)
+	ingressTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-ingress-operator:ingress-operator")
+	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", ingressTrustPolicy, ingressPermPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +284,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		Name:      "cloud-credentials",
 	})
 
-	arn, err = o.CreateOIDCRole(iamClient, "openshift-image-registry", oidcTrustPolicy, imageRegistryPermPolicy)
+	registryTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-image-registry:cluster-image-registry-operator")
+	arn, err = o.CreateOIDCRole(iamClient, "openshift-image-registry", registryTrustPolicy, imageRegistryPermPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +295,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		Name:      "installer-cloud-credentials",
 	})
 
-	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-operator", oidcTrustPolicy, awsEBSCSIPermPolicy)
+	csiTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator")
+	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-operator", csiTrustPolicy, awsEBSCSIPermPolicy)
 	if err != nil {
 		return nil, err
 	}
