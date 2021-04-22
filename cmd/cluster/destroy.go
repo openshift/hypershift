@@ -120,7 +120,9 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		Name:               hostedCluster.GetName(),
 		BaseDomain:         hostedCluster.Spec.DNS.BaseDomain,
 	}
-	destroyInfraOpts.Run(ctx)
+	if err := destroyInfraOpts.Run(ctx); err != nil {
+		return fmt.Errorf("failed to destroy infrastructure: %w", err)
+	}
 
 	if !o.PreserveIAM {
 		log.Info("destroying IAM")
@@ -129,8 +131,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			InfraID:            hostedCluster.Spec.InfraID,
 		}
-		err := destroyOpts.DestroyIAM(ctx)
-		if err != nil {
+		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)
 		}
 	}
