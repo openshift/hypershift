@@ -605,35 +605,44 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 
 func (o *CreateIAMOptions) CreateCredentialedUserWithPolicy(ctx context.Context, client iamiface.IAMAPI, userName, policyDocument string) (*iam.AccessKey, error) {
 	var user *iam.User
-	if output, err := client.CreateUserWithContext(ctx, &iam.CreateUserInput{
-		UserName: aws.String(userName),
-		Tags:     iamTags(o.InfraID, userName),
-	}); err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
+	user, err := existingUser(client, userName)
+	if err != nil {
+		return nil, err
+	}
+	if user != nil {
+		log.Info("Found existing user", "user", userName)
 	} else {
-		user = output.User
+		if output, err := client.CreateUserWithContext(ctx, &iam.CreateUserInput{
+			UserName: aws.String(userName),
+			Tags:     iamTags(o.InfraID, userName),
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create user: %w", err)
+		} else {
+			user = output.User
+		}
+		log.Info("Created user", "user", userName)
 	}
-	log.Info("Created user", "user", userName)
 
-	var policy *iam.Policy
-	if output, err := client.CreatePolicyWithContext(ctx, &iam.CreatePolicyInput{
-		PolicyName:     aws.String(userName),
-		PolicyDocument: aws.String(policyDocument),
-	}); err != nil {
-		return nil, fmt.Errorf("failed to create policy: %w", err)
+	policyName := userName
+	hasPolicy, err := existingUserPolicy(client, userName, userName)
+	if err != nil {
+		return nil, err
+	}
+	if hasPolicy {
+		log.Info("Found existing user policy", "user", userName)
 	} else {
-		policy = output.Policy
+		_, err := client.PutUserPolicyWithContext(ctx, &iam.PutUserPolicyInput{
+			PolicyName:     aws.String(policyName),
+			PolicyDocument: aws.String(policyDocument),
+			UserName:       aws.String(userName),
+		})
+		if err != nil {
+			return nil, err
+		}
+		log.Info("Created user policy", "user", userName)
 	}
-	log.Info("Created policy", "name", aws.StringValue(policy.PolicyName), "arn", aws.StringValue(policy.Arn))
 
-	if _, err := client.AttachUserPolicyWithContext(ctx, &iam.AttachUserPolicyInput{
-		UserName:  user.UserName,
-		PolicyArn: policy.Arn,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to attach user policy: %w", err)
-	}
-	log.Info("Attached user to policy", "user", aws.StringValue(user.UserName), "policy", aws.StringValue(policy.Arn))
-
+	// We create a new access key regardless as there is no way to get access to existing keys
 	if output, err := client.CreateAccessKeyWithContext(ctx, &iam.CreateAccessKeyInput{
 		UserName: user.UserName,
 	}); err != nil {
@@ -655,6 +664,19 @@ func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
 		return nil, fmt.Errorf("cannot get existing role: %w", err)
 	}
 	return result.Role, nil
+}
+
+func existingUser(client iamiface.IAMAPI, userName string) (*iam.User, error) {
+	result, err := client.GetUser(&iam.GetUserInput{UserName: aws.String(userName)})
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
+				return nil, nil
+			}
+		}
+		return nil, fmt.Errorf("cannot get existing role: %w", err)
+	}
+	return result.User, nil
 }
 
 func existingInstanceProfile(client iamiface.IAMAPI, profileName string) (*iam.InstanceProfile, error) {
@@ -684,6 +706,22 @@ func existingRolePolicy(client iamiface.IAMAPI, roleName, policyName string) (bo
 			}
 		}
 		return false, fmt.Errorf("cannot get existing role policy: %w", err)
+	}
+	return aws.StringValue(result.PolicyName) == policyName, nil
+}
+
+func existingUserPolicy(client iamiface.IAMAPI, userName, policyName string) (bool, error) {
+	result, err := client.GetUserPolicy(&iam.GetUserPolicyInput{
+		UserName:   aws.String(userName),
+		PolicyName: aws.String(policyName),
+	})
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("cannot get existing user policy: %w", err)
 	}
 	return aws.StringValue(result.PolicyName) == policyName, nil
 }
