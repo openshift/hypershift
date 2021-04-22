@@ -162,22 +162,19 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 			break
 		}
 	}
-	err = o.DestroyOIDCRole(iamClient, "openshift-ingress")
-	err = o.DestroyOIDCRole(iamClient, "openshift-image-registry")
-	err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-operator")
-
-	cloudControllerUserName := fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller")
-	nodePoolUserName := fmt.Sprintf("%s-%s", o.InfraID, "node-pool")
-	if err := o.DestroyUser(ctx, iamClient, cloudControllerUserName); err != nil {
+	if err = o.DestroyOIDCRole(iamClient, "openshift-ingress"); err != nil {
 		return err
 	}
-	if err := o.DestroyUser(ctx, iamClient, nodePoolUserName); err != nil {
+	if err = o.DestroyOIDCRole(iamClient, "openshift-image-registry"); err != nil {
 		return err
 	}
-	if err := o.DestroyPolicy(ctx, iamClient, cloudControllerUserName); err != nil {
+	if err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-operator"); err != nil {
 		return err
 	}
-	if err := o.DestroyPolicy(ctx, iamClient, nodePoolUserName); err != nil {
+	if err := o.DestroyUser(ctx, iamClient, "cloud-controller"); err != nil {
+		return err
+	}
+	if err := o.DestroyUser(ctx, iamClient, "node-pool"); err != nil {
 		return err
 	}
 
@@ -281,7 +278,9 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 	return nil
 }
 
-func (o *DestroyIAMOptions) DestroyUser(ctx context.Context, client iamiface.IAMAPI, userName string) error {
+func (o *DestroyIAMOptions) DestroyUser(ctx context.Context, client iamiface.IAMAPI, name string) error {
+	userName := fmt.Sprintf("%s-%s", o.InfraID, name)
+
 	// Tear down any access keys for the user
 	if output, err := client.ListAccessKeysWithContext(ctx, &iam.ListAccessKeysInput{
 		UserName: aws.String(userName),
@@ -310,28 +309,24 @@ func (o *DestroyIAMOptions) DestroyUser(ctx context.Context, client iamiface.IAM
 		}
 	}
 
-	// Detach any policies from the user
-	if output, err := client.ListAttachedUserPoliciesWithContext(ctx, &iam.ListAttachedUserPoliciesInput{
-		UserName: aws.String(userName),
-	}); err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			if awsErr.Code() != iam.ErrCodeNoSuchEntityException {
-				return fmt.Errorf("failed to list user policies: %w", err)
+	// Delete the policy
+	policyName := userName
+	_, err := client.DeleteUserPolicy(&iam.DeleteUserPolicyInput{
+		PolicyName: aws.String(policyName),
+		UserName:   aws.String(userName),
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() != iam.ErrCodeNoSuchEntityException {
+				log.Error(aerr, "Error deleting user policy", "user", userName)
+				return aerr
 			}
 		} else {
-			return fmt.Errorf("failed to list user policies: %w", err)
+			log.Error(err, "Error deleting user policy", "user", userName)
+			return err
 		}
 	} else {
-		for _, policy := range output.AttachedPolicies {
-			if _, err := client.DetachUserPolicyWithContext(ctx, &iam.DetachUserPolicyInput{
-				PolicyArn: policy.PolicyArn,
-				UserName:  aws.String(userName),
-			}); err != nil {
-				return fmt.Errorf("failed to detach policy from user: %w", err)
-			} else {
-				log.Info("Detached user policy", "user", userName, "policyArn", aws.StringValue(policy.PolicyArn), "policyName", aws.StringValue(policy.PolicyName))
-			}
-		}
+		log.Info("Deleted user policy", "user", userName)
 	}
 
 	// Now the user can be deleted
@@ -346,29 +341,4 @@ func (o *DestroyIAMOptions) DestroyUser(ctx context.Context, client iamiface.IAM
 		log.Info("Deleted user")
 	}
 	return nil
-}
-
-func (o *DestroyIAMOptions) DestroyPolicy(ctx context.Context, client iamiface.IAMAPI, name string) (result error) {
-	return client.ListPoliciesPagesWithContext(ctx, &iam.ListPoliciesInput{}, func(output *iam.ListPoliciesOutput, _ bool) bool {
-		for _, policy := range output.Policies {
-			if aws.StringValue(policy.PolicyName) != name {
-				continue
-			}
-			if _, err := client.DeletePolicyWithContext(ctx, &iam.DeletePolicyInput{
-				PolicyArn: policy.Arn,
-			}); err != nil {
-				if awsErr, ok := err.(awserr.Error); ok {
-					if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
-						return true
-					}
-				}
-				result = fmt.Errorf("failed to delete policy: %w", err)
-				return true
-			} else {
-				log.Info("Deleted policy", "name", name, "arn", aws.StringValue(policy.Arn))
-				return true
-			}
-		}
-		return true
-	})
 }
