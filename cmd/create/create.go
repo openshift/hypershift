@@ -11,8 +11,9 @@ import (
 
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "create",
-		Short: "Commands for creating HyperShift resources",
+		Use:          "create",
+		Short:        "Commands for creating HyperShift resources",
+		SilenceUsage: true,
 	}
 
 	cmd.AddCommand(cluster.NewCreateCommand())

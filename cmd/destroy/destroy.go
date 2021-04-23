@@ -9,8 +9,9 @@ import (
 
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "destroy",
-		Short: "Commands for destroying HyperShift resources",
+		Use:          "destroy",
+		Short:        "Commands for destroying HyperShift resources",
+		SilenceUsage: true,
 	}
 
 	cmd.AddCommand(infra.NewDestroyCommand())

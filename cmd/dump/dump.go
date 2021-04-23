@@ -8,8 +8,9 @@ import (
 
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dump",
-		Short: "Commands for dumping resources for debugging",
+		Use:          "dump",
+		Short:        "Commands for dumping resources for debugging",
+		SilenceUsage: true,
 	}
 
 	cmd.AddCommand(cluster.NewDumpCommand())

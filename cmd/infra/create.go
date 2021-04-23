@@ -8,8 +8,9 @@ import (
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "infra",
-		Short: "Commands for creating HyperShift infra resources",
+		Use:          "infra",
+		Short:        "Commands for creating HyperShift infra resources",
+		SilenceUsage: true,
 	}
 
 	cmd.AddCommand(aws.NewCreateCommand())

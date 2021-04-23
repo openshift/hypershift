@@ -46,8 +46,9 @@ type Options struct {
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cluster",
-		Short: "Creates basic functional HostedCluster resources",
+		Use:          "cluster",
+		Short:        "Creates basic functional HostedCluster resources",
+		SilenceUsage: true,
 	}
 
 	var releaseImage string

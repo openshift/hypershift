@@ -43,8 +43,9 @@ type CreateIAMOutput struct {
 
 func NewCreateIAMCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "aws",
-		Short: "Creates AWS instance profile for workers",
+		Use:          "aws",
+		Short:        "Creates AWS instance profile for workers",
+		SilenceUsage: true,
 	}
 
 	opts := CreateIAMOptions{

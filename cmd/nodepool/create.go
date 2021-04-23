@@ -29,8 +29,9 @@ type CreateNodePoolOptions struct {
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "nodepool",
-		Short: "Create a HyperShift NodePool",
+		Use:          "nodepool",
+		Short:        "Create a HyperShift NodePool",
+		SilenceUsage: true,
 	}
 
 	opts := CreateNodePoolOptions{
