@@ -33,7 +33,8 @@ type HostedClusterSpec struct {
 	Networking ClusterNetworking `json:"networking"`
 
 	// Autoscaling for compute nodes only, does not cover control plane
-	Autoscaling ClusterAutoscaling `json:"autoscaling"`
+	// +optional
+	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
 	Platform PlatformSpec `json:"platform"`
 

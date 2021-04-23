@@ -327,7 +327,6 @@ spec:
                     type: string
                 type: object
             required:
-            - autoscaling
             - initialComputeReplicas
             - issuerURL
             - networking
