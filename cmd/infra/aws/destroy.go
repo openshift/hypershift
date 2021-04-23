@@ -14,10 +14,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
+	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/spf13/cobra"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
 
 type DestroyInfraOptions struct {
@@ -26,6 +30,10 @@ type DestroyInfraOptions struct {
 	AWSCredentialsFile string
 	Name               string
 	BaseDomain         string
+
+	EC2Client     ec2iface.EC2API
+	Route53Client route53iface.Route53API
+	ELBClient     elbiface.ELBAPI
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -49,7 +57,7 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("base-domain")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
@@ -57,11 +65,18 @@ func NewDestroyCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
+
+		awsSession := awsutil.NewSession()
+		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
+		opts.EC2Client = ec2.New(awsSession, awsConfig)
+		opts.ELBClient = elb.New(awsSession, awsConfig)
+		opts.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(opts.AWSCredentialsFile))
+
 		if err := opts.Run(ctx); err != nil {
-			return err
+			log.Error(err, "Failed to destroy infrastructure")
+			os.Exit(1)
 		}
-		log.Info("Successfully destroyed AWS infra")
-		return nil
+		log.Info("Successfully destroyed infrastructure")
 	}
 
 	return cmd
@@ -80,23 +95,11 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	var errs []error
-	ec2client, err := ec2Client(o.AWSCredentialsFile, o.Region)
-	if err != nil {
-		return err
-	}
-	route53client, err := route53Client(o.AWSCredentialsFile)
-	if err != nil {
-		return err
-	}
-	elbclient, err := elbClient(o.AWSCredentialsFile, o.Region)
-	if err != nil {
-		return err
-	}
-	errs = append(errs, o.DestroyInternetGateways(ctx, ec2client)...)
-	errs = append(errs, o.DestroyVPCs(ctx, ec2client, elbclient)...)
-	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2client)...)
-	errs = append(errs, o.DestroyEIPs(ctx, ec2client)...)
-	errs = append(errs, o.DestroyDNS(ctx, route53client)...)
+	errs = append(errs, o.DestroyInternetGateways(ctx, o.EC2Client)...)
+	errs = append(errs, o.DestroyVPCs(ctx, o.EC2Client, o.ELBClient)...)
+	errs = append(errs, o.DestroyDHCPOptions(ctx, o.EC2Client)...)
+	errs = append(errs, o.DestroyEIPs(ctx, o.EC2Client)...)
+	errs = append(errs, o.DestroyDNS(ctx, o.Route53Client)...)
 	return utilerrors.NewAggregate(errs)
 }
 
