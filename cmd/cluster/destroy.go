@@ -99,6 +99,9 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	defer clusterDeleteCtxCancel()
 	err := wait.PollUntil(1*time.Second, func() (bool, error) {
 		if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
 			log.Error(err, "failed to get hostedcluster")
 			return false, nil
 		}
@@ -106,7 +109,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		return done, nil
 	}, clusterDeleteCtx.Done())
 	if err != nil {
-		log.Error(err, "hostedcluster wasn't successfully deleted")
+		return fmt.Errorf("hostedcluster was't finalized, can't delete infrastructure: %w", err)
 	}
 
 	log.Info("destroying infrastructure", "infraID", hostedCluster.Spec.InfraID)
@@ -117,7 +120,9 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		Name:               hostedCluster.GetName(),
 		BaseDomain:         hostedCluster.Spec.DNS.BaseDomain,
 	}
-	destroyInfraOpts.Run(ctx)
+	if err := destroyInfraOpts.Run(ctx); err != nil {
+		return fmt.Errorf("failed to destroy infrastructure: %w", err)
+	}
 
 	if !o.PreserveIAM {
 		log.Info("destroying IAM")
@@ -126,8 +131,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			InfraID:            hostedCluster.Spec.InfraID,
 		}
-		err := destroyOpts.DestroyIAM()
-		if err != nil {
+		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)
 		}
 	}

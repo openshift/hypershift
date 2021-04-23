@@ -2,6 +2,7 @@ package aws
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -38,7 +39,7 @@ const (
 					"Action": "sts:AssumeRoleWithWebIdentity",
 				"Condition": {
 					"StringEquals": {
-						"%s:aud": "openshift"
+						"%s:sub": "%s"
 					}
 				}
 			}
@@ -139,6 +140,157 @@ const (
 		"iss",
 		"sub"
 	]
+}`
+
+	cloudControllerPolicy = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeImages",
+        "ec2:DescribeRegions",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVolumes",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateTags",
+        "ec2:CreateVolume",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyVolume",
+        "ec2:AttachVolume",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CreateRoute",
+        "ec2:DeleteRoute",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteVolume",
+        "ec2:DetachVolume",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:DescribeVpcs",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:AttachLoadBalancerToSubnets",
+        "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "elasticloadbalancing:CreateLoadBalancerPolicy",
+        "elasticloadbalancing:CreateLoadBalancerListeners",
+        "elasticloadbalancing:ConfigureHealthCheck",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:DeleteLoadBalancerListeners",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+        "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+        "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:CreateListener",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:DescribeListeners",
+        "elasticloadbalancing:DescribeLoadBalancerPolicies",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:ModifyListener",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        "iam:CreateServiceLinkedRole",
+        "kms:DescribeKey"
+      ],
+      "Resource": [
+        "*"
+      ],
+      "Effect": "Allow"
+    }
+  ]
+}`
+
+	nodePoolPolicy = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "ec2:AllocateAddress",
+        "ec2:AssociateRouteTable",
+        "ec2:AttachInternetGateway",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CreateInternetGateway",
+        "ec2:CreateNatGateway",
+        "ec2:CreateRoute",
+        "ec2:CreateRouteTable",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateSubnet",
+        "ec2:CreateTags",
+        "ec2:DeleteInternetGateway",
+        "ec2:DeleteNatGateway",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteTags",
+        "ec2:DescribeAccountAttributes",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeNatGateways",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeNetworkInterfaceAttribute",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeVpcAttribute",
+        "ec2:DescribeVolumes",
+        "ec2:DetachInternetGateway",
+        "ec2:DisassociateRouteTable",
+        "ec2:DisassociateAddress",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyNetworkInterfaceAttribute",
+        "ec2:ModifySubnetAttribute",
+        "ec2:ReleaseAddress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "tag:GetResources",
+        "ec2:CreateLaunchTemplate",
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:DescribeLaunchTemplates",
+        "ec2:DescribeLaunchTemplateVersions",
+        "ec2:DeleteLaunchTemplate",
+        "ec2:DeleteLaunchTemplateVersions"
+      ],
+      "Resource": [
+        "*"
+      ],
+      "Effect": "Allow"
+    },
+    {
+      "Condition": {
+        "StringLike": {
+          "iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"
+        }
+      },
+      "Action": [
+        "iam:CreateServiceLinkedRole"
+      ],
+      "Resource": [
+        "arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
+      ],
+      "Effect": "Allow"
+    },
+    {
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:*:iam::*:role/*-worker-role"
+      ],
+      "Effect": "Allow"
+    }
+  ]
 }`
 )
 
@@ -271,11 +423,10 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		log.Info("OIDC provider created", "provider", providerARN)
 	}
 
-	oidcTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL)
-
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
-	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", oidcTrustPolicy, ingressPermPolicy)
+	ingressTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-ingress-operator:ingress-operator")
+	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", ingressTrustPolicy, ingressPermPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +436,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		Name:      "cloud-credentials",
 	})
 
-	arn, err = o.CreateOIDCRole(iamClient, "openshift-image-registry", oidcTrustPolicy, imageRegistryPermPolicy)
+	registryTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-image-registry:cluster-image-registry-operator")
+	arn, err = o.CreateOIDCRole(iamClient, "openshift-image-registry", registryTrustPolicy, imageRegistryPermPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +447,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		Name:      "installer-cloud-credentials",
 	})
 
-	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-operator", oidcTrustPolicy, awsEBSCSIPermPolicy)
+	csiTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator")
+	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-operator", csiTrustPolicy, awsEBSCSIPermPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -450,6 +603,56 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 	return nil
 }
 
+func (o *CreateIAMOptions) CreateCredentialedUserWithPolicy(ctx context.Context, client iamiface.IAMAPI, userName, policyDocument string) (*iam.AccessKey, error) {
+	var user *iam.User
+	user, err := existingUser(client, userName)
+	if err != nil {
+		return nil, err
+	}
+	if user != nil {
+		log.Info("Found existing user", "user", userName)
+	} else {
+		if output, err := client.CreateUserWithContext(ctx, &iam.CreateUserInput{
+			UserName: aws.String(userName),
+			Tags:     iamTags(o.InfraID, userName),
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create user: %w", err)
+		} else {
+			user = output.User
+		}
+		log.Info("Created user", "user", userName)
+	}
+
+	policyName := userName
+	hasPolicy, err := existingUserPolicy(client, userName, userName)
+	if err != nil {
+		return nil, err
+	}
+	if hasPolicy {
+		log.Info("Found existing user policy", "user", userName)
+	} else {
+		_, err := client.PutUserPolicyWithContext(ctx, &iam.PutUserPolicyInput{
+			PolicyName:     aws.String(policyName),
+			PolicyDocument: aws.String(policyDocument),
+			UserName:       aws.String(userName),
+		})
+		if err != nil {
+			return nil, err
+		}
+		log.Info("Created user policy", "user", userName)
+	}
+
+	// We create a new access key regardless as there is no way to get access to existing keys
+	if output, err := client.CreateAccessKeyWithContext(ctx, &iam.CreateAccessKeyInput{
+		UserName: user.UserName,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create access key: %w", err)
+	} else {
+		log.Info("Created access key", "user", aws.StringValue(user.UserName))
+		return output.AccessKey, nil
+	}
+}
+
 func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
 	result, err := client.GetRole(&iam.GetRoleInput{RoleName: aws.String(roleName)})
 	if err != nil {
@@ -461,6 +664,19 @@ func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
 		return nil, fmt.Errorf("cannot get existing role: %w", err)
 	}
 	return result.Role, nil
+}
+
+func existingUser(client iamiface.IAMAPI, userName string) (*iam.User, error) {
+	result, err := client.GetUser(&iam.GetUserInput{UserName: aws.String(userName)})
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
+				return nil, nil
+			}
+		}
+		return nil, fmt.Errorf("cannot get existing role: %w", err)
+	}
+	return result.User, nil
 }
 
 func existingInstanceProfile(client iamiface.IAMAPI, profileName string) (*iam.InstanceProfile, error) {
@@ -490,6 +706,22 @@ func existingRolePolicy(client iamiface.IAMAPI, roleName, policyName string) (bo
 			}
 		}
 		return false, fmt.Errorf("cannot get existing role policy: %w", err)
+	}
+	return aws.StringValue(result.PolicyName) == policyName, nil
+}
+
+func existingUserPolicy(client iamiface.IAMAPI, userName, policyName string) (bool, error) {
+	result, err := client.GetUserPolicy(&iam.GetUserPolicyInput{
+		UserName:   aws.String(userName),
+		PolicyName: aws.String(policyName),
+	})
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("cannot get existing user policy: %w", err)
 	}
 	return aws.StringValue(result.PolicyName) == policyName, nil
 }

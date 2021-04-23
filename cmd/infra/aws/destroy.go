@@ -3,7 +3,10 @@ package aws
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -46,19 +49,29 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("base-domain")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		opts.Run(context.Background())
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, cancel := context.WithCancel(context.Background())
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+		}()
+		if err := opts.Run(ctx); err != nil {
+			return err
+		}
 		log.Info("Successfully destroyed AWS infra")
+		return nil
 	}
 
 	return cmd
 }
 
-func (o *DestroyInfraOptions) Run(ctx context.Context) {
-	wait.PollUntil(5*time.Second, func() (bool, error) {
+func (o *DestroyInfraOptions) Run(ctx context.Context) error {
+	return wait.PollUntil(5*time.Second, func() (bool, error) {
 		err := o.DestroyInfra(ctx)
 		if err != nil {
-			log.Error(err, "error destroying infra")
+			log.Info("WARNING: error during destroy, will retry", "error", err)
 			return false, nil
 		}
 		return true, nil

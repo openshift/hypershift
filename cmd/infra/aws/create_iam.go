@@ -1,9 +1,12 @@
 package aws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -31,6 +34,11 @@ type CreateIAMOutput struct {
 	IssuerURL                string                       `json:"issuerURL"`
 	ServiceAccountSigningKey []byte                       `json:"serviceAccountSigningKey"`
 	Roles                    []hyperv1.AWSRoleCredentials `json:"roles"`
+
+	KubeCloudControllerUserAccessKeyID     string `json:"kubeCloudControllerUserAccessKeyID"`
+	KubeCloudControllerUserAccessKeySecret string `json:"kubeCloudControllerUserAccessKeySecret"`
+	NodePoolManagementUserAccessKeyID      string `json:"nodePoolManagementUserAccessKeyID"`
+	NodePoolManagementUserAccessKeySecret  string `json:"nodePoolManagementUserAccessKeySecret"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -53,18 +61,22 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("infra-id")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		if err := opts.Run(); err != nil {
-			log.Error(err, "Error")
-			os.Exit(1)
-		}
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, cancel := context.WithCancel(context.Background())
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+		}()
+		return opts.Run(ctx)
 	}
 
 	return cmd
 }
 
-func (o *CreateIAMOptions) Run() error {
-	results, err := o.CreateIAM()
+func (o *CreateIAMOptions) Run(ctx context.Context) error {
+	results, err := o.CreateIAM(ctx)
 	if err != nil {
 		return err
 	}
@@ -89,7 +101,7 @@ func (o *CreateIAMOptions) Run() error {
 	return nil
 }
 
-func (o *CreateIAMOptions) CreateIAM() (*CreateIAMOutput, error) {
+func (o *CreateIAMOptions) CreateIAM(ctx context.Context) (*CreateIAMOutput, error) {
 	var err error
 	iamClient, err := IAMClient(o.AWSCredentialsFile, o.Region)
 	if err != nil {
@@ -110,8 +122,22 @@ func (o *CreateIAMOptions) CreateIAM() (*CreateIAMOutput, error) {
 		return nil, err
 	}
 	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
-	return results, nil
 
+	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller"), cloudControllerPolicy); err != nil {
+		return nil, err
+	} else {
+		results.KubeCloudControllerUserAccessKeyID = aws.StringValue(key.AccessKeyId)
+		results.KubeCloudControllerUserAccessKeySecret = aws.StringValue(key.SecretAccessKey)
+	}
+
+	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "node-pool"), nodePoolPolicy); err != nil {
+		return nil, err
+	} else {
+		results.NodePoolManagementUserAccessKeyID = aws.StringValue(key.AccessKeyId)
+		results.NodePoolManagementUserAccessKeySecret = aws.StringValue(key.SecretAccessKey)
+	}
+
+	return results, nil
 }
 
 func IAMClient(creds, region string) (iamiface.IAMAPI, error) {
