@@ -25,7 +25,8 @@ type HostedClusterSpec struct {
     Networking ClusterNetworking
 
     // Autoscaling for compute nodes only, does not cover control plane
-    Autoscaling ClusterAutoscaling
+    // +optional
+    Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
     // NOTE: This might not make sense as control plane
     // inputs can be specific to versions
