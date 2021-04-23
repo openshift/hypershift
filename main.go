@@ -30,7 +30,8 @@ import (
 
 func main() {
 	cmd := &cobra.Command{
-		Use: "hypershift",
+		Use:          "hypershift",
+		SilenceUsage: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
 			os.Exit(1)

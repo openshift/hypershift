@@ -60,8 +60,9 @@ const (
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "aws",
-		Short: "Creates AWS infrastructure resources for a cluster",
+		Use:          "aws",
+		Short:        "Creates AWS infrastructure resources for a cluster",
+		SilenceUsage: true,
 	}
 
 	opts := CreateInfraOptions{

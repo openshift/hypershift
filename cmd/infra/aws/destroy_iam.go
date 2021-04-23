@@ -32,8 +32,9 @@ type DestroyIAMOptions struct {
 
 func NewDestroyIAMCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "aws",
-		Short: "Destroys AWS instance profile for workers",
+		Use:          "aws",
+		Short:        "Destroys AWS instance profile for workers",
+		SilenceUsage: true,
 	}
 
 	opts := DestroyIAMOptions{

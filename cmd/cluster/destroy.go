@@ -51,8 +51,9 @@ type DestroyOptions struct {
 
 func NewDestroyCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cluster",
-		Short: "Destroys a HostedCluster and its associated infrastructure.",
+		Use:          "cluster",
+		Short:        "Destroys a HostedCluster and its associated infrastructure.",
+		SilenceUsage: true,
 	}
 
 	opts := DestroyOptions{

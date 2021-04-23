@@ -38,8 +38,9 @@ type DestroyInfraOptions struct {
 
 func NewDestroyCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "aws",
-		Short: "Destroys AWS infrastructure resources for a cluster",
+		Use:          "aws",
+		Short:        "Destroys AWS infrastructure resources for a cluster",
+		SilenceUsage: true,
 	}
 
 	opts := DestroyInfraOptions{

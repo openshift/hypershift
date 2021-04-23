@@ -8,8 +8,9 @@ import (
 
 func NewDestroyCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "infra",
-		Short: "Commands for destroying HyperShift infra resources",
+		Use:          "infra",
+		Short:        "Commands for destroying HyperShift infra resources",
+		SilenceUsage: true,
 	}
 
 	cmd.AddCommand(aws.NewDestroyCommand())

@@ -37,9 +37,10 @@ of the HostedCluster itself.
 // from HostedCluster resources.
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "kubeconfig",
-		Short: "Creates a combined kubeconfig from hostedcluster resources",
-		Long:  description,
+		Use:          "kubeconfig",
+		Short:        "Creates a combined kubeconfig from hostedcluster resources",
+		Long:         description,
+		SilenceUsage: true,
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

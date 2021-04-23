@@ -75,7 +75,7 @@ NAME      VERSION   KUBECONFIG                 AVAILABLE
 example   4.7.6     example-admin-kubeconfig   True
 ```
 
-Also check the `pods` in the `clusters-example` namespace 
+Also check the `pods` in the `clusters-example` namespace
 
 ```shell
 $ oc get pods -n clusters-example
@@ -118,7 +118,7 @@ hypershift destroy cluster \
   --name example
 ```
 
-## How to add node pools to the example cluster
+## How to add additional node pools to the example cluster
 
 **Prerequisites:**
 
@@ -161,10 +161,10 @@ spec:
 
 **Pull Secret Issues**
 
-- If you run into an issue where the `pods` are not creating properly when you 
-issue the `hypershift create cluster ...` command, it may be your `pull-secret`. There may be a 
-typo or a bad copy/paste that has left the `pull-secret` malformed. Make sure the `pull-secret` is accurate and exists 
-on your system and you properly pass in the path to the file. A proper representation of the `pull-secret` 
+- If you run into an issue where the `pods` are not creating properly when you
+issue the `hypershift create cluster ...` command, it may be your `pull-secret`. There may be a
+typo or a bad copy/paste that has left the `pull-secret` malformed. Make sure the `pull-secret` is accurate and exists
+on your system and you properly pass in the path to the file. A proper representation of the `pull-secret`
 will look like the following in this example:
 
 ```shell
@@ -182,7 +182,7 @@ pull-secret   kubernetes.io/dockerconfigjson   1      74m
 `pull-secret` that you passed into the `hypershift create cluster...` command:
 
 ```shell
-$ oc logs control-plane-operator-5cb584b6fc-bm6bp -n clusters-example
+$ oc logs deploy/control-plane-operator -n clusters-example
 
 ...
 "error": "failed to ensure control plane: failed to get pull secret pull-secret: secrets \"pull-secret\" not found"}
@@ -198,9 +198,8 @@ $ hypershift destroy cluster   --aws-creds ~/.aws/credentials   --namespace clus
 
 $ oc delete secret example-pull-secret -n clusters
 
-$ hypershift create cluster --pull-secret ~/pull-secret \ 
-      --aws-creds ~/.aws/credentials \ 
-      --name example \  
+$ hypershift create cluster --pull-secret ~/pull-secret \
+      --aws-creds ~/.aws/credentials \
+      --name example \
       --base-domain yourroute53domain
-
 ```
