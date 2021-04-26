@@ -189,11 +189,11 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
-	result.PublicZoneID, err = o.LookupPublicZone(o.Route53Client)
+	result.PublicZoneID, err = o.LookupPublicZone(ctx, o.Route53Client)
 	if err != nil {
 		return nil, err
 	}
-	result.PrivateZoneID, err = o.CreatePrivateZone(o.Route53Client, result.VPCID)
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, o.Route53Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
