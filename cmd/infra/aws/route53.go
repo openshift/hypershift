@@ -10,12 +10,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
-	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 )
 
-func (o *CreateInfraOptions) LookupPublicZone(client route53iface.Route53API) (string, error) {
+func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, client route53iface.Route53API) (string, error) {
 	name := o.BaseDomain
-	id, err := lookupZone(client, name, false)
+	id, err := lookupZone(ctx, client, name, false)
 	if err != nil {
 		log.Error(err, "Public zone not found", "name", name)
 		return "", err
@@ -24,7 +25,7 @@ func (o *CreateInfraOptions) LookupPublicZone(client route53iface.Route53API) (s
 	return id, nil
 }
 
-func lookupZone(client route53iface.Route53API, name string, isPrivateZone bool) (string, error) {
+func lookupZone(ctx context.Context, client route53iface.Route53API, name string, isPrivateZone bool) (string, error) {
 	var res *route53.HostedZone
 	f := func(resp *route53.ListHostedZonesOutput, lastPage bool) (shouldContinue bool) {
 		for idx, zone := range resp.HostedZones {
@@ -35,37 +36,52 @@ func lookupZone(client route53iface.Route53API, name string, isPrivateZone bool)
 		}
 		return !lastPage
 	}
-	if err := client.ListHostedZonesPages(&route53.ListHostedZonesInput{}, f); err != nil {
-		return "", err
+	if err := retryRoute53WithBackoff(ctx, func() error {
+		if err := client.ListHostedZonesPagesWithContext(ctx, &route53.ListHostedZonesInput{}, f); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("failed to list hosted zones: %w", err)
 	}
 	if res == nil {
-		return "", errors.Errorf("Hosted zone %s not found", name)
+		return "", fmt.Errorf("hosted zone %s not found", name)
 	}
 	return cleanZoneID(*res.Id), nil
 }
 
-func (o *CreateInfraOptions) CreatePrivateZone(client route53iface.Route53API, vpcID string) (string, error) {
+func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route53iface.Route53API, vpcID string) (string, error) {
 	name := fmt.Sprintf("%s.%s", o.Name, o.BaseDomain)
-	id, err := lookupZone(client, name, true)
+	id, err := lookupZone(ctx, client, name, true)
 	if err == nil {
 		log.Info("Found existing private zone", "name", name, "id", id)
 		return id, err
 	}
-	callRef := fmt.Sprintf("%d", time.Now().Unix())
-	res, err := client.CreateHostedZone(&route53.CreateHostedZoneInput{
-		CallerReference: aws.String(callRef),
-		Name:            aws.String(name),
-		HostedZoneConfig: &route53.HostedZoneConfig{
-			PrivateZone: aws.Bool(true),
-		},
-		VPC: &route53.VPC{
-			VPCId:     aws.String(vpcID),
-			VPCRegion: aws.String(o.Region),
-		},
-	})
-	if err != nil {
 
-		return "", err
+	var res *route53.CreateHostedZoneOutput
+	if err := retryRoute53WithBackoff(ctx, func() error {
+		callRef := fmt.Sprintf("%d", time.Now().Unix())
+		if output, err := client.CreateHostedZoneWithContext(ctx, &route53.CreateHostedZoneInput{
+			CallerReference: aws.String(callRef),
+			Name:            aws.String(name),
+			HostedZoneConfig: &route53.HostedZoneConfig{
+				PrivateZone: aws.Bool(true),
+			},
+			VPC: &route53.VPC{
+				VPCId:     aws.String(vpcID),
+				VPCRegion: aws.String(o.Region),
+			},
+		}); err != nil {
+			return err
+		} else {
+			res = output
+			return nil
+		}
+	}); err != nil {
+		return "", fmt.Errorf("failed to create hosted zone: %w", err)
+	}
+	if res == nil {
+		return "", fmt.Errorf("unexpected output from hosted zone creation")
 	}
 	id = cleanZoneID(*res.HostedZone.Id)
 	log.Info("Created private zone", "name", name, "id", id)
@@ -81,7 +97,7 @@ func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client route53ifac
 
 func (o *DestroyInfraOptions) DestroyPrivateZone(ctx context.Context, client route53iface.Route53API) error {
 	name := fmt.Sprintf("%s.%s", o.Name, o.BaseDomain)
-	id, err := lookupZone(client, name, true)
+	id, err := lookupZone(ctx, client, name, true)
 	if err != nil {
 		return nil
 	}
@@ -102,7 +118,7 @@ func (o *DestroyInfraOptions) DestroyPrivateZone(ctx context.Context, client rou
 
 func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client route53iface.Route53API) error {
 	name := o.BaseDomain
-	id, err := lookupZone(client, name, false)
+	id, err := lookupZone(ctx, client, name, false)
 	if err != nil {
 		return nil
 	}
@@ -178,7 +194,7 @@ func findRecord(ctx context.Context, client route53iface.Route53API, id, name st
 		return nil, err
 	}
 	if record == nil {
-		return nil, fmt.Errorf("Record not found")
+		return nil, fmt.Errorf("record not found")
 	}
 	return record, nil
 }
@@ -203,4 +219,22 @@ func cleanRecordName(name string) string {
 		return str
 	}
 	return s
+}
+
+func retryRoute53WithBackoff(ctx context.Context, fn func() error) error {
+	backoff := wait.Backoff{
+		Duration: 1 * time.Second,
+		Steps:    10,
+		Factor:   1.5,
+	}
+	retriable := func(error) bool {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+			return true
+		}
+	}
+	// TODO: inspect the error for throttling details?
+	return retry.OnError(backoff, retriable, fn)
 }
