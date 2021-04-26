@@ -50,6 +50,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 )
 
 const (
@@ -86,6 +87,15 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
 		Complete(r)
+}
+
+func ensureHostedClusterOwnerRef(hc *hyperv1.HostedCluster, ownerReferences []metav1.OwnerReference) []metav1.OwnerReference {
+	return util.EnsureOwnerRef(ownerReferences, metav1.OwnerReference{
+		APIVersion: hyperv1.GroupVersion.String(),
+		Kind:       "HostedCluster",
+		Name:       hc.GetName(),
+		UID:        hc.UID,
+	})
 }
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -212,6 +222,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name, err)
 		}
+		if src.OwnerReferences == nil {
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &src, func() error {
+				src.OwnerReferences = ensureHostedClusterOwnerRef(hcluster, src.OwnerReferences)
+				return nil
+			})
+		}
 		dest := manifests.AWSKubeCloudControllerCreds(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["credentials"]
@@ -237,6 +253,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get node pool provider creds %s: %w", hcluster.Spec.Platform.AWS.NodePoolManagementCreds.Name, err)
 		}
+		if src.OwnerReferences == nil {
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &src, func() error {
+				src.OwnerReferences = ensureHostedClusterOwnerRef(hcluster, src.OwnerReferences)
+				return nil
+			})
+		}
 		dest := manifests.AWSNodePoolManagementCreds(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["credentials"]
@@ -259,6 +281,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 		}
+		if src.OwnerReferences == nil {
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &src, func() error {
+				src.OwnerReferences = ensureHostedClusterOwnerRef(hcluster, src.OwnerReferences)
+				return nil
+			})
+	    }
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dst, func() error {
 			srcData, srcHasData := src.Data[".dockerconfigjson"]
@@ -280,6 +308,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		var src corev1.Secret
 		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get signing key %s: %w", hcluster.Spec.SigningKey.Name, err)
+		}
+		if src.OwnerReferences == nil {
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &src, func() error {
+				src.OwnerReferences = ensureHostedClusterOwnerRef(hcluster, src.OwnerReferences)
+				return nil
+			})
 		}
 		dest := controlplaneoperator.SigningKey(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
@@ -303,6 +337,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &src)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
+		}
+		if src.OwnerReferences == nil {
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, &src, func() error {
+				src.OwnerReferences = ensureHostedClusterOwnerRef(hcluster, src.OwnerReferences)
+				return nil
+			})
 		}
 		dest := controlplaneoperator.SSHKey(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
@@ -376,6 +416,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
 		}
 		dest := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
+		if dest.OwnerReferences == nil {
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
+				dest.OwnerReferences = ensureHostedClusterOwnerRef(hcluster, dest.OwnerReferences)
+				return nil
+			})
+		}
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
 			key := hcp.Status.KubeConfig.Key
 			srcData, srcHasData := src.Data[key]
