@@ -6,14 +6,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -35,7 +33,6 @@ const (
 type ExternalInfraClusterReconciler struct {
 	ctrlclient.Client
 	recorder record.EventRecorder
-	Infra    *configv1.Infrastructure
 	Log      logr.Logger
 }
 
@@ -50,12 +47,6 @@ func (r *ExternalInfraClusterReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
-
-	var infra configv1.Infrastructure
-	if err := mgr.GetAPIReader().Get(context.Background(), client.ObjectKey{Name: "cluster"}, &infra); err != nil {
-		return fmt.Errorf("failed to get cluster infra: %w", err)
-	}
-	r.Infra = &infra
 
 	r.recorder = mgr.GetEventRecorderFor("external-infra-controller")
 
