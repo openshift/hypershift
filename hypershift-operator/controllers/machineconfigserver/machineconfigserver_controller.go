@@ -322,14 +322,14 @@ func (r *MachineConfigServerReconciler) reconcileMCSServiceRouteResources(ctx co
 	var ok bool
 	r.Log.Info("Fetching CA cert of machine config server certs")
 	if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: mcs.Namespace, Name: hostedClusterConfigOperatorConfigMapName}, &hostedClusterConfigOperatorConfigMapData); err != nil {
-		return &ctrl.Result{}, fmt.Errorf("failed to get hosted cluster config operator configmap %s: %w", hostedClusterConfigOperatorConfigMapName, err)
+		return fmt.Errorf("failed to get hosted cluster config operator configmap %s: %w", hostedClusterConfigOperatorConfigMapName, err)
 	}
 	if combinedCA, ok = hostedClusterConfigOperatorConfigMapData.Data["initial-ca.crt"]; !ok {
-		return &ctrl.Result{}, fmt.Errorf("could not find node initial-ca.crt in configmap %s", hostedClusterConfigOperatorConfigMapName)
+		return fmt.Errorf("could not find node initial-ca.crt in configmap %s", hostedClusterConfigOperatorConfigMapName)
 	}
 	r.Log.Info("Creating ignition provider route")
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionRoute, func() error {
-		return reconcileMCSServiceRoute(ignitionRoute, mcs)
+		return reconcileMCSServiceRoute(ignitionRoute, mcs, combinedCA)
 	})
 	return err
 }
@@ -344,7 +344,7 @@ func (r *MachineConfigServerReconciler) updateStatusMCSServiceRoute(ctx context.
 		return &ctrl.Result{Requeue: true}, nil
 	}
 	mcs.Status.Host = ignitionRoute.Spec.Host
-	mcs.Status.Port = int32(80)
+	mcs.Status.Port = int32(443)
 	r.Log.Info("Updated status for MCS")
 	return nil, nil
 }
@@ -356,10 +356,15 @@ func reconcileMCSServiceClusterIP(mcsService *corev1.Service, mcs *hyperv1.Machi
 	return nil
 }
 
-func reconcileMCSServiceRoute(ignitionRoute *routev1.Route, mcs *hyperv1.MachineConfigServer) error {
+func reconcileMCSServiceRoute(ignitionRoute *routev1.Route, mcs *hyperv1.MachineConfigServer, combinedCA string) error {
 	ignitionRoute.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
 		Name: MachineConfigServerService(mcs.Namespace, mcs.Name).Name,
+	}
+	ignitionRoute.Spec.TLS = &routev1.TLSConfig{
+		Termination:                   routev1.TLSTerminationReencrypt,
+		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+		DestinationCACertificate:      combinedCA,
 	}
 	return nil
 }
