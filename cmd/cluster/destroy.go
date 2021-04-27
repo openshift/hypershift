@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -37,6 +38,8 @@ const (
 type DestroyOptions struct {
 	Namespace          string
 	Name               string
+	InfraID            string
+	BaseDomain         string
 	Region             string
 	AWSCredentialsFile string
 	PreserveIAM        bool
@@ -70,7 +73,9 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().BoolVar(&opts.PreserveIAM, "preserve-iam", opts.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 	cmd.Flags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
-	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
+	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Cluster's region; inferred from the hosted cluster by default")
+	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "Cluster's base domain; inferred from the hosted cluster by default")
+	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID; inferred from the hosted cluster by default")
 
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("aws-creds")
@@ -104,53 +109,88 @@ func NewDestroyCommand() *cobra.Command {
 func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	c := util.GetClientOrDie()
 
+	infraID := o.InfraID
+	baseDomain := o.BaseDomain
+	region := o.Region
+
+	hostedClusterExists := false
 	var hostedCluster hyperv1.HostedCluster
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
-		log.Info("hostedcluster not found, nothing to do", "namespace", o.Namespace, "name", o.Name)
-		return nil
-	}
-
-	controllerutil.AddFinalizer(&hostedCluster, destroyFinalizer)
-	if err := c.Update(ctx, &hostedCluster); err != nil {
-		return fmt.Errorf("failed to add finalizer, won't destroy: %w", err)
-	}
-
-	// Cluster deletion will be subject to a timeout so that it's possible to
-	// try and tear down infra even if the cluster never finalizes; this is an
-	// attempt to reduce resource leakage in such cases.
-	log.Info("deleting hostedcluster")
-	if err := c.Delete(ctx, &hostedCluster); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("WARNING: hostedcluster was finalized before infrastructure was deleted; resources may have been leaked")
-			return nil
+			log.Info("Hosted cluster not found, destroying infrastructure from user input", "namespace", o.Namespace, "name", o.Name, "infraID", infraID, "region", region, "baseDomain", baseDomain)
 		} else {
-			return fmt.Errorf("failed to delete hostedcluster: %w", err)
+			return fmt.Errorf("failed to get hostedcluster: %w", err)
 		}
-	}
-	clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
-	defer clusterDeleteCtxCancel()
-	err := wait.PollUntil(1*time.Second, func() (bool, error) {
-		if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
-			if apierrors.IsNotFound(err) {
-				return true, nil
-			}
-			log.Error(err, "failed to get hostedcluster")
-			return false, nil
-		}
-		done := len(hostedCluster.Finalizers) == 1 && hostedCluster.Finalizers[0] == destroyFinalizer
-		return done, nil
-	}, clusterDeleteCtx.Done())
-	if err != nil {
-		return fmt.Errorf("hostedcluster was't finalized, can't delete infrastructure: %w", err)
+	} else {
+		infraID = hostedCluster.Spec.InfraID
+		baseDomain = hostedCluster.Spec.DNS.BaseDomain
+		region = hostedCluster.Spec.Platform.AWS.Region
+		hostedClusterExists = true
+		log.Info("Found hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "infraID", infraID, "region", region, "baseDomain", baseDomain)
 	}
 
-	log.Info("destroying infrastructure", "infraID", hostedCluster.Spec.InfraID)
+	var inputErrors []error
+	if len(infraID) == 0 {
+		inputErrors = append(inputErrors, fmt.Errorf("infrastructure ID is required"))
+	}
+	if len(baseDomain) == 0 {
+		inputErrors = append(inputErrors, fmt.Errorf("base domain is required"))
+	}
+	if len(region) == 0 {
+		inputErrors = append(inputErrors, fmt.Errorf("region is required"))
+	}
+	if err := errors.NewAggregate(inputErrors); err != nil {
+		return fmt.Errorf("required inputs are missing: %w", err)
+	}
+
+	// If the hosted cluster exists, add a finalizer, delete it, and wait for
+	// the cluster to be cleaned up before destroying its infrastructure.
+	if hostedClusterExists {
+		controllerutil.AddFinalizer(&hostedCluster, destroyFinalizer)
+		if err := c.Update(ctx, &hostedCluster); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("Hosted cluster not found, skipping finalizer update", "namespace", o.Namespace, "name", o.Name)
+			} else {
+				return fmt.Errorf("failed to add finalizer to hosted cluster: %w", err)
+			}
+		} else {
+			log.Info("Updated finalizer for hosted cluster", "namespace", o.Namespace, "name", o.Name)
+		}
+		log.Info("Deleting hosted cluster", "namespace", o.Namespace, "name", o.Name)
+		if err := c.Delete(ctx, &hostedCluster); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("Hosted not found, skipping delete", "namespace", o.Namespace, "name", o.Name)
+			} else {
+				return fmt.Errorf("failed to delete hostedcluster: %w", err)
+			}
+		}
+		// Wait for the hosted cluster to have only the CLI's finalizer remaining,
+		// which should indicate the cluster was successfully torn down.
+		clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
+		defer clusterDeleteCtxCancel()
+		err := wait.PollUntil(1*time.Second, func() (bool, error) {
+			if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
+				if apierrors.IsNotFound(err) {
+					return true, nil
+				}
+				log.Error(err, "Failed to get hosted cluster", "namespace", o.Namespace, "name", o.Name)
+				return false, nil
+			}
+			done := len(hostedCluster.Finalizers) == 1 && hostedCluster.Finalizers[0] == destroyFinalizer
+			return done, nil
+		}, clusterDeleteCtx.Done())
+		if err != nil {
+			return fmt.Errorf("hostedcluster was't finalized, aborting delete: %w", err)
+		}
+	}
+
+	log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
-		Region:             hostedCluster.Spec.Platform.AWS.Region,
-		InfraID:            hostedCluster.Spec.InfraID,
+		Region:             region,
+		InfraID:            infraID,
 		AWSCredentialsFile: o.AWSCredentialsFile,
-		Name:               hostedCluster.GetName(),
-		BaseDomain:         hostedCluster.Spec.DNS.BaseDomain,
+		Name:               o.Name,
+		BaseDomain:         baseDomain,
 		EC2Client:          o.EC2Client,
 		Route53Client:      o.Route53Client,
 		ELBClient:          o.ELBClient,
@@ -160,11 +200,11 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 	}
 
 	if !o.PreserveIAM {
-		log.Info("destroying IAM")
+		log.Info("Destroying IAM", "infraID", infraID)
 		destroyOpts := awsinfra.DestroyIAMOptions{
-			Region:             hostedCluster.Spec.Platform.AWS.Region,
+			Region:             region,
 			AWSCredentialsFile: o.AWSCredentialsFile,
-			InfraID:            hostedCluster.Spec.InfraID,
+			InfraID:            infraID,
 			IAMClient:          o.IAMClient,
 			S3Client:           o.S3Client,
 		}
@@ -173,11 +213,17 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		}
 	}
 
-	controllerutil.RemoveFinalizer(&hostedCluster, destroyFinalizer)
-	if err := c.Update(ctx, &hostedCluster); err != nil {
-		return fmt.Errorf("failed to remove finalizer: %w", err)
+	if hostedClusterExists {
+		controllerutil.RemoveFinalizer(&hostedCluster, destroyFinalizer)
+		if err := c.Update(ctx, &hostedCluster); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to remove finalizer: %w", err)
+			}
+		} else {
+			log.Info("Finalized hosted cluster", "namespace", o.Namespace, "name", o.Name)
+		}
 	}
 
-	log.Info("successfully destroyed cluster and infrastructure")
+	log.Info("Successfully destroyed cluster and infrastructure", "namespace", o.Namespace, "name", o.Name, "infraID", infraID)
 	return nil
 }

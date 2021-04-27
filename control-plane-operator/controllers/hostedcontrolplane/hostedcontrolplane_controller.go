@@ -271,7 +271,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		Port: infraStatus.APIPort,
 	}
 
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage)
+	r.Log.Info("Looking up release image metadata", "image", hostedControlPlane.Spec.ReleaseImage)
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer lookupCancel()
+	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
 	if err != nil {
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ReleaseInfoLookupFailed", err.Error(), ctrl.Result{}, fmt.Errorf("failed to look up release info: %w", err))
 	}
@@ -279,7 +282,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "InvalidComponentVersion", err.Error(), ctrl.Result{}, fmt.Errorf("invalid component versions found in release info: %w", err))
 	}
-	r.Log.Info("found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", releaseImage.ComponentImages(), "componentVersions", componentVersions)
+	r.Log.Info("Found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", releaseImage.ComponentImages(), "componentVersions", componentVersions)
 
 	if hostedControlPlane.Status.Version == "" {
 		hostedControlPlane.Status.Version = releaseImage.Version()
