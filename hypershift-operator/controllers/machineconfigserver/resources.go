@@ -9,9 +9,9 @@ import (
 func MachineConfigServerServicePorts() []corev1.ServicePort {
 	return []corev1.ServicePort{
 		{
-			Name:       "http",
+			Name:       "https",
 			Protocol:   corev1.ProtocolTCP,
-			Port:       80,
+			Port:       443,
 			TargetPort: intstr.FromInt(8081),
 		},
 	}
