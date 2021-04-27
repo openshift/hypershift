@@ -7,13 +7,14 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"math/big"
 	"math/rand"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	rbacv1 "k8s.io/api/rbac/v1"
 
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
@@ -1143,7 +1144,7 @@ func (r *HostedControlPlaneReconciler) updateStatusVPNServerServiceNodePort(ctx 
 	}
 	r.Log.Info("Fetched vpn service nodePort", "nodePort", svc.Spec.Ports[0].NodePort)
 	status.VPNAddress = servicePublishingStrategyMapping.NodePort.Address
-	status.VPNPort = vpnServicePort
+	status.VPNPort = svc.Spec.Ports[0].NodePort
 	return nil
 }
 
