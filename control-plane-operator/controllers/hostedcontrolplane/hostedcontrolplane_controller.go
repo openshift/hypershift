@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"math/big"
 	"math/rand"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
-	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/record"
@@ -56,21 +55,14 @@ import (
 const (
 	finalizer                  = "hypershift.openshift.io/finalizer"
 	controlPlaneAnnotation     = "hypershift.openshift.io/hosted-control-plane"
-	APIServerPort              = 6443
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
-	kubeAPIServerServiceName   = "kube-apiserver"
-	vpnServiceName             = "openvpn-server"
-	oauthServiceName           = "oauth-openshift"
 	pullSecretName             = "pull-secret"
 	vpnServiceAccountName      = "vpn"
 	ingressOperatorNamespace   = "openshift-ingress-operator"
 	hypershiftRouteLabel       = "hypershift.openshift.io/cluster"
 	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
 	DefaultAPIServerIPAddress  = "172.20.0.1"
-	externalOauthPort          = 443
-	vpnServicePort             = 1194
-
 	etcdOperatorImage          = "quay.io/coreos/etcd-operator:v0.9.4"
 	etcdVersion                = "3.4.9"
 	etcdClusterSize            = 1
@@ -276,7 +268,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
 		Host: infraStatus.APIAddress,
-		Port: APIServerPort,
+		Port: infraStatus.APIPort,
 	}
 
 	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage)
@@ -426,28 +418,25 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 				if serviceItr.ServicePublishingStrategy.NodePort == nil {
 					return status, fmt.Errorf("nodeport metadata not defined for servicetype: %s", serviceItr.Service)
 				}
-				r.Log.Info("Creating nodePort Kube API service")
-				apiService, err := r.reconcileKubeAPIServerServiceNodePort(ctx, hcp, targetNamespace, *serviceItr.ServicePublishingStrategy.NodePort)
-				if err != nil {
-					return status, fmt.Errorf("failed to reconcile Kube API service: %w", err)
+				r.Log.Info("Reconciling nodePort Kube API service")
+				if err := r.reconcileKubeAPIServerServiceNodePortResources(ctx, hcp, targetNamespace, *serviceItr.ServicePublishingStrategy.NodePort); err != nil {
+					return status, fmt.Errorf("error reconciling service for kube apiserver: %w", err)
 				}
-				r.Log.Info("Fetched Kube API service nodePort", "nodePort", apiService.Spec.Ports[0].NodePort)
-				status.APIAddress = serviceItr.ServicePublishingStrategy.NodePort.Address
-				status.APIPort = apiService.Spec.Ports[0].NodePort
+				r.Log.Info("Reconciled nodePort Kube API service. Updating status")
+				if err := r.updateStatusKubeAPIServerServiceNodePort(ctx, targetNamespace, serviceItr, &status); err != nil {
+					return status, fmt.Errorf("updating status for kube apiserver: %w", err)
+				}
+				r.Log.Info("Updated status for nodePort Kube API service")
 			case hyperv1.LoadBalancer:
-				r.Log.Info("Creating LoadBalancer Kube API service")
-				apiService, err := createKubeAPIServerService(r, hcp, targetNamespace)
-				if err != nil {
-					return status, fmt.Errorf("failed to create Kube API service: %w", err)
+				r.Log.Info("Reconciling LoadBalancer Kube API service")
+				if err := r.reconcileKubeAPIServerServiceLoadBalancerResources(ctx, hcp, targetNamespace, &status); err != nil {
+					return status, fmt.Errorf("error reconciling service for kube apiserver: %w", err)
 				}
-
-				r.Log.Info("Fetching Kube API service information")
-				apiAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(apiService))
-				if err != nil {
-					return status, fmt.Errorf("error getting api service info: %w", err)
+				r.Log.Info("Reconciled LoadBalancer Kube API service. Updating status")
+				if err := r.updateStatusKubeAPIServerServiceLoadBalancer(ctx, targetNamespace, &status); err != nil {
+					return status, fmt.Errorf("error updating status for kube apiserver: %w", err)
 				}
-				status.APIAddress = apiAddress
-				status.APIPort = APIServerPort
+				r.Log.Info("Updated status for LoadBalancer Kube API service")
 			default:
 				return status, fmt.Errorf("unsupported servicetype %s for service: %s", serviceItr.ServicePublishingStrategy.Type, serviceItr.Service)
 			}
@@ -457,27 +446,26 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 				if serviceItr.ServicePublishingStrategy.NodePort == nil {
 					return status, fmt.Errorf("nodeport metadata not defined for servicetype: %s", serviceItr.Service)
 				}
-				r.Log.Info("reconciling nodePort VPN service")
-				vpnService, err := r.reconcileVPNServerServiceNodePort(ctx, hcp, targetNamespace, *serviceItr.ServicePublishingStrategy.NodePort)
-				if err != nil {
+				r.Log.Info("Reconciling nodePort VPN service")
+				if err := r.reconcileVPNServerServiceNodePortResources(ctx, hcp, targetNamespace, *serviceItr.ServicePublishingStrategy.NodePort); err != nil {
+					return status, fmt.Errorf("error reconciling service for vpn: %w", err)
+
+				}
+				r.Log.Info("Reconciled nodePort VPN service. Updating status")
+				if err := r.updateStatusVPNServerServiceNodePort(ctx, targetNamespace, serviceItr, &status); err != nil {
+					return status, fmt.Errorf("error updating status for vpn: %w", err)
+				}
+				r.Log.Info("Updated status for nodePort VPN service")
+			case hyperv1.LoadBalancer:
+				r.Log.Info("Reconciling LoadBalancer VPN service")
+				if err := r.reconcileVPNServerServiceLoadBalancerResources(ctx, hcp, targetNamespace, &status); err != nil {
 					return status, fmt.Errorf("error reconciling service for vpn: %w", err)
 				}
-				r.Log.Info("Fetched VPN service nodePort", "nodePort", vpnService.Spec.Ports[0].NodePort)
-				status.VPNAddress = serviceItr.ServicePublishingStrategy.NodePort.Address
-				status.VPNPort = vpnService.Spec.Ports[0].NodePort
-			case hyperv1.LoadBalancer:
-				r.Log.Info("Creating VPN service")
-				vpnService, err := createVPNServerService(r, hcp, targetNamespace)
-				if err != nil {
-					return status, fmt.Errorf("error creating service for vpn: %w", err)
+				r.Log.Info("Reconciled LoadBalancer VPN service. Updating status")
+				if err := r.updateStatusVPNServerServiceLoadBalancer(ctx, targetNamespace, &status); err != nil {
+					return status, fmt.Errorf("error updating status for vpn: %w", err)
 				}
-				r.Log.Info("Fetching VPN service info")
-				vpnAddress, err := getLoadBalancerServiceAddress(r, ctx, client.ObjectKeyFromObject(vpnService))
-				if err != nil {
-					return status, fmt.Errorf("error getting vpn service nodeport: %w", err)
-				}
-				status.VPNAddress = vpnAddress
-				status.VPNPort = vpnServicePort
+				r.Log.Info("Updated status for LoadBalancer VPN service")
 			default:
 				return status, fmt.Errorf("unsupported servicetype %s for service: %s", serviceItr.ServicePublishingStrategy.Type, serviceItr.Service)
 			}
@@ -488,32 +476,24 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 					return status, fmt.Errorf("nodeport metadata not defined for servicetype: %s", serviceItr.Service)
 				}
 				r.Log.Info("Reconciling nodePort OAuth service")
-				oauthService, err := r.reconcileOauthServiceNodePort(ctx, hcp, targetNamespace, *serviceItr.ServicePublishingStrategy.NodePort)
-				if err != nil {
-					return status, fmt.Errorf("error reconciling service for oauth: %w", err)
+				if err := r.reconcileOauthServiceNodePortResources(ctx, hcp, targetNamespace, *serviceItr.ServicePublishingStrategy.NodePort); err != nil {
+					return status, fmt.Errorf("error reconciling service for oauth server: %w", err)
 				}
-				r.Log.Info("Fetched OAuth nodePort", "nodePort", oauthService.Spec.Ports[0].NodePort)
-				status.OAuthAddress = serviceItr.ServicePublishingStrategy.NodePort.Address
-				status.OAuthPort = oauthService.Spec.Ports[0].NodePort
+				r.Log.Info("Reconciled nodePort OAuth service. Updating status")
+				if err := r.updateStatusOauthServerServiceNodePort(ctx, targetNamespace, serviceItr, &status); err != nil {
+					return status, fmt.Errorf("error updating status for oauth server: %w", err)
+				}
+				r.Log.Info("Updated status for nodePort OAuth service")
 			case hyperv1.Route:
-				r.Log.Info("Creating OAuth service")
-				_, err := createOauthService(r, hcp, targetNamespace)
-				if err != nil {
-					return status, fmt.Errorf("error creating service for oauth: %w", err)
+				r.Log.Info("Reconciling OAuth route servicetype resources")
+				if err := r.reconcileOauthServerServiceRouteResources(ctx, hcp, targetNamespace); err != nil {
+					return status, fmt.Errorf("error reconciling oauth route servicetype resources: %w", err)
 				}
-				r.Log.Info("Creating OAuth server route")
-				oauthRoute := createOauthServerRoute(targetNamespace)
-				oauthRoute.OwnerReferences = ensureHCPOwnerRef(hcp, oauthRoute.OwnerReferences)
-				if err := r.Create(ctx, oauthRoute); err != nil && !apierrors.IsAlreadyExists(err) {
-					return status, fmt.Errorf("failed to create oauth server route: %w", err)
+				r.Log.Info("Reconciled OAuth route servicetype resources. Updating status")
+				if err := r.updateStatusOauthServerServiceRoute(ctx, targetNamespace, &status); err != nil {
+					return status, fmt.Errorf("error updating status for oauth route servicetype resources: %w", err)
 				}
-				r.Log.Info("Fetching OAuth server route information")
-				oauthAddress, err := getRouteAddress(r, ctx, client.ObjectKeyFromObject(oauthRoute))
-				if err != nil {
-					return status, fmt.Errorf("failed get get route address: %w", err)
-				}
-				status.OAuthAddress = oauthAddress
-				status.OAuthPort = 443
+				r.Log.Info("Updated status for OAuth route servicetype resources")
 			default:
 				return status, fmt.Errorf("unsupported servicetype %s for service: %s", serviceItr.ServicePublishingStrategy.Type, serviceItr.Service)
 			}
@@ -521,24 +501,15 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 			return status, fmt.Errorf("unknown service specified: %s", serviceItr.Service)
 		}
 	}
-
-	r.Log.Info("Creating Openshift API service")
-	openshiftAPIService, err := createOpenshiftService(r, hcp, targetNamespace)
-	if err != nil {
-		return status, fmt.Errorf("failed to create openshift server service: %w", err)
+	r.Log.Info("Reconciling Openshift API service")
+	if err := r.reconcileOpenshiftAPIServerServiceResources(ctx, hcp, targetNamespace, &status); err != nil {
+		return status, fmt.Errorf("error reconciling openshift api service: %w", err)
 	}
-	r.Log.Info("Created Openshift API service")
 
-	r.Log.Info("Creating Openshift OAuth API service")
-	oauthAPIService, err := createOauthAPIService(r, hcp, targetNamespace)
-	if err != nil {
-		return status, fmt.Errorf("failed to create openshift oauth api service: %w", err)
+	r.Log.Info("Reconciling OAuth API service")
+	if err := r.reconcileOauthAPIServerServiceResources(ctx, hcp, targetNamespace, &status); err != nil {
+		return status, fmt.Errorf("error reconciling oauth api service: %w", err)
 	}
-	r.Log.Info("Created Openshift Oauth API service")
-
-	status.OpenShiftAPIAddress = openshiftAPIService.Spec.ClusterIP
-	status.OauthAPIServerAddress = oauthAPIService.Spec.ClusterIP
-
 	return status, nil
 }
 
@@ -643,7 +614,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	if err != nil {
 		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
 	}
-	r.Log.Info(fmt.Sprintf("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIAddress, APIServerPort)))
+	r.Log.Info(fmt.Sprintf("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIAddress, infraStatus.APIPort)))
 	r.Log.Info(fmt.Sprintf("Kubeconfig is available in secret admin-kubeconfig in the %s namespace", hcp.GetNamespace()))
 	r.Log.Info(fmt.Sprintf("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", fmt.Sprintf("apps.%s", baseDomain))))
 	r.Log.Info(fmt.Sprintf("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", targetNamespace))
@@ -796,7 +767,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		}
 	}
 
-	params.InternalAPIPort = APIServerPort
+	params.InternalAPIPort = defaultAPIServerPort
 	params.IssuerURL = hcp.Spec.IssuerURL
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
@@ -940,32 +911,8 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	return manifests, nil
 }
 
-func createKubeAPIServerService(client client.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = kubeAPIServerServiceName
-	svc.Spec.Selector = map[string]string{"app": "kube-apiserver"}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
-	svc.Spec.Ports = []corev1.ServicePort{
-		{
-			Port:       6443,
-			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(6443),
-		},
-	}
-	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-	if err := client.Create(context.TODO(), svc); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return nil, fmt.Errorf("failed to create api server service: %w", err)
-		}
-	}
-	return svc, nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServerServiceNodePort(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = kubeAPIServerServiceName
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServerServiceNodePortResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) error {
+	svc := manifests.KubeAPIServerService(namespace)
 	var nodePort int32 = 0
 	if nodePortMetadata.Port > 0 {
 		nodePort = nodePortMetadata.Port
@@ -973,7 +920,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServerServiceNodePort(ctx
 	var kubeAPIServerServiceData corev1.Service
 	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, &kubeAPIServerServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return svc, err
+		return err
 	}
 	if len(kubeAPIServerServiceData.Spec.Ports) > 0 && kubeAPIServerServiceData.Spec.Ports[0].NodePort > 0 {
 		r.Log.Info("Preserving existing nodePort for service", "nodePort", kubeAPIServerServiceData.Spec.Ports[0].NodePort)
@@ -981,68 +928,217 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServerServiceNodePort(ctx
 	}
 	r.Log.Info("Updating KubeAPI service")
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.Spec.Ports = []corev1.ServicePort{
-			{
-				Port:       6443,
-				Protocol:   corev1.ProtocolTCP,
-				TargetPort: intstr.FromInt(6443),
-			},
-		}
-		if nodePort > 0 {
-			svc.Spec.Ports[0].NodePort = nodePort
-		}
-		svc.Spec.Selector = map[string]string{"app": "kube-apiserver"}
-		svc.Spec.Type = corev1.ServiceTypeNodePort
 		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-		return nil
+		return reconcileKubeAPIServerServiceNodePort(svc, nodePort)
 	})
-	if err != nil {
-		return svc, err
-	}
+	return err
+}
+
+func (r *HostedControlPlaneReconciler) updateStatusKubeAPIServerServiceNodePort(ctx context.Context, namespace string, servicePublishingStrategyMapping hyperv1.ServicePublishingStrategyMapping, status *InfrastructureStatus) error {
 	r.Log.Info("Retrieving KubeAPI service to get nodePort value")
+	svc := manifests.KubeAPIServerService(namespace)
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
-		return svc, err
+		return err
 	}
 	if !(svc.Spec.Ports[0].NodePort > 0) {
-		return svc, fmt.Errorf("nodePort not populated")
+		return fmt.Errorf("nodePort not populated")
 	}
-	return svc, err
+	r.Log.Info("Fetched Kube API service nodePort", "nodePort", svc.Spec.Ports[0].NodePort)
+	status.APIAddress = servicePublishingStrategyMapping.NodePort.Address
+	status.APIPort = svc.Spec.Ports[0].NodePort
+	return nil
 }
 
-func createVPNServerService(client client.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = vpnServiceName
-	svc.Spec.Selector = map[string]string{"app": "openvpn-server"}
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
-	svc.Spec.Ports = []corev1.ServicePort{
-		{
-			Port:       vpnServicePort,
-			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(vpnServicePort),
-		},
+func reconcileKubeAPIServerServiceNodePort(svc *corev1.Service, nodePort int32) error {
+	svc.Spec.Ports = KubeAPIServerServicePorts(defaultAPIServerPort)
+	if nodePort > 0 {
+		svc.Spec.Ports[0].NodePort = nodePort
 	}
-	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-	if err := client.Create(context.TODO(), svc); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return nil, fmt.Errorf("failed to create vpn server service: %w", err)
+	svc.Spec.Selector = KubeAPIServerServiceSelector()
+	svc.Spec.Type = corev1.ServiceTypeNodePort
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServerServiceLoadBalancerResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, status *InfrastructureStatus) error {
+	svc := manifests.KubeAPIServerService(namespace)
+	var kubeAPIServerServiceData corev1.Service
+	var existingNodePort int32 = 0
+	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, &kubeAPIServerServiceData); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	if len(kubeAPIServerServiceData.Spec.Ports) > 0 && kubeAPIServerServiceData.Spec.Ports[0].NodePort > 0 {
+		r.Log.Info("Preserving existing nodePort for service", "nodePort", kubeAPIServerServiceData.Spec.Ports[0].NodePort)
+		existingNodePort = kubeAPIServerServiceData.Spec.Ports[0].NodePort
+	}
+	r.Log.Info("Updating KubeAPI service")
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
+		return reconcileKubeAPIServerServiceLoadBalancer(svc, existingNodePort)
+	})
+	return err
+}
+
+func (r *HostedControlPlaneReconciler) updateStatusKubeAPIServerServiceLoadBalancer(ctx context.Context, namespace string, status *InfrastructureStatus) error {
+	r.Log.Info("Retrieving KubeAPI service to get load balancer info")
+	svc := manifests.KubeAPIServerService(namespace)
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
+		return err
+	}
+	var addr string
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		switch {
+		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
+			addr = svc.Status.LoadBalancer.Ingress[0].Hostname
+		case svc.Status.LoadBalancer.Ingress[0].IP != "":
+			addr = svc.Status.LoadBalancer.Ingress[0].IP
 		}
 	}
-	return svc, nil
+	r.Log.Info("Retrieved load balancer info", "serviceName", svc.Name, "address", addr)
+	status.APIAddress = addr
+	status.APIPort = defaultAPIServerPort
+	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceNodePort(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = vpnServiceName
-	var nodePort int32 = 0
+func reconcileKubeAPIServerServiceLoadBalancer(svc *corev1.Service, existingNodePort int32) error {
+	svc.Spec.Ports = KubeAPIServerServicePorts(defaultAPIServerPort)
+	if existingNodePort > 0 {
+		svc.Spec.Ports[0].NodePort = existingNodePort
+	}
+	svc.Spec.Selector = KubeAPIServerServiceSelector()
+	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) updateStatusOauthServerServiceRoute(ctx context.Context, namespace string, status *InfrastructureStatus) error {
+	r.Log.Info("Gathering route metadata")
+	routeInstance := manifests.OauthServerRoute(namespace)
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: routeInstance.Namespace, Name: routeInstance.Name}, routeInstance); err != nil {
+		return err
+	}
+	var addr = routeInstance.Spec.Host
+	r.Log.Info("Retrieved route  info", "routeName", routeInstance.Name, "address", addr)
+	status.OAuthAddress = addr
+	status.OAuthPort = 443
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOauthServerServiceRouteResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string) error {
+	svc := manifests.OauthServerService(namespace)
+	r.Log.Info("Updating oauth service")
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
+		return r.reconcileOauthServiceClusterIP(svc)
+	})
+	if err != nil {
+		return err
+	}
+	r.Log.Info("Updated oauth service. Proceeding to update oauth route")
+	routeInstance := manifests.OauthServerRoute(namespace)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, routeInstance, func() error {
+		routeInstance.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
+		return reconcileOauthServerRoute(routeInstance)
+	})
+	return err
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOauthServiceClusterIP(svc *corev1.Service) error {
+	svc.Spec.Ports = OauthServerServicePorts()
+	svc.Spec.Selector = OauthServerServiceSelector()
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
+	return nil
+}
+
+func reconcileOauthServerRoute(routeInstance *routev1.Route) error {
+	routeInstance.Spec = routev1.RouteSpec{
+		To: routev1.RouteTargetReference{
+			Kind: "Service",
+			Name: manifests.OauthServiceName,
+		},
+		TLS: &routev1.TLSConfig{
+			Termination:                   routev1.TLSTerminationPassthrough,
+			InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+		},
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceLoadBalancerResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, status *InfrastructureStatus) error {
+	svc := manifests.VPNServerService(namespace)
+	var existingNodePort int32 = 0
+	var vpnServerServiceData corev1.Service
+	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, &vpnServerServiceData); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	if len(vpnServerServiceData.Spec.Ports) > 0 && vpnServerServiceData.Spec.Ports[0].NodePort > 0 {
+		r.Log.Info("Preserving existing nodePort for service", "nodePort", vpnServerServiceData.Spec.Ports[0].NodePort)
+		existingNodePort = vpnServerServiceData.Spec.Ports[0].NodePort
+	}
+	r.Log.Info("Updating openVPN service")
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
+		return reconcileVPNServerServiceLoadBalancer(svc, existingNodePort)
+	})
+	return err
+}
+
+func reconcileVPNServerServiceLoadBalancer(svc *corev1.Service, existingNodePort int32) error {
+	svc.Spec.Ports = VPNServerServicePorts()
+	if existingNodePort > 0 {
+		svc.Spec.Ports[0].NodePort = existingNodePort
+	}
+	svc.Spec.Selector = VPNServerServiceSelector()
+	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) updateStatusVPNServerServiceLoadBalancer(ctx context.Context, namespace string, status *InfrastructureStatus) error {
+	r.Log.Info("Retrieving openVPN service to get load balancer info")
+	svc := manifests.VPNServerService(namespace)
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
+		return err
+	}
+	var addr string
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		switch {
+		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
+			addr = svc.Status.LoadBalancer.Ingress[0].Hostname
+		case svc.Status.LoadBalancer.Ingress[0].IP != "":
+			addr = svc.Status.LoadBalancer.Ingress[0].IP
+		}
+	}
+	r.Log.Info("Retrieved load balancer info", "serviceName", svc.Name, "address", addr)
+	status.VPNAddress = addr
+	status.VPNPort = vpnServicePort
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) updateStatusVPNServerServiceNodePort(ctx context.Context, namespace string, servicePublishingStrategyMapping hyperv1.ServicePublishingStrategyMapping, status *InfrastructureStatus) error {
+	r.Log.Info("Retrieving openVPN service to get nodePort value")
+	svc := manifests.VPNServerService(namespace)
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
+		return err
+	}
+	if !(svc.Spec.Ports[0].NodePort > 0) {
+		return fmt.Errorf("nodePort not populated")
+	}
+	r.Log.Info("Fetched vpn service nodePort", "nodePort", svc.Spec.Ports[0].NodePort)
+	status.VPNAddress = servicePublishingStrategyMapping.NodePort.Address
+	status.VPNPort = vpnServicePort
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceNodePortResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) error {
+	svc := manifests.VPNServerService(namespace)
+	var nodePort int32
 	if nodePortMetadata.Port > 0 {
 		nodePort = nodePortMetadata.Port
 	}
 	var openVPNServerServiceData corev1.Service
 	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, &openVPNServerServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return svc, err
+		return err
 	}
 	if len(openVPNServerServiceData.Spec.Ports) > 0 && openVPNServerServiceData.Spec.Ports[0].NodePort > 0 {
 		r.Log.Info("Preserving existing nodePort for service", "nodePort", openVPNServerServiceData.Spec.Ports[0].NodePort)
@@ -1050,110 +1146,74 @@ func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceNodePort(ctx con
 	}
 	r.Log.Info("Updating openVPN service")
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.Spec.Ports = []corev1.ServicePort{
-			{
-				Port:       vpnServicePort,
-				Protocol:   corev1.ProtocolTCP,
-				TargetPort: intstr.FromInt(vpnServicePort),
-			},
-		}
-		if nodePort > 0 {
-			svc.Spec.Ports[0].NodePort = nodePort
-		}
-		svc.Spec.Selector = map[string]string{"app": "openvpn-server"}
-		svc.Spec.Type = corev1.ServiceTypeNodePort
 		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-		return nil
+		return reconcileVPNServerServiceNodePort(svc, nodePort)
+	})
+	return err
+}
+
+func reconcileVPNServerServiceNodePort(svc *corev1.Service, nodePort int32) error {
+	svc.Spec.Ports = VPNServerServicePorts()
+	if nodePort > 0 {
+		svc.Spec.Ports[0].NodePort = nodePort
+	}
+	svc.Spec.Selector = VPNServerServiceSelector()
+	svc.Spec.Type = corev1.ServiceTypeNodePort
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOpenshiftAPIServerServiceResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, status *InfrastructureStatus) error {
+	svc := manifests.OpenshiftAPIServerService(namespace)
+	r.Log.Info("Updating openshift apiserver service")
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
+		return reconcileOpenshiftAPIServerServiceClusterIP(svc)
 	})
 	if err != nil {
-		return svc, err
+		return err
 	}
-	r.Log.Info("Retrieving openVPN service to get nodePort value")
+	r.Log.Info("Retrieving openshift apiserver service data")
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
-		return svc, err
+		return err
 	}
-	if !(svc.Spec.Ports[0].NodePort > 0) {
-		return svc, fmt.Errorf("node port not populated")
-	}
-	return svc, err
+	status.OpenShiftAPIAddress = svc.Spec.ClusterIP
+	return nil
 }
 
-func createOpenshiftService(c client.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = "openshift-apiserver"
-	svc.Spec.Selector = map[string]string{"app": "openshift-apiserver"}
+func reconcileOpenshiftAPIServerServiceClusterIP(svc *corev1.Service) error {
+	svc.Spec.Selector = OpenshiftAPIServerServiceSelector()
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.Ports = []corev1.ServicePort{
-		{
-			Name:       "https",
-			Port:       443,
-			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(8443),
-		},
-	}
-	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-	if err := c.Create(context.TODO(), svc); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			return svc, c.Get(context.TODO(), client.ObjectKeyFromObject(svc), svc)
-		} else {
-			return nil, fmt.Errorf("failed to create openshift service: %w", err)
-		}
-	}
-	return svc, nil
+	svc.Spec.Ports = OpenshiftAPIServerServicePorts()
+	return nil
 }
 
-func createOauthAPIService(c client.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = "openshift-oauth-apiserver"
-	svc.Spec.Selector = map[string]string{"app": "openshift-oauth-apiserver"}
+func (r *HostedControlPlaneReconciler) reconcileOauthAPIServerServiceResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, status *InfrastructureStatus) error {
+	svc := manifests.OauthAPIServerService(namespace)
+	r.Log.Info("Updating oauth apiserver service")
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
+		return reconcileOauthAPIServerClusterIP(svc)
+	})
+	if err != nil {
+		return err
+	}
+	r.Log.Info("Retrieving oauth apiserver service data")
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
+		return err
+	}
+	status.OauthAPIServerAddress = svc.Spec.ClusterIP
+	return nil
+}
+
+func reconcileOauthAPIServerClusterIP(svc *corev1.Service) error {
+	svc.Spec.Selector = OauthAPIServerServiceSelector()
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.Ports = []corev1.ServicePort{
-		{
-			Name:       "https",
-			Port:       443,
-			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(8443),
-		},
-	}
-	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-	if err := c.Create(context.TODO(), svc); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			return svc, c.Get(context.TODO(), client.ObjectKeyFromObject(svc), svc)
-		} else {
-			return nil, fmt.Errorf("failed to create openshift service: %w", err)
-		}
-	}
-	return svc, nil
+	svc.Spec.Ports = OauthAPIServerServicePorts()
+	return nil
 }
 
-func createOauthService(client client.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = oauthServiceName
-	svc.Spec.Selector = map[string]string{"app": "oauth-openshift"}
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.Ports = []corev1.ServicePort{
-		{
-			Name:       "https",
-			Port:       443,
-			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(6443),
-		},
-	}
-	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-	err := client.Create(context.TODO(), svc)
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return nil, fmt.Errorf("failed to create oauth service: %w", err)
-	}
-	return svc, nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileOauthServiceNodePort(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = oauthServiceName
+func (r *HostedControlPlaneReconciler) reconcileOauthServiceNodePortResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) error {
+	svc := manifests.OauthServerService(namespace)
 	var nodePort int32 = 0
 	if nodePortMetadata.Port > 0 {
 		nodePort = nodePortMetadata.Port
@@ -1161,7 +1221,7 @@ func (r *HostedControlPlaneReconciler) reconcileOauthServiceNodePort(ctx context
 	var oauthServerServiceData corev1.Service
 	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, &oauthServerServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return svc, err
+		return err
 	}
 	if len(oauthServerServiceData.Spec.Ports) > 0 && oauthServerServiceData.Spec.Ports[0].NodePort > 0 {
 		r.Log.Info("Preserving existing nodePort for service", "nodePort", oauthServerServiceData.Spec.Ports[0].NodePort)
@@ -1169,33 +1229,35 @@ func (r *HostedControlPlaneReconciler) reconcileOauthServiceNodePort(ctx context
 	}
 	r.Log.Info("Updating oauth service")
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.Spec.Ports = []corev1.ServicePort{
-			{
-				Name:       "https",
-				Port:       443,
-				Protocol:   corev1.ProtocolTCP,
-				TargetPort: intstr.FromInt(6443),
-			},
-		}
-		if nodePort > 0 {
-			svc.Spec.Ports[0].NodePort = nodePort
-		}
-		svc.Spec.Selector = map[string]string{"app": "oauth-openshift"}
-		svc.Spec.Type = corev1.ServiceTypeNodePort
 		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-		return nil
+		return reconcileOauthServiceNodePort(svc, nodePort)
 	})
-	if err != nil {
-		return svc, err
-	}
-	r.Log.Info("Retrieving oauth service to get nodePort value")
+	return err
+}
+
+func (r *HostedControlPlaneReconciler) updateStatusOauthServerServiceNodePort(ctx context.Context, namespace string, servicePublishingStrategyMapping hyperv1.ServicePublishingStrategyMapping, status *InfrastructureStatus) error {
+	r.Log.Info("Gathering oauth server service nodeport data")
+	svc := manifests.OauthServerService(namespace)
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
-		return svc, err
+		return err
 	}
 	if !(svc.Spec.Ports[0].NodePort > 0) {
-		return svc, fmt.Errorf("node port not populated")
+		return fmt.Errorf("node port not populated")
 	}
-	return svc, err
+	r.Log.Info("Retrieved nodePort info", "serviceName", svc.Name, "nodePort", svc.Spec.Ports[0].NodePort)
+	status.OAuthAddress = servicePublishingStrategyMapping.NodePort.Address
+	status.OAuthPort = svc.Spec.Ports[0].NodePort
+	return nil
+}
+
+func reconcileOauthServiceNodePort(svc *corev1.Service, nodePort int32) error {
+	svc.Spec.Ports = OauthServerServicePorts()
+	if nodePort > 0 {
+		svc.Spec.Ports[0].NodePort = nodePort
+	}
+	svc.Spec.Selector = OauthServerServiceSelector()
+	svc.Spec.Type = corev1.ServiceTypeNodePort
+	return nil
 }
 
 func ensureVPNSCC(c client.Client, hcp *hyperv1.HostedControlPlane, namespace string) error {
@@ -1225,83 +1287,6 @@ func ensureVPNSCC(c client.Client, hcp *hyperv1.HostedControlPlane, namespace st
 		return nil
 	})
 	return err
-}
-
-func ensureDefaultIngressControllerSelector(c client.Client) error {
-	defaultIC := &operatorv1.IngressController{}
-	if err := c.Get(context.TODO(), client.ObjectKey{Namespace: ingressOperatorNamespace, Name: "default"}, defaultIC); err != nil {
-		return fmt.Errorf("failed to fetch default ingress controller: %w", err)
-	}
-	routeSelector := defaultIC.Spec.RouteSelector
-	if routeSelector == nil {
-		routeSelector = &metav1.LabelSelector{}
-	}
-	found := false
-	for _, exp := range routeSelector.MatchExpressions {
-		if exp.Key == hypershiftRouteLabel && exp.Operator == metav1.LabelSelectorOpDoesNotExist {
-			found = true
-			break
-		}
-	}
-	if !found {
-		routeSelector.MatchExpressions = append(routeSelector.MatchExpressions, metav1.LabelSelectorRequirement{
-			Key:      hypershiftRouteLabel,
-			Operator: metav1.LabelSelectorOpDoesNotExist,
-		})
-		defaultIC.Spec.RouteSelector = routeSelector
-		if err := c.Update(context.TODO(), defaultIC); err != nil {
-			return fmt.Errorf("failed to update default ingress controller: %w", err)
-		}
-	}
-	return nil
-}
-
-func createOauthServerRoute(namespace string) *routev1.Route {
-	return &routev1.Route{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      "oauth",
-		},
-		Spec: routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: "oauth-openshift",
-			},
-			TLS: &routev1.TLSConfig{
-				Termination:                   routev1.TLSTerminationPassthrough,
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
-			},
-		},
-	}
-}
-
-func getLoadBalancerServiceAddress(c client.Client, ctx context.Context, key client.ObjectKey) (string, error) {
-	svc := &corev1.Service{}
-	if err := c.Get(ctx, key, svc); err != nil {
-		return "", fmt.Errorf("failed to get service: %w", err)
-	}
-	var addr string
-	if len(svc.Status.LoadBalancer.Ingress) > 0 {
-		switch {
-		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
-			addr = svc.Status.LoadBalancer.Ingress[0].Hostname
-		case svc.Status.LoadBalancer.Ingress[0].IP != "":
-			addr = svc.Status.LoadBalancer.Ingress[0].IP
-		}
-	}
-	return addr, nil
-}
-
-func getRouteAddress(c client.Client, ctx context.Context, key client.ObjectKey) (string, error) {
-	route := &routev1.Route{}
-	if err := c.Get(ctx, key, route); err != nil {
-		return "", fmt.Errorf("failed to get route: %w", err)
-	}
-	var addr string
-	if len(route.Spec.Host) > 0 {
-		addr = route.Spec.Host
-	}
-	return addr, nil
 }
 
 func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, namespace string, manifests map[string][]byte) error {

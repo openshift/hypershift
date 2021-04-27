@@ -16,7 +16,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -179,7 +178,7 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	r.Log.Info("Reconciling MCS service")
-	reconcileResult, err := r.reconcileMCSService(ctx, mcs, mcsService, ignitionRoute)
+	reconcileResult, err := r.reconcileMCSServiceResources(ctx, mcs, mcsService, ignitionRoute)
 	if reconcileResult != nil {
 		return *reconcileResult, err
 	} else if err != nil {
@@ -227,33 +226,15 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 	return ctrl.Result{}, nil
 }
 
-func (r *MachineConfigServerReconciler) reconcileMCSServiceNodePort(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service) (*ctrl.Result, error) {
+func (r *MachineConfigServerReconciler) reconcileMCSServiceNodePortResources(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service) error {
 	r.Log.Info("Creating MCS Service")
 	_, err := controllerutil.CreateOrPatch(ctx, r.Client, mcsService, func() error {
-		mcsService.Spec.Ports = []corev1.ServicePort{
-			{
-				Name:       "http",
-				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(8080),
-			},
-		}
-		mcsService.Spec.Selector = map[string]string{
-			"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
-		}
-		mcsService.Spec.Type = corev1.ServiceTypeNodePort
-
-		// If there's user input nodePort and there's no existing one, we set it.
-		if (mcs.Spec.IgnitionService.NodePort != nil && mcs.Spec.IgnitionService.NodePort.Port > 0) &&
-			mcsService.Spec.Ports[0].NodePort <= 0 {
-			mcsService.Spec.Ports[0].NodePort = mcs.Spec.IgnitionService.NodePort.Port
-		}
-
-		return nil
+		return reconcileMCSServiceNodePort(mcsService, mcs)
 	})
-	if err != nil {
-		return &ctrl.Result{}, err
-	}
+	return err
+}
+
+func (r *MachineConfigServerReconciler) updateStatusMCSServiceNodePort(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service) (*ctrl.Result, error) {
 	r.Log.Info("Retrieving MCS Service to get node port value")
 	if err := r.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsService), mcsService); err != nil {
 		return &ctrl.Result{}, err
@@ -264,40 +245,39 @@ func (r *MachineConfigServerReconciler) reconcileMCSServiceNodePort(ctx context.
 	}
 	mcs.Status.Host = mcs.Spec.IgnitionService.NodePort.Address
 	mcs.Status.Port = mcsService.Spec.Ports[0].NodePort
+	r.Log.Info("Updated status for MCS")
 	return nil, nil
 }
 
-func (r *MachineConfigServerReconciler) reconcileMCSServiceRoute(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service, ignitionRoute *routev1.Route) (*ctrl.Result, error) {
+func reconcileMCSServiceNodePort(mcsService *corev1.Service, mcs *hyperv1.MachineConfigServer) error {
+	mcsService.Spec.Ports = MachineConfigServerServicePorts()
+	mcsService.Spec.Selector = MachineConfigServerServiceSelector(mcs.Name)
+	// If there's user input nodePort and there's no existing one, we set it.
+	if (mcs.Spec.IgnitionService.NodePort != nil && mcs.Spec.IgnitionService.NodePort.Port > 0) &&
+		mcsService.Spec.Ports[0].NodePort <= 0 {
+		mcsService.Spec.Ports[0].NodePort = mcs.Spec.IgnitionService.NodePort.Port
+	}
+	mcsService.Spec.Type = corev1.ServiceTypeNodePort
+	return nil
+}
+
+func (r *MachineConfigServerReconciler) reconcileMCSServiceRouteResources(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service, ignitionRoute *routev1.Route) error {
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
-		mcsService.Spec.Ports = []corev1.ServicePort{
-			{
-				Name:       "http",
-				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(8080),
-			},
-		}
-		mcsService.Spec.Selector = map[string]string{
-			"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
-		}
-		mcsService.Spec.Type = corev1.ServiceTypeClusterIP
-		return nil
+		return reconcileMCSServiceClusterIP(mcsService, mcs)
 	})
 	if err != nil {
-		return &ctrl.Result{}, err
+		return err
 	}
 	r.Log.Info("Creating ignition provider route")
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionRoute, func() error {
-		ignitionRoute.Spec.To = routev1.RouteTargetReference{
-			Kind: "Service",
-			Name: fmt.Sprintf("machine-config-server-%s", mcs.Name),
-		}
-		return nil
+		return reconcileMCSServiceRoute(ignitionRoute, mcs)
 	})
-	if err != nil {
-		return &ctrl.Result{}, err
-	}
-	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(ignitionRoute), ignitionRoute); err != nil {
+	return err
+}
+
+func (r *MachineConfigServerReconciler) updateStatusMCSServiceRoute(ctx context.Context, mcs *hyperv1.MachineConfigServer, ignitionRoute *routev1.Route) (*ctrl.Result, error) {
+	r.Log.Info("Retrieving MCS Route to get address")
+	if err := r.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(ignitionRoute), ignitionRoute); err != nil {
 		return &ctrl.Result{}, err
 	}
 	if ignitionRoute.Spec.Host == "" {
@@ -306,10 +286,26 @@ func (r *MachineConfigServerReconciler) reconcileMCSServiceRoute(ctx context.Con
 	}
 	mcs.Status.Host = ignitionRoute.Spec.Host
 	mcs.Status.Port = int32(80)
+	r.Log.Info("Updated status for MCS")
 	return nil, nil
 }
 
-func (r *MachineConfigServerReconciler) reconcileMCSService(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service, ignitionRoute *routev1.Route) (*ctrl.Result, error) {
+func reconcileMCSServiceClusterIP(mcsService *corev1.Service, mcs *hyperv1.MachineConfigServer) error {
+	mcsService.Spec.Ports = MachineConfigServerServicePorts()
+	mcsService.Spec.Selector = MachineConfigServerServiceSelector(mcs.Name)
+	mcsService.Spec.Type = corev1.ServiceTypeClusterIP
+	return nil
+}
+
+func reconcileMCSServiceRoute(ignitionRoute *routev1.Route, mcs *hyperv1.MachineConfigServer) error {
+	ignitionRoute.Spec.To = routev1.RouteTargetReference{
+		Kind: "Service",
+		Name: MachineConfigServerService(mcs.Namespace, mcs.Name).Name,
+	}
+	return nil
+}
+
+func (r *MachineConfigServerReconciler) reconcileMCSServiceResources(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service, ignitionRoute *routev1.Route) (*ctrl.Result, error) {
 	serviceType := mcs.Spec.IgnitionService.Type
 	switch serviceType {
 	case hyperv1.NodePort:
@@ -317,10 +313,16 @@ func (r *MachineConfigServerReconciler) reconcileMCSService(ctx context.Context,
 		if mcs.Spec.IgnitionService.NodePort == nil {
 			return &ctrl.Result{}, fmt.Errorf("nodePort metadata is not defined")
 		}
-		return r.reconcileMCSServiceNodePort(ctx, mcs, mcsService)
+		if err := r.reconcileMCSServiceNodePortResources(ctx, mcs, mcsService); err != nil {
+			return &ctrl.Result{}, fmt.Errorf("failed to reconcile mcs servicetype nodeport resources: %w", err)
+		}
+		return r.updateStatusMCSServiceNodePort(ctx, mcs, mcsService)
 	case hyperv1.Route:
 		r.Log.Info("Reconciling MCS route")
-		return r.reconcileMCSServiceRoute(ctx, mcs, mcsService, ignitionRoute)
+		if err := r.reconcileMCSServiceRouteResources(ctx, mcs, mcsService, ignitionRoute); err != nil {
+			return &ctrl.Result{}, fmt.Errorf("failed to reconcile mcs servicetype route resources: %w", err)
+		}
+		return r.updateStatusMCSServiceRoute(ctx, mcs, ignitionRoute)
 	default:
 		return &ctrl.Result{}, fmt.Errorf("unrecognized mcs serviceType: %s", serviceType)
 	}
@@ -376,15 +378,11 @@ oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ prin
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
-			},
+			MatchLabels: MachineConfigServerServiceSelector(mcs.Name),
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"app": fmt.Sprintf("machine-config-server-%s", mcs.Name),
-				},
+				Labels: MachineConfigServerServiceSelector(mcs.Name),
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            sa.Name,
