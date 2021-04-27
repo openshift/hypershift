@@ -17,18 +17,24 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
 
 type DestroyIAMOptions struct {
 	Region             string
 	AWSCredentialsFile string
 	InfraID            string
+
+	IAMClient iamiface.IAMAPI
+	S3Client  s3iface.S3API
 }
 
 func NewDestroyIAMCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "aws",
-		Short: "Destroys AWS instance profile for workers",
+		Use:          "aws",
+		Short:        "Destroys AWS instance profile for workers",
+		SilenceUsage: true,
 	}
 
 	opts := DestroyIAMOptions{
@@ -52,6 +58,12 @@ func NewDestroyIAMCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
+
+		awsSession := awsutil.NewSession()
+		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
+		opts.IAMClient = iam.New(awsSession, awsConfig)
+		opts.S3Client = s3.New(awsSession, awsConfig)
+
 		if err := opts.DestroyIAM(ctx); err != nil {
 			return err
 		}
@@ -75,19 +87,11 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	var err error
-	iamClient, err := IAMClient(o.AWSCredentialsFile, o.Region)
+	err = o.DestroyOIDCResources(ctx, o.IAMClient, o.S3Client)
 	if err != nil {
 		return err
 	}
-	s3Client, err := S3Client(o.AWSCredentialsFile, o.Region)
-	if err != nil {
-		return err
-	}
-	err = o.DestroyOIDCResources(ctx, iamClient, s3Client)
-	if err != nil {
-		return err
-	}
-	err = o.DestroyWorkerInstanceProfile(iamClient)
+	err = o.DestroyWorkerInstanceProfile(o.IAMClient)
 	if err != nil {
 		return err
 	}

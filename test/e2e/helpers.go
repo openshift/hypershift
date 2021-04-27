@@ -54,12 +54,7 @@ func DestroyCluster(t *testing.T, ctx context.Context, opts *cmdcluster.DestroyO
 
 	t.Logf("Waiting for hostedcluster %s/%s to be destroyed", opts.Namespace, opts.Name)
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-		err := cmdcluster.DestroyCluster(ctx, &cmdcluster.DestroyOptions{
-			Namespace:          opts.Namespace,
-			Name:               opts.Name,
-			AWSCredentialsFile: opts.AWSCredentialsFile,
-			ClusterGracePeriod: opts.ClusterGracePeriod,
-		})
+		err := cmdcluster.DestroyCluster(ctx, opts)
 		if err != nil {
 			t.Logf("error destroying cluster, will retry: %s", err)
 			return false, nil

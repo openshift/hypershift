@@ -1,13 +1,13 @@
 package aws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/elb"
@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/spf13/cobra"
+
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
 
 type CreateInfraOptions struct {
@@ -25,6 +27,10 @@ type CreateInfraOptions struct {
 	BaseDomain         string
 	OutputFile         string
 	AdditionalTags     []string
+
+	EC2Client     ec2iface.EC2API
+	Route53Client route53iface.Route53API
+	ELBClient     elbiface.ELBAPI
 
 	additionalEC2Tags []*ec2.Tag
 }
@@ -54,8 +60,9 @@ const (
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "aws",
-		Short: "Creates AWS infrastructure resources for a cluster",
+		Use:          "aws",
+		Short:        "Creates AWS infrastructure resources for a cluster",
+		SilenceUsage: true,
 	}
 
 	opts := CreateInfraOptions{
@@ -76,17 +83,32 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("base-domain")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		if err := opts.Run(); err != nil {
-			log.Error(err, "Error")
+		ctx, cancel := context.WithCancel(context.Background())
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+		}()
+
+		awsSession := awsutil.NewSession()
+		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
+		opts.EC2Client = ec2.New(awsSession, awsConfig)
+		opts.ELBClient = elb.New(awsSession, awsConfig)
+		opts.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(opts.AWSCredentialsFile))
+
+		if err := opts.Run(ctx); err != nil {
+			log.Error(err, "Failed to create infrastructure")
 			os.Exit(1)
 		}
+		log.Info("Successfully created infrastructure")
 	}
 
 	return cmd
 }
 
-func (o *CreateInfraOptions) Run() error {
-	result, err := o.CreateInfra()
+func (o *CreateInfraOptions) Run(ctx context.Context) error {
+	result, err := o.CreateInfra(ctx)
 	if err != nil {
 		return err
 	}
@@ -110,7 +132,7 @@ func (o *CreateInfraOptions) Run() error {
 	return nil
 }
 
-func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
+func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutput, error) {
 	log.Info("Creating infrastructure", "id", o.InfraID)
 
 	var err error
@@ -124,102 +146,56 @@ func (o *CreateInfraOptions) CreateInfra() (*CreateInfraOutput, error) {
 		Name:        o.Name,
 		BaseDomain:  o.BaseDomain,
 	}
-	client, err := ec2Client(o.AWSCredentialsFile, o.Region)
+	result.Zone, err = o.firstZone(o.EC2Client)
 	if err != nil {
 		return nil, err
 	}
-	result.Zone, err = o.firstZone(client)
+	result.VPCID, err = o.createVPC(o.EC2Client)
 	if err != nil {
 		return nil, err
 	}
-	result.VPCID, err = o.createVPC(client)
+	if err = o.CreateDHCPOptions(o.EC2Client, result.VPCID); err != nil {
+		return nil, err
+	}
+	result.PrivateSubnetID, err = o.CreatePrivateSubnet(o.EC2Client, result.VPCID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	if err = o.CreateDHCPOptions(client, result.VPCID); err != nil {
-		return nil, err
-	}
-	result.PrivateSubnetID, err = o.CreatePrivateSubnet(client, result.VPCID, result.Zone)
+	result.PublicSubnetID, err = o.CreatePublicSubnet(o.EC2Client, result.VPCID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	result.PublicSubnetID, err = o.CreatePublicSubnet(client, result.VPCID, result.Zone)
+	igwID, err := o.CreateInternetGateway(o.EC2Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	igwID, err := o.CreateInternetGateway(client, result.VPCID)
+	natGatewayID, err := o.CreateNATGateway(o.EC2Client, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	natGatewayID, err := o.CreateNATGateway(client, result.PublicSubnetID, result.Zone)
+	result.SecurityGroupID, err = o.CreateWorkerSecurityGroup(o.EC2Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	result.SecurityGroupID, err = o.CreateWorkerSecurityGroup(client, result.VPCID)
+	privateRouteTable, err := o.CreatePrivateRouteTable(o.EC2Client, result.VPCID, natGatewayID, result.PrivateSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	privateRouteTable, err := o.CreatePrivateRouteTable(client, result.VPCID, natGatewayID, result.PrivateSubnetID, result.Zone)
+	publicRouteTable, err := o.CreatePublicRouteTable(o.EC2Client, result.VPCID, igwID, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	publicRouteTable, err := o.CreatePublicRouteTable(client, result.VPCID, igwID, result.PublicSubnetID, result.Zone)
+	err = o.CreateVPCS3Endpoint(o.EC2Client, result.VPCID, privateRouteTable, publicRouteTable)
 	if err != nil {
 		return nil, err
 	}
-	err = o.CreateVPCS3Endpoint(client, result.VPCID, privateRouteTable, publicRouteTable)
+	result.PublicZoneID, err = o.LookupPublicZone(ctx, o.Route53Client)
 	if err != nil {
 		return nil, err
 	}
-	r53client, err := route53Client(o.AWSCredentialsFile)
-	if err != nil {
-		return nil, err
-	}
-	result.PublicZoneID, err = o.LookupPublicZone(r53client)
-	if err != nil {
-		return nil, err
-	}
-	result.PrivateZoneID, err = o.CreatePrivateZone(r53client, result.VPCID)
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, o.Route53Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
-}
-
-func ec2Client(creds, region string) (ec2iface.EC2API, error) {
-	awsConfig := &aws.Config{
-		Region: aws.String(region),
-	}
-	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
-	s, err := session.NewSession(awsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client session: %w", err)
-	}
-	return ec2.New(s), nil
-}
-
-func route53Client(creds string) (route53iface.Route53API, error) {
-	awsConfig := &aws.Config{
-		// Route53 is weird about regions
-		// https://github.com/openshift/cluster-ingress-operator/blob/5660b43d66bd63bbe2dcb45fb40df98d8d91347e/pkg/dns/aws/dns.go#L163-L169
-		Region: aws.String("us-east-1"),
-	}
-	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
-	s, err := session.NewSession(awsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client session: %w", err)
-	}
-	return route53.New(s), nil
-}
-
-func elbClient(creds, region string) (elbiface.ELBAPI, error) {
-	awsConfig := &aws.Config{
-		Region: aws.String(region),
-	}
-	awsConfig.Credentials = credentials.NewSharedCredentials(creds, "default")
-	s, err := session.NewSession(awsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client session: %w", err)
-	}
-	return elb.New(s), nil
 }

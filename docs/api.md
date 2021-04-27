@@ -25,7 +25,8 @@ type HostedClusterSpec struct {
     Networking ClusterNetworking
 
     // Autoscaling for compute nodes only, does not cover control plane
-    Autoscaling ClusterAutoscaling
+    // +optional
+    Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
     // NOTE: This might not make sense as control plane
     // inputs can be specific to versions
@@ -121,8 +122,9 @@ type AddonsSpec struct {
 type ClusterAutoscaling struct {
     // Maximum number of nodes in all node groups.
     // Cluster autoscaler will not grow the cluster beyond this number.
+    // default: 0 (unlimited)
     // +kubebuilder:validation:Minimum=0
-    MaxNodesTotal int32 `json:"maxNodesTotal"`
+    MaxNodesTotal *int32 `json:"maxNodesTotal,omitempty"`
 
     // Gives pods graceful termination time before scaling down
     // default: 600 seconds

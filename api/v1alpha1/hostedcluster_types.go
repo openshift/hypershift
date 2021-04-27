@@ -32,6 +32,10 @@ type HostedClusterSpec struct {
 	// Networking contains network-specific settings for this cluster
 	Networking ClusterNetworking `json:"networking"`
 
+	// Autoscaling for compute nodes only, does not cover control plane
+	// +optional
+	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
+
 	Platform PlatformSpec `json:"platform"`
 
 	// InfraID is used to identify the cluster in cloud platforms
@@ -190,6 +194,30 @@ type Release struct {
 	// Image is the release image pullspec for the control plane
 	// +kubebuilder:validation:Required
 	Image string `json:"image"`
+}
+
+// TODO maybe we have profiles for scaling behaviors
+type ClusterAutoscaling struct {
+	// Maximum number of nodes in all node groups.
+	// Cluster autoscaler will not grow the cluster beyond this number.
+	// +kubebuilder:validation:Minimum=0
+	MaxNodesTotal *int32 `json:"maxNodesTotal,omitempty"`
+
+	// Gives pods graceful termination time before scaling down
+	// default: 600 seconds
+	// +kubebuilder:validation:Minimum=0
+	MaxPodGracePeriod *int32 `json:"maxPodGracePeriod,omitempty"`
+
+	// Maximum time CA waits for node to be provisioned
+	// default: 15 minutes
+	// +kubebuilder:validation:Pattern=^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+	MaxNodeProvisionTime string `json:"maxNodeProvisionTime,omitempty"`
+
+	// To allow users to schedule "best-effort" pods, which shouldn't trigger
+	// Cluster Autoscaler actions, but only run when there are spare resources available,
+	// default: -10
+	// More info: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
+	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
 }
 
 // HostedClusterStatus defines the observed state of HostedCluster

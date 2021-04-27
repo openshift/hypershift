@@ -34,8 +34,9 @@ type DumpOptions struct {
 
 func NewDumpCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cluster",
-		Short: "Creates basic functional HostedCluster resources",
+		Use:          "cluster",
+		Short:        "Creates basic functional HostedCluster resources",
+		SilenceUsage: true,
 	}
 
 	opts := &DumpOptions{

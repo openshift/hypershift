@@ -611,6 +611,21 @@ func (o *CreateIAMOptions) CreateCredentialedUserWithPolicy(ctx context.Context,
 	}
 	if user != nil {
 		log.Info("Found existing user", "user", userName)
+
+		// Clean up any old access keys since we can only have 2 per user by quota
+		// This is best effort and errors are ignored
+		if output, err := client.ListAccessKeysWithContext(ctx, &iam.ListAccessKeysInput{
+			UserName: aws.String(userName),
+		}); err == nil {
+			for _, key := range output.AccessKeyMetadata {
+				if _, err := client.DeleteAccessKeyWithContext(ctx, &iam.DeleteAccessKeyInput{
+					AccessKeyId: key.AccessKeyId,
+					UserName:    key.UserName,
+				}); err == nil {
+					log.Info("Deleted old access key", "id", key.AccessKeyId, "user", userName)
+				}
+			}
+		}
 	} else {
 		if output, err := client.CreateUserWithContext(ctx, &iam.CreateUserInput{
 			UserName: aws.String(userName),

@@ -12,8 +12,19 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/elb"
+	"github.com/aws/aws-sdk-go/service/elb/elbiface"
+	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/iam/iamiface"
+	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"k8s.io/apimachinery/pkg/util/errors"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/version"
 )
 
@@ -23,6 +34,7 @@ var GlobalTestContext context.Context
 
 type GlobalTestOptions struct {
 	AWSCredentialsFile   string
+	Region               string
 	PullSecretFile       string
 	LatestReleaseImage   string
 	PreviousReleaseImage string
@@ -30,12 +42,19 @@ type GlobalTestOptions struct {
 	UpgradeTestsEnabled  bool
 	ArtifactDir          string
 	BaseDomain           string
+
+	EC2Client     ec2iface.EC2API
+	Route53Client route53iface.Route53API
+	ELBClient     elbiface.ELBAPI
+	IAMClient     iamiface.IAMAPI
+	S3Client      s3iface.S3API
 }
 
 var GlobalOptions = &GlobalTestOptions{}
 
 func init() {
 	flag.StringVar(&GlobalOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
+	flag.StringVar(&GlobalOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
 	flag.StringVar(&GlobalOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&GlobalOptions.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&GlobalOptions.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
@@ -71,6 +90,14 @@ func (o *GlobalTestOptions) SetDefaults() error {
 			o.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}
 	}
+
+	awsSession := awsutil.NewSession()
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	o.IAMClient = iam.New(awsSession, awsConfig)
+	o.S3Client = s3.New(awsSession, awsConfig)
+	o.EC2Client = ec2.New(awsSession, awsConfig)
+	o.ELBClient = elb.New(awsSession, awsConfig)
+	o.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(o.AWSCredentialsFile))
 
 	return nil
 }

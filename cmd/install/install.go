@@ -41,8 +41,9 @@ type Options struct {
 
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "install",
-		Short: "Installs the HyperShift operator",
+		Use:          "install",
+		Short:        "Installs the HyperShift operator",
+		SilenceUsage: true,
 	}
 
 	var opts Options

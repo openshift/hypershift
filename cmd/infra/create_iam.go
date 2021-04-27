@@ -8,8 +8,9 @@ import (
 
 func NewCreateIAMCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "iam",
-		Short: "Commands for creating HyperShift IAM resources",
+		Use:          "iam",
+		Short:        "Commands for creating HyperShift IAM resources",
+		SilenceUsage: true,
 	}
 
 	cmd.AddCommand(aws.NewCreateIAMCommand())

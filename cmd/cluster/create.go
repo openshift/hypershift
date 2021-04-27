@@ -9,6 +9,16 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/elb"
+	"github.com/aws/aws-sdk-go/service/elb/elbiface"
+	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/iam/iamiface"
+	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -16,6 +26,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/version"
 
 	"github.com/openshift/hypershift/cmd/util"
@@ -42,12 +53,19 @@ type Options struct {
 	BaseDomain         string
 	PublicZoneID       string
 	PrivateZoneID      string
+
+	EC2Client     ec2iface.EC2API
+	Route53Client route53iface.Route53API
+	ELBClient     elbiface.ELBAPI
+	IAMClient     iamiface.IAMAPI
+	S3Client      s3iface.S3API
 }
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cluster",
-		Short: "Creates basic functional HostedCluster resources",
+		Use:          "cluster",
+		Short:        "Creates basic functional HostedCluster resources",
+		SilenceUsage: true,
 	}
 
 	var releaseImage string
@@ -93,7 +111,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
@@ -101,7 +119,19 @@ func NewCreateCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-		return CreateCluster(ctx, opts)
+
+		awsSession := awsutil.NewSession()
+		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
+		opts.IAMClient = iam.New(awsSession, awsConfig)
+		opts.S3Client = s3.New(awsSession, awsConfig)
+		opts.EC2Client = ec2.New(awsSession, awsConfig)
+		opts.ELBClient = elb.New(awsSession, awsConfig)
+		opts.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(opts.AWSCredentialsFile))
+
+		if err := CreateCluster(ctx, opts); err != nil {
+			log.Error(err, "Failed to create cluster")
+			os.Exit(1)
+		}
 	}
 
 	return cmd
@@ -153,8 +183,11 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
+			EC2Client:          opts.EC2Client,
+			Route53Client:      opts.Route53Client,
+			ELBClient:          opts.ELBClient,
 		}
-		infra, err = opt.CreateInfra()
+		infra, err = opt.CreateInfra(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
@@ -175,6 +208,8 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			Region:             opts.Region,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
+			IAMClient:          opts.IAMClient,
+			S3Client:           opts.S3Client,
 		}
 		iamInfo, err = opt.CreateIAM(ctx)
 		if err != nil {
