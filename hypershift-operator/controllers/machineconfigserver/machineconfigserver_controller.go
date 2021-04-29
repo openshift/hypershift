@@ -75,12 +75,6 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, mcs.Spec.ReleaseImage)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	r.Log = r.Log.WithValues("releaseImage", mcs.Spec.ReleaseImage, "version", releaseImage.Version())
-
 	// Generate mcs manifests for the given release
 	mcsServiceAccount := MachineConfigServerServiceAccount(mcs.Namespace, mcs.Name)
 
@@ -137,6 +131,14 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 		return ctrl.Result{}, nil
 	}
+
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer lookupCancel()
+	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, mcs.Spec.ReleaseImage)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+	r.Log = r.Log.WithValues("releaseImage", mcs.Spec.ReleaseImage, "version", releaseImage.Version())
 
 	// Ensure the machineConfigServer has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(mcs, finalizer) {
