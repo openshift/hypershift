@@ -28,9 +28,17 @@ spec:
       jsonPath: .status.kubeconfig.name
       name: KubeConfig
       type: string
+    - description: Progress
+      jsonPath: .status.version.history[?(@.state!="")].state
+      name: Progress
+      type: string
     - description: Available
       jsonPath: .status.conditions[?(@.type=="Available")].status
       name: Available
+      type: string
+    - description: Reason
+      jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: Reason
       type: string
     name: v1alpha1
     schema:
