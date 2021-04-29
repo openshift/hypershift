@@ -249,6 +249,7 @@ spec:
                     description: Type is the underlying infrastructure provider for the cluster.
                     enum:
                     - AWS
+                    - None
                     type: string
                 required:
                 - type
