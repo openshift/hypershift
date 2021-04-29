@@ -70,6 +70,8 @@ func TestQuickStart(t *testing.T) {
 			Namespace:          hostedCluster.Namespace,
 			Name:               hostedCluster.Name,
 			Region:             GlobalOptions.Region,
+			InfraID:            hostedCluster.Name,
+			BaseDomain:         opts.BaseDomain,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			EC2Client:          GlobalOptions.EC2Client,
 			Route53Client:      GlobalOptions.Route53Client,
@@ -86,6 +88,7 @@ func TestQuickStart(t *testing.T) {
 	createClusterOpts := cmdcluster.Options{
 		Namespace:          hostedCluster.Namespace,
 		Name:               hostedCluster.Name,
+		InfraID:            hostedCluster.Name,
 		ReleaseImage:       opts.ReleaseImage,
 		PullSecretFile:     opts.PullSecretFile,
 		AWSCredentialsFile: opts.AWSCredentialsFile,
