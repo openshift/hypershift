@@ -150,8 +150,11 @@ func NewStartCommand() *cobra.Command {
 		if err := (&nodepool.NodePoolReconciler{
 			Client:        mgr.GetClient(),
 			ImageProvider: &static.StaticImageProvider{},
-			ReleaseProvider: &releaseinfo.PodProvider{
-				Pods: kubeClient.CoreV1().Pods(namespace),
+			ReleaseProvider: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.PodProvider{
+					Pods: kubeClient.CoreV1().Pods(namespace),
+				},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "nodePool")
@@ -160,8 +163,11 @@ func NewStartCommand() *cobra.Command {
 
 		if err := (&machineconfigserver.MachineConfigServerReconciler{
 			Client: mgr.GetClient(),
-			ReleaseProvider: &releaseinfo.PodProvider{
-				Pods: kubeClient.CoreV1().Pods(namespace),
+			ReleaseProvider: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.PodProvider{
+					Pods: kubeClient.CoreV1().Pods(namespace),
+				},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "machineConfigReconciler")
