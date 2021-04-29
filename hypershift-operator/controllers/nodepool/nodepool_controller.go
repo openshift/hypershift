@@ -193,9 +193,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		nodePool.Spec.Release.Image = hcluster.Status.Version.History[0].Image
 	}
 
-	releaseImage, err := r.ReleaseProvider.Lookup(context.Background(), nodePool.Spec.Release.Image)
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer lookupCancel()
+	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, nodePool.Spec.Release.Image)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 	targetVersion := releaseImage.Version()
 
@@ -278,7 +280,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Reconcile machineDeployment
 	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
-		return r.reconcileMachineDeployment(md, nodePool, mcs, awsMachineTemplate, hcluster.Spec.InfraID)
+		return r.reconcileMachineDeployment(md, nodePool, mcs, awsMachineTemplate, hcluster.Spec.InfraID, releaseImage)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machineDeployment %q: %w",
 			ctrlclient.ObjectKeyFromObject(md).String(), err)
@@ -445,7 +447,8 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 	nodePool *hyperv1.NodePool,
 	mcs *hyperv1.MachineConfigServer,
 	awsMachineTemplate *capiaws.AWSMachineTemplate,
-	CAPIClusterName string) error {
+	CAPIClusterName string,
+	releaseImage *releaseinfo.ReleaseImage) error {
 
 	// Set annotations and labels
 	if machineDeployment.GetAnnotations() == nil {
@@ -505,10 +508,6 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 	}
 
 	// Propagate version to the machineDeployment.
-	releaseImage, err := r.ReleaseProvider.Lookup(context.Background(), nodePool.Spec.Release.Image)
-	if err != nil {
-		return err
-	}
 	targetVersion := releaseImage.Version()
 	if targetVersion == nodePool.Status.Version &&
 		targetVersion != k8sutilspointer.StringPtrDerefOr(machineDeployment.Spec.Template.Spec.Version, "") {
