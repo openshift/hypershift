@@ -44,30 +44,31 @@ type PKIParams struct {
 }
 
 type ClusterParams struct {
-	Namespace               string      `json:"namespace"`
-	ExternalAPIDNSName      string      `json:"externalAPIDNSName"`
-	ExternalAPIAddress      string      `json:"externalAPIAddress"`
-	ExternalAPIPort         uint        `json:"externalAPIPort"`
-	ExternalOpenVPNAddress  string      `json:"externalVPNAddress"`
-	ExternalOpenVPNPort     uint        `json:"externalVPNPort"`
-	ExternalOauthDNSName    string      `json:"externalOauthDNSName"`
-	ExternalOauthPort       uint        `json:"externalOauthPort"`
-	IdentityProviders       string      `json:"identityProviders"`
-	ServiceCIDR             string      `json:"serviceCIDR"`
-	MachineCIDR             string      `json:"machineCIDR"`
-	NamedCerts              []NamedCert `json:"namedCerts,omitempty"`
-	PodCIDR                 string      `json:"podCIDR"`
-	ReleaseImage            string      `json:"releaseImage"`
-	IngressSubdomain        string      `json:"ingressSubdomain"`
-	OpenShiftAPIClusterIP   string      `json:"openshiftAPIClusterIP"`
-	OauthAPIClusterIP       string      `json:"oauthAPIClusterIP"`
-	ImageRegistryHTTPSecret string      `json:"imageRegistryHTTPSecret"`
-	RouterNodePortHTTP      string      `json:"routerNodePortHTTP"`
-	RouterNodePortHTTPS     string      `json:"routerNodePortHTTPS"`
-	BaseDomain              string      `json:"baseDomain"`
-	PublicZoneID            string      `json:"publicZoneID,omitempty"`
-	PrivateZoneID           string      `json:"PrivateZoneID,omitempty"`
-	NetworkType             string      `json:"networkType"`
+	Namespace                 string      `json:"namespace"`
+	ExternalAPIDNSName        string      `json:"externalAPIDNSName"`
+	ExternalAPIAddress        string      `json:"externalAPIAddress"`
+	ExternalAPIPort           uint        `json:"externalAPIPort"`
+	ExternalOpenVPNAddress    string      `json:"externalVPNAddress"`
+	ExternalOpenVPNPort       uint        `json:"externalVPNPort"`
+	ExternalOauthDNSName      string      `json:"externalOauthDNSName"`
+	ExternalOauthPort         uint        `json:"externalOauthPort"`
+	IdentityProviders         string      `json:"identityProviders"`
+	ServiceCIDR               string      `json:"serviceCIDR"`
+	MachineCIDR               string      `json:"machineCIDR"`
+	NamedCerts                []NamedCert `json:"namedCerts,omitempty"`
+	PodCIDR                   string      `json:"podCIDR"`
+	ReleaseImage              string      `json:"releaseImage"`
+	IngressSubdomain          string      `json:"ingressSubdomain"`
+	OpenShiftAPIClusterIP     string      `json:"openshiftAPIClusterIP"`
+	OauthAPIClusterIP         string      `json:"oauthAPIClusterIP"`
+	PackageServerAPIClusterIP string      `json:"packageServerAPIClusterIP"`
+	ImageRegistryHTTPSecret   string      `json:"imageRegistryHTTPSecret"`
+	RouterNodePortHTTP        string      `json:"routerNodePortHTTP"`
+	RouterNodePortHTTPS       string      `json:"routerNodePortHTTPS"`
+	BaseDomain                string      `json:"baseDomain"`
+	PublicZoneID              string      `json:"publicZoneID,omitempty"`
+	PrivateZoneID             string      `json:"PrivateZoneID,omitempty"`
+	NetworkType               string      `json:"networkType"`
 	// APIAvailabilityPolicy defines the availability of components that support end-user facing API requests
 	APIAvailabilityPolicy AvailabilityPolicy `json:"apiAvailabilityPolicy"`
 	// ControllerAvailabilityPolicy defines the availability of controller components for the cluster
@@ -76,6 +77,7 @@ type ClusterParams struct {
 	OriginReleasePrefix                    string                 `json:"originReleasePrefix"`
 	OpenshiftAPIServerCABundle             string                 `json:"openshiftAPIServerCABundle"`
 	OauthAPIServerCABundle                 string                 `json:"oauthAPIServerCABundle"`
+	PackageServerCABundle                  string                 `json:"packageServerCABundle"`
 	CloudProvider                          string                 `json:"cloudProvider"`
 	CVOSetupImage                          string                 `json:"cvoSetupImage"`
 	IssuerURL                              string                 `json:"issuerURL"`

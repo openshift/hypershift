@@ -13,6 +13,7 @@ const (
 	vpnServiceName                = "openvpn-server"
 	openshiftAPIServerServiceName = "openshift-apiserver"
 	oauthAPIServerName            = "openshift-oauth-apiserver"
+	packageServerServiceName      = "packageserver"
 )
 
 func KubeAPIServerService(hostedClusterNamespace string) *corev1.Service {
@@ -64,6 +65,15 @@ func OauthAPIServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      oauthAPIServerName,
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
+func PackageServerService(hostedClusterNamespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      packageServerServiceName,
 			Namespace: hostedClusterNamespace,
 		},
 	}

@@ -29,11 +29,15 @@ spec:
         - "5443"
         - --global-namespace
         - openshift-marketplace
+        - --kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        - --authentication-kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        - --authorization-kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
         env:
         - name: OPERATOR_CONDITION_NAME
           value: packageserver
-        - name: KUBECONFIG
-          value: /etc/openshift/kubeconfig/kubeconfig
         image: {{ imageFor "operator-lifecycle-manager" }}
         imagePullPolicy: IfNotPresent
         livenessProbe:
@@ -102,20 +106,20 @@ spec:
         secret:
           defaultMode: 420
           items:
-          - key: tls.crt
+          - key: server.crt
             path: apiserver.crt
-          - key: tls.key
+          - key: server.key
             path: apiserver.key
-          secretName: packageserver-service-cert
+          secretName: packageserver-cert
       - name: webhook-cert
         secret:
           defaultMode: 420
           items:
-          - key: tls.crt
+          - key: server.crt
             path: tls.crt
-          - key: tls.key
+          - key: server.key
             path: tls.key
-          secretName: packageserver-service-cert
+          secretName: packageserver-cert
       - name: kubeconfig
         secret:
           secretName: service-network-admin-kubeconfig
