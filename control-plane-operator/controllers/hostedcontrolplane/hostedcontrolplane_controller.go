@@ -86,14 +86,15 @@ var (
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type InfrastructureStatus struct {
-	APIAddress            string
-	APIPort               int32
-	OAuthAddress          string
-	OAuthPort             int32
-	VPNAddress            string
-	VPNPort               int32
-	OpenShiftAPIAddress   string
-	OauthAPIServerAddress string
+	APIAddress              string
+	APIPort                 int32
+	OAuthAddress            string
+	OAuthPort               int32
+	VPNAddress              string
+	VPNPort                 int32
+	OpenShiftAPIAddress     string
+	OauthAPIServerAddress   string
+	PackageServerAPIAddress string
 }
 
 func (s InfrastructureStatus) IsReady() bool {
@@ -514,6 +515,12 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 	if err := r.reconcileOauthAPIServerServiceResources(ctx, hcp, targetNamespace, &status); err != nil {
 		return status, fmt.Errorf("error reconciling oauth api service: %w", err)
 	}
+
+	r.Log.Info("Reconciling Package Server API service")
+	if err := r.reconcilePackageServerServiceResources(ctx, hcp, targetNamespace, &status); err != nil {
+		return status, fmt.Errorf("error reconciling package server service: %w", err)
+	}
+
 	return status, nil
 }
 
@@ -751,6 +758,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.IngressSubdomain = fmt.Sprintf("apps.%s", baseDomain)
 	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIAddress
 	params.OauthAPIClusterIP = infraStatus.OauthAPIServerAddress
+	params.PackageServerAPIClusterIP = infraStatus.PackageServerAPIAddress
 	params.BaseDomain = baseDomain
 	params.PublicZoneID = hcp.Spec.DNS.PublicZoneID
 	params.PrivateZoneID = hcp.Spec.DNS.PrivateZoneID
@@ -836,6 +844,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString(caBytes)
 	params.OauthAPIServerCABundle = params.OpenshiftAPIServerCABundle
+	params.PackageServerCABundle = params.OpenshiftAPIServerCABundle
 
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.PullSecret.Name}, &pullSecret); err != nil {
@@ -1215,6 +1224,58 @@ func reconcileOauthAPIServerClusterIP(svc *corev1.Service) error {
 	svc.Spec.Ports = OauthAPIServerServicePorts()
 	return nil
 }
+
+func (r *HostedControlPlaneReconciler) reconcilePackageServerServiceResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, status *InfrastructureStatus) error {
+	svc := manifests.PackageServerService(namespace)
+	r.Log.Info("Updating packageserver service")
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
+		return reconcilePackageServerServiceClusterIP(svc)
+	})
+	if err != nil {
+		return err
+	}
+	r.Log.Info("Retrieving packageserver service data")
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
+		return err
+	}
+	status.PackageServerAPIAddress = svc.Spec.ClusterIP
+	return nil
+}
+
+func reconcilePackageServerServiceClusterIP(svc *corev1.Service) error {
+	svc.Spec.Selector = PackageServerServiceSelector()
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
+	svc.Spec.Ports = PackageServerServicePorts()
+	return nil
+}
+
+/*
+func createPackageServerService(c client.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
+	svc := &corev1.Service{}
+	svc.Namespace = namespace
+	svc.Name = "packageserver"
+	svc.Spec.Selector = map[string]string{"app": "packageserver"}
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
+	svc.Spec.Ports = []corev1.ServicePort{
+		{
+			Name:       "https",
+			Port:       443,
+			Protocol:   corev1.ProtocolTCP,
+			TargetPort: intstr.FromInt(5443),
+		},
+	}
+	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
+	if err := c.Create(context.TODO(), svc); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return svc, c.Get(context.TODO(), client.ObjectKeyFromObject(svc), svc)
+		} else {
+			return nil, fmt.Errorf("failed to create packageserver service: %w", err)
+		}
+	}
+	return svc, nil
+}
+*/
 
 func (r *HostedControlPlaneReconciler) reconcileOauthServiceNodePortResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) error {
 	svc := manifests.OauthServerService(namespace)

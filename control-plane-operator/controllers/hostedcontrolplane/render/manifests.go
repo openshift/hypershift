@@ -68,10 +68,10 @@ func (c *clusterManifestContext) setupManifests() {
 	c.oauthOpenshiftServer()
 	c.openVPN()
 	c.registry()
+	c.operatorLifecycleManager()
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
 	c.ignitionConfigs()
-	c.operatorLifecycleManager()
 }
 
 func (c *clusterManifestContext) hostedClusterConfigOperator() {
@@ -363,15 +363,33 @@ func (c *clusterManifestContext) operatorLifecycleManager() {
 	c.addManifestFiles(
 		"olm/catalog-metrics-service.yaml",
 		"olm/olm-metrics-service.yaml",
-		"olm/0000_50_olm_07-olm-operator.deployment.yaml",
-		"olm/0000_50_olm_08-catalog-operator.deployment.yaml",
-		"olm/packageserver.deployment.yaml",
+		"olm/olm-operator-deployment.yaml",
+		"olm/catalog-operator-deployment.yaml",
+		"olm/packageserver-deployment.yaml",
+		"olm/packageserver-secret.yaml",
 	)
-	/*
-		c.addUserManifestFiles(
-			"olm/",
-		)
-	*/
+	c.addUserManifestFiles(
+		"olm/packageserver-service-guest.yaml",
+		"olm/packageserver-endpoint-guest.yaml",
+		"olm/catalogsources-crd-guest.yaml",
+		"olm/clusterserviceversions-crd-guest.yaml",
+		"olm/installplans-crd-guest.yaml",
+		"olm/operatorconditions-crd-guest.yaml",
+		"olm/operatorgroups-crd-guest.yaml",
+		"olm/operators-crd-guest.yaml",
+		"olm/subscriptions-crd-guest.yaml",
+		"olm/openshift-operators-namespace-guest.yaml",
+		"olm/global-operatorgroup-default-guest.yaml",
+	)
+
+	params := map[string]string{
+		"PackageServerCABundle": c.params.(*ClusterParams).PackageServerCABundle,
+	}
+	entry, err := c.substituteParams(params, "olm/packageserver-apiservice-template.yaml")
+	if err != nil {
+		panic(err.Error())
+	}
+	c.addUserManifest("packageserver-apiservice.yaml", string(entry))
 }
 
 func (c *clusterManifestContext) addUserManifestFiles(name ...string) {

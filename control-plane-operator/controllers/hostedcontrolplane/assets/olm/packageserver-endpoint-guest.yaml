@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: packageserver
+  namespace: default
+subsets:
+- addresses:
+  - ip: {{ .PackageServerAPIClusterIP }}
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
