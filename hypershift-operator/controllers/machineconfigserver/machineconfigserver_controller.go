@@ -11,6 +11,8 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -148,7 +150,12 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 	}
 
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsServiceAccount, NoopReconcile)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsServiceAccount, func() error {
+		mcsServiceAccount.ImagePullSecrets = []corev1.LocalObjectReference{
+			{Name: controlplaneoperator.PullSecret(mcsServiceAccount.Namespace).Name},
+		}
+		return nil
+	})
 	if err != nil {
 		return ctrl.Result{}, err
 	}
