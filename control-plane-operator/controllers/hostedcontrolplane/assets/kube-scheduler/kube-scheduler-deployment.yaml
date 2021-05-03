@@ -26,6 +26,8 @@ spec:
         openshift.io/restartedAt: "{{ .RestartDate }}"
 {{ end }}
     spec:
+      imagePullSecrets:
+      - name: pull-secret
       tolerations:
         - key: "multi-az-worker"
           operator: "Equal"
