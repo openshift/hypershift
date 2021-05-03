@@ -96,8 +96,6 @@ spec:
               infraID:
                 description: InfraID is used to identify the cluster in cloud platforms
                 type: string
-              initialComputeReplicas:
-                type: integer
               issuerURL:
                 type: string
               networking:
@@ -336,7 +334,6 @@ spec:
                     type: string
                 type: object
             required:
-            - initialComputeReplicas
             - issuerURL
             - networking
             - platform

@@ -112,10 +112,21 @@ func TestQuickStart(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 	t.Logf("Created hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 
+	// Get the newly created nodepool
+	nodepool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedCluster.Namespace,
+			Name:      hostedCluster.Name,
+		},
+	}
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
+	t.Logf("Created nodepool %s/%s", nodepool.Namespace, nodepool.Name)
+
 	// Perform some very basic assertions about the guest cluster
 	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
 
-	WaitForReadyNodes(t, ctx, guestClient, hostedCluster)
+	WaitForReadyNodes(t, ctx, guestClient, nodepool)
 
 	WaitForReadyClusterOperators(t, ctx, guestClient, hostedCluster)
 }

@@ -19,6 +19,7 @@ type ExampleResources struct {
 	SigningKey                  *corev1.Secret
 	SSHKey                      *corev1.Secret
 	Cluster                     *hyperv1.HostedCluster
+	NodePool                    *hyperv1.NodePool
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
@@ -33,6 +34,9 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
 	}
+	if o.NodePool != nil {
+		objects = append(objects, o.NodePool)
+	}
 	return objects
 }
 
@@ -44,7 +48,7 @@ type ExampleOptions struct {
 	SigningKey       []byte
 	IssuerURL        string
 	SSHKey           []byte
-	NodePoolReplicas int
+	NodePoolReplicas int32
 	InfraID          string
 	ComputeCIDR      string
 	BaseDomain       string
@@ -167,7 +171,6 @@ aws_secret_access_key = %s
 			Release: hyperv1.Release{
 				Image: o.ReleaseImage,
 			},
-			InitialComputeReplicas: o.NodePoolReplicas,
 			Networking: hyperv1.ClusterNetworking{
 				ServiceCIDR: "172.31.0.0/16",
 				PodCIDR:     "10.132.0.0/14",
@@ -230,6 +233,31 @@ aws_secret_access_key = %s
 		},
 	}
 
+	var nodePool *hyperv1.NodePool
+	if o.NodePoolReplicas > 0 {
+		nodePool = &hyperv1.NodePool{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "NodePool",
+				APIVersion: hyperv1.GroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace.Name,
+				Name:      o.Name,
+			},
+			Spec: hyperv1.NodePoolSpec{
+				IgnitionService: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+				NodeCount:   &o.NodePoolReplicas,
+				ClusterName: o.Name,
+			},
+		}
+
+		if cluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+			nodePool.Spec.Platform.AWS = cluster.Spec.Platform.AWS.NodePoolDefaults
+		}
+	}
+
 	return &ExampleResources{
 		Namespace:                   namespace,
 		PullSecret:                  pullSecret,
@@ -238,5 +266,6 @@ aws_secret_access_key = %s
 		SigningKey:                  signingKeySecret,
 		SSHKey:                      sshKeySecret,
 		Cluster:                     cluster,
+		NodePool:                    nodePool,
 	}
 }

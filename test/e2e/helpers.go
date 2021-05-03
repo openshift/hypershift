@@ -152,10 +152,10 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
-func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
 	g := NewWithT(t)
 
-	t.Logf("Waiting for hostedcluster %s/%s nodes to become ready", hostedCluster.Namespace, hostedCluster.Name)
+	t.Logf("Waiting for nodepool %s/%s nodes to become ready", nodePool.Namespace, nodePool.Name)
 	nodes := &corev1.NodeList{}
 	waitForNodesCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
@@ -175,7 +175,7 @@ func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client
 				}
 			}
 		}
-		if len(readyNodes) != hostedCluster.Spec.InitialComputeReplicas {
+		if len(readyNodes) != int(*nodePool.Spec.NodeCount) {
 			return false, nil
 		}
 		t.Logf("found %d ready nodes", len(nodes.Items))
@@ -183,7 +183,7 @@ func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client
 	}, waitForNodesCtx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest nodes became ready")
 
-	t.Logf("All %d nodes for hostedcluster %s/%s appear to be ready", hostedCluster.Spec.InitialComputeReplicas, hostedCluster.Namespace, hostedCluster.Name)
+	t.Logf("All %d nodes for nodepool %s/%s appear to be ready", int(*nodePool.Spec.NodeCount), nodePool.Namespace, nodePool.Name)
 }
 
 func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
