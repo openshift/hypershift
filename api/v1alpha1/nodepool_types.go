@@ -5,6 +5,7 @@ import (
 )
 
 const (
+	NodePoolAMIDiscoveryFailed              = "AMIDiscoveryFailed"
 	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
 	NodePoolAutorepairEnabledConditionType  = "AutorepairEnabled"
 	NodePoolAsExpectedConditionReason       = "AsExpected"

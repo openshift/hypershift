@@ -1,6 +1,7 @@
 package releaseinfo
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
@@ -21,8 +23,6 @@ var _ Provider = (*PodProvider)(nil)
 // filesystem assumed to be present at /release-manifests/image-references.
 type PodProvider struct {
 	Pods v1.PodInterface
-
-	// TODO: consider something like ExpirationCache if performance becomes an issue
 }
 
 func (p *PodProvider) Lookup(ctx context.Context, image string) (releaseImage *ReleaseImage, err error) {
@@ -34,9 +34,14 @@ func (p *PodProvider) Lookup(ctx context.Context, image string) (releaseImage *R
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
 				{
-					Name:    "lookup",
+					Name:    "read-image-references",
 					Image:   image,
 					Command: []string{"/usr/bin/cat", "/release-manifests/image-references"},
+				},
+				{
+					Name:    "read-coreos-metadata",
+					Image:   image,
+					Command: []string{"/usr/bin/cat", "/release-manifests/0000_50_installer_coreos-bootimages.yaml"},
 				},
 			},
 		},
@@ -73,26 +78,56 @@ func (p *PodProvider) Lookup(ctx context.Context, image string) (releaseImage *R
 		return nil, fmt.Errorf("failed waiting for image lookup pod %q: %w", pod.Name, err)
 	}
 
-	// Try and extract the pod's logs
-	req := p.Pods.GetLogs(pod.Name, &corev1.PodLogOptions{})
+	imageStreamData, err := getContainerLogs(ctx, p.Pods, pod.Name, "read-image-references")
+	if err != nil {
+		return nil, fmt.Errorf("couldn't lookup image reference metadata: %w", err)
+	}
+	osData, err := getContainerLogs(ctx, p.Pods, pod.Name, "read-coreos-metadata")
+	if err != nil {
+		return nil, fmt.Errorf("couldn't lookup coreos metadata: %w", err)
+	}
+
+	var imageStream imageapi.ImageStream
+	if err := json.Unmarshal(imageStreamData, &imageStream); err != nil {
+		return nil, fmt.Errorf("couldn't read image lookup pod %q logs as a serialized ImageStream: %w\nraw logs:\n%s", pod.Name, err, string(imageStreamData))
+	}
+
+	var coreOSMetaCM corev1.ConfigMap
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(osData), 100).Decode(&coreOSMetaCM); err != nil {
+		return nil, fmt.Errorf("couldn't read image lookup pod %q logs as a serialized ConfigMap: %w\nraw logs:\n%s", pod.Name, err, string(osData))
+	}
+
+	streamData, hasStreamData := coreOSMetaCM.Data["stream"]
+	if !hasStreamData {
+		return nil, fmt.Errorf("coreos stream metadata configmap is missing the 'stream' key")
+	}
+	var coreOSMeta CoreOSStreamMetadata
+	if err := json.Unmarshal([]byte(streamData), &coreOSMeta); err != nil {
+		return nil, fmt.Errorf("couldn't decode stream metadata data: %w\n%s", err, streamData)
+	}
+
+	releaseImage = &ReleaseImage{
+		ImageStream:    &imageStream,
+		StreamMetadata: &coreOSMeta,
+	}
+	return
+}
+
+func getContainerLogs(ctx context.Context, pods v1.PodInterface, podName, containerName string) (result []byte, err error) {
+	req := pods.GetLogs(podName, &corev1.PodLogOptions{Container: containerName})
 	logs, err := req.Stream(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read image lookup pod %q logs: %w", pod.Name, err)
+		return nil, fmt.Errorf("failed to read logs from %s/%s: %w", podName, containerName, err)
 	}
 	defer func() {
-		err := logs.Close()
-		if err != nil {
-			err = fmt.Errorf("failed to close pod %q log stream: %w", pod.Name, err)
+		if err := logs.Close(); err != nil {
+			err = fmt.Errorf("failed to close log stream from %s/%s: %w", podName, containerName, err)
 		}
 	}()
-	data, err := ioutil.ReadAll(logs)
-
-	// The logs should be a serialized ImageStream resource
-	var imageStream imageapi.ImageStream
-	err = json.Unmarshal(data, &imageStream)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't read image lookup pod %q logs as a serialized ImageStream: %w\nraw logs:\n%s", pod.Name, err, string(data))
+	if data, err := ioutil.ReadAll(logs); err != nil {
+		err = fmt.Errorf("couldn't decode logs from %s/%s: %w", podName, containerName, err)
+	} else {
+		result = data
 	}
-	releaseImage = &ReleaseImage{ImageStream: &imageStream}
 	return
 }
