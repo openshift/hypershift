@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketplace-operator
+  annotations:
+    config.openshift.io/inject-proxy: "marketplace-operator"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: marketplace-operator
+  template:
+    metadata:
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        name: marketplace-operator
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
+      tolerations:
+      - key: "node-role.kubernetes.io/master"
+        operator: Exists
+        effect: "NoSchedule"
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
+      containers:
+        - name: marketplace-operator
+          image: {{ imageFor "operator-marketplace" }}
+          ports:
+          - containerPort: 60000
+            name: metrics
+          - containerPort: 8080
+            name: healthz
+          command:
+          - marketplace-operator
+          args:
+          - -defaultsDir=/defaults
+          - -clusterOperatorName=marketplace
+          - -tls-cert
+          - /var/run/secrets/serving-cert/tls.crt
+          - -tls-key
+          - /var/run/secrets/serving-cert/tls.key
+          - -kubeconfig
+          - /etc/openshift/kubeconfig/kubeconfig
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 50Mi
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: "marketplace-operator"
+            - name: "RELEASE_VERSION"
+              # The string "0.0.1-snapshot" is substituted by the CVO with the version of the payload
+              value: "0.0.1-snapshot"
+          volumeMounts:
+            - name: marketplace-trusted-ca
+              mountPath: /etc/pki/ca-trust/extracted/pem/
+            - name: marketplace-operator-metrics
+              mountPath: /var/run/secrets/serving-cert
+            - mountPath: /etc/openshift/kubeconfig
+              name: kubeconfig
+              readOnly: true
+            - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              name: podinfo
+      volumes:
+        - name: marketplace-trusted-ca
+          configMap:
+            optional: true
+            name: marketplace-trusted-ca
+            items:
+            - key: ca-bundle.crt
+              path: tls-ca-bundle.pem
+        - name: marketplace-operator-metrics
+          secret:
+            secretName: marketplace-operator-metrics
+        - name: kubeconfig
+          secret:
+            secretName: service-network-admin-kubeconfig
+        - name: podinfo
+          downwardAPI:
+                  items:
+                    - path: "namespace"
+                      fieldRef:
+                        fieldPath: metadata.namespace
