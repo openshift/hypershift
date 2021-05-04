@@ -93,9 +93,14 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 			ClusterName: o.ClusterName,
 			NodeCount:   &o.NodeCount,
 			Platform: hyperv1.NodePoolPlatform{
-				AWS: hcluster.Spec.Platform.AWS.NodePoolDefaults,
+				Type: hcluster.Spec.Platform.Type,
 			},
 		},
+	}
+
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		nodePool.Spec.Platform.AWS = hcluster.Spec.Platform.AWS.NodePoolDefaults
 	}
 
 	if o.Render {

@@ -250,10 +250,14 @@ aws_secret_access_key = %s
 				},
 				NodeCount:   &o.NodePoolReplicas,
 				ClusterName: o.Name,
+				Platform: hyperv1.NodePoolPlatform{
+					Type: cluster.Spec.Platform.Type,
+				},
 			},
 		}
 
-		if cluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		switch nodePool.Spec.Platform.Type {
+		case hyperv1.AWSPlatform:
 			nodePool.Spec.Platform.AWS = cluster.Spec.Platform.AWS.NodePoolDefaults
 		}
 	}

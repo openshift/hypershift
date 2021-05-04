@@ -11,7 +11,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func machineDeployment(nodePool *hyperv1.NodePool, mcs *hyperv1.MachineConfigServer, clusterName string) *capiv1.MachineDeployment {
+func machineDeployment(nodePool *hyperv1.NodePool, clusterName string) *capiv1.MachineDeployment {
 	resourcesName := generateName(clusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	return &capiv1.MachineDeployment{
 		ObjectMeta: metav1.ObjectMeta{
