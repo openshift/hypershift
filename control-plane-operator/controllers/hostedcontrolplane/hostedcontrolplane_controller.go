@@ -1250,33 +1250,6 @@ func reconcilePackageServerServiceClusterIP(svc *corev1.Service) error {
 	return nil
 }
 
-/*
-func createPackageServerService(c client.Client, hcp *hyperv1.HostedControlPlane, namespace string) (*corev1.Service, error) {
-	svc := &corev1.Service{}
-	svc.Namespace = namespace
-	svc.Name = "packageserver"
-	svc.Spec.Selector = map[string]string{"app": "packageserver"}
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.Ports = []corev1.ServicePort{
-		{
-			Name:       "https",
-			Port:       443,
-			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(5443),
-		},
-	}
-	svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-	if err := c.Create(context.TODO(), svc); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			return svc, c.Get(context.TODO(), client.ObjectKeyFromObject(svc), svc)
-		} else {
-			return nil, fmt.Errorf("failed to create packageserver service: %w", err)
-		}
-	}
-	return svc, nil
-}
-*/
-
 func (r *HostedControlPlaneReconciler) reconcileOauthServiceNodePortResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) error {
 	svc := manifests.OauthServerService(namespace)
 	var nodePort int32 = 0

@@ -32,7 +32,7 @@ spec:
             - --writeStatusName
             - operator-lifecycle-manager
             - --writePackageServerStatusName
-            - operator-lifecycle-manager-packageserver
+            - "\"\""
             - --tls-cert
             - /var/run/secrets/serving-cert/tls.crt
             - --tls-key
@@ -55,7 +55,7 @@ spec:
           terminationMessagePolicy: FallbackToLogsOnError
           env:
             - name: RELEASE_VERSION
-              value: "0.0.1-snapshot"
+              value: {{ version "release" }}
             - name: OPERATOR_NAMESPACE
               valueFrom:
                 fieldRef:

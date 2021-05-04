@@ -367,6 +367,9 @@ func (c *clusterManifestContext) operatorLifecycleManager() {
 		"olm/catalog-operator-deployment.yaml",
 		"olm/packageserver-deployment.yaml",
 		"olm/packageserver-secret.yaml",
+		"olm/marketplace-metrics-service.yaml",
+		"olm/marketplace-operator-deployment.yaml",
+		"olm/marketplace-proxy-configmap.yaml",
 	)
 	c.addUserManifestFiles(
 		"olm/packageserver-service-guest.yaml",
@@ -379,7 +382,9 @@ func (c *clusterManifestContext) operatorLifecycleManager() {
 		"olm/operators-crd-guest.yaml",
 		"olm/subscriptions-crd-guest.yaml",
 		"olm/openshift-operators-namespace-guest.yaml",
+		"olm/openshift-operator-lifecycle-manager-namespace-guest.yaml",
 		"olm/global-operatorgroup-default-guest.yaml",
+		//"olm/prometheus-rule-guest.yaml",
 	)
 
 	params := map[string]string{
