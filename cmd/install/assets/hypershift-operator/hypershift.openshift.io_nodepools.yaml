@@ -197,6 +197,14 @@ spec:
                     required:
                     - instanceType
                     type: object
+                  type:
+                    description: PlatformType is a specific supported infrastructure provider.
+                    enum:
+                    - AWS
+                    - None
+                    type: string
+                required:
+                - type
                 type: object
               release:
                 description: Release specifies the release image to use for this NodePool For a nodePool a given version dictates the ignition config and an image artifact e.g an AMI in AWS. Release specifies the release image to use for this HostedCluster

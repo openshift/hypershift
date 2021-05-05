@@ -3,6 +3,7 @@ package releaseinfo
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 var _ Provider = (*CachedProvider)(nil)
@@ -13,9 +14,27 @@ type CachedProvider struct {
 	Cache map[string]*ReleaseImage
 	Inner Provider
 	mu    sync.Mutex
+
+	once sync.Once
 }
 
 func (p *CachedProvider) Lookup(ctx context.Context, image string) (releaseImage *ReleaseImage, err error) {
+	// Purge the cache every once in a while as a simple leak mitigation
+	p.once.Do(func() {
+		go func() {
+			t := time.NewTicker(30 * time.Minute)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					p.mu.Lock()
+					p.Cache = map[string]*ReleaseImage{}
+					p.mu.Unlock()
+				}
+			}
+		}()
+	})
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if entry, ok := p.Cache[image]; ok {

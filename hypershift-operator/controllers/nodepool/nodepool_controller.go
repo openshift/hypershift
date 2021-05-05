@@ -11,7 +11,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/machineconfigserver"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/machineimage"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
@@ -48,7 +47,6 @@ type NodePoolReconciler struct {
 	ctrlclient.Client
 	recorder        record.EventRecorder
 	Log             logr.Logger
-	ImageProvider   machineimage.Provider
 	ReleaseProvider releaseinfo.Provider
 }
 
@@ -93,7 +91,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	mcs := machineConfigServer(nodePool)
-	md := machineDeployment(nodePool, mcs, hcluster.Spec.InfraID)
+	md := machineDeployment(nodePool, hcluster.Spec.InfraID)
 	mhc := machineHealthCheck(nodePool)
 
 	if !nodePool.DeletionTimestamp.IsZero() {
@@ -168,15 +166,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		UID:        hcluster.UID,
 	})
 
-	mcs := machineConfigServer(nodePool)
-	md := machineDeployment(nodePool, mcs, hcluster.Spec.InfraID)
-	ami, err := r.ImageProvider.Image(hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
-	}
-	awsMachineTemplate := AWSMachineTemplate(hcluster.Spec.InfraID, ami, nodePool)
-	mhc := machineHealthCheck(nodePool)
-
 	// Validate input
 	if err := validate(nodePool); err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
@@ -193,9 +182,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		nodePool.Spec.Release.Image = hcluster.Status.Version.History[0].Image
 	}
 
-	releaseImage, err := r.ReleaseProvider.Lookup(context.Background(), nodePool.Spec.Release.Image)
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer lookupCancel()
+	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, nodePool.Spec.Release.Image)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 	targetVersion := releaseImage.Version()
 
@@ -210,6 +201,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Reconcile machineConfigServer for the given nodePool release
+	mcs := machineConfigServer(nodePool)
 	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, mcs, func() error {
 		if mcs.GetAnnotations() == nil {
 			mcs.Annotations = map[string]string{}
@@ -228,90 +220,135 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
-	// Reconcile AWSMachineTemplate
-	// If a change happens to the nodePool AWSNodePoolPlatform we delete the existing awsMachineTemplate,
-	// create a new one with a new name
-	// and pass it to the machineDeployment. This will trigger a rolling upgrade.
-	currentMD := &capiv1.MachineDeployment{}
-	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(md), currentMD); err != nil && !apierrors.IsNotFound(err) {
-		return ctrl.Result{}, fmt.Errorf("failed to get machineDeployment: %w", err)
-	}
-
-	// If the machineDeployment has not been created yet, create new awsMachineTemplate.
-	if currentMD.CreationTimestamp.IsZero() {
-		r.Log.Info("Creating new AWSMachineTemplate", "AWSMachineTemplate", ctrlclient.ObjectKeyFromObject(awsMachineTemplate).String())
-		if _, err := controllerutil.CreateOrPatch(ctx, r.Client, awsMachineTemplate, func() error {
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("error creating new AWSMachineTemplate: %w", err)
-		}
-	}
-
-	if !currentMD.CreationTimestamp.IsZero() {
-		currentAWSMachineTemplate := &capiaws.AWSMachineTemplate{}
-		if err := r.Get(ctx, client.ObjectKey{
-			Namespace: currentMD.Spec.Template.Spec.InfrastructureRef.Namespace,
-			Name:      currentMD.Spec.Template.Spec.InfrastructureRef.Name,
-		}, currentAWSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, err
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		var ami string
+		switch {
+		case len(nodePool.Spec.Platform.AWS.AMI) > 0:
+			ami = nodePool.Spec.Platform.AWS.AMI
+		default:
+			defaultAmi, err := defaultNodePoolAMI(hcluster, releaseImage)
+			if err != nil {
+				meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+					Type:    hyperv1.NodePoolAMIDiscoveryFailed,
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.NodePoolValidationFailedConditionReason,
+					Message: fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err),
+				})
+				return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
+			}
+			meta.RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolAMIDiscoveryFailed)
+			ami = defaultAmi
 		}
 
-		if !equality.Semantic.DeepEqual(currentAWSMachineTemplate.Spec.Template.Spec, awsMachineTemplate.Spec.Template.Spec) {
-			r.Log.Info("AWS config has changed. This will trigger a rolling upgrade")
+		md := machineDeployment(nodePool, hcluster.Spec.InfraID)
+		awsMachineTemplate := AWSMachineTemplate(hcluster.Spec.InfraID, ami, nodePool)
+		mhc := machineHealthCheck(nodePool)
+
+		// Reconcile AWSMachineTemplate
+		// If a change happens to the nodePool AWSNodePoolPlatform we delete the existing awsMachineTemplate,
+		// create a new one with a new name
+		// and pass it to the machineDeployment. This will trigger a rolling upgrade.
+		currentMD := &capiv1.MachineDeployment{}
+		if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(md), currentMD); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get machineDeployment: %w", err)
+		}
+
+		// If the machineDeployment has not been created yet, create new awsMachineTemplate.
+		if currentMD.CreationTimestamp.IsZero() {
 			r.Log.Info("Creating new AWSMachineTemplate", "AWSMachineTemplate", ctrlclient.ObjectKeyFromObject(awsMachineTemplate).String())
-			// Create new template
 			if _, err := controllerutil.CreateOrPatch(ctx, r.Client, awsMachineTemplate, func() error {
 				return nil
 			}); err != nil {
 				return ctrl.Result{}, fmt.Errorf("error creating new AWSMachineTemplate: %w", err)
 			}
-			// Delete existing template
-			r.Log.Info("Deleting existing AWSMachineTemplate", "AWSMachineTemplate", ctrlclient.ObjectKeyFromObject(currentAWSMachineTemplate).String())
-			if err := r.Delete(ctx, currentAWSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("error deleting existing AWSMachineTemplate: %w", err)
+		}
+
+		if !currentMD.CreationTimestamp.IsZero() {
+			currentAWSMachineTemplate := &capiaws.AWSMachineTemplate{}
+			if err := r.Get(ctx, client.ObjectKey{
+				Namespace: currentMD.Spec.Template.Spec.InfrastructureRef.Namespace,
+				Name:      currentMD.Spec.Template.Spec.InfrastructureRef.Name,
+			}, currentAWSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, err
 			}
-		} else {
-			// We pass the existing one to reconcileMachineDeployment.
-			awsMachineTemplate = currentAWSMachineTemplate
+
+			if !equality.Semantic.DeepEqual(currentAWSMachineTemplate.Spec.Template.Spec, awsMachineTemplate.Spec.Template.Spec) {
+				r.Log.Info("AWS config has changed. This will trigger a rolling upgrade")
+				r.Log.Info("Creating new AWSMachineTemplate", "AWSMachineTemplate", ctrlclient.ObjectKeyFromObject(awsMachineTemplate).String())
+				// Create new template
+				if _, err := controllerutil.CreateOrPatch(ctx, r.Client, awsMachineTemplate, func() error {
+					return nil
+				}); err != nil {
+					return ctrl.Result{}, fmt.Errorf("error creating new AWSMachineTemplate: %w", err)
+				}
+				// Delete existing template
+				r.Log.Info("Deleting existing AWSMachineTemplate", "AWSMachineTemplate", ctrlclient.ObjectKeyFromObject(currentAWSMachineTemplate).String())
+				if err := r.Delete(ctx, currentAWSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("error deleting existing AWSMachineTemplate: %w", err)
+				}
+			} else {
+				// We pass the existing one to reconcileMachineDeployment.
+				awsMachineTemplate = currentAWSMachineTemplate
+			}
 		}
-	}
 
-	// Reconcile machineDeployment
-	if _, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
-		return r.reconcileMachineDeployment(md, nodePool, mcs, awsMachineTemplate, hcluster.Spec.InfraID)
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile machineDeployment %q: %w",
-			ctrlclient.ObjectKeyFromObject(md).String(), err)
-	}
-
-	// Reconcile MachineHealthCheck
-	if nodePool.Spec.Management.AutoRepair {
-		if _, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
-			return r.reconcileMachineHealthCheck(mhc, nodePool, hcluster.Spec.InfraID)
+		// Reconcile machineDeployment
+		if _, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
+			return r.reconcileMachineDeployment(md, nodePool, mcs, awsMachineTemplate, hcluster.Spec.InfraID, releaseImage)
 		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile machineHealthCheck %q: %w",
-				ctrlclient.ObjectKeyFromObject(mhc).String(), err)
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile machineDeployment %q: %w",
+				ctrlclient.ObjectKeyFromObject(md).String(), err)
 		}
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:   hyperv1.NodePoolAutorepairEnabledConditionType,
-			Status: metav1.ConditionTrue,
-			Reason: hyperv1.NodePoolAsExpectedConditionReason,
-		})
-	} else {
-		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, err
+
+		// Reconcile MachineHealthCheck
+		if nodePool.Spec.Management.AutoRepair {
+			if _, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
+				return r.reconcileMachineHealthCheck(mhc, nodePool, hcluster.Spec.InfraID)
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile machineHealthCheck %q: %w",
+					ctrlclient.ObjectKeyFromObject(mhc).String(), err)
+			}
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:   hyperv1.NodePoolAutorepairEnabledConditionType,
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.NodePoolAsExpectedConditionReason,
+			})
+		} else {
+			if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, err
+			}
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:   hyperv1.NodePoolAutorepairEnabledConditionType,
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.NodePoolAsExpectedConditionReason,
+			})
 		}
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:   hyperv1.NodePoolAutorepairEnabledConditionType,
-			Status: metav1.ConditionFalse,
-			Reason: hyperv1.NodePoolAsExpectedConditionReason,
-		})
 	}
+
 	return ctrl.Result{}, nil
 }
 
 func isUpgrading(nodePool *hyperv1.NodePool, targetVersion string) bool {
 	return targetVersion != nodePool.Status.Version
+}
+
+func defaultNodePoolAMI(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	// TODO: The architecture should be specified from the API
+	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+	if !foundArch {
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+	}
+	// TODO: Should the region be included in the NodePool platform information?
+	region := hcluster.Spec.Platform.AWS.Region
+	regionData, hasRegionData := arch.Images.AWS.Regions[region]
+	if !hasRegionData {
+		return "", fmt.Errorf("couldn't find AWS image for region %q", region)
+	}
+	if len(regionData.Image) == 0 {
+		return "", fmt.Errorf("release image metadata has no image for region %q", region)
+	}
+	return regionData.Image, nil
 }
 
 // DeploymentComplete considers a deployment to be complete once all of its desired replicas
@@ -445,7 +482,8 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 	nodePool *hyperv1.NodePool,
 	mcs *hyperv1.MachineConfigServer,
 	awsMachineTemplate *capiaws.AWSMachineTemplate,
-	CAPIClusterName string) error {
+	CAPIClusterName string,
+	releaseImage *releaseinfo.ReleaseImage) error {
 
 	// Set annotations and labels
 	if machineDeployment.GetAnnotations() == nil {
@@ -505,10 +543,6 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 	}
 
 	// Propagate version to the machineDeployment.
-	releaseImage, err := r.ReleaseProvider.Lookup(context.Background(), nodePool.Spec.Release.Image)
-	if err != nil {
-		return err
-	}
 	targetVersion := releaseImage.Version()
 	if targetVersion == nodePool.Status.Version &&
 		targetVersion != k8sutilspointer.StringPtrDerefOr(machineDeployment.Spec.Template.Spec.Version, "") {

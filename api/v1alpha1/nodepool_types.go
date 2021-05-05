@@ -5,6 +5,7 @@ import (
 )
 
 const (
+	NodePoolAMIDiscoveryFailed              = "AMIDiscoveryFailed"
 	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
 	NodePoolAutorepairEnabledConditionType  = "AutorepairEnabled"
 	NodePoolAsExpectedConditionReason       = "AsExpected"
@@ -111,6 +112,7 @@ type NodePoolAutoScaling struct {
 // NodePoolPlatform is the platform-specific configuration for a node
 // pool. Only one of the platforms should be set.
 type NodePoolPlatform struct {
+	Type PlatformType `json:"type"`
 	// AWS is the configuration used when installing on AWS.
 	AWS *AWSNodePoolPlatform `json:"aws,omitempty"`
 }

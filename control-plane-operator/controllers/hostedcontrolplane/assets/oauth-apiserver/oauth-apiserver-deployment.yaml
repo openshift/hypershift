@@ -20,6 +20,8 @@ spec:
         app: openshift-oauth-apiserver
         clusterID: "{{ .ClusterID }}"
     spec:
+      imagePullSecrets:
+      - name: pull-secret
       automountServiceAccountToken: false
       containers:
       - name: oauth-apiserver

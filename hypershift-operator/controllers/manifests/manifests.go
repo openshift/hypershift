@@ -5,8 +5,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
 func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName string) *corev1.Namespace {
@@ -22,15 +20,6 @@ func KubeConfigSecret(hostedClusterNamespace string, hostedClusterName string) *
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedClusterNamespace,
 			Name:      hostedClusterName + "-admin-kubeconfig",
-		},
-	}
-}
-
-func DefaultNodePool(hostedClusterNamespace, hostedClusterName string) *hyperv1.NodePool {
-	return &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: hostedClusterNamespace,
-			Name:      hostedClusterName,
 		},
 	}
 }

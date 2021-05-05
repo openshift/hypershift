@@ -17,8 +17,6 @@ type HostedClusterSpec struct {
 	// Release specifies the release image to use for this HostedCluster
 	Release Release `json:"release"`
 
-	InitialComputeReplicas int `json:"initialComputeReplicas"`
-
 	// PullSecret is a pull secret injected into the container runtime of guest
 	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
@@ -118,12 +116,14 @@ type ClusterNetworking struct {
 }
 
 // PlatformType is a specific supported infrastructure provider.
-// +kubebuilder:validation:Enum=AWS
+// +kubebuilder:validation:Enum=AWS;None
 type PlatformType string
 
 const (
 	// AWSPlatformType represents Amazon Web Services infrastructure.
 	AWSPlatform PlatformType = "AWS"
+
+	NonePlatform PlatformType = "None"
 )
 
 type PlatformSpec struct {
@@ -273,7 +273,9 @@ type ClusterVersionStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version.history[?(@.state==\"Completed\")].version",description="Version"
 // +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
+// +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
+// +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
 // HostedCluster is the Schema for the hostedclusters API
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`

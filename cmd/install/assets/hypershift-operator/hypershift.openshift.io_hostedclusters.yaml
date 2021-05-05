@@ -28,9 +28,17 @@ spec:
       jsonPath: .status.kubeconfig.name
       name: KubeConfig
       type: string
+    - description: Progress
+      jsonPath: .status.version.history[?(@.state!="")].state
+      name: Progress
+      type: string
     - description: Available
       jsonPath: .status.conditions[?(@.type=="Available")].status
       name: Available
+      type: string
+    - description: Reason
+      jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: Reason
       type: string
     name: v1alpha1
     schema:
@@ -88,8 +96,6 @@ spec:
               infraID:
                 description: InfraID is used to identify the cluster in cloud platforms
                 type: string
-              initialComputeReplicas:
-                type: integer
               issuerURL:
                 type: string
               networking:
@@ -249,6 +255,7 @@ spec:
                     description: Type is the underlying infrastructure provider for the cluster.
                     enum:
                     - AWS
+                    - None
                     type: string
                 required:
                 - type
@@ -327,7 +334,6 @@ spec:
                     type: string
                 type: object
             required:
-            - initialComputeReplicas
             - issuerURL
             - networking
             - platform

@@ -322,20 +322,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Reconcile the default node pool
-	// TODO: Is this really a good idea to have on the API? If you want an initial
-	// node pool, create it through whatever user-oriented tool is consuming the
-	// API.
-	if hcluster.Spec.InitialComputeReplicas > 0 {
-		nodePool := manifests.DefaultNodePool(hcluster.Namespace, hcluster.Name)
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, nodePool, func() error {
-			return reconcileDefaultNodePool(nodePool, hcluster)
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile initial node pool: %w", err)
-		}
-	}
-
 	// Reconcile the CAPI ExternalInfraCluster
 	externalInfraCluster := controlplaneoperator.ExternalInfraCluster(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, externalInfraCluster, func() error {
@@ -463,6 +449,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Platform.AWS.NodePoolManagementCreds = corev1.LocalObjectReference{
 			Name: manifests.AWSNodePoolManagementCreds(hcp.Namespace).Name,
 		}
+	case hyperv1.NonePlatform:
+		hcp.Spec.Platform.Type = hyperv1.NonePlatform
 	}
 
 	// Only update release image (triggering a new rollout) after existing rollouts
@@ -713,25 +701,6 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 	return nil
 }
 
-func reconcileDefaultNodePool(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) error {
-	// This is a create-only resource, so never update it after it has been created.
-	if !nodePool.CreationTimestamp.IsZero() {
-		return nil
-	}
-	nodePool.Spec = hyperv1.NodePoolSpec{
-		ClusterName: hcluster.GetName(),
-		NodeCount:   k8sutilspointer.Int32Ptr(int32(hcluster.Spec.InitialComputeReplicas)),
-		IgnitionService: hyperv1.ServicePublishingStrategy{
-			Type: hyperv1.Route,
-		},
-	}
-	nodePool.Status = hyperv1.NodePoolStatus{}
-	if hcluster.Spec.Platform.AWS != nil {
-		nodePool.Spec.Platform.AWS = hcluster.Spec.Platform.AWS.NodePoolDefaults
-	}
-	return nil
-}
-
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, image string, sa *corev1.ServiceAccount) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
@@ -906,8 +875,6 @@ func reconcileExternalInfraCluster(eic *hyperv1.ExternalInfraCluster, hcluster *
 	eic.Annotations = map[string]string{
 		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
 	}
-
-	eic.Spec.ComputeReplicas = hcluster.Spec.InitialComputeReplicas
 
 	if hcluster.Spec.Platform.AWS != nil {
 		eic.Spec.Region = hcluster.Spec.Platform.AWS.Region

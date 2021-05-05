@@ -26,7 +26,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/externalinfracluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/machineconfigserver"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/machineimage/static"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,12 +147,12 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		if err := (&nodepool.NodePoolReconciler{
-			Client:        mgr.GetClient(),
-			ImageProvider: &static.StaticImageProvider{},
-			ReleaseProvider: &releaseinfo.StaticProviderDecorator{
-				Delegate: &releaseinfo.PodProvider{
+			Client: mgr.GetClient(),
+			ReleaseProvider: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.PodProvider{
 					Pods: kubeClient.CoreV1().Pods(namespace),
 				},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "nodePool")
@@ -162,10 +161,11 @@ func NewStartCommand() *cobra.Command {
 
 		if err := (&machineconfigserver.MachineConfigServerReconciler{
 			Client: mgr.GetClient(),
-			ReleaseProvider: &releaseinfo.StaticProviderDecorator{
-				Delegate: &releaseinfo.PodProvider{
+			ReleaseProvider: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.PodProvider{
 					Pods: kubeClient.CoreV1().Pods(namespace),
 				},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "machineConfigReconciler")

@@ -23,7 +23,44 @@ type Provider interface {
 // ReleaseImage wraps an ImageStream with some utilities that help the user
 // discover constituent component image information.
 type ReleaseImage struct {
-	*imageapi.ImageStream
+	*imageapi.ImageStream `json:",inline"`
+	StreamMetadata        *CoreOSStreamMetadata `json:"streamMetadata"`
+}
+
+type CoreOSStreamMetadata struct {
+	Stream        string                        `json:"stream"`
+	Architectures map[string]CoreOSArchitecture `json:"architectures"`
+}
+
+type CoreOSArchitecture struct {
+	// Artifacts is a map of platform name to Artifacts
+	Artifacts map[string]CoreOSArtifact `json:"artifacts"`
+	Images    CoreOSImages              `json:"images"`
+}
+
+type CoreOSArtifact struct {
+	Release string                             `json:"release"`
+	Formats map[string]map[string]CoreOSFormat `json:"formats"`
+}
+
+type CoreOSFormat struct {
+	Location           string `json:"location"`
+	Signature          string `json:"signature"`
+	SHA256             string `json:"sha256"`
+	UncompressedSHA256 string `json:"uncompressed-sha256"`
+}
+
+type CoreOSImages struct {
+	AWS CoreOSAWSImages `json:"aws"`
+}
+
+type CoreOSAWSImages struct {
+	Regions map[string]CoreOSAWSImage `json:"regions"`
+}
+
+type CoreOSAWSImage struct {
+	Release string `json:"release"`
+	Image   string `json:"image"`
 }
 
 func (i *ReleaseImage) Version() string {

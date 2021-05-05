@@ -14,6 +14,8 @@ spec:
         k8s-app: cluster-version-operator
         clusterID: "{{ .ClusterID }}"
     spec:
+      imagePullSecrets:
+      - name: pull-secret
       automountServiceAccountToken: false
       containers:
         - name: cluster-version-operator

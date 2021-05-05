@@ -14,6 +14,8 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -82,12 +84,6 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, mcs.Spec.ReleaseImage)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	r.Log = r.Log.WithValues("releaseImage", mcs.Spec.ReleaseImage, "version", releaseImage.Version())
-
 	// Generate mcs manifests for the given release
 	mcsServiceAccount := MachineConfigServerServiceAccount(mcs.Namespace, mcs.Name)
 
@@ -145,6 +141,14 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, nil
 	}
 
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer lookupCancel()
+	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, mcs.Spec.ReleaseImage)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+	r.Log = r.Log.WithValues("releaseImage", mcs.Spec.ReleaseImage, "version", releaseImage.Version())
+
 	// Ensure the machineConfigServer has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(mcs, finalizer) {
 		controllerutil.AddFinalizer(mcs, finalizer)
@@ -153,7 +157,12 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 	}
 
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsServiceAccount, NoopReconcile)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsServiceAccount, func() error {
+		mcsServiceAccount.ImagePullSecrets = []corev1.LocalObjectReference{
+			{Name: controlplaneoperator.PullSecret(mcsServiceAccount.Namespace).Name},
+		}
+		return nil
+	})
 	if err != nil {
 		return ctrl.Result{}, err
 	}
