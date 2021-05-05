@@ -11,7 +11,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/machineconfigserver"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/machineimage"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
@@ -48,7 +47,6 @@ type NodePoolReconciler struct {
 	ctrlclient.Client
 	recorder        record.EventRecorder
 	Log             logr.Logger
-	ImageProvider   machineimage.Provider
 	ReleaseProvider releaseinfo.Provider
 }
 
@@ -224,11 +222,26 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		md := machineDeployment(nodePool, hcluster.Spec.InfraID)
-		ami, err := r.ImageProvider.Image(hcluster)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to obtain AMI: %w", err)
+		var ami string
+		switch {
+		case len(nodePool.Spec.Platform.AWS.AMI) > 0:
+			ami = nodePool.Spec.Platform.AWS.AMI
+		default:
+			defaultAmi, err := defaultNodePoolAMI(hcluster, releaseImage)
+			if err != nil {
+				meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+					Type:    hyperv1.NodePoolAMIDiscoveryFailed,
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.NodePoolValidationFailedConditionReason,
+					Message: fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err),
+				})
+				return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
+			}
+			meta.RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolAMIDiscoveryFailed)
+			ami = defaultAmi
 		}
+
+		md := machineDeployment(nodePool, hcluster.Spec.InfraID)
 		awsMachineTemplate := AWSMachineTemplate(hcluster.Spec.InfraID, ami, nodePool)
 		mhc := machineHealthCheck(nodePool)
 
@@ -318,6 +331,24 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 func isUpgrading(nodePool *hyperv1.NodePool, targetVersion string) bool {
 	return targetVersion != nodePool.Status.Version
+}
+
+func defaultNodePoolAMI(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	// TODO: The architecture should be specified from the API
+	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+	if !foundArch {
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+	}
+	// TODO: Should the region be included in the NodePool platform information?
+	region := hcluster.Spec.Platform.AWS.Region
+	regionData, hasRegionData := arch.Images.AWS.Regions[region]
+	if !hasRegionData {
+		return "", fmt.Errorf("couldn't find AWS image for region %q", region)
+	}
+	if len(regionData.Image) == 0 {
+		return "", fmt.Errorf("release image metadata has no image for region %q", region)
+	}
+	return regionData.Image, nil
 }
 
 // DeploymentComplete considers a deployment to be complete once all of its desired replicas
