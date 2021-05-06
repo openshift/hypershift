@@ -370,6 +370,10 @@ func (c *clusterManifestContext) operatorLifecycleManager() {
 		"olm/marketplace-metrics-service.yaml",
 		"olm/marketplace-operator-deployment.yaml",
 		"olm/marketplace-proxy-configmap.yaml",
+		"olm/catalog-redhat-operators.yaml",
+		"olm/catalog-certified-operators.yaml",
+		"olm/catalog-community-operators.yaml",
+		"olm/catalog-redhat-marketplace.yaml",
 	)
 	c.addUserManifestFiles(
 		"olm/packageserver-service-guest.yaml",
@@ -384,6 +388,7 @@ func (c *clusterManifestContext) operatorLifecycleManager() {
 		"olm/openshift-operators-namespace-guest.yaml",
 		"olm/openshift-operator-lifecycle-manager-namespace-guest.yaml",
 		"olm/global-operatorgroup-default-guest.yaml",
+
 		//"olm/prometheus-rule-guest.yaml",
 	)
 

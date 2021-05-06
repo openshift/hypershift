@@ -44,7 +44,7 @@ spec:
           command:
           - marketplace-operator
           args:
-          - -defaultsDir=/defaults
+          - -defaultsDir=/hypershift
           - -clusterOperatorName=marketplace
           - -tls-cert
           - /var/run/secrets/serving-cert/tls.crt

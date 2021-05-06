@@ -1,0 +1,15 @@
+apiVersion: "operators.coreos.com/v1alpha1"
+kind: "CatalogSource"
+metadata:
+  name: "community-operators"
+  annotations:
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+spec:
+  sourceType: grpc
+  image: registry.redhat.io/redhat/community-operator-index:v4.8
+  displayName: "Community Operators"
+  publisher: "Red Hat"
+  priority: -400
+  updateStrategy:
+    registryPoll:
+      interval: 10m

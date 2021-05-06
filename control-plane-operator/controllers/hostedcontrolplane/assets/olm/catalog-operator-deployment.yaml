@@ -22,6 +22,7 @@ spec:
         app: catalog-operator
     spec:
       priorityClassName: "system-cluster-critical"
+      serviceAccount: vpn
       containers:
         - name: catalog-operator
           command:
@@ -71,6 +72,24 @@ spec:
             - mountPath: /etc/openshift/kubeconfig
               name: kubeconfig
               readOnly: true
+        - name: openvpn-client
+          terminationMessagePath: /dev/termination-log
+          command:
+            - /usr/sbin/openvpn
+          securityContext:
+            privileged: true
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: vpnsecret
+              mountPath: /etc/openvpn/secret
+            - name: vpnconfig
+              mountPath: /etc/openvpn/config
+          terminationMessagePolicy: File
+          image: 'quay.io/hypershift/openvpn:latest'
+          workingDir: /etc/openvpn/
+          args:
+            - '--config'
+            - /etc/openvpn/config/client.conf
       volumes:
         - name: serving-cert
           secret:
@@ -78,6 +97,14 @@ spec:
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig
+        - name: vpnconfig
+          configMap:
+            name: kube-apiserver-vpnclient-config
+            defaultMode: 420
+        - name: vpnsecret
+          secret:
+            secretName: kube-apiserver-vpnclient-secret
+            defaultMode: 420
       nodeSelector:
         kubernetes.io/os: linux
         node-role.kubernetes.io/master: ""
