@@ -44,6 +44,7 @@ type HostedClusterSpec struct {
 
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
+	// +kubebuilder:default={{service:"APIServer",servicePublishingStrategy:{type:"LoadBalancer"}},{service:"VPN",servicePublishingStrategy:{type:"LoadBalancer"}},{service:"OAuthServer",servicePublishingStrategy:{type:"Route"}}}
 	Services []ServicePublishingStrategyMapping `json:"services"`
 }
 
@@ -61,6 +62,7 @@ type ServicePublishingStrategy struct {
 	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route
 	Type PublishingStrategyType `json:"type"`
 	// NodePort is used to define extra metadata for the NodePort publishing strategy.
+	// +kubebuilder:validation:Optional
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
 }
 

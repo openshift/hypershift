@@ -73,6 +73,8 @@ spec:
                 description: ClusterName is the name of the Cluster this object belongs to.
                 type: string
               ignitionService:
+                default:
+                  type: Route
                 description: IgnitionService defines how the MachineConfigServer service is published in the management cluster
                 properties:
                   nodePort:
