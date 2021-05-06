@@ -1,24 +1,21 @@
 package aws
 
 import (
-	"bytes"
 	"context"
-	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1"
+	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
-	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 
 	jose "gopkg.in/square/go-jose.v2"
@@ -306,9 +303,12 @@ func DefaultProfileName(infraID string) string {
 // outputs rsa keypair
 func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Client s3iface.S3API) (*CreateIAMOutput, error) {
 	output := &CreateIAMOutput{
-		Region:  o.Region,
-		InfraID: o.InfraID,
+		Region:    o.Region,
+		InfraID:   o.InfraID,
+		IssuerURL: o.IssuerURL,
 	}
+
+	// Create the service account signing key
 	privKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
 		return nil, err
@@ -320,112 +320,64 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		Bytes:   x509.MarshalPKCS1PrivateKey(privKey),
 	})
 
-	pubKey := &privKey.PublicKey
-	pubKeyDERBytes, err := x509.MarshalPKIXPublicKey(pubKey)
+	// Discover the thumbprint for the CA on the OIDC discovery endpoint
+	url, err := url.Parse(o.IssuerURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse issuer URL: %w", err)
 	}
-
-	hasher := crypto.SHA256.New()
-	hasher.Write(pubKeyDERBytes)
-	pubKeyDERHash := hasher.Sum(nil)
-	kid := base64.RawURLEncoding.EncodeToString(pubKeyDERHash)
-
-	var keys []jose.JSONWebKey
-	keys = append(keys, jose.JSONWebKey{
-		Key:       pubKey,
-		KeyID:     kid,
-		Algorithm: string(jose.RS256),
-		Use:       "sig",
-	})
-
-	jwks, err := json.MarshalIndent(KeyResponse{Keys: keys}, "", "  ")
+	if url.Scheme != "https" {
+		return nil, fmt.Errorf("issuer URL must be https")
+	}
+	providerName := url.Host + url.Path
+	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:443", url.Host), &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to determine CA thumbprint for OIDC discovery endpoint: %w", err)
 	}
+	certs := conn.ConnectionState().PeerCertificates
+	cert := certs[len(certs)-1]
+	thumbprint := fmt.Sprintf("%x", sha1.Sum(cert.Raw))
+	conn.Close()
+	log.Info("OIDC CA thumbprint discovered", "thumbprint", thumbprint)
 
-	bucketName := o.InfraID
-	issuerURL := fmt.Sprintf("s3.%s.amazonaws.com/%s", o.Region, bucketName)
-	issuerURLWithProto := fmt.Sprintf("https://%s", issuerURL)
-	output.IssuerURL = issuerURLWithProto
-
-	_, err = s3Client.CreateBucket(&s3.CreateBucketInput{
-		Bucket: aws.String(bucketName),
-	})
-	if err != nil {
-		var aerr awserr.Error
-		if errors.As(err, &aerr) {
-			switch aerr.Code() {
-			case s3.ErrCodeBucketAlreadyOwnedByYou:
-				log.Info("Bucket already exists and is owned by us", "bucket", bucketName)
-			default:
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	} else {
-		log.Info("Bucket created", "bucket", bucketName)
-	}
-
-	discoveryJSON := fmt.Sprintf(discoveryTemplate, issuerURLWithProto, issuerURLWithProto, jwksURI)
-	_, err = s3Client.PutObject(&s3.PutObjectInput{
-		ACL:    aws.String("public-read"),
-		Body:   aws.ReadSeekCloser(strings.NewReader(discoveryJSON)),
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(discoveryURI),
-	})
-	if err != nil {
-		return nil, err
-	}
-	log.Info("OIDC discovery document updated", "bucket", bucketName)
-
-	_, err = s3Client.PutObject(&s3.PutObjectInput{
-		ACL:    aws.String("public-read"),
-		Body:   bytes.NewReader(jwks),
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(jwksURI),
-	})
-	if err != nil {
-		return nil, err
-	}
-	log.Info("JWKS document updated", "bucket", bucketName)
-
+	// Create the OIDC provider
 	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
 		return nil, err
 	}
 
-	var providerARN string
 	for _, provider := range oidcProviderList.OpenIDConnectProviderList {
-		if strings.Contains(*provider.Arn, bucketName) {
-			providerARN = *provider.Arn
-			log.Info("OIDC provider already exists", "provider", providerARN)
+		if strings.Contains(*provider.Arn, providerName) {
+			_, err := iamClient.DeleteOpenIDConnectProvider(&iam.DeleteOpenIDConnectProviderInput{
+				OpenIDConnectProviderArn: provider.Arn,
+			})
+			if err != nil {
+				log.Error(err, "Failed to remove existing OIDC provider", "provider", *provider.Arn)
+				return nil, err
+			}
+			log.Info("Removing existing OIDC provider", "provider", *provider.Arn)
 			break
 		}
 	}
 
-	if len(providerARN) == 0 {
-		oidcOutput, err := iamClient.CreateOpenIDConnectProvider(&iam.CreateOpenIDConnectProviderInput{
-			ClientIDList: []*string{
-				aws.String("openshift"),
-			},
-			ThumbprintList: []*string{
-				aws.String("A9D53002E97E00E043244F3D170D6F4C414104FD"), // root CA thumbprint for s3 (DigiCert)
-			},
-			Url: aws.String(issuerURLWithProto),
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		providerARN = *oidcOutput.OpenIDConnectProviderArn
-		log.Info("OIDC provider created", "provider", providerARN)
+	oidcOutput, err := iamClient.CreateOpenIDConnectProvider(&iam.CreateOpenIDConnectProviderInput{
+		ClientIDList: []*string{
+			aws.String("openshift"),
+		},
+		ThumbprintList: []*string{
+			aws.String(thumbprint),
+		},
+		Url: aws.String(o.IssuerURL),
+	})
+	if err != nil {
+		return nil, err
 	}
+
+	providerARN := *oidcOutput.OpenIDConnectProviderArn
+	log.Info("Created OIDC provider", "provider", providerARN)
 
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
-	ingressTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-ingress-operator:ingress-operator")
+	ingressTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, providerName, "system:serviceaccount:openshift-ingress-operator:ingress-operator")
 	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", ingressTrustPolicy, ingressPermPolicy)
 	if err != nil {
 		return nil, err
@@ -436,7 +388,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		Name:      "cloud-credentials",
 	})
 
-	registryTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-image-registry:cluster-image-registry-operator")
+	registryTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, providerName, "system:serviceaccount:openshift-image-registry:cluster-image-registry-operator")
 	arn, err = o.CreateOIDCRole(iamClient, "openshift-image-registry", registryTrustPolicy, imageRegistryPermPolicy)
 	if err != nil {
 		return nil, err
@@ -447,7 +399,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Clie
 		Name:      "installer-cloud-credentials",
 	})
 
-	csiTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, issuerURL, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator")
+	csiTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, providerName, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator")
 	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-operator", csiTrustPolicy, awsEBSCSIPermPolicy)
 	if err != nil {
 		return nil, err

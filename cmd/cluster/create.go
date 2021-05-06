@@ -51,6 +51,7 @@ type Options struct {
 	InstanceType       string
 	Region             string
 	BaseDomain         string
+	IssuerURL          string
 	PublicZoneID       string
 	PrivateZoneID      string
 
@@ -210,6 +211,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			InfraID:            infra.InfraID,
 			IAMClient:          opts.IAMClient,
 			S3Client:           opts.S3Client,
+			IssuerURL:          opts.IssuerURL,
 		}
 		iamInfo, err = opt.CreateIAM(ctx)
 		if err != nil {

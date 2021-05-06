@@ -15,6 +15,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	configv1 "github.com/openshift/api/config/v1"
+	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
@@ -23,6 +29,7 @@ type CreateIAMOptions struct {
 	Region             string
 	AWSCredentialsFile string
 	InfraID            string
+	IssuerURL          string
 	OutputFile         string
 
 	IAMClient iamiface.IAMAPI
@@ -115,6 +122,24 @@ func (o *CreateIAMOptions) Run(ctx context.Context) error {
 
 func (o *CreateIAMOptions) CreateIAM(ctx context.Context) (*CreateIAMOutput, error) {
 	var err error
+
+	client, err := crclient.New(ctrl.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to management cluster to determine ingress domain: %w", err)
+	}
+
+	ingressConfig := &configv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+
+	if err = client.Get(ctx, crclient.ObjectKeyFromObject(ingressConfig), ingressConfig); err != nil {
+		return nil, fmt.Errorf("failed to get cluster ingress configuration: %w", err)
+	}
+
+	o.IssuerURL = fmt.Sprintf("https://oidc-%s.%s", o.InfraID, ingressConfig.Spec.Domain)
+	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
 	results, err := o.CreateOIDCResources(o.IAMClient, o.S3Client)
 	if err != nil {
