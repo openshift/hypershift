@@ -177,11 +177,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return reconcile.Result{}, fmt.Errorf("error validating autoscaling parameters: %w", err)
 	}
 
-	// Default input: if release image is empty set it to the latest hostedCluster
-	if nodePool.Spec.Release.Image == "" {
-		nodePool.Spec.Release.Image = hcluster.Status.Version.History[0].Image
-	}
-
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer lookupCancel()
 	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, nodePool.Spec.Release.Image)
