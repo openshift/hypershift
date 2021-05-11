@@ -261,6 +261,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 	default:
 		for _, object := range exampleObjects {
 			key := crclient.ObjectKeyFromObject(object)
+			object.SetLabels(map[string]string{util.AutoInfraLabelName: infra.InfraID})
 			if err := client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli")); err != nil {
 				return fmt.Errorf("failed to apply object %q: %w", key, err)
 			}
