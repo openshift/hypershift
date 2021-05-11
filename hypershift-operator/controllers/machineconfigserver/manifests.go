@@ -2,6 +2,7 @@ package machineconfigserver
 
 import (
 	"fmt"
+
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -55,11 +56,11 @@ func MachineConfigServerIgnitionRoute(machineConfigServerNamespace, machineConfi
 	}
 }
 
-func MachineConfigServerUserDataSecret(mco *hyperv1.MachineConfigServer) *corev1.Secret {
+func MachineConfigServerUserDataSecret(mcs *hyperv1.MachineConfigServer) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: mco.GetNamespace(),
-			Name:      fmt.Sprintf("user-data-%s", mco.GetName()),
+			Namespace: mcs.GetNamespace(),
+			Name:      fmt.Sprintf("user-data-%s", mcs.GetName()),
 		},
 	}
 }

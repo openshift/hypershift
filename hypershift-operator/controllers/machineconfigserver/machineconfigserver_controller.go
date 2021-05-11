@@ -194,17 +194,27 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	r.Log.Info("Creating userdata secret")
+	r.Log.Info("Reconciling userdata secret")
 	semversion, err := semver.Parse(releaseImage.Version())
 	if err != nil {
 		return ctrl.Result{}, nil
 	}
-	userDataSecret = MachineConfigServerUserDataSecret(mcs)
+
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
 		// For now, only create and never update this secret
 		if !userDataSecret.CreationTimestamp.IsZero() {
 			return nil
 		}
+
+		userDataSecret.SetOwnerReferences([]metav1.OwnerReference{
+			{
+				APIVersion: hyperv1.GroupVersion.String(),
+				Kind:       "MachineConfigServer",
+				Name:       mcs.GetName(),
+				UID:        mcs.UID,
+			},
+		})
+
 		disableTemplatingValue := []byte(base64.StdEncoding.EncodeToString([]byte("true")))
 		var userDataValue []byte
 
@@ -227,12 +237,9 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	mcs.Status.Userdata.Name = userDataSecret.GetName()
 	mcs.Status.Version = releaseImage.Version()
-	if err := r.Status().Update(ctx, mcs); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, r.Status().Update(ctx, mcs)
 }
 
 func (r *MachineConfigServerReconciler) reconcileMCSServiceNodePortResources(ctx context.Context, mcs *hyperv1.MachineConfigServer, mcsService *corev1.Service) error {
