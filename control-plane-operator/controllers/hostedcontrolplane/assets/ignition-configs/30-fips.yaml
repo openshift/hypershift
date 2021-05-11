@@ -1,0 +1,8 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 30-fips
+  labels:
+    machineconfiguration.openshift.io/role: master
+spec:
+  fips: {{ .FIPS }}

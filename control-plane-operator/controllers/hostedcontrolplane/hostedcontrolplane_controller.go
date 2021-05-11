@@ -1658,6 +1658,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.CloudProvider = cloudProvider(hcp)
 	params.PlatformType = platformType(hcp)
 	params.InfraID = hcp.Spec.InfraID
+	params.FIPS = hcp.Spec.FIPS
 
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:

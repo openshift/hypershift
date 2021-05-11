@@ -144,6 +144,8 @@ spec:
                 required:
                 - managementType
                 type: object
+              fips:
+                type: boolean
               infraID:
                 description: InfraID is used to identify the cluster in cloud platforms
                 type: string
