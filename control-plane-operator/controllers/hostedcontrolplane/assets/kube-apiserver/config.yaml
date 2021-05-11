@@ -170,6 +170,8 @@ apiServerArguments:
   - flowcontrol.apiserver.k8s.io/v1alpha1=true
   service-account-issuer:
   - {{ .IssuerURL }}
+  service-account-jwks-uri:
+  - {{ .IssuerURL }}/openid/v1/jwks
   service-account-lookup:
   - 'true'
   service-account-signing-key-file:

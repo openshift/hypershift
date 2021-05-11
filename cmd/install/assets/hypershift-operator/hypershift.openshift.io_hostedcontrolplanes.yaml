@@ -241,6 +241,7 @@ spec:
                       - APIServer
                       - VPN
                       - OAuthServer
+                      - OIDC
                       type: string
                     servicePublishingStrategy:
                       description: ServicePublishingStrategy defines metadata around how a service is published
@@ -264,6 +265,7 @@ spec:
                           - LoadBalancer
                           - NodePort
                           - Route
+                          - None
                           type: string
                       required:
                       - type

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -341,6 +342,22 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile root CA: %w", err)
 	}
 
+	// Reconcile OIDC Route
+	for _, service := range hostedControlPlane.Spec.Services {
+		if service.Service != hyperv1.OIDC {
+			continue
+		}
+		switch service.Type {
+		case hyperv1.Route:
+			r.Log.Info("Reconciling OIDC Route servicetype resources")
+			if err := r.reconcileOIDCRouteResources(ctx, hostedControlPlane); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile OIDC route: %w", err)
+			}
+		case hyperv1.None:
+			r.Log.Info("OIDC Route is disabled")
+		}
+	}
+
 	// Reconcile etcd
 	r.Log.Info("Reconciling Etcd")
 	if err = r.reconcileEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
@@ -501,6 +518,7 @@ func (r *HostedControlPlaneReconciler) ensureInfrastructure(ctx context.Context,
 			default:
 				return status, fmt.Errorf("unsupported servicetype %s for service: %s", serviceItr.ServicePublishingStrategy.Type, serviceItr.Service)
 			}
+		case hyperv1.OIDC:
 		default:
 			return status, fmt.Errorf("unknown service specified: %s", serviceItr.Service)
 		}
@@ -1065,6 +1083,38 @@ func reconcileOauthServerRoute(routeInstance *routev1.Route) error {
 		},
 	}
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	route := manifests.OIDCRoute(hcp.GetNamespace())
+	r.Log.Info("Updating OIDC route")
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+		rootCASecret := pki.RootCASecret(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
+			return err
+		}
+		u, err := url.Parse(hcp.Spec.IssuerURL)
+		if err != nil {
+			return fmt.Errorf("Unable to parse issuer URL: %s", hcp.Spec.IssuerURL)
+		}
+		route.OwnerReferences = ensureHCPOwnerRef(hcp, route.OwnerReferences)
+		route.Spec = routev1.RouteSpec{
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: manifests.KubeAPIServerServiceName,
+			},
+			Host: u.Host,
+			TLS: &routev1.TLSConfig{
+				// Reencrypt is used here because we need to probe for the
+				// CA thumbprint before the KAS on the HCP is running
+				Termination:                   routev1.TLSTerminationReencrypt,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
+				DestinationCACertificate:      string(rootCASecret.Data["ca.crt"]),
+			},
+		}
+		return nil
+	})
+	return err
 }
 
 func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceLoadBalancerResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, status *InfrastructureStatus) error {

@@ -66,6 +66,7 @@ spec:
                     - LoadBalancer
                     - NodePort
                     - Route
+                    - None
                     type: string
                 required:
                 - type

@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	kubeAPIServerServiceName      = "kube-apiserver"
+	KubeAPIServerServiceName      = "kube-apiserver"
 	OauthServiceName              = "oauth-openshift"
 	oauthRouteName                = "oauth"
+	oidcRouteName                 = "oidc"
 	vpnServiceName                = "openvpn-server"
 	openshiftAPIServerServiceName = "openshift-apiserver"
 	oauthAPIServerName            = "openshift-oauth-apiserver"
@@ -18,7 +19,7 @@ const (
 func KubeAPIServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      kubeAPIServerServiceName,
+			Name:      KubeAPIServerServiceName,
 			Namespace: hostedClusterNamespace,
 		},
 	}
@@ -38,6 +39,15 @@ func OauthServerRoute(hostedClusterNamespace string) *routev1.Route {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedClusterNamespace,
 			Name:      oauthRouteName,
+		},
+	}
+}
+
+func OIDCRoute(hostedClusterNamespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedClusterNamespace,
+			Name:      oidcRouteName,
 		},
 	}
 }
