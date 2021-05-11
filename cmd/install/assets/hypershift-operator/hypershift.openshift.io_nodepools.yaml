@@ -212,6 +212,7 @@ spec:
                 properties:
                   image:
                     description: Image is the release image pullspec for the control plane
+                    pattern: ^(\w+\S+)$
                     type: string
                 required:
                 - image
@@ -220,6 +221,7 @@ spec:
             - clusterName
             - ignitionService
             - platform
+            - release
             type: object
           status:
             description: NodePoolStatus defines the observed state of NodePool

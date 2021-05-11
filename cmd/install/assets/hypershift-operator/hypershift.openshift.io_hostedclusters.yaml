@@ -272,6 +272,7 @@ spec:
                 properties:
                   image:
                     description: Image is the release image pullspec for the control plane
+                    pattern: ^(\w+\S+)$
                     type: string
                 required:
                 - image
@@ -406,6 +407,7 @@ spec:
                     properties:
                       image:
                         description: Image is the release image pullspec for the control plane
+                        pattern: ^(\w+\S+)$
                         type: string
                     required:
                     - image

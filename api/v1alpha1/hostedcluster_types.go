@@ -196,6 +196,7 @@ type AWSServiceEndpoint struct {
 type Release struct {
 	// Image is the release image pullspec for the control plane
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=^(\w+\S+)$
 	Image string `json:"image"`
 }
 

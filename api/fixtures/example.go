@@ -177,19 +177,19 @@ aws_secret_access_key = %s
 				MachineCIDR: o.ComputeCIDR,
 			},
 			Services: []hyperv1.ServicePublishingStrategyMapping{
-				hyperv1.ServicePublishingStrategyMapping{
+				{
 					Service: hyperv1.APIServer,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 						Type: hyperv1.LoadBalancer,
 					},
 				},
-				hyperv1.ServicePublishingStrategyMapping{
+				{
 					Service: hyperv1.VPN,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 						Type: hyperv1.LoadBalancer,
 					},
 				},
-				hyperv1.ServicePublishingStrategyMapping{
+				{
 					Service: hyperv1.OAuthServer,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 						Type: hyperv1.Route,
@@ -234,9 +234,6 @@ aws_secret_access_key = %s
 				},
 			},
 		},
-		Status: hyperv1.HostedClusterStatus{
-			Conditions: []metav1.Condition{},
-		},
 	}
 
 	var nodePool *hyperv1.NodePool
@@ -256,6 +253,9 @@ aws_secret_access_key = %s
 				},
 				NodeCount:   &o.NodePoolReplicas,
 				ClusterName: o.Name,
+				Release: hyperv1.Release{
+					Image: o.ReleaseImage,
+				},
 				Platform: hyperv1.NodePoolPlatform{
 					Type: cluster.Spec.Platform.Type,
 				},

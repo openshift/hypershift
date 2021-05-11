@@ -52,11 +52,12 @@ type NodePoolSpec struct {
 	Management NodePoolManagement `json:"nodePoolManagement"`
 	Platform   NodePoolPlatform   `json:"platform"`
 
-	// +kubebuilder:validation:Optional
 	// Release specifies the release image to use for this NodePool
 	// For a nodePool a given version dictates the ignition config and
 	// an image artifact e.g an AMI in AWS.
 	// Release specifies the release image to use for this HostedCluster
+	// +kubebuilder:validation:Required
+	// +required
 	Release Release `json:"release"`
 
 	// IgnitionService defines how the MachineConfigServer service is published in the management cluster
