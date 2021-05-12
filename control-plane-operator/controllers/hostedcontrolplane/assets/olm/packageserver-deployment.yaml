@@ -21,6 +21,21 @@ spec:
       labels:
         app: packageserver
     spec:
+      serviceAccount: vpn
+      dnsPolicy: None
+      dnsConfig:
+        # dnsmasq in the pod configured to check guest + host dns servers
+        nameservers:
+        - 127.0.0.1
+        # searches configured to match kube defaults
+        searches:
+        - {{ .Namespace }}.svc.cluster.local
+        - svc.cluster.local
+        - cluster.local
+        - ec2.internal
+        options:
+        - name: ndots
+          value: '5'
       containers:
       - command:
         - /bin/package-server
@@ -78,7 +93,37 @@ spec:
         - mountPath: /etc/openshift/kubeconfig
           name: kubeconfig
           readOnly: true
-      dnsPolicy: ClusterFirst
+      - name: openvpn-client
+        terminationMessagePath: /dev/termination-log
+        command:
+          - /usr/sbin/openvpn
+        securityContext:
+          privileged: true
+        imagePullPolicy: Always
+        volumeMounts:
+          - name: vpnsecret
+            mountPath: /etc/openvpn/secret
+          - name: vpnconfig
+            mountPath: /etc/openvpn/config
+        terminationMessagePolicy: File
+        image: 'quay.io/hypershift/openvpn:latest'
+        workingDir: /etc/openvpn/
+        args:
+          - '--config'
+          - /etc/openvpn/config/client.conf
+      - name: dnsmasq
+        securityContext:
+          privileged: true
+        imagePullPolicy: Always
+        volumeMounts:
+          - name: dnsmasq-conf
+            mountPath: /etc/dnsmasq.conf
+            subPath: dnsmasq.conf
+          - name: resolv-dnsmasq
+            mountPath: /etc/resolv.dnsmasq
+            subPath: resolv.dnsmasq
+        terminationMessagePolicy: FallbackToLogsOnError
+        image: 4km3/dnsmasq
       nodeSelector:
         kubernetes.io/os: linux
         node-role.kubernetes.io/master: ""
@@ -123,3 +168,19 @@ spec:
       - name: kubeconfig
         secret:
           secretName: service-network-admin-kubeconfig
+      - name: vpnconfig
+        configMap:
+          name: kube-apiserver-vpnclient-config
+          defaultMode: 420
+      - name: vpnsecret
+        secret:
+          secretName: kube-apiserver-vpnclient-secret
+          defaultMode: 420
+      - name: dnsmasq-conf
+        configMap:
+          name: dnsmasq-conf
+          defaultMode: 420
+      - name: resolv-dnsmasq
+        configMap:
+          name: resolv-dnsmasq
+          defaultMode: 420

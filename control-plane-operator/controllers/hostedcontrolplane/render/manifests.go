@@ -38,6 +38,7 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 		"base64String":      base64StringEncode,
 		"indent":            indent,
 		"address":           cidrAddress,
+		"dns":               dnsForCidr,
 		"mask":              cidrMask,
 		"include":           includeFileFunc(params, ctx.renderContext),
 		"includeVPN":        includeVPNFunc(true),
@@ -67,6 +68,7 @@ func (c *clusterManifestContext) setupManifests() {
 	c.clusterBootstrap()
 	c.oauthOpenshiftServer()
 	c.openVPN()
+	c.dnsmasq()
 	c.registry()
 	c.operatorLifecycleManager()
 	c.userManifestsBootstrapper()
@@ -272,6 +274,13 @@ func (c *clusterManifestContext) openVPN() {
 	c.addUserManifestFiles(
 		"openvpn/openvpn-client-deployment.yaml",
 		"openvpn/openvpn-client-configmap.yaml",
+	)
+}
+
+func (c *clusterManifestContext) dnsmasq() {
+	c.addManifestFiles(
+		"dnsmasq/dnsmasq-conf.configmap.yaml",
+		"dnsmasq/resolv-dnsmasq.configmap.yaml",
 	)
 }
 
