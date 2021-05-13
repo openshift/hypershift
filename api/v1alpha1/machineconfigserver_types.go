@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -31,6 +32,9 @@ type MachineConfigServerStatus struct {
 
 	// +kubebuilder:validation:Optional
 	Port int32 `json:"port,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	Userdata corev1.LocalObjectReference `json:"userdata,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -39,6 +43,7 @@ type MachineConfigServerStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Version"
 // +kubebuilder:printcolumn:name="Host",type="string",JSONPath=".status.host",description="Host"
+// +kubebuilder:printcolumn:name="Userdata",type="string",JSONPath=".status.userdata.name",description="Userdata"
 // MachineConfigServer is the Schema for the MachineConfigServers API
 type MachineConfigServer struct {
 	metav1.TypeMeta   `json:",inline"`

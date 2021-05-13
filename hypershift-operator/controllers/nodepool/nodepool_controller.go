@@ -10,7 +10,6 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/machineconfigserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
@@ -524,7 +523,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 		Spec: capiv1.MachineSpec{
 			ClusterName: CAPIClusterName,
 			Bootstrap: capiv1.Bootstrap{
-				DataSecretName: k8sutilspointer.StringPtr(machineconfigserver.MachineConfigServerUserDataSecret(mcs).GetName()),
+				DataSecretName: k8sutilspointer.StringPtr(mcs.Status.Userdata.Name),
 			},
 			InfrastructureRef: corev1.ObjectReference{
 				Kind:       "AWSMachineTemplate",

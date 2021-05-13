@@ -28,6 +28,10 @@ spec:
       jsonPath: .status.host
       name: Host
       type: string
+    - description: Userdata
+      jsonPath: .status.userdata.name
+      name: Userdata
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -86,6 +90,13 @@ spec:
               port:
                 format: int32
                 type: integer
+              userdata:
+                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
               version:
                 description: Version is the semantic version of the release used by the mcs. For a mcs a given version represents the ignition config served by the ignition endpoint referenced in the userdata secret.
                 type: string
