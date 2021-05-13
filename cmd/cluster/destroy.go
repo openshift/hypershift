@@ -217,9 +217,9 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 
 	//clean up CLI generated secrets
 	log.Info("Deleting Secrets", "namespace", o.Namespace)
-	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{util.AutoInfraLabelName: o.InfraID}); err != nil {
+	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{util.AutoInfraLabelName: infraID}); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("Secrets not found based on labels, skipping delete", "namespace", o.Namespace, "labels", util.AutoInfraLabelName+o.InfraID)
+			log.Info("Secrets not found based on labels, skipping delete", "namespace", o.Namespace, "labels", util.AutoInfraLabelName+infraID)
 		} else {
 			return fmt.Errorf("failed to clean up secrets in %s namespace: %w", o.Namespace, err)
 		}
