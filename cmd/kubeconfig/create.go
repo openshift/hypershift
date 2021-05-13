@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubejson "k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/apimachinery/pkg/types"
 	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -24,8 +25,13 @@ import (
 // TODO: NEXT: incorporate into an fzf workflow
 
 const description string = `
-This command renders a kubeconfig with a context for every HostedCluster resource.
-The contexts are named based on the HostedCluster following the pattern:
+This command renders kubeconfigs for HostedClusters.
+
+If a single cluster is identified, the kubeconfig is printed to stdout.
+
+If no clusters is identified, this command renders a kubeconfig with a context
+for every HostedCluster resource. The contexts are named based on the
+HostedCluster following the pattern:
 
     {hostedcluster.namespace}-{hostedcluster.name}
 
@@ -33,17 +39,37 @@ The kubeconfig for each cluster is based on the secret referenced by the status
 of the HostedCluster itself.
 `
 
-// NewCreateCommand returns a command which creates a combined kubeconfig
-// from HostedCluster resources.
+type Options struct {
+	Namespace string
+	Name      string
+}
+
+func (o Options) Validate() error {
+	if len(o.Namespace) > 0 && len(o.Name) == 0 {
+		return fmt.Errorf("name is required")
+	}
+	if len(o.Name) > 0 && len(o.Namespace) == 0 {
+		return fmt.Errorf("namespace is required")
+	}
+	return nil
+}
+
+// NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
+// resources.
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubeconfig",
-		Short:        "Creates a combined kubeconfig from hostedcluster resources",
+		Short:        "Renders kubeconfigs for hostedcluster resources.",
 		Long:         description,
 		SilenceUsage: true,
 	}
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	opts := Options{}
+
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A hostedcluster name")
+
+	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
@@ -51,15 +77,23 @@ func NewCreateCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-		return render(ctx)
+
+		if err := opts.Validate(); err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			os.Exit(1)
+		}
+
+		if err := render(ctx, opts); err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			os.Exit(2)
+		}
 	}
 
 	return cmd
 }
 
-// render builds the combined kubeconfig for hostedclusters and prints the
-// kubeconfig to stdout.
-func render(ctx context.Context) error {
+// render builds the kubeconfig and prints it to stdout.
+func render(ctx context.Context, opts Options) error {
 	scheme := runtime.NewScheme()
 	if err := clientcmdapiv1.AddToScheme(scheme); err != nil {
 		return fmt.Errorf("failed to set up scheme: %w", err)
@@ -69,12 +103,40 @@ func render(ctx context.Context) error {
 		kubejson.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
 	)
 	c := util.GetClientOrDie()
-	kubeConfig, err := buildCombinedConfig(ctx, c)
-	if err != nil {
-		return fmt.Errorf("failed to make kubeconfig: %w", err)
-	}
 
-	return serializer.Encode(kubeConfig, os.Stdout)
+	var kubeConfig *clientcmdapiv1.Config
+	switch {
+	case len(opts.Name) == 0:
+		config, err := buildCombinedConfig(ctx, c)
+		if err != nil {
+			return fmt.Errorf("failed to make kubeconfig: %w", err)
+		}
+		kubeConfig = config
+		return serializer.Encode(kubeConfig, os.Stdout)
+	default:
+		var cluster hyperv1.HostedCluster
+		if err := c.Get(ctx, types.NamespacedName{Namespace: opts.Namespace, Name: opts.Name}, &cluster); err != nil {
+			return err
+		}
+		if cluster.Status.KubeConfig == nil {
+			return fmt.Errorf("cluster doesn't report a kubeconfig")
+		}
+		kubeConfigSecret := corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: cluster.Namespace,
+				Name:      cluster.Status.KubeConfig.Name,
+			},
+		}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(&kubeConfigSecret), &kubeConfigSecret); err != nil {
+			return fmt.Errorf("failed to get kubeconfig secret %s: %s", client.ObjectKeyFromObject(&kubeConfigSecret), err)
+		}
+		data, hasData := kubeConfigSecret.Data["kubeconfig"]
+		if !hasData || len(data) == 0 {
+			return fmt.Errorf("kubeconfig secret has no kubeconfig")
+		}
+		fmt.Print(string(data))
+		return nil
+	}
 }
 
 // NamedConfig adds a name to a Config.
