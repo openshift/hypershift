@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -195,11 +194,6 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	r.Log.Info("Reconciling userdata secret")
-	semversion, err := semver.Parse(releaseImage.Version())
-	if err != nil {
-		return ctrl.Result{}, nil
-	}
-
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
 		// For now, only create and never update this secret
 		if !userDataSecret.CreationTimestamp.IsZero() {
@@ -216,17 +210,7 @@ func (r *MachineConfigServerReconciler) Reconcile(ctx context.Context, req ctrl.
 		})
 
 		disableTemplatingValue := []byte(base64.StdEncoding.EncodeToString([]byte("true")))
-		var userDataValue []byte
-
-		// Clear any version modifiers for this comparison
-		semversion.Pre = nil
-		semversion.Build = nil
-		if semversion.GTE(semver.MustParse("4.6.0")) {
-			userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s:%d/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, mcs.Status.Host, mcs.Status.Port))
-		} else {
-			userDataValue = []byte(fmt.Sprintf(`{"ignition":{"config":{"append":[{"source":"http://%s:%d/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"2.2.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, mcs.Status.Host, mcs.Status.Port))
-		}
-
+		userDataValue := []byte(fmt.Sprintf(`{"ignition":{"config":{"merge":[{"source":"http://%s:%d/config/master","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`, mcs.Status.Host, mcs.Status.Port))
 		userDataSecret.Data = map[string][]byte{
 			"disableTemplating": disableTemplatingValue,
 			"value":             userDataValue,
