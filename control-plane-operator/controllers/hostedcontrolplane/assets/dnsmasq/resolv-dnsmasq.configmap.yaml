@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resolv-dnsmasq
+data:
+  resolv.dnsmasq: |-
+    nameserver  {{ dns .ServiceCIDR }}
+    nameserver  172.30.0.10

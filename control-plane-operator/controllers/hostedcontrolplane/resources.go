@@ -69,6 +69,21 @@ func OauthServerServiceSelector() map[string]string {
 	return map[string]string{"app": "oauth-openshift"}
 }
 
+func PackageServerServicePorts() []corev1.ServicePort {
+	return []corev1.ServicePort{
+		{
+			Name:       "https",
+			Port:       443,
+			Protocol:   corev1.ProtocolTCP,
+			TargetPort: intstr.FromInt(5443),
+		},
+	}
+}
+
+func PackageServerServiceSelector() map[string]string {
+	return map[string]string{"app": "packageserver"}
+}
+
 func KubeAPIServerServicePorts(securePort int32) []corev1.ServicePort {
 	return []corev1.ServicePort{
 		{

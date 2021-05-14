@@ -102,6 +102,16 @@ func GeneratePKI(params *render.PKIParams) (map[string][]byte, error) {
 				"openshift-oauth-apiserver.default.svc.cluster.local",
 			}, nil),
 
+		// packageserver(olm)
+		cert("packageserver-server", "root-ca", "packageserver", "openshift",
+			[]string{
+				"packageserver",
+				fmt.Sprintf("packageserver-service.%s.svc", params.Namespace),
+				fmt.Sprintf("packageserver-service.%s.svc.cluster.local", params.Namespace),
+				"packageserver.default.svc",
+				"packageserver.default.svc.cluster.local",
+			}, nil),
+
 		// openshift-controller-manager
 		cert("openshift-controller-manager-server", "root-ca", "openshift-controller-manager", "openshift",
 			[]string{

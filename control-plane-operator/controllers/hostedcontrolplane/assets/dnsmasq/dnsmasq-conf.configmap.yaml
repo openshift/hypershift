@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dnsmasq-conf
+data:
+  dnsmasq.conf: |-
+    resolv-file=/etc/resolv.dnsmasq
+    conf-dir=/etc/dnsmasq.d
+    cache-size=0
+    no-negcache
+    strict-order

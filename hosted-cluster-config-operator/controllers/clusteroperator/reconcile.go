@@ -233,6 +233,37 @@ var clusterOperators = []ClusterOperatorInfo{
 			},
 		},
 	},
+	{
+		Name: "operator-lifecycle-manager",
+		VersionMapping: map[string]string{
+			"operator-lifecycle-manager": "release",
+			"operator":                   "release",
+		},
+		RelatedObjects: []configv1.ObjectReference{},
+	},
+	{
+		Name: "operator-lifecycle-manager-catalog",
+		VersionMapping: map[string]string{
+			"operator-lifecycle-manager": "release",
+			"operator":                   "release",
+		},
+		RelatedObjects: []configv1.ObjectReference{},
+	},
+	{
+		Name: "operator-lifecycle-manager-packageserver",
+		VersionMapping: map[string]string{
+			"packageserver": "release",
+			"operator":      "release",
+		},
+		RelatedObjects: []configv1.ObjectReference{},
+	},
+	{
+		Name: "marketplace",
+		VersionMapping: map[string]string{
+			"operator": "release",
+		},
+		RelatedObjects: []configv1.ObjectReference{},
+	},
 }
 
 var clusterOperatorNames sets.String
