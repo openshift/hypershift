@@ -37,6 +37,7 @@ type Options struct {
 	HyperShiftOperatorReplicas int32
 	Development                bool
 	Render                     bool
+	ExcludeEtcdManifests       bool
 }
 
 func NewCommand() *cobra.Command {
@@ -52,6 +53,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.Flags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
+	cmd.Flags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		switch {
@@ -65,8 +67,9 @@ func NewCommand() *cobra.Command {
 
 		objects = append(objects, hyperShiftOperatorManifests(opts)...)
 		objects = append(objects, clusterAPIManifests()...)
-		objects = append(objects, etcdManifests()...)
-
+		if !opts.ExcludeEtcdManifests {
+			objects = append(objects, etcdManifests()...)
+		}
 		switch {
 		case opts.Render:
 			render(objects)

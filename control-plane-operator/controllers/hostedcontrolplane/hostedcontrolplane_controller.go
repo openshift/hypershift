@@ -75,7 +75,8 @@ const (
 	etcdAvailableCheckInterval  = 10 * time.Second
 	kasAvailableCheckInterval   = 10 * time.Second
 
-	kubeAPIServerPort = 6443
+	kubeAPIServerPort            = 6443
+	etcdClientOverrideAnnotation = "hypershift.openshift.io/etcd-client-override"
 )
 
 var (
@@ -290,7 +291,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Reconcile etcd cluster status
-	{
+	if _, ok := hostedControlPlane.Annotations[etcdClientOverrideAnnotation]; !ok {
 		etcdCluster := manifests.EtcdCluster(hostedControlPlane.Namespace)
 		var err error
 		if err = r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil && !apierrors.IsNotFound(err) {
@@ -367,21 +368,23 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	// Reconcile etcd
-	r.Log.Info("Reconciling Etcd")
-	if err = r.reconcileEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
-		r.Log.Error(err, "failed to reconcile etcd")
-		return ctrl.Result{}, err
-	}
-	{
-		etcdAvailable := hcputil.GetConditionByType(hostedControlPlane.Status.Conditions, hyperv1.EtcdAvailable)
-		if etcdAvailable == nil || etcdAvailable.Status != hyperv1.ConditionTrue {
-			r.Log.Info("etcd is not yet available")
-			msg := "Etcd service not yet available"
-			if etcdAvailable != nil {
-				msg = etcdAvailable.Message
+	if _, ok := hostedControlPlane.Annotations[etcdClientOverrideAnnotation]; !ok {
+		// Reconcile etcd
+		r.Log.Info("Reconciling Etcd")
+		if err = r.reconcileEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
+			r.Log.Error(err, "failed to reconcile etcd")
+			return ctrl.Result{}, err
+		}
+		{
+			etcdAvailable := hcputil.GetConditionByType(hostedControlPlane.Status.Conditions, hyperv1.EtcdAvailable)
+			if etcdAvailable == nil || etcdAvailable.Status != hyperv1.ConditionTrue {
+				r.Log.Info("etcd is not yet available")
+				msg := "Etcd service not yet available"
+				if etcdAvailable != nil {
+					msg = etcdAvailable.Message
+				}
+				return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "EtcdNotAvailable", msg, ctrl.Result{RequeueAfter: etcdAvailableCheckInterval}, nil)
 			}
-			return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "EtcdNotAvailable", msg, ctrl.Result{RequeueAfter: etcdAvailableCheckInterval}, nil)
 		}
 	}
 	// Reconcile VPN
@@ -1260,6 +1263,11 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.IssuerURL = hcp.Spec.IssuerURL
 	params.EtcdClientName = "etcd-client"
 	params.NetworkType = "OpenShiftSDN"
+	if hcp.Annotations != nil {
+		if _, ok := hcp.Annotations[etcdClientOverrideAnnotation]; ok {
+			params.EtcdClientName = hcp.Annotations[etcdClientOverrideAnnotation]
+		}
+	}
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.APIAvailabilityPolicy = render.SingleReplica
 	params.ControllerAvailabilityPolicy = render.SingleReplica
