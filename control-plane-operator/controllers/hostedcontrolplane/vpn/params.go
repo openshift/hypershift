@@ -57,3 +57,13 @@ func NewVPNParams(hcp *hyperv1.HostedControlPlane, images map[string]string, ext
 		OwnerReference: config.ControllerOwnerRef(hcp),
 	}
 }
+
+type VPNServiceParams struct {
+	OwnerReference *metav1.OwnerReference
+}
+
+func NewVPNServiceParams(hcp *hyperv1.HostedControlPlane) *VPNServiceParams {
+	return &VPNServiceParams{
+		OwnerReference: config.ControllerOwnerRef(hcp),
+	}
+}

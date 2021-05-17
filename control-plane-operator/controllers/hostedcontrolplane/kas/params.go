@@ -54,6 +54,11 @@ type KubeAPIServerParams struct {
 	Images KubeAPIServerImages `json:"images"`
 }
 
+type KubeAPIServerServiceParams struct {
+	APIServerPort  int
+	OwnerReference *metav1.OwnerReference
+}
+
 func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
 		APIServer: configv1.APIServer{
@@ -212,4 +217,11 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 
 func externalAddress(endpoint hyperv1.APIEndpoint) string {
 	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
+}
+
+func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
+	return &KubeAPIServerServiceParams{
+		APIServerPort:  config.DefaultAPIServerPort,
+		OwnerReference: config.ControllerOwnerRef(hcp),
+	}
 }

@@ -1,4 +1,4 @@
-package kas
+package vpn
 
 import (
 	"fmt"
@@ -10,18 +10,22 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
-func (p *KubeAPIServerServiceParams) ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
+const (
+	VPNServerPort = 1194
+)
+
+func (p *VPNServiceParams) ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
 	util.EnsureOwnerRef(svc, p.OwnerReference)
-	svc.Spec.Selector = kasLabels
+	svc.Spec.Selector = vpnServerLabels
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]
 	} else {
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
-	portSpec.Port = int32(p.APIServerPort)
+	portSpec.Port = int32(VPNServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(p.APIServerPort)
+	portSpec.TargetPort = intstr.FromInt(VPNServerPort)
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
@@ -31,13 +35,13 @@ func (p *KubeAPIServerServiceParams) ReconcileService(svc *corev1.Service, strat
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	default:
-		return fmt.Errorf("invalid publishing strategy for Kube API server service: %s", strategy.Type)
+		return fmt.Errorf("invalid publishing strategy for VPN service: %s", strategy.Type)
 	}
 	svc.Spec.Ports[0] = portSpec
 	return nil
 }
 
-func (p *KubeAPIServerServiceParams) ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
+func (p *VPNServiceParams) ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
@@ -46,14 +50,14 @@ func (p *KubeAPIServerServiceParams) ReconcileServiceStatus(svc *corev1.Service,
 		switch {
 		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
 			host = svc.Status.LoadBalancer.Ingress[0].Hostname
-			port = int32(p.APIServerPort)
+			port = int32(VPNServerPort)
 		case svc.Status.LoadBalancer.Ingress[0].IP != "":
 			host = svc.Status.LoadBalancer.Ingress[0].IP
-			port = int32(p.APIServerPort)
+			port = int32(VPNServerPort)
 		}
 	case hyperv1.NodePort:
 		if strategy.NodePort == nil {
-			err = fmt.Errorf("strategy details not specified for API server nodeport type service")
+			err = fmt.Errorf("strategy details not specified for VPN nodeport type service")
 			return
 		}
 		if len(svc.Spec.Ports) == 0 {
@@ -66,4 +70,5 @@ func (p *KubeAPIServerServiceParams) ReconcileServiceStatus(svc *corev1.Service,
 		host = strategy.NodePort.Address
 	}
 	return
+
 }
