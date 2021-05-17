@@ -22,6 +22,13 @@ func (p *KubeAPIServerParams) ReconcileServiceKubeconfigSecret(secret, cert, ca 
 	return reconcileKubeconfig(secret, cert, ca, svcURL, "", p.OwnerReference)
 }
 
+func (p *KubeAPIServerParams) ReconcileServiceCAPIKubeconfigSecret(secret, cert, ca *corev1.Secret) error {
+	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, p.APIServerPort)
+	// The client used by CAPI machine controller expects the kubeconfig to have this key
+	// https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
+	return reconcileKubeconfig(secret, cert, ca, svcURL, "value", p.OwnerReference)
+}
+
 func (p *KubeAPIServerParams) ReconcileLocalhostKubeconfigSecret(secret, cert, ca *corev1.Secret) error {
 	localhostURL := fmt.Sprintf("https://localhost:%d", p.APIServerPort)
 	return reconcileKubeconfig(secret, cert, ca, localhostURL, "", p.OwnerReference)
