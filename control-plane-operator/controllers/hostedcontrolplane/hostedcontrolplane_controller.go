@@ -6,6 +6,7 @@ import (
 	crand "crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -76,9 +77,12 @@ const (
 	etcdAvailableCheckInterval  = 10 * time.Second
 	kasAvailableCheckInterval   = 10 * time.Second
 
-	kubeAPIServerPort            = 6443
-	etcdClientOverrideAnnotation = "hypershift.openshift.io/etcd-client-override"
-	securePortOverrideAnnotation = "hypershift.openshift.io/secureport-override"
+	kubeAPIServerPort             = 6443
+	etcdClientOverrideAnnotation  = "hypershift.openshift.io/etcd-client-override"
+	securePortOverrideAnnotation  = "hypershift.openshift.io/secureport-override"
+	identityProviderAnnotation    = "hypershift.openshift.io/identity-provider"
+	namedCertAnnotation           = "hypershift.openshift.io/named-cert"
+	networkTypeOverrideAnnotation = "hypershift.openshift.io/networktype-override"
 )
 
 var (
@@ -1273,6 +1277,19 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 			portNumber, err := strconv.ParseUint(hcp.Annotations[securePortOverrideAnnotation], 10, 32)
 			if err == nil {
 				params.InternalAPIPort = uint(portNumber)
+			}
+		}
+		if _, ok := hcp.Annotations[networkTypeOverrideAnnotation]; ok {
+			params.NetworkType = hcp.Annotations[networkTypeOverrideAnnotation]
+		}
+		if _, ok := hcp.Annotations[identityProviderAnnotation]; ok {
+			params.IdentityProviders = hcp.Annotations[identityProviderAnnotation]
+		}
+		if _, ok := hcp.Annotations[namedCertAnnotation]; ok {
+			var namedCertStruct []render.NamedCert
+			err := json.Unmarshal([]byte(hcp.Annotations[namedCertAnnotation]), &namedCertStruct)
+			if err == nil {
+				params.NamedCerts = namedCertStruct
 			}
 		}
 	}
