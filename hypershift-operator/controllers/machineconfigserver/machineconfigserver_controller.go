@@ -281,6 +281,7 @@ func (r *MachineConfigServerReconciler) reconcileUserData(ctx context.Context, m
 		}
 		return nil
 	})
+	mcs.Status.Userdata.Name = userDataSecret.GetName()
 	return nil, err
 }
 

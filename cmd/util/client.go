@@ -11,6 +11,10 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 )
 
+const (
+	AutoInfraLabelName = "hypershift.openshift.io/auto-created-for-infra"
+)
+
 // GetConfigOrDie creates a REST config from current context
 func GetConfigOrDie() *rest.Config {
 	cfg := cr.GetConfigOrDie()

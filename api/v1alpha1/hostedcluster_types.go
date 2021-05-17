@@ -45,12 +45,17 @@ type HostedClusterSpec struct {
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
 	Services []ServicePublishingStrategyMapping `json:"services"`
+
+	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
+	// Defaults to SingleReplica when not set.
+	// +optional
+	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 }
 
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
 type ServicePublishingStrategyMapping struct {
 	// Service identifies the type of service being published
-	// +kubebuilder:validation:Enum=APIServer;VPN;OAuthServer
+	// +kubebuilder:validation:Enum=APIServer;VPN;OAuthServer;OIDC
 	Service                   ServiceType `json:"service"`
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
@@ -58,7 +63,7 @@ type ServicePublishingStrategyMapping struct {
 // ServicePublishingStrategy defines metadata around how a service is published
 type ServicePublishingStrategy struct {
 	// Type defines the publishing strategy used for the service.
-	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route
+	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None
 	Type PublishingStrategyType `json:"type"`
 	// NodePort is used to define extra metadata for the NodePort publishing strategy.
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
@@ -74,6 +79,8 @@ var (
 	NodePort PublishingStrategyType = "NodePort"
 	// Route exposes services with a Route + ClusterIP kube service.
 	Route PublishingStrategyType = "Route"
+	// None disables exposing the service
+	None PublishingStrategyType = "None"
 )
 
 // ServiceType defines what control plane services can be exposed from the management control plane
@@ -83,6 +90,7 @@ var (
 	APIServer   ServiceType = "APIServer"
 	VPN         ServiceType = "VPN"
 	OAuthServer ServiceType = "OAuthServer"
+	OIDC        ServiceType = "OIDC"
 )
 
 // NodePortPublishingStrategy defines the network endpoint that can be used to contact the NodePort service
@@ -193,6 +201,7 @@ type AWSServiceEndpoint struct {
 type Release struct {
 	// Image is the release image pullspec for the control plane
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=^(\w+\S+)$
 	Image string `json:"image"`
 }
 

@@ -78,6 +78,9 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              controllerAvailabilityPolicy:
+                description: ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode Defaults to SingleReplica when not set.
+                type: string
               dns:
                 description: DNS configuration for the cluster
                 properties:
@@ -272,6 +275,7 @@ spec:
                 properties:
                   image:
                     description: Image is the release image pullspec for the control plane
+                    pattern: ^(\w+\S+)$
                     type: string
                 required:
                 - image
@@ -287,6 +291,7 @@ spec:
                       - APIServer
                       - VPN
                       - OAuthServer
+                      - OIDC
                       type: string
                     servicePublishingStrategy:
                       description: ServicePublishingStrategy defines metadata around how a service is published
@@ -310,6 +315,7 @@ spec:
                           - LoadBalancer
                           - NodePort
                           - Route
+                          - None
                           type: string
                       required:
                       - type
@@ -404,6 +410,7 @@ spec:
                     properties:
                       image:
                         description: Image is the release image pullspec for the control plane
+                        pattern: ^(\w+\S+)$
                         type: string
                     required:
                     - image

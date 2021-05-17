@@ -13,6 +13,8 @@ import (
 	"github.com/blang/semver"
 	"github.com/vincent-petithory/dataurl"
 	"gopkg.in/ini.v1"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func includeVPNFunc(includeVPN bool) func() bool {
@@ -58,22 +60,51 @@ func versionCompareFunc(versions map[string]string, versionCompareFn func(actual
 	}
 }
 
-func pkiFunc(pki map[string][]byte) func(string) string {
-	return func(fileName string) string {
-		b, found := pki[fileName]
-		if !found {
-			panic(fmt.Sprintf("pki file %s not found", fileName))
-		}
+func pkiFunc(secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) func(string, string, string) string {
+	return func(resourceType, name, key string) string {
+		b := findPKIData(resourceType, name, key, secrets, configMaps)
 		return base64.StdEncoding.EncodeToString(b)
 	}
 }
 
-func includePKIFunc(pki map[string][]byte) func(string, int) string {
-	return func(fileName string, indent int) string {
-		b, found := pki[fileName]
-		if !found {
-			panic(fmt.Sprintf("pki file %s not found", fileName))
+func findPKIData(resourceType, name, key string, secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) []byte {
+	switch resourceType {
+	case "secret":
+		return getSecretData(secrets, name, key)
+	case "configmap":
+		return getConfigMapData(configMaps, name, key)
+	default:
+		panic("wrong resource type")
+	}
+}
+
+func getSecretData(secrets *corev1.SecretList, name, key string) []byte {
+	for _, secret := range secrets.Items {
+		if secret.Name == name {
+			if _, ok := secret.Data[key]; !ok {
+				panic(fmt.Sprintf("key %s not found in secret %s", key, name))
+			}
+			return secret.Data[key]
 		}
+	}
+	panic(fmt.Sprintf("secret %s not found", name))
+}
+
+func getConfigMapData(cms *corev1.ConfigMapList, name, key string) []byte {
+	for _, cm := range cms.Items {
+		if cm.Name == name {
+			if _, ok := cm.Data[key]; !ok {
+				panic(fmt.Sprintf("key %s not found in configmap %s", key, name))
+			}
+			return []byte(cm.Data[key])
+		}
+	}
+	panic(fmt.Sprintf("configmap %s not found", name))
+}
+
+func includePKIFunc(secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) func(string, string, string, int) string {
+	return func(resourceType, name, key string, indent int) string {
+		b := findPKIData(resourceType, name, key, secrets, configMaps)
 		input := bytes.NewBuffer(b)
 		output := &bytes.Buffer{}
 		scanner := bufio.NewScanner(input)

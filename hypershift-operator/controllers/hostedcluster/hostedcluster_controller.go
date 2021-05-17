@@ -373,6 +373,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				dest.Data = map[string][]byte{}
 			}
 			dest.Data["kubeconfig"] = srcData
+			dest.SetOwnerReferences([]metav1.OwnerReference{{
+				APIVersion: hyperv1.GroupVersion.String(),
+				Kind:       "HostedCluster",
+				Name:       hcluster.Name,
+				UID:        hcluster.UID,
+			}})
 			return nil
 		})
 		if err != nil {
@@ -437,6 +443,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		Key:  "value",
 	}
 	hcp.Spec.Services = hcluster.Spec.Services
+	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
 
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:

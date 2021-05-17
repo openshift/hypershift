@@ -6,8 +6,6 @@ metadata:
   labels:
     k8s-app: kube-apiserver-proxy
 spec:
-  imagePullSecrets:
-  - name: pull-secret
   hostNetwork: true
   containers:
   - name: haproxy

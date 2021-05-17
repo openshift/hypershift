@@ -19,10 +19,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -211,6 +213,18 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)
 		}
+	}
+
+	//clean up CLI generated secrets
+	log.Info("Deleting Secrets", "namespace", o.Namespace)
+	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{util.AutoInfraLabelName: infraID}); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("Secrets not found based on labels, skipping delete", "namespace", o.Namespace, "labels", util.AutoInfraLabelName+infraID)
+		} else {
+			return fmt.Errorf("failed to clean up secrets in %s namespace: %w", o.Namespace, err)
+		}
+	} else {
+		log.Info("Deleted CLI generated secrets")
 	}
 
 	if hostedClusterExists {
