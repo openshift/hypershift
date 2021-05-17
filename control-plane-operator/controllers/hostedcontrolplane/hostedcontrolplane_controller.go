@@ -135,65 +135,41 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return nil
 }
 
-func getConditionByType(conditions []hyperv1.HostedControlPlaneCondition, conditionType hyperv1.ConditionType) *hyperv1.HostedControlPlaneCondition {
-	for k, v := range conditions {
-		if v.Type == conditionType {
-			return &conditions[k]
-		}
-	}
-	return nil
-}
-
-func setConditionByType(conditions *[]hyperv1.HostedControlPlaneCondition, conditionType hyperv1.ConditionType, status hyperv1.ConditionStatus, reason, message string) {
-	existingCondition := getConditionByType(*conditions, conditionType)
-	if existingCondition == nil {
-		newCondition := hyperv1.HostedControlPlaneCondition{
-			Type:    conditionType,
-			Status:  status,
-			Reason:  reason,
-			Message: message,
-		}
-		*conditions = append(*conditions, newCondition)
-	} else {
-		existingCondition.Status = status
-		existingCondition.Reason = reason
-		existingCondition.Message = message
-	}
-}
-
 func (r *HostedControlPlaneReconciler) setAvailableCondition(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, oldStatus *hyperv1.HostedControlPlaneStatus,
 	status hyperv1.ConditionStatus, reason, message string, result ctrl.Result, err error) (ctrl.Result, error) {
 	conditions := &hostedControlPlane.Status.Conditions
 
-	setConditionByType(conditions, hyperv1.Available, status, reason, message)
+	hcputil.SetConditionByType(conditions, hyperv1.Available, status, reason, message)
 
 	// Sync status.ready with Available condition
-	condition := getConditionByType(*conditions, hyperv1.Available)
+	condition := hcputil.GetConditionByType(*conditions, hyperv1.Available)
 	if condition != nil && condition.Status == hyperv1.ConditionTrue {
 		hostedControlPlane.Status.Ready = true
 	} else {
 		hostedControlPlane.Status.Ready = false
 	}
+	if updateErr := r.updateStatus(ctx, hostedControlPlane, oldStatus); updateErr != nil {
+		r.Log.Error(updateErr, "failed to update status")
+		result.Requeue = true
+	}
+	return result, err
+}
 
+func (r *HostedControlPlaneReconciler) updateStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, oldStatus *hyperv1.HostedControlPlaneStatus) error {
+	conditions := &hostedControlPlane.Status.Conditions
 	if reflect.DeepEqual(oldStatus, hostedControlPlane.Status) {
 		// No change to status, nothing to sync
-		return result, err
+		return nil
 	}
 
 	// Check for changed conditions to update LastTransitionTime
 	for k, condition := range *conditions {
-		oldCondition := getConditionByType(oldStatus.Conditions, condition.Type)
+		oldCondition := hcputil.GetConditionByType(oldStatus.Conditions, condition.Type)
 		if oldCondition == nil || *oldCondition != condition {
 			(*conditions)[k].LastTransitionTime = metav1.Now()
 		}
 	}
-
-	if updateErr := r.Status().Update(ctx, hostedControlPlane); updateErr != nil {
-		r.Log.Error(updateErr, "failed to update status")
-		result.Requeue = true
-	}
-
-	return result, err
+	return r.Status().Update(ctx, hostedControlPlane)
 }
 
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -330,9 +306,13 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			// Wait til etcd cluster is gone in case it's being deleted
 			return ctrl.Result{RequeueAfter: etcdDeleteCheckInterval}, nil
 		}
-		err = etcd.ReconcileEtcdClusterStatus(ctx, r.Client, hostedControlPlane, etcdCluster)
-		if err != nil {
+		if err = etcd.ReconcileEtcdClusterStatus(ctx, r.Client, &hostedControlPlane.Status, etcdCluster); err != nil {
 			return ctrl.Result{}, err
+		}
+		if err = r.updateStatus(ctx, hostedControlPlane, oldStatus); err != nil {
+			return ctrl.Result{}, err
+		} else {
+			oldStatus = hostedControlPlane.Status.DeepCopy()
 		}
 	}
 	// Reconcile Kube APIServer status
@@ -345,9 +325,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if apierrors.IsNotFound(err) {
 			kubeAPIServerDeployment = nil
 		}
-		err = kas.ReconcileKubeAPIServerDeploymentStatus(ctx, r.Client, hostedControlPlane, kubeAPIServerDeployment)
-		if err != nil {
+		kas.ReconcileKubeAPIServerDeploymentStatus(ctx, &hostedControlPlane.Status, kubeAPIServerDeployment)
+		if err = r.updateStatus(ctx, hostedControlPlane, oldStatus); err != nil {
 			return ctrl.Result{}, err
+		} else {
+			oldStatus = hostedControlPlane.Status.DeepCopy()
 		}
 	}
 
@@ -386,10 +368,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 	{
-		etcdAvailable := getConditionByType(hostedControlPlane.Status.Conditions, hyperv1.EtcdAvailable)
+		etcdAvailable := hcputil.GetConditionByType(hostedControlPlane.Status.Conditions, hyperv1.EtcdAvailable)
 		if etcdAvailable == nil || etcdAvailable.Status != hyperv1.ConditionTrue {
 			r.Log.Info("etcd is not yet available")
-			return ctrl.Result{RequeueAfter: etcdAvailableCheckInterval}, nil
+			return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "EtcdNotAvailable", etcdAvailable.Message, ctrl.Result{RequeueAfter: etcdAvailableCheckInterval}, nil)
 		}
 	}
 	// Reconcile VPN
@@ -406,10 +388,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 	{
-		kasAvailable := getConditionByType(hostedControlPlane.Status.Conditions, hyperv1.KubeAPIServerAvailable)
+		kasAvailable := hcputil.GetConditionByType(hostedControlPlane.Status.Conditions, hyperv1.KubeAPIServerAvailable)
 		if kasAvailable == nil || kasAvailable.Status != hyperv1.ConditionTrue {
 			r.Log.Info("Kube API server is not yet available")
-			return ctrl.Result{RequeueAfter: kasAvailableCheckInterval}, nil
+			return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "KubeAPIServerNotAvailable", kasAvailable.Message, ctrl.Result{RequeueAfter: kasAvailableCheckInterval}, nil)
 		}
 	}
 	// Reconcile kube controller manager
