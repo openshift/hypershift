@@ -57,6 +57,7 @@ const (
 	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
 	etcdClientOverrideAnnotation   = "hypershift.openshift.io/etcd-client-override"
+	securePortOverrideAnnotation   = "hypershift.openshift.io/secureport-override"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -430,6 +431,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcluster.Annotations != nil {
 		if _, ok := hcluster.Annotations[etcdClientOverrideAnnotation]; ok {
 			hcp.Annotations[etcdClientOverrideAnnotation] = hcluster.Annotations[etcdClientOverrideAnnotation]
+		}
+		if _, ok := hcluster.Annotations[securePortOverrideAnnotation]; ok {
+			hcp.Annotations[securePortOverrideAnnotation] = hcluster.Annotations[securePortOverrideAnnotation]
 		}
 	}
 
