@@ -1709,6 +1709,8 @@ func platformType(hcp *hyperv1.HostedControlPlane) string {
 	switch {
 	case hcp.Spec.Platform.AWS != nil:
 		return "AWS"
+	case hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform:
+		return "IBMCloud"
 	default:
 		return "None"
 	}
@@ -1718,6 +1720,8 @@ func cloudProvider(hcp *hyperv1.HostedControlPlane) string {
 	switch {
 	case hcp.Spec.Platform.AWS != nil:
 		return "aws"
+	case hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform:
+		return "external"
 	default:
 		return ""
 	}
