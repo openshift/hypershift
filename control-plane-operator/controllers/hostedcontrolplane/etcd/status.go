@@ -18,9 +18,10 @@ const (
 	etcdClusterLabel            = "etcd_cluster"
 	etcdClusterBootstrapTimeout = 5 * time.Minute
 
-	EtcdReasonFailed  = "EtcdFailed"
-	EtcdReasonRunning = "EtcdRunning"
-	EtcdReasonScaling = "EtcdScalingUp"
+	EtcdReasonNotCreated = "EtcdNotCreated"
+	EtcdReasonFailed     = "EtcdFailed"
+	EtcdReasonRunning    = "EtcdRunning"
+	EtcdReasonScaling    = "EtcdScalingUp"
 )
 
 func etcdClusterConditionByType(conditions []etcdv1.ClusterCondition, t etcdv1.ClusterConditionType) *etcdv1.ClusterCondition {
@@ -32,11 +33,12 @@ func etcdClusterConditionByType(conditions []etcdv1.ClusterCondition, t etcdv1.C
 	return nil
 }
 
-func ReconcileEtcdClusterStatus(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, cluster *etcdv1.EtcdCluster) error {
+func ReconcileEtcdClusterStatus(ctx context.Context, c client.Client, hcpStatus *hyperv1.HostedControlPlaneStatus, cluster *etcdv1.EtcdCluster) error {
 	log := ctrl.LoggerFrom(ctx)
 	if cluster == nil {
 		// etcd cluster doesn't yet exist, nothing to do yet
 		log.Info("Etcd cluster doesn't exist yet")
+		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonNotCreated, "Etcd cluster has not been created yet")
 		return nil
 	}
 	availableCondition := etcdClusterConditionByType(cluster.Status.Conditions, etcdv1.ClusterConditionAvailable)
@@ -44,25 +46,22 @@ func ReconcileEtcdClusterStatus(ctx context.Context, c client.Client, hcp *hyper
 	switch {
 	case availableCondition != nil && availableCondition.Status == corev1.ConditionTrue:
 		// Etcd cluster is available
-		hcputil.SetConditionByType(&hcp.Status.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionTrue, EtcdReasonRunning, "Etcd cluster is running and available")
+		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionTrue, EtcdReasonRunning, "Etcd cluster is running and available")
 	case len(cluster.Status.Members.Ready) == 0 && time.Since(cluster.CreationTimestamp.Time) > etcdClusterBootstrapTimeout:
 		// The etcd cluster failed to bootstrap, will delete
-		hcputil.SetConditionByType(&hcp.Status.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonFailed, "Etcd cluster failed to bootstrap within timeout, recreating")
+		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonFailed, "Etcd cluster failed to bootstrap within timeout, recreating")
 	case cluster.Spec.Size > 1 && len(cluster.Status.Members.Ready) <= 1:
 		hasTerminatedPods, err := etcdClusterHasTerminatedPods(ctx, c, cluster)
 		if err != nil {
 			return err
 		}
 		if hasTerminatedPods {
-			hcputil.SetConditionByType(&hcp.Status.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonFailed, "Etcd has failed to achieve quorum after bootstrap, recreating")
+			hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonFailed, "Etcd has failed to achieve quorum after bootstrap, recreating")
 		} else {
-			hcputil.SetConditionByType(&hcp.Status.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonScaling, "Etcd cluster is scaling up")
+			hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonScaling, "Etcd cluster is scaling up")
 		}
 	default:
-		hcputil.SetConditionByType(&hcp.Status.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonScaling, "Etcd cluster is scaling up")
-	}
-	if err := c.Status().Update(ctx, hcp); err != nil {
-		return err
+		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonScaling, "Etcd cluster is scaling up")
 	}
 	return nil
 }

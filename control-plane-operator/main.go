@@ -46,6 +46,11 @@ func main() {
 	}
 }
 
+const (
+	openVPNImage      = "quay.io/hypershift/openvpn:latest"
+	etcdOperatorImage = "quay.io/coreos/etcd-operator:v0.9.4"
+)
+
 func NewStartCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -135,6 +140,8 @@ func NewStartCommand() *cobra.Command {
 			},
 			ComponentImages: map[string]string{
 				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
+				"vpn":                            openVPNImage,
+				"etcd-operator":                  etcdOperatorImage,
 			},
 		}
 

@@ -443,6 +443,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		Key:  "value",
 	}
 	hcp.Spec.Services = hcluster.Spec.Services
+	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
 
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:

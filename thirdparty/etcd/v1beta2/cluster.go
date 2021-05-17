@@ -161,7 +161,7 @@ type PodPolicy struct {
 	// ClusterDomain is the cluster domain to use for member URLs E.g.
 	// '.cluster.local'.
 	// The default is to not set a cluster domain explicitly.
-	ClusterDomain string `json:"ClusterDomain"`
+	ClusterDomain string `json:"ClusterDomain,omitempty"`
 }
 
 // TODO: move this to initializer

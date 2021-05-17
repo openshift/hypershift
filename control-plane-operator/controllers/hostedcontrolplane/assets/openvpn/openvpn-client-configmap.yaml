@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: openvpn-client
-  namespace: kube-system
-data:
-  client.conf: |-
-{{ include "openvpn/client.conf" 4 }}

@@ -78,6 +78,9 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              controllerAvailabilityPolicy:
+                description: ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode Defaults to SingleReplica when not set.
+                type: string
               dns:
                 description: DNS configuration for the cluster
                 properties:
