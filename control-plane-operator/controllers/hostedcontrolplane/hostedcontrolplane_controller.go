@@ -485,7 +485,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return p.ReconcileService(apiServerService, serviceStrategy)
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
@@ -616,7 +616,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return
 	}
 	p := kas.NewKubeAPIServerServiceParams(hcp)
-	return p.ReconcileServiceStatus(svc, serviceStrategy)
+	return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
