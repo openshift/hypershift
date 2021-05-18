@@ -16,8 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -51,7 +49,6 @@ type DestroyOptions struct {
 	Route53Client route53iface.Route53API
 	ELBClient     elbiface.ELBAPI
 	IAMClient     iamiface.IAMAPI
-	S3Client      s3iface.S3API
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -97,7 +94,6 @@ func NewDestroyCommand() *cobra.Command {
 		opts.ELBClient = elb.New(awsSession, awsConfig)
 		opts.Route53Client = route53.New(awsSession, awsutil.NewConfig(opts.AWSCredentialsFile, "us-east-1"))
 		opts.IAMClient = iam.New(awsSession, awsConfig)
-		opts.S3Client = s3.New(awsSession, awsConfig)
 
 		if err := DestroyCluster(ctx, &opts); err != nil {
 			log.Error(err, "Failed to destroy cluster")
@@ -208,7 +204,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			InfraID:            infraID,
 			IAMClient:          o.IAMClient,
-			S3Client:           o.S3Client,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)

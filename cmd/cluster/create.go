@@ -17,8 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -59,7 +57,6 @@ type Options struct {
 	Route53Client route53iface.Route53API
 	ELBClient     elbiface.ELBAPI
 	IAMClient     iamiface.IAMAPI
-	S3Client      s3iface.S3API
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -124,7 +121,6 @@ func NewCreateCommand() *cobra.Command {
 		awsSession := awsutil.NewSession()
 		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
 		opts.IAMClient = iam.New(awsSession, awsConfig)
-		opts.S3Client = s3.New(awsSession, awsConfig)
 		opts.EC2Client = ec2.New(awsSession, awsConfig)
 		opts.ELBClient = elb.New(awsSession, awsConfig)
 		opts.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(opts.AWSCredentialsFile))
@@ -210,7 +206,6 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
 			IAMClient:          opts.IAMClient,
-			S3Client:           opts.S3Client,
 			IssuerURL:          opts.IssuerURL,
 		}
 		iamInfo, err = opt.CreateIAM(ctx)
