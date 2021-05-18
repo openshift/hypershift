@@ -77,7 +77,6 @@ func TestControlPlaneUpgrade(t *testing.T) {
 			Route53Client:      GlobalOptions.Route53Client,
 			ELBClient:          GlobalOptions.ELBClient,
 			IAMClient:          GlobalOptions.IAMClient,
-			S3Client:           GlobalOptions.S3Client,
 			ClusterGracePeriod: 15 * time.Minute,
 		}, opts.ArtifactDir)
 		DeleteNamespace(t, context.Background(), client, namespace.Name)
@@ -95,7 +94,6 @@ func TestControlPlaneUpgrade(t *testing.T) {
 		Route53Client:      GlobalOptions.Route53Client,
 		ELBClient:          GlobalOptions.ELBClient,
 		IAMClient:          GlobalOptions.IAMClient,
-		S3Client:           GlobalOptions.S3Client,
 		// TODO: generate a key on the fly
 		SSHKeyFile:       "",
 		NodePoolReplicas: 0,
