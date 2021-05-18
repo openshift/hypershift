@@ -11,8 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,7 +31,6 @@ type CreateIAMOptions struct {
 	OutputFile         string
 
 	IAMClient iamiface.IAMAPI
-	S3Client  s3iface.S3API
 }
 
 type CreateIAMOutput struct {
@@ -83,7 +80,6 @@ func NewCreateIAMCommand() *cobra.Command {
 		awsSession := awsutil.NewSession()
 		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
 		opts.IAMClient = iam.New(awsSession, awsConfig)
-		opts.S3Client = s3.New(awsSession, awsConfig)
 
 		if err := opts.Run(ctx); err != nil {
 			log.Error(err, "Failed to create infrastructure")
@@ -141,7 +137,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context) (*CreateIAMOutput, err
 	o.IssuerURL = fmt.Sprintf("https://oidc-%s.%s", o.InfraID, ingressConfig.Spec.Domain)
 	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
-	results, err := o.CreateOIDCResources(o.IAMClient, o.S3Client)
+	results, err := o.CreateOIDCResources(o.IAMClient)
 	if err != nil {
 		return nil, err
 	}

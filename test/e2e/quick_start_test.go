@@ -77,7 +77,6 @@ func TestQuickStart(t *testing.T) {
 			Route53Client:      GlobalOptions.Route53Client,
 			ELBClient:          GlobalOptions.ELBClient,
 			IAMClient:          GlobalOptions.IAMClient,
-			S3Client:           GlobalOptions.S3Client,
 			PreserveIAM:        false,
 			ClusterGracePeriod: 15 * time.Minute,
 		}, opts.ArtifactDir)
@@ -97,7 +96,6 @@ func TestQuickStart(t *testing.T) {
 		Route53Client:      GlobalOptions.Route53Client,
 		ELBClient:          GlobalOptions.ELBClient,
 		IAMClient:          GlobalOptions.IAMClient,
-		S3Client:           GlobalOptions.S3Client,
 		// TODO: generate a key on the fly
 		SSHKeyFile:       "",
 		NodePoolReplicas: 2,

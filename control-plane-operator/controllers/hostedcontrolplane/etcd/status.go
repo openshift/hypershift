@@ -18,9 +18,10 @@ const (
 	etcdClusterLabel            = "etcd_cluster"
 	etcdClusterBootstrapTimeout = 5 * time.Minute
 
-	EtcdReasonFailed  = "EtcdFailed"
-	EtcdReasonRunning = "EtcdRunning"
-	EtcdReasonScaling = "EtcdScalingUp"
+	EtcdReasonNotCreated = "EtcdNotCreated"
+	EtcdReasonFailed     = "EtcdFailed"
+	EtcdReasonRunning    = "EtcdRunning"
+	EtcdReasonScaling    = "EtcdScalingUp"
 )
 
 func etcdClusterConditionByType(conditions []etcdv1.ClusterCondition, t etcdv1.ClusterConditionType) *etcdv1.ClusterCondition {
@@ -37,6 +38,7 @@ func ReconcileEtcdClusterStatus(ctx context.Context, c client.Client, hcpStatus 
 	if cluster == nil {
 		// etcd cluster doesn't yet exist, nothing to do yet
 		log.Info("Etcd cluster doesn't exist yet")
+		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonNotCreated, "Etcd cluster has not been created yet")
 		return nil
 	}
 	availableCondition := etcdClusterConditionByType(cluster.Status.Conditions, etcdv1.ClusterConditionAvailable)

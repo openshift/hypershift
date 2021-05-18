@@ -13,8 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -27,7 +25,6 @@ type DestroyIAMOptions struct {
 	InfraID            string
 
 	IAMClient iamiface.IAMAPI
-	S3Client  s3iface.S3API
 }
 
 func NewDestroyIAMCommand() *cobra.Command {
@@ -62,7 +59,6 @@ func NewDestroyIAMCommand() *cobra.Command {
 		awsSession := awsutil.NewSession()
 		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
 		opts.IAMClient = iam.New(awsSession, awsConfig)
-		opts.S3Client = s3.New(awsSession, awsConfig)
 
 		if err := opts.DestroyIAM(ctx); err != nil {
 			return err
@@ -87,7 +83,7 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	var err error
-	err = o.DestroyOIDCResources(ctx, o.IAMClient, o.S3Client)
+	err = o.DestroyOIDCResources(ctx, o.IAMClient)
 	if err != nil {
 		return err
 	}
@@ -98,72 +94,14 @@ func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	return nil
 }
 
-func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient iamiface.IAMAPI, s3Client s3iface.S3API) error {
-	bucketName := o.InfraID
-
-	_, err := s3Client.DeleteObject(&s3.DeleteObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(discoveryURI),
-	})
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != s3.ErrCodeNoSuchBucket &&
-				aerr.Code() != s3.ErrCodeNoSuchKey {
-				log.Error(aerr, "Error deleting OIDC discovery document", "bucket", bucketName, "key", discoveryURI)
-				return aerr
-			}
-		} else {
-			log.Error(err, "Error deleting OIDC discovery document", "bucket", bucketName, "key", discoveryURI)
-			return err
-		}
-	} else {
-		log.Info("Deleted OIDC discovery document", "bucket", bucketName, "key", discoveryURI)
-	}
-
-	_, err = s3Client.DeleteObject(&s3.DeleteObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(jwksURI),
-	})
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != s3.ErrCodeNoSuchBucket &&
-				aerr.Code() != s3.ErrCodeNoSuchKey {
-				log.Error(aerr, "Error deleting JWKS document", "bucket", bucketName, "key", jwksURI)
-				return aerr
-			}
-		} else {
-			log.Error(err, "Error deleting JWKS document", "bucket", bucketName, "key", jwksURI)
-			return err
-		}
-	} else {
-		log.Info("Deleted JWKS document", "bucket", bucketName, "key", jwksURI)
-	}
-
-	_, err = s3Client.DeleteBucket(&s3.DeleteBucketInput{
-		Bucket: aws.String(bucketName),
-	})
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != iam.ErrCodeNoSuchEntityException &&
-				aerr.Code() != s3.ErrCodeNoSuchBucket {
-				log.Error(aerr, "Error deleting OIDC discovery endpoint", "bucket", bucketName)
-				return aerr
-			}
-		} else {
-			log.Error(err, "Error deleting OIDC discovery endpoint", "bucket", bucketName)
-			return err
-		}
-	} else {
-		log.Info("Deleted OIDC discovery endpoint", "bucket", bucketName)
-	}
-
+func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient iamiface.IAMAPI) error {
 	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
 		return err
 	}
 
 	for _, provider := range oidcProviderList.OpenIDConnectProviderList {
-		if strings.Contains(*provider.Arn, bucketName) {
+		if strings.Contains(*provider.Arn, o.InfraID) {
 			_, err := iamClient.DeleteOpenIDConnectProvider(&iam.DeleteOpenIDConnectProviderInput{
 				OpenIDConnectProviderArn: provider.Arn,
 			})

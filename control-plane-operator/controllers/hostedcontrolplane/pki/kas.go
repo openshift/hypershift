@@ -45,11 +45,11 @@ func (p *PKIParams) ReconcileKASServerCertSecret(secret, ca *corev1.Secret) erro
 }
 
 func (p *PKIParams) ReconcileKASKubeletClientCertSecret(secret, ca *corev1.Secret) error {
-	return p.reconcileSignedCert(secret, ca, "sytem:kube-apiserver", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
+	return p.reconcileSignedCert(secret, ca, "system:kube-apiserver", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
 }
 
 func (p *PKIParams) ReconcileKASMachineBootstrapClientCertSecret(secret, ca *corev1.Secret) error {
-	return p.reconcileSignedCert(secret, ca, "sytem:bootstrapper", "system:bootstrappers", X509DefaultUsage, X509UsageClientAuth)
+	return p.reconcileSignedCert(secret, ca, "system:bootstrapper", "system:bootstrappers", X509DefaultUsage, X509UsageClientAuth)
 }
 
 func (p *PKIParams) ReconcileKASAggregatorCertSecret(secret, ca *corev1.Secret) error {

@@ -15,6 +15,7 @@ func ReconcileKubeAPIServerDeploymentStatus(ctx context.Context, hcpStatus *hype
 	log := ctrl.LoggerFrom(ctx)
 	if deployment == nil {
 		log.Info("Kube APIServer deployment doesn't exist yet")
+		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.KubeAPIServerAvailable, hyperv1.ConditionFalse, "NotCreated", "Kube APIServer deployment is not yet created")
 		return
 	}
 	availableCondition := hcputil.DeploymentConditionByType(deployment, appsv1.DeploymentAvailable)
