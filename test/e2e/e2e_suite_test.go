@@ -20,8 +20,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"k8s.io/apimachinery/pkg/util/errors"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -47,7 +45,6 @@ type GlobalTestOptions struct {
 	Route53Client route53iface.Route53API
 	ELBClient     elbiface.ELBAPI
 	IAMClient     iamiface.IAMAPI
-	S3Client      s3iface.S3API
 }
 
 var GlobalOptions = &GlobalTestOptions{}
@@ -94,7 +91,6 @@ func (o *GlobalTestOptions) SetDefaults() error {
 	awsSession := awsutil.NewSession()
 	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
 	o.IAMClient = iam.New(awsSession, awsConfig)
-	o.S3Client = s3.New(awsSession, awsConfig)
 	o.EC2Client = ec2.New(awsSession, awsConfig)
 	o.ELBClient = elb.New(awsSession, awsConfig)
 	o.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(o.AWSCredentialsFile))

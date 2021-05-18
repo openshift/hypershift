@@ -16,8 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-
 	jose "gopkg.in/square/go-jose.v2"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -112,30 +110,6 @@ const (
 			],
 			"Resource": "*"
 		}
-	]
-}`
-
-	discoveryURI      = ".well-known/openid-configuration"
-	jwksURI           = "openid/v1/jwks"
-	discoveryTemplate = `{
-	"issuer": "%s",
-	"jwks_uri": "%s/%s",
-	"response_types_supported": [
-		"id_token"
-	],
-	"subject_types_supported": [
-		"public"
-	],
-	"id_token_signing_alg_values_supported": [
-		"RS256"
-	],
-	"claims_supported": [
-		"aud",
-		"exp",
-		"sub",
-		"iat",
-		"iss",
-		"sub"
 	]
 }`
 
@@ -301,7 +275,7 @@ func DefaultProfileName(infraID string) string {
 
 // inputs: none
 // outputs rsa keypair
-func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, s3Client s3iface.S3API) (*CreateIAMOutput, error) {
+func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*CreateIAMOutput, error) {
 	output := &CreateIAMOutput{
 		Region:    o.Region,
 		InfraID:   o.InfraID,
