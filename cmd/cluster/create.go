@@ -208,7 +208,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			IAMClient:          opts.IAMClient,
 			IssuerURL:          opts.IssuerURL,
 		}
-		iamInfo, err = opt.CreateIAM(ctx)
+		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
 			return fmt.Errorf("failed to create iam: %w", err)
 		}
