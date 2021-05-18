@@ -37,6 +37,11 @@ type HostedControlPlaneSpec struct {
 	Platform     PlatformSpec                `json:"platform"`
 	DNS          DNSSpec                     `json:"dns"`
 
+	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
+	// Defaults to SingleReplica when not set
+	// +optional
+	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
+
 	// KubeConfig specifies the name and key for the kubeconfig secret
 	// +optional
 	KubeConfig *KubeconfigSecretRef `json:"kubeconfig,omitempty"`
@@ -46,6 +51,13 @@ type HostedControlPlaneSpec struct {
 	Services []ServicePublishingStrategyMapping `json:"services"`
 }
 
+type AvailabilityPolicy string
+
+const (
+	HighlyAvailable AvailabilityPolicy = "HighlyAvailable"
+	SingleReplica   AvailabilityPolicy = "SingleReplica"
+)
+
 type KubeconfigSecretRef struct {
 	Name string `json:"name"`
 	Key  string `json:"key"`
@@ -54,8 +66,9 @@ type KubeconfigSecretRef struct {
 type ConditionType string
 
 const (
-	Available     ConditionType = "Available"
-	EtcdAvailable ConditionType = "EtcdAvailable"
+	Available              ConditionType = "Available"
+	EtcdAvailable          ConditionType = "EtcdAvailable"
+	KubeAPIServerAvailable ConditionType = "KubeAPIServerAvailable"
 )
 
 type ConditionStatus string

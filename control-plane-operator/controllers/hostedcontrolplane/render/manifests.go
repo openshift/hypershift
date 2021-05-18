@@ -7,16 +7,18 @@ import (
 	"strings"
 	"text/template"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 )
 
-func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, pki map[string][]byte) (map[string][]byte, error) {
+func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) (map[string][]byte, error) {
 	componentVersions, err := image.ComponentVersions()
 	if err != nil {
 		return nil, err
 	}
-	ctx := newClusterManifestContext(image.ComponentImages(), componentVersions, params, pullSecret, pki)
+	ctx := newClusterManifestContext(image.ComponentImages(), componentVersions, params, pullSecret, secrets, configMaps)
 	ctx.setupManifests()
 	return ctx.renderManifests()
 }
@@ -27,7 +29,7 @@ type clusterManifestContext struct {
 	userManifests     map[string]string
 }
 
-func newClusterManifestContext(images, versions map[string]string, params interface{}, pullSecret []byte, pki map[string][]byte) *clusterManifestContext {
+func newClusterManifestContext(images, versions map[string]string, params interface{}, pullSecret []byte, secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) *clusterManifestContext {
 	ctx := &clusterManifestContext{
 		renderContext: newRenderContext(params),
 		userManifests: make(map[string]string),
@@ -45,8 +47,8 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 		"randomString":      randomString,
 		"includeData":       includeDataFunc(),
 		"trimTrailingSpace": trimTrailingSpace,
-		"pki":               pkiFunc(pki),
-		"include_pki":       includePKIFunc(pki),
+		"pki":               pkiFunc(secrets, configMaps),
+		"include_pki":       includePKIFunc(secrets, configMaps),
 		"pullSecretBase64":  pullSecretBase64(pullSecret),
 		"atleast_version":   atLeastVersionFunc(versions),
 		"lessthan_version":  lessThanVersionFunc(versions),
@@ -57,16 +59,12 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 
 func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
-	c.serviceAdminKubeconfig()
-	c.kubeControllerManager()
-	c.kubeScheduler()
 	c.clusterVersionOperator()
 	c.openshiftAPIServer()
 	c.oauthAPIServer()
 	c.openshiftControllerManager()
 	c.clusterBootstrap()
 	c.oauthOpenshiftServer()
-	c.openVPN()
 	c.registry()
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
@@ -130,23 +128,6 @@ func (c *clusterManifestContext) oauthOpenshiftServer() {
 	)
 	c.addUserManifestFiles(
 		"oauth-openshift/ingress-certs-secret.yaml",
-	)
-}
-
-func (c *clusterManifestContext) kubeControllerManager() {
-	c.addManifestFiles(
-		"kube-controller-manager/kube-controller-manager-deployment.yaml",
-		"kube-controller-manager/kube-controller-manager-config-configmap.yaml",
-		"kube-controller-manager/kube-controller-manager-secret.yaml",
-		"kube-controller-manager/kube-controller-manager-configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) kubeScheduler() {
-	c.addManifestFiles(
-		"kube-scheduler/kube-scheduler-deployment.yaml",
-		"kube-scheduler/kube-scheduler-config-configmap.yaml",
-		"kube-scheduler/kube-scheduler-secret.yaml",
 	)
 }
 
@@ -256,21 +237,6 @@ func (c *clusterManifestContext) machineConfigServer() {
 		"machine-config-server/machine-config-server-configmap.yaml",
 		"machine-config-server/machine-config-server-secret.yaml",
 		"machine-config-server/machine-config-server-kubeconfig-secret.yaml",
-	)
-}
-
-func (c *clusterManifestContext) openVPN() {
-	c.addManifestFiles(
-		"openvpn/openvpn-serviceaccount.yaml",
-		"openvpn/openvpn-server-deployment.yaml",
-		"openvpn/openvpn-ccd-configmap.yaml",
-		"openvpn/openvpn-server-configmap.yaml",
-		"openvpn/openvpn-server-secret.yaml",
-		"openvpn/openvpn-client-secret.yaml",
-	)
-	c.addUserManifestFiles(
-		"openvpn/openvpn-client-deployment.yaml",
-		"openvpn/openvpn-client-configmap.yaml",
 	)
 }
 

@@ -4,4 +4,4 @@ metadata:
   name: hosted-cluster-config-operator
 data:
   initial-ca.crt: |
-{{ include_pki "combined-ca.crt"  4 }}
+{{ include_pki "configmap" "combined-ca" "ca.crt"  4 }}
