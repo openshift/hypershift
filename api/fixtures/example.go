@@ -54,6 +54,7 @@ type ExampleOptions struct {
 	BaseDomain       string
 	PublicZoneID     string
 	PrivateZoneID    string
+	Annotations      map[string]string
 
 	AWS ExampleAWSOptions
 }
@@ -164,8 +165,9 @@ aws_secret_access_key = %s
 			APIVersion: hyperv1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace.Name,
-			Name:      o.Name,
+			Namespace:   namespace.Name,
+			Name:        o.Name,
+			Annotations: o.Annotations,
 		},
 		Spec: hyperv1.HostedClusterSpec{
 			Release: hyperv1.Release{
