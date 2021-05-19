@@ -4,52 +4,45 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const (
 	KubeconfigKey = "kubeconfig"
 )
 
-func (p *KubeAPIServerParams) ReconcileServiceKubeconfigSecret(secret, cert, ca *corev1.Secret) error {
-	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, p.APIServerPort)
-	return reconcileKubeconfig(secret, cert, ca, svcURL, "", p.OwnerReference)
+func ReconcileServiceKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
+	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, apiServerPort)
+	return reconcileKubeconfig(secret, cert, ca, svcURL, "", ownerRef)
 }
 
-func (p *KubeAPIServerParams) ReconcileServiceCAPIKubeconfigSecret(secret, cert, ca *corev1.Secret) error {
-	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, p.APIServerPort)
+func ReconcileServiceCAPIKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
+	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, apiServerPort)
 	// The client used by CAPI machine controller expects the kubeconfig to have this key
 	// https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
-	return reconcileKubeconfig(secret, cert, ca, svcURL, "value", p.OwnerReference)
+	return reconcileKubeconfig(secret, cert, ca, svcURL, "value", ownerRef)
 }
 
-func (p *KubeAPIServerParams) ReconcileLocalhostKubeconfigSecret(secret, cert, ca *corev1.Secret) error {
-	localhostURL := fmt.Sprintf("https://localhost:%d", p.APIServerPort)
-	return reconcileKubeconfig(secret, cert, ca, localhostURL, "", p.OwnerReference)
+func ReconcileLocalhostKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
+	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
+	return reconcileKubeconfig(secret, cert, ca, localhostURL, "", ownerRef)
 }
 
-func (p *KubeAPIServerParams) ReconcileExternalKubeconfigSecret(secret, cert, ca *corev1.Secret) error {
-	extURL := fmt.Sprintf("https://%s:%d", p.ExternalAddress, p.ExternalPort)
-	key := ""
-	if p.KubeConfigRef != nil {
-		key = p.KubeConfigRef.Key
-	}
-	return reconcileKubeconfig(secret, cert, ca, extURL, key, p.OwnerReference)
+func ReconcileExternalKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, externalURL, secretKey string) error {
+	return reconcileKubeconfig(secret, cert, ca, externalURL, secretKey, ownerRef)
 }
 
-func (p *KubeAPIServerParams) ReconcileBootstrapKubeconfigSecret(secret, cert, ca *corev1.Secret) error {
-	extURL := fmt.Sprintf("https://%s:%d", p.ExternalAddress, p.ExternalPort)
-	return reconcileKubeconfig(secret, cert, ca, extURL, "", p.OwnerReference)
+func ReconcileBootstrapKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, externalURL string) error {
+	return reconcileKubeconfig(secret, cert, ca, externalURL, "", ownerRef)
 }
 
-func reconcileKubeconfig(secret, cert, ca *corev1.Secret, url, key string, ownerRef *metav1.OwnerReference) error {
-	util.EnsureOwnerRef(secret, ownerRef)
+func reconcileKubeconfig(secret, cert, ca *corev1.Secret, url, key string, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(secret)
 	caBytes := ca.Data[pki.CASignerCertMapKey]
 	crtBytes, keyBytes := cert.Data[corev1.TLSCertKey], cert.Data[corev1.TLSPrivateKeyKey]
 	kubeCfgBytes, err := generateKubeConfig(url, crtBytes, keyBytes, caBytes)

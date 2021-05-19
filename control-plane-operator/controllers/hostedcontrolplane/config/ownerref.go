@@ -6,7 +6,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
+
+type OwnerRef struct {
+	Reference *metav1.OwnerReference
+}
+
+func (c OwnerRef) ApplyTo(obj client.Object) {
+	util.EnsureOwnerRef(obj, c.Reference)
+}
+
+func OwnerRefFrom(obj client.Object) OwnerRef {
+	return OwnerRef{
+		Reference: ControllerOwnerRef(obj),
+	}
+}
 
 func ControllerOwnerRef(obj client.Object) *metav1.OwnerReference {
 	gvk, err := apiutil.GVKForObject(obj, api.Scheme)
