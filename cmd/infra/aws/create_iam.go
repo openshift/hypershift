@@ -7,20 +7,22 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
-	hyperapi "github.com/openshift/hypershift/api"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 type CreateIAMOptions struct {
@@ -81,7 +83,7 @@ func NewCreateIAMCommand() *cobra.Command {
 		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
 		opts.IAMClient = iam.New(awsSession, awsConfig)
 
-		if err := opts.Run(ctx); err != nil {
+		if err := opts.Run(ctx, util.GetClientOrDie()); err != nil {
 			log.Error(err, "Failed to create infrastructure")
 			os.Exit(1)
 		}
@@ -90,8 +92,8 @@ func NewCreateIAMCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *CreateIAMOptions) Run(ctx context.Context) error {
-	results, err := o.CreateIAM(ctx)
+func (o *CreateIAMOptions) Run(ctx context.Context, client crclient.Client) error {
+	results, err := o.CreateIAM(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -116,13 +118,8 @@ func (o *CreateIAMOptions) Run(ctx context.Context) error {
 	return nil
 }
 
-func (o *CreateIAMOptions) CreateIAM(ctx context.Context) (*CreateIAMOutput, error) {
+func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client) (*CreateIAMOutput, error) {
 	var err error
-
-	client, err := crclient.New(ctrl.GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to management cluster to determine ingress domain: %w", err)
-	}
 
 	ingressConfig := &configv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -130,8 +127,15 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context) (*CreateIAMOutput, err
 		},
 	}
 
-	if err = client.Get(ctx, crclient.ObjectKeyFromObject(ingressConfig), ingressConfig); err != nil {
-		return nil, fmt.Errorf("failed to get cluster ingress configuration: %w", err)
+	err = wait.PollUntil(5*time.Second, func() (bool, error) {
+		if err = client.Get(ctx, crclient.ObjectKeyFromObject(ingressConfig), ingressConfig); err != nil {
+			log.Error(err, "failed to get ingress config")
+			return false, nil
+		}
+		return true, nil
+	}, ctx.Done())
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover issuer URL: %w", err)
 	}
 
 	o.IssuerURL = fmt.Sprintf("https://oidc-%s.%s", o.InfraID, ingressConfig.Spec.Domain)
