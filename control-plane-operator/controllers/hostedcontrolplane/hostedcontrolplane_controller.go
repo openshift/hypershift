@@ -1097,6 +1097,17 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile service admin kubeconfig secret: %w", err)
 	}
 
+	// The client used by CAPI machine controller expects the kubeconfig to follow this naming and key convention
+	// https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
+	capiKubeconfigSecret := manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, capiKubeconfigSecret, func() error {
+		// TODO(alberto): This secret is currently using the cluster-admin kubeconfig for the guest cluster.
+		// We should create a separate kubeconfig with a tight set of permissions for it to use.
+		return p.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile CAPI service admin kubeconfig secret: %w", err)
+	}
+
 	localhostKubeconfigSecret := manifests.KASLocalhostKubeconfigSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, localhostKubeconfigSecret, func() error {
 		return p.ReconcileLocalhostKubeconfigSecret(localhostKubeconfigSecret, clientCertSecret, rootCA)
