@@ -11,7 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
-func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, existingNodePort int32) error {
+func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int) error {
 	util.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels
 	var portSpec corev1.ServicePort
@@ -23,9 +23,6 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(apiServerPort)
-	if existingNodePort > 0 {
-		svc.Spec.Ports[0].NodePort = existingNodePort
-	}
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		svc.Spec.Type = corev1.ServiceTypeLoadBalancer

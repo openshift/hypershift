@@ -484,19 +484,8 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	}
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
-	var existingServiceData corev1.Service
-	existingNodePort := int32(0)
-	r.Log.Info("Checking for existing service", "serviceName", apiServerService.Name, "namespace", apiServerService.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: apiServerService.Namespace, Name: apiServerService.Name}, &existingServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-	if len(existingServiceData.Spec.Ports) > 0 && existingServiceData.Spec.Ports[0].NodePort > 0 {
-		r.Log.Info("Existing nodePort found for service", "nodePort", existingServiceData.Spec.Ports[0].NodePort)
-		existingNodePort = existingServiceData.Spec.Ports[0].NodePort
-	}
-
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, existingNodePort)
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
@@ -510,18 +499,8 @@ func (r *HostedControlPlaneReconciler) reconcileVPNServerService(ctx context.Con
 	}
 	p := vpn.NewVPNServiceParams(hcp)
 	vpnServerService := manifests.VPNServerService(hcp.Namespace)
-	var existingServiceData corev1.Service
-	existingNodePort := int32(0)
-	r.Log.Info("Checking for existing service", "serviceName", vpnServerService.Name, "namespace", vpnServerService.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: vpnServerService.Namespace, Name: vpnServerService.Name}, &existingServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-	if len(existingServiceData.Spec.Ports) > 0 && existingServiceData.Spec.Ports[0].NodePort > 0 {
-		r.Log.Info("Existing nodePort found for service", "nodePort", existingServiceData.Spec.Ports[0].NodePort)
-		existingNodePort = existingServiceData.Spec.Ports[0].NodePort
-	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, vpnServerService, func() error {
-		return p.ReconcileService(vpnServerService, serviceStrategy, existingNodePort)
+		return p.ReconcileService(vpnServerService, serviceStrategy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile VPN service: %w", err)
 	}
@@ -535,18 +514,8 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	}
 	p := oauth.NewOAuthServiceParams(hcp)
 	oauthServerService := manifests.OauthServerService(hcp.Namespace)
-	var existingServiceData corev1.Service
-	existingNodePort := int32(0)
-	r.Log.Info("Checking for existing service", "serviceName", oauthServerService.Name, "namespace", oauthServerService.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: oauthServerService.Namespace, Name: oauthServerService.Name}, &existingServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-	if len(existingServiceData.Spec.Ports) > 0 && existingServiceData.Spec.Ports[0].NodePort > 0 {
-		r.Log.Info("Existing nodePort found for service", "nodePort", existingServiceData.Spec.Ports[0].NodePort)
-		existingNodePort = existingServiceData.Spec.Ports[0].NodePort
-	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, oauthServerService, func() error {
-		return p.ReconcileService(oauthServerService, serviceStrategy, existingNodePort)
+		return p.ReconcileService(oauthServerService, serviceStrategy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth service: %w", err)
 	}
