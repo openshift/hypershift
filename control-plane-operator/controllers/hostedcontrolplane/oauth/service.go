@@ -32,6 +32,9 @@ func (p *OAuthServiceParams) ReconcileService(svc *corev1.Service, strategy *hyp
 	portSpec.Port = int32(OAuthServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(OAuthServerPort)
+	if existingNodePort > 0 {
+		portSpec.NodePort = existingNodePort
+	}
 	switch strategy.Type {
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
