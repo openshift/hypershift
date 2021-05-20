@@ -1,6 +1,8 @@
 package manifests
 
 import (
+	"fmt"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +23,17 @@ func KASServiceKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "service-network-admin-kubeconfig",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
+// The client used by CAPI machine controller expects the kubeconfig to follow this naming convention
+// https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
+func KASServiceCAPIKubeconfigSecret(controlPlaneNamespace, infraID string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-kubeconfig", infraID),
 			Namespace: controlPlaneNamespace,
 		},
 	}

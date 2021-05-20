@@ -20,7 +20,7 @@ var (
 	oauthServerLabels = map[string]string{"app": "oauth-openshift"}
 )
 
-func (p *OAuthServiceParams) ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
+func (p *OAuthServiceParams) ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, existingNodePort int32) error {
 	util.EnsureOwnerRef(svc, p.OwnerReference)
 	svc.Spec.Selector = oauthServerLabels
 	var portSpec corev1.ServicePort

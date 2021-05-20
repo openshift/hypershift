@@ -22,7 +22,7 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-all: build
+all: build e2e
 
 build: hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
 

@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -17,22 +18,17 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
-	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
 	hyperapi "github.com/openshift/hypershift/api"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/version"
+	"github.com/spf13/cobra"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	"github.com/openshift/hypershift/cmd/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// NoopReconcile is just a default mutation function that does nothing.
-var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type Options struct {
 	Namespace          string
@@ -52,6 +48,7 @@ type Options struct {
 	IssuerURL          string
 	PublicZoneID       string
 	PrivateZoneID      string
+	Annotations        []string
 
 	EC2Client     ec2iface.EC2API
 	Route53Client route53iface.Route53API
@@ -89,6 +86,7 @@ func NewCreateCommand() *cobra.Command {
 		Region:             "us-east-1",
 		InfraID:            "",
 		InstanceType:       "m4.large",
+		Annotations:        []string{},
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -105,6 +103,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "Instance type for AWS instances.")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
+	cmd.Flags().StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -135,6 +134,16 @@ func NewCreateCommand() *cobra.Command {
 }
 
 func CreateCluster(ctx context.Context, opts Options) error {
+	annotations := map[string]string{}
+	for _, s := range opts.Annotations {
+		pair := strings.SplitN(s, "=", 2)
+		if len(pair) != 2 {
+			return fmt.Errorf("invalid annotation: %s", s)
+		}
+		k, v := pair[0], pair[1]
+		annotations[k] = v
+	}
+
 	pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
 	if err != nil {
 		return fmt.Errorf("failed to read pull secret file: %w", err)
@@ -208,7 +217,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			IAMClient:          opts.IAMClient,
 			IssuerURL:          opts.IssuerURL,
 		}
-		iamInfo, err = opt.CreateIAM(ctx)
+		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
 			return fmt.Errorf("failed to create iam: %w", err)
 		}
@@ -217,6 +226,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 	exampleObjects := apifixtures.ExampleOptions{
 		Namespace:        opts.Namespace,
 		Name:             infra.Name,
+		Annotations:      annotations,
 		ReleaseImage:     opts.ReleaseImage,
 		PullSecret:       pullSecret,
 		SigningKey:       iamInfo.ServiceAccountSigningKey,

@@ -438,10 +438,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
 	hcp.Spec.DNS = hcluster.Spec.DNS
-	hcp.Spec.KubeConfig = &hyperv1.KubeconfigSecretRef{
-		Name: fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
-		Key:  "value",
-	}
 	hcp.Spec.Services = hcluster.Spec.Services
 	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
 
@@ -682,23 +678,23 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 
 	// The deployment depends on the kubeconfig being reported.
 	if hcp.Status.KubeConfig != nil {
-		// Resolve the kubeconfig secret from the hostedcontrolplane which the
+		// Resolve the kubeconfig secret for CAPI which the
 		// autoscaler is deployed alongside of.
-		hcpKubeConfigSecret := &corev1.Secret{
+		capiKubeConfigSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: hcp.Namespace,
-				Name:      hcp.Status.KubeConfig.Name,
+				Name:      fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
 			},
 		}
-		err = r.Client.Get(ctx, client.ObjectKeyFromObject(hcpKubeConfigSecret), hcpKubeConfigSecret)
+		err = r.Client.Get(ctx, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
 		if err != nil {
-			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", hcpKubeConfigSecret.Name, err)
+			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
 		}
 
 		// Reconcile autoscaler deployment
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, autoScalerServiceAccount, hcpKubeConfigSecret, "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0", hcluster.Spec.Autoscaling)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, autoScalerServiceAccount, capiKubeConfigSecret, "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0", hcluster.Spec.Autoscaling)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -1188,7 +1184,7 @@ func reconcileCAPIAWSProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, hcpKubeConfigSecret *corev1.Secret, image string, options hyperv1.ClusterAutoscaling) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, image string, options hyperv1.ClusterAutoscaling) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -1247,7 +1243,7 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.Ser
 						Name: "target-kubeconfig",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: hcpKubeConfigSecret.Name,
+								SecretName: kubeConfigSecret.Name,
 								Items: []corev1.KeyToPath{
 									{
 										// TODO: should the key be published on status?
