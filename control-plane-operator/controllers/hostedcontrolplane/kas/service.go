@@ -28,7 +28,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
-		if portSpec.NodePort == 0 && strategy.NodePort != nil {
+		if portSpec.NodePort > 0 && strategy.NodePort != nil {
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	default:

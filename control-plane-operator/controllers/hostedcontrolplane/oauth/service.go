@@ -35,7 +35,7 @@ func (p *OAuthServiceParams) ReconcileService(svc *corev1.Service, strategy *hyp
 	switch strategy.Type {
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
-		if portSpec.NodePort == 0 && strategy.NodePort != nil {
+		if portSpec.NodePort > 0 && strategy.NodePort != nil {
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	case hyperv1.Route:

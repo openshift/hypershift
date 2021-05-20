@@ -31,7 +31,7 @@ func (p *VPNServiceParams) ReconcileService(svc *corev1.Service, strategy *hyper
 		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
-		if portSpec.NodePort == 0 && strategy.NodePort != nil {
+		if portSpec.NodePort > 0 && strategy.NodePort != nil {
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	default:
