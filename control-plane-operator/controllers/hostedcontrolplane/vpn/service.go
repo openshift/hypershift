@@ -14,7 +14,7 @@ const (
 	VPNServerPort = 1194
 )
 
-func (p *VPNServiceParams) ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
+func (p *VPNServiceParams) ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, existingNodePort int32) error {
 	util.EnsureOwnerRef(svc, p.OwnerReference)
 	svc.Spec.Selector = vpnServerLabels
 	var portSpec corev1.ServicePort
@@ -26,6 +26,9 @@ func (p *VPNServiceParams) ReconcileService(svc *corev1.Service, strategy *hyper
 	portSpec.Port = int32(VPNServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(VPNServerPort)
+	if existingNodePort > 0 {
+		portSpec.NodePort = existingNodePort
+	}
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
