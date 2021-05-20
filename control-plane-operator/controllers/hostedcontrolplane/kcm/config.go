@@ -10,8 +10,8 @@ import (
 
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const (
@@ -19,8 +19,8 @@ const (
 	ServiceServingCAKey            = "service-ca.crt"
 )
 
-func (p *KubeControllerManagerParams) ReconcileConfig(config, serviceServingCA *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(config, p.OwnerReference)
+func ReconcileConfig(config, serviceServingCA *corev1.ConfigMap, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
@@ -54,7 +54,8 @@ func generateConfig(serviceServingCA *corev1.ConfigMap) (string, error) {
 	return string(b), nil
 }
 
-func (p *KubeControllerManagerParams) ReconcileKCMServiceServingCA(cm, combinedCA *corev1.ConfigMap) error {
+func ReconcileKCMServiceServingCA(cm, combinedCA *corev1.ConfigMap, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(cm)
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}

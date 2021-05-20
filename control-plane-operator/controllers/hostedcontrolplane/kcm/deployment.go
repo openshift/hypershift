@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
@@ -56,14 +55,14 @@ var (
 	}
 )
 
-func (p *KubeControllerManagerParams) ReconcileDeployment(deployment *appsv1.Deployment, servingCA *corev1.ConfigMap) error {
-	deployment.Spec.Replicas = pointer.Int32Ptr(int32(p.Replicas))
+func ReconcileDeployment(deployment *appsv1.Deployment, servingCA *corev1.ConfigMap, p *KubeControllerManagerParams) error {
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: kcmLabels,
 	}
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
+	args := kcmArgs(p)
 	deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
 		MaxSurge:       &maxSurge,
 		MaxUnavailable: &maxUnavailable,
@@ -77,7 +76,7 @@ func (p *KubeControllerManagerParams) ReconcileDeployment(deployment *appsv1.Dep
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(kcmContainerMain(), p.buildKCMContainerMain),
+			util.BuildContainer(kcmContainerMain(), buildKCMContainerMain(p.HyperkubeImage, args)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(kcmVolumeConfig(), buildKCMVolumeConfig),
@@ -89,16 +88,12 @@ func (p *KubeControllerManagerParams) ReconcileDeployment(deployment *appsv1.Dep
 			util.BuildVolume(kcmVolumeServiceSigner(), buildKCMVolumeServiceSigner),
 		},
 	}
-	p.LivenessProbes.ApplyTo(&deployment.Spec.Template.Spec)
-	p.ReadinessProbes.ApplyTo(&deployment.Spec.Template.Spec)
-	p.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
-	p.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)
-	p.Resources.ApplyTo(&deployment.Spec.Template.Spec)
+	p.DeploymentConfig.ApplyTo(deployment)
 	if servingCA != nil {
-		p.applyServingCAVolume(&deployment.Spec.Template.Spec, servingCA)
+		applyServingCAVolume(&deployment.Spec.Template.Spec, servingCA)
 	}
-	p.applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec)
-	p.applyCloudProviderCreds(&deployment.Spec.Template.Spec)
+	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig)
+	applyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds)
 	return nil
 }
 
@@ -108,14 +103,16 @@ func kcmContainerMain() *corev1.Container {
 	}
 }
 
-func (p *KubeControllerManagerParams) buildKCMContainerMain(c *corev1.Container) {
-	c.Image = p.HyperkubeImage
-	c.Command = []string{
-		"hyperkube",
-		"kube-controller-manager",
+func buildKCMContainerMain(image string, args []string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.Command = []string{
+			"hyperkube",
+			"kube-controller-manager",
+		}
+		c.Args = args
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
-	c.Args = p.kcmArgs()
-	c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 }
 
 func kcmVolumeConfig() *corev1.Volume {
@@ -212,9 +209,11 @@ func kcmVolumeCloudConfig() *corev1.Volume {
 	}
 }
 
-func (p *KubeControllerManagerParams) buildKCMVolumeCloudConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = p.CloudProviderConfig.Name
+func buildKCMVolumeCloudConfig(cloudProviderConfigName string) func(v *corev1.Volume) {
+	return func(v *corev1.Volume) {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+		v.ConfigMap.Name = cloudProviderConfigName
+	}
 }
 
 func kcmVolumeCloudProviderCreds() *corev1.Volume {
@@ -223,9 +222,11 @@ func kcmVolumeCloudProviderCreds() *corev1.Volume {
 	}
 }
 
-func (p *KubeControllerManagerParams) buildKCMVolumeCloudProviderCreds(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = p.CloudProviderCreds.Name
+func buildKCMVolumeCloudProviderCreds(cloudProviderCredsName string) func(v *corev1.Volume) {
+	return func(v *corev1.Volume) {
+		v.Secret = &corev1.SecretVolumeSource{}
+		v.Secret.SecretName = cloudProviderCredsName
+	}
 }
 
 type serviceCAVolumeBuilder string
@@ -235,7 +236,7 @@ func (name serviceCAVolumeBuilder) buildKCMVolumeServiceServingCA(v *corev1.Volu
 	v.ConfigMap.Name = string(name)
 }
 
-func (p *KubeControllerManagerParams) applyServingCAVolume(ps *corev1.PodSpec, cm *corev1.ConfigMap) {
+func applyServingCAVolume(ps *corev1.PodSpec, cm *corev1.ConfigMap) {
 	builder := serviceCAVolumeBuilder(cm.Name)
 	ps.Volumes = append(ps.Volumes, util.BuildVolume(kcmVolumeServiceServingCA(), builder.buildKCMVolumeServiceServingCA))
 	var container *corev1.Container
@@ -251,7 +252,7 @@ func (p *KubeControllerManagerParams) applyServingCAVolume(ps *corev1.PodSpec, c
 	container.VolumeMounts = append(container.VolumeMounts, serviceServingCAMount.ContainerMounts(kcmContainerMain().Name)...)
 }
 
-func (p *KubeControllerManagerParams) kcmArgs() []string {
+func kcmArgs(p *KubeControllerManagerParams) []string {
 	cpath := func(vol, file string) string {
 		return path.Join(volumeMounts.Path(kcmContainerMain().Name, vol), file)
 	}
@@ -263,7 +264,7 @@ func (p *KubeControllerManagerParams) kcmArgs() []string {
 		fmt.Sprintf("--authorization-kubeconfig=%s", kubeConfigPath),
 		"--allocate-node-cidrs=true",
 	}
-	if providerConfig := p.cloudProviderConfig(); providerConfig != "" {
+	if providerConfig := cloudProviderConfig(p.CloudProvider, p.CloudProviderConfig); providerConfig != "" {
 		args = append(args, fmt.Sprintf("--cloud-config=%s", providerConfig))
 	}
 	if p.CloudProvider != "" {
@@ -271,7 +272,7 @@ func (p *KubeControllerManagerParams) kcmArgs() []string {
 	}
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
-		fmt.Sprintf("--cluster-cidr=%s", clusterCIDR(&p.Network.Spec)),
+		fmt.Sprintf("--cluster-cidr=%s", config.ClusterCIDR(&p.Network)),
 		fmt.Sprintf("--cluster-signing-cert-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--cluster-signing-key-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerKeyMapKey)),
 		"--configure-cloud-routes=false",
@@ -290,7 +291,7 @@ func (p *KubeControllerManagerParams) kcmArgs() []string {
 		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
-		fmt.Sprintf("--service-cluster-ip-range=%s", serviceCIDR(&p.Network.Spec)),
+		fmt.Sprintf("--service-cluster-ip-range=%s", config.ServiceCIDR(&p.Network)),
 		"--use-service-account-credentials=true",
 		"--experimental-cluster-signing-duration=26280h",
 	}...)
@@ -300,34 +301,34 @@ func (p *KubeControllerManagerParams) kcmArgs() []string {
 	return args
 }
 
-func (p *KubeControllerManagerParams) cloudProviderConfig() string {
-	if p.CloudProviderConfig.Name != "" {
+func cloudProviderConfig(cloudProvider string, configRef *corev1.LocalObjectReference) string {
+	if configRef != nil && configRef.Name != "" {
 		cfgDir := cloudProviderConfigVolumeMount.Path(kcmContainerMain().Name, kcmVolumeCloudConfig().Name)
-		return path.Join(cfgDir, cloud.ProviderConfigKey(p.CloudProvider))
+		return path.Join(cfgDir, cloud.ProviderConfigKey(cloudProvider))
 	}
 	return ""
 }
 
-func (p *KubeControllerManagerParams) applyCloudConfigVolumeMount(podSpec *corev1.PodSpec) {
-	if p.CloudProviderConfig.Name == "" {
+func applyCloudConfigVolumeMount(podSpec *corev1.PodSpec, cloudProviderConfigRef *corev1.LocalObjectReference) {
+	if cloudProviderConfigRef == nil || cloudProviderConfigRef.Name == "" {
 		return
 	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudConfig(), p.buildKCMVolumeCloudConfig))
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudConfig(), buildKCMVolumeCloudConfig(cloudProviderConfigRef.Name)))
 	container := mustContainer(podSpec, kcmContainerMain().Name)
 	container.VolumeMounts = append(container.VolumeMounts,
 		cloudProviderConfigVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
 }
 
-func (p *KubeControllerManagerParams) applyCloudProviderCreds(podSpec *corev1.PodSpec) {
-	if p.CloudProviderCreds.Name == "" {
+func applyCloudProviderCreds(podSpec *corev1.PodSpec, cloudProvider string, cloudProviderCreds *corev1.LocalObjectReference) {
+	if cloudProviderCreds == nil || cloudProviderCreds.Name == "" {
 		return
 	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudProviderCreds(), p.buildKCMVolumeCloudProviderCreds))
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudProviderCreds(), buildKCMVolumeCloudProviderCreds(cloudProviderCreds.Name)))
 	container := mustContainer(podSpec, kcmContainerMain().Name)
 	container.VolumeMounts = append(container.VolumeMounts,
 		cloudProviderCredsVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
 
-	switch p.CloudProvider {
+	switch cloudProvider {
 	case aws.Provider:
 		credsPath := path.Join(cloudProviderCredsVolumeMount.Path(kcmContainerMain().Name, kcmVolumeCloudProviderCreds().Name), AWSCloudProviderCredsKey)
 		container.Env = append(container.Env,
@@ -340,20 +341,6 @@ func (p *KubeControllerManagerParams) applyCloudProviderCreds(podSpec *corev1.Po
 				Value: "true",
 			})
 	}
-}
-
-func clusterCIDR(networkSpec *configv1.NetworkSpec) string {
-	if len(networkSpec.ClusterNetwork) > 0 {
-		return networkSpec.ClusterNetwork[0].CIDR
-	}
-	return ""
-}
-
-func serviceCIDR(networkSpec *configv1.NetworkSpec) string {
-	if len(networkSpec.ServiceNetwork) > 0 {
-		return networkSpec.ServiceNetwork[0]
-	}
-	return ""
 }
 
 func mustContainer(podSpec *corev1.PodSpec, name string) *corev1.Container {

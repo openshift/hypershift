@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
@@ -30,18 +31,17 @@ var (
 	}
 )
 
-func (p *VPNParams) ReconcileWorkerClientDeployment(cm *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(cm, p.OwnerReference)
+func ReconcileWorkerClientDeployment(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, vpnImage string) error {
+	ownerRef.ApplyTo(cm)
 	clientDeployment := manifests.VPNClientDeployment()
-	if err := p.reconcileClientDeployment(clientDeployment); err != nil {
+	if err := reconcileClientDeployment(clientDeployment, deploymentConfig, vpnImage); err != nil {
 		return err
 	}
 	return util.ReconcileWorkerManifest(cm, clientDeployment)
 }
 
-func (p *VPNParams) reconcileClientDeployment(deployment *appsv1.Deployment) error {
+func reconcileClientDeployment(deployment *appsv1.Deployment, deploymentConfig config.DeploymentConfig, vpnImage string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: pointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: vpnClientLabels,
 		},
@@ -52,7 +52,7 @@ func (p *VPNParams) reconcileClientDeployment(deployment *appsv1.Deployment) err
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{
-					util.BuildContainer(vpnContainerClient(), p.buildVPNContainerClient),
+					util.BuildContainer(vpnContainerClient(), buildVPNContainerClient(vpnImage)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(vpnVolumeWorkerClientConfig(), buildVPNVolumeWorkerClientConfig),
@@ -62,9 +62,8 @@ func (p *VPNParams) reconcileClientDeployment(deployment *appsv1.Deployment) err
 			},
 		},
 	}
-	p.ClientScheduling.ApplyTo(&deployment.Spec.Template.Spec)
-	p.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)
-	p.Resources.ApplyTo(&deployment.Spec.Template.Spec)
+
+	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
 
@@ -86,18 +85,20 @@ func vpnContainerClient() *corev1.Container {
 	}
 }
 
-func (p *VPNParams) buildVPNContainerClient(c *corev1.Container) {
-	c.Image = p.VPNImage
-	c.ImagePullPolicy = corev1.PullAlways
-	c.Command = []string{
-		"/bin/bash",
+func buildVPNContainerClient(image string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.ImagePullPolicy = corev1.PullAlways
+		c.Command = []string{
+			"/bin/bash",
+		}
+		c.Args = []string{
+			"-c",
+			vpnClientScript(workerVolumeMounts.Path(c.Name, vpnVolumeWorkerClientConfig().Name)),
+		}
+		c.WorkingDir = workerVolumeMounts.Path(c.Name, vpnVolumeClientCerts().Name)
+		c.VolumeMounts = workerVolumeMounts.ContainerMounts(c.Name)
 	}
-	c.Args = []string{
-		"-c",
-		vpnClientScript(workerVolumeMounts.Path(c.Name, vpnVolumeWorkerClientConfig().Name)),
-	}
-	c.WorkingDir = workerVolumeMounts.Path(c.Name, vpnVolumeClientCerts().Name)
-	c.VolumeMounts = workerVolumeMounts.ContainerMounts(c.Name)
 }
 
 func vpnVolumeClientCerts() *corev1.Volume {

@@ -8,6 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
@@ -25,10 +26,9 @@ var (
 	}
 )
 
-func (p *VPNParams) ReconcileServerDeployment(deployment *appsv1.Deployment) error {
-	util.EnsureOwnerRef(deployment, p.OwnerReference)
+func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
+	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: pointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: vpnServerLabels,
 		},
@@ -40,7 +40,7 @@ func (p *VPNParams) ReconcileServerDeployment(deployment *appsv1.Deployment) err
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				ServiceAccountName:           manifests.VPNServiceAccount(deployment.Namespace).Name,
 				Containers: []corev1.Container{
-					util.BuildContainer(vpnContainerServer(), p.buildVPNContainerServer),
+					util.BuildContainer(vpnContainerServer(), buildVPNContainerServer(image)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(vpnVolumeServerCerts(), buildVPNVolumeServerCerts),
@@ -50,9 +50,7 @@ func (p *VPNParams) ReconcileServerDeployment(deployment *appsv1.Deployment) err
 			},
 		},
 	}
-	p.ServerScheduling.ApplyTo(&deployment.Spec.Template.Spec)
-	p.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)
-	p.Resources.ApplyTo(&deployment.Spec.Template.Spec)
+	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
 
@@ -62,18 +60,20 @@ func vpnContainerServer() *corev1.Container {
 	}
 }
 
-func (p *VPNParams) buildVPNContainerServer(c *corev1.Container) {
-	c.Image = p.VPNImage
-	c.ImagePullPolicy = corev1.PullAlways
-	c.Command = []string{
-		"/usr/sbin/openvpn",
+func buildVPNContainerServer(image string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.ImagePullPolicy = corev1.PullAlways
+		c.Command = []string{
+			"/usr/sbin/openvpn",
+		}
+		c.Args = []string{
+			"--config",
+			path.Join(volumeMounts.Path(c.Name, vpnVolumeServerConfig().Name), vpnServerConfigKey),
+		}
+		c.WorkingDir = volumeMounts.Path(c.Name, vpnVolumeServerCerts().Name)
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
-	c.Args = []string{
-		"--config",
-		path.Join(volumeMounts.Path(c.Name, vpnVolumeServerConfig().Name), vpnServerConfigKey),
-	}
-	c.WorkingDir = volumeMounts.Path(c.Name, vpnVolumeServerCerts().Name)
-	c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 }
 
 func vpnVolumeServerCerts() *corev1.Volume {

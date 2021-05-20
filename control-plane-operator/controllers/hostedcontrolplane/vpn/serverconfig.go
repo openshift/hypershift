@@ -7,7 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 const (
@@ -15,12 +15,12 @@ const (
 	workerConfigKey    = "worker"
 )
 
-func (p *VPNParams) ReconcileVPNServerConfig(config *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(config, p.OwnerReference)
+func ReconcileVPNServerConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef, clusterCIDR, serviceCIDR, machineCIDR string) error {
+	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	cfg, err := p.generateConfig()
+	cfg, err := generateConfig(clusterCIDR, serviceCIDR, machineCIDR)
 	if err != nil {
 		return fmt.Errorf("failed to generate vpn config: %w", err)
 	}
@@ -28,12 +28,12 @@ func (p *VPNParams) ReconcileVPNServerConfig(config *corev1.ConfigMap) error {
 	return nil
 }
 
-func (p *VPNParams) ReconcileVPNServerClientConfig(config *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(config, p.OwnerReference)
+func ReconcileVPNServerClientConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef, clusterCIDR, serviceCIDR, machineCIDR string) error {
+	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	workerCfg, err := p.generateWorkerClientConfig()
+	workerCfg, err := generateWorkerClientConfig(clusterCIDR, serviceCIDR, machineCIDR)
 	if err != nil {
 		return fmt.Errorf("failed to generate vpn worker config: %w", err)
 	}
@@ -83,17 +83,8 @@ type routeEntry struct {
 	mask    string
 }
 
-func (p *VPNParams) vpnRoutes() ([]routeEntry, error) {
+func vpnRoutes(cidrs ...string) ([]routeEntry, error) {
 	result := []routeEntry{}
-	cidrs := []string{}
-	for _, entry := range p.Network.Spec.ClusterNetwork {
-		cidrs = append(cidrs, entry.CIDR)
-	}
-	for _, cidr := range p.Network.Spec.ServiceNetwork {
-		cidrs = append(cidrs, cidr)
-	}
-	cidrs = append(cidrs, p.MachineCIDR)
-
 	for _, cidr := range cidrs {
 		address, mask, err := parseCIDR(cidr)
 		if err != nil {
@@ -104,10 +95,10 @@ func (p *VPNParams) vpnRoutes() ([]routeEntry, error) {
 	return result, nil
 }
 
-func (p *VPNParams) generateConfig() (string, error) {
+func generateConfig(cidrs ...string) (string, error) {
 	config := &bytes.Buffer{}
 	fmt.Fprintf(config, "%s", baseConfig)
-	routes, err := p.vpnRoutes()
+	routes, err := vpnRoutes(cidrs...)
 	if err != nil {
 		return "", err
 	}
@@ -122,9 +113,9 @@ func (p *VPNParams) generateConfig() (string, error) {
 	return config.String(), nil
 }
 
-func (p *VPNParams) generateWorkerClientConfig() (string, error) {
+func generateWorkerClientConfig(cidrs ...string) (string, error) {
 	config := &bytes.Buffer{}
-	routes, err := p.vpnRoutes()
+	routes, err := vpnRoutes(cidrs...)
 	if err != nil {
 		return "", err
 	}
