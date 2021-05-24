@@ -11,6 +11,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
@@ -68,18 +69,19 @@ var kasLabels = map[string]string{
 	"app": "kube-apiserver",
 }
 
-func (p *KubeAPIServerParams) ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment) error {
-	util.EnsureOwnerRef(deployment, p.OwnerReference)
+func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
+	ownerRef config.OwnerRef,
+	deploymentConfig config.DeploymentConfig,
+	namedCertificates []configv1.APIServerNamedServingCert,
+	cloudProviderConfigRef *corev1.LocalObjectReference,
+	images KubeAPIServerImages) error {
+
+	ownerRef.ApplyTo(deployment)
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
-	deploymentLabels := kasLabels
-	for label, value := range p.AdditionalLabels {
-		deploymentLabels[label] = value
-	}
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: pointer.Int32Ptr(p.Replicas),
 		Selector: &metav1.LabelSelector{
-			MatchLabels: deploymentLabels,
+			MatchLabels: kasLabels,
 		},
 		Strategy: appsv1.DeploymentStrategy{
 			Type: appsv1.RollingUpdateDeploymentStrategyType,
@@ -90,18 +92,18 @@ func (p *KubeAPIServerParams) ReconcileKubeAPIServerDeployment(deployment *appsv
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: deploymentLabels,
+				Labels: kasLabels,
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				ServiceAccountName:           manifests.VPNServiceAccount(deployment.Namespace).Name,
 				InitContainers: []corev1.Container{
-					util.BuildContainer(kasContainerBootstrap(), p.buildKASContainerBootstrap),
+					util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(kasContainerApplyBootstrap(), p.buildKASContainerApplyBootstrap),
-					util.BuildContainer(kasContainerMain(), p.buildKASContainerMain),
-					util.BuildContainer(kasContainerVPNClient(), p.buildKASContainerVPNClient),
+					util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
+					util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube)),
+					util.BuildContainer(kasContainerVPNClient(), buildKASContainerVPNClient(images.VPN)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(kasVolumeBootstrapManifests(), buildKASVolumeBootstrapManifests),
@@ -125,11 +127,9 @@ func (p *KubeAPIServerParams) ReconcileKubeAPIServerDeployment(deployment *appsv
 			},
 		},
 	}
-	p.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
-	p.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)
-	p.Resources.ApplyTo(&deployment.Spec.Template.Spec)
-	applyNamedCertificateMounts(p.APIServer.Spec.ServingCerts.NamedCertificates, &deployment.Spec.Template.Spec)
-	p.applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec)
+	deploymentConfig.ApplyTo(deployment)
+	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
+	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec)
 	return nil
 }
 
@@ -139,16 +139,18 @@ func kasContainerBootstrap() *corev1.Container {
 	}
 }
 
-func (p *KubeAPIServerParams) buildKASContainerBootstrap(c *corev1.Container) {
-	c.Command = []string{
-		"/bin/bash",
+func buildKASContainerBootstrap(image string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Command = []string{
+			"/bin/bash",
+		}
+		c.Args = []string{
+			"-c",
+			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeBootstrapManifests().Name)),
+		}
+		c.Image = image
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
-	c.Args = []string{
-		"-c",
-		invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeBootstrapManifests().Name)),
-	}
-	c.Image = p.Images.ClusterConfigOperator
-	c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 }
 
 func kasContainerApplyBootstrap() *corev1.Container {
@@ -157,22 +159,24 @@ func kasContainerApplyBootstrap() *corev1.Container {
 	}
 }
 
-func (p *KubeAPIServerParams) buildKASContainerApplyBootstrap(c *corev1.Container) {
-	c.Image = p.Images.CLI
-	c.Command = []string{
-		"/bin/bash",
+func buildKASContainerApplyBootstrap(image string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.Command = []string{
+			"/bin/bash",
+		}
+		c.Args = []string{
+			"-c",
+			applyBootstrapManifestsScript(volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name)),
+		}
+		c.Env = []corev1.EnvVar{
+			{
+				Name:  "KUBECONFIG",
+				Value: path.Join(volumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
+			},
+		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
-	c.Args = []string{
-		"-c",
-		applyBootstrapManifestsScript(volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name)),
-	}
-	c.Env = []corev1.EnvVar{
-		{
-			Name:  "KUBECONFIG",
-			Value: path.Join(volumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
-		},
-	}
-	c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 }
 
 func kasContainerMain() *corev1.Container {
@@ -181,18 +185,20 @@ func kasContainerMain() *corev1.Container {
 	}
 }
 
-func (p *KubeAPIServerParams) buildKASContainerMain(c *corev1.Container) {
-	c.Image = p.Images.HyperKube
-	c.Command = []string{
-		"hyperkube",
+func buildKASContainerMain(image string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.Command = []string{
+			"hyperkube",
+		}
+		c.Args = []string{
+			"kube-apiserver",
+			fmt.Sprintf("--openshift-config=%s", path.Join(volumeMounts.Path(c.Name, kasVolumeConfig().Name), KubeAPIServerConfigKey)),
+			"-v5",
+		}
+		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
-	c.Args = []string{
-		"kube-apiserver",
-		fmt.Sprintf("--openshift-config=%s", path.Join(volumeMounts.Path(c.Name, kasVolumeConfig().Name), KubeAPIServerConfigKey)),
-		"-v5",
-	}
-	c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
-	c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 }
 
 func kasContainerVPNClient() *corev1.Container {
@@ -201,18 +207,20 @@ func kasContainerVPNClient() *corev1.Container {
 	}
 }
 
-func (p *KubeAPIServerParams) buildKASContainerVPNClient(c *corev1.Container) {
-	c.Image = p.Images.VPN
-	c.ImagePullPolicy = corev1.PullAlways
-	c.Command = []string{
-		"/usr/sbin/openvpn",
+func buildKASContainerVPNClient(image string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.ImagePullPolicy = corev1.PullAlways
+		c.Command = []string{
+			"/usr/sbin/openvpn",
+		}
+		c.Args = []string{
+			"--config",
+			path.Join(volumeMounts.Path(c.Name, kasVolumeVPNClientConfig().Name), vpnClientConfigKey),
+		}
+		c.WorkingDir = kasVPNWorkingDir
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
-	c.Args = []string{
-		"--config",
-		path.Join(volumeMounts.Path(c.Name, kasVolumeVPNClientConfig().Name), vpnClientConfigKey),
-	}
-	c.WorkingDir = kasVPNWorkingDir
-	c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 }
 
 func kasVolumeBootstrapManifests() *corev1.Volume {
@@ -398,14 +406,16 @@ func kasVolumeCloudConfig() *corev1.Volume {
 	}
 }
 
-func (p *KubeAPIServerParams) buildKASVolumeCloudConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = p.CloudProviderConfig.Name
+func buildKASVolumeCloudConfig(configMapName string) func(v *corev1.Volume) {
+	return func(v *corev1.Volume) {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+		v.ConfigMap.Name = configMapName
+	}
 }
 
-func (p *KubeAPIServerParams) applyCloudConfigVolumeMount(podSpec *corev1.PodSpec) {
-	if p.CloudProviderConfig.Name != "" {
-		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeCloudConfig(), p.buildKASVolumeCloudConfig))
+func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec *corev1.PodSpec) {
+	if configRef != nil && configRef.Name != "" {
+		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeCloudConfig(), buildKASVolumeCloudConfig(configRef.Name)))
 		var container *corev1.Container
 		for i, c := range podSpec.Containers {
 			if c.Name == kasContainerMain().Name {

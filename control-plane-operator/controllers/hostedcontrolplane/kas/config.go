@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	hcpconfig "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const (
@@ -25,12 +24,15 @@ const (
 	DefaultEtcdPort        = 2379
 )
 
-func (p *KubeAPIServerParams) ReconcileConfig(config *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(config, p.OwnerReference)
+func ReconcileConfig(config *corev1.ConfigMap,
+	ownerRef hcpconfig.OwnerRef,
+	p KubeAPIServerConfigParams,
+) error {
+	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	kasConfig := p.generateConfig(config.Namespace)
+	kasConfig := generateConfig(config.Namespace, p)
 	serializedConfig, err := json.Marshal(kasConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver config: %w", err)
@@ -47,7 +49,7 @@ func (a kubeAPIServerArgs) Set(name string, values ...string) {
 	a[name] = v
 }
 
-func (p *KubeAPIServerParams) generateConfig(ns string) *kcpv1.KubeAPIServerConfig {
+func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
 	}
@@ -62,42 +64,42 @@ func (p *KubeAPIServerParams) generateConfig(ns string) *kcpv1.KubeAPIServerConf
 					"network.openshift.io/ExternalIPRanger": {
 						Location: "",
 						Configuration: runtime.RawExtension{
-							Object: externalIPRangerConfig(p.Network.Spec.ExternalIP),
+							Object: externalIPRangerConfig(p.ExternalIPConfig),
 						},
 					},
 					"network.openshift.io/RestrictedEndpointsAdmission": {
 						Location: "",
 						Configuration: runtime.RawExtension{
-							Object: restrictedEndpointsAdmission(p.Network.Spec),
+							Object: restrictedEndpointsAdmission(p.ClusterNetwork, p.ServiceNetwork),
 						},
 					},
 				},
 			},
 			ServingInfo: configv1.HTTPServingInfo{
 				ServingInfo: configv1.ServingInfo{
-					NamedCertificates: namedCertificates(p.APIServer.Spec.ServingCerts.NamedCertificates),
-					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.APIServerPort),
+					NamedCertificates: configNamedCertificates(p.NamedCertificates),
+					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.ApiServerPort),
 					BindNetwork:       "tcp4",
-					CipherSuites:      hcpconfig.CipherSuites(p.APIServer.Spec.TLSSecurityProfile),
-					MinTLSVersion:     minTLSVersion(p.APIServer.Spec.TLSSecurityProfile),
+					CipherSuites:      hcpconfig.CipherSuites(p.TLSSecurityProfile),
+					MinTLSVersion:     minTLSVersion(p.TLSSecurityProfile),
 				},
 			},
-			CORSAllowedOrigins: corsAllowedOrigins(p.APIServer.Spec.AdditionalCORSAllowedOrigins),
+			CORSAllowedOrigins: corsAllowedOrigins(p.AdditionalCORSAllowedOrigins),
 		},
 		AuthConfig: kcpv1.MasterAuthConfig{
 			OAuthMetadataFile: cpath(kasVolumeOauthMetadata().Name, OauthMetadataConfigKey),
 		},
 		ConsolePublicURL:             "",
-		ImagePolicyConfig:            imagePolicyConfig(p.Image),
-		ProjectConfig:                projectConfig(p.Scheduler.Spec.DefaultNodeSelector),
-		ServiceAccountPublicKeyFiles: []string{cpath(kasVolumeServiceAccountKey().Name, ServiceSignerPublicKey)},
-		ServicesSubnet:               p.Network.Spec.ServiceNetwork[0],
+		ImagePolicyConfig:            imagePolicyConfig(p.InternalRegistryHostName, p.ExternalRegistryHostNames),
+		ProjectConfig:                projectConfig(p.DefaultNodeSelector),
+		ServiceAccountPublicKeyFiles: []string{cpath(kasVolumeServiceAccountKey().Name, pki.ServiceSignerPublicKey)},
+		ServicesSubnet:               p.ServiceNetwork,
 	}
 	args := kubeAPIServerArgs{}
 	args.Set("advertise-address", p.AdvertiseAddress)
 	args.Set("allow-privileged", "true")
 	args.Set("anonymous-auth", "true")
-	args.Set("api-audiences", p.Authentication.Spec.ServiceAccountIssuer)
+	args.Set("api-audiences", p.ServiceAccountIssuerURL)
 	args.Set("audit-log-format", "json")
 	args.Set("audit-log-maxbackup", "10")
 	args.Set("audit-log-maxsize", "100")
@@ -105,8 +107,8 @@ func (p *KubeAPIServerParams) generateConfig(ns string) *kcpv1.KubeAPIServerConf
 	args.Set("audit-policy-file", cpath(kasVolumeAuditConfig().Name, AuditPolicyConfigMapKey))
 	args.Set("authorization-mode", "Scope", "SystemMasters", "RBAC", "Node")
 	args.Set("client-ca-file", cpath(kasVolumeClientCA().Name, pki.CASignerCertMapKey))
-	if cloudConfig := p.cloudProviderConfig(); cloudConfig != "" {
-		args.Set("cloud-config", p.cloudProviderConfig())
+	if p.CloudProviderConfigRef != nil {
+		args.Set("cloud-config", cloudProviderConfig(p.CloudProviderConfigRef.Name, p.CloudProvider))
 	}
 	if p.CloudProvider != "" {
 		args.Set("cloud-provider", p.CloudProvider)
@@ -122,7 +124,7 @@ func (p *KubeAPIServerParams) generateConfig(ns string) *kcpv1.KubeAPIServerConf
 	args.Set("etcd-prefix", "kubernetes.io")
 	args.Set("etcd-servers", p.EtcdURL)
 	args.Set("event-ttl", "3h")
-	args.Set("feature-gates", hcpconfig.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)...)
+	args.Set("feature-gates", p.FeatureGates...)
 	args.Set("goaway-chance", "0")
 	args.Set("http2-max-streams-per-connection", "2000")
 	args.Set("insecure-port", "0")
@@ -144,11 +146,11 @@ func (p *KubeAPIServerParams) generateConfig(ns string) *kcpv1.KubeAPIServerConf
 	args.Set("requestheader-group-headers", "X-Remote-Group")
 	args.Set("requestheader-username-headers", "X-Remote-User")
 	args.Set("runtime-config", "flowcontrol.apiserver.k8s.io/v1alpha1=true")
-	args.Set("service-account-issuer", p.Authentication.Spec.ServiceAccountIssuer)
-	args.Set("service-account-jwks-uri", jwksURL(p.Authentication.Spec.ServiceAccountIssuer))
+	args.Set("service-account-issuer", p.ServiceAccountIssuerURL)
+	args.Set("service-account-jwks-uri", jwksURL(p.ServiceAccountIssuerURL))
 	args.Set("service-account-lookup", "true")
-	args.Set("service-account-signing-key-file", cpath(kasVolumeServiceAccountKey().Name, ServiceSignerPrivateKey))
-	args.Set("service-node-port-range", p.Network.Spec.ServiceNodePortRange)
+	args.Set("service-account-signing-key-file", cpath(kasVolumeServiceAccountKey().Name, pki.ServiceSignerPrivateKey))
+	args.Set("service-node-port-range", p.NodePortRange)
 	args.Set("shutdown-delay-duration", "10s")
 	args.Set("storage-backend", "etcd3")
 	args.Set("storage-media-type", "application/vnd.kubernetes.protobuf")
@@ -158,10 +160,10 @@ func (p *KubeAPIServerParams) generateConfig(ns string) *kcpv1.KubeAPIServerConf
 	return config
 }
 
-func (p *KubeAPIServerParams) cloudProviderConfig() string {
-	if p.CloudProviderConfig.Name != "" {
+func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
+	if cloudProviderConfigName != "" {
 		cfgDir := cloudProviderConfigVolumeMount.Path(kasContainerMain().Name, kasVolumeCloudConfig().Name)
-		return path.Join(cfgDir, cloud.ProviderConfigKey(p.CloudProvider))
+		return path.Join(cfgDir, cloud.ProviderConfigKey(cloudProvider))
 	}
 	return ""
 }
@@ -186,15 +188,11 @@ func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime
 	return cfg
 }
 
-func restrictedEndpointsAdmission(networkSpec configv1.NetworkSpec) runtime.Object {
+func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork string) runtime.Object {
 	cfg := &unstructured.Unstructured{}
 	cfg.SetAPIVersion("network.openshift.io/v1")
 	cfg.SetKind("RestrictedEndpointsAdmissionConfig")
-	restrictedCIDRs := []string{}
-	for _, entry := range networkSpec.ClusterNetwork {
-		restrictedCIDRs = append(restrictedCIDRs, entry.CIDR)
-	}
-	restrictedCIDRs = append(restrictedCIDRs, networkSpec.ServiceNetwork...)
+	restrictedCIDRs := []string{clusterNetwork, serviceNetwork}
 	unstructured.SetNestedStringSlice(cfg.Object, restrictedCIDRs, "restrictedCIDRs")
 	return cfg
 }
@@ -248,7 +246,7 @@ func admissionPlugins() []string {
 	}
 }
 
-func namedCertificates(servingCerts []configv1.APIServerNamedServingCert) []configv1.NamedCertificate {
+func configNamedCertificates(servingCerts []configv1.APIServerNamedServingCert) []configv1.NamedCertificate {
 	result := []configv1.NamedCertificate{}
 	serverCertPath := volumeMounts.Path(kasContainerMain().Name, kasVolumeServerCert().Name)
 	result = append(result, configv1.NamedCertificate{
@@ -270,6 +268,11 @@ func namedCertificates(servingCerts []configv1.APIServerNamedServingCert) []conf
 }
 
 func minTLSVersion(securityProfile *configv1.TLSSecurityProfile) string {
+	if securityProfile == nil {
+		securityProfile = &configv1.TLSSecurityProfile{
+			Type: configv1.TLSProfileIntermediateType,
+		}
+	}
 	if securityProfile.Type == configv1.TLSProfileCustomType {
 		return string(securityProfile.Custom.MinTLSVersion)
 	}
@@ -285,10 +288,10 @@ func corsAllowedOrigins(additionalCORSAllowedOrigins []string) []string {
 	return corsAllowed
 }
 
-func imagePolicyConfig(image configv1.Image) kcpv1.KubeAPIServerImagePolicyConfig {
+func imagePolicyConfig(internalRegistryHostname string, externalRegistryHostnames []string) kcpv1.KubeAPIServerImagePolicyConfig {
 	cfg := kcpv1.KubeAPIServerImagePolicyConfig{
-		InternalRegistryHostname:  image.Status.InternalRegistryHostname,
-		ExternalRegistryHostnames: image.Spec.ExternalRegistryHostnames,
+		InternalRegistryHostname:  internalRegistryHostname,
+		ExternalRegistryHostnames: externalRegistryHostnames,
 	}
 	return cfg
 }

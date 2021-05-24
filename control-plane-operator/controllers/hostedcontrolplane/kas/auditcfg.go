@@ -14,7 +14,7 @@ import (
 	oauthv1 "github.com/openshift/api/oauth/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 func defaultAuditPolicy() *auditv1.Policy {
@@ -287,18 +287,17 @@ func serializeAuditPolicy(policy *auditv1.Policy) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func (p *KubeAPIServerParams) ReconcileAuditConfig(auditCfgMap *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(auditCfgMap, p.OwnerReference)
+func ReconcileAuditConfig(auditCfgMap *corev1.ConfigMap, ownerRef config.OwnerRef, auditProfile configv1.AuditProfileType) error {
+	ownerRef.ApplyTo(auditCfgMap)
 	if auditCfgMap.Data == nil {
 		auditCfgMap.Data = map[string]string{}
 	}
-	policyProfile := p.APIServer.Spec.Audit.Profile
-	if policyProfile == "" {
-		policyProfile = configv1.AuditProfileDefaultType
+	if auditProfile == "" {
+		auditProfile = configv1.AuditProfileDefaultType
 	}
-	policy, ok := auditPolicies[policyProfile]
+	policy, ok := auditPolicies[auditProfile]
 	if !ok {
-		return fmt.Errorf("Invalid policy profile: %s", policyProfile)
+		return fmt.Errorf("Invalid audit policy profile: %s", auditProfile)
 	}
 	policyBytes, err := serializeAuditPolicy(policy)
 	if err != nil {

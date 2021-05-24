@@ -1092,7 +1092,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceKubeconfigSecret := manifests.KASServiceKubeconfigSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, serviceKubeconfigSecret, func() error {
-		return p.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA)
+		return kas.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile service admin kubeconfig secret: %w", err)
 	}
@@ -1103,56 +1103,64 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, capiKubeconfigSecret, func() error {
 		// TODO(alberto): This secret is currently using the cluster-admin kubeconfig for the guest cluster.
 		// We should create a separate kubeconfig with a tight set of permissions for it to use.
-		return p.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA)
+		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CAPI service admin kubeconfig secret: %w", err)
 	}
 
 	localhostKubeconfigSecret := manifests.KASLocalhostKubeconfigSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, localhostKubeconfigSecret, func() error {
-		return p.ReconcileLocalhostKubeconfigSecret(localhostKubeconfigSecret, clientCertSecret, rootCA)
+		return kas.ReconcileLocalhostKubeconfigSecret(localhostKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile localhost kubeconfig secret: %w", err)
 	}
 
 	externalKubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, externalKubeconfigSecret, func() error {
-		return p.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA)
+		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
 	}
 
 	bootstrapKubeconfigSecret := manifests.KASBootstrapKubeconfigSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, bootstrapKubeconfigSecret, func() error {
-		return p.ReconcileBootstrapKubeconfigSecret(bootstrapKubeconfigSecret, bootstrapClientCertSecret, rootCA)
+		return kas.ReconcileBootstrapKubeconfigSecret(bootstrapKubeconfigSecret, bootstrapClientCertSecret, rootCA, p.OwnerRef, p.ExternalURL())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile bootstrap kubeconfig secret: %w", err)
 	}
 
 	kubeAPIServerAuditConfig := manifests.KASAuditConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerAuditConfig, func() error {
-		return p.ReconcileAuditConfig(kubeAPIServerAuditConfig)
+		return kas.ReconcileAuditConfig(kubeAPIServerAuditConfig, p.OwnerRef, p.AuditPolicyProfile())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server audit config: %w", err)
 	}
 
 	kubeAPIServerConfig := manifests.KASConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerConfig, func() error {
-		return p.ReconcileConfig(kubeAPIServerConfig)
+		return kas.ReconcileConfig(kubeAPIServerConfig,
+			p.OwnerRef,
+			p.ConfigParams())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server config: %w", err)
 	}
 
 	oauthMetadata := manifests.KASOAuthMetadata(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthMetadata, func() error {
-		return p.ReconcileOauthMetadata(oauthMetadata)
+		return kas.ReconcileOauthMetadata(oauthMetadata, p.OwnerRef, p.ExternalOAuthAddress, p.ExternalOAuthPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth metadata: %w", err)
 	}
 
 	kubeAPIServerDeployment := manifests.KASDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
-		return p.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment)
+		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
+			p.OwnerRef,
+			p.DeploymentConfig,
+			p.NamedCertificates(),
+			p.CloudProviderConfig,
+			p.Images,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
 	}

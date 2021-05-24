@@ -5,15 +5,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-func (p *KubeAPIServerParams) ReconcileOauthMetadata(cfg *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(cfg, p.OwnerReference)
+func ReconcileOauthMetadata(cfg *corev1.ConfigMap, ownerRef config.OwnerRef, externalOAuthAddress string, externalOAuthPort int32) error {
+	ownerRef.ApplyTo(cfg)
 	if cfg.Data == nil {
 		cfg.Data = map[string]string{}
 	}
-	oauthURL := fmt.Sprintf("https://%s:%d", p.ExternalOAuthAddress, p.ExternalOAuthPort)
+	oauthURL := fmt.Sprintf("https://%s:%d", externalOAuthAddress, externalOAuthPort)
 	cfg.Data[OauthMetadataConfigKey] = fmt.Sprintf(oauthMetadata, oauthURL)
 	return nil
 }
