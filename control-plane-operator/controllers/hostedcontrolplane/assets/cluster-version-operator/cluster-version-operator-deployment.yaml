@@ -17,6 +17,22 @@ spec:
       imagePullSecrets:
       - name: pull-secret
       automountServiceAccountToken: false
+      initContainers:
+      - name: prepare-payload
+        image: {{ .ReleaseImage }}
+        imagePullPolicy: Always
+        command:
+        - /bin/bash
+        args:
+        - -c
+        - |-
+          cp -R /manifests /var/payload/
+          cp -R /release-manifests /var/payload/
+          # Delete any manifests you want to exclude from /var/payload/release-manifests
+          # ie. rm /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.yaml
+        volumeMounts:
+        - name: payload
+          mountPath: /var/payload
       containers:
         - name: cluster-version-operator
           image: {{ .ReleaseImage }}
@@ -39,7 +55,12 @@ spec:
             - mountPath: /etc/openshift/kubeconfig
               name: kubeconfig
               readOnly: true
+            - mountPath: /var/payload
+              name: payload
+              readOnly: true
           env:
+            - name: PAYLOAD_OVERRIDE
+              value: /var/payload
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
@@ -71,3 +92,5 @@ spec:
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig
+        - name: payload
+          emptyDir: {}
