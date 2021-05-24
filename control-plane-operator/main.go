@@ -47,8 +47,9 @@ func main() {
 }
 
 const (
-	openVPNImage      = "quay.io/hypershift/openvpn:latest"
-	etcdOperatorImage = "quay.io/coreos/etcd-operator:v0.9.4"
+	openVPNImage = "quay.io/hypershift/openvpn:latest"
+	// FIXME: Set to upstream image when DNS resolution is fixed for etcd service
+	etcdOperatorImage = "quay.io/hypershift/etcd-operator:v0.9.4-patched"
 )
 
 func NewStartCommand() *cobra.Command {
