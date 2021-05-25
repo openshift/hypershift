@@ -21,10 +21,16 @@ type HostedClusterSpec struct {
 	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
 
-	SigningKey corev1.LocalObjectReference `json:"signingKey"`
+	// SigningKey is a reference to a Secret containing a single key "key"
+	// +optional
+	SigningKey corev1.LocalObjectReference `json:"signingKey,omitempty"`
 
+	// +kubebuilder:default:="https://kubernetes.default.svc"
 	IssuerURL string `json:"issuerURL"`
 
+	// SSHKey is a reference to a Secret containing a single key "id_rsa.pub",
+	// whose value is the public part of an SSH key that can be used to access
+	// Nodes.
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 
 	// Networking contains network-specific settings for this cluster
