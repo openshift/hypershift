@@ -283,7 +283,7 @@ spec:
                 - image
                 type: object
               services:
-                description: Services defines metadata about how control plane services are published in the management cluster.
+                description: 'Services defines metadata about how control plane services are published in the management cluster. TODO (alberto): include Ignition endpoint here.'
                 items:
                   description: ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
                   properties:
@@ -396,6 +396,9 @@ spec:
                   - type
                   type: object
                 type: array
+              ignitionEndpoint:
+                description: IgnitionEndpoint is the endpoint injected in the ign config userdata. It exposes the config for instances to become kubernetes nodes.
+                type: string
               kubeconfig:
                 description: KubeConfig is a reference to the secret containing the default kubeconfig for the cluster.
                 properties:

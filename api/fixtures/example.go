@@ -250,9 +250,6 @@ aws_secret_access_key = %s
 				Name:      o.Name,
 			},
 			Spec: hyperv1.NodePoolSpec{
-				IgnitionService: hyperv1.ServicePublishingStrategy{
-					Type: hyperv1.Route,
-				},
 				NodeCount:   &o.NodePoolReplicas,
 				ClusterName: o.Name,
 				Release: hyperv1.Release{
