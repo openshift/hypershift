@@ -24,15 +24,15 @@ type KubeAPIServerImages struct {
 }
 
 type KubeAPIServerParams struct {
-	APIServer           configv1.APIServer          `json:"apiServer"`
-	Authentication      configv1.Authentication     `json:"authentication"`
-	FeatureGate         configv1.FeatureGate        `json:"featureGate"`
-	Network             configv1.Network            `json:"network"`
-	OAuth               configv1.OAuth              `json:"oauth"`
-	Image               configv1.Image              `json:"image"`
-	Scheduler           configv1.Scheduler          `json:"scheduler"`
-	CloudProvider       string                      `json:"cloudProvider"`
-	CloudProviderConfig corev1.LocalObjectReference `json:"cloudProviderConfig"`
+	APIServer           configv1.APIServer           `json:"apiServer"`
+	Authentication      configv1.Authentication      `json:"authentication"`
+	FeatureGate         configv1.FeatureGate         `json:"featureGate"`
+	Network             configv1.Network             `json:"network"`
+	OAuth               configv1.OAuth               `json:"oauth"`
+	Image               configv1.Image               `json:"image"`
+	Scheduler           configv1.Scheduler           `json:"scheduler"`
+	CloudProvider       string                       `json:"cloudProvider"`
+	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 
 	AdvertiseAddress     string                       `json:"advertiseAddress"`
 	ExternalAddress      string                       `json:"externalAddress"`
@@ -41,15 +41,9 @@ type KubeAPIServerParams struct {
 	ExternalOAuthPort    int32                        `json:"externalOAuthPort"`
 	EtcdURL              string                       `json:"etcdAddress"`
 	APIServerPort        int32                        `json:"apiServerPort"`
-	Replicas             int32                        `json:"replicas"`
-	Scheduling           config.Scheduling            `json:"scheduling"`
-	AdditionalLabels     map[string]string            `json:"additionalLabels"`
-	SecurityContexts     config.SecurityContextSpec   `json:"securityContexts"`
-	LivenessProbes       config.LivenessProbes        `json:"livenessProbes"`
-	ReadinessProbes      config.ReadinessProbes       `json:"readinessProbes"`
-	Resources            config.ResourcesSpec         `json:"resources"`
 	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
-	OwnerReference       *metav1.OwnerReference       `json:"ownerReference"`
+	config.DeploymentConfig
+	config.OwnerRef
 
 	Images KubeAPIServerImages `json:"images"`
 }
@@ -127,13 +121,6 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 		EtcdURL:              config.DefaultEtcdURL,
 		APIServerPort:        config.DefaultAPIServerPort,
 
-		// TODO: Come up with sane defaults for scheduling APIServer pods
-		// Expose configuration
-		AdditionalLabels: map[string]string{},
-		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
-		},
-
 		Images: KubeAPIServerImages{
 			HyperKube:             images["hyperkube"],
 			CLI:                   images["cli"],
@@ -157,6 +144,10 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 		kasContainerVPNClient().Name: {
 			Privileged: pointer.BoolPtr(true),
 		},
+	}
+	params.AdditionalLabels = map[string]string{}
+	params.Scheduling = config.Scheduling{
+		PriorityClass: config.DefaultPriorityClass,
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		kasContainerMain().Name: {
@@ -201,7 +192,7 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider
-		params.CloudProviderConfig.Name = manifests.AWSProviderConfig("").Name
+		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AWSProviderConfig("").Name}
 	}
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {
@@ -211,8 +202,119 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 		params.Replicas = 1
 	}
 	params.KubeConfigRef = hcp.Spec.KubeConfig
-	params.OwnerReference = config.ControllerOwnerRef(hcp)
+	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
+}
+
+func (p *KubeAPIServerParams) NamedCertificates() []configv1.APIServerNamedServingCert {
+	return p.APIServer.Spec.ServingCerts.NamedCertificates
+}
+
+func (p *KubeAPIServerParams) AuditPolicyProfile() configv1.AuditProfileType {
+	return p.APIServer.Spec.Audit.Profile
+}
+
+func (p *KubeAPIServerParams) ExternalURL() string {
+	return fmt.Sprintf("https://%s:%d", p.ExternalAddress, p.ExternalPort)
+}
+
+func (p *KubeAPIServerParams) ExternalKubeconfigKey() string {
+	if p.KubeConfigRef == nil {
+		return ""
+	}
+	return p.KubeConfigRef.Key
+}
+
+func (p *KubeAPIServerParams) ExternalIPConfig() *configv1.ExternalIPConfig {
+	return p.Network.Spec.ExternalIP
+}
+
+func (p *KubeAPIServerParams) ClusterNetwork() string {
+	for _, entry := range p.Network.Spec.ClusterNetwork {
+		return entry.CIDR
+	}
+	return ""
+}
+
+func (p *KubeAPIServerParams) ServiceNetwork() string {
+	for _, entry := range p.Network.Spec.ServiceNetwork {
+		return entry
+	}
+	return ""
+}
+
+func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
+	return KubeAPIServerConfigParams{
+		ExternalIPConfig:             p.ExternalIPConfig(),
+		ClusterNetwork:               p.ClusterNetwork(),
+		ServiceNetwork:               p.ServiceNetwork(),
+		NamedCertificates:            p.NamedCertificates(),
+		ApiServerPort:                p.APIServerPort,
+		TLSSecurityProfile:           p.TLSSecurityProfile(),
+		AdditionalCORSAllowedOrigins: p.AdditionalCORSAllowedOrigins(),
+		InternalRegistryHostName:     p.InternalRegistryHostName(),
+		ExternalRegistryHostNames:    p.ExternalRegistryHostNames(),
+		DefaultNodeSelector:          p.DefaultNodeSelector(),
+		AdvertiseAddress:             p.AdvertiseAddress,
+		ServiceAccountIssuerURL:      p.ServiceAccountIssuerURL(),
+		CloudProvider:                p.CloudProvider,
+		CloudProviderConfigRef:       p.CloudProviderConfig,
+		EtcdURL:                      p.EtcdURL,
+		FeatureGates:                 p.FeatureGates(),
+		NodePortRange:                p.ServiceNodePortRange(),
+	}
+}
+
+type KubeAPIServerConfigParams struct {
+	ExternalIPConfig             *configv1.ExternalIPConfig
+	ClusterNetwork               string
+	ServiceNetwork               string
+	NamedCertificates            []configv1.APIServerNamedServingCert
+	ApiServerPort                int32
+	TLSSecurityProfile           *configv1.TLSSecurityProfile
+	AdditionalCORSAllowedOrigins []string
+	InternalRegistryHostName     string
+	ExternalRegistryHostNames    []string
+	DefaultNodeSelector          string
+	AdvertiseAddress             string
+	ServiceAccountIssuerURL      string
+	CloudProvider                string
+	CloudProviderConfigRef       *corev1.LocalObjectReference
+	EtcdURL                      string
+	FeatureGates                 []string
+	NodePortRange                string
+}
+
+func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {
+	return p.APIServer.Spec.TLSSecurityProfile
+}
+
+func (p *KubeAPIServerParams) AdditionalCORSAllowedOrigins() []string {
+	return p.APIServer.Spec.AdditionalCORSAllowedOrigins
+}
+
+func (p *KubeAPIServerParams) InternalRegistryHostName() string {
+	return p.Image.Status.InternalRegistryHostname
+}
+
+func (p *KubeAPIServerParams) ExternalRegistryHostNames() []string {
+	return p.Image.Spec.ExternalRegistryHostnames
+}
+
+func (p *KubeAPIServerParams) DefaultNodeSelector() string {
+	return p.Scheduler.Spec.DefaultNodeSelector
+}
+
+func (p *KubeAPIServerParams) ServiceAccountIssuerURL() string {
+	return p.Authentication.Spec.ServiceAccountIssuer
+}
+
+func (p *KubeAPIServerParams) FeatureGates() []string {
+	return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
+}
+
+func (p *KubeAPIServerParams) ServiceNodePortRange() string {
+	return p.Network.Spec.ServiceNodePortRange
 }
 
 func externalAddress(endpoint hyperv1.APIEndpoint) string {

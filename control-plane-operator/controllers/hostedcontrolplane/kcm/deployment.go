@@ -289,7 +289,7 @@ func (p *KubeControllerManagerParams) kcmArgs() []string {
 		"--port=0",
 		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
-		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, kas.ServiceSignerPrivateKey)),
+		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", serviceCIDR(&p.Network.Spec)),
 		"--use-service-account-credentials=true",
 		"--experimental-cluster-signing-duration=26280h",
