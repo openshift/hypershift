@@ -19,6 +19,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,6 +56,14 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
+		ctx, cancel := context.WithCancel(context.Background())
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+		}()
+
 		switch {
 		case opts.Development:
 			opts.HyperShiftOperatorReplicas = 0
@@ -71,7 +81,7 @@ func NewCommand() *cobra.Command {
 		case opts.Render:
 			render(objects)
 		default:
-			err := apply(context.TODO(), objects)
+			err := apply(ctx, objects)
 			if err != nil {
 				panic(err)
 			}
@@ -131,6 +141,19 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		ServiceAccount: operatorServiceAccount,
 		Replicas:       opts.HyperShiftOperatorReplicas,
 	}.Build()
+	operatorService := assets.HyperShiftOperatorService{
+		Namespace: operatorNamespace,
+	}.Build()
+	prometheusRole := assets.HyperShiftPrometheusRole{
+		Namespace: operatorNamespace,
+	}.Build()
+	prometheusRoleBinding := assets.HyperShiftOperatorPrometheusRoleBinding{
+		Namespace: operatorNamespace,
+		Role:      prometheusRole,
+	}.Build()
+	serviceMonitor := assets.HyperShiftServiceMonitor{
+		Namespace: operatorNamespace,
+	}.Build()
 
 	return []crclient.Object{
 		hostedClustersCRD,
@@ -143,6 +166,10 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		operatorClusterRole,
 		operatorClusterRoleBinding,
 		operatorDeployment,
+		operatorService,
+		prometheusRole,
+		prometheusRoleBinding,
+		serviceMonitor,
 	}
 }
 

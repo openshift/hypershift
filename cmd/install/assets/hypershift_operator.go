@@ -6,6 +6,9 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 type HyperShiftNamespace struct {
@@ -73,7 +76,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								},
 							},
 							Command: []string{"/usr/bin/hypershift-operator"},
-							Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "operator"},
+							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000"},
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "metrics",
+									ContainerPort: 9000,
+									Protocol:      corev1.ProtocolTCP,
+								},
+							},
 						},
 					},
 				},
@@ -81,6 +91,40 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		},
 	}
 	return deployment
+}
+
+type HyperShiftOperatorService struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftOperatorService) Build() *corev1.Service {
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "operator",
+			Labels: map[string]string{
+				"name": "operator",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{
+				"name": "operator",
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "metrics",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       9393,
+					TargetPort: intstr.FromString("metrics"),
+				},
+			},
+		},
+	}
 }
 
 type HyperShiftOperatorServiceAccount struct {
@@ -270,4 +314,101 @@ func (o HyperShiftMachineConfigServersCustomResourceDefinition) Build() *apiexte
 	}
 	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
 	return crd
+}
+
+type HyperShiftPrometheusRole struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftPrometheusRole) Build() *rbacv1.Role {
+	role := &rbacv1.Role{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Role",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "prometheus",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"services",
+					"endpoints",
+					"pods",
+				},
+				Verbs: []string{"get", "list", "watch"},
+			},
+		},
+	}
+	return role
+}
+
+type HyperShiftOperatorPrometheusRoleBinding struct {
+	Namespace *corev1.Namespace
+	Role      *rbacv1.Role
+}
+
+func (o HyperShiftOperatorPrometheusRoleBinding) Build() *rbacv1.RoleBinding {
+	binding := &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "RoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "prometheus",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     o.Role.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "prometheus-user-workload",
+				Namespace: "openshift-user-workload-monitoring",
+			},
+		},
+	}
+	return binding
+}
+
+type HyperShiftServiceMonitor struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftServiceMonitor) Build() *unstructured.Unstructured {
+	serviceMonitorJSON := `
+{
+   "apiVersion": "monitoring.coreos.com/v1",
+   "kind": "ServiceMonitor",
+   "metadata": {
+      "name": "operator"
+   },
+   "spec": {
+      "endpoints": [
+         {
+            "interval": "30s",
+            "port": "metrics"
+         }
+      ],
+      "jobLabel": "component",
+      "selector": {
+         "matchLabels": {
+            "name": "operator"
+         }
+      }
+   }
+}
+`
+	obj, err := runtime.Decode(unstructured.UnstructuredJSONScheme, []byte(serviceMonitorJSON))
+	if err != nil {
+		panic(err)
+	}
+	sm := obj.(*unstructured.Unstructured)
+	sm.SetNamespace(o.Namespace.Name)
+	return sm
 }
