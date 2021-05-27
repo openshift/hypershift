@@ -100,6 +100,7 @@ spec:
                 description: InfraID is used to identify the cluster in cloud platforms
                 type: string
               issuerURL:
+                default: https://kubernetes.default.svc
                 type: string
               networking:
                 description: Networking contains network-specific settings for this cluster
@@ -327,14 +328,14 @@ spec:
                   type: object
                 type: array
               signingKey:
-                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                description: SigningKey is a reference to a Secret containing a single key "key"
                 properties:
                   name:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
               sshKey:
-                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                description: SSHKey is a reference to a Secret containing a single key "id_rsa.pub", whose value is the public part of an SSH key that can be used to access Nodes.
                 properties:
                   name:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
@@ -347,7 +348,6 @@ spec:
             - pullSecret
             - release
             - services
-            - signingKey
             - sshKey
             type: object
           status:

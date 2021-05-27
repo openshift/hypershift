@@ -276,7 +276,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane signing key by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
-	{
+	if len(hcluster.Spec.SigningKey.Name) > 0 {
 		var src corev1.Secret
 		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get signing key %s: %w", hcluster.Spec.SigningKey.Name, err)
@@ -428,7 +428,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
-	hcp.Spec.SigningKey = corev1.LocalObjectReference{Name: controlplaneoperator.SigningKey(hcp.Namespace).Name}
+	if len(hcluster.Spec.SigningKey.Name) > 0 {
+		hcp.Spec.SigningKey = corev1.LocalObjectReference{Name: controlplaneoperator.SigningKey(hcp.Namespace).Name}
+	}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
 	}
