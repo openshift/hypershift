@@ -22,7 +22,7 @@ spec:
     command:
     - haproxy
     - -f
-    - /usr/local/etc/haproxy/haproxy.cfg
+    - /usr/local/etc/haproxy
     volumeMounts:
     - name: config
       mountPath: /usr/local/etc/haproxy
