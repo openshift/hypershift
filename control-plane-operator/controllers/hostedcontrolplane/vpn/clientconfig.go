@@ -6,6 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
@@ -27,8 +28,8 @@ cert secret/tls.crt
 key secret/tls.key
 `
 
-func (p *VPNParams) ReconcileKubeAPIServerClientConfig(config *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(config, p.OwnerReference)
+func ReconcileKubeAPIServerClientConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
@@ -47,18 +48,18 @@ cert tls.crt
 key tls.key
 `
 
-func (p *VPNParams) generateClientConfig() (string, error) {
+func generateClientConfig(host string, port int32) (string, error) {
 	result := &bytes.Buffer{}
 	fmt.Fprintf(result, "%s", baseWorkerClientConfig)
-	fmt.Fprintf(result, "remote %s %d tcp\n", p.ExternalAddress, p.ExternalPort)
+	fmt.Fprintf(result, "remote %s %d tcp\n", host, port)
 	return result.String(), nil
 }
 
-func (p *VPNParams) reconcileClientConfig(config *corev1.ConfigMap) error {
+func reconcileClientConfig(config *corev1.ConfigMap, host string, port int32) error {
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	configData, err := p.generateClientConfig()
+	configData, err := generateClientConfig(host, port)
 	if err != nil {
 		return err
 	}
@@ -66,10 +67,10 @@ func (p *VPNParams) reconcileClientConfig(config *corev1.ConfigMap) error {
 	return nil
 }
 
-func (p *VPNParams) ReconcileWorkerClientConfig(config *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(config, p.OwnerReference)
+func ReconcileWorkerClientConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef, host string, port int32) error {
+	ownerRef.ApplyTo(config)
 	clientConfig := manifests.VPNClientConfig()
-	if err := p.reconcileClientConfig(clientConfig); err != nil {
+	if err := reconcileClientConfig(clientConfig, host, port); err != nil {
 		return err
 	}
 	return util.ReconcileWorkerManifest(config, clientConfig)

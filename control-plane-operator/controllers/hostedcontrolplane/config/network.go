@@ -29,3 +29,17 @@ func Network(hcp *hyperv1.HostedControlPlane) configv1.Network {
 		},
 	}
 }
+
+func ClusterCIDR(network *configv1.Network) string {
+	for _, entry := range network.Spec.ClusterNetwork {
+		return entry.CIDR
+	}
+	return ""
+}
+
+func ServiceCIDR(network *configv1.Network) string {
+	for _, entry := range network.Spec.ServiceNetwork {
+		return entry
+	}
+	return ""
+}

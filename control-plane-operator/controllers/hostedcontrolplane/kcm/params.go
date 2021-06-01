@@ -5,7 +5,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -16,23 +15,16 @@ import (
 )
 
 type KubeControllerManagerParams struct {
-	FeatureGate         configv1.FeatureGate        `json:"featureGate"`
-	Network             configv1.Network            `json:"network"`
-	ServiceCA           []byte                      `json:"serviceCA"`
-	CloudProvider       string                      `json:"cloudProvider"`
-	CloudProviderConfig corev1.LocalObjectReference `json:"cloudProviderConfig"`
-	CloudProviderCreds  corev1.LocalObjectReference `json:"cloudProviderCreds"`
-	Port                int32                       `json:"port"`
+	FeatureGate         configv1.FeatureGate         `json:"featureGate"`
+	Network             configv1.Network             `json:"network"`
+	ServiceCA           []byte                       `json:"serviceCA"`
+	CloudProvider       string                       `json:"cloudProvider"`
+	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
+	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
+	Port                int32                        `json:"port"`
 
-	Replicas         int32 `json:"replicas"`
-	Scheduling       config.Scheduling
-	AdditionalLabels map[string]string          `json:"additionalLabels"`
-	SecurityContexts config.SecurityContextSpec `json:"securityContexts"`
-	LivenessProbes   config.LivenessProbes      `json:"livenessProbes"`
-	ReadinessProbes  config.ReadinessProbes     `json:"readinessProbes"`
-	Resources        config.ResourcesSpec       `json:"resources"`
-	OwnerReference   *metav1.OwnerReference     `json:"ownerReference"`
-
+	config.DeploymentConfig
+	config.OwnerRef
 	HyperkubeImage string `json:"hyperkubeImage"`
 }
 
@@ -53,12 +45,12 @@ func NewKubeControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[
 		Network: config.Network(hcp),
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
-		AdditionalLabels: map[string]string{},
-		Scheduling: config.Scheduling{
-			PriorityClass: DefaultPriorityClass,
-		},
 		HyperkubeImage: images["hyperkube"],
 		Port:           DefaultPort,
+	}
+	params.AdditionalLabels = map[string]string{}
+	params.Scheduling = config.Scheduling{
+		PriorityClass: DefaultPriorityClass,
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		kcmContainerMain().Name: {
@@ -103,8 +95,8 @@ func NewKubeControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider
-		params.CloudProviderConfig.Name = manifests.AWSProviderConfig("").Name
-		params.CloudProviderCreds.Name = hcp.Spec.Platform.AWS.KubeCloudControllerCreds.Name
+		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AWSProviderConfig("").Name}
+		params.CloudProviderCreds = &corev1.LocalObjectReference{Name: hcp.Spec.Platform.AWS.KubeCloudControllerCreds.Name}
 	}
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {
@@ -113,7 +105,7 @@ func NewKubeControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[
 	default:
 		params.Replicas = 1
 	}
-	params.OwnerReference = config.ControllerOwnerRef(hcp)
+	params.OwnerRef = config.OwnerRefFrom(hcp)
 
 	return params
 }

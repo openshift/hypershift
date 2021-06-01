@@ -230,17 +230,11 @@ func (p *KubeAPIServerParams) ExternalIPConfig() *configv1.ExternalIPConfig {
 }
 
 func (p *KubeAPIServerParams) ClusterNetwork() string {
-	for _, entry := range p.Network.Spec.ClusterNetwork {
-		return entry.CIDR
-	}
-	return ""
+	return config.ClusterCIDR(&p.Network)
 }
 
 func (p *KubeAPIServerParams) ServiceNetwork() string {
-	for _, entry := range p.Network.Spec.ServiceNetwork {
-		return entry
-	}
-	return ""
+	return config.ServiceCIDR(&p.Network)
 }
 
 func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {

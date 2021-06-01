@@ -7,15 +7,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 const (
 	VPNServerPort = 1194
 )
 
-func (p *VPNServiceParams) ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
-	util.EnsureOwnerRef(svc, p.OwnerReference)
+func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy) error {
+	ownerRef.ApplyTo(svc)
 	svc.Spec.Selector = vpnServerLabels
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
@@ -41,7 +41,7 @@ func (p *VPNServiceParams) ReconcileService(svc *corev1.Service, strategy *hyper
 	return nil
 }
 
-func (p *VPNServiceParams) ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
+func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
