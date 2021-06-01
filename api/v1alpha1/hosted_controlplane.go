@@ -146,6 +146,14 @@ type HostedControlPlaneStatus struct {
 	Conditions []HostedControlPlaneCondition `json:"conditions"`
 }
 
+type APIEndpoint struct {
+	// Host is the hostname on which the API server is serving.
+	Host string `json:"host"`
+
+	// Port is the port on which the API server is serving.
+	Port int32 `json:"port"`
+}
+
 // +kubebuilder:object:root=true
 // HostedControlPlaneList contains a list of HostedControlPlanes.
 type HostedControlPlaneList struct {

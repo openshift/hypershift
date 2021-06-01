@@ -4,6 +4,18 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
+type ClusterAPIClusterResourceSetBindingsCustomResourceDefinition struct{}
+
+func (o ClusterAPIClusterResourceSetBindingsCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
+	return getCustomResourceDefinition("cluster-api/addons.cluster.x-k8s.io_clusterresourcesetbindings.yaml")
+}
+
+type ClusterAPIClusterResourceSetsCustomResourceDefinition struct{}
+
+func (o ClusterAPIClusterResourceSetsCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
+	return getCustomResourceDefinition("cluster-api/addons.cluster.x-k8s.io_clusterresourcesets.yaml")
+}
+
 type ClusterAPIClustersCustomResourceDefinition struct{}
 
 func (o ClusterAPIClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
@@ -26,6 +38,24 @@ type ClusterAPIMachinesCustomResourceDefinition struct{}
 
 func (o ClusterAPIMachinesCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
 	return getCustomResourceDefinition("cluster-api/cluster.x-k8s.io_machines.yaml")
+}
+
+type ClusterAPIAWSClusterControllerIdentitiesCustomResourceDefinition struct{}
+
+func (o ClusterAPIAWSClusterControllerIdentitiesCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
+	return getCustomResourceDefinition("cluster-api/infrastructure.cluster.x-k8s.io_awsclustercontrolleridentities.yaml")
+}
+
+type ClusterAPIAWSClusterRoleIdentitiesCustomResourceDefinition struct{}
+
+func (o ClusterAPIAWSClusterRoleIdentitiesCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
+	return getCustomResourceDefinition("cluster-api/infrastructure.cluster.x-k8s.io_awsclusterroleidentities.yaml")
+}
+
+type ClusterAPIAWSClusterStaticIdentitiesCustomResourceDefinition struct{}
+
+func (o ClusterAPIAWSClusterStaticIdentitiesCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
+	return getCustomResourceDefinition("cluster-api/infrastructure.cluster.x-k8s.io_awsclusterstaticidentities.yaml")
 }
 
 type ClusterAPIMachineSetsCustomResourceDefinition struct{}

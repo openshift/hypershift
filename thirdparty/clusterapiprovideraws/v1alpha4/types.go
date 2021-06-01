@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,16 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha3
+package v1alpha4
 
 import (
 	"fmt"
 	"sort"
 	"time"
 
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"k8s.io/apimachinery/pkg/util/sets"
-
-	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha3"
 )
 
 const (
@@ -297,6 +296,15 @@ func (s Subnets) ToMap() map[string]*SubnetSpec {
 	res := make(map[string]*SubnetSpec)
 	for _, x := range s {
 		res[x.ID] = x
+	}
+	return res
+}
+
+// IDs returns a slice of the subnet ids
+func (s Subnets) IDs() []string {
+	res := []string{}
+	for _, subnet := range s {
+		res = append(res, subnet.ID)
 	}
 	return res
 }

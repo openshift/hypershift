@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,18 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha3
+package v1alpha4
 
 import (
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha3"
 )
 
 const (
 	// ClusterFinalizer allows ReconcileAWSCluster to clean up AWS resources associated with AWSCluster before
 	// removing it from the apiserver.
 	ClusterFinalizer = "awscluster.infrastructure.cluster.x-k8s.io"
+
+	// AWSClusterControllerIdentityName is the name of the AWSClusterControllerIdentity singleton
+	AWSClusterControllerIdentityName = "default"
 )
 
 // AWSClusterSpec defines the desired state of AWSCluster
@@ -83,6 +85,34 @@ type AWSClusterSpec struct {
 	// Bastion contains options to configure the bastion host.
 	// +optional
 	Bastion Bastion `json:"bastion"`
+
+	// IdentityRef is a reference to a identity to be used when reconciling this cluster
+	// +optional
+	IdentityRef *AWSIdentityReference `json:"identityRef,omitempty"`
+}
+
+type AWSIdentityKind string
+
+var (
+	// ControllerIdentityKind defines identity reference kind as AWSClusterControllerIdentity
+	ControllerIdentityKind = AWSIdentityKind("AWSClusterControllerIdentity")
+
+	// ClusterRoleIdentityKind defines identity reference kind as AWSClusterRoleIdentity
+	ClusterRoleIdentityKind = AWSIdentityKind("AWSClusterRoleIdentity")
+
+	// ClusterStaticIdentityKind defines identity reference kind as AWSClusterStaticIdentity
+	ClusterStaticIdentityKind = AWSIdentityKind("AWSClusterStaticIdentity")
+)
+
+// AWSIdentityReference specifies a identity.
+type AWSIdentityReference struct {
+	// Name of the identity.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Kind of the identity.
+	// +kubebuilder:validation:Enum=AWSClusterControllerIdentity;AWSClusterRoleIdentity;AWSClusterStaticIdentity
+	Kind AWSIdentityKind `json:"kind"`
 }
 
 type Bastion struct {
@@ -115,6 +145,8 @@ type Bastion struct {
 // AWSLoadBalancerSpec defines the desired state of an AWS load balancer
 type AWSLoadBalancerSpec struct {
 	// Scheme sets the scheme of the load balancer (defaults to Internet-facing)
+	// +kubebuilder:default=Internet-facing
+	// +kubebuilder:validation:Enum=Internet-facing;internal
 	// +optional
 	Scheme *ClassicELBScheme `json:"scheme,omitempty"`
 

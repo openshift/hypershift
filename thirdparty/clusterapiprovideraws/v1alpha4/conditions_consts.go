@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,9 +14,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha3
+package v1alpha4
 
-import clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha3"
+import clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+
+const (
+	// PrincipalCredentialRetrievedCondition reports on whether Principal credentials could be retrieved successfully.
+	// A possible scenario, where retrieval is unsuccessful, is when SourcePrincipal is not authorized for assume role.
+	PrincipalCredentialRetrievedCondition clusterv1.ConditionType = "PrincipalCredentialRetrieved"
+	// PrincipalCredentialRetrievalFailedReason used when errors occur during identity credential retrieval.
+	PrincipalCredentialRetrievalFailedReason = "PrincipalCredentialRetrievalFailed"
+	// CredentialProviderBuildFailedReason used when errors occur during building providers before trying credential retrieval.
+	CredentialProviderBuildFailedReason = "CredentialProviderBuildFailed"
+	// PrincipalUsageAllowedCondition reports on whether Principal and all the nested source identities are allowed to be used in the AWSCluster namespace.
+	PrincipalUsageAllowedCondition clusterv1.ConditionType = "PrincipalUsageAllowed"
+	// PrincipalUsageUnauthorizedReason used when AWSCluster namespace is not in the identity's allowed namespaces list.
+	PrincipalUsageUnauthorizedReason = "PrincipalUsageUnauthorized"
+	// SourcePrincipalUsageUnauthorizedReason used when AWSCluster is not in the intersection of source identity allowed namespaces
+	// and allowed namespaces of the identities that source identity depends to
+	SourcePrincipalUsageUnauthorizedReason = "SourcePrincipalUsageUnauthorized"
+)
 
 const (
 	// VpcReady condition reports on the successful reconciliation of a VPC

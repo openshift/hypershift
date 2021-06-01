@@ -13,7 +13,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
+	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
 	etcd "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"

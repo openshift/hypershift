@@ -21,20 +21,22 @@ import (
 	"net"
 	"strings"
 
+	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
-
-	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
 )
 
 const (
+	// ClusterFinalizer is the finalizer used by the cluster controller to
+	// cleanup the cluster resources when a Cluster is being deleted.
 	ClusterFinalizer = "cluster.cluster.x-k8s.io"
 )
 
 // ANCHOR: ClusterSpec
 
-// ClusterSpec defines the desired state of Cluster
+// ClusterSpec defines the desired state of Cluster.
 type ClusterSpec struct {
 	// Paused can be used to prevent controllers from processing the Cluster and all its associated objects.
 	// +optional
@@ -87,6 +89,7 @@ type ClusterNetwork struct {
 // ANCHOR_END: ClusterNetwork
 
 // ANCHOR: NetworkRanges
+
 // NetworkRanges represents ranges of network addresses.
 type NetworkRanges struct {
 	CIDRBlocks []string `json:"cidrBlocks"`
@@ -103,7 +106,7 @@ func (n *NetworkRanges) String() string {
 
 // ANCHOR: ClusterStatus
 
-// ClusterStatus defines the observed state of Cluster
+// ClusterStatus defines the observed state of Cluster.
 type ClusterStatus struct {
 	// FailureDomains is a slice of failure domain objects synced from the infrastructure provider.
 	FailureDomains FailureDomains `json:"failureDomains,omitempty"`
@@ -127,10 +130,6 @@ type ClusterStatus struct {
 	// InfrastructureReady is the state of the infrastructure provider.
 	// +optional
 	InfrastructureReady bool `json:"infrastructureReady"`
-
-	// ControlPlaneInitialized defines if the control plane has been initialized.
-	// +optional
-	ControlPlaneInitialized bool `json:"controlPlaneInitialized"`
 
 	// ControlPlaneReady defines if the control plane is ready.
 	// +optional
@@ -202,7 +201,7 @@ func (v APIEndpoint) String() string {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="Cluster status such as Pending/Provisioning/Provisioned/Deleting/Failed"
 
-// Cluster is the Schema for the clusters API
+// Cluster is the Schema for the clusters API.
 type Cluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -211,17 +210,103 @@ type Cluster struct {
 	Status ClusterStatus `json:"status,omitempty"`
 }
 
+// GetConditions returns the set of conditions for this object.
 func (c *Cluster) GetConditions() Conditions {
 	return c.Status.Conditions
 }
 
+// SetConditions sets the conditions on this object.
 func (c *Cluster) SetConditions(conditions Conditions) {
 	c.Status.Conditions = conditions
 }
 
+// GetIPFamily returns a ClusterIPFamily from the configuration provided.
+func (c *Cluster) GetIPFamily() (ClusterIPFamily, error) {
+	var podCIDRs, serviceCIDRs []string
+	if c.Spec.ClusterNetwork != nil {
+		if c.Spec.ClusterNetwork.Pods != nil {
+			podCIDRs = c.Spec.ClusterNetwork.Pods.CIDRBlocks
+		}
+		if c.Spec.ClusterNetwork.Services != nil {
+			serviceCIDRs = c.Spec.ClusterNetwork.Services.CIDRBlocks
+		}
+	}
+	if len(podCIDRs) == 0 && len(serviceCIDRs) == 0 {
+		return IPv4IPFamily, nil
+	}
+
+	podsIPFamily, err := ipFamilyForCIDRStrings(podCIDRs)
+	if err != nil {
+		return InvalidIPFamily, fmt.Errorf("pods: %s", err)
+	}
+	if len(serviceCIDRs) == 0 {
+		return podsIPFamily, nil
+	}
+
+	servicesIPFamily, err := ipFamilyForCIDRStrings(serviceCIDRs)
+	if err != nil {
+		return InvalidIPFamily, fmt.Errorf("services: %s", err)
+	}
+	if len(podCIDRs) == 0 {
+		return servicesIPFamily, nil
+	}
+
+	if podsIPFamily == DualStackIPFamily {
+		return DualStackIPFamily, nil
+	} else if podsIPFamily != servicesIPFamily {
+		return InvalidIPFamily, errors.New("pods and services IP family mismatch")
+	}
+
+	return podsIPFamily, nil
+}
+
+func ipFamilyForCIDRStrings(cidrs []string) (ClusterIPFamily, error) {
+	if len(cidrs) > 2 {
+		return InvalidIPFamily, errors.New("too many CIDRs specified")
+	}
+	var foundIPv4 bool
+	var foundIPv6 bool
+	for _, cidr := range cidrs {
+		ip, _, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return InvalidIPFamily, fmt.Errorf("could not parse CIDR: %s", err)
+		}
+		if ip.To4() != nil {
+			foundIPv4 = true
+		} else {
+			foundIPv6 = true
+		}
+	}
+	switch {
+	case foundIPv4 && foundIPv6:
+		return DualStackIPFamily, nil
+	case foundIPv4:
+		return IPv4IPFamily, nil
+	case foundIPv6:
+		return IPv6IPFamily, nil
+	default:
+		return InvalidIPFamily, nil
+	}
+}
+
+// ClusterIPFamily defines the types of supported IP families.
+type ClusterIPFamily int
+
+// Define the ClusterIPFamily constants.
+const (
+	InvalidIPFamily ClusterIPFamily = iota
+	IPv4IPFamily
+	IPv6IPFamily
+	DualStackIPFamily
+)
+
+func (f ClusterIPFamily) String() string {
+	return [...]string{"InvalidIPFamily", "IPv4IPFamily", "IPv6IPFamily", "DualStackIPFamily"}[f]
+}
+
 // +kubebuilder:object:root=true
 
-// ClusterList contains a list of Cluster
+// ClusterList contains a list of Cluster.
 type ClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -247,7 +332,7 @@ func (in FailureDomains) FilterControlPlane() FailureDomains {
 	return res
 }
 
-// GetIDs returns a slice containing the ids for failure domains
+// GetIDs returns a slice containing the ids for failure domains.
 func (in FailureDomains) GetIDs() []*string {
 	ids := make([]*string, 0, len(in))
 	for id := range in {
