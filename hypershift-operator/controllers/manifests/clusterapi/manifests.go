@@ -94,3 +94,12 @@ func CAPIAWSProviderRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBindin
 		},
 	}
 }
+
+func CAPIWebhooksTLSSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "capi-webhooks-tls",
+		},
+	}
+}

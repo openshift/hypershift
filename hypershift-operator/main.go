@@ -23,7 +23,6 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/externalinfracluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/spf13/cobra"
@@ -155,13 +154,6 @@ func NewStartCommand() *cobra.Command {
 			},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "nodePool")
-			os.Exit(1)
-		}
-
-		if err := (&externalinfracluster.ExternalInfraClusterReconciler{
-			Client: mgr.GetClient(),
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "ExternalInfraCluster")
 			os.Exit(1)
 		}
 

@@ -16,7 +16,7 @@ import (
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
+	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
