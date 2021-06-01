@@ -184,6 +184,17 @@ func cidrMask(cidr string) string {
 	return fmt.Sprintf("%d.%d.%d.%d", m[0], m[1], m[2], m[3])
 }
 
+func dnsForCidr(cidr string) string {
+	ip, _, err := net.ParseCIDR(cidr)
+	if err != nil {
+		panic(err.Error())
+	}
+	dnsAddr := ip.To4()
+	// dns for openshift mounts at x.x.x.10 in the service range by default
+	dnsAddr[3] = 10
+	return dnsAddr.String()
+}
+
 func iniValue(iniContent, section, key string) string {
 	f, err := ini.Load([]byte(iniContent))
 	if err != nil {

@@ -36,3 +36,14 @@ func (p *PKIParams) ReconcileOpenShiftControllerManagerCertSecret(secret, ca *co
 	}
 	return p.reconcileSignedCertWithAddresses(secret, ca, "openshift-controller-manager", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
+
+func (p *PKIParams) ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret) error {
+	dnsNames := []string{
+		"packageserver",
+		fmt.Sprintf("packageserver.%s.svc", p.Namespace),
+		fmt.Sprintf("packageserver.%s.svc.cluster.local", p.Namespace),
+		"packageserver.default.svc",
+		"packageserver.default.svc.cluster.local",
+	}
+	return p.reconcileSignedCertWithAddresses(secret, ca, "packageserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
+}
