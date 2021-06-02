@@ -22,8 +22,11 @@ import (
 	"strings"
 	"time"
 
+	routev1 "github.com/openshift/api/route/v1"
+
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -172,6 +175,20 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
+	}
+
+	// Set Ignition Server endpoint
+	{
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
+			}
+		}
+		if err == nil && ignitionServerRoute.Spec.Host != "" {
+			hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
+		}
 	}
 
 	// Persist status updates
@@ -410,6 +427,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
 
+	// Reconcile the Ignition server
+	if err = r.reconcileIgnitionServer(ctx, hcluster, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
+	}
+
 	r.Log.Info("successfully reconciled")
 	return ctrl.Result{}, nil
 }
@@ -641,6 +663,88 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
 	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get control plane namespace: %w", err)
+	}
+
+	// Reconcile service
+	// TODO (alberto): enable nodePort choice at the hostedClusterAPI
+	ignitionServerService := ignitionserver.Service(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerService, func() error {
+		ignitionServerService.Spec.Ports = []corev1.ServicePort{
+			{
+				Name:       "http",
+				Protocol:   corev1.ProtocolTCP,
+				Port:       80,
+				TargetPort: intstr.FromInt(9090),
+			},
+		}
+		ignitionServerService.Spec.Selector = map[string]string{
+			"app": ignitionserver.ResourceName,
+		}
+		ignitionServerService.Spec.Type = corev1.ServiceTypeClusterIP
+		return nil
+	})
+
+	// Reconcile route
+	ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerRoute, func() error {
+		ignitionServerRoute.Spec.To = routev1.RouteTargetReference{
+			Kind: "Service",
+			Name: ignitionserver.ResourceName,
+		}
+		return nil
+	})
+
+	// Reconcile deployment
+	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerDeployment, func() error {
+		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
+			Replicas: k8sutilspointer.Int32Ptr(1),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": ignitionserver.ResourceName,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": ignitionserver.ResourceName,
+					},
+				},
+				Spec: corev1.PodSpec{
+					TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+					Tolerations: []corev1.Toleration{
+						{
+							Key:    "node-role.kubernetes.io/master",
+							Effect: corev1.TaintEffectNoSchedule,
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:            ignitionserver.ResourceName,
+							Image:           r.OperatorImage,
+							ImagePullPolicy: corev1.PullAlways,
+							Command:         []string{"/usr/bin/ignition-server"},
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: 9090,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		return nil
+	})
 
 	return nil
 }

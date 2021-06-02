@@ -50,6 +50,7 @@ type HostedClusterSpec struct {
 
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
+	// TODO (alberto): include Ignition endpoint here.
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
@@ -248,6 +249,11 @@ type HostedClusterStatus struct {
 	// for the cluster.
 	// +optional
 	KubeConfig *corev1.LocalObjectReference `json:"kubeconfig,omitempty"`
+
+	// IgnitionEndpoint is the endpoint injected in the ign config userdata.
+	// It exposes the config for instances to become kubernetes nodes.
+	// +optional
+	IgnitionEndpoint string `json:"ignitionEndpoint"`
 
 	Conditions []metav1.Condition `json:"conditions"`
 }

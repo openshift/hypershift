@@ -24,7 +24,7 @@ endif
 
 all: build e2e
 
-build: hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
+build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
 
 .PHONY: verify
 verify: deps api fmt vet
@@ -32,6 +32,11 @@ verify: deps api fmt vet
 	git diff-files --quiet --ignore-submodules
 	$(eval STATUS = $(shell git status -s))
 	$(if $(strip $(STATUS)),$(error untracked files detected))
+
+# Build ignition-server binary
+.PHONY: ignition-server
+ignition-server:
+	$(GO_BUILD_RECIPE) -o bin/ignition-server ./hypershift-operator/ignitionserver
 
 # Build hypershift-operator binary
 .PHONY: hypershift-operator

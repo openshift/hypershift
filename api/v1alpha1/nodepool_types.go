@@ -59,9 +59,6 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:Required
 	// +required
 	Release Release `json:"release"`
-
-	// IgnitionService defines how the MachineConfigServer service is published in the management cluster
-	IgnitionService ServicePublishingStrategy `json:"ignitionService"`
 }
 
 // NodePoolStatus defines the observed state of NodePool
