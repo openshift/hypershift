@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/hypershift/certs"
@@ -83,11 +84,18 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Clock == nil {
 		r.Clock = clock.RealClock{}
 	}
+	// Set up watches for resource types the controller manages. The list basically
+	// tracks types of the resources in the clusterapi, controlplaneoperator, and
+	// ignitionserver manifests packages. Since we're receiving watch events across
+	// namespaces, the events are filtered to enqueue only those resources which
+	// are annotated as being associated with a hostedcluster (using an annotation).
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		Watches(&source.Kind{Type: &capiawsv1.AWSCluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &hyperv1.HostedControlPlane{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &capiv1.Cluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
+		Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
+		Watches(&source.Kind{Type: &appsv1.Deployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
@@ -166,6 +174,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Set the Available condition
+	// TODO: This is really setting something that could be more granular like
+	// HostedControlPlaneAvailable, and then the HostedCluster high-level Available
+	// condition could be computed as a function of the granular ThingAvailable
+	// conditions (so that it could incorporate e.g. HostedControlPlane and IgnitionServer
+	// availability in the ultimate HostedCluster Available condition)
 	{
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
@@ -192,6 +205,49 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err == nil && ignitionServerRoute.Spec.Host != "" {
 			hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
 		}
+	}
+
+	// Set the ignition server availability condition by checking its deployment.
+	{
+		// Assume the server is unavailable unless proven otherwise.
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.IgnitionEndpointAvailable),
+			Status: metav1.ConditionUnknown,
+			Reason: hyperv1.IgnitionServerDeploymentStatusUnknownReason,
+		}
+		// Check to ensure the deployment exists and is available.
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		deployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
+			if apierrors.IsNotFound(err) {
+				newCondition = metav1.Condition{
+					Type:   string(hyperv1.IgnitionEndpointAvailable),
+					Status: metav1.ConditionFalse,
+					Reason: hyperv1.IgnitionServerDeploymentNotFoundReason,
+				}
+			} else {
+				return ctrl.Result{}, fmt.Errorf("failed to get ignition server deployment: %w", err)
+			}
+		} else {
+			// Assume the deployment is unavailable until proven otherwise.
+			newCondition = metav1.Condition{
+				Type:   string(hyperv1.IgnitionEndpointAvailable),
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.IgnitionServerDeploymentUnavailableReason,
+			}
+			for _, cond := range deployment.Status.Conditions {
+				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+					newCondition = metav1.Condition{
+						Type:   string(hyperv1.IgnitionEndpointAvailable),
+						Status: metav1.ConditionTrue,
+						Reason: hyperv1.IgnitionServerDeploymentAsExpected,
+					}
+					break
+				}
+			}
+		}
+		newCondition.ObservedGeneration = hcluster.Generation
+		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
 
 	// Persist status updates
@@ -721,15 +777,14 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
-	if err != nil {
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
 	// Reconcile service
 	// TODO (alberto): enable nodePort choice at the hostedClusterAPI
 	ignitionServerService := ignitionserver.Service(controlPlaneNamespace.Name)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerService, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerService, func() error {
 		ignitionServerService.Spec.Ports = []corev1.ServicePort{
 			{
 				Name:       "http",
@@ -743,21 +798,124 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		}
 		ignitionServerService.Spec.Type = corev1.ServiceTypeClusterIP
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition service: %w", err)
+	}
 
 	// Reconcile route
 	ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.Name)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerRoute, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerRoute, func() error {
+		ignitionServerRoute.Annotations = map[string]string{
+			hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		}
+		ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
+			Termination: routev1.TLSTerminationPassthrough,
+		}
 		ignitionServerRoute.Spec.To = routev1.RouteTargetReference{
 			Kind: "Service",
 			Name: ignitionserver.ResourceName,
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition route: %w", err)
+	}
+
+	// The route must be admitted and assigned a host before we can generate certs
+	if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
+		r.Log.Info("ignition server reconciliation waiting for ignition server route to be assigned a host value")
+		return nil
+	}
+
+	// Reconcile a root CA for ignition serving certificates. We only create this
+	// and don't update it for now.
+	caCertSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace.Name)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, caCertSecret, func() error {
+		if caCertSecret.CreationTimestamp.IsZero() {
+			cfg := &certs.CertCfg{
+				Subject:   pkix.Name{CommonName: "ignition-root-ca", OrganizationalUnit: []string{"openshift"}},
+				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+				Validity:  certs.ValidityTenYears,
+				IsCA:      true,
+			}
+			key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
+			if err != nil {
+				return fmt.Errorf("failed to generate CA: %w", err)
+			}
+			caCertSecret.Type = corev1.SecretTypeTLS
+			caCertSecret.Data = map[string][]byte{
+				corev1.TLSCertKey:       certs.CertToPem(crt),
+				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition ca cert: %w", err)
+	} else {
+		r.Log.Info("reconciled ignition CA cert secret", "result", result)
+	}
+
+	// Reconcile a ignition serving certificate issued by the generated root CA. We
+	// only create this and don't update it for now.
+	servingCertSecret := ignitionserver.IgnitionServingCertSecret(controlPlaneNamespace.Name)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, servingCertSecret, func() error {
+		if servingCertSecret.CreationTimestamp.IsZero() {
+			if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
+				return fmt.Errorf("ignition server route has no host")
+			}
+			caCert, err := certs.PemToCertificate(caCertSecret.Data[corev1.TLSCertKey])
+			if err != nil {
+				return fmt.Errorf("couldn't get ca cert: %w", err)
+			}
+			caKey, err := certs.PemToPrivateKey(caCertSecret.Data[corev1.TLSPrivateKeyKey])
+			if err != nil {
+				return fmt.Errorf("couldn't get ca key: %w", err)
+			}
+			cfg := &certs.CertCfg{
+				Subject:   pkix.Name{CommonName: "ignition-server", Organization: []string{"openshift"}},
+				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+				Validity:  certs.ValidityOneYear,
+				DNSNames:  []string{ignitionServerRoute.Status.Ingress[0].Host},
+			}
+			key, crt, err := certs.GenerateSignedCertificate(caKey, caCert, cfg)
+			if err != nil {
+				return fmt.Errorf("failed to generate ignition serving cert: %w", err)
+			}
+			servingCertSecret.Type = corev1.SecretTypeTLS
+			servingCertSecret.Data = map[string][]byte{
+				corev1.TLSCertKey:       certs.CertToPem(crt),
+				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition serving cert: %w", err)
+	} else {
+		r.Log.Info("reconciled ignition serving cert secret", "result", result)
+	}
+
+	// Reconcile a token for authorizing requests to the ignition server. We only
+	// create this and don't update it for now.
+	tokenSecret := ignitionserver.IgnitionTokenSecret(controlPlaneNamespace.Name)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
+		if tokenSecret.CreationTimestamp.IsZero() {
+			tokenSecret.Data = map[string][]byte{
+				ignitionserver.TokenSecretKey: []byte(uuid.New().String()),
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition token secret: %w", err)
+	} else {
+		r.Log.Info("reconciled ignition token secret", "result", result)
+	}
 
 	// Reconcile deployment
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerDeployment, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerDeployment, func() error {
+		if ignitionServerDeployment.Annotations == nil {
+			ignitionServerDeployment.Annotations = map[string]string{}
+		}
+		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Replicas: k8sutilspointer.Int32Ptr(1),
 			Selector: &metav1.LabelSelector{
@@ -779,15 +937,49 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 							Effect: corev1.TaintEffectNoSchedule,
 						},
 					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "serving-cert",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: servingCertSecret.Name,
+								},
+							},
+						},
+						{
+							Name: "token",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: tokenSecret.Name,
+								},
+							},
+						},
+					},
 					Containers: []corev1.Container{
 						{
 							Name:            ignitionserver.ResourceName,
 							Image:           r.OperatorImage,
 							ImagePullPolicy: corev1.PullAlways,
-							Command:         []string{"/usr/bin/ignition-server"},
+							Command: []string{
+								"/usr/bin/ignition-server",
+								"start",
+								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
+								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
+								"--token-file", "/var/run/secrets/ignition/token/token",
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: 9090,
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "serving-cert",
+									MountPath: "/var/run/secrets/ignition/serving-cert",
+								},
+								{
+									Name:      "token",
+									MountPath: "/var/run/secrets/ignition/token",
 								},
 							},
 						},
@@ -796,7 +988,9 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 			},
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
+	}
 
 	return nil
 }

@@ -13,6 +13,18 @@ const (
 	NodePoolUpgradingConditionType          = "Upgrading"
 )
 
+// The following are reasons for the IgnitionEndpointAvailable condition.
+const (
+	MachineConfigServerDeploymentAsExpected          = "IgnitionServerDeploymentAsExpected"
+	MachineConfigServerDeploymentStatusUnknownReason = "IgnitionServerDeploymentStatusUnknown"
+	MachineConfigServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
+
+	IgnitionEndpointMissingReason string = "IgnitionEndpointMissing"
+	IgnitionCACertMissingReason   string = "IgnitionCACertMissing"
+	IgnitionTokenMissingReason    string = "IgnitionTokenMissing"
+	IgnitionPayloadErrorReason    string = "IgnitionPayloadError"
+)
+
 func init() {
 	SchemeBuilder.Register(&NodePool{})
 	SchemeBuilder.Register(&NodePoolList{})
