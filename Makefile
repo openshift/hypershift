@@ -36,7 +36,7 @@ verify: deps api fmt vet
 # Build ignition-server binary
 .PHONY: ignition-server
 ignition-server:
-	$(GO_BUILD_RECIPE) -o bin/ignition-server ./hypershift-operator/ignitionserver
+	$(GO_BUILD_RECIPE) -o bin/ignition-server ./ignition-server
 
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
