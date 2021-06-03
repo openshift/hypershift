@@ -55,8 +55,7 @@ type ExampleOptions struct {
 	PublicZoneID     string
 	PrivateZoneID    string
 	Annotations      map[string]string
-
-	AWS ExampleAWSOptions
+	AWS              ExampleAWSOptions
 }
 
 type ExampleAWSOptions struct {
@@ -219,15 +218,10 @@ aws_secret_access_key = %s
 				AWS: &hyperv1.AWSPlatformSpec{
 					Region: o.AWS.Region,
 					Roles:  o.AWS.Roles,
-					VPC:    o.AWS.VPCID,
-					NodePoolDefaults: &hyperv1.AWSNodePoolPlatform{
-						InstanceType:    o.AWS.InstanceType,
-						InstanceProfile: o.AWS.InstanceProfile,
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+						VPC: o.AWS.VPCID,
 						Subnet: &hyperv1.AWSResourceReference{
 							ID: &o.AWS.SubnetID,
-						},
-						SecurityGroups: []hyperv1.AWSResourceReference{
-							{ID: &o.AWS.SecurityGroupID},
 						},
 						Zone: o.AWS.Zone,
 					},
@@ -266,7 +260,18 @@ aws_secret_access_key = %s
 
 		switch nodePool.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
-			nodePool.Spec.Platform.AWS = cluster.Spec.Platform.AWS.NodePoolDefaults
+			nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+				InstanceType:    o.AWS.InstanceType,
+				InstanceProfile: o.AWS.InstanceProfile,
+				Subnet: &hyperv1.AWSResourceReference{
+					ID: &o.AWS.SubnetID,
+				},
+				SecurityGroups: []hyperv1.AWSResourceReference{
+					{
+						ID: &o.AWS.SecurityGroupID,
+					},
+				},
+			}
 		}
 	}
 

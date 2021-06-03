@@ -120,55 +120,9 @@ spec:
                   aws:
                     description: AWS contains AWS-specific settings for the HostedCluster
                     properties:
-                      kubeCloudControllerCreds:
-                        description: KubeCloudControllerCreds is a reference to a secret containing cloud credentials with permissions matching the Kube cloud controller policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
+                      cloudProviderConfig:
+                        description: CloudProviderConfig is used to generate the ConfigMap with the cloud config consumed by the Control Plane components.
                         properties:
-                          name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
-                            type: string
-                        type: object
-                      nodePoolDefaults:
-                        description: NodePoolDefaults specifies the default platform
-                        properties:
-                          ami:
-                            description: AMI is the image id to use
-                            type: string
-                          instanceProfile:
-                            type: string
-                          instanceType:
-                            description: InstanceType defines the ec2 instance type. eg. m4-large
-                            type: string
-                          securityGroups:
-                            description: SecurityGroups is the set of security groups to associate with nodepool machines
-                            items:
-                              description: AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters. Only one of ID, ARN or Filters may be specified. Specifying more than one will result in a validation error.
-                              properties:
-                                arn:
-                                  description: ARN of resource
-                                  type: string
-                                filters:
-                                  description: 'Filters is a set of key/value pairs used to identify a resource They are applied according to the rules defined by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
-                                  items:
-                                    description: Filter is a filter used to identify an AWS resource
-                                    properties:
-                                      name:
-                                        description: Name of the filter. Filter names are case-sensitive.
-                                        type: string
-                                      values:
-                                        description: Values includes one or more filter values. Filter values are case-sensitive.
-                                        items:
-                                          type: string
-                                        type: array
-                                    required:
-                                    - name
-                                    - values
-                                    type: object
-                                  type: array
-                                id:
-                                  description: ID of resource
-                                  type: string
-                              type: object
-                            type: array
                           subnet:
                             description: Subnet is the subnet to use for instances
                             properties:
@@ -197,11 +151,21 @@ spec:
                                 description: ID of resource
                                 type: string
                             type: object
+                          vpc:
+                            description: VPC specifies the VPC used for the cluster
+                            type: string
                           zone:
                             description: Zone is the availability zone where the instances are created
                             type: string
                         required:
-                        - instanceType
+                        - vpc
+                        type: object
+                      kubeCloudControllerCreds:
+                        description: KubeCloudControllerCreds is a reference to a secret containing cloud credentials with permissions matching the Kube cloud controller policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
                         type: object
                       nodePoolManagementCreds:
                         description: NodePoolManagementCreds is a reference to a secret containing cloud credentials with permissions matching the noe pool management policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
@@ -211,7 +175,7 @@ spec:
                             type: string
                         type: object
                       region:
-                        description: Region is the AWS region for the cluster
+                        description: Region is the AWS region for the cluster. This is used by CRs that are consumed by OCP Operators. E.g cluster-infrastructure-02-config.yaml and install-config.yaml This is also used by nodePools to fetch the default boot AMI in a given payload.
                         type: string
                       roles:
                         items:
@@ -245,14 +209,10 @@ spec:
                           - url
                           type: object
                         type: array
-                      vpc:
-                        description: VPC specifies the VPC used for the cluster
-                        type: string
                     required:
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds
                     - region
-                    - vpc
                     type: object
                   type:
                     description: Type is the underlying infrastructure provider for the cluster.

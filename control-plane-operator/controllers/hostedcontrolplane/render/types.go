@@ -111,10 +111,7 @@ type ClusterParams struct {
 	DefaultFeatureGates                    []string
 
 	// AWS params
-	AWSZone     string `json:"awsZone"`
-	AWSVPCID    string `json:"awsVPCID"`
-	AWSRegion   string `json:"awsRegion"`
-	AWSSubnetID string `json:"awsSubnetID"`
+	AWSRegion string `json:"awsRegion"`
 
 	// Fields below are are taken from the ROKs type
 	EndpointPublishingStrategyScope string                 `json:"endpointPublishingStrategyScope"`
