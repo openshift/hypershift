@@ -21,6 +21,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	kasmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"strings"
 	"time"
 
@@ -294,6 +296,25 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		})
 	}
 
+	// Reconcile the HostedControlPlane audit webhook config if specified
+	// reference from the HostedCluster and syncing the secret in the control plane namespace.
+	{
+		if len(hcluster.Spec.AuditWebhook.Name) > 0 {
+			var src corev1.Secret
+			if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.AuditWebhook.Name}, &src); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to get audit webhook config %s: %w", hcluster.Spec.AuditWebhook.Name, err)
+			}
+			configData, ok := src.Data[kas.AuditWebhookKubeconfigKey]
+			if !ok {
+				return ctrl.Result{}, fmt.Errorf("audit webhook secret does not contain key %s", kas.AuditWebhookKubeconfigKey)
+			}
+			hostedControlPlaneAuditWebhookSecret := kasmanifests.KASAuditWebhookConfigFile(controlPlaneNamespace.Name)
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneAuditWebhookSecret, func() error {
+				return reconcileAuditWebhook(hostedControlPlaneAuditWebhookSecret, configData)
+			})
+		}
+	}
+
 	// Reconcile the HostedControlPlane signing key by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	if len(hcluster.Spec.SigningKey.Name) > 0 {
@@ -472,6 +493,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
+	}
+	if len(hcluster.Spec.AuditWebhook.Name) > 0 {
+		hcp.Spec.AuditWebhook.Name = kasmanifests.KASAuditWebhookConfigFile("").Name
 	}
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
 	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
@@ -1716,4 +1740,13 @@ func enqueueParentHostedCluster(obj ctrlclient.Object) []reconcile.Request {
 	return []reconcile.Request{
 		{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
 	}
+}
+
+func reconcileAuditWebhook(secret *corev1.Secret, configFileData []byte) error {
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[kas.AuditWebhookKubeconfigKey] = configFileData
+	secret.Type = corev1.SecretTypeOpaque
+	return nil
 }

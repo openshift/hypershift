@@ -21,6 +21,11 @@ type HostedClusterSpec struct {
 	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
 
+	// AuditWebhook contains metadata for configuring an audit webhook
+	// endpoint for a cluster to process cluster audit events
+	// +optional
+	AuditWebhook corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
+
 	// SigningKey is a reference to a Secret containing a single key "key"
 	// +optional
 	SigningKey corev1.LocalObjectReference `json:"signingKey,omitempty"`

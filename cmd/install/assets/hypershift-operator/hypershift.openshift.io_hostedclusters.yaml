@@ -56,6 +56,13 @@ spec:
           spec:
             description: HostedClusterSpec defines the desired state of HostedCluster
             properties:
+              auditWebhook:
+                description: AuditWebhook contains metadata for configuring an audit webhook endpoint for a cluster to process cluster audit events
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
               autoscaling:
                 description: Autoscaling for compute nodes only, does not cover control plane
                 properties:
