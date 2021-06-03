@@ -9,7 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha3"
+	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"

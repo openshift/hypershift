@@ -107,9 +107,19 @@ type HostedControlPlaneCondition struct {
 type HostedControlPlaneStatus struct {
 	// Ready denotes that the HostedControlPlane API Server is ready to
 	// receive requests
+	// This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default=false
 	Ready bool `json:"ready"`
+
+	// Initialized denotes whether or not the control plane has
+	// provided a kubeadm-config.
+	// Once this condition is marked true, its value is never changed. See the Ready condition for an indication of
+	// the current readiness of the cluster's control plane.
+	// This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L238-L252
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=false
+	Initialized bool `json:"initialized"`
 
 	// ExternalManagedControlPlane indicates to cluster-api that the control plane
 	// is managed by an external service.
@@ -144,6 +154,14 @@ type HostedControlPlaneStatus struct {
 	// Current condition types are: "Available"
 	// +kubebuilder:validation:Required
 	Conditions []HostedControlPlaneCondition `json:"conditions"`
+}
+
+type APIEndpoint struct {
+	// Host is the hostname on which the API server is serving.
+	Host string `json:"host"`
+
+	// Port is the port on which the API server is serving.
+	Port int32 `json:"port"`
 }
 
 // +kubebuilder:object:root=true

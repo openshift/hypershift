@@ -17,17 +17,16 @@ limitations under the License.
 package v1alpha4
 
 import (
+	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-
-	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
 )
 
 // ANCHOR: MachineSetSpec
 
-// MachineSetSpec defines the desired state of MachineSet
+// MachineSetSpec defines the desired state of MachineSet.
 type MachineSetSpec struct {
 	// ClusterName is the name of the Cluster this object belongs to.
 	// +kubebuilder:validation:MinLength=1
@@ -67,7 +66,7 @@ type MachineSetSpec struct {
 
 // ANCHOR: MachineTemplateSpec
 
-// MachineTemplateSpec describes the data needed to create a Machine from a template
+// MachineTemplateSpec describes the data needed to create a Machine from a template.
 type MachineTemplateSpec struct {
 	// Standard object's metadata.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
@@ -108,7 +107,7 @@ const (
 
 // ANCHOR: MachineSetStatus
 
-// MachineSetStatus defines the observed state of MachineSet
+// MachineSetStatus defines the observed state of MachineSet.
 type MachineSetStatus struct {
 	// Selector is the same as the label selector but in the string format to avoid introspection
 	// by clients. The string will be in the same format as the query-param syntax.
@@ -194,7 +193,7 @@ func (m *MachineSet) Validate() field.ErrorList {
 // +kubebuilder:printcolumn:name="Available",type="integer",JSONPath=".status.availableReplicas",description="Total number of available machines (ready for at least minReadySeconds)"
 // +kubebuilder:printcolumn:name="Ready",type="integer",JSONPath=".status.readyReplicas",description="Total number of ready machines targeted by this machineset."
 
-// MachineSet is the Schema for the machinesets API
+// MachineSet is the Schema for the machinesets API.
 type MachineSet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -205,7 +204,7 @@ type MachineSet struct {
 
 // +kubebuilder:object:root=true
 
-// MachineSetList contains a list of MachineSet
+// MachineSetList contains a list of MachineSet.
 type MachineSetList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

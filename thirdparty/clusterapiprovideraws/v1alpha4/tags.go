@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,15 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha3
+package v1alpha4
 
 import (
 	"fmt"
 	"reflect"
 
+	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"k8s.io/apimachinery/pkg/types"
-
-	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha3"
 )
 
 // Tags defines a map of tags.

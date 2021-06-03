@@ -24,7 +24,7 @@ import (
 
 // ANCHOR: MachineHealthCheckSpec
 
-// MachineHealthCheckSpec defines the desired state of MachineHealthCheck
+// MachineHealthCheckSpec defines the desired state of MachineHealthCheck.
 type MachineHealthCheckSpec struct {
 	// ClusterName is the name of the Cluster this object belongs to.
 	// +kubebuilder:validation:MinLength=1
@@ -45,8 +45,19 @@ type MachineHealthCheckSpec struct {
 	// +optional
 	MaxUnhealthy *intstr.IntOrString `json:"maxUnhealthy,omitempty"`
 
+	// Any further remediation is only allowed if the number of machines selected by "selector" as not healthy
+	// is within the range of "UnhealthyRange". Takes precedence over MaxUnhealthy.
+	// Eg. "[3-5]" - This means that remediation will be allowed only when:
+	// (a) there are at least 3 unhealthy machines (and)
+	// (b) there are at most 5 unhealthy machines
+	// +optional
+	// +kubebuilder:validation:Pattern=^\[[0-9]+-[0-9]+\]$
+	UnhealthyRange *string `json:"unhealthyRange,omitempty"`
+
 	// Machines older than this duration without a node will be considered to have
 	// failed and will be remediated.
+	// If not set, this value is defaulted to 10 minutes.
+	// If you wish to disable this feature, set the value explicitly to 0.
 	// +optional
 	NodeStartupTimeout *metav1.Duration `json:"nodeStartupTimeout,omitempty"`
 
@@ -83,7 +94,7 @@ type UnhealthyCondition struct {
 
 // ANCHOR: MachineHealthCheckStatus
 
-// MachineHealthCheckStatus defines the observed state of MachineHealthCheck
+// MachineHealthCheckStatus defines the observed state of MachineHealthCheck.
 type MachineHealthCheckStatus struct {
 	// total number of machines counted by this machine health check
 	// +kubebuilder:validation:Minimum=0
@@ -121,7 +132,7 @@ type MachineHealthCheckStatus struct {
 // +kubebuilder:printcolumn:name="ExpectedMachines",type="integer",JSONPath=".status.expectedMachines",description="Number of machines currently monitored"
 // +kubebuilder:printcolumn:name="CurrentHealthy",type="integer",JSONPath=".status.currentHealthy",description="Current observed healthy machines"
 
-// MachineHealthCheck is the Schema for the machinehealthchecks API
+// MachineHealthCheck is the Schema for the machinehealthchecks API.
 type MachineHealthCheck struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -133,17 +144,19 @@ type MachineHealthCheck struct {
 	Status MachineHealthCheckStatus `json:"status,omitempty"`
 }
 
+// GetConditions returns the set of conditions for this object.
 func (m *MachineHealthCheck) GetConditions() Conditions {
 	return m.Status.Conditions
 }
 
+// SetConditions sets the conditions on this object.
 func (m *MachineHealthCheck) SetConditions(conditions Conditions) {
 	m.Status.Conditions = conditions
 }
 
 // +kubebuilder:object:root=true
 
-// MachineHealthCheckList contains a list of MachineHealthCheck
+// MachineHealthCheckList contains a list of MachineHealthCheck.
 type MachineHealthCheckList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

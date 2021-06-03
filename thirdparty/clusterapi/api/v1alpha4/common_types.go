@@ -23,7 +23,7 @@ import (
 
 const (
 	// ClusterLabelName is the label set on machines linked to a cluster and
-	// external objects(bootstrap and infrastructure providers)
+	// external objects(bootstrap and infrastructure providers).
 	ClusterLabelName = "cluster.x-k8s.io/cluster-name"
 
 	// ProviderLabelName is the label set on components in the provider manifest.
@@ -53,6 +53,11 @@ const (
 	// on the reconciled object.
 	PausedAnnotation = "cluster.x-k8s.io/paused"
 
+	// DisableMachineCreate is an annotation that can be used to signal a MachineSet to stop creating new machines.
+	// It is utilized in the OnDelete MachineDeploymentStrategy to allow the MachineDeployment controller to scale down
+	// older MachineSets when Machines are deleted and add the new replicas to the latest MachineSet.
+	DisableMachineCreate = "cluster.x-k8s.io/disable-machine-create"
+
 	// WatchLabel is a label othat can be applied to any Cluster API object.
 	//
 	// Controllers which allow for selective reconciliation may check this label and proceed
@@ -74,23 +79,39 @@ const (
 	// MachineSkipRemediationAnnotation is the annotation used to mark the machines that should not be considered for remediation by MachineHealthCheck reconciler.
 	MachineSkipRemediationAnnotation = "cluster.x-k8s.io/skip-remediation"
 
-	// ClusterSecretType defines the type of secret created by core components
+	// ClusterSecretType defines the type of secret created by core components.
 	ClusterSecretType corev1.SecretType = "cluster.x-k8s.io/secret" //nolint:gosec
 
-	// InterruptibleLabel is the label used to mark the nodes that run on interruptible instances
+	// InterruptibleLabel is the label used to mark the nodes that run on interruptible instances.
 	InterruptibleLabel = "cluster.x-k8s.io/interruptible"
+
+	// ManagedByAnnotation is an annotation that can be applied to InfraCluster resources to signify that
+	// some external system is managing the cluster infrastructure.
+	//
+	// Provider InfraCluster controllers will ignore resources with this annotation.
+	// An external controller must fulfill the contract of the InfraCluster resource.
+	// External infrastructure providers should ensure that the annotation, once set, cannot be removed.
+	ManagedByAnnotation = "cluster.x-k8s.io/managed-by"
+)
+
+var (
+	// ZeroDuration is a zero value of the metav1.Duration type.
+	ZeroDuration = metav1.Duration{}
 )
 
 // MachineAddressType describes a valid MachineAddress type.
 type MachineAddressType string
 
+// Define the MachineAddressType constants.
 const (
 	MachineHostName    MachineAddressType = "Hostname"
 	MachineExternalIP  MachineAddressType = "ExternalIP"
 	MachineInternalIP  MachineAddressType = "InternalIP"
 	MachineExternalDNS MachineAddressType = "ExternalDNS"
 	MachineInternalDNS MachineAddressType = "InternalDNS"
+)
 
+const (
 	// MachineNodeNameIndex is used by the Machine Controller to index Machines by Node name, and add a watch on Nodes.
 	MachineNodeNameIndex = "status.nodeRef.name"
 )
@@ -129,44 +150,6 @@ type MachineAddresses []MachineAddress
 // In future versions, controller-tools@v2 might allow overriding the type and validation for embedded
 // types. When that happens, this hack should be revisited.
 type ObjectMeta struct {
-	// Name must be unique within a namespace. Is required when creating resources, although
-	// some resources may allow a client to request the generation of an appropriate name
-	// automatically. Name is primarily intended for creation idempotence and configuration
-	// definition.
-	// Cannot be updated.
-	// More info: http://kubernetes.io/docs/user-guide/identifiers#names
-	// +optional
-	Name string `json:"name,omitempty"`
-
-	// GenerateName is an optional prefix, used by the server, to generate a unique
-	// name ONLY IF the Name field has not been provided.
-	// If this field is used, the name returned to the client will be different
-	// than the name passed. This value will also be combined with a unique suffix.
-	// The provided value has the same validation rules as the Name field,
-	// and may be truncated by the length of the suffix required to make the value
-	// unique on the server.
-	//
-	// If this field is specified and the generated name exists, the server will
-	// NOT return a 409 - instead, it will either return 201 Created or 500 with Reason
-	// ServerTimeout indicating a unique name could not be found in the time allotted, and the client
-	// should retry (optionally after the time indicated in the Retry-After header).
-	//
-	// Applied only if Name is not specified.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency
-	// +optional
-	GenerateName string `json:"generateName,omitempty"`
-
-	// Namespace defines the space within each name must be unique. An empty namespace is
-	// equivalent to the "default" namespace, but "default" is the canonical representation.
-	// Not all objects are required to be scoped to a namespace - the value of this field for
-	// those objects will be empty.
-	//
-	// Must be a DNS_LABEL.
-	// Cannot be updated.
-	// More info: http://kubernetes.io/docs/user-guide/namespaces
-	// +optional
-	Namespace string `json:"namespace,omitempty"`
-
 	// Map of string keys and values that can be used to organize and categorize
 	// (scope and select) objects. May match selectors of replication controllers
 	// and services.
@@ -180,13 +163,4 @@ type ObjectMeta struct {
 	// More info: http://kubernetes.io/docs/user-guide/annotations
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
-
-	// List of objects depended by this object. If ALL objects in the list have
-	// been deleted, this object will be garbage collected. If this object is managed by a controller,
-	// then an entry in this list will point to this controller, with the controller field set to true.
-	// There cannot be more than one managing controller.
-	// +optional
-	// +patchMergeKey=uid
-	// +patchStrategy=merge
-	OwnerReferences []metav1.OwnerReference `json:"ownerReferences,omitempty" patchStrategy:"merge" patchMergeKey:"uid"`
 }

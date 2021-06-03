@@ -1,6 +1,7 @@
 package controlplaneoperator
 
 import (
+	capiawsv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -80,8 +81,8 @@ func HostedControlPlane(controlPlaneNamespace string, hostedClusterName string) 
 	}
 }
 
-func ExternalInfraCluster(controlPlaneNamespace string, hostedClusterName string) *hyperv1.ExternalInfraCluster {
-	return &hyperv1.ExternalInfraCluster{
+func AWSCluster(controlPlaneNamespace string, hostedClusterName string) *capiawsv1.AWSCluster {
+	return &capiawsv1.AWSCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hostedClusterName,
