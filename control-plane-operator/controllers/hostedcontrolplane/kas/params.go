@@ -42,6 +42,7 @@ type KubeAPIServerParams struct {
 	EtcdURL              string                       `json:"etcdAddress"`
 	APIServerPort        int32                        `json:"apiServerPort"`
 	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
+	AuditWebhookEnabled  bool                         `json:"auditWebhookEnabled"`
 	config.DeploymentConfig
 	config.OwnerRef
 
@@ -193,6 +194,10 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AWSProviderConfig("").Name}
+	case hyperv1.IBMCloudPlatform:
+		if hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.AuditWebhook != nil && hcp.Spec.Platform.IBMCloud.AuditWebhook.Enable {
+			params.AuditWebhookEnabled = true
+		}
 	}
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {
@@ -256,6 +261,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		EtcdURL:                      p.EtcdURL,
 		FeatureGates:                 p.FeatureGates(),
 		NodePortRange:                p.ServiceNodePortRange(),
+		AuditWebhookEnabled:          p.AuditWebhookEnabled,
 	}
 }
 
@@ -277,6 +283,7 @@ type KubeAPIServerConfigParams struct {
 	EtcdURL                      string
 	FeatureGates                 []string
 	NodePortRange                string
+	AuditWebhookEnabled          bool
 }
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {

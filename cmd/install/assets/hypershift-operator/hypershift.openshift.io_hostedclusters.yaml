@@ -215,6 +215,17 @@ spec:
                     - nodePoolManagementCreds
                     - region
                     type: object
+                  ibmcloud:
+                    description: IBMCloud contains IBMCloud-specific settings for the HostedCluster
+                    properties:
+                      auditWebhook:
+                        description: AuditWebhook contains metadata for configuring an audit webhook endpoint for a cluster
+                        properties:
+                          enable:
+                            description: Enable enables the audit webhook
+                            type: boolean
+                        type: object
+                    type: object
                   type:
                     description: Type is the underlying infrastructure provider for the cluster.
                     enum:

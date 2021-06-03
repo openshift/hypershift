@@ -152,6 +152,23 @@ type PlatformSpec struct {
 	// AWS contains AWS-specific settings for the HostedCluster
 	// +optional
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
+
+	// IBMCloud contains IBMCloud-specific settings for the HostedCluster
+	// +optional
+	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
+}
+
+type IBMCloudPlatformSpec struct {
+	// AuditWebhook contains metadata for configuring an audit webhook
+	// endpoint for a cluster
+	// +optional
+	AuditWebhook *AuditWebhook `json:"auditWebhook,omitempty"`
+}
+
+type AuditWebhook struct {
+	// Enable enables the audit webhook
+	// +optional
+	Enable bool `json:"enable,omitempty"`
 }
 
 type AWSCloudProviderConfig struct {

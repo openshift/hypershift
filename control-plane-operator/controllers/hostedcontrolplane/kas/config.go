@@ -113,6 +113,10 @@ func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServer
 	if p.CloudProvider != "" {
 		args.Set("cloud-provider", p.CloudProvider)
 	}
+	if p.AuditWebhookEnabled {
+		args.Set("audit-webhook-config-file", auditWebhookConfigFile())
+		args.Set("audit-webhook-mode", "batch")
+	}
 	args.Set("enable-admission-plugins", admissionPlugins()...)
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
@@ -312,4 +316,9 @@ func requestHeaderAllowedNames() []string {
 
 func jwksURL(issuerURL string) string {
 	return fmt.Sprintf("%s/openid/v1/jwks", issuerURL)
+}
+
+func auditWebhookConfigFile() string {
+	cfgDir := kasAuditWebhookConfigFileVolumeMount.Path(kasContainerMain().Name, kasAuditWebhookConfigFileVolume().Name)
+	return path.Join(cfgDir, "webhook-kubeconfig")
 }
