@@ -21,12 +21,12 @@ func NewAWSParams(hcp *hyperv1.HostedControlPlane) *AWSParams {
 	}
 	p := &AWSParams{
 		ClusterID: hcp.Spec.InfraID,
-		VPC:       hcp.Spec.Platform.AWS.VPC,
+		VPC:       hcp.Spec.Platform.AWS.CloudProviderConfig.VPC,
 	}
-	if hcp.Spec.Platform.AWS.NodePoolDefaults != nil {
-		p.Zone = hcp.Spec.Platform.AWS.NodePoolDefaults.Zone
-		if hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID != nil {
-			p.SubnetID = *hcp.Spec.Platform.AWS.NodePoolDefaults.Subnet.ID
+	if hcp.Spec.Platform.AWS.CloudProviderConfig != nil {
+		p.Zone = hcp.Spec.Platform.AWS.CloudProviderConfig.Zone
+		if hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
+			p.SubnetID = *hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID
 		}
 	}
 	p.OwnerRef = config.ControllerOwnerRef(hcp)

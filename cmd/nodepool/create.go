@@ -20,12 +20,16 @@ import (
 )
 
 type CreateNodePoolOptions struct {
-	Name         string
-	Namespace    string
-	ClusterName  string
-	NodeCount    int32
-	ReleaseImage string
-	Render       bool
+	Name            string
+	Namespace       string
+	ClusterName     string
+	NodeCount       int32
+	ReleaseImage    string
+	InstanceType    string
+	SubnetID        string
+	SecurityGroupID string
+	InstanceProfile string
+	Render          bool
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -48,6 +52,10 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().Int32Var(&opts.NodeCount, "node-count", opts.NodeCount, "The number of nodes to create in the NodePool")
 	cmd.Flags().StringVar(&opts.ClusterName, "cluster-name", opts.ClusterName, "The name of the HostedCluster nodes in this pool will join")
 	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The release image for nodes. If empty, defaults to the same release image as the HostedCluster.")
+	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "The AWS instance type of the NodePool")
+	cmd.Flags().StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The AWS subnet ID in which to create the NodePool")
+	cmd.Flags().StringVar(&opts.SecurityGroupID, "securitygroup-id", opts.SecurityGroupID, "The AWS security group in which to create the NodePool")
+	cmd.Flags().StringVar(&opts.InstanceProfile, "instance-profile", opts.InstanceProfile, "The AWS instance profile for the NodePool")
 
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 
@@ -110,7 +118,18 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		nodePool.Spec.Platform.AWS = hcluster.Spec.Platform.AWS.NodePoolDefaults
+		nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+			InstanceType:    o.InstanceType,
+			InstanceProfile: o.InstanceProfile,
+			Subnet: &hyperv1.AWSResourceReference{
+				ID: &o.SubnetID,
+			},
+			SecurityGroups: []hyperv1.AWSResourceReference{
+				{
+					ID: &o.SecurityGroupID,
+				},
+			},
+		}
 	}
 
 	if o.Render {

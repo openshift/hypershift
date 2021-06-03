@@ -154,16 +154,30 @@ type PlatformSpec struct {
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
 }
 
-type AWSPlatformSpec struct {
-	// Region is the AWS region for the cluster
-	Region string `json:"region"`
+type AWSCloudProviderConfig struct {
+	// Subnet is the subnet to use for instances
+	// +optional
+	Subnet *AWSResourceReference `json:"subnet,omitempty"`
+
+	// Zone is the availability zone where the instances are created
+	// +optional
+	Zone string `json:"zone,omitempty"`
 
 	// VPC specifies the VPC used for the cluster
 	VPC string `json:"vpc"`
+}
 
-	// NodePoolDefaults specifies the default platform
+type AWSPlatformSpec struct {
+	// Region is the AWS region for the cluster.
+	// This is used by CRs that are consumed by OCP Operators.
+	// E.g cluster-infrastructure-02-config.yaml and install-config.yaml
+	// This is also used by nodePools to fetch the default boot AMI in a given payload.
+	Region string `json:"region"`
+
+	// CloudProviderConfig is used to generate the ConfigMap with the cloud config consumed
+	// by the Control Plane components.
 	// +optional
-	NodePoolDefaults *AWSNodePoolPlatform `json:"nodePoolDefaults,omitempty"`
+	CloudProviderConfig *AWSCloudProviderConfig `json:"cloudProviderConfig,omitempty"`
 
 	// ServiceEndpoints list contains custom endpoints which will override default
 	// service endpoint of AWS Services.

@@ -165,9 +165,6 @@ spec:
                             description: ID of resource
                             type: string
                         type: object
-                      zone:
-                        description: Zone is the availability zone where the instances are created
-                        type: string
                     required:
                     - instanceType
                     type: object

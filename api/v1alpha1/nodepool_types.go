@@ -131,9 +131,6 @@ type AWSNodePoolPlatform struct {
 	// SecurityGroups is the set of security groups to associate with nodepool machines
 	// +optional
 	SecurityGroups []AWSResourceReference `json:"securityGroups,omitempty"`
-	// Zone is the availability zone where the instances are created
-	// +optional
-	Zone string `json:"zone,omitempty"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
