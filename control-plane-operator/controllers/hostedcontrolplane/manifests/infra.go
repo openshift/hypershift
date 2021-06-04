@@ -12,6 +12,7 @@ const (
 	oauthRouteName                = "oauth"
 	oidcRouteName                 = "oidc"
 	vpnServiceName                = "openvpn-server"
+	konnectivityServerServiceName = "konnectivity-server"
 	openshiftAPIServerServiceName = "openshift-apiserver"
 	oauthAPIServerName            = "openshift-oauth-apiserver"
 	packageServerServiceName      = "packageserver"
@@ -57,6 +58,15 @@ func VPNServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vpnServiceName,
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
+func KonnectivityServerService(hostedClusterNamespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      konnectivityServerServiceName,
 			Namespace: hostedClusterNamespace,
 		},
 	}

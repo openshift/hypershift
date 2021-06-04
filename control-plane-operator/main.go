@@ -50,6 +50,7 @@ const (
 	openVPNImage = "quay.io/hypershift/openvpn:latest"
 	// FIXME: Set to upstream image when DNS resolution is fixed for etcd service
 	etcdOperatorImage = "quay.io/hypershift/etcd-operator:v0.9.4-patched"
+	konnectivityImage = "us.gcr.io/k8s-artifacts-prod/kas-network-proxy/proxy-server:v0.0.17"
 )
 
 func NewStartCommand() *cobra.Command {
@@ -143,6 +144,7 @@ func NewStartCommand() *cobra.Command {
 				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
 				"vpn":                            openVPNImage,
 				"etcd-operator":                  etcdOperatorImage,
+				"konnectivity":                   konnectivityImage,
 			},
 		}
 

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	rbacv1 "k8s.io/api/rbac/v1"
 
@@ -100,6 +101,8 @@ type InfrastructureStatus struct {
 	OAuthPort               int32
 	VPNHost                 string
 	VPNPort                 int32
+	KonnectivityHost        string
+	KonnectivityPort        int32
 	OpenShiftAPIHost        string
 	OauthAPIServerHost      string
 	PackageServerAPIAddress string
@@ -109,9 +112,11 @@ func (s InfrastructureStatus) IsReady() bool {
 	return len(s.APIHost) > 0 &&
 		len(s.OAuthHost) > 0 &&
 		len(s.VPNHost) > 0 &&
+		len(s.KonnectivityHost) > 0 &&
 		s.APIPort > 0 &&
 		s.OAuthPort > 0 &&
-		s.VPNPort > 0
+		s.VPNPort > 0 &&
+		s.KonnectivityPort > 0
 }
 
 type HostedControlPlaneReconciler struct {
@@ -386,10 +391,18 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "EtcdNotAvailable", msg, ctrl.Result{RequeueAfter: etcdAvailableCheckInterval}, nil)
 		}
 	}
+
 	// Reconcile VPN
 	r.Log.Info("Reconciling VPN")
 	if err = r.reconcileVPN(ctx, hostedControlPlane, releaseImage, infraStatus.VPNHost, infraStatus.VPNPort); err != nil {
 		r.Log.Error(err, "failed to reconcile vpn")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile Konnectivity
+	r.Log.Info("Reconciling Konnectivity")
+	if err = r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImage, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort); err != nil {
+		r.Log.Error(err, "failed to reconcile konnectivity")
 		return ctrl.Result{}, err
 	}
 
@@ -410,6 +423,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "KubeAPIServerNotAvailable", msg, ctrl.Result{RequeueAfter: kasAvailableCheckInterval}, nil)
 		}
 	}
+
 	// Reconcile kube controller manager
 	r.Log.Info("Reconciling Kube Controller Manager")
 	if err = r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImage); err != nil {
@@ -510,6 +524,21 @@ func (r *HostedControlPlaneReconciler) reconcileVPNServerService(ctx context.Con
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	p := konnectivity.NewKonnectivityServiceParams(hcp)
+	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Konnectivity)
+	if serviceStrategy == nil {
+		return fmt.Errorf("Konnectivity service strategy not specified")
+	}
+	konnectivityServerService := manifests.KonnectivityServerService(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, konnectivityServerService, func() error {
+		return konnectivity.ReconcileServerService(konnectivityServerService, p.OwnerRef, serviceStrategy)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile Konnectivity service: %w", err)
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.OAuthServer)
 	if serviceStrategy == nil {
@@ -582,6 +611,9 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructure(ctx context.Conte
 	if err := r.reconcileVPNServerService(ctx, hcp); err != nil {
 		return fmt.Errorf("failed to reconcile VPN server service: %w", err)
 	}
+	if err := r.reconcileKonnectivityServerService(ctx, hcp); err != nil {
+		return fmt.Errorf("failed to reconcile Konnectivity servier service: %w", err)
+	}
 	if err := r.reconcileOAuthServerService(ctx, hcp); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth server service: %w", err)
 	}
@@ -605,6 +637,9 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatus(ctx context
 		return infraStatus, err
 	}
 	if infraStatus.VPNHost, infraStatus.VPNPort, err = r.reconcileVPNServerServiceStatus(ctx, hcp); err != nil {
+		return infraStatus, err
+	}
+	if infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, err = r.reconcileKonnectivityServiceStatus(ctx, hcp); err != nil {
 		return infraStatus, err
 	}
 	if infraStatus.OAuthHost, infraStatus.OAuthPort, err = r.reconcileOAuthServiceStatus(ctx, hcp); err != nil {
@@ -658,6 +693,24 @@ func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceStatus(ctx conte
 		return
 	}
 	return vpn.ReconcileServiceStatus(svc, serviceStrategy)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
+	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Konnectivity)
+	if serviceStrategy == nil {
+		err = fmt.Errorf("Konnectivity service strategy not specified")
+		return
+	}
+	svc := manifests.KonnectivityServerService(hcp.Namespace)
+	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+		if apierrors.IsNotFound(err) {
+			err = nil
+			return
+		}
+		err = fmt.Errorf("failed to get konnectivity service: %w", err)
+		return
+	}
+	return konnectivity.ReconcileServerServiceStatus(svc, serviceStrategy)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
@@ -806,7 +859,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 }
 
 func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus) error {
-	p := pki.NewPKIParams(hcp, infraStatus.APIHost, infraStatus.OAuthHost, infraStatus.VPNHost)
+	p := pki.NewPKIParams(hcp, infraStatus.APIHost, infraStatus.OAuthHost, infraStatus.VPNHost, infraStatus.KonnectivityHost)
 
 	// Root CA
 	rootCASecret := manifests.RootCASecret(hcp.Namespace)
@@ -962,6 +1015,22 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile openshift controller manager cert: %w", err)
 	}
 
+	// Konnectivity Server Cert
+	konnectivityServerCertSecret := manifests.KonnectivityServerCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityServerCertSecret, func() error {
+		return p.ReconcileKonnectivityServerCertSecret(konnectivityServerCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity server cert: %w", err)
+	}
+
+	// Konnectivity Cluster Cert
+	konnectivityClusterCertSecret := manifests.KonnectivityClusterCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityClusterCertSecret, func() error {
+		return p.ReconcileKonnectivityClusterCertSecret(konnectivityClusterCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
+	}
+
 	// Ingress Cert
 	ingressCert := manifests.IngressCert(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, ingressCert, func() error {
@@ -1104,6 +1173,24 @@ func (r *HostedControlPlaneReconciler) reconcileVPN(ctx context.Context, hcp *hy
 		return vpn.ReconcileWorkerClientDeployment(clientDeployment, p.OwnerRef, p.WorkerClientDeploymentConfig, p.VPNImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile vpn client deployment: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, address string, port int32) error {
+	r.Log.Info("Reconciling Konnectivity")
+	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), address, port)
+	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
+		return konnectivity.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.DeploymentConfig, p.KonnectivityImage)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity server deployment: %w", err)
+	}
+	serverLocalService := manifests.KonnectivityServerLocalService(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverLocalService, func() error {
+		return konnectivity.ReconcileServerLocalService(serverLocalService, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity server local service: %w", err)
 	}
 	return nil
 }
