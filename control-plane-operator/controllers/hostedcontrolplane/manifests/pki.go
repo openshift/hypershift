@@ -220,3 +220,21 @@ func KASAuditWebhookConfigFile(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func KASKMSConfigFile(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kms-config",
+			Namespace: ns,
+		},
+	}
+}
+
+func KASKMSWDEKSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kp-wdek-secret",
+			Namespace: ns,
+		},
+	}
+}

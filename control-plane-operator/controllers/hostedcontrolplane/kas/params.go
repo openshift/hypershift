@@ -25,6 +25,7 @@ type KubeAPIServerImages struct {
 	HyperKube             string `json:"hyperKube"`
 	VPN                   string `json:"vpn"`
 	Portieris             string `json:"portieris"`
+	KMS                   string `json:"kms"`
 }
 
 type KubeAPIServerParams struct {
@@ -47,6 +48,8 @@ type KubeAPIServerParams struct {
 	APIServerPort        int32                        `json:"apiServerPort"`
 	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
 	AuditWebhookEnabled  bool                         `json:"auditWebhookEnabled"`
+	KMSKPInfo            string                       `json:"kmsKPInfo"`
+	KMSKPRegion          string                       `json:"kmsKPRegion"`
 	config.DeploymentConfig
 	config.OwnerRef
 
@@ -230,7 +233,15 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 	if len(hcp.Spec.AuditWebhook.Name) > 0 {
 		params.AuditWebhookEnabled = true
 	}
-
+	if _, ok := hcp.Annotations[hyperv1.KMSKPRegionAnnotation]; ok {
+		params.KMSKPRegion = hcp.Annotations[hyperv1.KMSKPRegionAnnotation]
+	}
+	if _, ok := hcp.Annotations[hyperv1.KMSKPInfoAnnotation]; ok {
+		params.KMSKPInfo = hcp.Annotations[hyperv1.KMSKPInfoAnnotation]
+	}
+	if _, ok := hcp.Annotations[hyperv1.KMSImageAnnotation]; ok {
+		params.Images.KMS = hcp.Annotations[hyperv1.KMSImageAnnotation]
+	}
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3
