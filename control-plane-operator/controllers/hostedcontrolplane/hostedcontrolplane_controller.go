@@ -1082,6 +1082,11 @@ func (r *HostedControlPlaneReconciler) reconcileVPN(ctx context.Context, hcp *hy
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile vpn service account: %w", err)
 	}
+	if hcp.Annotations != nil {
+		if _, ok := hcp.Annotations[hyperv1.EtcdClientOverrideAnnotation]; !ok {
+			return nil
+		}
+	}
 	serverConfig := manifests.VPNServerConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverConfig, func() error {
 		return vpn.ReconcileVPNServerConfig(serverConfig, p.OwnerRef, config.ClusterCIDR(&p.Network), config.ServiceCIDR(&p.Network), p.MachineCIDR)
