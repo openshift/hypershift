@@ -190,6 +190,7 @@ func clusterAPIManifests() []crclient.Object {
 	awsMachineTemplatesCRD := assets.ClusterAPIAWSMachineTemplatesCustomResourceDefinition{}.Build()
 	awsManagedClustersCRD := assets.ClusterAPIAWSManagedClustersCustomResourceDefinition{}.Build()
 	awsManagedMachinePoolsCRD := assets.ClusterAPIAWSManagedMachinePoolsCustomResourceDefinition{}.Build()
+	ibmCloudClustersCRD := assets.ClusterAPIIBMCloudClustersCustomResourceDefinition{}.Build()
 
 	return []crclient.Object{
 		clusterResourceSetBindingsCRD,
@@ -208,6 +209,7 @@ func clusterAPIManifests() []crclient.Object {
 		awsClusterControllerIdentitiesCRD,
 		awsClusterRoleIdentitiesCRD,
 		awsClusterStaticIdentitiesCRD,
+		ibmCloudClustersCRD,
 	}
 }
 
