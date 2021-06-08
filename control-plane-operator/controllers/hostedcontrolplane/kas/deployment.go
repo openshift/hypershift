@@ -57,6 +57,12 @@ var (
 		},
 	}
 
+	kasAuditWebhookConfigFileVolumeMount = util.PodVolumeMounts{
+		kasContainerMain().Name: {
+			kasAuditWebhookConfigFileVolume().Name: "/etc/kubernetes/auditwebhook",
+		},
+	}
+
 	// volume mounts in apply bootstrap container
 	applyWorkMountPath       = "/work"
 	applyKubeconfigMountPath = "/var/secrets/localhost-kubeconfig"
@@ -74,7 +80,8 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	deploymentConfig config.DeploymentConfig,
 	namedCertificates []configv1.APIServerNamedServingCert,
 	cloudProviderConfigRef *corev1.LocalObjectReference,
-	images KubeAPIServerImages) error {
+	images KubeAPIServerImages,
+	auditWebhookEnabled bool) error {
 
 	ownerRef.ApplyTo(deployment)
 	maxSurge := intstr.FromInt(3)
@@ -130,6 +137,9 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	deploymentConfig.ApplyTo(deployment)
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
 	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec)
+	if auditWebhookEnabled {
+		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec)
+	}
 	return nil
 }
 
@@ -486,4 +496,31 @@ func applyNamedCertificateMounts(certs []configv1.APIServerNamedServingCert, spe
 			MountPath: fmt.Sprintf("%s-%d", kasNamedCertificateMountPathPrefix, i+1),
 		})
 	}
+}
+
+func kasAuditWebhookConfigFileVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "kas-audit-webhook",
+	}
+}
+
+func buildKASAuditWebhookConfigFileVolume(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{}
+	v.Secret.SecretName = manifests.KASAuditWebhookConfigFile("").Name
+}
+
+func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec) {
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasAuditWebhookConfigFileVolume(), buildKASAuditWebhookConfigFileVolume))
+	var container *corev1.Container
+	for i, c := range podSpec.Containers {
+		if c.Name == kasContainerMain().Name {
+			container = &podSpec.Containers[i]
+			break
+		}
+	}
+	if container == nil {
+		panic("main kube apiserver container not found in spec")
+	}
+	container.VolumeMounts = append(container.VolumeMounts,
+		kasAuditWebhookConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 }
