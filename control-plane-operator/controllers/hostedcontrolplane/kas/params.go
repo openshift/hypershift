@@ -1,7 +1,10 @@
 package kas
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -128,6 +131,29 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 			VPN:                   images["vpn"],
 		},
 	}
+	if hcp.Annotations != nil {
+		if _, ok := hcp.Annotations[hyperv1.SecurePortOverrideAnnotation]; ok {
+			portNumber, err := strconv.ParseInt(hcp.Annotations[hyperv1.SecurePortOverrideAnnotation], 10, 32)
+			if err == nil {
+				params.APIServerPort = int32(portNumber)
+			}
+		}
+		if _, ok := hcp.Annotations[hyperv1.NamedCertAnnotation]; ok {
+			var namedCertStruct []render.NamedCert
+			err := json.Unmarshal([]byte(hcp.Annotations[hyperv1.NamedCertAnnotation]), &namedCertStruct)
+			if err == nil {
+				for _, namedCertEntry := range namedCertStruct {
+					params.APIServer.Spec.ServingCerts.NamedCertificates = append(params.APIServer.Spec.ServingCerts.NamedCertificates, configv1.APIServerNamedServingCert{
+						Names: []string{namedCertEntry.NamedCertDomain},
+						ServingCertificate: configv1.SecretNameReference{
+							Name: hyperv1.NamedCertSecretName,
+						},
+					})
+				}
+			}
+		}
+	}
+
 	switch hcp.Spec.Etcd.ManagementType {
 	case hyperv1.Unmanaged:
 		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint

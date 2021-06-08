@@ -161,7 +161,11 @@ const (
 )
 
 const (
-	SecurePortOverrideAnnotation = "hypershift.openshift.io/secureport-override"
+	SecurePortOverrideAnnotation  = "hypershift.openshift.io/secureport-override"
+	IdentityProviderAnnotation    = "hypershift.openshift.io/identity-provider"
+	NamedCertAnnotation           = "hypershift.openshift.io/named-cert"
+	NetworkTypeOverrideAnnotation = "hypershift.openshift.io/networktype-override"
+	NamedCertSecretName           = "named-cert-info"
 )
 
 type PlatformSpec struct {
