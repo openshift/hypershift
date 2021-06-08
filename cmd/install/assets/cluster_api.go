@@ -99,3 +99,9 @@ type ClusterAPIAWSManagedMachinePoolsCustomResourceDefinition struct{}
 func (o ClusterAPIAWSManagedMachinePoolsCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
 	return getCustomResourceDefinition("cluster-api/infrastructure.cluster.x-k8s.io_awsmanagedmachinepools.yaml")
 }
+
+type ClusterAPIIBMCloudClustersCustomResourceDefinition struct{}
+
+func (o ClusterAPIIBMCloudClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
+	return getCustomResourceDefinition("cluster-api/infrastructure.cluster.x-k8s.io_ibmclusters.yaml")
+}

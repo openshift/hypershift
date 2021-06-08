@@ -21,6 +21,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"github.com/openshift/hypershift/api"
+	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"strings"
 	"time"
 
@@ -370,6 +373,21 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSCluster: %w", err)
 		}
 		infraCR = awsCluster
+	case hyperv1.IBMCloudPlatform:
+		// Reconcile external IBM Cloud Cluster
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+			r.Log.Error(err, "failed to get control plane ref")
+			return reconcile.Result{}, err
+		}
+
+		ibmCluster := controlplaneoperator.IBMCloudCluster(controlPlaneNamespace.Name, hcluster.Name)
+		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ibmCluster, func() error {
+			return reconcileIBMCloudCluster(ibmCluster, hcluster, hcp.Status.ControlPlaneEndpoint)
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile IBMCluster: %w", err)
+		}
+		infraCR = ibmCluster
 	default:
 		// TODO(alberto): for platform None implement back a "pass through" infra CR similar to externalInfraCluster.
 	}
@@ -1054,6 +1072,21 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 	return nil
 }
 
+func reconcileIBMCloudCluster(ibmCluster *capiibmv1.IBMCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
+	ibmCluster.Annotations = map[string]string{
+		hostedClusterAnnotation:    ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		capiv1.ManagedByAnnotation: "external",
+	}
+
+	// Set the values for upper level controller
+	ibmCluster.Status.Ready = true
+	ibmCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+		Host: apiEndpoint.Host,
+		Port: apiEndpoint.Port,
+	}
+	return nil
+}
+
 func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, infraCR client.Object) error {
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
@@ -1063,7 +1096,10 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	cluster.Annotations = map[string]string{
 		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
 	}
-
+	gvk, err := apiutil.GVKForObject(infraCR, api.Scheme)
+	if err != nil {
+		return err
+	}
 	cluster.Spec = capiv1.ClusterSpec{
 		ControlPlaneEndpoint: capiv1.APIEndpoint{},
 		ControlPlaneRef: &corev1.ObjectReference{
@@ -1073,8 +1109,8 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 			Name:       hcp.Name,
 		},
 		InfrastructureRef: &corev1.ObjectReference{
-			APIVersion: "infrastructure.cluster.x-k8s.io/v1alpha4",
-			Kind:       "AWSCluster",
+			APIVersion: gvk.GroupVersion().String(),
+			Kind:       gvk.Kind,
 			Namespace:  infraCR.GetNamespace(),
 			Name:       infraCR.GetName(),
 		},
