@@ -649,6 +649,15 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		if _, ok := hcluster.Annotations[hyperv1.PortierisImageAnnotation]; ok {
 			hcp.Annotations[hyperv1.PortierisImageAnnotation] = hcluster.Annotations[hyperv1.PortierisImageAnnotation]
 		}
+		if _, ok := hcluster.Annotations[hyperv1.KMSKPInfoAnnotation]; ok {
+			hcp.Annotations[hyperv1.KMSKPInfoAnnotation] = hcluster.Annotations[hyperv1.KMSKPInfoAnnotation]
+		}
+		if _, ok := hcluster.Annotations[hyperv1.KMSKPRegionAnnotation]; ok {
+			hcp.Annotations[hyperv1.KMSKPRegionAnnotation] = hcluster.Annotations[hyperv1.KMSKPRegionAnnotation]
+		}
+		if _, ok := hcluster.Annotations[hyperv1.KMSImageAnnotation]; ok {
+			hcp.Annotations[hyperv1.KMSImageAnnotation] = hcluster.Annotations[hyperv1.KMSImageAnnotation]
+		}
 	}
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
