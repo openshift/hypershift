@@ -6,6 +6,7 @@ import (
 	crand "crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -1319,6 +1320,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.InternalAPIPort = defaultAPIServerPort
 	params.IssuerURL = hcp.Spec.IssuerURL
 	params.EtcdClientName = "etcd-client"
+	params.NetworkType = "OpenShiftSDN"
 	if hcp.Annotations != nil {
 		if _, ok := hcp.Annotations[hyperv1.EtcdClientOverrideAnnotation]; ok {
 			params.EtcdClientName = hcp.Annotations[hyperv1.EtcdClientOverrideAnnotation]
@@ -1329,8 +1331,20 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 				params.InternalAPIPort = uint(portNumber)
 			}
 		}
+		if _, ok := hcp.Annotations[hyperv1.NetworkTypeOverrideAnnotation]; ok {
+			params.NetworkType = hcp.Annotations[hyperv1.NetworkTypeOverrideAnnotation]
+		}
+		if _, ok := hcp.Annotations[hyperv1.IdentityProviderAnnotation]; ok {
+			params.IdentityProviders = hcp.Annotations[hyperv1.IdentityProviderAnnotation]
+		}
+		if _, ok := hcp.Annotations[hyperv1.NamedCertAnnotation]; ok {
+			var namedCertStruct []render.NamedCert
+			err := json.Unmarshal([]byte(hcp.Annotations[hyperv1.NamedCertAnnotation]), &namedCertStruct)
+			if err == nil {
+				params.NamedCerts = namedCertStruct
+			}
+		}
 	}
-	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.APIAvailabilityPolicy = render.SingleReplica
 	params.ControllerAvailabilityPolicy = render.SingleReplica
