@@ -59,6 +59,8 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+              name: server
+              protocol: TCP
             - containerPort: 8081
               name: metrics
               protocol: TCP
