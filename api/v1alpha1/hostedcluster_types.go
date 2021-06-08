@@ -160,6 +160,10 @@ const (
 	IBMCloudPlatform PlatformType = "IBMCloud"
 )
 
+const (
+	SecurePortOverrideAnnotation = "hypershift.openshift.io/secureport-override"
+)
+
 type PlatformSpec struct {
 	// Type is the underlying infrastructure provider for the cluster.
 	//
