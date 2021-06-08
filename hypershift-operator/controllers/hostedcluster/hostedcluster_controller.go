@@ -21,9 +21,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	kasmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/api"
 	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"strings"
@@ -503,6 +503,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	hcp.Annotations = map[string]string{
 		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
+	}
+	if hcluster.Annotations != nil {
+		if _, ok := hcluster.Annotations[hyperv1.EtcdClientOverrideAnnotation]; ok {
+			hcp.Annotations[hyperv1.EtcdClientOverrideAnnotation] = hcluster.Annotations[hyperv1.EtcdClientOverrideAnnotation]
+		}
 	}
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}

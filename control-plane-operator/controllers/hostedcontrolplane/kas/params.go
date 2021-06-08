@@ -205,6 +205,11 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 	default:
 		params.Replicas = 1
 	}
+	if hcp.Annotations != nil {
+		if _, ok := hcp.Annotations[hyperv1.EtcdClientOverrideAnnotation]; ok {
+			params.EtcdURL = "https://" + hcp.Annotations[hyperv1.EtcdClientOverrideAnnotation] + ":2379"
+		}
+	}
 	params.KubeConfigRef = hcp.Spec.KubeConfig
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
