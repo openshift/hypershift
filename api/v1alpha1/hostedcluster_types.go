@@ -150,6 +150,7 @@ const (
 
 const (
 	EtcdClientOverrideAnnotation = "hypershift.openshift.io/etcd-client-override"
+	SecurePortOverrideAnnotation = "hypershift.openshift.io/secureport-override"
 )
 
 type PlatformSpec struct {

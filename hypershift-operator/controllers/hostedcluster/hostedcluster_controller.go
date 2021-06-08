@@ -508,6 +508,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		if _, ok := hcluster.Annotations[hyperv1.EtcdClientOverrideAnnotation]; ok {
 			hcp.Annotations[hyperv1.EtcdClientOverrideAnnotation] = hcluster.Annotations[hyperv1.EtcdClientOverrideAnnotation]
 		}
+		if _, ok := hcluster.Annotations[hyperv1.SecurePortOverrideAnnotation]; ok {
+			hcp.Annotations[hyperv1.SecurePortOverrideAnnotation] = hcluster.Annotations[hyperv1.SecurePortOverrideAnnotation]
+		}
 	}
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
