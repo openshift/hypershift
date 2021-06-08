@@ -24,6 +24,7 @@ type KubeAPIServerImages struct {
 	CLI                   string `json:"cli"`
 	HyperKube             string `json:"hyperKube"`
 	VPN                   string `json:"vpn"`
+	Portieris             string `json:"portieris"`
 }
 
 type KubeAPIServerParams struct {
@@ -152,6 +153,9 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 				}
 			}
 		}
+	}
+	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
+		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
 	}
 
 	switch hcp.Spec.Etcd.ManagementType {
