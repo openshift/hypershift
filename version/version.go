@@ -12,7 +12,8 @@ var (
 	HyperShiftImage = "registry.ci.openshift.org/hypershift/hypershift:latest"
 )
 
-const releaseURL = "https://openshift-release.svc.ci.openshift.org/api/v1/releasestream/4-stable/latest"
+// https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
+const releaseURL = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable/latest"
 
 type OCPVersion struct {
 	Name        string `json:"name"`
