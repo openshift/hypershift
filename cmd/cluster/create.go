@@ -10,18 +10,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/elb"
-	"github.com/aws/aws-sdk-go/service/elb/elbiface"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	hyperapi "github.com/openshift/hypershift/api"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/version"
 	"github.com/spf13/cobra"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -49,11 +40,6 @@ type Options struct {
 	PublicZoneID       string
 	PrivateZoneID      string
 	Annotations        []string
-
-	EC2Client     ec2iface.EC2API
-	Route53Client route53iface.Route53API
-	ELBClient     elbiface.ELBAPI
-	IAMClient     iamiface.IAMAPI
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -116,13 +102,6 @@ func NewCreateCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-
-		awsSession := awsutil.NewSession()
-		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
-		opts.IAMClient = iam.New(awsSession, awsConfig)
-		opts.EC2Client = ec2.New(awsSession, awsConfig)
-		opts.ELBClient = elb.New(awsSession, awsConfig)
-		opts.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(opts.AWSCredentialsFile))
 
 		if err := CreateCluster(ctx, opts); err != nil {
 			log.Error(err, "Failed to create cluster")
@@ -193,9 +172,6 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
-			EC2Client:          opts.EC2Client,
-			Route53Client:      opts.Route53Client,
-			ELBClient:          opts.ELBClient,
 		}
 		infra, err = opt.CreateInfra(ctx)
 		if err != nil {
@@ -218,7 +194,6 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			Region:             opts.Region,
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
-			IAMClient:          opts.IAMClient,
 			IssuerURL:          opts.IssuerURL,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
