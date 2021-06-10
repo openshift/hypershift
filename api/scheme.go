@@ -14,6 +14,7 @@ import (
 
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	capiibm "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	etcd "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -35,6 +36,7 @@ var (
 
 func init() {
 	capiaws.AddToScheme(Scheme)
+	capiibm.AddToScheme(Scheme)
 	clientgoscheme.AddToScheme(Scheme)
 	hyperv1.AddToScheme(Scheme)
 	capiv1.AddToScheme(Scheme)
