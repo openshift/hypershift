@@ -239,7 +239,7 @@ aws_secret_access_key = %s
 	}
 
 	var nodePool *hyperv1.NodePool
-	if o.NodePoolReplicas > 0 {
+	if o.NodePoolReplicas > -1 {
 		nodePool = &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "NodePool",
