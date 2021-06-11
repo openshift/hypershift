@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	KubeAPIServerConfigKey = "config.json"
-	OauthMetadataConfigKey = "oauthMetadata.json"
-	AuditLogFile           = "audit.log"
-	DefaultEtcdPort        = 2379
+	KubeAPIServerConfigKey  = "config.json"
+	OauthMetadataConfigKey  = "oauthMetadata.json"
+	AuditLogFile            = "audit.log"
+	EgressSelectorConfigKey = "config.yaml"
+	DefaultEtcdPort         = 2379
 )
 
 func ReconcileConfig(config *corev1.ConfigMap,
@@ -113,6 +114,7 @@ func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServer
 	if p.CloudProvider != "" {
 		args.Set("cloud-provider", p.CloudProvider)
 	}
+	//args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")

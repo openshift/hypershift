@@ -19,6 +19,10 @@ type PKIParams struct {
 	// An externally accessible DNS name or IP for the API server. Currently obtained from the load balancer DNS name.
 	ExternalAPIAddress string `json:"externalAPIAddress"`
 
+	// ExternalKconnectivityAddress
+	// An externally accessible DNS name or IP for the Konnectivity proxy. Currently obtained from the load balancer DNS name.
+	ExternalKconnectivityAddress string `json:"externalKconnectivityAddress"`
+
 	// NodeInternalAPIServerIP
 	// A fixed IP that pods on worker nodes will use to communicate with the API server - 172.20.0.1
 	NodeInternalAPIServerIP string `json:"nodeInternalAPIServerIP"`
@@ -45,16 +49,18 @@ type PKIParams struct {
 func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 	apiExternalAddress,
 	oauthExternalAddress,
-	vpnExternalAddress string) *PKIParams {
+	vpnExternalAddress,
+	konnectivityExternalAddress string) *PKIParams {
 	p := &PKIParams{
-		Namespace:               hcp.Namespace,
-		Network:                 config.Network(hcp),
-		ExternalAPIAddress:      apiExternalAddress,
-		NodeInternalAPIServerIP: config.DefaultAdvertiseAddress,
-		ExternalOauthAddress:    oauthExternalAddress,
-		IngressSubdomain:        fmt.Sprintf("apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain),
-		ExternalOpenVPNAddress:  vpnExternalAddress,
-		OwnerReference:          config.ControllerOwnerRef(hcp),
+		Namespace:                    hcp.Namespace,
+		Network:                      config.Network(hcp),
+		ExternalAPIAddress:           apiExternalAddress,
+		ExternalKconnectivityAddress: konnectivityExternalAddress,
+		NodeInternalAPIServerIP:      config.DefaultAdvertiseAddress,
+		ExternalOauthAddress:         oauthExternalAddress,
+		IngressSubdomain:             fmt.Sprintf("apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain),
+		ExternalOpenVPNAddress:       vpnExternalAddress,
+		OwnerReference:               config.ControllerOwnerRef(hcp),
 	}
 	return p
 }
