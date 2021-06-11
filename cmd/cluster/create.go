@@ -134,6 +134,10 @@ func NewCreateCommand() *cobra.Command {
 }
 
 func CreateCluster(ctx context.Context, opts Options) error {
+	if len(opts.ReleaseImage) == 0 {
+		return fmt.Errorf("release image is required")
+	}
+
 	annotations := map[string]string{}
 	for _, s := range opts.Annotations {
 		pair := strings.SplitN(s, "=", 2)
