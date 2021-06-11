@@ -15,27 +15,27 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func machineDeployment(nodePool *hyperv1.NodePool, clusterName string) *capiv1.MachineDeployment {
+func machineDeployment(nodePool *hyperv1.NodePool, clusterName string, controlPlaneNamespace string) *capiv1.MachineDeployment {
 	resourcesName := generateName(clusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	return &capiv1.MachineDeployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      resourcesName,
-			Namespace: targetNamespace(nodePool),
+			Namespace: controlPlaneNamespace,
 		},
 	}
 }
 
-func machineHealthCheck(nodePool *hyperv1.NodePool) *capiv1.MachineHealthCheck {
+func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string) *capiv1.MachineHealthCheck {
 	return &capiv1.MachineHealthCheck{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nodePool.GetName(),
-			Namespace: targetNamespace(nodePool),
+			Namespace: controlPlaneNamespace,
 		},
 	}
 }
 
-func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool) *capiaws.AWSMachineTemplate {
+func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, controlPlaneNamespace string) *capiaws.AWSMachineTemplate {
 	subnet := &capiaws.AWSResourceReference{}
 	if nodePool.Spec.Platform.AWS.Subnet != nil {
 		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
@@ -78,7 +78,7 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool) *capi
 			Annotations: map[string]string{
 				nodePoolAnnotation: ctrlclient.ObjectKeyFromObject(nodePool).String(),
 			},
-			Namespace: targetNamespace(nodePool),
+			Namespace: controlPlaneNamespace,
 		},
 		Spec: capiaws.AWSMachineTemplateSpec{
 			Template: capiaws.AWSMachineTemplateResource{

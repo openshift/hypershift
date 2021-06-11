@@ -253,6 +253,20 @@ type ClusterAutoscaling struct {
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
 }
 
+const (
+	// IgnitionEndpointAvailable indicates whether the ignition server for the
+	// HostedCluster is available to handle ignition requests.
+	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
+)
+
+// The following are reasons for the IgnitionEndpointAvailable condition.
+const (
+	IgnitionServerDeploymentAsExpected          = "IgnitionServerDeploymentAsExpected"
+	IgnitionServerDeploymentStatusUnknownReason = "IgnitionServerDeploymentStatusUnknown"
+	IgnitionServerDeploymentNotFoundReason      = "IgnitionServerDeploymentNotFound"
+	IgnitionServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
+)
+
 // HostedClusterStatus defines the observed state of HostedCluster
 type HostedClusterStatus struct {
 	// Version is the status of the release version applied to the
