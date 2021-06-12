@@ -21,6 +21,7 @@ const (
 	KubeAPIServerConfigKey    = "config.json"
 	OauthMetadataConfigKey    = "oauthMetadata.json"
 	AuditLogFile              = "audit.log"
+	EgressSelectorConfigKey   = "config.yaml"
 	DefaultEtcdPort           = 2379
 	AuditWebhookKubeconfigKey = "webhook-kubeconfig"
 )
@@ -118,6 +119,7 @@ func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServer
 		args.Set("audit-webhook-config-file", auditWebhookConfigFile())
 		args.Set("audit-webhook-mode", "batch")
 	}
+	//args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")

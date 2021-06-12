@@ -196,10 +196,16 @@ aws_secret_access_key = %s
 						Type: hyperv1.Route,
 					},
 				},
-				hyperv1.ServicePublishingStrategyMapping{
+				{
 					Service: hyperv1.OIDC,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 						Type: hyperv1.Route,
+					},
+				},
+				{
+					Service: hyperv1.Konnectivity,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
 					},
 				},
 			},
@@ -233,7 +239,7 @@ aws_secret_access_key = %s
 	}
 
 	var nodePool *hyperv1.NodePool
-	if o.NodePoolReplicas > 0 {
+	if o.NodePoolReplicas > -1 {
 		nodePool = &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "NodePool",

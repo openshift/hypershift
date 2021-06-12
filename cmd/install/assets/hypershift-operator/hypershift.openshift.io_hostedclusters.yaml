@@ -261,6 +261,7 @@ spec:
                       - VPN
                       - OAuthServer
                       - OIDC
+                      - Konnectivity
                       type: string
                     servicePublishingStrategy:
                       description: ServicePublishingStrategy defines metadata around how a service is published

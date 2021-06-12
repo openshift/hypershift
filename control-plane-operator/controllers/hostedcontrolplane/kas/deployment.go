@@ -344,6 +344,16 @@ func buildKASVolumeAggregatorCA(v *corev1.Volume) {
 	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
 }
 
+func kasVolumeEgressSelectorConfig() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "egress-selector-config",
+	}
+}
+func buildKASVolumeEgressSelectorConfig(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.EgressSelectorConfigMap("").Name
+}
+
 func kasVolumeServiceAccountKey() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "svcacct-key",

@@ -67,7 +67,7 @@ type HostedClusterSpec struct {
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
 type ServicePublishingStrategyMapping struct {
 	// Service identifies the type of service being published
-	// +kubebuilder:validation:Enum=APIServer;VPN;OAuthServer;OIDC
+	// +kubebuilder:validation:Enum=APIServer;VPN;OAuthServer;OIDC;Konnectivity
 	Service                   ServiceType `json:"service"`
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
@@ -99,10 +99,11 @@ var (
 type ServiceType string
 
 var (
-	APIServer   ServiceType = "APIServer"
-	VPN         ServiceType = "VPN"
-	OAuthServer ServiceType = "OAuthServer"
-	OIDC        ServiceType = "OIDC"
+	APIServer    ServiceType = "APIServer"
+	VPN          ServiceType = "VPN"
+	Konnectivity ServiceType = "Konnectivity"
+	OAuthServer  ServiceType = "OAuthServer"
+	OIDC         ServiceType = "OIDC"
 )
 
 // NodePortPublishingStrategy defines the network endpoint that can be used to contact the NodePort service
@@ -256,6 +257,20 @@ type ClusterAutoscaling struct {
 	// More info: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
 }
+
+const (
+	// IgnitionEndpointAvailable indicates whether the ignition server for the
+	// HostedCluster is available to handle ignition requests.
+	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
+)
+
+// The following are reasons for the IgnitionEndpointAvailable condition.
+const (
+	IgnitionServerDeploymentAsExpected          = "IgnitionServerDeploymentAsExpected"
+	IgnitionServerDeploymentStatusUnknownReason = "IgnitionServerDeploymentStatusUnknown"
+	IgnitionServerDeploymentNotFoundReason      = "IgnitionServerDeploymentNotFound"
+	IgnitionServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
+)
 
 // HostedClusterStatus defines the observed state of HostedCluster
 type HostedClusterStatus struct {

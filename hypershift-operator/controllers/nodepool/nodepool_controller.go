@@ -3,15 +3,19 @@ package nodepool
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"strconv"
 	"time"
 
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
@@ -98,14 +102,15 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Generate mcs manifests for the given release
-	mcsServiceAccount := MachineConfigServerServiceAccount(targetNamespace(nodePool), nodePool.GetName())
-	mcsRoleBinding := MachineConfigServerRoleBinding(targetNamespace(nodePool), nodePool.GetName())
-	mcsService := MachineConfigServerService(targetNamespace(nodePool), nodePool.GetName())
-	mcsDeployment := MachineConfigServerDeployment(targetNamespace(nodePool), nodePool.GetName())
-	userDataSecret := MachineConfigServerUserDataSecret(targetNamespace(nodePool), nodePool.GetName())
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+	mcsServiceAccount := MachineConfigServerServiceAccount(controlPlaneNamespace, nodePool.GetName())
+	mcsRoleBinding := MachineConfigServerRoleBinding(controlPlaneNamespace, nodePool.GetName())
+	mcsService := MachineConfigServerService(controlPlaneNamespace, nodePool.GetName())
+	mcsDeployment := MachineConfigServerDeployment(controlPlaneNamespace, nodePool.GetName())
+	userDataSecret := MachineConfigServerUserDataSecret(controlPlaneNamespace, nodePool.GetName())
 
-	md := machineDeployment(nodePool, hcluster.Spec.InfraID)
-	mhc := machineHealthCheck(nodePool)
+	md := machineDeployment(nodePool, hcluster.Spec.InfraID, controlPlaneNamespace)
+	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 
 	if !nodePool.DeletionTimestamp.IsZero() {
 		awsMachineTemplates, err := r.listAWSMachineTemplates(nodePool)
@@ -209,6 +214,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	if hcluster.Status.IgnitionEndpoint == "" {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.IgnitionEndpointAvailable),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.IgnitionEndpointMissingReason,
+			ObservedGeneration: nodePool.Generation,
+		})
 		r.Log.Info("Ignition endpoint not available, waiting")
 		return reconcile.Result{}, nil
 	}
@@ -232,11 +243,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Reconcile machineConfigServer for the given nodePool release
-	mcsServiceAccount := MachineConfigServerServiceAccount(targetNamespace(nodePool), nodePool.GetName())
-	mcsRoleBinding := MachineConfigServerRoleBinding(targetNamespace(nodePool), nodePool.GetName())
-	mcsService := MachineConfigServerService(targetNamespace(nodePool), nodePool.GetName())
-	mcsDeployment := MachineConfigServerDeployment(targetNamespace(nodePool), nodePool.GetName())
-	userDataSecret := MachineConfigServerUserDataSecret(targetNamespace(nodePool), nodePool.GetName())
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+	mcsServiceAccount := MachineConfigServerServiceAccount(controlPlaneNamespace, nodePool.GetName())
+	mcsRoleBinding := MachineConfigServerRoleBinding(controlPlaneNamespace, nodePool.GetName())
+	mcsService := MachineConfigServerService(controlPlaneNamespace, nodePool.GetName())
+	mcsDeployment := MachineConfigServerDeployment(controlPlaneNamespace, nodePool.GetName())
+	userDataSecret := MachineConfigServerUserDataSecret(controlPlaneNamespace, nodePool.GetName())
 
 	r.Log.Info("Reconciling MCS ServiceAccount")
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsServiceAccount, func() error {
@@ -270,11 +282,36 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	r.Log.Info("Reconciling MCS Deployment")
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsDeployment, func() error {
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsDeployment, func() error {
 		return reconcileMCSDeployment(nodePool, mcsDeployment, mcsServiceAccount, releaseImage)
-	})
-	if err != nil {
+	}); err != nil {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.IgnitionEndpointAvailable),
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: nodePool.Generation,
+			Reason:             hyperv1.MachineConfigServerDeploymentUnavailableReason,
+			Message:            err.Error(),
+		})
 		return ctrl.Result{}, err
+	} else {
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.IgnitionEndpointAvailable),
+			Status: metav1.ConditionFalse,
+			Reason: hyperv1.MachineConfigServerDeploymentUnavailableReason,
+		}
+		for _, cond := range mcsDeployment.Status.Conditions {
+			if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+				newCondition = metav1.Condition{
+					Type:   string(hyperv1.IgnitionEndpointAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.MachineConfigServerDeploymentAsExpected,
+				}
+				break
+			}
+		}
+		newCondition.ObservedGeneration = nodePool.Generation
+		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
+		r.Log.Info("reconciled MCS deployment", "result", result)
 	}
 
 	r.Log.Info("Reconciling MCS Service")
@@ -298,20 +335,94 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	r.Log.Info("Reconciling userdata Secret")
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		disableTemplatingValue := []byte(base64.StdEncoding.EncodeToString([]byte("true")))
-		userDataValue := []byte(fmt.Sprintf(
-			`{"ignition":{"config":{"merge":[{"source":"http://%s/ignition/%s","verification":{}}]},"security":{},"timeouts":{},"version":"3.1.0"},"networkd":{},"passwd":{},"storage":{},"systemd":{}}`,
-			hcluster.Status.IgnitionEndpoint,
-			nodePool.GetName()))
+	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
+	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(caSecret), caSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.IgnitionEndpointAvailable),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.IgnitionCACertMissingReason,
+				ObservedGeneration: nodePool.Generation,
+			})
+			r.Log.Info("still waiting for ignition CA cert secret to exist")
+			return ctrl.Result{}, nil
+		} else {
+			return ctrl.Result{}, fmt.Errorf("failed to get ignition CA secret: %w", err)
+		}
+	}
+	tokenSecret := ignitionserver.IgnitionTokenSecret(controlPlaneNamespace)
+	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.IgnitionEndpointAvailable),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.IgnitionTokenMissingReason,
+				ObservedGeneration: nodePool.Generation,
+			})
+			r.Log.Info("still waiting for ignition token secret to exist")
+			return ctrl.Result{}, nil
+		} else {
+			return ctrl.Result{}, fmt.Errorf("failed to get token secret: %w", err)
+		}
+	}
+
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
+		caCertBytes, hasCACert := caSecret.Data[corev1.TLSCertKey]
+		if !hasCACert {
+			return fmt.Errorf("ca secret is missing tls.crt key")
+		}
+		tokenBytes, hasToken := tokenSecret.Data[ignitionserver.TokenSecretKey]
+		if !hasToken {
+			return fmt.Errorf("token secret is missing token key")
+		}
+		encodedCACert := base64.StdEncoding.EncodeToString(caCertBytes)
+		encodedToken := base64.StdEncoding.EncodeToString(tokenBytes)
+		ignConfig := ignitionapi.Config{
+			Ignition: ignitionapi.Ignition{
+				Version: "3.1.0",
+				Security: ignitionapi.Security{
+					TLS: ignitionapi.TLS{
+						CertificateAuthorities: []ignitionapi.Resource{
+							{
+								Source: k8sutilspointer.StringPtr(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
+							},
+						},
+					},
+				},
+				Config: ignitionapi.IgnitionConfig{
+					Merge: []ignitionapi.Resource{
+						{
+							Source: k8sutilspointer.StringPtr(fmt.Sprintf("https://%s/ignition/%s", hcluster.Status.IgnitionEndpoint, nodePool.Name)),
+							HTTPHeaders: []ignitionapi.HTTPHeader{
+								{
+									Name:  "Authorization",
+									Value: k8sutilspointer.StringPtr(fmt.Sprintf("Bearer %s", encodedToken)),
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		userDataValue, err := json.Marshal(ignConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal ignition config: %w", err)
+		}
 		userDataSecret.Data = map[string][]byte{
-			"disableTemplating": disableTemplatingValue,
+			"disableTemplating": []byte(base64.StdEncoding.EncodeToString([]byte("true"))),
 			"value":             userDataValue,
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:    string(hyperv1.IgnitionEndpointAvailable),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.IgnitionPayloadErrorReason,
+			Message: err.Error(),
+		})
 		return ctrl.Result{}, err
+	} else {
+		r.Log.Info("reconciled ignition user data secret", "result", result)
 	}
 
 	if mcsDeployment.GetLabels()[payloadVersionAnnotation] == targetVersion || !DeploymentComplete(mcsDeployment) {
@@ -340,9 +451,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			ami = defaultAmi
 		}
 
-		md := machineDeployment(nodePool, hcluster.Spec.InfraID)
-		awsMachineTemplate := AWSMachineTemplate(hcluster.Spec.InfraID, ami, nodePool)
-		mhc := machineHealthCheck(nodePool)
+		md := machineDeployment(nodePool, hcluster.Spec.InfraID, controlPlaneNamespace)
+		awsMachineTemplate := AWSMachineTemplate(hcluster.Spec.InfraID, ami, nodePool, controlPlaneNamespace)
+		mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 
 		r.Log.Info("Reconciling AWSMachineTemplate")
 		// If a change happens to the nodePool AWSNodePoolPlatform we delete the existing awsMachineTemplate,
@@ -802,10 +913,6 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 		},
 	}
 	return nil
-}
-
-func targetNamespace(nodePool *hyperv1.NodePool) string {
-	return fmt.Sprintf("%s-%s", nodePool.GetNamespace(), nodePool.Spec.ClusterName)
 }
 
 func hashStruct(o interface{}) string {

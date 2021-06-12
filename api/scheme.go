@@ -10,6 +10,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
@@ -48,4 +49,5 @@ func init() {
 	corev1.AddToScheme(Scheme)
 	apiextensionsv1.AddToScheme(Scheme)
 	etcd.AddToScheme(Scheme)
+	kasv1beta1.AddToScheme(Scheme)
 }
