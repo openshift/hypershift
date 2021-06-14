@@ -8,7 +8,6 @@ import "embed"
 //go:embed hosted-cluster-config-operator/*
 //go:embed ignition-configs/*
 //go:embed install-config/*
-//go:embed kube-scheduler/*
 //go:embed machine-config-server/*
 //go:embed oauth-apiserver/*
 //go:embed oauth-openshift/*
