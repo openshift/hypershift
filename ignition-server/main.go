@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -17,6 +19,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+)
+
+const (
+	namespaceEnvVariable = "MY_NAMESPACE"
 )
 
 // We only match /ignition/$NodePoolName
@@ -47,10 +53,11 @@ func main() {
 }
 
 type Options struct {
-	Addr      string
-	CertFile  string
-	KeyFile   string
-	TokenFile string
+	Addr        string
+	CertFile    string
+	KeyFile     string
+	CACertProxy string
+	TokenFile   string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -60,15 +67,17 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Addr:      "0.0.0.0:9090",
-		CertFile:  "/var/run/secrets/ignition/tls.crt",
-		KeyFile:   "/var/run/secrets/ignition/tls.key",
-		TokenFile: "/var/run/secrets/ignition/token",
+		Addr:        "0.0.0.0:9090",
+		CertFile:    "/var/run/secrets/ignition/tls.crt",
+		KeyFile:     "/var/run/secrets/ignition/tls.key",
+		CACertProxy: "/var/run/secrets/ca-cert-proxy/tls.crt",
+		TokenFile:   "/var/run/secrets/ignition/token",
 	}
 
 	cmd.Flags().StringVar(&opts.Addr, "addr", opts.Addr, "Listen address")
 	cmd.Flags().StringVar(&opts.CertFile, "cert-file", opts.CertFile, "Path to the serving cert")
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", opts.KeyFile, "Path to the serving key")
+	cmd.Flags().StringVar(&opts.CACertProxy, "ca-cert-proxy", opts.CACertProxy, "Path to root CA used to trust target server proxied requests")
 	cmd.Flags().StringVar(&opts.TokenFile, "token-file", opts.TokenFile, "Path to the auth token")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -116,7 +125,8 @@ func run(ctx context.Context, opts Options) error {
 			return
 		}
 		nodePoolName := urlPathSplit[2]
-		targetURL := fmt.Sprintf("http://machine-config-server-%s/config/master", nodePoolName)
+		targetURL := fmt.Sprintf("https://machine-config-server-%s.%s/config/master",
+			nodePoolName, os.Getenv(namespaceEnvVariable))
 
 		// Authorize the request against the token
 		const bearerPrefix = "Bearer "
@@ -154,8 +164,25 @@ func run(ctx context.Context, opts Options) error {
 			}
 		}
 
+		// Get CA for proxy request.
+		ca, err := ioutil.ReadFile(opts.CACertProxy)
+		if err != nil {
+			log.Printf("Server internal error: %v", err)
+			http.Error(w, fmt.Sprintf("Server internal error: %v", err), http.StatusInternalServerError)
+		}
+		caPool := x509.NewCertPool()
+		if !caPool.AppendCertsFromPEM(ca) {
+			log.Printf("Server internal error: failed to setup CA for proxying request")
+			http.Error(w, fmt.Sprintf("Server internal error: failed to setup CA for proxying request"), http.StatusInternalServerError)
+		}
+
 		// Send proxy request.
 		client := &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					RootCAs: caPool,
+				},
+			},
 			Timeout: 5 * time.Second,
 		}
 		resp, err := client.Do(proxyReq)

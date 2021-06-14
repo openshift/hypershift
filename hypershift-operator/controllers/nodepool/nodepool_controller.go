@@ -318,10 +318,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
 		mcsService.Spec.Ports = []corev1.ServicePort{
 			{
-				Name:       "http",
+				Name:       "https",
 				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(8080),
+				Port:       443,
+				TargetPort: intstr.FromString("https"),
 			},
 		}
 
@@ -1114,11 +1114,6 @@ oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ prin
 						},
 						Ports: []corev1.ContainerPort{
 							{
-								Name:          "http",
-								ContainerPort: 8080,
-								Protocol:      corev1.ProtocolTCP,
-							},
-							{
 								Name:          "https",
 								ContainerPort: 8443,
 								Protocol:      corev1.ProtocolTCP,
@@ -1158,7 +1153,7 @@ oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ prin
 						Name: "mcs-tls",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: "machine-config-server",
+								SecretName: ignitionserver.IgnitionServingCertSecret(deployment.Namespace).Name,
 							},
 						},
 					},

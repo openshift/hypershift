@@ -1039,14 +1039,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
 	}
 
-	// MCS Cert
-	machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, machineConfigServerCert, func() error {
-		return p.ReconcileMachineConfigServerCert(machineConfigServerCert, rootCASecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
-	}
-
 	// OLM PackageServer Cert
 	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, packageServerCertSecret, func() error {

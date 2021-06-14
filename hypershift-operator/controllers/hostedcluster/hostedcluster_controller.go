@@ -21,11 +21,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/openshift/hypershift/api"
 	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
@@ -805,10 +806,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerService, func() error {
 		ignitionServerService.Spec.Ports = []corev1.ServicePort{
 			{
-				Name:       "http",
+				Name:       "https",
 				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(9090),
+				Port:       443,
+				TargetPort: intstr.FromString("https"),
 			},
 		}
 		ignitionServerService.Spec.Selector = map[string]string{
@@ -892,7 +893,11 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 				Subject:   pkix.Name{CommonName: "ignition-server", Organization: []string{"openshift"}},
 				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 				Validity:  certs.ValidityOneYear,
-				DNSNames:  []string{ignitionServerRoute.Status.Ingress[0].Host},
+				DNSNames: []string{
+					ignitionServerRoute.Status.Ingress[0].Host,
+					// For NodePool's Machine Config Server Services.
+					"*." + controlPlaneNamespace.Name,
+				},
 			}
 			key, crt, err := certs.GenerateSignedCertificate(caKey, caCert, cfg)
 			if err != nil {
@@ -965,6 +970,14 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 							},
 						},
 						{
+							Name: "ca-cert-proxy",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: caCertSecret.Name,
+								},
+							},
+						},
+						{
 							Name: "token",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
@@ -975,6 +988,16 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 					},
 					Containers: []corev1.Container{
 						{
+							Env: []corev1.EnvVar{
+								{
+									Name: "MY_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
 							Name:            ignitionserver.ResourceName,
 							Image:           r.OperatorImage,
 							ImagePullPolicy: corev1.PullAlways,
@@ -983,10 +1006,12 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								"start",
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
+								"--ca-cert-proxy", "/var/run/secrets/ignition/ca-cert-proxy/tls.crt",
 								"--token-file", "/var/run/secrets/ignition/token/token",
 							},
 							Ports: []corev1.ContainerPort{
 								{
+									Name:          "https",
 									ContainerPort: 9090,
 								},
 							},
@@ -994,6 +1019,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								{
 									Name:      "serving-cert",
 									MountPath: "/var/run/secrets/ignition/serving-cert",
+								},
+								{
+									Name:      "ca-cert-proxy",
+									MountPath: "/var/run/secrets/ignition/ca-cert-proxy",
 								},
 								{
 									Name:      "token",
