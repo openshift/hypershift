@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: openshift-oauth-apiserver-auditpolicy
-data:
-  policy.yaml: |-
-{{ include "oauth-apiserver/audit-policy.yaml" 4 }}

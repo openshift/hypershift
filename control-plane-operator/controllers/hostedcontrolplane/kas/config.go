@@ -82,7 +82,7 @@ func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServer
 					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.ApiServerPort),
 					BindNetwork:       "tcp4",
 					CipherSuites:      hcpconfig.CipherSuites(p.TLSSecurityProfile),
-					MinTLSVersion:     minTLSVersion(p.TLSSecurityProfile),
+					MinTLSVersion:     hcpconfig.MinTLSVersion(p.TLSSecurityProfile),
 				},
 			},
 			CORSAllowedOrigins: corsAllowedOrigins(p.AdditionalCORSAllowedOrigins),
@@ -267,18 +267,6 @@ func configNamedCertificates(servingCerts []configv1.APIServerNamedServingCert) 
 		})
 	}
 	return result
-}
-
-func minTLSVersion(securityProfile *configv1.TLSSecurityProfile) string {
-	if securityProfile == nil {
-		securityProfile = &configv1.TLSSecurityProfile{
-			Type: configv1.TLSProfileIntermediateType,
-		}
-	}
-	if securityProfile.Type == configv1.TLSProfileCustomType {
-		return string(securityProfile.Custom.MinTLSVersion)
-	}
-	return string(configv1.TLSProfiles[securityProfile.Type].MinTLSVersion)
 }
 
 func corsAllowedOrigins(additionalCORSAllowedOrigins []string) []string {

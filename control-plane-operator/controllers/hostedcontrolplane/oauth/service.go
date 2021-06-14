@@ -8,7 +8,7 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 const (
@@ -20,8 +20,8 @@ var (
 	oauthServerLabels = map[string]string{"app": "oauth-openshift"}
 )
 
-func (p *OAuthServiceParams) ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
-	util.EnsureOwnerRef(svc, p.OwnerReference)
+func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy) error {
+	ownerRef.ApplyTo(svc)
 	svc.Spec.Selector = oauthServerLabels
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
@@ -47,7 +47,7 @@ func (p *OAuthServiceParams) ReconcileService(svc *corev1.Service, strategy *hyp
 	return nil
 }
 
-func (p *OAuthServiceParams) ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
+func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
 	switch strategy.Type {
 	case hyperv1.Route:
 		if route.Spec.Host == "" {

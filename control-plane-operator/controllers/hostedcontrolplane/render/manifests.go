@@ -1,7 +1,6 @@
 package render
 
 import (
-	"bytes"
 	"fmt"
 	"path"
 	"strings"
@@ -61,8 +60,6 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
 	c.clusterVersionOperator()
-	c.openshiftAPIServer()
-	c.oauthAPIServer()
 	c.openshiftControllerManager()
 	c.clusterBootstrap()
 	c.oauthOpenshiftServer()
@@ -132,73 +129,6 @@ func (c *clusterManifestContext) oauthOpenshiftServer() {
 	c.addUserManifestFiles(
 		"oauth-openshift/ingress-certs-secret.yaml",
 	)
-}
-
-func (c *clusterManifestContext) openshiftAPIServer() {
-	c.addManifestFiles(
-		"openshift-apiserver/openshift-apiserver-deployment.yaml",
-		"openshift-apiserver/openshift-apiserver-service.yaml",
-		"openshift-apiserver/openshift-apiserver-config-configmap.yaml",
-		"openshift-apiserver/openshift-apiserver-secret.yaml",
-		"openshift-apiserver/openshift-apiserver-configmap.yaml",
-	)
-	c.addUserManifestFiles(
-		"openshift-apiserver/openshift-apiserver-user-service.yaml",
-		"openshift-apiserver/openshift-apiserver-user-endpoint.yaml",
-	)
-	apiServices := &bytes.Buffer{}
-	for _, apiService := range []string{
-		"v1.apps.openshift.io",
-		"v1.authorization.openshift.io",
-		"v1.build.openshift.io",
-		"v1.image.openshift.io",
-		"v1.project.openshift.io",
-		"v1.quota.openshift.io",
-		"v1.route.openshift.io",
-		"v1.security.openshift.io",
-		"v1.template.openshift.io"} {
-		params := map[string]string{
-			"APIService":                 apiService,
-			"APIServiceGroup":            trimFirstSegment(apiService),
-			"OpenshiftAPIServerCABundle": c.params.(*ClusterParams).OpenshiftAPIServerCABundle,
-		}
-		entry, err := c.substituteParams(params, "openshift-apiserver/service-template.yaml")
-		if err != nil {
-			panic(err.Error())
-		}
-		apiServices.Write(entry)
-	}
-	c.addUserManifest("openshift-apiserver-apiservices.yaml", apiServices.String())
-}
-
-func (c *clusterManifestContext) oauthAPIServer() {
-	c.addManifestFiles(
-		"oauth-apiserver/oauth-apiserver-deployment.yaml",
-		"oauth-apiserver/oauth-apiserver-auditpolicy.yaml",
-		"oauth-apiserver/oauth-apiserver-secret.yaml",
-		"oauth-apiserver/oauth-apiserver-configmap.yaml",
-	)
-	c.addUserManifestFiles(
-		"oauth-apiserver/oauth-apiserver-user-service.yaml",
-		"oauth-apiserver/oauth-apiserver-user-endpoint.yaml",
-	)
-	apiServices := &bytes.Buffer{}
-	for _, apiService := range []string{
-		"v1.oauth.openshift.io",
-		"v1.user.openshift.io"} {
-
-		params := map[string]string{
-			"APIService":             apiService,
-			"APIServiceGroup":        trimFirstSegment(apiService),
-			"OauthAPIServerCABundle": c.params.(*ClusterParams).OauthAPIServerCABundle,
-		}
-		entry, err := c.substituteParams(params, "oauth-apiserver/service-template.yaml")
-		if err != nil {
-			panic(err.Error())
-		}
-		apiServices.Write(entry)
-	}
-	c.addUserManifest("oauth-apiserver-apiservices.yaml", apiServices.String())
 }
 
 func (c *clusterManifestContext) openshiftControllerManager() {

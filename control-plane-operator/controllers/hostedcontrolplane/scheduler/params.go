@@ -12,7 +12,6 @@ import (
 type KubeSchedulerParams struct {
 	FeatureGate             configv1.FeatureGate `json:"featureGate"`
 	OwnerRef                config.OwnerRef      `json:"ownerRef"`
-	Replicas                int32                `json:"replicas"`
 	HyperkubeImage          string               `json:"hyperkubeImage"`
 	config.DeploymentConfig `json:",inline"`
 }
