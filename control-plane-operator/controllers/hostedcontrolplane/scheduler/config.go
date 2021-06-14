@@ -11,16 +11,16 @@ import (
 	schedulerv1 "k8s.io/kube-scheduler/config/v1beta1"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const (
 	KubeSchedulerConfigKey = "config.json"
 )
 
-func (p *KubeSchedulerParams) ReconcileConfig(config *corev1.ConfigMap) error {
-	util.EnsureOwnerRef(config, p.OwnerReference)
+func ReconcileConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}

@@ -432,6 +432,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Reconcile kube scheduler
+	r.Log.Info("Reconciling Kube Scheduler")
 	if err = r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImage); err != nil {
 		r.Log.Error(err, "failed to reconcile kube controller manager")
 		return ctrl.Result{}, err
@@ -1325,14 +1326,14 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 
 	schedulerConfig := manifests.SchedulerConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, schedulerConfig, func() error {
-		return p.ReconcileConfig(schedulerConfig)
+		return scheduler.ReconcileConfig(schedulerConfig, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile scheduler config: %w", err)
 	}
 
 	schedulerDeployment := manifests.SchedulerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, schedulerDeployment, func() error {
-		return p.ReconcileDeployment(schedulerDeployment)
+		return scheduler.ReconcileDeployment(schedulerDeployment, p.OwnerRef, p.DeploymentConfig, p.HyperkubeImage, p.FeatureGates())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile scheduler deployment: %w", err)
 	}
