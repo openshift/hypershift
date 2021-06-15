@@ -21,14 +21,18 @@ import (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		konnectivityServerContainer().Name: util.ContainerVolumeMounts{
-			konnectivityVolumeServerCA().Name:     "/etc/konnectivity/server-ca",
 			konnectivityVolumeServerCerts().Name:  "/etc/konnectivity/server",
 			konnectivityVolumeClusterCerts().Name: "/etc/konnectivity/cluster",
-			konnectivityVolumeKubeconfig().Name:   "/etc/konnectivity/kubeconfig",
+		},
+		konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
+			konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
 		},
 	}
 	konnectivityServerLabels = map[string]string{
 		"app": "konnectivity-server",
+	}
+	konnectivityAgentLabels = map[string]string{
+		"app": "konnectivity-agent",
 	}
 )
 
@@ -36,7 +40,7 @@ const (
 	KubeconfigKey = "kubeconfig"
 )
 
-func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, konnectivityImage string) error {
+func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -49,13 +53,11 @@ func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(konnectivityImage)),
+					util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(image)),
 				},
 				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeServerCA(), buildKonnectivityVolumeServerCA),
 					util.BuildVolume(konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts),
 					util.BuildVolume(konnectivityVolumeClusterCerts(), buildKonnectivityVolumeClusterCerts),
-					util.BuildVolume(konnectivityVolumeKubeconfig(), buildKonnectivityVolumeKubeconfig),
 				},
 			},
 		},
@@ -92,7 +94,7 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			"--server-key",
 			cpath(konnectivityVolumeServerCerts().Name, corev1.TLSPrivateKeyKey),
 			"--server-ca-cert",
-			cpath(konnectivityVolumeServerCA().Name, pki.CASignerCertMapKey),
+			cpath(konnectivityVolumeServerCerts().Name, pki.CASignerCertMapKey),
 			"--mode=grpc",
 			"--server-port",
 			strconv.Itoa(KonnectivityServerLocalPort),
@@ -100,27 +102,8 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			strconv.Itoa(KonnectivityServerPort),
 			"--health-port=8092",
 			"--admin-port=8093",
-			"--agent-namespace=kube-system",
-			"--agent-service-account=konnectivity-agent",
-			"--kubeconfig",
-			cpath(konnectivityVolumeKubeconfig().Name, KubeconfigKey),
-			"--authentication-audience=system:konnectivity-server",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
-	}
-}
-
-func konnectivityVolumeServerCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "server-ca",
-	}
-}
-
-func buildKonnectivityVolumeServerCA(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{
-		LocalObjectReference: corev1.LocalObjectReference{
-			Name: manifests.CombinedCAConfigMap("").Name,
-		},
 	}
 }
 
@@ -132,7 +115,7 @@ func konnectivityVolumeServerCerts() *corev1.Volume {
 
 func buildKonnectivityVolumeServerCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KonnectivityServerCertSecret("").Name,
+		SecretName: manifests.KonnectivityServerSecret("").Name,
 	}
 }
 
@@ -144,19 +127,7 @@ func konnectivityVolumeClusterCerts() *corev1.Volume {
 
 func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KonnectivityClusterCertSecret("").Name,
-	}
-}
-
-func konnectivityVolumeKubeconfig() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "kubeconfig",
-	}
-}
-
-func buildKonnectivityVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+		SecretName: manifests.KonnectivityClusterSecret("").Name,
 	}
 }
 
@@ -238,4 +209,82 @@ func ReconcileServerServiceStatus(svc *corev1.Service, strategy *hyperv1.Service
 		host = strategy.NodePort.Address
 	}
 	return
+}
+
+func ReconcileWorkerAgentDaemonSet(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, host string, port int32) error {
+	ownerRef.ApplyTo(cm)
+	agentDaemonSet := manifests.KonnectivityAgentDaemonSet()
+	if err := reconcileAgentDaemonSet(agentDaemonSet, deploymentConfig, image, host, port); err != nil {
+		return err
+	}
+	return util.ReconcileWorkerManifest(cm, agentDaemonSet)
+}
+
+func reconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32) error {
+	daemonset.Spec = appsv1.DaemonSetSpec{
+		Selector: &metav1.LabelSelector{
+			MatchLabels: konnectivityAgentLabels,
+		},
+		Template: corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: konnectivityAgentLabels,
+			},
+			Spec: corev1.PodSpec{
+				AutomountServiceAccountToken: pointer.BoolPtr(false),
+				Containers: []corev1.Container{
+					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, host, port)),
+				},
+				Volumes: []corev1.Volume{
+					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeAgentCerts),
+				},
+			},
+		},
+	}
+	deploymentConfig.ApplyToDaemonSet(daemonset)
+	return nil
+}
+
+func konnectivityAgentContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "konnectivity-agent",
+	}
+}
+
+func konnectivityVolumeAgentCerts() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "agent-certs",
+	}
+}
+
+func buildKonnectivityVolumeAgentCerts(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{
+		SecretName: manifests.KonnectivityAgentSecret().Name,
+	}
+}
+
+func buildKonnectivityAgentContainer(image, host string, port int32) func(c *corev1.Container) {
+	cpath := func(volume, file string) string {
+		return path.Join(volumeMounts.Path(konnectivityAgentContainer().Name, volume), file)
+	}
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.ImagePullPolicy = corev1.PullAlways
+		c.Command = []string{
+			"/proxy-agent",
+		}
+		c.Args = []string{
+			"--logtostderr=true",
+			"--ca-cert",
+			cpath(konnectivityVolumeAgentCerts().Name, pki.CASignerCertMapKey),
+			"--agent-cert",
+			cpath(konnectivityVolumeAgentCerts().Name, corev1.TLSCertKey),
+			"--agent-key",
+			cpath(konnectivityVolumeAgentCerts().Name, corev1.TLSPrivateKeyKey),
+			"--proxy-server-host",
+			host,
+			"--proxy-server-port",
+			fmt.Sprint(port),
+		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+	}
 }

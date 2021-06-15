@@ -1016,17 +1016,25 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	}
 
 	// Konnectivity Server Cert
-	konnectivityServerCertSecret := manifests.KonnectivityServerCertSecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityServerCertSecret, func() error {
-		return p.ReconcileKonnectivityServerCertSecret(konnectivityServerCertSecret, rootCASecret)
+	konnectivityServerSecret := manifests.KonnectivityServerSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityServerSecret, func() error {
+		return p.ReconcileKonnectivityServerSecret(konnectivityServerSecret, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server cert: %w", err)
 	}
 
 	// Konnectivity Cluster Cert
-	konnectivityClusterCertSecret := manifests.KonnectivityClusterCertSecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityClusterCertSecret, func() error {
-		return p.ReconcileKonnectivityClusterCertSecret(konnectivityClusterCertSecret, rootCASecret)
+	konnectivityClusterSecret := manifests.KonnectivityClusterSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityClusterSecret, func() error {
+		return p.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
+	}
+
+	// Konnectivity Agent Cert
+	konnectivityWorkerAgentSecret := manifests.KonnectivityWorkerAgentSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityWorkerAgentSecret, func() error {
+		return p.ReconcileKonnectivityWorkerAgentCertSecret(konnectivityWorkerAgentSecret, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
 	}
@@ -1182,7 +1190,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), address, port)
 	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
-		return konnectivity.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.DeploymentConfig, p.KonnectivityImage)
+		return konnectivity.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.ServerDeploymentConfig, p.KonnectivityServerImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server deployment: %w", err)
 	}
@@ -1191,6 +1199,12 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 		return konnectivity.ReconcileServerLocalService(serverLocalService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server local service: %w", err)
+	}
+	agentDaemonSet := manifests.KonnectivityWorkerAgentDaemonSet(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, agentDaemonSet, func() error {
+		return konnectivity.ReconcileWorkerAgentDaemonSet(agentDaemonSet, p.OwnerRef, p.AgentDeamonSetConfig, p.KonnectivityAgentImage, p.ExternalAddress, p.ExternalPort)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity agent daemonset: %w", err)
 	}
 	return nil
 }
