@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -16,6 +17,10 @@ const (
 )
 
 func ReconcileWorkerManifest(cm *corev1.ConfigMap, resource client.Object) error {
+	return ReconcileWorkerManifestWithObjectTyper(cm, resource, hyperapi.Scheme)
+}
+
+func ReconcileWorkerManifestWithObjectTyper(cm *corev1.ConfigMap, resource client.Object, objectTyper runtime.ObjectTyper) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -23,7 +28,7 @@ func ReconcileWorkerManifest(cm *corev1.ConfigMap, resource client.Object) error
 		cm.Labels = map[string]string{}
 	}
 	cm.Labels["worker-manifest"] = "true"
-	serialized, err := serializeResource(resource)
+	serialized, err := serializeResource(resource, objectTyper)
 	if err != nil {
 		return fmt.Errorf("failed to serialize resource of type %T: %w", resource, err)
 	}
@@ -31,9 +36,9 @@ func ReconcileWorkerManifest(cm *corev1.ConfigMap, resource client.Object) error
 	return nil
 }
 
-func serializeResource(resource client.Object) (string, error) {
+func serializeResource(resource client.Object, objectTyper runtime.ObjectTyper) (string, error) {
 	out := &bytes.Buffer{}
-	gvks, _, err := hyperapi.Scheme.ObjectKinds(resource)
+	gvks, _, err := objectTyper.ObjectKinds(resource)
 	if err != nil || len(gvks) == 0 {
 		return "", fmt.Errorf("cannot determine GVK of resource of type %T: %w", resource, err)
 	}

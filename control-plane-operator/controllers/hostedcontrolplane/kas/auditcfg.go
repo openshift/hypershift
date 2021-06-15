@@ -1,13 +1,10 @@
 package kas
 
 import (
-	"bytes"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -263,29 +260,12 @@ const (
 )
 
 var (
-	auditScheme     = runtime.NewScheme()
-	auditSerializer = json.NewSerializerWithOptions(
-		json.DefaultMetaFactory, auditScheme, auditScheme,
-		json.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
-	)
 	auditPolicies = map[configv1.AuditProfileType]*auditv1.Policy{
 		configv1.AuditProfileDefaultType:            defaultAuditPolicy(),
 		configv1.WriteRequestBodiesAuditProfileType: writeRequestBodiesAuditPolicy(),
 		configv1.AllRequestBodiesAuditProfileType:   allRequestBodiesAuditPolicy(),
 	}
 )
-
-func init() {
-	auditv1.AddToScheme(auditScheme)
-}
-
-func serializeAuditPolicy(policy *auditv1.Policy) ([]byte, error) {
-	out := &bytes.Buffer{}
-	if err := auditSerializer.Encode(policy, out); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
-}
 
 func ReconcileAuditConfig(auditCfgMap *corev1.ConfigMap, ownerRef config.OwnerRef, auditProfile configv1.AuditProfileType) error {
 	ownerRef.ApplyTo(auditCfgMap)
@@ -299,7 +279,7 @@ func ReconcileAuditConfig(auditCfgMap *corev1.ConfigMap, ownerRef config.OwnerRe
 	if !ok {
 		return fmt.Errorf("Invalid audit policy profile: %s", auditProfile)
 	}
-	policyBytes, err := serializeAuditPolicy(policy)
+	policyBytes, err := config.SerializeAuditPolicy(policy)
 	if err != nil {
 		return err
 	}

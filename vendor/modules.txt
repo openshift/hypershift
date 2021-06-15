@@ -153,12 +153,14 @@ github.com/onsi/gomega/matchers/support/goraph/util
 github.com/onsi/gomega/types
 # github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
 ## explicit
+github.com/openshift/api/build/v1
 github.com/openshift/api/config/v1
 github.com/openshift/api/image/docker10
 github.com/openshift/api/image/dockerpre012
 github.com/openshift/api/image/v1
 github.com/openshift/api/kubecontrolplane/v1
 github.com/openshift/api/oauth/v1
+github.com/openshift/api/openshiftcontrolplane/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
@@ -776,6 +778,10 @@ k8s.io/component-base/config/v1alpha1
 # k8s.io/klog/v2 v2.5.0
 ## explicit
 k8s.io/klog/v2
+# k8s.io/kube-aggregator v0.20.2
+## explicit
+k8s.io/kube-aggregator/pkg/apis/apiregistration
+k8s.io/kube-aggregator/pkg/apis/apiregistration/v1
 # k8s.io/kube-openapi v0.0.0-20201113171705-d219536bb9fd
 k8s.io/kube-openapi/pkg/util/proto
 # k8s.io/kube-scheduler v0.20.2

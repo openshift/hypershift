@@ -37,6 +37,18 @@ var openSSLToIANACiphersMap = map[string]string{
 	"DES-CBC3-SHA": "TLS_RSA_WITH_3DES_EDE_CBC_SHA", // 0x00,0x0A
 }
 
+func MinTLSVersion(securityProfile *configv1.TLSSecurityProfile) string {
+	if securityProfile == nil {
+		securityProfile = &configv1.TLSSecurityProfile{
+			Type: configv1.TLSProfileIntermediateType,
+		}
+	}
+	if securityProfile.Type == configv1.TLSProfileCustomType {
+		return string(securityProfile.Custom.MinTLSVersion)
+	}
+	return string(configv1.TLSProfiles[securityProfile.Type].MinTLSVersion)
+}
+
 // OpenSSLToIANACipherSuites maps input OpenSSL Cipher Suite names to their
 // IANA counterparts.
 // Unknown ciphers are left out.

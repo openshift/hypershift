@@ -3,7 +3,6 @@ package scheduler
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -11,18 +10,10 @@ import (
 )
 
 type KubeSchedulerParams struct {
-	FeatureGate configv1.FeatureGate `json:"featureGate"`
-
-	Replicas         int32 `json:"replicas"`
-	Scheduling       config.Scheduling
-	AdditionalLabels config.AdditionalLabels    `json:"additionalLabels"`
-	SecurityContexts config.SecurityContextSpec `json:"securityContexts"`
-	LivenessProbes   config.LivenessProbes      `json:"livenessProbes"`
-	ReadinessProbes  config.ReadinessProbes     `json:"readinessProbes"`
-	Resources        config.ResourcesSpec       `json:"resources"`
-	OwnerReference   *metav1.OwnerReference     `json:"ownerReference"`
-
-	HyperkubeImage string `json:"hyperkubeImage"`
+	FeatureGate             configv1.FeatureGate `json:"featureGate"`
+	OwnerRef                config.OwnerRef      `json:"ownerRef"`
+	HyperkubeImage          string               `json:"hyperkubeImage"`
+	config.DeploymentConfig `json:",inline"`
 }
 
 func NewKubeSchedulerParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *KubeSchedulerParams {
@@ -34,11 +25,10 @@ func NewKubeSchedulerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 				},
 			},
 		},
-		AdditionalLabels: map[string]string{},
-		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
-		},
 		HyperkubeImage: images["hyperkube"],
+	}
+	params.Scheduling = config.Scheduling{
+		PriorityClass: config.DefaultPriorityClass,
 	}
 	params.Resources = map[string]corev1.ResourceRequirements{
 		schedulerContainerMain().Name: {
@@ -54,7 +44,11 @@ func NewKubeSchedulerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 	default:
 		params.Replicas = 1
 	}
-	params.OwnerReference = config.ControllerOwnerRef(hcp)
+	params.OwnerRef = config.OwnerRefFrom(hcp)
 
 	return params
+}
+
+func (p *KubeSchedulerParams) FeatureGates() []string {
+	return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
 }

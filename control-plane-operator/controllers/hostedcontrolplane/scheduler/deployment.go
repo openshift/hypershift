@@ -29,11 +29,11 @@ var (
 	}
 )
 
-func (p *KubeSchedulerParams) ReconcileDeployment(deployment *appsv1.Deployment) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, featureGates []string) error {
+	ownerRef.ApplyTo(deployment)
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: pointer.Int32Ptr(int32(p.Replicas)),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: schedulerLabels,
 		},
@@ -51,7 +51,7 @@ func (p *KubeSchedulerParams) ReconcileDeployment(deployment *appsv1.Deployment)
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{
-					util.BuildContainer(schedulerContainerMain(), p.buildSchedulerContainerMain),
+					util.BuildContainer(schedulerContainerMain(), buildSchedulerContainerMain(image, featureGates)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(schedulerVolumeConfig(), buildSchedulerVolumeConfig),
@@ -61,12 +61,7 @@ func (p *KubeSchedulerParams) ReconcileDeployment(deployment *appsv1.Deployment)
 			},
 		},
 	}
-	p.AdditionalLabels.ApplyTo(&deployment.Spec.Template.ObjectMeta)
-	p.LivenessProbes.ApplyTo(&deployment.Spec.Template.Spec)
-	p.ReadinessProbes.ApplyTo(&deployment.Spec.Template.Spec)
-	p.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
-	p.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)
-	p.Resources.ApplyTo(&deployment.Spec.Template.Spec)
+	config.ApplyTo(deployment)
 	return nil
 }
 
@@ -76,27 +71,29 @@ func schedulerContainerMain() *corev1.Container {
 	}
 }
 
-func (p *KubeSchedulerParams) buildSchedulerContainerMain(c *corev1.Container) {
-	kubeConfigPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeKubeconfig().Name), kas.KubeconfigKey)
-	configPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeConfig().Name), KubeSchedulerConfigKey)
-	certWorkDir := volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeCertWorkDir().Name)
-	c.Image = p.HyperkubeImage
-	c.Command = []string{
-		"hyperkube",
-		"kube-scheduler",
+func buildSchedulerContainerMain(image string, featureGates []string) func(*corev1.Container) {
+	return func(c *corev1.Container) {
+		kubeConfigPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeKubeconfig().Name), kas.KubeconfigKey)
+		configPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeConfig().Name), KubeSchedulerConfigKey)
+		certWorkDir := volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeCertWorkDir().Name)
+		c.Image = image
+		c.Command = []string{
+			"hyperkube",
+			"kube-scheduler",
+		}
+		c.Args = []string{
+			fmt.Sprintf("--config=%s", configPath),
+			fmt.Sprintf("--cert-dir=%s", certWorkDir),
+			fmt.Sprintf("--port=0"),
+			fmt.Sprintf("--authentication-kubeconfig=%s", kubeConfigPath),
+			fmt.Sprintf("--authorization-kubeconfig=%s", kubeConfigPath),
+			"-v=2",
+		}
+		for _, f := range featureGates {
+			c.Args = append(c.Args, fmt.Sprintf("--feature-gates=%s", f))
+		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
-	c.Args = []string{
-		fmt.Sprintf("--config=%s", configPath),
-		fmt.Sprintf("--cert-dir=%s", certWorkDir),
-		fmt.Sprintf("--port=0"),
-		fmt.Sprintf("--authentication-kubeconfig=%s", kubeConfigPath),
-		fmt.Sprintf("--authorization-kubeconfig=%s", kubeConfigPath),
-		"-v=2",
-	}
-	for _, f := range config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection) {
-		c.Args = append(c.Args, fmt.Sprintf("--feature-gates=%s", f))
-	}
-	c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 }
 
 func schedulerVolumeConfig() *corev1.Volume {
