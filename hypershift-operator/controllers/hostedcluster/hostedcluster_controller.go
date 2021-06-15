@@ -820,15 +820,15 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 	}
 
 	// Reconcile service
-	// TODO (alberto): enable nodePort choice at the hostedClusterAPI
+	// TODO (alberto): enable nDNSNamesodePort choice at the hostedClusterAPI
 	ignitionServerService := ignitionserver.Service(controlPlaneNamespace.Name)
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerService, func() error {
 		ignitionServerService.Spec.Ports = []corev1.ServicePort{
 			{
-				Name:       "http",
+				Name:       "https",
 				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(9090),
+				Port:       443,
+				TargetPort: intstr.FromString("https"),
 			},
 		}
 		ignitionServerService.Spec.Selector = map[string]string{
@@ -868,6 +868,21 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 	if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
 		r.Log.Info("ignition server reconciliation waiting for ignition server route to be assigned a host value")
 		return nil
+	}
+
+	// Reconcile a CA cert for trusting the server for the proxied requests to the MachineConfigServer Service.
+	// Uses https://github.com/openshift/service-ca-operator.
+	caCertProxyConfigMap := ignitionserver.IgnitionCACertProxyConfigMap(controlPlaneNamespace.Name)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, caCertProxyConfigMap, func() error {
+		if caCertProxyConfigMap.Annotations == nil {
+			caCertProxyConfigMap.Annotations = make(map[string]string)
+		}
+		caCertProxyConfigMap.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition CA cert proxy configmap: %w", err)
+	} else {
+		r.Log.Info("reconciled ignition CA cert proxy configmap", "result", result)
 	}
 
 	// Reconcile a root CA for ignition serving certificates. We only create this
@@ -993,6 +1008,16 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 							},
 						},
 						{
+							Name: "ca-cert-proxy",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: caCertProxyConfigMap.Name,
+									},
+								},
+							},
+						},
+						{
 							Name: "token",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
@@ -1011,10 +1036,12 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								"start",
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
+								"--ca-cert-proxy", "/var/run/secrets/ignition/ca-cert-proxy/service-ca.crt",
 								"--token-file", "/var/run/secrets/ignition/token/token",
 							},
 							Ports: []corev1.ContainerPort{
 								{
+									Name:          "https",
 									ContainerPort: 9090,
 								},
 							},
@@ -1022,6 +1049,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								{
 									Name:      "serving-cert",
 									MountPath: "/var/run/secrets/ignition/serving-cert",
+								},
+								{
+									Name:      "ca-cert-proxy",
+									MountPath: "/var/run/secrets/ignition/ca-cert-proxy",
 								},
 								{
 									Name:      "token",

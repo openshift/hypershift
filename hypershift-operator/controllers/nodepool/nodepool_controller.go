@@ -48,11 +48,12 @@ import (
 )
 
 const (
-	finalizer                = "hypershift.openshift.io/finalizer"
-	autoscalerMaxAnnotation  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
-	autoscalerMinAnnotation  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
-	nodePoolAnnotation       = "hypershift.openshift.io/nodePool"
-	payloadVersionAnnotation = "hypershift.openshift.io/payloadVersion"
+	finalizer                             = "hypershift.openshift.io/finalizer"
+	autoscalerMaxAnnotation               = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
+	autoscalerMinAnnotation               = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
+	nodePoolAnnotation                    = "hypershift.openshift.io/nodePool"
+	payloadVersionAnnotation              = "hypershift.openshift.io/payloadVersion"
+	machineConfigServerServingCertsSecret = "machine-config-server-serving-certs"
 )
 
 type NodePoolReconciler struct {
@@ -348,12 +349,19 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	r.Log.Info("Reconciling MCS Service")
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
+		// Requests serving certs.
+		// Uses https://github.com/openshift/service-ca-operator.
+		if mcsService.Annotations == nil {
+			mcsService.Annotations = make(map[string]string)
+		}
+		mcsService.Annotations["service.beta.openshift.io/serving-cert-secret-name"] = machineConfigServerServingCertsSecret
+
 		mcsService.Spec.Ports = []corev1.ServicePort{
 			{
-				Name:       "http",
+				Name:       "https",
 				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(8080),
+				Port:       443,
+				TargetPort: intstr.FromString("https"),
 			},
 		}
 
@@ -1160,11 +1168,6 @@ oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ prin
 						},
 						Ports: []corev1.ContainerPort{
 							{
-								Name:          "http",
-								ContainerPort: 8080,
-								Protocol:      corev1.ProtocolTCP,
-							},
-							{
 								Name:          "https",
 								ContainerPort: 8443,
 								Protocol:      corev1.ProtocolTCP,
@@ -1204,7 +1207,7 @@ oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ prin
 						Name: "mcs-tls",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: "machine-config-server",
+								SecretName: machineConfigServerServingCertsSecret,
 							},
 						},
 					},
