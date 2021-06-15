@@ -336,7 +336,7 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 					Name:      "test-secret",
 				},
 			}
-			err := reconcileAutoScalerDeployment(deployment, sa, secret, "test.io/test-image", test.AutoscalerOptions)
+			err := reconcileAutoScalerDeployment(deployment, sa, secret, test.AutoscalerOptions)
 			if err != nil {
 				t.Error(err)
 			}
