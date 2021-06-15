@@ -4,7 +4,7 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make
+RUN make build
 
 FROM quay.io/openshift/origin-base:4.7
 COPY --from=builder /hypershift/bin/ignition-server /usr/bin/ignition-server
