@@ -47,23 +47,3 @@ func (p *PKIParams) ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secre
 	}
 	return p.reconcileSignedCertWithAddresses(secret, ca, "packageserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
-
-func (p *PKIParams) ReconcileKonnectivityServerCertSecret(secret, ca *corev1.Secret) error {
-	dnsNames := []string{
-		"konnectivity-server",
-		fmt.Sprintf("konnectivity-server.%s.svc", p.Namespace),
-		fmt.Sprintf("konnectivity-server.%s.svc.cluster.local", p.Namespace),
-	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "konnectivity-server", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
-}
-
-func (p *PKIParams) ReconcileKonnectivityClusterCertSecret(secret, ca *corev1.Secret) error {
-	dnsNames := []string{}
-	ips := []string{}
-	if isNumericIP(p.ExternalKconnectivityAddress) {
-		ips = append(ips, p.ExternalKconnectivityAddress)
-	} else {
-		dnsNames = append(dnsNames, p.ExternalKconnectivityAddress)
-	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "konnectivity-server", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, ips)
-}

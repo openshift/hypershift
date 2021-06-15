@@ -25,3 +25,14 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	c.ReadinessProbes.ApplyTo(&deployment.Spec.Template.Spec)
 	c.Resources.ApplyTo(&deployment.Spec.Template.Spec)
 }
+
+func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
+	// replicas is not used for DaemonSets
+	c.Scheduling.ApplyTo(&daemonset.Spec.Template.Spec)
+	c.AdditionalLabels.ApplyTo(&daemonset.Spec.Template.ObjectMeta)
+	c.SecurityContexts.ApplyTo(&daemonset.Spec.Template.Spec)
+	c.Resources.ApplyTo(&daemonset.Spec.Template.Spec)
+	c.LivenessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
+	c.ReadinessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
+	c.Resources.ApplyTo(&daemonset.Spec.Template.Spec)
+}

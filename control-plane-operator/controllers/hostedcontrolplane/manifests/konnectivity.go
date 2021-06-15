@@ -23,3 +23,21 @@ func KonnectivityServerDeployment(ns string) *appsv1.Deployment {
 		},
 	}
 }
+
+func KonnectivityAgentDaemonSet() *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "konnectivity-agent",
+			Namespace: "kube-system",
+		},
+	}
+}
+
+func KonnectivityWorkerAgentDaemonSet(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-manifest-konnectivity-agent-daemonset",
+			Namespace: ns,
+		},
+	}
+}
