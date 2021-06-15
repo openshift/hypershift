@@ -62,7 +62,6 @@ func (c *clusterManifestContext) setupManifests() {
 	c.clusterVersionOperator()
 	c.openshiftControllerManager()
 	c.clusterBootstrap()
-	c.oauthOpenshiftServer()
 	c.dnsmasq()
 	c.registry()
 	c.operatorLifecycleManager()
@@ -78,56 +77,6 @@ func (c *clusterManifestContext) hostedClusterConfigOperator() {
 		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
 		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
 		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) serviceAdminKubeconfig() {
-	c.addManifestFiles(
-		"common/service-network-admin-kubeconfig-secret.yaml",
-	)
-}
-
-func (c *clusterManifestContext) etcd() {
-	c.addManifestFiles(
-		"etcd/etcd-cluster-crd.yaml",
-		"etcd/etcd-cluster.yaml",
-		"etcd/etcd-operator-cluster-role-binding.yaml",
-		"etcd/etcd-operator-cluster-role.yaml",
-		"etcd/etcd-operator-serviceaccount.yaml",
-		"etcd/etcd-operator.yaml",
-	)
-
-	for _, secret := range []string{"etcd-client", "server", "peer"} {
-		file := secret
-		if file != "etcd-client" {
-			file = "etcd-" + secret
-		}
-		params := map[string]string{
-			"secret": secret,
-			"file":   file,
-		}
-		content, err := c.substituteParams(params, "etcd/etcd-secret-template.yaml")
-		if err != nil {
-			panic(err.Error())
-		}
-		c.addManifest(file+"-tls-secret.yaml", content)
-	}
-}
-
-func (c *clusterManifestContext) oauthOpenshiftServer() {
-	c.addManifestFiles(
-		"oauth-openshift/oauth-browser-client.yaml",
-		"oauth-openshift/oauth-challenging-client.yaml",
-		"oauth-openshift/oauth-server-config-configmap.yaml",
-		"oauth-openshift/oauth-server-deployment.yaml",
-		"oauth-openshift/oauth-server-service.yaml",
-		"oauth-openshift/v4-0-config-system-branding.yaml",
-		"oauth-openshift/oauth-server-sessionsecret-secret.yaml",
-		"oauth-openshift/oauth-server-secret.yaml",
-		"oauth-openshift/oauth-server-configmap.yaml",
-	)
-	c.addUserManifestFiles(
-		"oauth-openshift/ingress-certs-secret.yaml",
 	)
 }
 
@@ -177,20 +126,6 @@ func (c *clusterManifestContext) dnsmasq() {
 	c.addManifestFiles(
 		"dnsmasq/dnsmasq-conf.configmap.yaml",
 		"dnsmasq/resolv-dnsmasq.configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) roksMetrics() {
-	c.addUserManifestFiles(
-		"roks-metrics/roks-metrics-00-namespace.yaml",
-		"roks-metrics/roks-metrics-deployment.yaml",
-		"roks-metrics/roks-metrics-rbac.yaml",
-		"roks-metrics/roks-metrics-service.yaml",
-		"roks-metrics/roks-metrics-serviceaccount.yaml",
-		"roks-metrics/roks-metrics-servicemonitor.yaml",
-		"roks-metrics/roks-metrics-push-gateway-deployment.yaml",
-		"roks-metrics/roks-metrics-push-gateway-service.yaml",
-		"roks-metrics/roks-metrics-push-gateway-servicemonitor.yaml",
 	)
 }
 
