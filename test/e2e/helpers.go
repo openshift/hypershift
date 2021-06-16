@@ -106,10 +106,8 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 
 	t.Logf("Waiting for hostedcluster %s/%s kubeconfig to be published", hostedCluster.Namespace, hostedCluster.Name)
 	var guestKubeConfigSecret corev1.Secret
-	waitForKubeConfigCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
 	err := wait.PollUntil(1*time.Second, func() (done bool, err error) {
-		err = client.Get(waitForKubeConfigCtx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+		err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		if err != nil {
 			return false, nil
 		}
@@ -120,11 +118,11 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 			Namespace: hostedCluster.Namespace,
 			Name:      hostedCluster.Status.KubeConfig.Name,
 		}
-		if err := client.Get(waitForKubeConfigCtx, key, &guestKubeConfigSecret); err != nil {
+		if err := client.Get(ctx, key, &guestKubeConfigSecret); err != nil {
 			return false, nil
 		}
 		return true, nil
-	}, waitForKubeConfigCtx.Done())
+	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "guest kubeconfig didn't become available")
 
 	// TODO: this key should probably be published or an API constant
@@ -157,10 +155,8 @@ func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client
 
 	t.Logf("Waiting for nodepool %s/%s nodes to become ready", nodePool.Namespace, nodePool.Name)
 	nodes := &corev1.NodeList{}
-	waitForNodesCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
 	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
-		err = client.List(waitForNodesCtx, nodes)
+		err = client.List(ctx, nodes)
 		if err != nil {
 			return false, nil
 		}
@@ -180,7 +176,7 @@ func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client
 		}
 		t.Logf("found %d ready nodes", len(nodes.Items))
 		return true, nil
-	}, waitForNodesCtx.Done())
+	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest nodes became ready")
 
 	t.Logf("All %d nodes for nodepool %s/%s appear to be ready", int(*nodePool.Spec.NodeCount), nodePool.Namespace, nodePool.Name)
@@ -191,10 +187,8 @@ func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crcl
 
 	t.Logf("Waiting for hostedcluster %s/%s operators to become ready", hostedCluster.Namespace, hostedCluster.Name)
 	clusterOperators := &configv1.ClusterOperatorList{}
-	waitForClusterOperatorsReadyCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
 	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
-		err = client.List(waitForClusterOperatorsReadyCtx, clusterOperators)
+		err = client.List(ctx, clusterOperators)
 		if err != nil {
 			t.Logf("failed to list cluster operators: %v", err)
 			return false, nil
@@ -231,7 +225,7 @@ func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crcl
 		}
 		t.Logf("guest cluster operators are ready")
 		return true, nil
-	}, waitForClusterOperatorsReadyCtx.Done())
+	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest cluster operators became ready")
 
 	t.Logf("All cluster operators for hostedcluster %s/%s appear to be ready", hostedCluster.Namespace, hostedCluster.Name)
