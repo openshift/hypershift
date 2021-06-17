@@ -99,5 +99,6 @@ func OpenShiftAPIServerAPIServiceGroups() []string {
 		"route",
 		"security",
 		"template",
+		"project",
 	}
 }
