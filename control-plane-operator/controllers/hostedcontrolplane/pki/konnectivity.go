@@ -18,7 +18,11 @@ func (p *PKIParams) ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret)
 }
 
 func (p *PKIParams) ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret) error {
-	dnsNames := []string{}
+	dnsNames := []string{
+		"konnectivity-server",
+		fmt.Sprintf("konnectivity-server.%s.svc", p.Namespace),
+		fmt.Sprintf("konnectivity-server.%s.svc.cluster.local", p.Namespace),
+	}
 	ips := []string{}
 	if isNumericIP(p.ExternalKconnectivityAddress) {
 		ips = append(ips, p.ExternalKconnectivityAddress)
@@ -32,9 +36,9 @@ func (p *PKIParams) ReconcileKonnectivityAgentSecret(secret, ca *corev1.Secret) 
 	return p.reconcileSignedCert(secret, ca, "konnectivity-agent", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
 }
 
-func (p *PKIParams) ReconcileKonnectivityWorkerAgentCertSecret(cm *corev1.ConfigMap, ca *corev1.Secret) error {
+func (p *PKIParams) ReconcileKonnectivityWorkerAgentSecret(cm *corev1.ConfigMap, ca *corev1.Secret) error {
 	util.EnsureOwnerRef(cm, p.OwnerReference)
-	secret := manifests.KonnectivityAgentSecret()
+	secret := manifests.KonnectivityAgentSecret("kube-system")
 	if err := p.ReconcileKonnectivityAgentSecret(secret, ca); err != nil {
 		return err
 	}

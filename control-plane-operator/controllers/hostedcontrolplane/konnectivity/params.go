@@ -19,6 +19,7 @@ type KonnectivityParams struct {
 	ExternalPort            int32
 	OwnerRef                config.OwnerRef
 	ServerDeploymentConfig  config.DeploymentConfig
+	AgentDeploymentConfig   config.DeploymentConfig
 	AgentDeamonSetConfig    config.DeploymentConfig
 }
 
@@ -39,6 +40,15 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.ServerDeploymentConfig.Replicas = 1
+	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
+		konnectivityServerContainer().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		},
+	}
+	p.AgentDeploymentConfig.Replicas = 1
 	p.AgentDeamonSetConfig.Resources = config.ResourcesSpec{
 		konnectivityServerContainer().Name: {
 			Requests: corev1.ResourceList{

@@ -1046,11 +1046,19 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	}
 
 	// Konnectivity Agent Cert
+	konnectivityAgentSecret := manifests.KonnectivityAgentSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityAgentSecret, func() error {
+		return p.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
+	}
+
+	// Konnectivity Worker Agent Cert
 	konnectivityWorkerAgentSecret := manifests.KonnectivityWorkerAgentSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityWorkerAgentSecret, func() error {
-		return p.ReconcileKonnectivityWorkerAgentCertSecret(konnectivityWorkerAgentSecret, rootCASecret)
+		return p.ReconcileKonnectivityWorkerAgentSecret(konnectivityWorkerAgentSecret, rootCASecret)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
+		return fmt.Errorf("failed to reconcile konnectivity worker agent cert: %w", err)
 	}
 
 	// Ingress Cert
@@ -1213,6 +1221,12 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 		return konnectivity.ReconcileServerLocalService(serverLocalService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server local service: %w", err)
+	}
+	agentDeployment := manifests.KonnectivityAgentDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, agentDeployment, func() error {
+		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity agent deployment: %w", err)
 	}
 	agentDaemonSet := manifests.KonnectivityWorkerAgentDaemonSet(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, agentDaemonSet, func() error {

@@ -36,7 +36,7 @@ func egressSelectorConfiguration() *kasv1beta1.EgressSelectorConfiguration {
 					ProxyProtocol: kasv1beta1.ProtocolGRPC,
 					Transport: &kasv1beta1.Transport{
 						TCP: &kasv1beta1.TCPTransport{
-							URL:       fmt.Sprintf("https://kconnectivity-server:%d", konnectivity.KonnectivityServerPort),
+							URL:       fmt.Sprintf("https://kconnectivity-server-local:%d", konnectivity.KonnectivityServerPort),
 							TLSConfig: &kasv1beta1.TLSConfig{},
 						},
 					},
