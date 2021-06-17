@@ -176,11 +176,11 @@ func KonnectivityClusterSecret(ns string) *corev1.Secret {
 	}
 }
 
-func KonnectivityAgentSecret() *corev1.Secret {
+func KonnectivityAgentSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "konnectivity-agent",
-			Namespace: "kube-system",
+			Namespace: ns,
 		},
 	}
 }
