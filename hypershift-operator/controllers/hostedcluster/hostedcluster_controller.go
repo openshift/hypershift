@@ -378,6 +378,39 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		})
 	}
 
+	// Reconcile the HostedControlPlane audit webhook config if specified
+	// reference from the HostedCluster and syncing the secret in the control plane namespace.
+	{
+		if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
+			var src corev1.Secret
+			if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.AuditWebhook.Name}, &src); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to get audit webhook config %s: %w", hcluster.Spec.AuditWebhook.Name, err)
+			}
+			configData, ok := src.Data[hyperv1.AuditWebhookKubeconfigKey]
+			if !ok {
+				return ctrl.Result{}, fmt.Errorf("audit webhook secret does not contain key %s", hyperv1.AuditWebhookKubeconfigKey)
+			}
+
+			hostedControlPlaneAuditWebhookSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlPlaneNamespace.Name,
+					Name:      src.Name,
+				},
+			}
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneAuditWebhookSecret, func() error {
+				if hostedControlPlaneAuditWebhookSecret.Data == nil {
+					hostedControlPlaneAuditWebhookSecret.Data = map[string][]byte{}
+				}
+				hostedControlPlaneAuditWebhookSecret.Data[hyperv1.AuditWebhookKubeconfigKey] = configData
+				hostedControlPlaneAuditWebhookSecret.Type = corev1.SecretTypeOpaque
+				return nil
+			})
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed reconciling audit webhook secret: %w", err)
+			}
+		}
+	}
+
 	// Reconcile the HostedControlPlane signing key by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	if len(hcluster.Spec.SigningKey.Name) > 0 {
@@ -571,6 +604,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
+	}
+	if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
+		hcp.Spec.AuditWebhook = hcluster.Spec.AuditWebhook.DeepCopy()
 	}
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
 	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
