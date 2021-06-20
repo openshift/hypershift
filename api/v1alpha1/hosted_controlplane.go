@@ -49,6 +49,8 @@ type HostedControlPlaneSpec struct {
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
 	Services []ServicePublishingStrategyMapping `json:"services"`
+
+	Etcd EtcdSpec `json:"etcd"`
 }
 
 type AvailabilityPolicy string

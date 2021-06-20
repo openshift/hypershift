@@ -55,6 +55,35 @@ spec:
                 required:
                 - baseDomain
                 type: object
+              etcd:
+                properties:
+                  managed:
+                    type: object
+                  managementType:
+                    description: One of Managed or Unmanaged
+                    type: string
+                  unmanaged:
+                    properties:
+                      endpoint:
+                        type: string
+                      tls:
+                        properties:
+                          clientCert:
+                            description: Refers to a secret for authenticating to the etcd server Contains the cert, key, CA cert.
+                            properties:
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                                type: string
+                            type: object
+                        required:
+                        - clientCert
+                        type: object
+                    required:
+                    - tls
+                    type: object
+                required:
+                - managementType
+                type: object
               infraID:
                 type: string
               issuerURL:
@@ -256,6 +285,7 @@ spec:
                 type: object
             required:
             - dns
+            - etcd
             - infraID
             - issuerURL
             - machineCIDR

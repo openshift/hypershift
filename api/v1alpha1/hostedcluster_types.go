@@ -57,6 +57,8 @@ type HostedClusterSpec struct {
 	// Defaults to SingleReplica when not set.
 	// +optional
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
+
+	Etcd EtcdSpec `json:"etcd"`
 }
 
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
@@ -251,6 +253,41 @@ type ClusterAutoscaling struct {
 	// default: -10
 	// More info: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
+}
+
+// EtcdManagementType ...
+type EtcdManagementType string
+
+const (
+	Managed   EtcdManagementType = "Managed"
+	Unmanaged EtcdManagementType = "Unmanaged"
+)
+
+type EtcdSpec struct {
+	// One of Managed or Unmanaged
+	ManagementType EtcdManagementType `json:"managementType"`
+
+	Managed *ManagedEtcdSpec `json:"managed,omitempty"`
+
+	Unmanaged *UnmanagedEtcdSpec `json:"unmanaged,omitempty"`
+}
+
+type ManagedEtcdSpec struct {
+
+	// Here is where various managed stuff could be configured
+	// including backup policies?
+}
+
+type UnmanagedEtcdSpec struct {
+	Endpoint string `json:"endpoint,omitempty"`
+
+	TLS EtcdTLSConfig `json:"tls"`
+}
+
+type EtcdTLSConfig struct {
+	// Refers to a secret for authenticating to the etcd server
+	// Contains the cert, key, CA cert.
+	ClientCert corev1.LocalObjectReference `json:"clientCert"`
 }
 
 const (
