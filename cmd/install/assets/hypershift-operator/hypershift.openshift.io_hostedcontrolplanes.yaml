@@ -37,6 +37,13 @@ spec:
           spec:
             description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
             properties:
+              auditWebhook:
+                description: AuditWebhook contains metadata for configuring an audit webhook endpoint for a cluster to process cluster audit events. It references a secret that contains the webhook information for the audit webhook endpoint. It is a secret because if the endpoint has MTLS the kubeconfig will contain client keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
               controllerAvailabilityPolicy:
                 description: ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode Defaults to SingleReplica when not set
                 type: string
