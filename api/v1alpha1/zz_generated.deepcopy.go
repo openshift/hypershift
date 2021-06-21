@@ -350,6 +350,11 @@ func (in *HostedClusterSpec) DeepCopyInto(out *HostedClusterSpec) {
 	*out = *in
 	out.Release = in.Release
 	out.PullSecret = in.PullSecret
+	if in.AuditWebhook != nil {
+		in, out := &in.AuditWebhook, &out.AuditWebhook
+		*out = new(v1.LocalObjectReference)
+		**out = **in
+	}
 	out.SigningKey = in.SigningKey
 	out.SSHKey = in.SSHKey
 	out.Networking = in.Networking
@@ -501,6 +506,11 @@ func (in *HostedControlPlaneSpec) DeepCopyInto(out *HostedControlPlaneSpec) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.AuditWebhook != nil {
+		in, out := &in.AuditWebhook, &out.AuditWebhook
+		*out = new(v1.LocalObjectReference)
+		**out = **in
 	}
 }
 

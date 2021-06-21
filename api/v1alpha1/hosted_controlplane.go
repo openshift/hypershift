@@ -49,6 +49,15 @@ type HostedControlPlaneSpec struct {
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
 	Services []ServicePublishingStrategyMapping `json:"services"`
+
+	// AuditWebhook contains metadata for configuring an audit webhook
+	// endpoint for a cluster to process cluster audit events. It references
+	// a secret that contains the webhook information for the audit webhook endpoint.
+	// It is a secret because if the endpoint has MTLS the kubeconfig will contain client
+	// keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored
+	// in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.
+	// +optional
+	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 }
 
 type AvailabilityPolicy string

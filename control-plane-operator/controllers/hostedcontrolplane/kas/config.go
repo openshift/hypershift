@@ -3,6 +3,7 @@ package kas
 import (
 	"encoding/json"
 	"fmt"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"path"
 
 	corev1 "k8s.io/api/core/v1"
@@ -113,6 +114,10 @@ func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServer
 	}
 	if p.CloudProvider != "" {
 		args.Set("cloud-provider", p.CloudProvider)
+	}
+	if p.AuditWebhookEnabled {
+		args.Set("audit-webhook-config-file", auditWebhookConfigFile())
+		args.Set("audit-webhook-mode", "batch")
 	}
 	//args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
@@ -302,4 +307,9 @@ func requestHeaderAllowedNames() []string {
 
 func jwksURL(issuerURL string) string {
 	return fmt.Sprintf("%s/openid/v1/jwks", issuerURL)
+}
+
+func auditWebhookConfigFile() string {
+	cfgDir := kasAuditWebhookConfigFileVolumeMount.Path(kasContainerMain().Name, kasAuditWebhookConfigFileVolume().Name)
+	return path.Join(cfgDir, hyperv1.AuditWebhookKubeconfigKey)
 }
