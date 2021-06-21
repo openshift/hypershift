@@ -279,7 +279,7 @@ type ManagedEtcdSpec struct {
 }
 
 type UnmanagedEtcdSpec struct {
-	Endpoint string `json:"endpoint,omitempty"`
+	Endpoint string `json:"endpoint"`
 
 	TLS EtcdTLSConfig `json:"tls"`
 }

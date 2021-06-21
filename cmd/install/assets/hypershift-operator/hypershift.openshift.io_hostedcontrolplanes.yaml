@@ -79,6 +79,7 @@ spec:
                         - clientCert
                         type: object
                     required:
+                    - endpoint
                     - tls
                     type: object
                 required:
