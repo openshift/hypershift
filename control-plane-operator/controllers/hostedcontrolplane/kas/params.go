@@ -2,6 +2,7 @@ package kas
 
 import (
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -127,6 +128,14 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 			ClusterConfigOperator: images["cluster-config-operator"],
 			VPN:                   images["vpn"],
 		},
+	}
+	if hcp.Annotations != nil {
+		if _, ok := hcp.Annotations[hyperv1.SecurePortOverrideAnnotation]; ok {
+			portNumber, err := strconv.ParseInt(hcp.Annotations[hyperv1.SecurePortOverrideAnnotation], 10, 32)
+			if err == nil {
+				params.APIServerPort = int32(portNumber)
+			}
+		}
 	}
 	switch hcp.Spec.Etcd.ManagementType {
 	case hyperv1.Unmanaged:
