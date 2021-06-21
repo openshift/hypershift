@@ -679,10 +679,10 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.Services = hcluster.Spec.Services
 	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
 	hcp.Spec.Etcd.ManagementType = hcluster.Spec.Etcd.ManagementType
-	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged && hcp.Spec.Etcd.Unmanaged != nil {
+	if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged && hcluster.Spec.Etcd.Unmanaged != nil {
 		hcp.Spec.Etcd.Unmanaged = hcluster.Spec.Etcd.Unmanaged.DeepCopy()
 	}
-	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed && hcp.Spec.Etcd.Managed != nil {
+	if hcluster.Spec.Etcd.ManagementType == hyperv1.Managed && hcluster.Spec.Etcd.Managed != nil {
 		hcp.Spec.Etcd.Managed = hcluster.Spec.Etcd.Managed.DeepCopy()
 	}
 
