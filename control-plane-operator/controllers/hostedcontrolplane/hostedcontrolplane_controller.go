@@ -194,8 +194,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				}
 				newCondition = cond
 			}
-			newCondition.ObservedGeneration = hostedControlPlane.Generation
-			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 		case hyperv1.Unmanaged:
 			newCondition = metav1.Condition{
 				Type:    string(hyperv1.EtcdAvailable),
@@ -203,8 +201,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				Reason:  etcd.EtcdReasonRunning,
 				Message: "Etcd cluster is assumed to be running in unmanaged state",
 			}
-			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
 	// Reconcile Kube APIServer status
