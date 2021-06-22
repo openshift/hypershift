@@ -87,7 +87,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 
 	ownerRef.ApplyTo(deployment)
 	maxSurge := intstr.FromInt(3)
-	maxUnavailable := intstr.FromInt(1)
+	maxUnavailable := intstr.FromInt(0)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: kasLabels,
