@@ -1362,6 +1362,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.NamedCertificates(),
 			p.CloudProviderConfig,
 			p.Images,
+			p.AuditWebhookRef,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
