@@ -10,11 +10,11 @@ import (
 
 func (p *PKIParams) ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret) error {
 	dnsNames := []string{
-		"konnectivity-server",
-		fmt.Sprintf("konnectivity-server.%s.svc", p.Namespace),
-		fmt.Sprintf("konnectivity-server.%s.svc.cluster.local", p.Namespace),
+		"konnectivity-server-local",
+		fmt.Sprintf("konnectivity-server-local.%s.svc", p.Namespace),
+		fmt.Sprintf("konnectivity-server-local.%s.svc.cluster.local", p.Namespace),
 	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "konnectivity-server", "kubernetes", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
+	return p.reconcileSignedCertWithAddresses(secret, ca, "konnectivity-server-local", "kubernetes", X509DefaultUsage, X509UsageServerAuth, dnsNames, nil)
 }
 
 func (p *PKIParams) ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret) error {
@@ -29,7 +29,11 @@ func (p *PKIParams) ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret
 	} else {
 		dnsNames = append(dnsNames, p.ExternalKconnectivityAddress)
 	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "konnectivity-server", "kubernetes", X509SignerUsage, X509UsageClientServerAuth, dnsNames, ips)
+	return p.reconcileSignedCertWithAddresses(secret, ca, "konnectivity-server", "kubernetes", X509DefaultUsage, X509UsageServerAuth, dnsNames, ips)
+}
+
+func (p *PKIParams) ReconcileKonnectivityClientSecret(secret, ca *corev1.Secret) error {
+	return p.reconcileSignedCert(secret, ca, "konnectivity-client", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
 }
 
 func (p *PKIParams) ReconcileKonnectivityAgentSecret(secret, ca *corev1.Secret) error {

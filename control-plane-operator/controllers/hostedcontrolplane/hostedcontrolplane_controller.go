@@ -401,7 +401,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Reconcile Konnectivity
 	r.Log.Info("Reconciling Konnectivity")
-	if err = r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImage, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort); err != nil {
+	if err = r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImage, infraStatus); err != nil {
 		r.Log.Error(err, "failed to reconcile konnectivity")
 		return ctrl.Result{}, err
 	}
@@ -1045,6 +1045,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
 	}
 
+	// Konnectivity Client Cert
+	konnectivityClientSecret := manifests.KonnectivityClientSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityClientSecret, func() error {
+		return p.ReconcileKonnectivityClientSecret(konnectivityClientSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity client cert: %w", err)
+	}
+
 	// Konnectivity Agent Cert
 	konnectivityAgentSecret := manifests.KonnectivityAgentSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityAgentSecret, func() error {
@@ -1207,9 +1215,9 @@ func (r *HostedControlPlaneReconciler) reconcileVPN(ctx context.Context, hcp *hy
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, address string, port int32) error {
+func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus) error {
 	r.Log.Info("Reconciling Konnectivity")
-	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), address, port)
+	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), infraStatus.KonnectivityHost, infraStatus.KonnectivityPort)
 	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
 		return konnectivity.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.ServerDeploymentConfig, p.KonnectivityServerImage)
@@ -1223,8 +1231,13 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 		return fmt.Errorf("failed to reconcile konnectivity server local service: %w", err)
 	}
 	agentDeployment := manifests.KonnectivityAgentDeployment(hcp.Namespace)
+	ips := []string{
+		infraStatus.OpenShiftAPIHost,
+		infraStatus.OauthAPIServerHost,
+		infraStatus.PackageServerAPIAddress,
+	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, agentDeployment, func() error {
-		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage)
+		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage, ips)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity agent deployment: %w", err)
 	}
@@ -1307,6 +1320,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.ConfigParams())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server config: %w", err)
+	}
+
+	kubeAPIServerEgressSelectorConfig := manifests.KASEgressSelectorConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerEgressSelectorConfig, func() error {
+		return kas.ReconcileEgressSelectorConfig(kubeAPIServerEgressSelectorConfig, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server egress selector config: %w", err)
 	}
 
 	oauthMetadata := manifests.KASOAuthMetadata(hcp.Namespace)

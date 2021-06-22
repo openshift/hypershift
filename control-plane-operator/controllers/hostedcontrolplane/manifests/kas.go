@@ -79,6 +79,15 @@ func KASAuditConfig(controlPlaneNamespace string) *corev1.ConfigMap {
 	}
 }
 
+func KASEgressSelectorConfig(controlPlaneNamespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kas-egress-selector-config",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
 func KASConfig(controlPlaneNamespace string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
