@@ -305,6 +305,10 @@ type EtcdTLSConfig struct {
 }
 
 const (
+	// HostedClusterAvailable indicates whether the HostedCluster has a healthy
+	// control plane.
+	HostedClusterAvailable ConditionType = "Available"
+
 	// IgnitionEndpointAvailable indicates whether the ignition server for the
 	// HostedCluster is available to handle ignition requests.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"

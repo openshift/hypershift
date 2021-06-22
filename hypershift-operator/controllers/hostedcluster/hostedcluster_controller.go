@@ -1950,12 +1950,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 	// Determine whether the hosted control plane is available.
 	hcpAvailable := false
 	if hcp != nil {
-		for _, cond := range hcp.Status.Conditions {
-			if cond.Type == hyperv1.Available && cond.Status == hyperv1.ConditionTrue {
-				hcpAvailable = true
-				break
-			}
-		}
+		hcpAvailable = meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
 	}
 
 	// Determine whether the kubeconfig is available.
@@ -1968,7 +1963,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 	switch {
 	case hcpAvailable && kubeConfigAvailable:
 		return metav1.Condition{
-			Type:               string(hyperv1.Available),
+			Type:               string(hyperv1.HostedClusterAvailable),
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: hcluster.Generation,
 			Reason:             "HostedClusterIsAvailable",
@@ -1982,7 +1977,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 			messages = append(messages, "the hosted control plane kubeconfig is unavailable")
 		}
 		return metav1.Condition{
-			Type:               string(hyperv1.Available),
+			Type:               string(hyperv1.HostedClusterAvailable),
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: hcluster.Generation,
 			Reason:             "HostedClusterIsUnavailable",

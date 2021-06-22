@@ -10,15 +10,14 @@ import (
 	"math/big"
 	"math/rand"
 	"net/url"
-	"reflect"
 	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 
-	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
 	"golang.org/x/crypto/bcrypt"
@@ -56,28 +55,17 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
-	hcputil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/vpn"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 )
 
 const (
-	finalizer                   = "hypershift.openshift.io/finalizer"
-	controlPlaneAnnotation      = "hypershift.openshift.io/hosted-control-plane"
-	DefaultAdminKubeconfigName  = "admin-kubeconfig"
-	DefaultAdminKubeconfigKey   = "kubeconfig"
-	ingressOperatorNamespace    = "openshift-ingress-operator"
-	hypershiftRouteLabel        = "hypershift.openshift.io/cluster"
-	oauthBrandingManifest       = "v4-0-config-system-branding.yaml"
-	DefaultAPIServerIPAddress   = "172.20.0.1"
-	etcdClusterSize             = 1
-	infrastructureCheckInterval = 5 * time.Second
-	etcdDeleteCheckInterval     = 10 * time.Second
-	etcdAvailableCheckInterval  = 10 * time.Second
-	kasAvailableCheckInterval   = 10 * time.Second
-
-	kubeAPIServerPort = 6443
+	finalizer                  = "hypershift.openshift.io/finalizer"
+	DefaultAdminKubeconfigName = "admin-kubeconfig"
+	DefaultAdminKubeconfigKey  = "kubeconfig"
+	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
+	DefaultAPIServerIPAddress  = "172.20.0.1"
 )
 
 var (
@@ -87,12 +75,7 @@ var (
 		"oauth-server-service.yaml",
 		"kube-apiserver-service.yaml",
 	)
-
-	version46 = semver.MustParse("4.6.0")
 )
-
-// NoopReconcile is just a default mutation function that does nothing.
-var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type InfrastructureStatus struct {
 	APIHost                 string
@@ -135,6 +118,8 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
 		Watches(&source.Kind{Type: &etcdv1.EtcdCluster{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager %w", err)
@@ -143,43 +128,6 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	r.recorder = mgr.GetEventRecorderFor("hosted-control-plane-controller")
 
 	return nil
-}
-
-func (r *HostedControlPlaneReconciler) setAvailableCondition(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, oldStatus *hyperv1.HostedControlPlaneStatus,
-	status hyperv1.ConditionStatus, reason, message string, result ctrl.Result, err error) (ctrl.Result, error) {
-	conditions := &hostedControlPlane.Status.Conditions
-
-	hcputil.SetConditionByType(conditions, hyperv1.Available, status, reason, message)
-
-	// Sync status.ready with Available condition
-	condition := hcputil.GetConditionByType(*conditions, hyperv1.Available)
-	if condition != nil && condition.Status == hyperv1.ConditionTrue {
-		hostedControlPlane.Status.Ready = true
-	} else {
-		hostedControlPlane.Status.Ready = false
-	}
-	if updateErr := r.updateStatus(ctx, hostedControlPlane, oldStatus); updateErr != nil {
-		r.Log.Error(updateErr, "failed to update status")
-		result.Requeue = true
-	}
-	return result, err
-}
-
-func (r *HostedControlPlaneReconciler) updateStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, oldStatus *hyperv1.HostedControlPlaneStatus) error {
-	conditions := &hostedControlPlane.Status.Conditions
-	if reflect.DeepEqual(oldStatus, hostedControlPlane.Status) {
-		// No change to status, nothing to sync
-		return nil
-	}
-
-	// Check for changed conditions to update LastTransitionTime
-	for k, condition := range *conditions {
-		oldCondition := hcputil.GetConditionByType(oldStatus.Conditions, condition.Type)
-		if oldCondition == nil || *oldCondition != condition {
-			(*conditions)[k].LastTransitionTime = metav1.Now()
-		}
-	}
-	return r.Status().Update(ctx, hostedControlPlane)
 }
 
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -211,24 +159,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	oldStatus := hostedControlPlane.Status.DeepCopy()
-
-	// Fetch the Cluster.
-	cluster, err := util.GetOwnerCluster(ctx, r.Client, hostedControlPlane.ObjectMeta)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if cluster == nil {
-		r.Log.Info("Cluster Controller has not yet set OwnerRef")
-		return ctrl.Result{}, nil
-	}
-
-	if util.IsPaused(cluster, hostedControlPlane) {
-		r.Log.Info("HostedControlPlane or linked Cluster is marked as paused. Won't reconcile")
-		return ctrl.Result{}, nil
-	}
-
 	// Ensure the hostedControlPlane has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
 		controllerutil.AddFinalizer(hostedControlPlane, finalizer)
@@ -237,232 +167,153 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	r.Log = r.Log.WithValues("cluster", cluster.Name)
-	var infraStatus InfrastructureStatus
-	{
-		r.Log.Info("Reconciling infrastructure status")
-		infraStatus, err = r.reconcileInfrastructureStatus(ctx, hostedControlPlane)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile infrastructure status: %w", err)
-		}
-		if infraStatus.IsReady() {
-			hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
-				Host: infraStatus.APIHost,
-				Port: infraStatus.APIPort,
-			}
-		} else {
-			r.Log.Info("Infrastructure is not yet ready")
-		}
-	}
-
-	r.Log.Info("Looking up release image metadata", "image", hostedControlPlane.Spec.ReleaseImage)
-	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer lookupCancel()
-	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
-	if err != nil {
-		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ReleaseInfoLookupFailed", err.Error(), ctrl.Result{}, fmt.Errorf("failed to look up release info: %w", err))
-	}
-	componentVersions, err := releaseImage.ComponentVersions()
-	if err != nil {
-		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "InvalidComponentVersion", err.Error(), ctrl.Result{}, fmt.Errorf("invalid component versions found in release info: %w", err))
-	}
-	r.Log.Info("Found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", len(releaseImage.ComponentImages()), "componentVersions", componentVersions)
-
-	if hostedControlPlane.Status.Version == "" {
-		hostedControlPlane.Status.Version = releaseImage.Version()
-	}
-
-	// During an upgrade, if there's an old bootstrapper pod referring to the old
-	// image, delete the pod to make way for the new one to be rendered. This is
-	// a hack to avoid the refactoring of moving this pod into the hosted cluster
-	// config operator.
-	if hostedControlPlane.Spec.ReleaseImage != hostedControlPlane.Status.ReleaseImage {
-		var bootstrapPod corev1.Pod
-		err := r.Client.Get(ctx, types.NamespacedName{Namespace: hostedControlPlane.Namespace, Name: "manifests-bootstrapper"}, &bootstrapPod)
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to get manifests bootstrapper pod: %w", err)
-			}
-		} else {
-			currentImage := bootstrapPod.Spec.Containers[0].Image
-			latestImage, latestImageFound := releaseImage.ComponentImages()["cli"]
-			if latestImageFound && currentImage != latestImage {
-				err := r.Client.Delete(ctx, &bootstrapPod)
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to delete manifests bootstrapper pod: %w", err)
-				}
-				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name, "from", currentImage, "to", latestImage)
-			}
-		}
-	}
-
 	// Reconcile etcd cluster status
 	{
-		switch hostedControlPlane.Spec.Etcd.ManagementType {
-		case hyperv1.Managed:
-			etcdCluster := manifests.EtcdCluster(hostedControlPlane.Namespace)
-			var err error
-			if err = r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil && !apierrors.IsNotFound(err) {
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.EtcdAvailable),
+			Status: metav1.ConditionUnknown,
+			Reason: "EtcdStatusUnknown",
+		}
+		etcdCluster := manifests.EtcdCluster(hostedControlPlane.Namespace)
+		if err := r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil {
+			if apierrors.IsNotFound(err) {
+				newCondition = metav1.Condition{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionFalse,
+					Reason: "EtcdClusterNotFound",
+				}
+			} else {
 				return ctrl.Result{}, fmt.Errorf("failed to fetch etcd cluster %s/%s: %w", etcdCluster.Namespace, etcdCluster.Name, err)
 			}
-			if apierrors.IsNotFound(err) {
-				etcdCluster = nil
-			} else if !etcdCluster.DeletionTimestamp.IsZero() {
-				// Wait til etcd cluster is gone in case it's being deleted
-				return ctrl.Result{RequeueAfter: etcdDeleteCheckInterval}, nil
-			}
-			if err = etcd.ReconcileEtcdClusterStatus(ctx, r.Client, &hostedControlPlane.Status, etcdCluster); err != nil {
-				return ctrl.Result{}, err
-			}
-		case hyperv1.Unmanaged:
-			hcputil.SetConditionByType(&hostedControlPlane.Status.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionTrue, etcd.EtcdReasonRunning, "Etcd cluster is assumed to be running in unmanaged state")
-		}
-		if err = r.updateStatus(ctx, hostedControlPlane, oldStatus); err != nil {
-			return ctrl.Result{}, err
 		} else {
-			oldStatus = hostedControlPlane.Status.DeepCopy()
+			cond, err := etcd.ComputeEtcdClusterStatus(ctx, r.Client, etcdCluster)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to compute etcd cluster status: %w", err)
+			}
+			newCondition = cond
 		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
+
 	// Reconcile Kube APIServer status
 	{
-		kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
-		var err error
-		if err = r.Get(ctx, client.ObjectKeyFromObject(kubeAPIServerDeployment), kubeAPIServerDeployment); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to fetch Kube APIServer deployment %s/%s: %w", kubeAPIServerDeployment.Namespace, kubeAPIServerDeployment.Name, err)
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.KubeAPIServerAvailable),
+			Status: metav1.ConditionUnknown,
+			Reason: "StatusUnknown",
 		}
-		if apierrors.IsNotFound(err) {
-			kubeAPIServerDeployment = nil
-		}
-		kas.ReconcileKubeAPIServerDeploymentStatus(ctx, &hostedControlPlane.Status, kubeAPIServerDeployment)
-		if err = r.updateStatus(ctx, hostedControlPlane, oldStatus); err != nil {
-			return ctrl.Result{}, err
+		deployment := manifests.KASDeployment(hostedControlPlane.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
+			if apierrors.IsNotFound(err) {
+				newCondition = metav1.Condition{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionFalse,
+					Reason: "DeploymentNotFound",
+				}
+			} else {
+				return ctrl.Result{}, fmt.Errorf("failed to fetch Kube APIServer deployment %s/%s: %w", deployment.Namespace, deployment.Name, err)
+			}
 		} else {
-			oldStatus = hostedControlPlane.Status.DeepCopy()
-		}
-	}
-
-	r.Log.Info("Reconciling infrastructure services")
-	if err := r.reconcileInfrastructure(ctx, hostedControlPlane); err != nil {
-		r.Log.Error(err, "failed to ensure infrastructure")
-		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "InfrastructureEnsureFailed", err.Error(), ctrl.Result{}, fmt.Errorf("failed to ensure infrastructure: %w", err))
-	}
-	if !infraStatus.IsReady() {
-		r.Log.Info("Cluster infrastructure is still provisioning, will try again later")
-		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "WaitingOnInfrastructureReady", "Cluster infrastructure is still provisioning", ctrl.Result{RequeueAfter: infrastructureCheckInterval}, nil)
-	}
-
-	// Reconcile PKI
-	r.Log.Info("Reconciling PKI")
-	if err = r.reconcilePKI(ctx, hostedControlPlane, infraStatus); err != nil {
-		r.Log.Error(err, "failed to reconcile PKI")
-	}
-
-	// Reconcile Cloud Provider Config
-	r.Log.Info("Reconciling cloud provider config")
-	if err = r.reconcileCloudProviderConfig(ctx, hostedControlPlane); err != nil {
-		r.Log.Error(err, "failed to reconcile cloud provider config")
-	}
-
-	// Reconcile OIDC Route
-	for _, service := range hostedControlPlane.Spec.Services {
-		if service.Service != hyperv1.OIDC {
-			continue
-		}
-		switch service.Type {
-		case hyperv1.Route:
-			r.Log.Info("Reconciling OIDC Route servicetype resources")
-			if err := r.reconcileOIDCRouteResources(ctx, hostedControlPlane); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile OIDC route: %w", err)
+			// Assume the deployment is unavailable until proven otherwise.
+			newCondition = metav1.Condition{
+				Type:   string(hyperv1.KubeAPIServerAvailable),
+				Status: metav1.ConditionFalse,
+				Reason: "DeploymentStatusUnknown",
 			}
-		case hyperv1.None:
-			r.Log.Info("OIDC Route is disabled")
+			for _, cond := range deployment.Status.Conditions {
+				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+					newCondition = metav1.Condition{
+						Type:   string(hyperv1.KubeAPIServerAvailable),
+						Status: metav1.ConditionTrue,
+						Reason: "AsExpected",
+					}
+					break
+				}
+			}
 		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
-	// Reconcile etcd
-	r.Log.Info("Reconciling Etcd")
-	if err = r.reconcileEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
-		r.Log.Error(err, "failed to reconcile etcd")
-		return ctrl.Result{}, err
-	}
+	// Reconcile hostedcontrolplane availability and Ready flag
 	{
-		etcdAvailable := hcputil.GetConditionByType(hostedControlPlane.Status.Conditions, hyperv1.EtcdAvailable)
-		if etcdAvailable == nil || etcdAvailable.Status != hyperv1.ConditionTrue {
-			r.Log.Info("etcd is not yet available")
-			msg := "Etcd service not yet available"
-			if etcdAvailable != nil {
-				msg = etcdAvailable.Message
-			}
-			return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "EtcdNotAvailable", msg, ctrl.Result{RequeueAfter: etcdAvailableCheckInterval}, nil)
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.HostedControlPlaneAvailable),
+			Status: metav1.ConditionUnknown,
+			Reason: "StatusUnknown",
 		}
+		if meta.IsStatusConditionPresentAndEqual(hostedControlPlane.Status.Conditions, string(hyperv1.KubeAPIServerAvailable), metav1.ConditionTrue) &&
+			meta.IsStatusConditionPresentAndEqual(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdAvailable), metav1.ConditionTrue) {
+			hostedControlPlane.Status.Ready = true
+			newCondition = metav1.Condition{
+				Type:   string(hyperv1.HostedControlPlaneAvailable),
+				Status: metav1.ConditionTrue,
+				Reason: "AsExpected",
+			}
+		} else {
+			hostedControlPlane.Status.Ready = false
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.HostedControlPlaneAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  "ComponentsUnavailable",
+				Message: "Not all dependent components are available yet",
+			}
+		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
-	// Reconcile VPN
-	r.Log.Info("Reconciling VPN")
-	if err = r.reconcileVPN(ctx, hostedControlPlane, releaseImage, infraStatus.VPNHost, infraStatus.VPNPort); err != nil {
-		r.Log.Error(err, "failed to reconcile vpn")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile Konnectivity
-	r.Log.Info("Reconciling Konnectivity")
-	if err = r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImage, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort); err != nil {
-		r.Log.Error(err, "failed to reconcile konnectivity")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile kube apiserver
-	r.Log.Info("Reconciling Kube API Server")
-	if err = r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.OAuthHost, infraStatus.OAuthPort); err != nil {
-		r.Log.Error(err, "failed to reconcile kube apiserver")
-		return ctrl.Result{}, err
-	}
 	{
-		kasAvailable := hcputil.GetConditionByType(hostedControlPlane.Status.Conditions, hyperv1.KubeAPIServerAvailable)
-		if kasAvailable == nil || kasAvailable.Status != hyperv1.ConditionTrue {
-			r.Log.Info("Kube API server is not yet available")
-			msg := "Kube API server not yet available"
-			if kasAvailable != nil {
-				msg = kasAvailable.Message
-			}
-			return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "KubeAPIServerNotAvailable", msg, ctrl.Result{RequeueAfter: kasAvailableCheckInterval}, nil)
+		r.Log.Info("Reconciling infrastructure status")
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.InfrastructureReady),
+			Status: metav1.ConditionUnknown,
+			Reason: "StatusUnknown",
 		}
+		infraStatus, err := r.reconcileInfrastructureStatus(ctx, hostedControlPlane)
+		if err != nil {
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.InfrastructureReady),
+				Status:  metav1.ConditionUnknown,
+				Reason:  "InfraStatusFailure",
+				Message: err.Error(),
+			}
+			r.Log.Error(err, "failed to determine infrastructure status")
+		} else {
+			if infraStatus.IsReady() {
+				hostedControlPlane.Status.ControlPlaneEndpoint = hyperv1.APIEndpoint{
+					Host: infraStatus.APIHost,
+					Port: infraStatus.APIPort,
+				}
+				newCondition = metav1.Condition{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: "AsExpected",
+				}
+			} else {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.InfrastructureReady),
+					Status:  metav1.ConditionFalse,
+					Reason:  "WaitingOnInfrastructureReady",
+					Message: "Cluster infrastructure is still provisioning",
+				}
+				r.Log.Info("Infrastructure is not yet ready")
+			}
+		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
-	// Reconcile kube controller manager
-	r.Log.Info("Reconciling Kube Controller Manager")
-	if err = r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImage); err != nil {
-		r.Log.Error(err, "failed to reconcile kube controller manager")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile kube scheduler
-	r.Log.Info("Reconciling Kube Scheduler")
-	if err = r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImage); err != nil {
-		r.Log.Error(err, "failed to reconcile kube controller manager")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile openshift apiserver
-	r.Log.Info("Reconciling OpenShift API Server")
-	if err = r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.OpenShiftAPIHost); err != nil {
-		r.Log.Error(err, "failed to reconcile openshift apiserver")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile openshift oauth apiserver
-	r.Log.Info("Reconciling OpenShift OAuth API Server")
-	if err = r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.OauthAPIServerHost); err != nil {
-		r.Log.Error(err, "failed to reconcile openshift oauth apiserver")
-		return ctrl.Result{}, err
-	}
-
-	// Install the control plane into the infrastructure
-	r.Log.Info("Reconciling hosted control plane")
-	err = r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage)
-	if err != nil {
-		r.Log.Error(err, "failed to ensure control plane")
-		return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionFalse, "ControlPlaneEnsureFailed", err.Error(), ctrl.Result{}, fmt.Errorf("failed to ensure control plane: %w", err))
+	if hostedControlPlane.Status.Version == "" {
+		lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer lookupCancel()
+		releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
+		if err != nil {
+			r.Log.Error(err, "failed to look up release image metadata")
+		} else {
+			hostedControlPlane.Status.Version = releaseImage.Version()
+		}
 	}
 
 	if hostedControlPlane.Spec.KubeConfig != nil {
@@ -485,9 +336,170 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		hostedControlPlane.Status.LastReleaseImageTransitionTime = &now
 	}
 
+	// Always update status based on the current state of the world.
+	if err := r.Client.Status().Update(ctx, hostedControlPlane); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+
+	// Perform the hosted control plane reconciliation
+	if err := r.update(ctx, hostedControlPlane); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update control plane: %w", err)
+	}
+
 	r.Log.Info("Successfully reconciled")
-	oldStatus.Initialized = true
-	return r.setAvailableCondition(ctx, hostedControlPlane, oldStatus, hyperv1.ConditionTrue, "AsExpected", "HostedControlPlane is ready", ctrl.Result{}, nil)
+	return ctrl.Result{}, nil
+}
+
+func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
+	// If the cluster is marked paused, don't do any reconciliation work at all.
+	if cluster, err := util.GetOwnerCluster(ctx, r.Client, hostedControlPlane.ObjectMeta); err != nil {
+		return fmt.Errorf("failed to get owner cluster: %w", err)
+	} else {
+		if cluster == nil {
+			r.Log.Info("Cluster Controller has not yet set OwnerRef")
+			return nil
+		}
+		if util.IsPaused(cluster, hostedControlPlane) {
+			r.Log.Info("HostedControlPlane or linked Cluster is marked as paused. Won't reconcile")
+			return nil
+		}
+	}
+
+	r.Log.Info("Looking up release image metadata", "image", hostedControlPlane.Spec.ReleaseImage)
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer lookupCancel()
+	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
+	if err != nil {
+		return fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+	componentVersions, err := releaseImage.ComponentVersions()
+	if err != nil {
+		return fmt.Errorf("invalid component versions found in release info: %w", err)
+	}
+	r.Log.Info("Found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", len(releaseImage.ComponentImages()), "componentVersions", componentVersions)
+
+	// During an upgrade, if there's an old bootstrapper pod referring to the old
+	// image, delete the pod to make way for the new one to be rendered. This is
+	// a hack to avoid the refactoring of moving this pod into the hosted cluster
+	// config operator.
+	if hostedControlPlane.Spec.ReleaseImage != hostedControlPlane.Status.ReleaseImage {
+		var bootstrapPod corev1.Pod
+		err := r.Client.Get(ctx, types.NamespacedName{Namespace: hostedControlPlane.Namespace, Name: "manifests-bootstrapper"}, &bootstrapPod)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get manifests bootstrapper pod: %w", err)
+			}
+		} else {
+			currentImage := bootstrapPod.Spec.Containers[0].Image
+			latestImage, latestImageFound := releaseImage.ComponentImages()["cli"]
+			if latestImageFound && currentImage != latestImage {
+				err := r.Client.Delete(ctx, &bootstrapPod)
+				if err != nil {
+					return fmt.Errorf("failed to delete manifests bootstrapper pod: %w", err)
+				}
+				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name, "from", currentImage, "to", latestImage)
+			}
+		}
+	}
+
+	r.Log.Info("Reconciling infrastructure services")
+	if err := r.reconcileInfrastructure(ctx, hostedControlPlane); err != nil {
+		return fmt.Errorf("failed to ensure infrastructure: %w", err)
+	}
+	// Block here until infra status reports readiness
+	// TODO(dmace): This seems a bit heavy handed vs. making more granular bits no-op if
+	// they don't have the specific required inputs
+	infraStatus, err := r.reconcileInfrastructureStatus(ctx, hostedControlPlane)
+	if err != nil {
+		return fmt.Errorf("failed to look up infra status: %w", err)
+	}
+	if !infraStatus.IsReady() {
+		r.Log.Info("Waiting for infrastructure to be ready before proceeding")
+		return nil
+	}
+
+	// Reconcile PKI
+	r.Log.Info("Reconciling PKI")
+	if err := r.reconcilePKI(ctx, hostedControlPlane, infraStatus); err != nil {
+		return fmt.Errorf("failed to reconcile PKI: %w", err)
+	}
+
+	// Reconcile Cloud Provider Config
+	r.Log.Info("Reconciling cloud provider config")
+	if err := r.reconcileCloudProviderConfig(ctx, hostedControlPlane); err != nil {
+		return fmt.Errorf("failed to reconcile cloud provider config: %w", err)
+	}
+
+	// Reconcile OIDC Route
+	for _, service := range hostedControlPlane.Spec.Services {
+		if service.Service != hyperv1.OIDC {
+			continue
+		}
+		switch service.Type {
+		case hyperv1.Route:
+			r.Log.Info("Reconciling OIDC Route servicetype resources")
+			if err := r.reconcileOIDCRouteResources(ctx, hostedControlPlane); err != nil {
+				return fmt.Errorf("failed to reconcile OIDC route: %w", err)
+			}
+		case hyperv1.None:
+			r.Log.Info("OIDC Route is disabled")
+		}
+	}
+
+	// Reconcile etcd
+	r.Log.Info("Reconciling Etcd")
+	if err := r.reconcileEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile etcd: %w", err)
+	}
+
+	// Reconcile VPN
+	r.Log.Info("Reconciling VPN")
+	if err := r.reconcileVPN(ctx, hostedControlPlane, releaseImage, infraStatus.VPNHost, infraStatus.VPNPort); err != nil {
+		return fmt.Errorf("failed to reconcile vpn: %w", err)
+	}
+
+	// Reconcile Konnectivity
+	r.Log.Info("Reconciling Konnectivity")
+	if err := r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImage, infraStatus); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity: %w", err)
+	}
+
+	// Reconcile kube apiserver
+	r.Log.Info("Reconciling Kube API Server")
+	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.OAuthHost, infraStatus.OAuthPort); err != nil {
+		return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
+	}
+
+	// Reconcile kube controller manager
+	r.Log.Info("Reconciling Kube Controller Manager")
+	if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
+	}
+
+	// Reconcile kube scheduler
+	r.Log.Info("Reconciling Kube Scheduler")
+	if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
+	}
+
+	// Reconcile openshift apiserver
+	r.Log.Info("Reconciling OpenShift API Server")
+	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.OpenShiftAPIHost); err != nil {
+		return fmt.Errorf("failed to reconcile openshift apiserver: %w", err)
+	}
+
+	// Reconcile openshift oauth apiserver
+	r.Log.Info("Reconciling OpenShift OAuth API Server")
+	if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.OauthAPIServerHost); err != nil {
+		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+	}
+
+	// Install the control plane into the infrastructure
+	r.Log.Info("Reconciling hosted control plane")
+	if err := r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage); err != nil {
+		return fmt.Errorf("failed to ensure control plane: %w", err)
+	}
+	return nil
 }
 
 func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1050,6 +1062,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
 	}
 
+	// Konnectivity Client Cert
+	konnectivityClientSecret := manifests.KonnectivityClientSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityClientSecret, func() error {
+		return p.ReconcileKonnectivityClientSecret(konnectivityClientSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity client cert: %w", err)
+	}
+
 	// Konnectivity Agent Cert
 	konnectivityAgentSecret := manifests.KonnectivityAgentSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, konnectivityAgentSecret, func() error {
@@ -1108,92 +1128,72 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 }
 
 func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	switch hcp.Spec.Etcd.ManagementType {
-	case hyperv1.Unmanaged:
-		//reconcile client secret over
-		if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
-			return fmt.Errorf("etcd metadata not specified for unmanaged deployment")
-		}
-		var src corev1.Secret
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name}, &src); err != nil {
-			return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name, err)
-		}
-		if _, ok := src.Data["etcd-client.crt"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client cert", hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
-		}
-		if _, ok := src.Data["etcd-client.key"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client key", hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
-		}
-		if _, ok := src.Data["etcd-client-ca.crt"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
-		}
-		kubeComponentEtcdClientSecret := manifests.EtcdClientSecret(hcp.GetNamespace())
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, kubeComponentEtcdClientSecret, func() error {
-			if kubeComponentEtcdClientSecret.Data == nil {
-				kubeComponentEtcdClientSecret.Data = map[string][]byte{}
-			}
-			kubeComponentEtcdClientSecret.Data = src.Data
-			kubeComponentEtcdClientSecret.Type = corev1.SecretTypeOpaque
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed reconciling kube component etcd client secret: %w", err)
-		}
-	case hyperv1.Managed:
-		p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
 
-		// Etcd Operator ServiceAccount
-		operatorServiceAccount := manifests.EtcdOperatorServiceAccount(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorServiceAccount, func() error {
-			return etcd.ReconcileOperatorServiceAccount(operatorServiceAccount, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd operator service account: %w", err)
-		}
+	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
 
-		// Etcd operator role
-		operatorRole := manifests.EtcdOperatorRole(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRole, func() error {
-			operatorRole.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRole.OwnerReferences)
-			return etcd.ReconcileOperatorRole(operatorRole, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd operator role: %w", err)
-		}
+	// Etcd Operator ServiceAccount
+	operatorServiceAccount := manifests.EtcdOperatorServiceAccount(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorServiceAccount, func() error {
+		return etcd.ReconcileOperatorServiceAccount(operatorServiceAccount, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator service account: %w", err)
+	}
 
-		// Etcd operator rolebinding
-		operatorRoleBinding := manifests.EtcdOperatorRoleBinding(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRoleBinding, func() error {
-			operatorRoleBinding.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRoleBinding.OwnerReferences)
-			return etcd.ReconcileOperatorRoleBinding(operatorRoleBinding, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd operator role binding: %w", err)
-		}
+	// Etcd operator role
+	operatorRole := manifests.EtcdOperatorRole(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRole, func() error {
+		operatorRole.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRole.OwnerReferences)
+		return etcd.ReconcileOperatorRole(operatorRole, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator role: %w", err)
+	}
 
-		// Etcd operator deployment
-		operatorDeployment := manifests.EtcdOperatorDeployment(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorDeployment, func() error {
-			operatorDeployment.OwnerReferences = ensureHCPOwnerRef(hcp, operatorDeployment.OwnerReferences)
-			return etcd.ReconcileOperatorDeployment(operatorDeployment, p.OwnerRef, p.OperatorDeploymentConfig, p.EtcdOperatorImage)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd operator deployment: %w", err)
-		}
+	// Etcd operator rolebinding
+	operatorRoleBinding := manifests.EtcdOperatorRoleBinding(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRoleBinding, func() error {
+		operatorRoleBinding.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRoleBinding.OwnerReferences)
+		return etcd.ReconcileOperatorRoleBinding(operatorRoleBinding, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator role binding: %w", err)
+	}
 
-		// Etcd cluster
-		etcdCluster := manifests.EtcdCluster(hcp.Namespace)
-		etcdAvailableCond := hcputil.GetConditionByType(hcp.Status.Conditions, hyperv1.EtcdAvailable)
-		if etcdAvailableCond != nil && etcdAvailableCond.Status == hyperv1.ConditionFalse && etcdAvailableCond.Reason == etcd.EtcdReasonFailed {
-			if err := r.Delete(ctx, etcdCluster); err != nil {
+	// Etcd operator deployment
+	operatorDeployment := manifests.EtcdOperatorDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorDeployment, func() error {
+		operatorDeployment.OwnerReferences = ensureHCPOwnerRef(hcp, operatorDeployment.OwnerReferences)
+		return etcd.ReconcileOperatorDeployment(operatorDeployment, p.OwnerRef, p.OperatorDeploymentConfig, p.EtcdOperatorImage)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator deployment: %w", err)
+	}
+
+	// Etcd cluster
+	etcdCluster := manifests.EtcdCluster(hcp.Namespace)
+
+	// The EtcdCluster can currently enter a permanently failed state, so when
+	// that's detected, delete the EtcdCluster and start over.
+	// TODO(dmace): Fix this in the etcd operator and delete this code
+	shouldDeleteFailedEtcd := false
+	for _, cond := range hcp.Status.Conditions {
+		if cond.Type == string(hyperv1.EtcdAvailable) && cond.Status == metav1.ConditionFalse && cond.Reason == etcd.EtcdReasonFailed {
+			shouldDeleteFailedEtcd = true
+			break
+		}
+	}
+	if shouldDeleteFailedEtcd {
+		if err := r.Delete(ctx, etcdCluster); err != nil {
+			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to delete etcd cluster: %w", err)
 			}
 		}
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdCluster, func() error {
-			etcdCluster.OwnerReferences = ensureHCPOwnerRef(hcp, etcdCluster.OwnerReferences)
-			return etcd.ReconcileCluster(etcdCluster, p.OwnerRef, p.EtcdDeploymentConfig, p.ClusterVersion, p.PVCClaim)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
-		}
-	default:
-		return fmt.Errorf("unknown etcd management type %s", hcp.Spec.Etcd.ManagementType)
 	}
+
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdCluster, func() error {
+		etcdCluster.OwnerReferences = ensureHCPOwnerRef(hcp, etcdCluster.OwnerReferences)
+		return etcd.ReconcileCluster(etcdCluster, p.OwnerRef, p.EtcdDeploymentConfig, p.ClusterVersion, p.PVCClaim)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
+	}
+
 	return nil
 }
 
@@ -1245,9 +1245,9 @@ func (r *HostedControlPlaneReconciler) reconcileVPN(ctx context.Context, hcp *hy
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, address string, port int32) error {
+func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus) error {
 	r.Log.Info("Reconciling Konnectivity")
-	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), address, port)
+	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), infraStatus.KonnectivityHost, infraStatus.KonnectivityPort)
 	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
 		return konnectivity.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.ServerDeploymentConfig, p.KonnectivityServerImage)
@@ -1261,8 +1261,13 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 		return fmt.Errorf("failed to reconcile konnectivity server local service: %w", err)
 	}
 	agentDeployment := manifests.KonnectivityAgentDeployment(hcp.Namespace)
+	ips := []string{
+		infraStatus.OpenShiftAPIHost,
+		infraStatus.OauthAPIServerHost,
+		infraStatus.PackageServerAPIAddress,
+	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, agentDeployment, func() error {
-		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage)
+		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage, ips)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity agent deployment: %w", err)
 	}
@@ -1345,6 +1350,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.ConfigParams())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server config: %w", err)
+	}
+
+	kubeAPIServerEgressSelectorConfig := manifests.KASEgressSelectorConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerEgressSelectorConfig, func() error {
+		return kas.ReconcileEgressSelectorConfig(kubeAPIServerEgressSelectorConfig, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server egress selector config: %w", err)
 	}
 
 	oauthMetadata := manifests.KASOAuthMetadata(hcp.Namespace)
