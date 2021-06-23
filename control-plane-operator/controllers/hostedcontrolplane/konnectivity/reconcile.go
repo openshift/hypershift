@@ -1,6 +1,7 @@
 package konnectivity
 
 import (
+	"bytes"
 	"fmt"
 	"path"
 	"strconv"
@@ -100,6 +101,8 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			strconv.Itoa(KonnectivityServerPort),
 			"--health-port=8092",
 			"--admin-port=8093",
+			"--mode=http-connect",
+			"--proxy-strategies=destHost,defaultRoute",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -281,12 +284,13 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(
 			host,
 			"--proxy-server-port",
 			fmt.Sprint(port),
+			"--agent-identifiers=default-route=true",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
 
-func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
+func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, ips []string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -298,7 +302,7 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image)),
+					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
@@ -310,9 +314,17 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 	return nil
 }
 
-func buildKonnectivityAgentContainer(image string) func(c *corev1.Container) {
+func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.Container) {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(konnectivityAgentContainer().Name, volume), file)
+	}
+	var agentIDs bytes.Buffer
+	seperator := ""
+	for i, ip := range ips {
+		agentIDs.WriteString(fmt.Sprintf("%sipv4=%s", seperator, ip))
+		if i == 0 {
+			seperator = "&"
+		}
 	}
 	return func(c *corev1.Container) {
 		c.Image = image
@@ -332,6 +344,8 @@ func buildKonnectivityAgentContainer(image string) func(c *corev1.Container) {
 			manifests.KonnectivityServerService("").Name,
 			"--proxy-server-port",
 			fmt.Sprint(KonnectivityServerPort),
+			"--agent-identifiers",
+			agentIDs.String(),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}

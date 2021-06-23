@@ -222,7 +222,7 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			},
 			ControlPlane: nil,
 			ExpectedCondition: metav1.Condition{
-				Type:   string(hyperv1.Available),
+				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionFalse,
 			},
 		},
@@ -234,13 +234,13 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			ControlPlane: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{},
 				Status: hyperv1.HostedControlPlaneStatus{
-					Conditions: []hyperv1.HostedControlPlaneCondition{
-						{Type: hyperv1.Available, Status: hyperv1.ConditionTrue},
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.HostedControlPlaneAvailable), Status: metav1.ConditionTrue},
 					},
 				},
 			},
 			ExpectedCondition: metav1.Condition{
-				Type:   string(hyperv1.Available),
+				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionFalse,
 			},
 		},
@@ -254,13 +254,13 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			ControlPlane: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
 				Status: hyperv1.HostedControlPlaneStatus{
-					Conditions: []hyperv1.HostedControlPlaneCondition{
-						{Type: hyperv1.Available, Status: hyperv1.ConditionTrue},
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.HostedControlPlaneAvailable), Status: metav1.ConditionTrue},
 					},
 				},
 			},
 			ExpectedCondition: metav1.Condition{
-				Type:   string(hyperv1.Available),
+				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionTrue,
 			},
 		},
