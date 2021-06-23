@@ -106,7 +106,7 @@ spec:
               etcd:
                 default:
                   managementType: Managed
-                description: Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components uses to store data.
+                description: Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components uses to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.
                 properties:
                   managed:
                     description: Managed provides metadata that defines how the hypershift controllers manage the etcd cluster

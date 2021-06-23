@@ -73,7 +73,7 @@ type HostedClusterSpec struct {
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
-	// uses to store data.
+	// uses to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed"   }
 	Etcd EtcdSpec `json:"etcd"`
