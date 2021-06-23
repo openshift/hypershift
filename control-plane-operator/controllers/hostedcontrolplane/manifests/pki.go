@@ -32,15 +32,6 @@ func CombinedCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
-func EgressSelectorConfigMap(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "egress-selector",
-			Namespace: ns,
-		},
-	}
-}
-
 func VPNSignerCASecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -171,6 +162,15 @@ func KonnectivityClusterSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "konnectivity-cluster",
+			Namespace: ns,
+		},
+	}
+}
+
+func KonnectivityClientSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "konnectivity-client",
 			Namespace: ns,
 		},
 	}

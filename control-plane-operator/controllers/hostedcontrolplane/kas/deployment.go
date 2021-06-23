@@ -31,19 +31,21 @@ var (
 			kasVolumeLocalhostKubeconfig().Name: "/var/secrets/localhost-kubeconfig",
 		},
 		kasContainerMain().Name: {
-			kasVolumeWorkLogs().Name:          "/var/log/kube-apiserver",
-			kasVolumeConfig().Name:            "/etc/kubernetes/config",
-			kasVolumeAuditConfig().Name:       "/etc/kubernetes/audit",
-			kasVolumeRootCA().Name:            "/etc/kubernetes/certs/root-ca",
-			kasVolumeServerCert().Name:        "/etc/kubernetes/certs/server",
-			kasVolumeAggregatorCert().Name:    "/etc/kubernetes/certs/aggregator",
-			kasVolumeAggregatorCA().Name:      "/etc/kubernetes/certs/aggregator-ca",
-			kasVolumeClientCA().Name:          "/etc/kubernetes/certs/client-ca",
-			kasVolumeEtcdClientCert().Name:    "/etc/kubernetes/certs/etcd",
-			kasVolumeServiceAccountKey().Name: "/etc/kubernetes/secrets/svcacct-key",
-			kasVolumeOauthMetadata().Name:     "/etc/kubernetes/oauth",
-			kasVolumeKubeletClientCert().Name: "/etc/kubernetes/certs/kubelet",
-			kasVolumeKubeletClientCA().Name:   "/etc/kubernetes/certs/kubelet-ca",
+			kasVolumeWorkLogs().Name:               "/var/log/kube-apiserver",
+			kasVolumeConfig().Name:                 "/etc/kubernetes/config",
+			kasVolumeAuditConfig().Name:            "/etc/kubernetes/audit",
+			kasVolumeRootCA().Name:                 "/etc/kubernetes/certs/root-ca",
+			kasVolumeServerCert().Name:             "/etc/kubernetes/certs/server",
+			kasVolumeAggregatorCert().Name:         "/etc/kubernetes/certs/aggregator",
+			kasVolumeAggregatorCA().Name:           "/etc/kubernetes/certs/aggregator-ca",
+			kasVolumeClientCA().Name:               "/etc/kubernetes/certs/client-ca",
+			kasVolumeEtcdClientCert().Name:         "/etc/kubernetes/certs/etcd",
+			kasVolumeServiceAccountKey().Name:      "/etc/kubernetes/secrets/svcacct-key",
+			kasVolumeOauthMetadata().Name:          "/etc/kubernetes/oauth",
+			kasVolumeKubeletClientCert().Name:      "/etc/kubernetes/certs/kubelet",
+			kasVolumeKubeletClientCA().Name:        "/etc/kubernetes/certs/kubelet-ca",
+			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
+			kasVolumeEgressSelectorConfig().Name:   "/etc/kubernetes/egress-selector",
 		},
 		kasContainerVPNClient().Name: {
 			kasVolumeVPNClientConfig().Name: kasVPNWorkingDir + "/config",
@@ -103,7 +105,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 
 	ownerRef.ApplyTo(deployment)
 	maxSurge := intstr.FromInt(3)
-	maxUnavailable := intstr.FromInt(1)
+	maxUnavailable := intstr.FromInt(0)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: kasLabels,
@@ -145,6 +147,8 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 					util.BuildVolume(kasVolumeClientCA(), buildKASVolumeClientCA),
 					util.BuildVolume(kasVolumeKubeletClientCert(), buildKASVolumeKubeletClientCert),
 					util.BuildVolume(kasVolumeKubeletClientCA(), buildKASVolumeKubeletClientCA),
+					util.BuildVolume(kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert),
+					util.BuildVolume(kasVolumeEgressSelectorConfig(), buildKASVolumeEgressSelectorConfig),
 				},
 			},
 		},
@@ -346,6 +350,17 @@ func buildKASVolumeKubeletClientCA(v *corev1.Volume) {
 	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
 }
 
+func kasVolumeKonnectivityClientCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "konnectivity-client",
+	}
+}
+func buildKASVolumeKonnectivityClientCert(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{
+		SecretName: manifests.KonnectivityClientSecret("").Name,
+	}
+}
+
 func kasVolumeAggregatorCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "aggregator-crt",
@@ -374,7 +389,7 @@ func kasVolumeEgressSelectorConfig() *corev1.Volume {
 }
 func buildKASVolumeEgressSelectorConfig(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = manifests.EgressSelectorConfigMap("").Name
+	v.ConfigMap.Name = manifests.KASEgressSelectorConfig("").Name
 }
 
 func kasVolumeServiceAccountKey() *corev1.Volume {

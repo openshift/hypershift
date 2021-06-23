@@ -243,7 +243,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 			return false, nil
 		}
 
-		isAvailable := meta.IsStatusConditionPresentAndEqual(latest.Status.Conditions, string(hyperv1.Available), metav1.ConditionTrue)
+		isAvailable := meta.IsStatusConditionTrue(latest.Status.Conditions, string(hyperv1.HostedClusterAvailable))
 
 		rolloutComplete := latest.Status.Version != nil &&
 			latest.Status.Version.Desired.Image == image &&

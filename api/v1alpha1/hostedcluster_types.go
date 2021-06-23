@@ -281,7 +281,7 @@ type ClusterAutoscaling struct {
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
 }
 
-// EtcdManagementType ...
+// EtcdManagementType is a enum specifying the strategy for managing the clusters etcd instance
 type EtcdManagementType string
 
 const (
@@ -290,33 +290,47 @@ const (
 )
 
 type EtcdSpec struct {
-	// One of Managed or Unmanaged
+	// ManagementType defines how the etcd cluster is managed. Unmanaged means
+	// the etcd cluster is managed by a system outside the hypershift controllers.
+	// Managed means the hypershift controllers manage the provisioning of the etcd cluster
+	// and the operations around it
 	ManagementType EtcdManagementType `json:"managementType"`
 
+	// Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
 	Managed *ManagedEtcdSpec `json:"managed,omitempty"`
 
+	// Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
 	Unmanaged *UnmanagedEtcdSpec `json:"unmanaged,omitempty"`
 }
 
 type ManagedEtcdSpec struct {
 
-	// Here is where various managed stuff could be configured
-	// including backup policies?
+	//TODO: Ultimately backup policies, etc can be defined here.
 }
 
 type UnmanagedEtcdSpec struct {
+	// Endpoint is the full url to connect to the etcd cluster endpoint. An example is
+	// https://etcd-client:2379
 	Endpoint string `json:"endpoint"`
 
+	// TLS defines a reference to a TLS secret that can be used for client MTLS authentication with
+	// the etcd cluster
 	TLS EtcdTLSConfig `json:"tls"`
 }
 
 type EtcdTLSConfig struct {
-	// Refers to a secret for authenticating to the etcd server
-	// Contains the cert, key, CA cert.
-	ClientCert corev1.LocalObjectReference `json:"clientCert"`
+	// Client refers to a secret for client MTLS authentication with the etcd cluster
+	// The CA must be stored at secret key etcd-client-ca.crt.
+	// The client cert must be stored at secret key etcd-client.crt.
+	// The client key must be stored at secret key etcd-client.key.
+	Client corev1.LocalObjectReference `json:"clientTLS"`
 }
 
 const (
+	// HostedClusterAvailable indicates whether the HostedCluster has a healthy
+	// control plane.
+	HostedClusterAvailable ConditionType = "Available"
+
 	// IgnitionEndpointAvailable indicates whether the ignition server for the
 	// HostedCluster is available to handle ignition requests.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
