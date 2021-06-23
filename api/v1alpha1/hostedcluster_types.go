@@ -323,7 +323,7 @@ type EtcdTLSConfig struct {
 	// The CA must be stored at secret key etcd-client-ca.crt.
 	// The client cert must be stored at secret key etcd-client.crt.
 	// The client key must be stored at secret key etcd-client.key.
-	Client corev1.LocalObjectReference `json:"clientTLS"`
+	Client corev1.LocalObjectReference `json:"client"`
 }
 
 const (
