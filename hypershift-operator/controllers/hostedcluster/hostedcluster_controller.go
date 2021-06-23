@@ -466,7 +466,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("etcd metadata not specified for unmanaged deployment")
 		}
 		var src corev1.Secret
-		r.Log.Info("Retrieving etcd client mtls secret", "name", hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name)
 		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get etcd client cert %s: %w", hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name, err)
 		}
@@ -486,16 +485,17 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			},
 		}
 		r.Log.Info("Reconciling etcd client mtls secret to control plane namespace", "namespace", hostedControlPlaneEtcdClientSecret.Namespace)
-		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneEtcdClientSecret, func() error {
+		if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneEtcdClientSecret, func() error {
 			if hostedControlPlaneEtcdClientSecret.Data == nil {
 				hostedControlPlaneEtcdClientSecret.Data = map[string][]byte{}
 			}
 			hostedControlPlaneEtcdClientSecret.Data = src.Data
 			hostedControlPlaneEtcdClientSecret.Type = corev1.SecretTypeOpaque
 			return nil
-		})
-		if err != nil {
+		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed reconciling etcd client secret: %w", err)
+		} else {
+			r.Log.Info("reconciled etcd client mtls secret to control plane namespace", "result", result)
 		}
 	}
 

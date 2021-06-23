@@ -70,12 +70,16 @@ spec:
                     type: object
                   managementType:
                     description: ManagementType defines how the etcd cluster is managed. Unmanaged means the etcd cluster is managed by a system outside the hypershift controllers. Managed means the hypershift controllers manage the provisioning of the etcd cluster and the operations around it
+                    enum:
+                    - Managed
+                    - Unmanaged
                     type: string
                   unmanaged:
                     description: Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
                     properties:
                       endpoint:
                         description: Endpoint is the full url to connect to the etcd cluster endpoint. An example is https://etcd-client:2379
+                        pattern: ^https://
                         type: string
                       tls:
                         description: TLS defines a reference to a TLS secret that can be used for client MTLS authentication with the etcd cluster
