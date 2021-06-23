@@ -75,7 +75,7 @@ type HostedClusterSpec struct {
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 	// uses to store data.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={managementType: Managed   }
+	// +kubebuilder:default={managementType: "Managed"   }
 	Etcd EtcdSpec `json:"etcd"`
 }
 
