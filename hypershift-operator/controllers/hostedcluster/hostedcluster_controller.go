@@ -460,21 +460,21 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-		if hcluster.Spec.Etcd.Unmanaged == nil || len(hcluster.Spec.Etcd.Unmanaged.TLS.ClientCert.Name) == 0 || len(hcluster.Spec.Etcd.Unmanaged.Endpoint) == 0 {
+		if hcluster.Spec.Etcd.Unmanaged == nil || len(hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name) == 0 || len(hcluster.Spec.Etcd.Unmanaged.Endpoint) == 0 {
 			return ctrl.Result{}, fmt.Errorf("etcd metadata not specified for unmanaged deployment")
 		}
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Etcd.Unmanaged.TLS.ClientCert.Name}, &src); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get etcd client cert %s: %w", hcluster.Spec.Etcd.Unmanaged.TLS.ClientCert.Name, err)
+		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name}, &src); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get etcd client cert %s: %w", hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name, err)
 		}
 		if _, ok := src.Data["etcd-client.crt"]; !ok {
-			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client cert", hcluster.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
+			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client cert", hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
 		}
 		if _, ok := src.Data["etcd-client.key"]; !ok {
-			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client key", hcluster.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
+			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client key", hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
 		}
 		if _, ok := src.Data["etcd-client-ca.crt"]; !ok {
-			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client ca", hcluster.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
+			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client ca", hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
 		}
 		hostedControlPlaneEtcdClientSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{

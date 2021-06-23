@@ -1206,21 +1206,21 @@ func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *h
 		}
 	case hyperv1.Unmanaged:
 		//reconcile client secret over
-		if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
+		if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
 			return fmt.Errorf("etcd metadata not specified for unmanaged deployment")
 		}
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name}, &src); err != nil {
-			return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name, err)
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name}, &src); err != nil {
+			return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name, err)
 		}
 		if _, ok := src.Data["etcd-client.crt"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client cert", hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
+			return fmt.Errorf("etcd secret %s does not have client cert", hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
 		}
 		if _, ok := src.Data["etcd-client.key"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client key", hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
+			return fmt.Errorf("etcd secret %s does not have client key", hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
 		}
 		if _, ok := src.Data["etcd-client-ca.crt"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.ClientCert.Name)
+			return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
 		}
 		kubeComponentEtcdClientSecret := manifests.EtcdClientSecret(hcp.GetNamespace())
 		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, kubeComponentEtcdClientSecret, func() error {

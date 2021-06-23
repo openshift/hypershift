@@ -59,6 +59,8 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 
+	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
+	// uses to store data.
 	Etcd EtcdSpec `json:"etcd"`
 }
 
