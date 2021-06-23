@@ -74,6 +74,8 @@ type HostedClusterSpec struct {
 
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 	// uses to store data.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default={managementType: Managed   }
 	Etcd EtcdSpec `json:"etcd"`
 }
 
@@ -285,12 +287,15 @@ type EtcdSpec struct {
 	// the etcd cluster is managed by a system outside the hypershift controllers.
 	// Managed means the hypershift controllers manage the provisioning of the etcd cluster
 	// and the operations around it
+	// +unionDiscriminator
 	ManagementType EtcdManagementType `json:"managementType"`
 
 	// Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
+	// +optional
 	Managed *ManagedEtcdSpec `json:"managed,omitempty"`
 
 	// Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
+	// +optional
 	Unmanaged *UnmanagedEtcdSpec `json:"unmanaged,omitempty"`
 }
 
@@ -302,6 +307,7 @@ type ManagedEtcdSpec struct {
 type UnmanagedEtcdSpec struct {
 	// Endpoint is the full url to connect to the etcd cluster endpoint. An example is
 	// https://etcd-client:2379
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^https://`
 	Endpoint string `json:"endpoint"`
 

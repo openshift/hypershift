@@ -104,6 +104,8 @@ spec:
                 - baseDomain
                 type: object
               etcd:
+                default:
+                  managementType: ""
                 description: Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components uses to store data.
                 properties:
                   managed:
@@ -349,7 +351,6 @@ spec:
                     type: string
                 type: object
             required:
-            - etcd
             - issuerURL
             - networking
             - platform
