@@ -106,25 +106,29 @@ spec:
               etcd:
                 properties:
                   managed:
+                    description: Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
                     type: object
                   managementType:
-                    description: One of Managed or Unmanaged
+                    description: ManagementType defines how the etcd cluster is managed. Unmanaged means the etcd cluster is managed by a system outside the hypershift controllers. Managed means the hypershift controllers manage the provisioning of the etcd cluster and the operations around it
                     type: string
                   unmanaged:
+                    description: Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
                     properties:
                       endpoint:
+                        description: Endpoint is the full url to connect to the etcd cluster endpoint. An example is https://etcd-client:2379
                         type: string
                       tls:
+                        description: TLS defines a reference to a TLS secret that can be used for client MTLS authentication with the etcd cluster
                         properties:
-                          clientCert:
-                            description: Refers to a secret for authenticating to the etcd server Contains the cert, key, CA cert.
+                          clientTLS:
+                            description: Client refers to a secret for client MTLS authentication with the etcd cluster The CA must be stored at secret key etcd-client-ca.crt. The client cert must be stored at secret key etcd-client.crt. The client key must be stored at secret key etcd-client.key.
                             properties:
                               name:
                                 description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
                                 type: string
                             type: object
                         required:
-                        - clientCert
+                        - clientTLS
                         type: object
                     required:
                     - endpoint

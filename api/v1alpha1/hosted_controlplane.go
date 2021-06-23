@@ -59,6 +59,8 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 
+	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
+	// uses to store data.
 	Etcd EtcdSpec `json:"etcd"`
 }
 
@@ -77,42 +79,11 @@ type KubeconfigSecretRef struct {
 type ConditionType string
 
 const (
-	Available              ConditionType = "Available"
-	EtcdAvailable          ConditionType = "EtcdAvailable"
-	KubeAPIServerAvailable ConditionType = "KubeAPIServerAvailable"
+	HostedControlPlaneAvailable ConditionType = "Available"
+	EtcdAvailable               ConditionType = "EtcdAvailable"
+	KubeAPIServerAvailable      ConditionType = "KubeAPIServerAvailable"
+	InfrastructureReady         ConditionType = "InfrastructureReady"
 )
-
-type ConditionStatus string
-
-const (
-	ConditionTrue    ConditionStatus = "True"
-	ConditionFalse   ConditionStatus = "False"
-	ConditionUnknown ConditionStatus = "Unknown"
-)
-
-type HostedControlPlaneCondition struct {
-	// type specifies the aspect reported by this condition.
-	// +kubebuilder:validation:Required
-	Type ConditionType `json:"type"`
-
-	// status of the condition, one of True, False, Unknown.
-	// +kubebuilder:validation:Required
-	Status ConditionStatus `json:"status"`
-
-	// lastTransitionTime is the time of the last update to the current status property.
-	// +kubebuilder:validation:Required
-	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
-
-	// reason is the CamelCase reason for the condition's current status.
-	// +kubebuilder:validation:Optional
-	Reason string `json:"reason,omitempty"`
-
-	// message provides additional information about the current condition.
-	// This is only to be consumed by humans.  It may contain Line Feed
-	// characters (U+000A), which should be rendered as new lines.
-	// +kubebuilder:validation:Optional
-	Message string `json:"message,omitempty"`
-}
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane
 type HostedControlPlaneStatus struct {
@@ -164,7 +135,7 @@ type HostedControlPlaneStatus struct {
 	// Condition contains details for one aspect of the current state of the HostedControlPlane.
 	// Current condition types are: "Available"
 	// +kubebuilder:validation:Required
-	Conditions []HostedControlPlaneCondition `json:"conditions"`
+	Conditions []metav1.Condition `json:"conditions"`
 }
 
 type APIEndpoint struct {

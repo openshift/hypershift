@@ -49,9 +49,11 @@ func main() {
 const (
 	openVPNImage = "quay.io/hypershift/openvpn:latest"
 	// FIXME: Set to upstream image when DNS resolution is fixed for etcd service
-	etcdOperatorImage       = "quay.io/hypershift/etcd-operator:v0.9.4-patched"
-	konnectivityServerImage = "us.gcr.io/k8s-artifacts-prod/kas-network-proxy/proxy-server:v0.0.17"
-	konnectivityAgentImage  = "us.gcr.io/k8s-artifacts-prod/kas-network-proxy/proxy-agent:v0.0.17"
+	etcdOperatorImage = "quay.io/hypershift/etcd-operator:v0.9.4-patched"
+	// TODO: switch to upstream after a tagged release contains https://github.com/kubernetes-sigs/apiserver-network-proxy/pull/245
+	konnectivityServerImage = "quay.io/sjenning/proxy-server:local"
+	//konnectivityServerImage = "us.gcr.io/k8s-artifacts-prod/kas-network-proxy/proxy-server:v0.0.20"
+	konnectivityAgentImage = "us.gcr.io/k8s-artifacts-prod/kas-network-proxy/proxy-agent:v0.0.20"
 )
 
 func NewStartCommand() *cobra.Command {

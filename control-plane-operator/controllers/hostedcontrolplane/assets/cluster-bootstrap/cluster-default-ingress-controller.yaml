@@ -5,7 +5,18 @@ metadata:
   namespace: openshift-ingress-operator
 spec:
   domain: {{ .IngressSubdomain }}
+{{ if eq .PlatformType "IBMCloud" }}
+  endpointPublishingStrategy:
+    type: LoadBalancerService
+    loadBalancer:
+      scope: External
+  nodePlacement:
+    tolerations:
+    - key: dedicated
+      value: edge
+{{ else }}
   endpointPublishingStrategy:
     type: LoadBalancerService
   defaultCertificate:
     name: default-ingress-cert
+{{ end }}
