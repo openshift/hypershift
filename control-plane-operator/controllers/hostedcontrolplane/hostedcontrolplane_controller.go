@@ -465,8 +465,18 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile etcd
 	r.Log.Info("Reconciling Etcd")
-	if err := r.reconcileEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
-		return fmt.Errorf("failed to reconcile etcd: %w", err)
+
+	switch hostedControlPlane.Spec.Etcd.ManagementType {
+	case hyperv1.Managed:
+		if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
+			return fmt.Errorf("failed to reconcile etcd: %w", err)
+		}
+	case hyperv1.Unmanaged:
+		if err := r.reconcileUnmanagedEtcd(ctx, hostedControlPlane); err != nil {
+			return fmt.Errorf("failed to reconcile etcd: %w", err)
+		}
+	default:
+		return fmt.Errorf("unrecognized etcd management type: %s", hostedControlPlane.Spec.Etcd.ManagementType)
 	}
 
 	// Reconcile VPN
@@ -1150,109 +1160,104 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	switch hcp.Spec.Etcd.ManagementType {
-	case hyperv1.Managed:
-		p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
+func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
 
-		// Etcd Operator ServiceAccount
-		operatorServiceAccount := manifests.EtcdOperatorServiceAccount(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorServiceAccount, func() error {
-			return etcd.ReconcileOperatorServiceAccount(operatorServiceAccount, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd operator service account: %w", err)
+	// Etcd Operator ServiceAccount
+	operatorServiceAccount := manifests.EtcdOperatorServiceAccount(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorServiceAccount, func() error {
+		return etcd.ReconcileOperatorServiceAccount(operatorServiceAccount, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator service account: %w", err)
+	}
+
+	// Etcd operator role
+	operatorRole := manifests.EtcdOperatorRole(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRole, func() error {
+		operatorRole.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRole.OwnerReferences)
+		return etcd.ReconcileOperatorRole(operatorRole, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator role: %w", err)
+	}
+
+	// Etcd operator rolebinding
+	operatorRoleBinding := manifests.EtcdOperatorRoleBinding(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRoleBinding, func() error {
+		operatorRoleBinding.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRoleBinding.OwnerReferences)
+		return etcd.ReconcileOperatorRoleBinding(operatorRoleBinding, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator role binding: %w", err)
+	}
+
+	// Etcd operator deployment
+	operatorDeployment := manifests.EtcdOperatorDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorDeployment, func() error {
+		operatorDeployment.OwnerReferences = ensureHCPOwnerRef(hcp, operatorDeployment.OwnerReferences)
+		return etcd.ReconcileOperatorDeployment(operatorDeployment, p.OwnerRef, p.OperatorDeploymentConfig, p.EtcdOperatorImage)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd operator deployment: %w", err)
+	}
+
+	// Etcd cluster
+	etcdCluster := manifests.EtcdCluster(hcp.Namespace)
+
+	// The EtcdCluster can currently enter a permanently failed state, so when
+	// that's detected, delete the EtcdCluster and start over.
+	// TODO(dmace): Fix this in the etcd operator and delete this code
+	shouldDeleteFailedEtcd := false
+	for _, cond := range hcp.Status.Conditions {
+		if cond.Type == string(hyperv1.EtcdAvailable) && cond.Status == metav1.ConditionFalse && cond.Reason == etcd.EtcdReasonFailed {
+			shouldDeleteFailedEtcd = true
+			break
 		}
-
-		// Etcd operator role
-		operatorRole := manifests.EtcdOperatorRole(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRole, func() error {
-			operatorRole.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRole.OwnerReferences)
-			return etcd.ReconcileOperatorRole(operatorRole, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd operator role: %w", err)
-		}
-
-		// Etcd operator rolebinding
-		operatorRoleBinding := manifests.EtcdOperatorRoleBinding(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorRoleBinding, func() error {
-			operatorRoleBinding.OwnerReferences = ensureHCPOwnerRef(hcp, operatorRoleBinding.OwnerReferences)
-			return etcd.ReconcileOperatorRoleBinding(operatorRoleBinding, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd operator role binding: %w", err)
-		}
-
-		// Etcd operator deployment
-		operatorDeployment := manifests.EtcdOperatorDeployment(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, operatorDeployment, func() error {
-			operatorDeployment.OwnerReferences = ensureHCPOwnerRef(hcp, operatorDeployment.OwnerReferences)
-			return etcd.ReconcileOperatorDeployment(operatorDeployment, p.OwnerRef, p.OperatorDeploymentConfig, p.EtcdOperatorImage)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd operator deployment: %w", err)
-		}
-
-		// Etcd cluster
-		etcdCluster := manifests.EtcdCluster(hcp.Namespace)
-
-		// The EtcdCluster can currently enter a permanently failed state, so when
-		// that's detected, delete the EtcdCluster and start over.
-		// TODO(dmace): Fix this in the etcd operator and delete this code
-		shouldDeleteFailedEtcd := false
-		for _, cond := range hcp.Status.Conditions {
-			if cond.Type == string(hyperv1.EtcdAvailable) && cond.Status == metav1.ConditionFalse && cond.Reason == etcd.EtcdReasonFailed {
-				shouldDeleteFailedEtcd = true
-				break
+	}
+	if shouldDeleteFailedEtcd {
+		if err := r.Delete(ctx, etcdCluster); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete etcd cluster: %w", err)
 			}
 		}
-		if shouldDeleteFailedEtcd {
-			if err := r.Delete(ctx, etcdCluster); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to delete etcd cluster: %w", err)
-				}
-			}
-		}
+	}
 
-		if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdCluster, func() error {
-			etcdCluster.OwnerReferences = ensureHCPOwnerRef(hcp, etcdCluster.OwnerReferences)
-			return etcd.ReconcileCluster(etcdCluster, p.OwnerRef, p.EtcdDeploymentConfig, p.ClusterVersion, p.PVCClaim)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
-		}
-	case hyperv1.Unmanaged:
-		//reconcile client secret over
-		if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.Client.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
-			return fmt.Errorf("etcd metadata not specified for unmanaged deployment")
-		}
-		r.Log.Info("Retrieving tls secret", "name", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
-		var src corev1.Secret
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.Client.Name}, &src); err != nil {
-			return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name, err)
-		}
-		if _, ok := src.Data["etcd-client.crt"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client cert", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
-		}
-		if _, ok := src.Data["etcd-client.key"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client key", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
-		}
-		if _, ok := src.Data["etcd-client-ca.crt"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
-		}
-		kubeComponentEtcdClientSecret := manifests.EtcdClientSecret(hcp.GetNamespace())
-		r.Log.Info("Reconciling openshift control plane etcd client tls secret", "name", kubeComponentEtcdClientSecret.Name)
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, kubeComponentEtcdClientSecret, func() error {
-			if kubeComponentEtcdClientSecret.Data == nil {
-				kubeComponentEtcdClientSecret.Data = map[string][]byte{}
-			}
-			kubeComponentEtcdClientSecret.Data = src.Data
-			kubeComponentEtcdClientSecret.Type = corev1.SecretTypeOpaque
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed reconciling kube component etcd client secret: %w", err)
-		}
-	default:
-		return fmt.Errorf("unknown etcd management type %s", hcp.Spec.Etcd.ManagementType)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdCluster, func() error {
+		etcdCluster.OwnerReferences = ensureHCPOwnerRef(hcp, etcdCluster.OwnerReferences)
+		return etcd.ReconcileCluster(etcdCluster, p.OwnerRef, p.EtcdDeploymentConfig, p.ClusterVersion, p.PVCClaim)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
 	}
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	//reconcile client secret over
+	if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.Client.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
+		return fmt.Errorf("etcd metadata not specified for unmanaged deployment")
+	}
+	r.Log.Info("Retrieving tls secret", "name", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
+	var src corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.Client.Name}, &src); err != nil {
+		return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name, err)
+	}
+	if _, ok := src.Data["etcd-client.crt"]; !ok {
+		return fmt.Errorf("etcd secret %s does not have client cert", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
+	}
+	if _, ok := src.Data["etcd-client.key"]; !ok {
+		return fmt.Errorf("etcd secret %s does not have client key", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
+	}
+	if _, ok := src.Data["etcd-client-ca.crt"]; !ok {
+		return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
+	}
+	kubeComponentEtcdClientSecret := manifests.EtcdClientSecret(hcp.GetNamespace())
+	r.Log.Info("Reconciling openshift control plane etcd client tls secret", "name", kubeComponentEtcdClientSecret.Name)
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, kubeComponentEtcdClientSecret, func() error {
+		if kubeComponentEtcdClientSecret.Data == nil {
+			kubeComponentEtcdClientSecret.Data = map[string][]byte{}
+		}
+		kubeComponentEtcdClientSecret.Data = src.Data
+		kubeComponentEtcdClientSecret.Type = corev1.SecretTypeOpaque
+		return nil
+	})
+	return err
 }
 
 func (r *HostedControlPlaneReconciler) reconcileVPN(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, address string, port int32) error {
