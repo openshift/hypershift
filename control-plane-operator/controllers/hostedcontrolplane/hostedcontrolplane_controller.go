@@ -176,6 +176,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 		switch hostedControlPlane.Spec.Etcd.ManagementType {
 		case hyperv1.Managed:
+			r.Log.Info("Reconciling etcd cluster status for managed strategy")
 			etcdCluster := manifests.EtcdCluster(hostedControlPlane.Namespace)
 			if err := r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil {
 				if apierrors.IsNotFound(err) {
@@ -188,6 +189,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 					return ctrl.Result{}, fmt.Errorf("failed to fetch etcd cluster %s/%s: %w", etcdCluster.Namespace, etcdCluster.Name, err)
 				}
 			} else {
+				r.Log.Info("Computing proper etcd cluster status based on current state of etcd cluster")
 				cond, err := etcd.ComputeEtcdClusterStatus(ctx, r.Client, etcdCluster)
 				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to compute etcd cluster status: %w", err)
@@ -195,6 +197,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				newCondition = cond
 			}
 		case hyperv1.Unmanaged:
+			r.Log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
 			newCondition = metav1.Condition{
 				Type:    string(hyperv1.EtcdAvailable),
 				Status:  metav1.ConditionTrue,
@@ -202,6 +205,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				Message: "Etcd cluster is assumed to be running in unmanaged state",
 			}
 		}
+		r.Log.Info("Updating hosted control plane status")
 		newCondition.ObservedGeneration = hostedControlPlane.Generation
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
@@ -1206,23 +1210,25 @@ func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *h
 		}
 	case hyperv1.Unmanaged:
 		//reconcile client secret over
-		if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
+		if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.Client.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
 			return fmt.Errorf("etcd metadata not specified for unmanaged deployment")
 		}
+		r.Log.Info("Retrieving tls secret", "name", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name}, &src); err != nil {
-			return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name, err)
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.Client.Name}, &src); err != nil {
+			return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name, err)
 		}
 		if _, ok := src.Data["etcd-client.crt"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client cert", hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
+			return fmt.Errorf("etcd secret %s does not have client cert", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
 		}
 		if _, ok := src.Data["etcd-client.key"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client key", hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
+			return fmt.Errorf("etcd secret %s does not have client key", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
 		}
 		if _, ok := src.Data["etcd-client-ca.crt"]; !ok {
-			return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
+			return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.Client.Name)
 		}
 		kubeComponentEtcdClientSecret := manifests.EtcdClientSecret(hcp.GetNamespace())
+		r.Log.Info("Reconciling openshift control plane etcd client tls secret", "name", kubeComponentEtcdClientSecret.Name)
 		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, kubeComponentEtcdClientSecret, func() error {
 			if kubeComponentEtcdClientSecret.Data == nil {
 				kubeComponentEtcdClientSecret.Data = map[string][]byte{}

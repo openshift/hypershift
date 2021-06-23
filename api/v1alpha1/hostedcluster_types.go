@@ -269,7 +269,7 @@ type ClusterAutoscaling struct {
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
 }
 
-// EtcdManagementType ...
+// EtcdManagementType is a enum specifying the strategy for managing the clusters etcd instance
 type EtcdManagementType string
 
 const (
@@ -307,11 +307,11 @@ type UnmanagedEtcdSpec struct {
 }
 
 type EtcdTLSConfig struct {
-	// ClientTLS refers to a secret for client MTLS authentication with the etcd cluster
+	// Client refers to a secret for client MTLS authentication with the etcd cluster
 	// The CA must be stored at secret key etcd-client-ca.crt.
 	// The client cert must be stored at secret key etcd-client.crt.
 	// The client key must be stored at secret key etcd-client.key.
-	ClientTLS corev1.LocalObjectReference `json:"clientTLS"`
+	Client corev1.LocalObjectReference `json:"clientTLS"`
 }
 
 const (

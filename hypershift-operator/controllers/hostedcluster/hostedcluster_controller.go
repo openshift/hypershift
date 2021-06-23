@@ -459,22 +459,25 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile etcd client MTLS secret if the control plane is using an unmanaged etcd cluster
 	if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-		if hcluster.Spec.Etcd.Unmanaged == nil || len(hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name) == 0 || len(hcluster.Spec.Etcd.Unmanaged.Endpoint) == 0 {
+		r.Log.Info("Reconciling etcd client mtls secret")
+		if hcluster.Spec.Etcd.Unmanaged == nil || len(hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name) == 0 || len(hcluster.Spec.Etcd.Unmanaged.Endpoint) == 0 {
 			return ctrl.Result{}, fmt.Errorf("etcd metadata not specified for unmanaged deployment")
 		}
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name}, &src); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get etcd client cert %s: %w", hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name, err)
+		r.Log.Info("Retrieving etcd client mtls secret", "name", hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name)
+		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name}, &src); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get etcd client cert %s: %w", hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name, err)
 		}
 		if _, ok := src.Data["etcd-client.crt"]; !ok {
-			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client cert", hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
+			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client cert", hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name)
 		}
 		if _, ok := src.Data["etcd-client.key"]; !ok {
-			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client key", hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
+			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client key", hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name)
 		}
 		if _, ok := src.Data["etcd-client-ca.crt"]; !ok {
-			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client ca", hcluster.Spec.Etcd.Unmanaged.TLS.ClientTLS.Name)
+			return ctrl.Result{}, fmt.Errorf("etcd secret %s does not have client ca", hcluster.Spec.Etcd.Unmanaged.TLS.Client.Name)
 		}
 		hostedControlPlaneEtcdClientSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -482,6 +485,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				Name:      src.Name,
 			},
 		}
+		r.Log.Info("Reconciling etcd client mtls secret to control plane namespace", "namespace", hostedControlPlaneEtcdClientSecret.Namespace)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneEtcdClientSecret, func() error {
 			if hostedControlPlaneEtcdClientSecret.Data == nil {
 				hostedControlPlaneEtcdClientSecret.Data = map[string][]byte{}
