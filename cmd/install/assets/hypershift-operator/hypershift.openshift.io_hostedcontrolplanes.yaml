@@ -80,7 +80,7 @@ spec:
                       tls:
                         description: TLS defines a reference to a TLS secret that can be used for client MTLS authentication with the etcd cluster
                         properties:
-                          clientTLS:
+                          client:
                             description: Client refers to a secret for client MTLS authentication with the etcd cluster The CA must be stored at secret key etcd-client-ca.crt. The client cert must be stored at secret key etcd-client.crt. The client key must be stored at secret key etcd-client.key.
                             properties:
                               name:
@@ -88,7 +88,7 @@ spec:
                                 type: string
                             type: object
                         required:
-                        - clientTLS
+                        - client
                         type: object
                     required:
                     - endpoint
