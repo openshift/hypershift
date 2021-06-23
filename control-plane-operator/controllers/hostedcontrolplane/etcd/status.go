@@ -6,11 +6,10 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	hcputil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 )
 
@@ -18,10 +17,9 @@ const (
 	etcdClusterLabel            = "etcd_cluster"
 	etcdClusterBootstrapTimeout = 5 * time.Minute
 
-	EtcdReasonNotCreated = "EtcdNotCreated"
-	EtcdReasonFailed     = "EtcdFailed"
-	EtcdReasonRunning    = "EtcdRunning"
-	EtcdReasonScaling    = "EtcdScalingUp"
+	EtcdReasonFailed  = "EtcdFailed"
+	EtcdReasonRunning = "EtcdRunning"
+	EtcdReasonScaling = "EtcdScalingUp"
 )
 
 func etcdClusterConditionByType(conditions []etcdv1.ClusterCondition, t etcdv1.ClusterConditionType) *etcdv1.ClusterCondition {
@@ -33,37 +31,56 @@ func etcdClusterConditionByType(conditions []etcdv1.ClusterCondition, t etcdv1.C
 	return nil
 }
 
-func ReconcileEtcdClusterStatus(ctx context.Context, c client.Client, hcpStatus *hyperv1.HostedControlPlaneStatus, cluster *etcdv1.EtcdCluster) error {
-	log := ctrl.LoggerFrom(ctx)
-	if cluster == nil {
-		// etcd cluster doesn't yet exist, nothing to do yet
-		log.Info("Etcd cluster doesn't exist yet")
-		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonNotCreated, "Etcd cluster has not been created yet")
-		return nil
-	}
+func ComputeEtcdClusterStatus(ctx context.Context, c client.Client, cluster *etcdv1.EtcdCluster) (metav1.Condition, error) {
 	availableCondition := etcdClusterConditionByType(cluster.Status.Conditions, etcdv1.ClusterConditionAvailable)
 
+	var cond metav1.Condition
 	switch {
 	case availableCondition != nil && availableCondition.Status == corev1.ConditionTrue:
 		// Etcd cluster is available
-		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionTrue, EtcdReasonRunning, "Etcd cluster is running and available")
+		cond = metav1.Condition{
+			Type:    string(hyperv1.EtcdAvailable),
+			Status:  metav1.ConditionTrue,
+			Reason:  EtcdReasonRunning,
+			Message: "Etcd cluster is running and available",
+		}
 	case len(cluster.Status.Members.Ready) == 0 && time.Since(cluster.CreationTimestamp.Time) > etcdClusterBootstrapTimeout:
 		// The etcd cluster failed to bootstrap, will delete
-		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonFailed, "Etcd cluster failed to bootstrap within timeout, recreating")
+		cond = metav1.Condition{
+			Type:    string(hyperv1.EtcdAvailable),
+			Status:  metav1.ConditionFalse,
+			Reason:  EtcdReasonFailed,
+			Message: "Etcd cluster failed to bootstrap within timeout, recreating",
+		}
 	case cluster.Spec.Size > 1 && len(cluster.Status.Members.Ready) <= 1:
 		hasTerminatedPods, err := etcdClusterHasTerminatedPods(ctx, c, cluster)
 		if err != nil {
-			return err
+			return cond, err
 		}
 		if hasTerminatedPods {
-			hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonFailed, "Etcd has failed to achieve quorum after bootstrap, recreating")
+			cond = metav1.Condition{
+				Type:    string(hyperv1.EtcdAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  EtcdReasonFailed,
+				Message: "Etcd has failed to achieve quorum after bootstrap, recreating",
+			}
 		} else {
-			hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonScaling, "Etcd cluster is scaling up")
+			cond = metav1.Condition{
+				Type:    string(hyperv1.EtcdAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  EtcdReasonScaling,
+				Message: "Etcd cluster is scaling up",
+			}
 		}
 	default:
-		hcputil.SetConditionByType(&hcpStatus.Conditions, hyperv1.EtcdAvailable, hyperv1.ConditionFalse, EtcdReasonScaling, "Etcd cluster is scaling up")
+		cond = metav1.Condition{
+			Type:    string(hyperv1.EtcdAvailable),
+			Status:  metav1.ConditionFalse,
+			Reason:  EtcdReasonScaling,
+			Message: "Etcd cluster is scaling up",
+		}
 	}
-	return nil
+	return cond, nil
 }
 
 func etcdClusterHasTerminatedPods(ctx context.Context, c client.Client, cluster *etcdv1.EtcdCluster) (bool, error) {
