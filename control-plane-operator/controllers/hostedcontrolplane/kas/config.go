@@ -3,8 +3,9 @@ package kas
 import (
 	"encoding/json"
 	"fmt"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"path"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -119,7 +120,7 @@ func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServer
 		args.Set("audit-webhook-config-file", auditWebhookConfigFile())
 		args.Set("audit-webhook-mode", "batch")
 	}
-	//args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
+	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")

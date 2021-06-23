@@ -3,15 +3,21 @@ package kas
 import (
 	"bytes"
 	"fmt"
+	"path"
 
 	"github.com/openshift/hypershift/api"
+	hcpconfig "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 )
 
 func egressSelectorConfiguration() *kasv1beta1.EgressSelectorConfiguration {
+	cpath := func(volume, file string) string {
+		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
+	}
 	return &kasv1beta1.EgressSelectorConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "EgressSelectorConfiguration",
@@ -33,11 +39,15 @@ func egressSelectorConfiguration() *kasv1beta1.EgressSelectorConfiguration {
 			{
 				Name: "cluster",
 				Connection: kasv1beta1.Connection{
-					ProxyProtocol: kasv1beta1.ProtocolGRPC,
+					ProxyProtocol: kasv1beta1.ProtocolHTTPConnect,
 					Transport: &kasv1beta1.Transport{
 						TCP: &kasv1beta1.TCPTransport{
-							URL:       fmt.Sprintf("https://kconnectivity-server-local:%d", konnectivity.KonnectivityServerPort),
-							TLSConfig: &kasv1beta1.TLSConfig{},
+							URL: fmt.Sprintf("https://konnectivity-server-local:%d", konnectivity.KonnectivityServerLocalPort),
+							TLSConfig: &kasv1beta1.TLSConfig{
+								CABundle:   cpath(kasVolumeClientCA().Name, pki.CASignerCertMapKey),
+								ClientCert: cpath(kasVolumeKonnectivityClientCert().Name, corev1.TLSCertKey),
+								ClientKey:  cpath(kasVolumeKonnectivityClientCert().Name, corev1.TLSPrivateKeyKey),
+							},
 						},
 					},
 				},
@@ -58,14 +68,15 @@ func serializeEgressSelectorConfig(config *kasv1beta1.EgressSelectorConfiguratio
 	return out.Bytes(), nil
 }
 
-func (p *KubeAPIServerParams) ReconcileEgressSelectorConfig(egressCfgMap *corev1.ConfigMap) error {
-	if egressCfgMap.Data == nil {
-		egressCfgMap.Data = map[string]string{}
+func ReconcileEgressSelectorConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef) error {
+	ownerRef.ApplyTo(config)
+	if config.Data == nil {
+		config.Data = map[string]string{}
 	}
 	configBytes, err := serializeEgressSelectorConfig(egressSelectorConfiguration())
 	if err != nil {
 		return err
 	}
-	egressCfgMap.Data[EgressSelectorConfigMapKey] = string(configBytes)
+	config.Data[EgressSelectorConfigMapKey] = string(configBytes)
 	return nil
 }
