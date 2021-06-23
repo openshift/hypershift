@@ -302,7 +302,7 @@ type ManagedEtcdSpec struct {
 type UnmanagedEtcdSpec struct {
 	// Endpoint is the full url to connect to the etcd cluster endpoint. An example is
 	// https://etcd-client:2379
-	// +kubebuilder:validation:Pattern=`^https://([a-zA-Z0-9_.]:?[0-9]?[0-9]?[0-9]?[0-9]?[0-9]?[0-9]?$`
+	// +kubebuilder:validation:Pattern=`^https://`
 	Endpoint string `json:"endpoint"`
 
 	// TLS defines a reference to a TLS secret that can be used for client MTLS authentication with

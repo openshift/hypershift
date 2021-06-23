@@ -79,7 +79,7 @@ spec:
                     properties:
                       endpoint:
                         description: Endpoint is the full url to connect to the etcd cluster endpoint. An example is https://etcd-client:2379
-                        pattern: ^https://([a-zA-Z0-9_.]:?[0-9]?[0-9]?[0-9]?[0-9]?[0-9]?[0-9]?$
+                        pattern: ^https://
                         type: string
                       tls:
                         description: TLS defines a reference to a TLS secret that can be used for client MTLS authentication with the etcd cluster
