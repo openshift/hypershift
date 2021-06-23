@@ -72,6 +72,8 @@ type HostedClusterSpec struct {
 	// +optional
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
+	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
+	// uses to store data.
 	Etcd EtcdSpec `json:"etcd"`
 }
 
@@ -270,6 +272,7 @@ type ClusterAutoscaling struct {
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the clusters etcd instance
+// +kubebuilder:validation:Enum=Managed;Unmanaged
 type EtcdManagementType string
 
 const (
@@ -299,6 +302,7 @@ type ManagedEtcdSpec struct {
 type UnmanagedEtcdSpec struct {
 	// Endpoint is the full url to connect to the etcd cluster endpoint. An example is
 	// https://etcd-client:2379
+	// +kubebuilder:validation:Pattern=`^https://`
 	Endpoint string `json:"endpoint"`
 
 	// TLS defines a reference to a TLS secret that can be used for client MTLS authentication with
