@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path"
 
-	"github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/control-plane-operator/api"
 	hcpconfig "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
