@@ -172,6 +172,9 @@ aws_secret_access_key = %s
 			Release: hyperv1.Release{
 				Image: o.ReleaseImage,
 			},
+			Etcd: hyperv1.EtcdSpec{
+				ManagementType: hyperv1.Managed,
+			},
 			Networking: hyperv1.ClusterNetworking{
 				ServiceCIDR: "172.31.0.0/16",
 				PodCIDR:     "10.132.0.0/14",

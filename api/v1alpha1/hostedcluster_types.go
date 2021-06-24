@@ -71,6 +71,12 @@ type HostedClusterSpec struct {
 	// Defaults to SingleReplica when not set.
 	// +optional
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
+
+	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
+	// use to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default={managementType: "Managed"}
+	Etcd EtcdSpec `json:"etcd"`
 }
 
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
@@ -267,6 +273,58 @@ type ClusterAutoscaling struct {
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
 }
 
+// EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance
+// +kubebuilder:validation:Enum=Managed;Unmanaged
+type EtcdManagementType string
+
+const (
+	Managed   EtcdManagementType = "Managed"
+	Unmanaged EtcdManagementType = "Unmanaged"
+)
+
+type EtcdSpec struct {
+	// ManagementType defines how the etcd cluster is managed. Unmanaged means
+	// the etcd cluster is managed by a system outside the hypershift controllers.
+	// Managed means the hypershift controllers manage the provisioning of the etcd cluster
+	// and the operations around it
+	// +unionDiscriminator
+	ManagementType EtcdManagementType `json:"managementType"`
+
+	// Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
+	// +optional
+	Managed *ManagedEtcdSpec `json:"managed,omitempty"`
+
+	// Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
+	// +optional
+	Unmanaged *UnmanagedEtcdSpec `json:"unmanaged,omitempty"`
+}
+
+type ManagedEtcdSpec struct {
+
+	//TODO: Ultimately backup policies, etc can be defined here.
+}
+
+// UnmanagedEtcdSpec defines metadata that enables the Openshift controllers to connect to the external etcd cluster
+type UnmanagedEtcdSpec struct {
+	// Endpoint is the full url to connect to the etcd cluster endpoint. An example is
+	// https://etcd-client:2379
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^https://`
+	Endpoint string `json:"endpoint"`
+
+	// TLS defines a reference to a TLS secret that can be used for client MTLS authentication with
+	// the etcd cluster
+	TLS EtcdTLSConfig `json:"tls"`
+}
+
+type EtcdTLSConfig struct {
+	// ClientSecret refers to a secret for client MTLS authentication with the etcd cluster
+	// The CA must be stored at secret key etcd-client-ca.crt.
+	// The client cert must be stored at secret key etcd-client.crt.
+	// The client key must be stored at secret key etcd-client.key.
+	ClientSecret corev1.LocalObjectReference `json:"clientSecret"`
+}
+
 const (
 	// HostedClusterAvailable indicates whether the HostedCluster has a healthy
 	// control plane.
@@ -283,6 +341,12 @@ const (
 	IgnitionServerDeploymentStatusUnknownReason = "IgnitionServerDeploymentStatusUnknown"
 	IgnitionServerDeploymentNotFoundReason      = "IgnitionServerDeploymentNotFound"
 	IgnitionServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
+)
+
+// The following are reasons for the HostedClusterAvailable condition.
+const (
+	HostedClusterIsAvailable          = "HostedClusterIsAvailable"
+	HostedClusterInsufficientMetadata = "HostedClusterInsufficientMetadata"
 )
 
 // HostedClusterStatus defines the observed state of HostedCluster

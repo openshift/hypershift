@@ -58,6 +58,10 @@ type HostedControlPlaneSpec struct {
 	// in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.
 	// +optional
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
+
+	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
+	// use to store data.
+	Etcd EtcdSpec `json:"etcd"`
 }
 
 type AvailabilityPolicy string

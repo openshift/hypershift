@@ -119,7 +119,6 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 		ExternalPort:         hcp.Status.ControlPlaneEndpoint.Port,
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
-		EtcdURL:              config.DefaultEtcdURL,
 		APIServerPort:        config.DefaultAPIServerPort,
 
 		Images: KubeAPIServerImages{
@@ -128,6 +127,14 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 			ClusterConfigOperator: images["cluster-config-operator"],
 			VPN:                   images["vpn"],
 		},
+	}
+	switch hcp.Spec.Etcd.ManagementType {
+	case hyperv1.Unmanaged:
+		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
+	case hyperv1.Managed:
+		params.EtcdURL = config.DefaultEtcdURL
+	default:
+		params.EtcdURL = config.DefaultEtcdURL
 	}
 	unprivilegedSecurityContext := corev1.SecurityContext{
 		Capabilities: &corev1.Capabilities{

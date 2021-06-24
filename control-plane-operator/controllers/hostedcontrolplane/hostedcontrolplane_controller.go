@@ -174,23 +174,36 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Status: metav1.ConditionUnknown,
 			Reason: "EtcdStatusUnknown",
 		}
-		etcdCluster := manifests.EtcdCluster(hostedControlPlane.Namespace)
-		if err := r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil {
-			if apierrors.IsNotFound(err) {
-				newCondition = metav1.Condition{
-					Type:   string(hyperv1.EtcdAvailable),
-					Status: metav1.ConditionFalse,
-					Reason: "EtcdClusterNotFound",
+		switch hostedControlPlane.Spec.Etcd.ManagementType {
+		case hyperv1.Managed:
+			r.Log.Info("Reconciling etcd cluster status for managed strategy")
+			etcdCluster := manifests.EtcdCluster(hostedControlPlane.Namespace)
+			if err := r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil {
+				if apierrors.IsNotFound(err) {
+					newCondition = metav1.Condition{
+						Type:   string(hyperv1.EtcdAvailable),
+						Status: metav1.ConditionFalse,
+						Reason: "EtcdClusterNotFound",
+					}
+				} else {
+					return ctrl.Result{}, fmt.Errorf("failed to fetch etcd cluster %s/%s: %w", etcdCluster.Namespace, etcdCluster.Name, err)
 				}
 			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to fetch etcd cluster %s/%s: %w", etcdCluster.Namespace, etcdCluster.Name, err)
+				r.Log.Info("Computing proper etcd cluster status based on current state of etcd cluster")
+				cond, err := etcd.ComputeEtcdClusterStatus(ctx, r.Client, etcdCluster)
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to compute etcd cluster status: %w", err)
+				}
+				newCondition = cond
 			}
-		} else {
-			cond, err := etcd.ComputeEtcdClusterStatus(ctx, r.Client, etcdCluster)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to compute etcd cluster status: %w", err)
+		case hyperv1.Unmanaged:
+			r.Log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
+			newCondition = metav1.Condition{
+				Type:    string(hyperv1.EtcdAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  etcd.EtcdReasonRunning,
+				Message: "Etcd cluster is assumed to be running in unmanaged state",
 			}
-			newCondition = cond
 		}
 		newCondition.ObservedGeneration = hostedControlPlane.Generation
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
@@ -448,8 +461,18 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile etcd
 	r.Log.Info("Reconciling Etcd")
-	if err := r.reconcileEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
-		return fmt.Errorf("failed to reconcile etcd: %w", err)
+
+	switch hostedControlPlane.Spec.Etcd.ManagementType {
+	case hyperv1.Managed:
+		if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
+			return fmt.Errorf("failed to reconcile etcd: %w", err)
+		}
+	case hyperv1.Unmanaged:
+		if err := r.reconcileUnmanagedEtcd(ctx, hostedControlPlane); err != nil {
+			return fmt.Errorf("failed to reconcile etcd: %w", err)
+		}
+	default:
+		return fmt.Errorf("unrecognized etcd management type: %s", hostedControlPlane.Spec.Etcd.ManagementType)
 	}
 
 	// Reconcile VPN
@@ -1125,8 +1148,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-
+func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
 
 	// Etcd Operator ServiceAccount
@@ -1191,8 +1213,39 @@ func (r *HostedControlPlaneReconciler) reconcileEtcd(ctx context.Context, hcp *h
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
 	}
-
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	//reconcile client secret over
+	if hcp.Spec.Etcd.Unmanaged == nil || len(hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name) == 0 || len(hcp.Spec.Etcd.Unmanaged.Endpoint) == 0 {
+		return fmt.Errorf("etcd metadata not specified for unmanaged deployment")
+	}
+	r.Log.Info("Retrieving tls secret", "name", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
+	var src corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name}, &src); err != nil {
+		return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name, err)
+	}
+	if _, ok := src.Data["etcd-client.crt"]; !ok {
+		return fmt.Errorf("etcd secret %s does not have client cert", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
+	}
+	if _, ok := src.Data["etcd-client.key"]; !ok {
+		return fmt.Errorf("etcd secret %s does not have client key", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
+	}
+	if _, ok := src.Data["etcd-client-ca.crt"]; !ok {
+		return fmt.Errorf("etcd secret %s does not have client ca", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
+	}
+	kubeComponentEtcdClientSecret := manifests.EtcdClientSecret(hcp.GetNamespace())
+	r.Log.Info("Reconciling openshift control plane etcd client tls secret", "name", kubeComponentEtcdClientSecret.Name)
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, kubeComponentEtcdClientSecret, func() error {
+		if kubeComponentEtcdClientSecret.Data == nil {
+			kubeComponentEtcdClientSecret.Data = map[string][]byte{}
+		}
+		kubeComponentEtcdClientSecret.Data = src.Data
+		kubeComponentEtcdClientSecret.Type = corev1.SecretTypeOpaque
+		return nil
+	})
+	return err
 }
 
 func (r *HostedControlPlaneReconciler) reconcileVPN(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, address string, port int32) error {
@@ -1655,7 +1708,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 
 	params.InternalAPIPort = defaultAPIServerPort
 	params.IssuerURL = hcp.Spec.IssuerURL
-	params.EtcdClientName = "etcd-client"
+
 	params.NetworkType = "OpenShiftSDN"
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.APIAvailabilityPolicy = render.SingleReplica
