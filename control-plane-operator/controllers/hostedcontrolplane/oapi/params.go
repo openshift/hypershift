@@ -40,7 +40,6 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[str
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
-		EtcdURL:                 config.DefaultEtcdURL,
 		APIServer: configv1.APIServer{
 			Spec: configv1.APIServerSpec{
 				TLSSecurityProfile: &configv1.TLSSecurityProfile{
@@ -144,7 +143,14 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[str
 			},
 		},
 	}
-
+	switch hcp.Spec.Etcd.ManagementType {
+	case hyperv1.Unmanaged:
+		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
+	case hyperv1.Managed:
+		params.EtcdURL = config.DefaultEtcdURL
+	default:
+		params.EtcdURL = config.DefaultEtcdURL
+	}
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 3

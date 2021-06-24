@@ -73,7 +73,6 @@ type ClusterParams struct {
 	APIAvailabilityPolicy AvailabilityPolicy `json:"apiAvailabilityPolicy"`
 	// ControllerAvailabilityPolicy defines the availability of controller components for the cluster
 	ControllerAvailabilityPolicy           AvailabilityPolicy     `json:"controllerAvailabilityPolicy"`
-	EtcdClientName                         string                 `json:"etcdClientName"`
 	OriginReleasePrefix                    string                 `json:"originReleasePrefix"`
 	OpenshiftAPIServerCABundle             string                 `json:"openshiftAPIServerCABundle"`
 	OauthAPIServerCABundle                 string                 `json:"oauthAPIServerCABundle"`

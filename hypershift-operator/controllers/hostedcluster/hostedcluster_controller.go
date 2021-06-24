@@ -200,6 +200,52 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
 	}
 
+	// this secret is later used in the reconciliation process as well so storing value to prevent multiple
+	// network calls. This secret is only used in the unmanaged etcd strategy.
+	var unmanagedEtcdTLSClientSecret corev1.Secret
+	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
+	// provide clear status to the user on the resource without having to look at operator logs.
+	{
+		if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
+			r.Log.Info("Validating etcd client secret")
+			reportFailureOnHostedClusterFunc := func(message string) {
+				// condition for etcd failure case
+				newCondition := metav1.Condition{
+					Type:    string(hyperv1.HostedClusterAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.HostedClusterInsufficientMetadata,
+					Message: message,
+				}
+				newCondition.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
+			}
+			if hcluster.Spec.Etcd.Unmanaged == nil || len(hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name) == 0 || len(hcluster.Spec.Etcd.Unmanaged.Endpoint) == 0 {
+				msg := "etcd metadata not specified for unmanaged deployment"
+				reportFailureOnHostedClusterFunc(msg)
+				return ctrl.Result{}, fmt.Errorf(msg)
+			}
+			if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name}, &unmanagedEtcdTLSClientSecret); err != nil {
+				wrappedError := fmt.Errorf("failed to get etcd client cert %s: %w", hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name, err)
+				reportFailureOnHostedClusterFunc(wrappedError.Error())
+				return ctrl.Result{}, wrappedError
+			}
+			if _, ok := unmanagedEtcdTLSClientSecret.Data["etcd-client.crt"]; !ok {
+				wrappedError := fmt.Errorf("etcd secret %s does not have client cert", hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
+				reportFailureOnHostedClusterFunc(wrappedError.Error())
+				return ctrl.Result{}, wrappedError
+			}
+			if _, ok := unmanagedEtcdTLSClientSecret.Data["etcd-client.key"]; !ok {
+				wrappedError := fmt.Errorf("etcd secret %s does not have client key", hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
+				reportFailureOnHostedClusterFunc(wrappedError.Error())
+				return ctrl.Result{}, wrappedError
+			}
+			if _, ok := unmanagedEtcdTLSClientSecret.Data["etcd-client-ca.crt"]; !ok {
+				wrappedError := fmt.Errorf("etcd secret %s does not have client ca", hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
+				reportFailureOnHostedClusterFunc(wrappedError.Error())
+				return ctrl.Result{}, wrappedError
+			}
+		}
+	}
 	// Set the Available condition
 	// TODO: This is really setting something that could be more granular like
 	// HostedControlPlaneAvailable, and then the HostedCluster high-level Available
@@ -459,6 +505,29 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile etcd client MTLS secret if the control plane is using an unmanaged etcd cluster
+	if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
+		hostedControlPlaneEtcdClientSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: controlPlaneNamespace.Name,
+				Name:      unmanagedEtcdTLSClientSecret.Name,
+			},
+		}
+		r.Log.Info("Reconciling etcd client mtls secret to control plane namespace", "namespace", hostedControlPlaneEtcdClientSecret.Namespace)
+		if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneEtcdClientSecret, func() error {
+			if hostedControlPlaneEtcdClientSecret.Data == nil {
+				hostedControlPlaneEtcdClientSecret.Data = map[string][]byte{}
+			}
+			hostedControlPlaneEtcdClientSecret.Data = unmanagedEtcdTLSClientSecret.Data
+			hostedControlPlaneEtcdClientSecret.Type = corev1.SecretTypeOpaque
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed reconciling etcd client secret: %w", err)
+		} else {
+			r.Log.Info("reconciled etcd client mtls secret to control plane namespace", "result", result)
+		}
+	}
+
 	// Reconcile the HostedControlPlane
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hcp, func() error {
@@ -616,6 +685,13 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.Services = hcluster.Spec.Services
 	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
+	hcp.Spec.Etcd.ManagementType = hcluster.Spec.Etcd.ManagementType
+	if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged && hcluster.Spec.Etcd.Unmanaged != nil {
+		hcp.Spec.Etcd.Unmanaged = hcluster.Spec.Etcd.Unmanaged.DeepCopy()
+	}
+	if hcluster.Spec.Etcd.ManagementType == hyperv1.Managed && hcluster.Spec.Etcd.Managed != nil {
+		hcp.Spec.Etcd.Managed = hcluster.Spec.Etcd.Managed.DeepCopy()
+	}
 
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -1923,7 +1999,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 			Type:               string(hyperv1.HostedClusterAvailable),
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: hcluster.Generation,
-			Reason:             "HostedClusterIsAvailable",
+			Reason:             hyperv1.HostedClusterIsAvailable,
 		}
 	default:
 		var messages []string
