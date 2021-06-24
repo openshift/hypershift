@@ -63,7 +63,7 @@ spec:
                 - baseDomain
                 type: object
               etcd:
-                description: Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components uses to store data.
+                description: Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components use to store data.
                 properties:
                   managed:
                     description: Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
@@ -84,7 +84,7 @@ spec:
                       tls:
                         description: TLS defines a reference to a TLS secret that can be used for client MTLS authentication with the etcd cluster
                         properties:
-                          client:
+                          clientSecret:
                             description: Client refers to a secret for client MTLS authentication with the etcd cluster The CA must be stored at secret key etcd-client-ca.crt. The client cert must be stored at secret key etcd-client.crt. The client key must be stored at secret key etcd-client.key.
                             properties:
                               name:
@@ -92,7 +92,7 @@ spec:
                                 type: string
                             type: object
                         required:
-                        - client
+                        - clientSecret
                         type: object
                     required:
                     - endpoint
