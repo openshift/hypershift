@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: oauth-openshift
-data:
-  ca.crt: |-
-{{ include_pki "configmap" "combined-ca" "ca.crt" 4 }}
