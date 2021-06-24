@@ -169,9 +169,6 @@ aws_secret_access_key = %s
 			Annotations: o.Annotations,
 		},
 		Spec: hyperv1.HostedClusterSpec{
-			Etcd: hyperv1.EtcdSpec{
-				ManagementType: hyperv1.Managed,
-			},
 			Release: hyperv1.Release{
 				Image: o.ReleaseImage,
 			},
