@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
@@ -50,6 +49,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
@@ -521,6 +521,17 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 	}
 
+	r.Log.Info("Reconciling default ingress controller")
+	if err = r.reconcileDefaultIngressController(ctx, hostedControlPlane); err != nil {
+		return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
+	}
+
+	// Reconcile oauth server
+	r.Log.Info("Reconciling OAuth Server")
+	if err = r.reconcileOAuthServer(ctx, hostedControlPlane, releaseImage, infraStatus.OAuthHost, infraStatus.OAuthPort); err != nil {
+		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+	}
+
 	// Install the control plane into the infrastructure
 	r.Log.Info("Reconciling hosted control plane")
 	if err := r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage); err != nil {
@@ -870,19 +881,6 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	manifests, err := r.generateControlPlaneManifests(ctx, hcp, infraStatus, releaseImage)
 	if err != nil {
 		return err
-	}
-
-	// Create oauth branding manifest because it cannot be applied
-	manifestBytes := manifests[oauthBrandingManifest]
-	manifestObj := &unstructured.Unstructured{}
-	if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(string(manifestBytes)), 100).Decode(manifestObj); err != nil {
-		return fmt.Errorf("failed to decode manifest %s: %w", oauthBrandingManifest, err)
-	}
-	manifestObj.SetNamespace(targetNamespace)
-	if err = r.Create(context.TODO(), manifestObj); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return fmt.Errorf("failed to apply manifest %s: %w", oauthBrandingManifest, err)
-		}
 	}
 
 	if err := applyManifests(ctx, r, r.Log, targetNamespace, manifests); err != nil {
@@ -1601,6 +1599,79 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileDefaultIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	ingressControllerManifest := manifests.IngressDefaultIngressControllerWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, ingressControllerManifest, func() error {
+		return ingress.ReconcileDefaultIngressControllerWorkerManifest(ingressControllerManifest, config.OwnerRefFrom(hcp), config.IngressSubdomain(hcp), hcp.Spec.Platform.Type)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile default ingress controller worker manifest: %w", err)
+	}
+
+	ingressServingCert := manifests.IngressCert(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(ingressServingCert), ingressServingCert); err != nil {
+		return fmt.Errorf("cannot get ingress serving cert: %w", err)
+	}
+	ingressControllerCertManifest := manifests.IngressDefaultIngressControllerCertWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, ingressControllerCertManifest, func() error {
+		return ingress.ReconcileDefaultIngressControllerCertWorkerManifest(ingressControllerCertManifest, config.OwnerRefFrom(hcp), ingressServingCert)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile default ingress controller cert worker manifest: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, oauthHost string, oauthPort int32) error {
+	p := oauth.NewOAuthServerParams(hcp, releaseImage.ComponentImages(), oauthHost, oauthPort)
+
+	sessionSecret := manifests.OAuthServerServiceSessionSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, sessionSecret, func() error {
+		return oauth.ReconcileSessionSecret(sessionSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth session secret: %w", err)
+	}
+
+	loginTemplate := manifests.OAuthServerDefaultLoginTemplateSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, loginTemplate, func() error {
+		return oauth.ReconcileLoginTemplateSecret(loginTemplate, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile login template secret: %w", err)
+	}
+
+	providersTemplate := manifests.OAuthServerDefaultProviderSelectionTemplateSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, providersTemplate, func() error {
+		return oauth.ReconcileProviderSelectionTemplateSecret(providersTemplate, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile provider selection template secret: %w", err)
+	}
+
+	errorTemplate := manifests.OAuthServerDefaultErrorTemplateSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, errorTemplate, func() error {
+		return oauth.ReconcileErrorTemplateSecret(errorTemplate, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile error template secret: %w", err)
+	}
+
+	ingressServingCert := manifests.IngressCert(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(ingressServingCert), ingressServingCert); err != nil {
+		return fmt.Errorf("cannot get ingress serving cert: %w", err)
+	}
+	oauthConfig := manifests.OAuthServerConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthConfig, func() error {
+		return oauth.ReconcileOAuthServerConfig(ctx, oauthConfig, p.OwnerRef, r.Client, p.ConfigParams(ingressServingCert))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth server config: %w", err)
+	}
+
+	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, deployment, func() error {
+		return oauth.ReconcileDeployment(deployment, p.OwnerRef, p.OAuthServerImage, p.DeploymentConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
+	}
+
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
 	targetNamespace := hcp.GetNamespace()
 
@@ -1764,84 +1835,6 @@ func reconcileKubeAPIServerServiceNodePort(svc *corev1.Service, nodePort int32) 
 	}
 	svc.Spec.Selector = KubeAPIServerServiceSelector()
 	svc.Spec.Type = corev1.ServiceTypeNodePort
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServerServiceLoadBalancerResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, status *InfrastructureStatus) error {
-	svc := manifests.KubeAPIServerService(namespace)
-	var kubeAPIServerServiceData corev1.Service
-	var existingNodePort int32 = 0
-	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, &kubeAPIServerServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-	if len(kubeAPIServerServiceData.Spec.Ports) > 0 && kubeAPIServerServiceData.Spec.Ports[0].NodePort > 0 {
-		r.Log.Info("Preserving existing nodePort for service", "nodePort", kubeAPIServerServiceData.Spec.Ports[0].NodePort)
-		existingNodePort = kubeAPIServerServiceData.Spec.Ports[0].NodePort
-	}
-	r.Log.Info("Updating KubeAPI service")
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-		return reconcileKubeAPIServerServiceLoadBalancer(svc, existingNodePort)
-	})
-	return err
-}
-
-func (r *HostedControlPlaneReconciler) updateStatusKubeAPIServerServiceLoadBalancer(ctx context.Context, namespace string, status *InfrastructureStatus) error {
-	r.Log.Info("Retrieving KubeAPI service to get load balancer info")
-	svc := manifests.KubeAPIServerService(namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
-		return err
-	}
-	var addr string
-	if len(svc.Status.LoadBalancer.Ingress) > 0 {
-		switch {
-		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
-			addr = svc.Status.LoadBalancer.Ingress[0].Hostname
-		case svc.Status.LoadBalancer.Ingress[0].IP != "":
-			addr = svc.Status.LoadBalancer.Ingress[0].IP
-		}
-	}
-	r.Log.Info("Retrieved load balancer info", "serviceName", svc.Name, "address", addr)
-	status.APIHost = addr
-	status.APIPort = defaultAPIServerPort
-	return nil
-}
-
-func reconcileKubeAPIServerServiceLoadBalancer(svc *corev1.Service, existingNodePort int32) error {
-	svc.Spec.Ports = KubeAPIServerServicePorts(defaultAPIServerPort)
-	if existingNodePort > 0 {
-		svc.Spec.Ports[0].NodePort = existingNodePort
-	}
-	svc.Spec.Selector = KubeAPIServerServiceSelector()
-	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) updateStatusOauthServerServiceRoute(ctx context.Context, namespace string, status *InfrastructureStatus) error {
-	r.Log.Info("Gathering route metadata")
-	routeInstance := manifests.OauthServerRoute(namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: routeInstance.Namespace, Name: routeInstance.Name}, routeInstance); err != nil {
-		return err
-	}
-	var addr = routeInstance.Spec.Host
-	r.Log.Info("Retrieved route  info", "routeName", routeInstance.Name, "address", addr)
-	status.OAuthHost = addr
-	status.OAuthPort = 443
-	return nil
-}
-
-func reconcileOauthServerRoute(routeInstance *routev1.Route) error {
-	routeInstance.Spec = routev1.RouteSpec{
-		To: routev1.RouteTargetReference{
-			Kind: "Service",
-			Name: manifests.OauthServiceName,
-		},
-		TLS: &routev1.TLSConfig{
-			Termination:                   routev1.TLSTerminationPassthrough,
-			InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
-		},
-	}
 	return nil
 }
 

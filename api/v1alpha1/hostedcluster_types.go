@@ -75,7 +75,7 @@ type HostedClusterSpec struct {
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 	// use to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={managementType: "Managed"   }
+	// +kubebuilder:default={managementType: "Managed"}
 	Etcd EtcdSpec `json:"etcd"`
 }
 
@@ -330,7 +330,7 @@ type UnmanagedEtcdSpec struct {
 }
 
 type EtcdTLSConfig struct {
-	// Client refers to a secret for client MTLS authentication with the etcd cluster
+	// ClientSecret refers to a secret for client MTLS authentication with the etcd cluster
 	// The CA must be stored at secret key etcd-client-ca.crt.
 	// The client cert must be stored at secret key etcd-client.crt.
 	// The client key must be stored at secret key etcd-client.key.

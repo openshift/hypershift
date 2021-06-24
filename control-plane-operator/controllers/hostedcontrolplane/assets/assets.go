@@ -9,7 +9,6 @@ import "embed"
 //go:embed ignition-configs/*
 //go:embed install-config/*
 //go:embed machine-config-server/*
-//go:embed oauth-openshift/*
 //go:embed openshift-controller-manager/*
 //go:embed registry/*
 //go:embed roks-metrics/*
