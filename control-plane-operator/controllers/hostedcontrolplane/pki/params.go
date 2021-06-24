@@ -1,8 +1,6 @@
 package pki
 
 import (
-	"fmt"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -58,7 +56,7 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 		ExternalKconnectivityAddress: konnectivityExternalAddress,
 		NodeInternalAPIServerIP:      config.DefaultAdvertiseAddress,
 		ExternalOauthAddress:         oauthExternalAddress,
-		IngressSubdomain:             fmt.Sprintf("apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain),
+		IngressSubdomain:             config.IngressSubdomain(hcp),
 		ExternalOpenVPNAddress:       vpnExternalAddress,
 		OwnerReference:               config.ControllerOwnerRef(hcp),
 	}
