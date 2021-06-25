@@ -32,7 +32,10 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 		"new controlplane has defaults matching hostedcluster": {
 			Cluster: hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec:       hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "a"}},
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Release: hyperv1.Release{Image: "a"},
+				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{Image: "a"},
@@ -51,7 +54,10 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 		"hostedcontrolplane rollout is deferred due to existing rollout": {
 			Cluster: hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec:       hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "b"}},
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Release: hyperv1.Release{Image: "b"},
+				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{Image: "a"},
@@ -71,7 +77,10 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 		"hostedcontrolplane rollout happens after existing rollout is complete": {
 			Cluster: hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec:       hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "b"}},
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Release: hyperv1.Release{Image: "b"},
+				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{Image: "a"},
@@ -217,7 +226,9 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 	}{
 		"missing hostedcluster should cause unavailability": {
 			Cluster: hyperv1.HostedCluster{
-				Spec:   hyperv1.HostedClusterSpec{},
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+				},
 				Status: hyperv1.HostedClusterStatus{},
 			},
 			ControlPlane: nil,
@@ -228,7 +239,9 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 		},
 		"missing kubeconfig should cause unavailability": {
 			Cluster: hyperv1.HostedCluster{
-				Spec:   hyperv1.HostedClusterSpec{},
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+				},
 				Status: hyperv1.HostedClusterStatus{},
 			},
 			ControlPlane: &hyperv1.HostedControlPlane{
@@ -246,7 +259,9 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 		},
 		"should be available": {
 			Cluster: hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{},
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+				},
 				Status: hyperv1.HostedClusterStatus{
 					KubeConfig: &corev1.LocalObjectReference{Name: "foo"},
 				},
