@@ -337,6 +337,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Key:  DefaultAdminKubeconfigKey,
 		}
 	}
+	hostedControlPlane.Status.Initialized = true
 
 	// At this point the latest image is considered to be rolled out. If we're transitioning
 	// from one image to another, record that on status and note the time.
