@@ -3,13 +3,10 @@ package nodepool
 import (
 	"fmt"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -105,47 +102,20 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 	return awsMachineTemplate
 }
 
-func MachineConfigServerDeployment(machineConfigServerNamespace, machineConfigServerName string) *appsv1.Deployment {
-	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: machineConfigServerNamespace,
-			Name:      fmt.Sprintf("machine-config-server-%s", machineConfigServerName),
-		},
-	}
-}
-
-func MachineConfigServerServiceAccount(machineConfigServerNamespace, machineConfigServerName string) *corev1.ServiceAccount {
-	return &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: machineConfigServerNamespace,
-			Name:      fmt.Sprintf("machine-config-server-%s", machineConfigServerName),
-		},
-	}
-}
-
-func MachineConfigServerRoleBinding(machineConfigServerNamespace, machineConfigServerName string) *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: machineConfigServerNamespace,
-			Name:      fmt.Sprintf("machine-config-server-%s", machineConfigServerName),
-		},
-	}
-}
-
-func MachineConfigServerService(machineConfigServerNamespace, machineConfigServerName string) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: machineConfigServerNamespace,
-			Name:      fmt.Sprintf("machine-config-server-%s", machineConfigServerName),
-		},
-	}
-}
-
-func MachineConfigServerUserDataSecret(namespace, name string) *corev1.Secret {
+func IgnitionUserDataSecret(namespace, name, version string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      fmt.Sprintf("user-data-%s", name),
+			Name:      fmt.Sprintf("user-data-%s-%s", name, version),
+		},
+	}
+}
+
+func TokenSecret(namespace, name, version string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      fmt.Sprintf("token-%s-%s", name, version),
 		},
 	}
 }

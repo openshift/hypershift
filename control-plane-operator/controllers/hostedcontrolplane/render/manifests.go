@@ -117,7 +117,6 @@ func (c *clusterManifestContext) clusterBootstrap() {
 func (c *clusterManifestContext) machineConfigServer() {
 	c.addManifestFiles(
 		"machine-config-server/machine-config-server-configmap.yaml",
-		"machine-config-server/machine-config-server-secret.yaml",
 		"machine-config-server/machine-config-server-kubeconfig-secret.yaml",
 	)
 }

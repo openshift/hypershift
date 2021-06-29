@@ -33,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/hypershift/certs"
@@ -929,10 +928,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerService, func() error {
 		ignitionServerService.Spec.Ports = []corev1.ServicePort{
 			{
-				Name:       "http",
+				Name:       "https",
 				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(9090),
+				Port:       443,
+				TargetPort: intstr.FromString("https"),
 			},
 		}
 		ignitionServerService.Spec.Selector = map[string]string{
@@ -1043,20 +1042,62 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		r.Log.Info("reconciled ignition serving cert secret", "result", result)
 	}
 
-	// Reconcile a token for authorizing requests to the ignition server. We only
-	// create this and don't update it for now.
-	tokenSecret := ignitionserver.IgnitionTokenSecret(controlPlaneNamespace.Name)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
-		if tokenSecret.CreationTimestamp.IsZero() {
-			tokenSecret.Data = map[string][]byte{
-				ignitionserver.TokenSecretKey: []byte(uuid.New().String()),
-			}
+	role := ignitionserver.Role(controlPlaneNamespace.Name)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"events",
+					// This is needed by the tokeSecret controller to watch secrets.
+					"secrets",
+					// This is needed by the MCS ignitionProvider to lookup the release image and create the MCS.
+					"pods/log",
+					"serviceaccounts",
+					"pods",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{"rbac.authorization.k8s.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile ignition token secret: %w", err)
+		return fmt.Errorf("failed to reconcile ignition role: %w", err)
 	} else {
-		r.Log.Info("reconciled ignition token secret", "result", result)
+		span.AddEvent("reconciled ignition server role", trace.WithAttributes(attribute.String("result", string(result))))
+	}
+
+	sa := ignitionserver.ServiceAccount(controlPlaneNamespace.Name)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
+	} else {
+		span.AddEvent("reconciled ignition ServiceAccount", trace.WithAttributes(attribute.String("result", string(result))))
+	}
+
+	roleBinding := ignitionserver.RoleBinding(controlPlaneNamespace.Name)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, roleBinding, func() error {
+		roleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     role.Name,
+		}
+
+		roleBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      sa.Name,
+				Namespace: sa.Namespace,
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition RoleBinding: %w", err)
+	} else {
+		span.AddEvent("reconciled ignition RoleBinding", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	// Reconcile deployment
@@ -1080,6 +1121,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 					},
 				},
 				Spec: corev1.PodSpec{
+					ServiceAccountName:            sa.Name,
 					TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
 					Tolerations: []corev1.Toleration{
 						{
@@ -1096,29 +1138,31 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								},
 							},
 						},
-						{
-							Name: "token",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: tokenSecret.Name,
-								},
-							},
-						},
 					},
 					Containers: []corev1.Container{
 						{
 							Name:            ignitionserver.ResourceName,
 							Image:           r.OperatorImage,
 							ImagePullPolicy: corev1.PullAlways,
+							Env: []corev1.EnvVar{
+								{
+									Name: "MY_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
 							Command: []string{
 								"/usr/bin/ignition-server",
 								"start",
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
-								"--token-file", "/var/run/secrets/ignition/token/token",
 							},
 							Ports: []corev1.ContainerPort{
 								{
+									Name:          "https",
 									ContainerPort: 9090,
 								},
 							},
@@ -1126,10 +1170,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								{
 									Name:      "serving-cert",
 									MountPath: "/var/run/secrets/ignition/serving-cert",
-								},
-								{
-									Name:      "token",
-									MountPath: "/var/run/secrets/ignition/token",
 								},
 							},
 						},
