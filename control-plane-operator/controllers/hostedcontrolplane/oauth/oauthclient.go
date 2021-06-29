@@ -39,6 +39,7 @@ func reconcileOAuthClient(client *oauthv1.OAuthClient, externalHost string, exte
 		fmt.Sprintf("https://%s:%d/oauth/token/implicit", externalHost, externalPort),
 	}
 	client.RespondWithChallenges = true
+	client.GrantMethod = oauthv1.GrantHandlerAuto
 	if setSecret && len(client.Secret) == 0 {
 		client.Secret = randomString(32)
 	}
