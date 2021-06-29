@@ -345,20 +345,24 @@ const (
 	// IgnitionEndpointAvailable indicates whether the ignition server for the
 	// HostedCluster is available to handle ignition requests.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
+
+	// UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
+	// healthy.
+	UnmanagedEtcdAvailable ConditionType = "UnmanagedEtcdAvailable"
 )
 
-// The following are reasons for the IgnitionEndpointAvailable condition.
 const (
-	IgnitionServerDeploymentAsExpected          = "IgnitionServerDeploymentAsExpected"
+	IgnitionServerDeploymentAsExpectedReason    = "IgnitionServerDeploymentAsExpected"
 	IgnitionServerDeploymentStatusUnknownReason = "IgnitionServerDeploymentStatusUnknown"
 	IgnitionServerDeploymentNotFoundReason      = "IgnitionServerDeploymentNotFound"
 	IgnitionServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
-)
 
-// The following are reasons for the HostedClusterAvailable condition.
-const (
-	HostedClusterIsAvailable          = "HostedClusterIsAvailable"
-	HostedClusterInsufficientMetadata = "HostedClusterInsufficientMetadata"
+	HostedClusterAsExpectedReason          = "HostedClusterAsExpected"
+	HostedClusterUnhealthyComponentsReason = "UnhealthControlPlaneComponents"
+
+	UnmanagedEtcdStatusUnknownReason = "UnmanagedEtcdStatusUnknown"
+	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
+	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"
 )
 
 // HostedClusterStatus defines the observed state of HostedCluster
