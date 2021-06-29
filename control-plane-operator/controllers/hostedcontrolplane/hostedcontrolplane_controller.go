@@ -1653,6 +1653,20 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
 
+	oauthBrowserClient := manifests.OAuthServerBrowserClientManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthBrowserClient, func() error {
+		return oauth.ReconcileBrowserClientWorkerManifest(oauthBrowserClient, p.OwnerRef, p.ExternalHost, p.ExternalPort)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth browser client manifest: %w", err)
+	}
+
+	oauthChallengingClient := manifests.OAuthServerChallengingClientManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthChallengingClient, func() error {
+		return oauth.ReconcileChallengingClientWorkerManifest(oauthChallengingClient, p.OwnerRef, p.ExternalHost, p.ExternalPort)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth challenging client manifest: %w", err)
+	}
+
 	return nil
 }
 
