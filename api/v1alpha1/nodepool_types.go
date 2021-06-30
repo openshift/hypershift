@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -11,6 +12,7 @@ const (
 	NodePoolAsExpectedConditionReason       = "AsExpected"
 	NodePoolValidationFailedConditionReason = "ValidationFailed"
 	NodePoolUpgradingConditionType          = "Upgrading"
+	NodePoolUpdatingConfigConditionType     = "UpdatingConfig"
 )
 
 // The following are reasons for the IgnitionEndpointAvailable condition.
@@ -54,6 +56,17 @@ type NodePoolSpec struct {
 	NodeCount *int32 `json:"nodeCount"`
 	// +optional
 	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// TODO (alberto): this ConfigMaps are meant to contain
+	// MachineConfig, KubeletConfig and ContainerRuntimeConfig but
+	// MCO only supports MachineConfig in bootstrap mode atm
+	// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119
+	// By contractual convention the ConfigMap structure is as follow:
+	// type: ConfigMap
+	//   data:
+	//     config: |-
+	Config []v1.LocalObjectReference `json:"config,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={maxSurge: 1, maxUnavailable: 0, autoRepair: false}

@@ -750,6 +750,11 @@ func (in *NodePoolSpec) DeepCopyInto(out *NodePoolSpec) {
 		*out = new(NodePoolAutoScaling)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.Config != nil {
+		in, out := &in.Config, &out.Config
+		*out = make([]v1.LocalObjectReference, len(*in))
+		copy(*out, *in)
+	}
 	out.Management = in.Management
 	in.Platform.DeepCopyInto(&out.Platform)
 	out.Release = in.Release

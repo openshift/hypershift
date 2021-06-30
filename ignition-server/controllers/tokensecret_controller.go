@@ -1,8 +1,11 @@
 package controllers
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
@@ -19,6 +22,7 @@ import (
 
 const (
 	TokenSecretReleaseKey = "release"
+	TokenSecretConfigKey  = "config"
 	TokenSecretTokenKey   = "token"
 	TokenSecretAnnotation = "hypershift.openshift.io/ignition-config"
 )
@@ -38,11 +42,9 @@ func NewPayloadStore() *ExpiringCache {
 // IgnitionProvider can build ignition payload contents
 // for a given release image.
 type IgnitionProvider interface {
-	// GetPayload returns the ignition payload contents for
-	// the provided release. In the future the list of
-	// inputs may expand to incorporate user-provided ignition
-	// overlay contents.
-	GetPayload(ctx context.Context, payloadImage string) ([]byte, error)
+	// GetPayload returns the ignition payload content for
+	// the provided release image and a config string containing 0..N MachineConfig yaml definitions.
+	GetPayload(ctx context.Context, payloadImage, config string) ([]byte, error)
 }
 
 // TokenSecretReconciler watches token Secrets
@@ -56,6 +58,7 @@ type IgnitionProvider interface {
 //	 data:
 //     token: <authz token>
 //     release: <release image string>
+//     config: |-
 type TokenSecretReconciler struct {
 	client.Client
 	IgnitionProvider IgnitionProvider
@@ -130,7 +133,13 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
-	payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage)
+	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
+	config, err := decompress(compressedConfig)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, string(config))
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error getting ignition payload: %v", err)
 	}
@@ -139,4 +148,20 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	r.PayloadStore.Set(token, payload)
 
 	return ctrl.Result{}, nil
+}
+
+func decompress(content []byte) ([]byte, error) {
+	if len(content) == 0 {
+		return nil, nil
+	}
+	gr, err := gzip.NewReader(bytes.NewBuffer(content))
+	if err != nil {
+		return nil, fmt.Errorf("failed to uncompress content: %w", err)
+	}
+	defer gr.Close()
+	data, err := ioutil.ReadAll(gr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read content: %w", err)
+	}
+	return data, nil
 }
