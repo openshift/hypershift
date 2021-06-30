@@ -14,7 +14,7 @@ status:
   apiServerInternalURI: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
   apiServerURL: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
   etcdDiscoveryDomain: {{ .BaseDomain }}
-  infrastructureName: {{ .InfraID }}
+  infrastructureName: "{{ .InfraID }}"
   platform: {{ .PlatformType }}
   platformStatus:
     type: {{ .PlatformType }}
