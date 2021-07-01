@@ -98,7 +98,6 @@ oauth-openshift-75879b669f-grmhf                  1/1     Running     0         
 openshift-apiserver-766d9c6f79-c442c              1/1     Running     0          51m
 openshift-controller-manager-6db5976f8f-4nhgb     1/1     Running     0          52m
 openshift-oauth-apiserver-fb9d8c45b-7xzlp         1/1     Running     2          52m
-openvpn-server-b6889884c-rbrdf                    1/1     Running     0          52m
 ```
 
 
@@ -138,6 +137,9 @@ spec:
   platform:
     aws:
       instanceType: m5.large
+    type: AWS
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.8.0-rc.0-x86_64
 ```
 
 With autoscaling:
@@ -156,8 +158,11 @@ spec:
   platform:
     aws:
       instanceType: m5.large
+    type: AWS
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.8.0-rc.0-x86_64
 ```
-## Trouble Shooting
+## Troubleshooting
 
 **Pull Secret Issues**
 

@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/spf13/cobra"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -30,10 +29,6 @@ type DestroyInfraOptions struct {
 	AWSCredentialsFile string
 	Name               string
 	BaseDomain         string
-
-	EC2Client     ec2iface.EC2API
-	Route53Client route53iface.Route53API
-	ELBClient     elbiface.ELBAPI
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -67,12 +62,6 @@ func NewDestroyCommand() *cobra.Command {
 			cancel()
 		}()
 
-		awsSession := awsutil.NewSession()
-		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
-		opts.EC2Client = ec2.New(awsSession, awsConfig)
-		opts.ELBClient = elb.New(awsSession, awsConfig)
-		opts.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(opts.AWSCredentialsFile))
-
 		if err := opts.Run(ctx); err != nil {
 			log.Error(err, "Failed to destroy infrastructure")
 			os.Exit(1)
@@ -95,12 +84,18 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
+	awsSession := awsutil.NewSession("cli-destroy-infra")
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	ec2Client := ec2.New(awsSession, awsConfig)
+	elbClient := elb.New(awsSession, awsConfig)
+	route53Client := route53.New(awsSession, awsutil.NewRoute53Config(o.AWSCredentialsFile))
+
 	var errs []error
-	errs = append(errs, o.DestroyInternetGateways(ctx, o.EC2Client)...)
-	errs = append(errs, o.DestroyVPCs(ctx, o.EC2Client, o.ELBClient)...)
-	errs = append(errs, o.DestroyDHCPOptions(ctx, o.EC2Client)...)
-	errs = append(errs, o.DestroyEIPs(ctx, o.EC2Client)...)
-	errs = append(errs, o.DestroyDNS(ctx, o.Route53Client)...)
+	errs = append(errs, o.DestroyInternetGateways(ctx, ec2Client)...)
+	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient)...)
+	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
+	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
+	errs = append(errs, o.DestroyDNS(ctx, route53Client)...)
 	return utilerrors.NewAggregate(errs)
 }
 

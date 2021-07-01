@@ -33,10 +33,6 @@ type PKIParams struct {
 	// Subdomain for cluster ingress. Used to generate the wildcard certificate for ingress.
 	IngressSubdomain string `json:"ingressSubdomain"`
 
-	// VPN Server
-	// An externally accessible DNS name or IP for the VPN Server. Currently obtained from VPN load balancer DNS name.
-	ExternalOpenVPNAddress string `json:"externalOpenVPNAddress"`
-
 	// Namespace used to generate internal DNS names for services.
 	Namespace string `json:"namespace"`
 
@@ -47,7 +43,6 @@ type PKIParams struct {
 func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 	apiExternalAddress,
 	oauthExternalAddress,
-	vpnExternalAddress,
 	konnectivityExternalAddress string) *PKIParams {
 	p := &PKIParams{
 		Namespace:                    hcp.Namespace,
@@ -57,7 +52,6 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 		NodeInternalAPIServerIP:      config.DefaultAdvertiseAddress,
 		ExternalOauthAddress:         oauthExternalAddress,
 		IngressSubdomain:             config.IngressSubdomain(hcp),
-		ExternalOpenVPNAddress:       vpnExternalAddress,
 		OwnerReference:               config.ControllerOwnerRef(hcp),
 	}
 	return p

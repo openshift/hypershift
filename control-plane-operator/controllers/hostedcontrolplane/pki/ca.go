@@ -58,10 +58,6 @@ func (p *PKIParams) ReconcileClusterSignerCA(secret *corev1.Secret) error {
 	return p.reconcileSelfSignedCA(secret, "cluster-signer", "openshift")
 }
 
-func (p *PKIParams) ReconcileVPNSignerCA(secret *corev1.Secret) error {
-	return p.reconcileSelfSignedCA(secret, "openvpn-ca", "openshift")
-}
-
 func (p *PKIParams) ReconcileCombinedCA(cm *corev1.ConfigMap, rootCA, signerCA *corev1.Secret) error {
 	return p.reconcileAggregateCA(cm, rootCA, signerCA)
 }

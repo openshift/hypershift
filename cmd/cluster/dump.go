@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/spf13/cobra"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -35,7 +36,7 @@ type DumpOptions struct {
 func NewDumpCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "cluster",
-		Short:        "Creates basic functional HostedCluster resources",
+		Short:        "Dumps hostedcluster diagnostic info",
 		SilenceUsage: true,
 	}
 
@@ -87,7 +88,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	for _, nodePool := range nodePools {
 		objectNames = append(objectNames, typedName(&hyperv1.NodePool{}, nodePool.Name))
 	}
-	cmd.WithNamespace(opts.Namespace).Run(objectNames...)
+	cmd.WithNamespace(opts.Namespace).Run(ctx, objectNames...)
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
 
@@ -114,8 +115,8 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&hyperv1.HostedControlPlane{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
-	cmd.WithNamespace(controlPlaneNamespace).Run(resourceList)
-	cmd.WithNamespace(opts.Namespace).Run(resourceList)
+	cmd.WithNamespace(controlPlaneNamespace).Run(ctx, resourceList)
+	cmd.WithNamespace(opts.Namespace).Run(ctx, resourceList)
 
 	podList := &corev1.PodList{}
 	if err = c.List(ctx, podList, client.InNamespace(controlPlaneNamespace)); err != nil {
@@ -126,10 +127,44 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	return nil
 }
 
+// DumpGuestCluster dumps resources from a hosted cluster using its apiserver
+// indicated by the provided kubeconfig. This function assumes that pods aren't
+// able to be scheduled and so can only gather information directly accessible
+// through the api server.
+func DumpGuestCluster(ctx context.Context, kubeconfig string, destDir string) error {
+	ocCommand, err := exec.LookPath("oc")
+	if err != nil || len(ocCommand) == 0 {
+		return fmt.Errorf("cannot find oc command")
+	}
+	cmd := OCAdmInspect{
+		oc:          ocCommand,
+		artifactDir: destDir,
+		kubeconfig:  kubeconfig,
+	}
+	resources := []client.Object{
+		&appsv1.DaemonSet{},
+		&appsv1.Deployment{},
+		&appsv1.ReplicaSet{},
+		&appsv1.StatefulSet{},
+		&batchv1.Job{},
+		&corev1.ConfigMap{},
+		&corev1.Endpoints{},
+		&corev1.Event{},
+		&corev1.PersistentVolumeClaim{},
+		&corev1.Pod{},
+		&corev1.ReplicationController{},
+		&configv1.ClusterOperator{},
+	}
+	resourceList := strings.Join(resourceTypes(resources), ",")
+	cmd.Run(ctx, resourceList)
+	return nil
+}
+
 type OCAdmInspect struct {
 	oc          string
 	artifactDir string
 	namespace   string
+	kubeconfig  string
 }
 
 func (i *OCAdmInspect) WithNamespace(namespace string) *OCAdmInspect {
@@ -138,13 +173,16 @@ func (i *OCAdmInspect) WithNamespace(namespace string) *OCAdmInspect {
 	return &withNS
 }
 
-func (i *OCAdmInspect) Run(cmdArgs ...string) {
+func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	allArgs := []string{"adm", "inspect", "--dest-dir", i.artifactDir}
 	if len(i.namespace) > 0 {
 		allArgs = append(allArgs, "-n", i.namespace)
 	}
+	if len(i.kubeconfig) > 0 {
+		allArgs = append(allArgs, "--kubeconfig", i.kubeconfig)
+	}
 	allArgs = append(allArgs, cmdArgs...)
-	cmd := exec.Command(i.oc, allArgs...)
+	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	err := cmd.Run()

@@ -42,7 +42,6 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 		"dns":               dnsForCidr,
 		"mask":              cidrMask,
 		"include":           includeFileFunc(params, ctx.renderContext),
-		"includeVPN":        includeVPNFunc(true),
 		"dataURLEncode":     dataURLEncode(params, ctx.renderContext),
 		"randomString":      randomString,
 		"includeData":       includeDataFunc(),
@@ -117,7 +116,6 @@ func (c *clusterManifestContext) clusterBootstrap() {
 func (c *clusterManifestContext) machineConfigServer() {
 	c.addManifestFiles(
 		"machine-config-server/machine-config-server-configmap.yaml",
-		"machine-config-server/machine-config-server-secret.yaml",
 		"machine-config-server/machine-config-server-kubeconfig-secret.yaml",
 	)
 }

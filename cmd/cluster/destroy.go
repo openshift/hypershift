@@ -8,14 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/elb"
-	"github.com/aws/aws-sdk-go/service/elb/elbiface"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,7 +19,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 )
 
@@ -44,11 +35,6 @@ type DestroyOptions struct {
 	AWSCredentialsFile string
 	PreserveIAM        bool
 	ClusterGracePeriod time.Duration
-
-	EC2Client     ec2iface.EC2API
-	Route53Client route53iface.Route53API
-	ELBClient     elbiface.ELBAPI
-	IAMClient     iamiface.IAMAPI
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -87,13 +73,6 @@ func NewDestroyCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-
-		awsSession := awsutil.NewSession()
-		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
-		opts.EC2Client = ec2.New(awsSession, awsConfig)
-		opts.ELBClient = elb.New(awsSession, awsConfig)
-		opts.Route53Client = route53.New(awsSession, awsutil.NewConfig(opts.AWSCredentialsFile, "us-east-1"))
-		opts.IAMClient = iam.New(awsSession, awsConfig)
 
 		if err := DestroyCluster(ctx, &opts); err != nil {
 			log.Error(err, "Failed to destroy cluster")
@@ -189,9 +168,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		AWSCredentialsFile: o.AWSCredentialsFile,
 		Name:               o.Name,
 		BaseDomain:         baseDomain,
-		EC2Client:          o.EC2Client,
-		Route53Client:      o.Route53Client,
-		ELBClient:          o.ELBClient,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		return fmt.Errorf("failed to destroy infrastructure: %w", err)
@@ -203,7 +179,6 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 			Region:             region,
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			InfraID:            infraID,
-			IAMClient:          o.IAMClient,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)

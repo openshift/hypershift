@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	kasVPNWorkingDir                   = "/etc/openvpn"
 	kasNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
 )
 
@@ -47,10 +46,6 @@ var (
 			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
 			kasVolumeEgressSelectorConfig().Name:   "/etc/kubernetes/egress-selector",
 		},
-		kasContainerVPNClient().Name: {
-			kasVolumeVPNClientConfig().Name: kasVPNWorkingDir + "/config",
-			kasVolumeVPNClientCert().Name:   kasVPNWorkingDir + "/secret",
-		},
 	}
 
 	cloudProviderConfigVolumeMount = util.PodVolumeMounts{
@@ -68,9 +63,6 @@ var (
 	// volume mounts in apply bootstrap container
 	applyWorkMountPath       = "/work"
 	applyKubeconfigMountPath = "/var/secrets/localhost-kubeconfig"
-
-	// volume mounts in kube apiserver
-	vpnClientConfigKey = "client.conf"
 )
 
 var kasLabels = map[string]string{
@@ -105,14 +97,12 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				ServiceAccountName:           manifests.VPNServiceAccount(deployment.Namespace).Name,
 				InitContainers: []corev1.Container{
 					util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator)),
 				},
 				Containers: []corev1.Container{
 					util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
 					util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube)),
-					util.BuildContainer(kasContainerVPNClient(), buildKASContainerVPNClient(images.VPN)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(kasVolumeBootstrapManifests(), buildKASVolumeBootstrapManifests),
@@ -128,8 +118,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 					util.BuildVolume(kasVolumeEtcdClientCert(), buildKASVolumeEtcdClientCert),
 					util.BuildVolume(kasVolumeOauthMetadata(), buildKASVolumeOauthMetadata),
 					util.BuildVolume(kasVolumeClientCA(), buildKASVolumeClientCA),
-					util.BuildVolume(kasVolumeVPNClientCert(), buildKASVolumeVPNClientCert),
-					util.BuildVolume(kasVolumeVPNClientConfig(), buildKASVolumeVPNClientConfig),
 					util.BuildVolume(kasVolumeKubeletClientCert(), buildKASVolumeKubeletClientCert),
 					util.BuildVolume(kasVolumeKubeletClientCA(), buildKASVolumeKubeletClientCA),
 					util.BuildVolume(kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert),
@@ -211,28 +199,6 @@ func buildKASContainerMain(image string) func(c *corev1.Container) {
 			"-v5",
 		}
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
-	}
-}
-
-func kasContainerVPNClient() *corev1.Container {
-	return &corev1.Container{
-		Name: "vpn-client",
-	}
-}
-
-func buildKASContainerVPNClient(image string) func(c *corev1.Container) {
-	return func(c *corev1.Container) {
-		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
-		c.Command = []string{
-			"/usr/sbin/openvpn",
-		}
-		c.Args = []string{
-			"--config",
-			path.Join(volumeMounts.Path(c.Name, kasVolumeVPNClientConfig().Name), vpnClientConfigKey),
-		}
-		c.WorkingDir = kasVPNWorkingDir
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
@@ -411,28 +377,6 @@ func kasVolumeOauthMetadata() *corev1.Volume {
 func buildKASVolumeOauthMetadata(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.KASOAuthMetadata("").Name
-}
-
-func kasVolumeVPNClientConfig() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "vpn-client-config",
-	}
-}
-func buildKASVolumeVPNClientConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = manifests.VPNKubeAPIServerClientConfig("").Name
-}
-
-func kasVolumeVPNClientCert() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "vpn-client-crt",
-	}
-}
-
-func buildKASVolumeVPNClientCert(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.VPNKubeAPIServerClientSecret("").Name,
-	}
 }
 
 func kasVolumeCloudConfig() *corev1.Volume {

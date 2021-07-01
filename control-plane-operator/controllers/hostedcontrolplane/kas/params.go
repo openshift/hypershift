@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -21,7 +20,6 @@ type KubeAPIServerImages struct {
 	ClusterConfigOperator string `json:"clusterConfigOperator"`
 	CLI                   string `json:"cli"`
 	HyperKube             string `json:"hyperKube"`
-	VPN                   string `json:"vpn"`
 }
 
 type KubeAPIServerParams struct {
@@ -126,7 +124,6 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 			HyperKube:             images["hyperkube"],
 			CLI:                   images["cli"],
 			ClusterConfigOperator: images["cluster-config-operator"],
-			VPN:                   images["vpn"],
 		},
 	}
 	if hcp.Annotations != nil {
@@ -152,15 +149,11 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 				"NET_ADMIN",
 			},
 		},
-		RunAsUser: pointer.Int64Ptr(int64(1001)),
 	}
 	params.SecurityContexts = config.SecurityContextSpec{
 		kasContainerBootstrap().Name:      unprivilegedSecurityContext,
 		kasContainerApplyBootstrap().Name: unprivilegedSecurityContext,
 		kasContainerMain().Name:           unprivilegedSecurityContext,
-		kasContainerVPNClient().Name: {
-			Privileged: pointer.BoolPtr(true),
-		},
 	}
 	params.AdditionalLabels = map[string]string{}
 	params.Scheduling = config.Scheduling{
