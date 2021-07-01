@@ -11,7 +11,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -31,8 +30,6 @@ type CreateIAMOptions struct {
 	InfraID            string
 	IssuerURL          string
 	OutputFile         string
-
-	IAMClient iamiface.IAMAPI
 }
 
 type CreateIAMOutput struct {
@@ -78,10 +75,6 @@ func NewCreateIAMCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-
-		awsSession := awsutil.NewSession()
-		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
-		opts.IAMClient = iam.New(awsSession, awsConfig)
 
 		if err := opts.Run(ctx, util.GetClientOrDie()); err != nil {
 			log.Error(err, "Failed to create infrastructure")
@@ -141,26 +134,30 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	o.IssuerURL = fmt.Sprintf("https://oidc-%s.%s", o.InfraID, ingressConfig.Spec.Domain)
 	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
-	results, err := o.CreateOIDCResources(o.IAMClient)
+	awsSession := awsutil.NewSession("cli-create-iam")
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	iamClient := iam.New(awsSession, awsConfig)
+
+	results, err := o.CreateOIDCResources(iamClient)
 	if err != nil {
 		return nil, err
 	}
 	profileName := DefaultProfileName(o.InfraID)
 	results.ProfileName = profileName
-	err = o.CreateWorkerInstanceProfile(o.IAMClient, profileName)
+	err = o.CreateWorkerInstanceProfile(iamClient, profileName)
 	if err != nil {
 		return nil, err
 	}
 	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
 
-	if key, err := o.CreateCredentialedUserWithPolicy(ctx, o.IAMClient, fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller"), cloudControllerPolicy); err != nil {
+	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller"), cloudControllerPolicy); err != nil {
 		return nil, err
 	} else {
 		results.KubeCloudControllerUserAccessKeyID = aws.StringValue(key.AccessKeyId)
 		results.KubeCloudControllerUserAccessKeySecret = aws.StringValue(key.SecretAccessKey)
 	}
 
-	if key, err := o.CreateCredentialedUserWithPolicy(ctx, o.IAMClient, fmt.Sprintf("%s-%s", o.InfraID, "node-pool"), nodePoolPolicy); err != nil {
+	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "node-pool"), nodePoolPolicy); err != nil {
 		return nil, err
 	} else {
 		results.NodePoolManagementUserAccessKeyID = aws.StringValue(key.AccessKeyId)

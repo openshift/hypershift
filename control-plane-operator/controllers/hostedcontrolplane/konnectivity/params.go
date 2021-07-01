@@ -41,7 +41,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.ServerDeploymentConfig.Replicas = 1
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
-		konnectivityServerContainer().Name: {
+		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
 				corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -50,7 +50,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.AgentDeploymentConfig.Replicas = 1
 	p.AgentDeamonSetConfig.Resources = config.ResourcesSpec{
-		konnectivityServerContainer().Name: {
+		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
 				corev1.ResourceCPU:    resource.MustParse("10m"),

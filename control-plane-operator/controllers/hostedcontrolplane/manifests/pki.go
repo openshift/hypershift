@@ -32,15 +32,6 @@ func CombinedCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
-func VPNSignerCASecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openvpn-signer-ca",
-			Namespace: ns,
-		},
-	}
-}
-
 func EtcdClientSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -189,42 +180,6 @@ func KonnectivityWorkerAgentSecret(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "user-manifest-konnectivity-agent-secret",
-			Namespace: ns,
-		},
-	}
-}
-
-func VPNServerCertSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openvpn-server",
-			Namespace: ns,
-		},
-	}
-}
-
-func VPNKubeAPIServerClientSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openvpn-kube-apiserver-client",
-			Namespace: ns,
-		},
-	}
-}
-
-func VPNClientSecret() *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openvpn-client",
-			Namespace: "kube-system",
-		},
-	}
-}
-
-func VPNWorkerClientSecret(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-manifest-openvpn-client-secret",
 			Namespace: ns,
 		},
 	}

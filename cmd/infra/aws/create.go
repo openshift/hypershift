@@ -9,11 +9,7 @@ import (
 	"syscall"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/elb"
-	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/spf13/cobra"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -27,10 +23,6 @@ type CreateInfraOptions struct {
 	BaseDomain         string
 	OutputFile         string
 	AdditionalTags     []string
-
-	EC2Client     ec2iface.EC2API
-	Route53Client route53iface.Route53API
-	ELBClient     elbiface.ELBAPI
 
 	additionalEC2Tags []*ec2.Tag
 }
@@ -91,12 +83,6 @@ func NewCreateCommand() *cobra.Command {
 			cancel()
 		}()
 
-		awsSession := awsutil.NewSession()
-		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
-		opts.EC2Client = ec2.New(awsSession, awsConfig)
-		opts.ELBClient = elb.New(awsSession, awsConfig)
-		opts.Route53Client = route53.New(awsSession, awsutil.NewRoute53Config(opts.AWSCredentialsFile))
-
 		if err := opts.Run(ctx); err != nil {
 			log.Error(err, "Failed to create infrastructure")
 			os.Exit(1)
@@ -135,6 +121,11 @@ func (o *CreateInfraOptions) Run(ctx context.Context) error {
 func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutput, error) {
 	log.Info("Creating infrastructure", "id", o.InfraID)
 
+	awsSession := awsutil.NewSession("cli-create-infra")
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	ec2Client := ec2.New(awsSession, awsConfig)
+	route53Client := route53.New(awsSession, awsutil.NewRoute53Config(o.AWSCredentialsFile))
+
 	var err error
 	if err = o.parseAdditionalTags(); err != nil {
 		return nil, err
@@ -146,54 +137,54 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 		Name:        o.Name,
 		BaseDomain:  o.BaseDomain,
 	}
-	result.Zone, err = o.firstZone(o.EC2Client)
+	result.Zone, err = o.firstZone(ec2Client)
 	if err != nil {
 		return nil, err
 	}
-	result.VPCID, err = o.createVPC(o.EC2Client)
+	result.VPCID, err = o.createVPC(ec2Client)
 	if err != nil {
 		return nil, err
 	}
-	if err = o.CreateDHCPOptions(o.EC2Client, result.VPCID); err != nil {
+	if err = o.CreateDHCPOptions(ec2Client, result.VPCID); err != nil {
 		return nil, err
 	}
-	result.PrivateSubnetID, err = o.CreatePrivateSubnet(o.EC2Client, result.VPCID, result.Zone)
+	result.PrivateSubnetID, err = o.CreatePrivateSubnet(ec2Client, result.VPCID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	result.PublicSubnetID, err = o.CreatePublicSubnet(o.EC2Client, result.VPCID, result.Zone)
+	result.PublicSubnetID, err = o.CreatePublicSubnet(ec2Client, result.VPCID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	igwID, err := o.CreateInternetGateway(o.EC2Client, result.VPCID)
+	igwID, err := o.CreateInternetGateway(ec2Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	natGatewayID, err := o.CreateNATGateway(o.EC2Client, result.PublicSubnetID, result.Zone)
+	natGatewayID, err := o.CreateNATGateway(ec2Client, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	result.SecurityGroupID, err = o.CreateWorkerSecurityGroup(o.EC2Client, result.VPCID)
+	result.SecurityGroupID, err = o.CreateWorkerSecurityGroup(ec2Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	privateRouteTable, err := o.CreatePrivateRouteTable(o.EC2Client, result.VPCID, natGatewayID, result.PrivateSubnetID, result.Zone)
+	privateRouteTable, err := o.CreatePrivateRouteTable(ec2Client, result.VPCID, natGatewayID, result.PrivateSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	publicRouteTable, err := o.CreatePublicRouteTable(o.EC2Client, result.VPCID, igwID, result.PublicSubnetID, result.Zone)
+	publicRouteTable, err := o.CreatePublicRouteTable(ec2Client, result.VPCID, igwID, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	err = o.CreateVPCS3Endpoint(o.EC2Client, result.VPCID, privateRouteTable, publicRouteTable)
+	err = o.CreateVPCS3Endpoint(ec2Client, result.VPCID, privateRouteTable, publicRouteTable)
 	if err != nil {
 		return nil, err
 	}
-	result.PublicZoneID, err = o.LookupPublicZone(ctx, o.Route53Client)
+	result.PublicZoneID, err = o.LookupPublicZone(ctx, route53Client)
 	if err != nil {
 		return nil, err
 	}
-	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, o.Route53Client, result.VPCID)
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, route53Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}

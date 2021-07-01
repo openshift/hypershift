@@ -1,35 +1,41 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
-	"strings"
 	"syscall"
 	"time"
 
+	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
+	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-// We only match /ignition/$NodePoolName
-var ignPathPattern = regexp.MustCompile("^/ignition/[^/ ]*$")
+const namespaceEnvVariableName = "MY_NAMESPACE"
 
-// This is the simplest http server that enable us to satisfy
+// We only match /ignition
+var ignPathPattern = regexp.MustCompile("^/ignition[^/ ]*$")
+var payloadStore = controllers.NewPayloadStore()
+
+// This is an https server that enable us to satisfy
 // 1 - 1 relation between clusters and ign endpoints.
-// At the moment this acts as purely a proxy towards MCS clusterIP type Services that
-// are named machine-config-server-$nodePoolName by convention and
-// are created on demand by NodePools,
-// this might / might not change in the future.
+// It runs a token Secret controller.
+// The token Secret controller uses an IgnitionProvider provider implementation
+// (e.g machineConfigServerIgnitionProvider) to keep up to date a payload store in memory.
+// The payload store has the structure "NodePool token": "payload".
+// A token represents a given cluster version (and in the future also a machine Config) at any given point in time.
+// For a request to succeed a token needs to be passed in the Header.
 // TODO (alberto): Metrics.
-
 func main() {
 	cmd := &cobra.Command{
 		Use: "ignition-server",
@@ -47,10 +53,9 @@ func main() {
 }
 
 type Options struct {
-	Addr      string
-	CertFile  string
-	KeyFile   string
-	TokenFile string
+	Addr     string
+	CertFile string
+	KeyFile  string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -60,16 +65,14 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Addr:      "0.0.0.0:9090",
-		CertFile:  "/var/run/secrets/ignition/tls.crt",
-		KeyFile:   "/var/run/secrets/ignition/tls.key",
-		TokenFile: "/var/run/secrets/ignition/token",
+		Addr:     "0.0.0.0:9090",
+		CertFile: "/var/run/secrets/ignition/tls.crt",
+		KeyFile:  "/var/run/secrets/ignition/tls.key",
 	}
 
 	cmd.Flags().StringVar(&opts.Addr, "addr", opts.Addr, "Listen address")
 	cmd.Flags().StringVar(&opts.CertFile, "cert-file", opts.CertFile, "Path to the serving cert")
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", opts.KeyFile, "Path to the serving key")
-	cmd.Flags().StringVar(&opts.TokenFile, "token-file", opts.TokenFile, "Path to the auth token")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -90,11 +93,58 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
-func run(ctx context.Context, opts Options) error {
-	token, err := ioutil.ReadFile(opts.TokenFile)
-	if err != nil {
-		return fmt.Errorf("failed to read token file: %w", err)
+// payloadStoreReconciler runs a TokenSecretReconciler controller
+// to keep the PayloadStore up to date.
+func payloadStoreReconciler(ctx context.Context) error {
+	if os.Getenv(namespaceEnvVariableName) == "" {
+		return fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
+
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme: hyperapi.Scheme,
+		Port:   9443,
+		// TODO (alberto): expose this flags?
+		// MetricsBindAddress: opts.MetricsAddr,
+		// LeaderElection:     opts.EnableLeaderElection,
+		Namespace: os.Getenv(namespaceEnvVariableName),
+	})
+	if err != nil {
+		return fmt.Errorf("unable to start manager: %w", err)
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return fmt.Errorf("unable to create kube client: %w", err)
+	}
+
+	if err = (&controllers.TokenSecretReconciler{
+		Client:       mgr.GetClient(),
+		PayloadStore: payloadStore,
+		IgnitionProvider: &controllers.MCSIgnitionProvider{
+			ReleaseProvider: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.PodProvider{
+					Pods: kubeClient.CoreV1().Pods(os.Getenv(namespaceEnvVariableName)),
+				},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			Client:    mgr.GetClient(),
+			Namespace: os.Getenv(namespaceEnvVariableName),
+		},
+	}).SetupWithManager(ctx, mgr); err != nil {
+		return fmt.Errorf("unable to create controller: %w", err)
+	}
+
+	return mgr.Start(ctx)
+}
+
+func run(ctx context.Context, opts Options) error {
+	// Run the payloadReconciler to watch token Secrets in a particular Namespace
+	if os.Getenv(namespaceEnvVariableName) == "" {
+		return fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
+	}
+	go payloadStoreReconciler(ctx)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("User Agent: %s. Requested: %s", r.Header.Get("User-Agent"), r.URL.Path)
@@ -105,18 +155,6 @@ func run(ctx context.Context, opts Options) error {
 			http.NotFound(w, r)
 			return
 		}
-
-		// Get the nodePool name to build the MCS Service targetURL
-		// by convention machine-config-server-$nodePoolName/config/master.
-		urlPathSplit := strings.SplitAfter(r.URL.Path, "/")
-		if len(urlPathSplit) != 3 {
-			// This can only happen if our regExp is not working as expected.
-			log.Printf("Unexpected URL path: %s", r.URL.Path)
-			http.Error(w, fmt.Sprintf("Bad request, path %q is not supported", r.URL.Path), http.StatusBadRequest)
-			return
-		}
-		nodePoolName := urlPathSplit[2]
-		targetURL := fmt.Sprintf("http://machine-config-server-%s/config/master", nodePoolName)
 
 		// Authorize the request against the token
 		const bearerPrefix = "Bearer "
@@ -134,52 +172,16 @@ func run(ctx context.Context, opts Options) error {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if !bytes.Equal(decodedToken, token) {
+
+		payload, ok := payloadStore.Get(string(decodedToken))
+		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", targetURL, nil)
-		if err != nil {
-			// Send 500 response.
-			log.Printf("Server internal error: %v", err)
-			http.Error(w, fmt.Sprintf("Server internal error: %v", err), http.StatusInternalServerError)
-		}
-
-		// Copy original Headers into proxy request.
-		for k, vv := range r.Header {
-			for _, v := range vv {
-				proxyReq.Header.Add(k, v)
-			}
-		}
-
-		// Send proxy request.
-		client := &http.Client{
-			Timeout: 5 * time.Second,
-		}
-		resp, err := client.Do(proxyReq)
-		if err != nil {
-			// Send 503 response.
-			log.Printf("Service unavailable: %v", err)
-			http.Error(w, fmt.Sprintf("Service unavailable: %v", err), http.StatusServiceUnavailable)
-			return
-		}
-		defer resp.Body.Close()
-
-		// Copy proxy response headers into the responseWriter.
-		for k, vv := range resp.Header {
-			for _, v := range vv {
-				w.Header().Add(k, v)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-
-		if _, err := io.Copy(w, resp.Body); err != nil {
-			log.Printf("error copying body: %v", err)
-			http.Error(w, "Request can't be handled", http.StatusInternalServerError)
-			return
-		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(payload)
+		return
 	})
 
 	server := http.Server{
