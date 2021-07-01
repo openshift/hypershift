@@ -32,9 +32,6 @@ type PKIParams struct {
 	// MCO/MCS
 	MachineConfigServerAddress string // An externally accessible DNS name or IP for the Machine Config Server. Currently generated using a route hostname.
 
-	// VPN Server
-	ExternalOpenVPNAddress string // An externally accessible DNS name or IP for the VPN Server. Currently obtained from VPN load balancer DNS name.
-
 	// Common
 	Namespace string // Used to generate internal DNS names for services.
 
@@ -48,8 +45,6 @@ type ClusterParams struct {
 	ExternalAPIDNSName        string      `json:"externalAPIDNSName"`
 	ExternalAPIAddress        string      `json:"externalAPIAddress"`
 	ExternalAPIPort           uint        `json:"externalAPIPort"`
-	ExternalOpenVPNAddress    string      `json:"externalVPNAddress"`
-	ExternalOpenVPNPort       uint        `json:"externalVPNPort"`
 	ExternalOauthDNSName      string      `json:"externalOauthDNSName"`
 	ExternalOauthPort         uint        `json:"externalOauthPort"`
 	IdentityProviders         string      `json:"identityProviders"`
@@ -92,8 +87,6 @@ type ClusterParams struct {
 	OAuthServerResources                   []ResourceRequirements `json:"oAuthServerResources"`
 	ClusterPolicyControllerResources       []ResourceRequirements `json:"clusterPolicyControllerResources"`
 	AutoApproverResources                  []ResourceRequirements `json:"autoApproverResources"`
-	OpenVPNClientResources                 []ResourceRequirements `json:"openVPNClientResources"`
-	OpenVPNServerResources                 []ResourceRequirements `json:"openVPNServerResources"`
 	APIServerAuditEnabled                  bool                   `json:"apiServerAuditEnabled"`
 	RestartDate                            string                 `json:"restartDate"`
 	HostedClusterConfigOperatorControllers []string               `json:"hostedClusterConfigOperatorControllers"`

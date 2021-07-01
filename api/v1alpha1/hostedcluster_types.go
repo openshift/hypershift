@@ -82,7 +82,7 @@ type HostedClusterSpec struct {
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
 type ServicePublishingStrategyMapping struct {
 	// Service identifies the type of service being published
-	// +kubebuilder:validation:Enum=APIServer;VPN;OAuthServer;OIDC;Konnectivity
+	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity
 	Service                   ServiceType `json:"service"`
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
@@ -115,7 +115,6 @@ type ServiceType string
 
 var (
 	APIServer    ServiceType = "APIServer"
-	VPN          ServiceType = "VPN"
 	Konnectivity ServiceType = "Konnectivity"
 	OAuthServer  ServiceType = "OAuthServer"
 	OIDC         ServiceType = "OIDC"

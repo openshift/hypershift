@@ -42,7 +42,6 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 		"dns":               dnsForCidr,
 		"mask":              cidrMask,
 		"include":           includeFileFunc(params, ctx.renderContext),
-		"includeVPN":        includeVPNFunc(true),
 		"dataURLEncode":     dataURLEncode(params, ctx.renderContext),
 		"randomString":      randomString,
 		"includeData":       includeDataFunc(),

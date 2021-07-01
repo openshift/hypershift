@@ -249,7 +249,6 @@ spec:
                       description: Service identifies the type of service being published
                       enum:
                       - APIServer
-                      - VPN
                       - OAuthServer
                       - OIDC
                       - Konnectivity

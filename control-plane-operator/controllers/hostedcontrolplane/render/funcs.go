@@ -17,12 +17,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func includeVPNFunc(includeVPN bool) func() bool {
-	return func() bool {
-		return includeVPN
-	}
-}
-
 func imageFunc(images map[string]string) func(string) string {
 	return func(imageName string) string {
 		return images[imageName]
