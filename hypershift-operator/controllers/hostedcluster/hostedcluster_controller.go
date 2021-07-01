@@ -712,6 +712,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 	}
 
+	hcp.Spec.Configs = hcluster.Spec.Configs
+
 	return nil
 }
 

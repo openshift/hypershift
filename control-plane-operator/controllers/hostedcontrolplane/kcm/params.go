@@ -1,11 +1,14 @@
 package kcm
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -33,7 +36,8 @@ const (
 	DefaultPort          = 10257
 )
 
-func NewKubeControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string) *KubeControllerManagerParams {
+	log := ctrl.LoggerFrom(ctx)
 	params := &KubeControllerManagerParams{
 		FeatureGate: configv1.FeatureGate{
 			Spec: configv1.FeatureGateSpec{
@@ -107,6 +111,9 @@ func NewKubeControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 
+	if err := config.ExtractConfigs(hcp, []client.Object{&params.FeatureGate, &params.Network}); err != nil {
+		log.Error(err, "Errors encountered extracting configs")
+	}
 	return params
 }
 

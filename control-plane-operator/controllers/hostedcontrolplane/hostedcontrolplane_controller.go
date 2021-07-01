@@ -1225,7 +1225,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, oauthAddress string, oauthPort int32) error {
-	p := kas.NewKubeAPIServerParams(hcp, releaseImage.ComponentImages(), oauthAddress, oauthPort)
+	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImage.ComponentImages(), oauthAddress, oauthPort)
 
 	rootCA := manifests.RootCASecret(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
@@ -1327,7 +1327,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	p := kcm.NewKubeControllerManagerParams(hcp, releaseImage.ComponentImages())
+	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImage.ComponentImages())
 
 	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
@@ -1358,7 +1358,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	p := scheduler.NewKubeSchedulerParams(hcp, releaseImage.ComponentImages())
+	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImage.ComponentImages())
 
 	schedulerConfig := manifests.SchedulerConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, schedulerConfig, func() error {
@@ -1369,7 +1369,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 
 	schedulerDeployment := manifests.SchedulerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, schedulerDeployment, func() error {
-		return scheduler.ReconcileDeployment(schedulerDeployment, p.OwnerRef, p.DeploymentConfig, p.HyperkubeImage, p.FeatureGates())
+		return scheduler.ReconcileDeployment(schedulerDeployment, p.OwnerRef, p.DeploymentConfig, p.HyperkubeImage, p.FeatureGates(), p.Scheduler.Spec.Policy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile scheduler deployment: %w", err)
 	}
@@ -1497,7 +1497,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultIngressController(ctx con
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, oauthHost string, oauthPort int32) error {
-	p := oauth.NewOAuthServerParams(hcp, releaseImage.ComponentImages(), oauthHost, oauthPort)
+	p := oauth.NewOAuthServerParams(ctx, hcp, releaseImage.ComponentImages(), oauthHost, oauthPort)
 
 	sessionSecret := manifests.OAuthServerServiceSessionSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, sessionSecret, func() error {
