@@ -59,7 +59,6 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
 	c.clusterVersionOperator()
-	c.openshiftControllerManager()
 	c.clusterBootstrap()
 	c.dnsmasq()
 	c.registry()
@@ -76,20 +75,6 @@ func (c *clusterManifestContext) hostedClusterConfigOperator() {
 		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
 		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
 		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) openshiftControllerManager() {
-	c.addManifestFiles(
-		"openshift-controller-manager/openshift-controller-manager-deployment.yaml",
-		"openshift-controller-manager/openshift-controller-manager-config-configmap.yaml",
-		"openshift-controller-manager/cluster-policy-controller-deployment.yaml",
-		"openshift-controller-manager/openshift-controller-manager-secret.yaml",
-		"openshift-controller-manager/openshift-controller-manager-configmap.yaml",
-	)
-	c.addUserManifestFiles(
-		"openshift-controller-manager/00-openshift-controller-manager-namespace.yaml",
-		"openshift-controller-manager/openshift-controller-manager-service-ca.yaml",
 	)
 }
 
@@ -205,16 +190,12 @@ func (c *clusterManifestContext) operatorLifecycleManager() {
 		"olm/catalog-operator-deployment.yaml",
 		"olm/packageserver-secret.yaml",
 		"olm/packageserver-deployment.yaml",
-		"olm/catalog-redhat-operators.deployment.yaml",
 		"olm/catalog-redhat-operators.imagestream.yaml",
 		"olm/catalog-redhat-operators.service.yaml",
-		"olm/catalog-certified.deployment.yaml",
 		"olm/catalog-certified.imagestream.yaml",
 		"olm/catalog-certified.service.yaml",
-		"olm/catalog-community.deployment.yaml",
 		"olm/catalog-community.imagestream.yaml",
 		"olm/catalog-community.service.yaml",
-		"olm/catalog-redhat-marketplace.deployment.yaml",
 		"olm/catalog-redhat-marketplace.imagestream.yaml",
 		"olm/catalog-redhat-marketplace.service.yaml",
 	)
