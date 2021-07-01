@@ -9,11 +9,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/certs"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-func (p *PKIParams) reconcileSelfSignedCA(secret *corev1.Secret, cn, ou string) error {
-	util.EnsureOwnerRef(secret, p.OwnerReference)
+func reconcileSelfSignedCA(secret *corev1.Secret, ownerRef config.OwnerRef, cn, ou string) error {
+	ownerRef.ApplyTo(secret)
 	secret.Type = corev1.SecretTypeOpaque
 	if hasKeys(secret, CASignerKeyMapKey, CASignerKeyMapKey) {
 		return nil
@@ -36,8 +36,8 @@ func (p *PKIParams) reconcileSelfSignedCA(secret *corev1.Secret, cn, ou string) 
 	return nil
 }
 
-func (p *PKIParams) reconcileAggregateCA(configMap *corev1.ConfigMap, sources ...*corev1.Secret) error {
-	util.EnsureOwnerRef(configMap, p.OwnerReference)
+func reconcileAggregateCA(configMap *corev1.ConfigMap, ownerRef config.OwnerRef, sources ...*corev1.Secret) error {
+	ownerRef.ApplyTo(configMap)
 	combined := &bytes.Buffer{}
 	for _, src := range sources {
 		ca_bytes := src.Data[CASignerCertMapKey]
@@ -50,14 +50,14 @@ func (p *PKIParams) reconcileAggregateCA(configMap *corev1.ConfigMap, sources ..
 	return nil
 }
 
-func (p *PKIParams) ReconcileRootCA(secret *corev1.Secret) error {
-	return p.reconcileSelfSignedCA(secret, "root-ca", "openshift")
+func ReconcileRootCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "root-ca", "openshift")
 }
 
-func (p *PKIParams) ReconcileClusterSignerCA(secret *corev1.Secret) error {
-	return p.reconcileSelfSignedCA(secret, "cluster-signer", "openshift")
+func ReconcileClusterSignerCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "cluster-signer", "openshift")
 }
 
-func (p *PKIParams) ReconcileCombinedCA(cm *corev1.ConfigMap, rootCA, signerCA *corev1.Secret) error {
-	return p.reconcileAggregateCA(cm, rootCA, signerCA)
+func ReconcileCombinedCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, rootCA, signerCA *corev1.Secret) error {
+	return reconcileAggregateCA(cm, ownerRef, rootCA, signerCA)
 }

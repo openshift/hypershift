@@ -14,24 +14,17 @@ const (
 )
 
 type ClusterPolicyControllerParams struct {
-	Image     string             `json:"image"`
-	APIServer configv1.APIServer `json:"apiServer"`
+	Image     string              `json:"image"`
+	APIServer *configv1.APIServer `json:"apiServer"`
 
 	DeploymentConfig config.DeploymentConfig `json:"deploymentConfig"`
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *ClusterPolicyControllerParams {
+func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
-		Image: images["cluster-policy-controller"],
-		APIServer: configv1.APIServer{
-			Spec: configv1.APIServerSpec{
-				TLSSecurityProfile: &configv1.TLSSecurityProfile{
-					Type:         configv1.TLSProfileIntermediateType,
-					Intermediate: &configv1.IntermediateTLSProfile{},
-				},
-			},
-		},
+		Image:     images["cluster-policy-controller"],
+		APIServer: globalConfig.APIServer,
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		AdditionalLabels: map[string]string{},
@@ -59,9 +52,17 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, images ma
 }
 
 func (p *ClusterPolicyControllerParams) MinTLSVersion() string {
-	return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+	if p.APIServer != nil {
+		return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+	} else {
+		return config.MinTLSVersion(nil)
+	}
 }
 
 func (p *ClusterPolicyControllerParams) CipherSuites() []string {
-	return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+	} else {
+		return config.CipherSuites(nil)
+	}
 }

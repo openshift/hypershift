@@ -4,55 +4,57 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-func (p *PKIParams) ReconcileOpenShiftAPIServerCertSecret(secret, ca *corev1.Secret) error {
+func ReconcileOpenShiftAPIServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"openshift-apiserver",
-		fmt.Sprintf("openshift-apiserver.%s.svc", p.Namespace),
-		fmt.Sprintf("openshift-apiserver.%s.svc.cluster.local", p.Namespace),
+		fmt.Sprintf("openshift-apiserver.%s.svc", secret.Namespace),
+		fmt.Sprintf("openshift-apiserver.%s.svc.cluster.local", secret.Namespace),
 		"openshift-apiserver.default.svc",
 		"openshift-apiserver.default.svc.cluster.local",
 	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "openshift-apiserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-apiserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
 
-func (p *PKIParams) ReconcileOpenShiftOAuthAPIServerCertSecret(secret, ca *corev1.Secret) error {
+func ReconcileOpenShiftOAuthAPIServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"openshift-oauth-apiserver",
-		fmt.Sprintf("openshift-oauth-apiserver.%s.svc", p.Namespace),
-		fmt.Sprintf("openshift-oauth-apiserver.%s.svc.cluster.local", p.Namespace),
+		fmt.Sprintf("openshift-oauth-apiserver.%s.svc", secret.Namespace),
+		fmt.Sprintf("openshift-oauth-apiserver.%s.svc.cluster.local", secret.Namespace),
 		"openshift-oauth-apiserver.default.svc",
 		"openshift-oauth-apiserver.default.svc.cluster.local",
 	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "openshift-oauth-apiserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth-apiserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
 
-func (p *PKIParams) ReconcileOpenShiftControllerManagerCertSecret(secret, ca *corev1.Secret) error {
+func ReconcileOpenShiftControllerManagerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"openshift-controller-manager",
-		fmt.Sprintf("openshift-controller-manager.%s.svc", p.Namespace),
-		fmt.Sprintf("openshift-controller-manager.%s.svc.cluster.local", p.Namespace),
+		fmt.Sprintf("openshift-controller-manager.%s.svc", secret.Namespace),
+		fmt.Sprintf("openshift-controller-manager.%s.svc.cluster.local", secret.Namespace),
 	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "openshift-controller-manager", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-controller-manager", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
 
-func (p *PKIParams) ReconcileClusterPolicyControllerCertSecret(secret, ca *corev1.Secret) error {
+func ReconcileClusterPolicyControllerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"cluster-policy-controller",
-		fmt.Sprintf("openshift-controller-manager.%s.svc", p.Namespace),
-		fmt.Sprintf("openshift-controller-manager.%s.svc.cluster.local", p.Namespace),
+		fmt.Sprintf("openshift-controller-manager.%s.svc", secret.Namespace),
+		fmt.Sprintf("openshift-controller-manager.%s.svc.cluster.local", secret.Namespace),
 	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "cluster-policy-controller", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "cluster-policy-controller", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
 
-func (p *PKIParams) ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret) error {
+func ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"packageserver",
-		fmt.Sprintf("packageserver.%s.svc", p.Namespace),
-		fmt.Sprintf("packageserver.%s.svc.cluster.local", p.Namespace),
+		fmt.Sprintf("packageserver.%s.svc", secret.Namespace),
+		fmt.Sprintf("packageserver.%s.svc.cluster.local", secret.Namespace),
 		"packageserver.default.svc",
 		"packageserver.default.svc.cluster.local",
 	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "packageserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "packageserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
