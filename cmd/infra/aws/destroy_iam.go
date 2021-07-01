@@ -23,8 +23,6 @@ type DestroyIAMOptions struct {
 	Region             string
 	AWSCredentialsFile string
 	InfraID            string
-
-	IAMClient iamiface.IAMAPI
 }
 
 func NewDestroyIAMCommand() *cobra.Command {
@@ -56,10 +54,6 @@ func NewDestroyIAMCommand() *cobra.Command {
 			cancel()
 		}()
 
-		awsSession := awsutil.NewSession()
-		awsConfig := awsutil.NewConfig(opts.AWSCredentialsFile, opts.Region)
-		opts.IAMClient = iam.New(awsSession, awsConfig)
-
 		if err := opts.DestroyIAM(ctx); err != nil {
 			return err
 		}
@@ -82,12 +76,16 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
+	awsSession := awsutil.NewSession("cli-destroy-iam")
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	iamClient := iam.New(awsSession, awsConfig)
+
 	var err error
-	err = o.DestroyOIDCResources(ctx, o.IAMClient)
+	err = o.DestroyOIDCResources(ctx, iamClient)
 	if err != nil {
 		return err
 	}
-	err = o.DestroyWorkerInstanceProfile(o.IAMClient)
+	err = o.DestroyWorkerInstanceProfile(iamClient)
 	if err != nil {
 		return err
 	}

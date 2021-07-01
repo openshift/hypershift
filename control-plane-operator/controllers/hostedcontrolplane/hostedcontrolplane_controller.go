@@ -14,10 +14,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	appsv1 "k8s.io/api/apps/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
@@ -47,7 +47,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -57,7 +56,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/vpn"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 )
@@ -84,8 +82,6 @@ type InfrastructureStatus struct {
 	APIPort                 int32
 	OAuthHost               string
 	OAuthPort               int32
-	VPNHost                 string
-	VPNPort                 int32
 	KonnectivityHost        string
 	KonnectivityPort        int32
 	OpenShiftAPIHost        string
@@ -96,11 +92,9 @@ type InfrastructureStatus struct {
 func (s InfrastructureStatus) IsReady() bool {
 	return len(s.APIHost) > 0 &&
 		len(s.OAuthHost) > 0 &&
-		len(s.VPNHost) > 0 &&
 		len(s.KonnectivityHost) > 0 &&
 		s.APIPort > 0 &&
 		s.OAuthPort > 0 &&
-		s.VPNPort > 0 &&
 		s.KonnectivityPort > 0
 }
 
@@ -435,7 +429,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile PKI
-	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed {
+	if _, exists := hostedControlPlane.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
 		r.Log.Info("Reconciling PKI")
 		if err := r.reconcilePKI(ctx, hostedControlPlane, infraStatus); err != nil {
 			return fmt.Errorf("failed to reconcile PKI: %w", err)
@@ -478,12 +472,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		}
 	default:
 		return fmt.Errorf("unrecognized etcd management type: %s", hostedControlPlane.Spec.Etcd.ManagementType)
-	}
-
-	// Reconcile VPN
-	r.Log.Info("Reconciling VPN")
-	if err := r.reconcileVPN(ctx, hostedControlPlane, releaseImage, infraStatus.VPNHost, infraStatus.VPNPort); err != nil {
-		return fmt.Errorf("failed to reconcile vpn: %w", err)
 	}
 
 	// Reconcile Konnectivity
@@ -586,21 +574,6 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileVPNServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.VPN)
-	if serviceStrategy == nil {
-		return fmt.Errorf("VPN service strategy not specified")
-	}
-	p := vpn.NewVPNServiceParams(hcp)
-	vpnServerService := manifests.VPNServerService(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, vpnServerService, func() error {
-		return vpn.ReconcileService(vpnServerService, p.OwnerRef, serviceStrategy)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile VPN service: %w", err)
-	}
-	return nil
-}
-
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	p := konnectivity.NewKonnectivityServiceParams(hcp)
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Konnectivity)
@@ -619,7 +592,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.OAuthServer)
 	if serviceStrategy == nil {
-		return fmt.Errorf("VPN service strategy not specified")
+		return fmt.Errorf("OAuthServer service strategy not specified")
 	}
 	p := oauth.NewOAuthServiceParams(hcp)
 	oauthServerService := manifests.OauthServerService(hcp.Namespace)
@@ -675,18 +648,11 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileInfrastructure(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	// Ensure that we can run privileged pods
-	if err := ensureVPNSCC(r, hcp, hcp.Namespace); err != nil {
-		return fmt.Errorf("failed to ensure privileged SCC for the new namespace: %w", err)
-	}
 	if hcp.Spec.Services == nil {
 		return fmt.Errorf("service publishing strategy undefined")
 	}
 	if err := r.reconcileAPIServerService(ctx, hcp); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
-	}
-	if err := r.reconcileVPNServerService(ctx, hcp); err != nil {
-		return fmt.Errorf("failed to reconcile VPN server service: %w", err)
 	}
 	if err := r.reconcileKonnectivityServerService(ctx, hcp); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity servier service: %w", err)
@@ -711,9 +677,6 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatus(ctx context
 	var infraStatus InfrastructureStatus
 	var err error
 	if infraStatus.APIHost, infraStatus.APIPort, err = r.reconcileAPIServerServiceStatus(ctx, hcp); err != nil {
-		return infraStatus, err
-	}
-	if infraStatus.VPNHost, infraStatus.VPNPort, err = r.reconcileVPNServerServiceStatus(ctx, hcp); err != nil {
 		return infraStatus, err
 	}
 	if infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, err = r.reconcileKonnectivityServiceStatus(ctx, hcp); err != nil {
@@ -752,24 +715,6 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 	}
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort)
-}
-
-func (r *HostedControlPlaneReconciler) reconcileVPNServerServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.VPN)
-	if serviceStrategy == nil {
-		err = fmt.Errorf("VPN service strategy not specified")
-		return
-	}
-	svc := manifests.VPNServerService(hcp.Namespace)
-	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
-		if apierrors.IsNotFound(err) {
-			err = nil
-			return
-		}
-		err = fmt.Errorf("failed to get vpn service: %w", err)
-		return
-	}
-	return vpn.ReconcileServiceStatus(svc, serviceStrategy)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
@@ -922,7 +867,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 }
 
 func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus) error {
-	p := pki.NewPKIParams(hcp, infraStatus.APIHost, infraStatus.OAuthHost, infraStatus.VPNHost, infraStatus.KonnectivityHost)
+	p := pki.NewPKIParams(hcp, infraStatus.APIHost, infraStatus.OAuthHost, infraStatus.KonnectivityHost)
 
 	// Root CA
 	rootCASecret := manifests.RootCASecret(hcp.Namespace)
@@ -968,35 +913,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return p.ReconcileEtcdPeerSecret(etcdPeerSecret, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
-	}
-
-	// VPN CA
-	vpnCASecret := manifests.VPNSignerCASecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, vpnCASecret, func() error {
-		return p.ReconcileVPNSignerCA(vpnCASecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn CA: %w", err)
-	}
-	// VPN server cert
-	vpnServerCert := manifests.VPNServerCertSecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, vpnServerCert, func() error {
-		return p.ReconcileVPNServerCertSecret(vpnServerCert, vpnCASecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn server cert: %w", err)
-	}
-	// VPN KAS client cert
-	vpnKASClientCert := manifests.VPNKubeAPIServerClientSecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, vpnKASClientCert, func() error {
-		return p.ReconcileVPNKubeAPIServerClientSecret(vpnKASClientCert, vpnCASecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn kas client cert: %w", err)
-	}
-	// VPN worker client cert
-	vpnWorkerClientCert := manifests.VPNWorkerClientSecret(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, vpnWorkerClientCert, func() error {
-		return p.ReconcileVPNWorkerClientSecret(vpnWorkerClientCert, vpnCASecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn worker client secret: %w", err)
 	}
 
 	// KAS server secret
@@ -1257,59 +1173,6 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 		return nil
 	})
 	return err
-}
-
-func (r *HostedControlPlaneReconciler) reconcileVPN(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, address string, port int32) error {
-	r.Log.Info("Reconciling VPN")
-	p := vpn.NewVPNParams(hcp, releaseImage.ComponentImages(), address, port)
-	serviceAccount := manifests.VPNServiceAccount(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, serviceAccount, func() error {
-		return vpn.ReconcileVPNServiceAccount(serviceAccount, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn service account: %w", err)
-	}
-	if hcp.Annotations != nil {
-		if _, ok := hcp.Annotations[hyperv1.SecurePortOverrideAnnotation]; !ok {
-			return nil
-		}
-	}
-	serverConfig := manifests.VPNServerConfig(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverConfig, func() error {
-		return vpn.ReconcileVPNServerConfig(serverConfig, p.OwnerRef, config.ClusterCIDR(&p.Network), config.ServiceCIDR(&p.Network), p.MachineCIDR)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn server config: %w", err)
-	}
-	serverClientConfig := manifests.VPNServerClientConfig(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverClientConfig, func() error {
-		return vpn.ReconcileVPNServerClientConfig(serverClientConfig, p.OwnerRef, config.ClusterCIDR(&p.Network), config.ServiceCIDR(&p.Network), p.MachineCIDR)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn server client config: %w", err)
-	}
-	kubeAPIServerConfig := manifests.VPNKubeAPIServerClientConfig(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerConfig, func() error {
-		return vpn.ReconcileKubeAPIServerClientConfig(kubeAPIServerConfig, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn kas client config: %w", err)
-	}
-	clientConfig := manifests.VPNWorkerClientConfig(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, clientConfig, func() error {
-		return vpn.ReconcileWorkerClientConfig(clientConfig, p.OwnerRef, p.ExternalAddress, p.ExternalPort)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn worker client config: %w", err)
-	}
-	serverDeployment := manifests.VPNServerDeployment(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
-		return vpn.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.ServerDeploymentConfig, p.VPNImage)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn server deployment: %w", err)
-	}
-	clientDeployment := manifests.VPNWorkerClientDeployment(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, clientDeployment, func() error {
-		return vpn.ReconcileWorkerClientDeployment(clientDeployment, p.OwnerRef, p.WorkerClientDeploymentConfig, p.VPNImage)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile vpn client deployment: %w", err)
-	}
-	return nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus) error {
@@ -1712,8 +1575,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.ExternalAPIDNSName = infraStatus.APIHost
 	params.ExternalAPIPort = uint(infraStatus.APIPort)
 	params.ExternalAPIAddress = DefaultAPIServerIPAddress
-	params.ExternalOpenVPNAddress = infraStatus.VPNHost
-	params.ExternalOpenVPNPort = uint(infraStatus.VPNPort)
 	params.ExternalOauthDNSName = infraStatus.OAuthHost
 	params.ExternalOauthPort = uint(infraStatus.OAuthPort)
 	params.ServiceCIDR = hcp.Spec.ServiceCIDR
@@ -1878,35 +1739,6 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 				DestinationCACertificate:      string(rootCASecret.Data["ca.crt"]),
 			},
 		}
-		return nil
-	})
-	return err
-}
-
-func ensureVPNSCC(c client.Client, hcp *hyperv1.HostedControlPlane, namespace string) error {
-	sccBinding := &rbacv1.ClusterRoleBinding{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ClusterRoleBinding",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("system:serviceaccount:%s:%s:scc:privileged", namespace, manifests.VPNServiceAccount(namespace).Name),
-		},
-	}
-	_, err := controllerutil.CreateOrUpdate(context.TODO(), c, sccBinding, func() error {
-		sccBinding.RoleRef = rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "system:openshift:scc:privileged",
-		}
-		sccBinding.Subjects = []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      manifests.VPNServiceAccount(namespace).Name,
-				Namespace: namespace,
-			},
-		}
-		sccBinding.OwnerReferences = ensureHCPOwnerRef(hcp, sccBinding.OwnerReferences)
 		return nil
 	})
 	return err

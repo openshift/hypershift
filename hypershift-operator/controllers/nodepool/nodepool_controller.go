@@ -11,10 +11,10 @@ import (
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
@@ -28,7 +28,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -48,11 +47,13 @@ import (
 )
 
 const (
-	finalizer                = "hypershift.openshift.io/finalizer"
-	autoscalerMaxAnnotation  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
-	autoscalerMinAnnotation  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
-	nodePoolAnnotation       = "hypershift.openshift.io/nodePool"
-	payloadVersionAnnotation = "hypershift.openshift.io/payloadVersion"
+	finalizer               = "hypershift.openshift.io/finalizer"
+	autoscalerMaxAnnotation = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
+	autoscalerMinAnnotation = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
+	nodePoolAnnotation      = "hypershift.openshift.io/nodePool"
+	TokenSecretReleaseKey   = "release"
+	TokenSecretTokenKey     = "token"
+	TokenSecretAnnotation   = "hypershift.openshift.io/ignition-config"
 )
 
 type NodePoolReconciler struct {
@@ -71,8 +72,8 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
 		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		// We want to reconcile when the MCS deployment finishes rolling out a new release version
-		Watches(&source.Kind{Type: &appsv1.Deployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
+		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
@@ -117,12 +118,10 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Generate mcs manifests for the given release
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
-	mcsServiceAccount := MachineConfigServerServiceAccount(controlPlaneNamespace, nodePool.GetName())
-	mcsRoleBinding := MachineConfigServerRoleBinding(controlPlaneNamespace, nodePool.GetName())
-	mcsService := MachineConfigServerService(controlPlaneNamespace, nodePool.GetName())
-	mcsDeployment := MachineConfigServerDeployment(controlPlaneNamespace, nodePool.GetName())
-	userDataSecret := MachineConfigServerUserDataSecret(controlPlaneNamespace, nodePool.GetName())
-
+	// TODO (alberto): using odePool.Status.Version here gives a race: if a NodePool is deleted
+	// before the targeted version is the one in the status then the tokenSecret and userDataSecret would be leaked.
+	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.Status.Version)
+	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.Status.Version)
 	md := machineDeployment(nodePool, hcluster.Spec.InfraID, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 
@@ -137,28 +136,17 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return reconcile.Result{}, fmt.Errorf("failed to delete AWSMachineTemplate: %w", err)
 			}
 		}
+
+		if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+		}
+
 		if err := r.Delete(ctx, md); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete MachineDeployment: %w", err)
 		}
 
-		if err := r.Delete(ctx, mcsServiceAccount); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete MCS ServiceAccount: %w", err)
-		}
-
-		if err := r.Delete(ctx, mcsRoleBinding); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete MCS RoleBinding: %w", err)
-		}
-
-		if err := r.Delete(ctx, mcsService); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete MCS Service: %w", err)
-		}
-
-		if err := r.Delete(ctx, mcsDeployment); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete MCS Deployment: %w", err)
-		}
-
 		if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete MCS Userdata Secret: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to delete ignition userdata Secret: %w", err)
 		}
 
 		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
@@ -261,7 +249,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	targetVersion := releaseImage.Version()
 
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 	if isUpgrading(nodePool, targetVersion) {
+		// Today only the version triggers a new token generation.
+		// Token Secrets are immutable and follow "prefixName-version" naming convention
+		// We'll likely add MachineConfig diffs to trigger token generation
+		// so instead of using "prefix-version" name as authoritative we'll need to use a config + version hash or similar.
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:    hyperv1.NodePoolUpgradingConditionType,
 			Status:  metav1.ConditionTrue,
@@ -269,102 +262,47 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Message: fmt.Sprintf("Upgrade in progress. Target version: %v", targetVersion),
 		})
 		r.Log.Info("New nodePool version set. Upgrading", "targetVersion", targetVersion)
+
+		// Ensure old versioned resources are deleted, i.e token Secret and userdata Secret.
+		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.Status.Version)
+		if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+		}
+
+		userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.Status.Version)
+		if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+		}
 	}
 
-	// Reconcile machineConfigServer for the given nodePool release
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
-	mcsServiceAccount := MachineConfigServerServiceAccount(controlPlaneNamespace, nodePool.GetName())
-	mcsRoleBinding := MachineConfigServerRoleBinding(controlPlaneNamespace, nodePool.GetName())
-	mcsService := MachineConfigServerService(controlPlaneNamespace, nodePool.GetName())
-	mcsDeployment := MachineConfigServerDeployment(controlPlaneNamespace, nodePool.GetName())
-	userDataSecret := MachineConfigServerUserDataSecret(controlPlaneNamespace, nodePool.GetName())
+	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetVersion)
+	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetVersion)
 
-	r.Log.Info("Reconciling MCS ServiceAccount")
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsServiceAccount, func() error {
-		mcsServiceAccount.ImagePullSecrets = []corev1.LocalObjectReference{
-			{Name: controlplaneoperator.PullSecret(mcsServiceAccount.Namespace).Name},
+	r.Log.Info("Reconciling token Secret")
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
+		if tokenSecret.Annotations == nil {
+			tokenSecret.Annotations = make(map[string]string)
+		}
+		tokenSecret.Annotations[TokenSecretAnnotation] = "true"
+		tokenSecret.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
+
+		if tokenSecret.Data == nil {
+			tokenSecret.Data = map[string][]byte{}
+			tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
+			tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
 		}
 		return nil
-	}); err != nil {
-		return ctrl.Result{}, err
-	} else {
-		span.AddEvent("reconciled mcs service account", trace.WithAttributes(attribute.String("result", string(result))))
-	}
-
-	r.Log.Info("Reconciling MCS RoleBinding")
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsRoleBinding, func() error {
-		mcsRoleBinding.RoleRef = rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "edit",
-		}
-		mcsRoleBinding.Subjects = []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      mcsServiceAccount.Name,
-				Namespace: mcsServiceAccount.Namespace,
-			},
-		}
-		return nil
-	}); err != nil {
-		return ctrl.Result{}, err
-	} else {
-		span.AddEvent("reconciled mcs role binding", trace.WithAttributes(attribute.String("result", string(result))))
-	}
-
-	r.Log.Info("Reconciling MCS Deployment")
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsDeployment, func() error {
-		return reconcileMCSDeployment(nodePool, mcsDeployment, mcsServiceAccount, releaseImage)
 	}); err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.IgnitionEndpointAvailable),
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: nodePool.Generation,
-			Reason:             hyperv1.MachineConfigServerDeploymentUnavailableReason,
-			Message:            err.Error(),
+			Type:    string(hyperv1.IgnitionEndpointAvailable),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.IgnitionTokenMissingError,
+			Message: err.Error(),
 		})
 		return ctrl.Result{}, err
 	} else {
-		newCondition := metav1.Condition{
-			Type:   string(hyperv1.IgnitionEndpointAvailable),
-			Status: metav1.ConditionFalse,
-			Reason: hyperv1.MachineConfigServerDeploymentUnavailableReason,
-		}
-		for _, cond := range mcsDeployment.Status.Conditions {
-			if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
-				newCondition = metav1.Condition{
-					Type:   string(hyperv1.IgnitionEndpointAvailable),
-					Status: metav1.ConditionTrue,
-					Reason: hyperv1.MachineConfigServerDeploymentAsExpected,
-				}
-				break
-			}
-		}
-		newCondition.ObservedGeneration = nodePool.Generation
-		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
-		r.Log.Info("reconciled MCS deployment", "result", result)
-		span.AddEvent("reconciled mcs deployment", trace.WithAttributes(attribute.String("result", string(result))))
-	}
-
-	r.Log.Info("Reconciling MCS Service")
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
-		mcsService.Spec.Ports = []corev1.ServicePort{
-			{
-				Name:       "http",
-				Protocol:   corev1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromInt(8080),
-			},
-		}
-
-		mcsService.Spec.Selector = MachineConfigServerServiceSelector(nodePool.GetName())
-
-		mcsService.Spec.Type = corev1.ServiceTypeClusterIP
-		return nil
-	}); err != nil {
-		return ctrl.Result{}, err
-	} else {
-		span.AddEvent("reconciled mcs service", trace.WithAttributes(attribute.String("result", string(result))))
+		span.AddEvent("reconciled token Secret", trace.WithAttributes(attribute.String("result", string(result))))
+		r.Log.Info("reconciled token Secret", "result", result)
 	}
 
 	r.Log.Info("Reconciling userdata Secret")
@@ -383,28 +321,18 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("failed to get ignition CA secret: %w", err)
 		}
 	}
-	tokenSecret := ignitionserver.IgnitionTokenSecret(controlPlaneNamespace)
-	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.IgnitionEndpointAvailable),
-				Status:             metav1.ConditionFalse,
-				Reason:             hyperv1.IgnitionTokenMissingReason,
-				ObservedGeneration: nodePool.Generation,
-			})
-			r.Log.Info("still waiting for ignition token secret to exist")
-			return ctrl.Result{}, nil
-		} else {
-			return ctrl.Result{}, fmt.Errorf("failed to get token secret: %w", err)
-		}
-	}
 
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
+		if userDataSecret.Annotations == nil {
+			userDataSecret.Annotations = make(map[string]string)
+		}
+		userDataSecret.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
+
 		caCertBytes, hasCACert := caSecret.Data[corev1.TLSCertKey]
 		if !hasCACert {
 			return fmt.Errorf("ca secret is missing tls.crt key")
 		}
-		tokenBytes, hasToken := tokenSecret.Data[ignitionserver.TokenSecretKey]
+		tokenBytes, hasToken := tokenSecret.Data[TokenSecretTokenKey]
 		if !hasToken {
 			return fmt.Errorf("token secret is missing token key")
 		}
@@ -425,7 +353,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				Config: ignitionapi.IgnitionConfig{
 					Merge: []ignitionapi.Resource{
 						{
-							Source: k8sutilspointer.StringPtr(fmt.Sprintf("https://%s/ignition/%s", hcluster.Status.IgnitionEndpoint, nodePool.Name)),
+							Source: k8sutilspointer.StringPtr(fmt.Sprintf("https://%s/ignition", hcluster.Status.IgnitionEndpoint)),
 							HTTPHeaders: []ignitionapi.HTTPHeader{
 								{
 									Name:  "Authorization",
@@ -450,18 +378,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:    string(hyperv1.IgnitionEndpointAvailable),
 			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.IgnitionPayloadErrorReason,
+			Reason:  hyperv1.IgnitionUserDataErrorReason,
 			Message: err.Error(),
 		})
 		return ctrl.Result{}, err
 	} else {
 		span.AddEvent("reconciled ignition user data secret", trace.WithAttributes(attribute.String("result", string(result))))
 		r.Log.Info("reconciled ignition user data secret", "result", result)
-	}
-
-	if mcsDeployment.GetLabels()[payloadVersionAnnotation] == targetVersion || !DeploymentComplete(mcsDeployment) {
-		r.Log.Info("machineConfigServer version does not match nodePool target version yet, waiting")
-		return ctrl.Result{}, nil
 	}
 
 	switch nodePool.Spec.Platform.Type {
@@ -547,7 +470,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
 			return r.reconcileMachineDeployment(
 				md, nodePool,
-				mcsDeployment, userDataSecret,
+				userDataSecret,
 				awsMachineTemplate,
 				hcluster.Spec.InfraID, releaseImage)
 		}); err != nil {
@@ -775,7 +698,6 @@ func enqueueParentNodePool(obj ctrlclient.Object) []reconcile.Request {
 
 func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv1.MachineDeployment,
 	nodePool *hyperv1.NodePool,
-	mcsDeployment *appsv1.Deployment,
 	userDataSecret *corev1.Secret,
 	awsMachineTemplate *capiaws.AWSMachineTemplate,
 	CAPIClusterName string,
@@ -846,17 +768,13 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 		return fmt.Errorf("unexpected error. NodePool current version does not match machineDeployment version")
 	}
 
-	if targetVersion != mcsDeployment.GetAnnotations()[payloadVersionAnnotation] {
-		// This should never happen by design.
-		return fmt.Errorf("unexpected error. NodePool target version: %v, has no machineConfigServer available: %v", targetVersion, mcsDeployment.GetAnnotations()[payloadVersionAnnotation])
-	}
-
 	if targetVersion != k8sutilspointer.StringPtrDerefOr(machineDeployment.Spec.Template.Spec.Version, "") {
 		r.Log.Info("Propagating new version to the machineDeployment. Starting upgrade",
 			"releaseImage", nodePool.Spec.Release.Image, "targetVersion", targetVersion)
 		// TODO (alberto): Point to a new InfrastructureRef with the new version AMI
 		// https://github.com/openshift/enhancements/pull/201
 		machineDeployment.Spec.Template.Spec.Version = &targetVersion
+		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = k8sutilspointer.StringPtr(userDataSecret.Name)
 
 		// We return early here during a version upgrade to persist the resource.
 		// So in the next reconciling loop we get a new MachineDeployment.Generation
@@ -983,258 +901,6 @@ func (r *NodePoolReconciler) listAWSMachineTemplates(nodePool *hyperv1.NodePool)
 		}
 	}
 	return filtered, nil
-}
-
-func reconcileMCSDeployment(nodePool *hyperv1.NodePool, deployment *appsv1.Deployment, sa *corev1.ServiceAccount, releaseImage *releaseinfo.ReleaseImage) error {
-	images := releaseImage.ComponentImages()
-	targetVersion := releaseImage.Version()
-	// We use the nodePool name as the label to be selected by the Service.
-	appName := nodePool.GetName()
-
-	bootstrapArgs := fmt.Sprintf(`
-mkdir -p /mcc-manifests/bootstrap/manifests
-mkdir -p /mcc-manifests/manifests
-exec machine-config-operator bootstrap \
---root-ca=/assets/manifests/root-ca.crt \
---kube-ca=/assets/manifests/combined-ca.crt \
---machine-config-operator-image=%s \
---machine-config-oscontent-image=%s \
---infra-image=%s \
---keepalived-image=%s \
---coredns-image=%s \
---mdns-publisher-image=%s \
---haproxy-image=%s \
---baremetal-runtimecfg-image=%s \
---infra-config-file=/assets/manifests/cluster-infrastructure-02-config.yaml \
---network-config-file=/assets/manifests/cluster-network-02-config.yaml \
---proxy-config-file=/assets/manifests/cluster-proxy-01-config.yaml \
---config-file=/assets/manifests/install-config.yaml \
---dns-config-file=/assets/manifests/cluster-dns-02-config.yaml \
---dest-dir=/mcc-manifests \
---pull-secret=/assets/manifests/pull-secret.yaml
-
-# Use our own version of configpools that swap master and workers
-mv /mcc-manifests/bootstrap/manifests /mcc-manifests/bootstrap/manifests.tmp
-mkdir /mcc-manifests/bootstrap/manifests
-cp /mcc-manifests/bootstrap/manifests.tmp/* /mcc-manifests/bootstrap/manifests/
-cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests/`,
-		images["machine-config-operator"],
-		images["machine-os-content"],
-		images["pod"],
-		images["keepalived-ipfailover"],
-		images["coredns"],
-		images["mdns-publisher"],
-		images["haproxy-router"],
-		images["baremetal-runtimecfg"],
-	)
-
-	customMachineConfigArg := `
-cat <<"EOF" > "./copy-ignition-config.sh"
-#!/bin/bash
-name="${1}"
-oc get cm ${name} -n "${NAMESPACE}" -o jsonpath='{ .data.data }' > "/mcc-manifests/bootstrap/manifests/${name/#ignition-config-//}.yaml"
-EOF
-chmod +x ./copy-ignition-config.sh
-oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh`
-
-	if deployment.Annotations == nil {
-		deployment.Annotations = make(map[string]string)
-	}
-	deployment.Annotations[payloadVersionAnnotation] = targetVersion
-	deployment.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-
-	if deployment.Spec.Template.Annotations == nil {
-		deployment.Spec.Template.Annotations = make(map[string]string)
-	}
-	deployment.Spec.Template.Annotations[payloadVersionAnnotation] = targetVersion
-
-	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
-		Selector: &metav1.LabelSelector{
-			MatchLabels: MachineConfigServerServiceSelector(appName),
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: MachineConfigServerServiceSelector(appName),
-			},
-			Spec: corev1.PodSpec{
-				ServiceAccountName:            sa.Name,
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
-				Tolerations: []corev1.Toleration{
-					{
-						Key:      "multi-az-worker",
-						Operator: "Equal",
-						Value:    "true",
-						Effect:   "NoSchedule",
-					},
-				},
-				InitContainers: []corev1.Container{
-					{
-						Image: images["machine-config-operator"],
-						Name:  "machine-config-operator-bootstrap",
-						Command: []string{
-							"/bin/bash",
-						},
-						Args: []string{
-							"-c",
-							bootstrapArgs,
-						},
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "mcc-manifests",
-								MountPath: "/mcc-manifests",
-							},
-							{
-								Name:      "config",
-								MountPath: "/assets/manifests",
-							},
-						},
-					},
-					{
-						Image:           images["cli"],
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Name:            "inject-custom-machine-configs",
-						Env: []corev1.EnvVar{
-							{
-								Name: "NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-						},
-						WorkingDir: "/tmp",
-						Command: []string{
-							"/usr/bin/bash",
-						},
-						Args: []string{
-							"-c",
-							customMachineConfigArg,
-						},
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "mcc-manifests",
-								MountPath: "/mcc-manifests",
-							},
-						},
-					},
-					{
-						Image:           images["machine-config-operator"],
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Name:            "machine-config-controller-bootstrap",
-						Command: []string{
-							"/usr/bin/machine-config-controller",
-						},
-						Args: []string{
-							"bootstrap",
-							"--manifest-dir=/mcc-manifests/bootstrap/manifests",
-							"--pull-secret=/mcc-manifests/bootstrap/manifests/machineconfigcontroller-pull-secret",
-							"--dest-dir=/mcs-manifests",
-						},
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "mcc-manifests",
-								MountPath: "/mcc-manifests",
-							},
-							{
-								Name:      "mcs-manifests",
-								MountPath: "/mcs-manifests",
-							},
-						},
-					},
-				},
-				Containers: []corev1.Container{
-					{
-						Image:           images["machine-config-operator"],
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Name:            "machine-config-server",
-						Command: []string{
-							"/usr/bin/machine-config-server",
-						},
-						Args: []string{
-							"bootstrap",
-							"--bootstrap-kubeconfig=/etc/openshift/kubeconfig",
-							"--secure-port=8443",
-							"--insecure-port=8080",
-						},
-						Ports: []corev1.ContainerPort{
-							{
-								Name:          "http",
-								ContainerPort: 8080,
-								Protocol:      corev1.ProtocolTCP,
-							},
-							{
-								Name:          "https",
-								ContainerPort: 8443,
-								Protocol:      corev1.ProtocolTCP,
-							},
-						},
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "kubeconfig",
-								ReadOnly:  true,
-								MountPath: "/etc/openshift",
-							},
-							{
-								Name:      "mcs-manifests",
-								MountPath: "/etc/mcs/bootstrap",
-							},
-							{
-								Name:      "mcc-manifests",
-								MountPath: "/etc/mcc/bootstrap",
-							},
-							{
-								Name:      "mcs-tls",
-								MountPath: "/etc/ssl/mcs",
-							},
-						},
-					},
-				},
-				Volumes: []corev1.Volume{
-					{
-						Name: "kubeconfig",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName: "machine-config-server-kubeconfig",
-							},
-						},
-					},
-					{
-						Name: "mcs-tls",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName: "machine-config-server",
-							},
-						},
-					},
-					{
-						Name: "mcs-manifests",
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{},
-						},
-					},
-					{
-						Name: "mcc-manifests",
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{},
-						},
-					},
-					{
-						Name: "config",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "machine-config-server",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	return nil
 }
 
 func MachineConfigServerServiceSelector(machineConfigServerName string) map[string]string {

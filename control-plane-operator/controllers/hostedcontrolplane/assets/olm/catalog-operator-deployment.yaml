@@ -22,7 +22,6 @@ spec:
         app: catalog-operator
     spec:
       priorityClassName: "system-cluster-critical"
-      serviceAccount: vpn
       dnsPolicy: None
       dnsConfig:
         # dnsmasq in the pod configured to check guest + host dns servers
@@ -88,24 +87,6 @@ spec:
             - mountPath: /etc/openshift/kubeconfig
               name: kubeconfig
               readOnly: true
-        - name: openvpn-client
-          terminationMessagePath: /dev/termination-log
-          command:
-            - /usr/sbin/openvpn
-          securityContext:
-            privileged: true
-          imagePullPolicy: Always
-          volumeMounts:
-            - name: vpnsecret
-              mountPath: /etc/openvpn/secret
-            - name: vpnconfig
-              mountPath: /etc/openvpn/config
-          terminationMessagePolicy: File
-          image: 'quay.io/hypershift/openvpn:latest'
-          workingDir: /etc/openvpn/
-          args:
-            - '--config'
-            - /etc/openvpn/config/client.conf
         - name: dnsmasq
           securityContext:
             privileged: true
@@ -126,14 +107,6 @@ spec:
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig
-        - name: vpnconfig
-          configMap:
-            name: openvpn-kube-apiserver-client
-            defaultMode: 420
-        - name: vpnsecret
-          secret:
-            secretName: openvpn-kube-apiserver-client
-            defaultMode: 420
         - name: dnsmasq-conf
           configMap:
             name: dnsmasq-conf
