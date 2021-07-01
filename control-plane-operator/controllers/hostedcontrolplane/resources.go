@@ -7,7 +7,6 @@ import (
 
 const (
 	defaultAPIServerPort = 6443
-	vpnServicePort       = 1194
 )
 
 func KubeAPIServerServicePorts(securePort int32) []corev1.ServicePort {
