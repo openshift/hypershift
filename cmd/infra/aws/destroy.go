@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/spf13/cobra"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -89,6 +91,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	ec2Client := ec2.New(awsSession, awsConfig)
 	elbClient := elb.New(awsSession, awsConfig)
 	route53Client := route53.New(awsSession, awsutil.NewRoute53Config(o.AWSCredentialsFile))
+	s3Client := s3.New(awsSession, awsConfig)
 
 	var errs []error
 	errs = append(errs, o.DestroyInternetGateways(ctx, ec2Client)...)
@@ -96,7 +99,31 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyDNS(ctx, route53Client)...)
+	errs = append(errs, o.DestroyS3Buckets(ctx, s3Client)...)
+
 	return utilerrors.NewAggregate(errs)
+}
+
+func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3iface.S3API) []error {
+	var errs []error
+	result, err := client.ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		errs = append(errs, err)
+		return errs
+	}
+	for _, bucket := range result.Buckets {
+		if strings.HasPrefix(*bucket.Name, fmt.Sprintf("%s-image-registry-", o.InfraID)) {
+			_, err := client.DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+				Bucket: bucket.Name,
+			})
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				log.Info("Deleted S3 Bucket", "name", *bucket.Name)
+			}
+		}
+	}
+	return errs
 }
 
 func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
