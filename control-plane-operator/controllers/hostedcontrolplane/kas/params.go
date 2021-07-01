@@ -175,6 +175,7 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 		kasContainerBootstrap().Name:      unprivilegedSecurityContext,
 		kasContainerApplyBootstrap().Name: unprivilegedSecurityContext,
 		kasContainerMain().Name:           unprivilegedSecurityContext,
+		kasContainerPortieries().Name:     unprivilegedSecurityContext,
 	}
 	params.AdditionalLabels = map[string]string{}
 	params.Scheduling = config.Scheduling{
