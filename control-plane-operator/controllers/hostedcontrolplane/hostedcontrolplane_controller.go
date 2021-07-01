@@ -44,6 +44,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
@@ -51,6 +52,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
@@ -519,6 +521,18 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 	}
 
+	// Reconcile openshift controller manager
+	r.Log.Info("Reconciling OpenShift Controller Manager")
+	if err = r.reconcileOpenShiftControllerManager(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+	}
+
+	// Reconcile cluster policy controller
+	r.Log.Info("Reconciling Cluster Policy Controller")
+	if err = r.reconcileClusterPolicyController(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile cluster policy controller: %w", err)
+	}
+
 	// Install the control plane into the infrastructure
 	r.Log.Info("Reconciling hosted control plane")
 	if err := r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage); err != nil {
@@ -984,6 +998,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return p.ReconcileOpenShiftControllerManagerCertSecret(openshiftControllerManagerCertSecret, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager cert: %w", err)
+	}
+
+	// Cluster Policy Controller Cert
+	clusterPolicyControllerCertSecret := manifests.ClusterPolicyControllerCertSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, clusterPolicyControllerCertSecret, func() error {
+		return p.ReconcileOpenShiftControllerManagerCertSecret(clusterPolicyControllerCertSecret, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster policy controller cert: %w", err)
 	}
 
 	// Konnectivity Server Cert
@@ -1537,6 +1559,59 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		return fmt.Errorf("failed to reconcile oauth challenging client manifest: %w", err)
 	}
 
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := ocm.NewOpenShiftControllerManagerParams(hcp, releaseImage.ComponentImages())
+
+	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, config, func() error {
+		return ocm.ReconcileOpenShiftControllerManagerConfig(config, p.OwnerRef, p.DeployerImage, p.DockerBuilderImage, p.MinTLSVersion(), p.CipherSuites())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
+	}
+
+	deployment := manifests.OpenShiftControllerManagerDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, deployment, func() error {
+		return ocm.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftControllerManagerImage, p.DeploymentConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager deployment: %w", err)
+	}
+
+	workerNamespace := manifests.OpenShiftControllerManagerNamespaceWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, workerNamespace, func() error {
+		return ocm.ReconcileOpenShiftControllerManagerNamespaceWorkerManifest(workerNamespace, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager worker namespace: %w", err)
+	}
+
+	workerServiceCA := manifests.OpenShiftControllerManagerServiceCAWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, workerServiceCA, func() error {
+		return ocm.ReconcileOpenShiftControllerManagerNamespaceWorkerManifest(workerServiceCA, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager worker service ca: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, releaseImage.ComponentImages())
+
+	config := manifests.ClusterPolicyControllerConfig(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, config, func() error {
+		return clusterpolicy.ReconcileClusterPolicyControllerConfig(config, p.OwnerRef, p.MinTLSVersion(), p.CipherSuites())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
+	}
+
+	deployment := manifests.ClusterPolicyControllerDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, deployment, func() error {
+		return clusterpolicy.ReconcileDeployment(deployment, p.OwnerRef, p.Image, p.DeploymentConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager deployment: %w", err)
+	}
 	return nil
 }
 
