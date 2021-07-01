@@ -10,11 +10,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
-func NewSession() *session.Session {
+func NewSession(agent string) *session.Session {
 	awsSession := session.Must(session.NewSession())
 	awsSession.Handlers.Build.PushBackNamed(request.NamedHandler{
 		Name: "openshift.io/hypershift",
-		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "cli"),
+		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", agent),
 	})
 	return awsSession
 }

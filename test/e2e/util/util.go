@@ -1,7 +1,11 @@
-package e2e
+package util
 
 import (
 	"context"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -34,42 +38,63 @@ func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client
 	err := client.Create(ctx, namespace)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create test namespace")
 	g.Expect(namespace.Name).ToNot(BeEmpty(), "generated namespace has no name")
-	t.Logf("Created test namespace %s", namespace.Name)
+	log.Info("created test namespace", "name", namespace.Name)
 	return namespace
 }
 
-func DestroyCluster(t *testing.T, ctx context.Context, opts *cmdcluster.DestroyOptions, artifactDir string) {
-	if len(artifactDir) > 0 {
-		err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
-			Namespace:   opts.Namespace,
-			Name:        opts.Name,
-			ArtifactDir: artifactDir,
-		})
-		if err != nil {
-			t.Logf("error dumping cluster contents: %s", err)
-		}
+// DumpHostedCluster tries to dump important resources related to the HostedCluster, and
+// logs any failures along the way.
+func DumpHostedCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir string) {
+	if len(artifactDir) == 0 {
+		log.Info("skipping cluster dump because no artifact dir was provided")
+		return
+	}
+	err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
+		Namespace:   hostedCluster.Namespace,
+		Name:        hostedCluster.Name,
+		ArtifactDir: artifactDir,
+	})
+	if err != nil {
+		log.Error(err, "failed to dump cluster")
+	}
+}
+
+// DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,
+// logging any failures along the way.
+func DumpAndDestroyHostedCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, awsCreds string, awsRegion string, baseDomain string, artifactDir string) {
+	DumpHostedCluster(ctx, hostedCluster, artifactDir)
+
+	opts := &cmdcluster.DestroyOptions{
+		Namespace:          hostedCluster.Namespace,
+		Name:               hostedCluster.Name,
+		Region:             awsRegion,
+		InfraID:            hostedCluster.Name,
+		BaseDomain:         baseDomain,
+		AWSCredentialsFile: awsCreds,
+		PreserveIAM:        false,
+		ClusterGracePeriod: 15 * time.Minute,
 	}
 
-	g := NewWithT(t)
-
-	t.Logf("Waiting for hostedcluster %s/%s to be destroyed", opts.Namespace, opts.Name)
+	log.Info("waiting for cluster to be destroyed", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		err := cmdcluster.DestroyCluster(ctx, opts)
 		if err != nil {
-			t.Logf("error destroying cluster, will retry: %s", err)
+			log.Error(err, "failed to destroy cluster, will retry")
 			return false, nil
 		}
 		return true, nil
 	}, ctx.Done())
-	g.Expect(err).NotTo(HaveOccurred(), "failed to destroy cluster")
-
-	t.Logf("Finished destroying hostedcluster %s/%s", opts.Namespace, opts.Name)
+	if err != nil {
+		log.Error(err, "failed to destroy cluster")
+	} else {
+		log.Info("destroyed cluster", "namespace", opts.Namespace, "name", opts.Name)
+	}
 }
 
-func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, namespace string) {
-	g := NewWithT(t)
-
-	t.Logf("Deleting namespace %s", namespace)
+// DeleteNamespace deletes and finalizes the given namespace, logging any failures
+// along the way.
+func DeleteNamespace(ctx context.Context, client crclient.Client, namespace string) {
+	log.Info("deleting namespace", "namespace", namespace)
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		err := client.Delete(ctx, ns, &crclient.DeleteOptions{})
@@ -77,34 +102,37 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 			if errors.IsNotFound(err) {
 				return true, nil
 			}
-			t.Logf("error deleting namespace %q, will retry: %s", namespace, err)
+			log.Error(err, "failed to delete namespace, will retry", "namespace", namespace)
 			return false, nil
 		}
 		return true, nil
 	}, ctx.Done())
-	g.Expect(err).NotTo(HaveOccurred(), "failed to delete namespace")
+	if err != nil {
+		log.Error(err, "failed to delete namespace")
+		return
+	}
 
-	t.Logf("Waiting for namespace %q to be finalized", namespace)
+	log.Info("waiting for namespace to be finalized", "namespace", namespace)
 	err = wait.PollInfinite(1*time.Second, func() (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(ns), ns); err != nil {
 			if errors.IsNotFound(err) {
 				return true, nil
 			}
-			t.Logf("error getting namespace %q: %s", namespace, err)
+			log.Error(err, "failed to get namespace", "namespace", namespace)
 			return false, nil
 		}
 		return false, nil
 	})
-	g.Expect(err).NotTo(HaveOccurred(), "namespace was not finalized")
-
-	t.Logf("Finished deleting namespace %s", namespace)
+	if err != nil {
+		log.Error(err, "namespace was not finalized")
+	} else {
+		log.Info("deleted namespace", "namespace", namespace)
+	}
 }
 
-func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
-	g := NewWithT(t)
-
-	t.Logf("Waiting for hostedcluster %s/%s kubeconfig to be published", hostedCluster.Namespace, hostedCluster.Name)
+func WaitForGuestKubeConfig(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
+	log.Info("waiting for hostedcluster kubeconfig to be published", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
 	var guestKubeConfigSecret corev1.Secret
 	err := wait.PollUntil(1*time.Second, func() (done bool, err error) {
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
@@ -123,16 +151,29 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 		}
 		return true, nil
 	}, ctx.Done())
-	g.Expect(err).NotTo(HaveOccurred(), "guest kubeconfig didn't become available")
+	if err != nil {
+		return nil, fmt.Errorf("kubeconfig didn't become available: %w", err)
+	}
+	log.Info("found kubeconfig for cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
 
 	// TODO: this key should probably be published or an API constant
-	g.Expect(guestKubeConfigSecret.Data).To(HaveKey("kubeconfig"), "guest kubeconfig secret is missing kubeconfig key")
-	guestKubeConfigSecretData := guestKubeConfigSecret.Data["kubeconfig"]
+	data, hasData := guestKubeConfigSecret.Data["kubeconfig"]
+	if !hasData {
+		return nil, fmt.Errorf("kubeconfig secret is missing kubeconfig key")
+	}
+	return data, nil
+}
+
+func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
+	g := NewWithT(t)
+
+	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(ctx, client, hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
 
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
 
-	t.Logf("Waiting for a successful connection to the guest apiserver")
+	log.Info("waiting for a successful connection to the guest apiserver")
 	var guestClient crclient.Client
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -146,14 +187,14 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	}, waitForGuestClientCtx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to establish a connection to the guest apiserver")
 
-	t.Logf("Successfully connected to the guest apiserver")
+	log.Info("successfully connected to the guest apiserver")
 	return guestClient
 }
 
 func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
 	g := NewWithT(t)
 
-	t.Logf("Waiting for nodepool %s/%s nodes to become ready", nodePool.Namespace, nodePool.Name)
+	log.Info("waiting for nodepool nodes to become ready", "namespace", nodePool.Namespace, "name", nodePool.Name)
 	nodes := &corev1.NodeList{}
 	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
 		err = client.List(ctx, nodes)
@@ -174,23 +215,23 @@ func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client
 		if len(readyNodes) != int(*nodePool.Spec.NodeCount) {
 			return false, nil
 		}
-		t.Logf("found %d ready nodes", len(nodes.Items))
+		log.Info("all nodes are ready", "count", len(nodes.Items))
 		return true, nil
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest nodes became ready")
 
-	t.Logf("All %d nodes for nodepool %s/%s appear to be ready", int(*nodePool.Spec.NodeCount), nodePool.Namespace, nodePool.Name)
+	log.Info("all nodes for nodepool appear to be ready", "count", int(*nodePool.Spec.NodeCount), "namespace", nodePool.Namespace, "name", nodePool.Name)
 }
 
 func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	g := NewWithT(t)
 
-	t.Logf("Waiting for hostedcluster %s/%s operators to become ready", hostedCluster.Namespace, hostedCluster.Name)
+	log.Info("waiting for hostedcluster operators to become ready", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
 	clusterOperators := &configv1.ClusterOperatorList{}
 	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
 		err = client.List(ctx, clusterOperators)
 		if err != nil {
-			t.Logf("failed to list cluster operators: %v", err)
+			log.Error(err, "failed to list cluster operators")
 			return false, nil
 		}
 		if len(clusterOperators.Items) == 0 {
@@ -223,23 +264,23 @@ func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crcl
 		if !ready {
 			return false, nil
 		}
-		t.Logf("guest cluster operators are ready")
+		log.Info("guest cluster operators are ready")
 		return true, nil
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest cluster operators became ready")
 
-	t.Logf("All cluster operators for hostedcluster %s/%s appear to be ready", hostedCluster.Namespace, hostedCluster.Name)
+	log.Info("all cluster operators for hostedcluster appear to be ready", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	g := NewWithT(t)
 
-	t.Logf("Waiting for hostedcluster %s/%s to rollout image %s", hostedCluster.Namespace, hostedCluster.Name, image)
+	log.Info("waiting for hostedcluster to rollout image %s", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "image", image)
 	err := wait.PollUntil(1*time.Second, func() (done bool, err error) {
 		latest := hostedCluster.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(latest), latest)
 		if err != nil {
-			t.Logf("error getting cluster: %s", err)
+			log.Error(err, "failed to get hostedcluster")
 			return false, nil
 		}
 
@@ -254,10 +295,50 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 		if isAvailable && rolloutComplete {
 			return true, nil
 		}
-		t.Logf("Still waiting for hostedcluster rollout (image=%s, isAvailable=%v, rolloutComplete=%v)", image, isAvailable, rolloutComplete)
+		log.Info("waiting for hostedcluster rollout", "image", image, "isAvailable", isAvailable, "rolloutComplete", rolloutComplete)
 		return false, nil
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
 
-	t.Logf("Observed hostedcluster %s/%s successfully rollout image %s", hostedCluster.Namespace, hostedCluster.Name, image)
+	log.Info("observed hostedcluster to have successfully rolled out image", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "image", image)
+}
+
+// DumpGuestCluster tries to collect resources from the from the hosted cluster,
+// and logs any failures that occur.
+func DumpGuestCluster(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, destDir string) {
+	kubeconfigTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	kubeconfig, err := WaitForGuestKubeConfig(kubeconfigTimeout, client, hostedCluster)
+	if err != nil {
+		log.Error(err, "failed to get guest kubeconfig")
+		return
+	}
+
+	kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
+	if err != nil {
+		log.Error(err, "failed to create temporary directory")
+		return
+	}
+	defer func() {
+		if err := os.Remove(kubeconfigFile.Name()); err != nil {
+			log.Error(err, "failed to remote temp file", "file", kubeconfigFile.Name())
+		}
+	}()
+
+	if _, err := kubeconfigFile.Write(kubeconfig); err != nil {
+		log.Error(err, "failed to write kubeconfig")
+		return
+	}
+	if err := kubeconfigFile.Close(); err != nil {
+		log.Error(err, "failed to close kubeconfig file")
+		return
+	}
+
+	dumpDir := filepath.Join(destDir, "hostedcluster-"+hostedCluster.Name)
+	log.Info("dumping guest cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "dest", dumpDir)
+	if err := cmdcluster.DumpGuestCluster(ctx, kubeconfigFile.Name(), dumpDir); err != nil {
+		log.Error(err, "failed to dump guest cluster")
+		return
+	}
+	log.Info("dumped guest cluster data", "dir", dumpDir)
 }
