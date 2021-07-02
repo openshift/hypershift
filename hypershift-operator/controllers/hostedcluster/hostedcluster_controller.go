@@ -1292,6 +1292,10 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, imag
 								},
 							},
 						},
+						// needed since control plane operator runs with anyuuid scc
+						SecurityContext: &corev1.SecurityContext{
+							RunAsUser: k8sutilspointer.Int64Ptr(1000),
+						},
 						Command: []string{"/usr/bin/control-plane-operator"},
 						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator"},
 					},
