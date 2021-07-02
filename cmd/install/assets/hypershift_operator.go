@@ -36,6 +36,11 @@ type HyperShiftOperatorDeployment struct {
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
+	// needed since hypershift operator runs with anyuuid scc
+	nonRootUser := int64(1000)
+	nonRootSecurityContext := &corev1.SecurityContext{
+		RunAsUser: &nonRootUser,
+	}
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -63,6 +68,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					Containers: []corev1.Container{
 						{
 							Name:            "operator",
+							SecurityContext: nonRootSecurityContext,
 							Image:           o.OperatorImage,
 							ImagePullPolicy: corev1.PullAlways,
 							Env: []corev1.EnvVar{
