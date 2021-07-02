@@ -609,10 +609,16 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}
 
-	// Reconcile the CAPI AWS provider components
-	err = r.reconcileCAPIAWSProvider(ctx, hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi aws provider: %w", err)
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		// Reconcile the CAPI AWS provider components
+		err = r.reconcileCAPIAWSProvider(ctx, hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi aws provider: %w", err)
+		}
+	default:
+		//TODO: add other providers
+		r.Log.Info("provider specific cluster api components not specified", "provider", hcluster.Spec.Platform.Type)
 	}
 
 	// Reconcile the autoscaler
