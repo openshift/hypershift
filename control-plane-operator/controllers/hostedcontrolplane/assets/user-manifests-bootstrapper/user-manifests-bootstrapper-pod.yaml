@@ -21,7 +21,7 @@ spec:
         - -c
         - |-
           cd /tmp
-          mkdir output
+          mkdir -p output/manifests output/bootstrap
           /usr/bin/cluster-version-operator render --output-dir /tmp/output --release-image {{ .ReleaseImage }}
           # Exclude the CVO deployment manifest
           rm /tmp/output/manifests/0000_00_cluster-version-operator*deployment.yaml
