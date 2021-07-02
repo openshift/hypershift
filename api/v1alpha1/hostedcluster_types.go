@@ -346,7 +346,7 @@ const (
 	IgnitionServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
 
 	HostedClusterAsExpectedReason          = "HostedClusterAsExpected"
-	HostedClusterUnhealthyComponentsReason = "UnhealthControlPlaneComponents"
+	HostedClusterUnhealthyComponentsReason = "UnhealthyControlPlaneComponents"
 
 	UnmanagedEtcdStatusUnknownReason = "UnmanagedEtcdStatusUnknown"
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
