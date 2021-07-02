@@ -1286,6 +1286,11 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 }
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, image string, sa *corev1.ServiceAccount) error {
+	// needed since control plane operator runs with anyuuid scc
+	nonRootUser := int64(1000)
+	nonRootSecurityContext := &corev1.SecurityContext{
+		RunAsUser: &nonRootUser,
+	}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -1316,8 +1321,9 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, imag
 								},
 							},
 						},
-						Command: []string{"/usr/bin/control-plane-operator"},
-						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator"},
+						SecurityContext: nonRootSecurityContext,
+						Command:         []string{"/usr/bin/control-plane-operator"},
+						Args:            []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator"},
 					},
 				},
 			},
