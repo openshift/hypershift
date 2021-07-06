@@ -7,21 +7,21 @@ import (
 )
 
 const (
-	NodePoolAMIDiscoveryFailed              = "AMIDiscoveryFailed"
+	NodePoolValidReleaseImageConditionType  = "ValidReleaseImage"
+	NodePoolValidAMIConditionType           = "ValidAMI"
+	NodePoolConfigFailedConditionType       = "ConfigFailed"
 	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
 	NodePoolAutorepairEnabledConditionType  = "AutorepairEnabled"
+	NodePoolUpdatingVersionConditionType    = "UpdatingVersion"
+	NodePoolUpdatingConfigConditionType     = "UpdatingConfig"
 	NodePoolAsExpectedConditionReason       = "AsExpected"
 	NodePoolValidationFailedConditionReason = "ValidationFailed"
-	NodePoolUpgradingConditionType          = "Upgrading"
-	NodePoolUpdatingConfigConditionType     = "UpdatingConfig"
 )
 
 // The following are reasons for the IgnitionEndpointAvailable condition.
 const (
 	IgnitionEndpointMissingReason string = "IgnitionEndpointMissing"
 	IgnitionCACertMissingReason   string = "IgnitionCACertMissing"
-	IgnitionTokenMissingError     string = "IgnitionTokenError"
-	IgnitionUserDataErrorReason   string = "IgnitionUserDataError"
 )
 
 func init() {
@@ -40,7 +40,8 @@ func init() {
 // +kubebuilder:printcolumn:name="Autoscaling",type="string",JSONPath=".status.conditions[?(@.type==\"AutoscalingEnabled\")].status",description="Autoscaling Enabled"
 // +kubebuilder:printcolumn:name="Autorepair",type="string",JSONPath=".status.conditions[?(@.type==\"AutorepairEnabled\")].status",description="Node Autorepair Enabled"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Current version"
-// +kubebuilder:printcolumn:name="Upgrading",type="string",JSONPath=".status.conditions[?(@.type==\"Upgrading\")].status",description="Upgrade in progress"
+// +kubebuilder:printcolumn:name="UpdatingVersion",type="string",JSONPath=".status.conditions[?(@.type==\"UpdatingVersion\")].status",description="UpdatingVersion in progress"
+// +kubebuilder:printcolumn:name="UpdatingConfig",type="string",JSONPath=".status.conditions[?(@.type==\"UpdatingConfig\")].status",description="UpdatingConfig in progress"
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
