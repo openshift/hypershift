@@ -45,9 +45,9 @@ var (
 )
 
 type idpData struct {
-	provider  runtime.Object `json:"provider"`
-	challenge bool           `json:"challenge"`
-	login     bool           `json:"login"`
+	provider  runtime.Object
+	challenge bool
+	login     bool
 }
 
 type IDPVolumeMountInfo struct {
