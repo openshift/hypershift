@@ -56,6 +56,7 @@ type ExampleOptions struct {
 	PrivateZoneID    string
 	Annotations      map[string]string
 	AWS              ExampleAWSOptions
+	NetworkType      hyperv1.NetworkType
 }
 
 type ExampleAWSOptions struct {
@@ -179,6 +180,7 @@ aws_secret_access_key = %s
 				ServiceCIDR: "172.31.0.0/16",
 				PodCIDR:     "10.132.0.0/14",
 				MachineCIDR: o.ComputeCIDR,
+				NetworkType: o.NetworkType,
 			},
 			Services: []hyperv1.ServicePublishingStrategyMapping{
 				{
