@@ -1,6 +1,8 @@
 package oauth
 
 import (
+	"encoding/json"
+	"fmt"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -17,6 +19,7 @@ type OAuthServerParams struct {
 	config.DeploymentConfig `json:",inline"`
 	OAuth                   configv1.OAuth     `json:"oauth"`
 	APIServer               configv1.APIServer `json:"apiServer"`
+	OauthConfigOverrides    map[string]*ConfigOverrideStruct
 }
 
 type OAuthConfigParams struct {
@@ -27,6 +30,7 @@ type OAuthConfigParams struct {
 	MinTLSVersion            string
 	IdentityProviders        []configv1.IdentityProvider
 	AccessTokenMaxAgeSeconds int32
+	OauthConfigOverrides     map[string]*ConfigOverrideStruct
 }
 
 func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32) *OAuthServerParams {
@@ -68,6 +72,16 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 	default:
 		p.Replicas = 1
 	}
+	if hcp.Annotations != nil {
+		if configOverride, ok := hcp.Annotations[hyperv1.IdentityProviderOverridesAnnotation]; ok {
+			p.OauthConfigOverrides = map[string]*ConfigOverrideStruct{}
+			err := json.Unmarshal([]byte(configOverride), &p.OauthConfigOverrides)
+			if err != nil {
+				//TODO: handle error
+				fmt.Println(err)
+			}
+		}
+	}
 	return p
 }
 
@@ -80,6 +94,7 @@ func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfi
 		MinTLSVersion:            config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile),
 		IdentityProviders:        p.OAuth.Spec.IdentityProviders,
 		AccessTokenMaxAgeSeconds: p.OAuth.Spec.TokenConfig.AccessTokenMaxAgeSeconds,
+		OauthConfigOverrides:     p.OauthConfigOverrides,
 	}
 }
 
