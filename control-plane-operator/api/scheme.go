@@ -17,6 +17,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
 	capiibm "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
@@ -58,4 +59,5 @@ func init() {
 	apiextensionsv1.AddToScheme(Scheme)
 	etcd.AddToScheme(Scheme)
 	kasv1beta1.AddToScheme(Scheme)
+	openshiftcpv1.AddToScheme(Scheme)
 }
