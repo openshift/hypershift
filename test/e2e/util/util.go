@@ -306,6 +306,10 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 // DumpGuestCluster tries to collect resources from the from the hosted cluster,
 // and logs any failures that occur.
 func DumpGuestCluster(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, destDir string) {
+	if len(destDir) == 0 {
+		log.Info("skipping guest cluster dump because no dest dir was provided")
+		return
+	}
 	kubeconfigTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	kubeconfig, err := WaitForGuestKubeConfig(kubeconfigTimeout, client, hostedCluster)
