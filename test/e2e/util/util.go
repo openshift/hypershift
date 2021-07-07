@@ -275,8 +275,8 @@ func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crcl
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	g := NewWithT(t)
 
-	log.Info("waiting for hostedcluster to rollout image %s", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "image", image)
-	err := wait.PollUntil(1*time.Second, func() (done bool, err error) {
+	log.Info("waiting for hostedcluster to rollout image", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "image", image)
+	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
 		latest := hostedCluster.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(latest), latest)
 		if err != nil {
