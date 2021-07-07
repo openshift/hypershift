@@ -43,10 +43,10 @@ type OAuthConfigParams struct {
 // OpenID api does not support some of the customizations used in the IBMCloud IAM OIDC provider. This can be removed
 // if the public API is adjusted to allow specifying these customizations.
 type ConfigOverride struct {
-	URLs      osinv1.OpenIDURLs   `json:"urls"`
-	Claims    osinv1.OpenIDClaims `json:"claims"`
-	Login     bool                `json:"login"`
-	Challenge bool                `json:"challenge"`
+	URLs      osinv1.OpenIDURLs   `json:"urls,omitempty"`
+	Claims    osinv1.OpenIDClaims `json:"claims,omitempty"`
+	Login     bool                `json:"login,omitempty"`
+	Challenge bool                `json:"challenge,omitempty"`
 }
 
 func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32) *OAuthServerParams {
