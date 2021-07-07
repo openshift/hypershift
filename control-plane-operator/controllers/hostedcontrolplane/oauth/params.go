@@ -3,6 +3,7 @@ package oauth
 import (
 	"encoding/json"
 	"fmt"
+	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -19,7 +20,9 @@ type OAuthServerParams struct {
 	config.DeploymentConfig `json:",inline"`
 	OAuth                   configv1.OAuth     `json:"oauth"`
 	APIServer               configv1.APIServer `json:"apiServer"`
-	OauthConfigOverrides    map[string]*ConfigOverrideStruct
+	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
+	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
+	OauthConfigOverrides map[string]*ConfigOverride
 }
 
 type OAuthConfigParams struct {
@@ -30,7 +33,20 @@ type OAuthConfigParams struct {
 	MinTLSVersion            string
 	IdentityProviders        []configv1.IdentityProvider
 	AccessTokenMaxAgeSeconds int32
-	OauthConfigOverrides     map[string]*ConfigOverrideStruct
+	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
+	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
+	OauthConfigOverrides map[string]*ConfigOverride
+}
+
+// ConfigOverride defines the oauth parameters that can be overriden in special use cases. The only supported
+// use case for this currently is the IBMCloud IAM OIDC provider. These parameters are necessary since the public
+// OpenID api does not support some of the customizations used in the IBMCloud IAM OIDC provider. This can be removed
+// if the public API is adjusted to allow specifying these customizations.
+type ConfigOverride struct {
+	URLs      osinv1.OpenIDURLs   `json:"urls"`
+	Claims    osinv1.OpenIDClaims `json:"claims"`
+	Login     bool                `json:"login"`
+	Challenge bool                `json:"challenge"`
 }
 
 func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32) *OAuthServerParams {
@@ -74,7 +90,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 	}
 	if hcp.Annotations != nil {
 		if configOverride, ok := hcp.Annotations[hyperv1.IdentityProviderOverridesAnnotation]; ok {
-			p.OauthConfigOverrides = map[string]*ConfigOverrideStruct{}
+			p.OauthConfigOverrides = map[string]*ConfigOverride{}
 			err := json.Unmarshal([]byte(configOverride), &p.OauthConfigOverrides)
 			if err != nil {
 				//TODO: handle error

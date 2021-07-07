@@ -77,7 +77,7 @@ func (i *IDPVolumeMountInfo) SecretPath(index int, secretName, field, key string
 	return path.Join(i.VolumeMounts[v.Name], key)
 }
 
-func convertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverrideStruct, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
+func convertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
 	converted := make([]osinv1.IdentityProvider, 0, len(identityProviders))
 	errs := []error{}
 	volumeMountInfo := &IDPVolumeMountInfo{
@@ -85,7 +85,7 @@ func convertIdentityProviders(ctx context.Context, identityProviders []configv1.
 	}
 
 	for i, idp := range defaultIDPMappingMethods(identityProviders) {
-		var providerConfigOverride *ConfigOverrideStruct
+		var providerConfigOverride *ConfigOverride = nil
 		if _, ok := providerOverrides[idp.Name]; ok {
 			providerConfigOverride = providerOverrides[idp.Name]
 		}
@@ -128,18 +128,10 @@ func defaultIDPMappingMethods(identityProviders []configv1.IdentityProvider) []c
 	return out
 }
 
-// ConfigOverrideStruct defines the parameters a user can override from the public API through an annotations
-type ConfigOverrideStruct struct {
-	URLs      osinv1.OpenIDURLs   `json:"urls"`
-	Claims    osinv1.OpenIDClaims `json:"claims"`
-	Login     bool                `json:"login"`
-	Challenge bool                `json:"challenge"`
-}
-
 func convertProviderConfigToIDPData(
 	ctx context.Context,
 	providerConfig *configv1.IdentityProviderConfig,
-	configOverride *ConfigOverrideStruct,
+	configOverride *ConfigOverride,
 	i int,
 	idpVolumeMounts *IDPVolumeMountInfo,
 	kclient crclient.Client,
@@ -284,7 +276,8 @@ func convertProviderConfigToIDPData(
 		if openIDConfig == nil {
 			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
 		}
-		baseProviderConfig := &osinv1.OpenIDIdentityProvider{
+		// this is the common config that is then added on to
+		openIDProviderData := &osinv1.OpenIDIdentityProvider{
 			CA:       idpVolumeMounts.ConfigMapPath(i, openIDConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey),
 			ClientID: openIDConfig.ClientID,
 			ClientSecret: configv1.StringSource{
@@ -295,19 +288,19 @@ func convertProviderConfigToIDPData(
 			ExtraScopes:              openIDConfig.ExtraScopes,
 			ExtraAuthorizeParameters: openIDConfig.ExtraAuthorizeParameters,
 		}
-		//Handle special case for IBM Cloud's OIDC provider (need to override some fields
+		//Handle special case for IBM Cloud's OIDC provider (need to override some fields not available in public api)
 		if configOverride != nil {
 			data.login = configOverride.Login
 			data.challenge = configOverride.Challenge
-			baseProviderConfig.URLs = configOverride.URLs
-			baseProviderConfig.Claims = configOverride.Claims
+			openIDProviderData.URLs = configOverride.URLs
+			openIDProviderData.Claims = configOverride.Claims
 		} else {
 			urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA)
 			if err != nil {
 				return nil, err
 			}
-			baseProviderConfig.URLs = *urls
-			baseProviderConfig.Claims = osinv1.OpenIDClaims{
+			openIDProviderData.URLs = *urls
+			openIDProviderData.Claims = osinv1.OpenIDClaims{
 				// There is no longer a user-facing setting for ID as it is considered unsafe
 				ID:                []string{configv1.UserIDClaim},
 				PreferredUsername: openIDConfig.Claims.PreferredUsername,
@@ -331,6 +324,7 @@ func convertProviderConfigToIDPData(
 			}
 			data.challenge = challengeFlowsAllowed
 		}
+		data.provider = openIDProviderData
 	case configv1.IdentityProviderTypeRequestHeader:
 		requestHeaderConfig := providerConfig.RequestHeader
 		if requestHeaderConfig == nil {
