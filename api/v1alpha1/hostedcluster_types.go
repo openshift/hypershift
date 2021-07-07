@@ -149,7 +149,24 @@ type ClusterNetworking struct {
 	ServiceCIDR string `json:"serviceCIDR"`
 	PodCIDR     string `json:"podCIDR"`
 	MachineCIDR string `json:"machineCIDR"`
+	// NetworkType specifies the SDN provider used for cluster networking.
+	// +kubebuilder:default:="OpenShiftSDN"
+	// +unionDiscriminator
+	// +required
+	NetworkType NetworkType `json:"networkType"`
 }
+
+// NetworkType specifies the SDN provider used for cluster networking.
+// +kubebuilder:validation:Enum=OpenShiftSDN;Calico
+type NetworkType string
+
+const (
+	// OpenShiftSDN specifies OpenshiftSDN as the SDN provider
+	OpenShiftSDN NetworkType = "OpenShiftSDN"
+
+	// Calico specifies Calico as the SDN provider
+	Calico NetworkType = "Calico"
+)
 
 // PlatformType is a specific supported infrastructure provider.
 // +kubebuilder:validation:Enum=AWS;None;IBMCloud
@@ -165,15 +182,11 @@ const (
 )
 
 const (
-	SecurePortOverrideAnnotation  = "hypershift.openshift.io/secureport-override"
-	IdentityProviderAnnotation    = "hypershift.openshift.io/identity-provider"
-	NamedCertAnnotation           = "hypershift.openshift.io/named-cert"
-	NetworkTypeOverrideAnnotation = "hypershift.openshift.io/networktype-override"
-	NamedCertSecretName           = "named-cert-info"
-	PortierisImageAnnotation      = "hypershift.openshift.io/portieris-image"
-	KMSImageAnnotation            = "hypershift.openshift.io/kms-image"
-	KMSKPInfoAnnotation           = "hypershift.openshift.io/kms-kp-info"
-	KMSKPRegionAnnotation         = "hypershift.openshift.io/kms-kp-region"
+	SecurePortOverrideAnnotation = "hypershift.openshift.io/secureport-override"
+	PortierisImageAnnotation     = "hypershift.openshift.io/portieris-image"
+	KMSImageAnnotation           = "hypershift.openshift.io/kms-image"
+	KMSKPInfoAnnotation          = "hypershift.openshift.io/kms-kp-info"
+	KMSKPRegionAnnotation        = "hypershift.openshift.io/kms-kp-region"
 )
 
 type PlatformSpec struct {

@@ -661,15 +661,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		if _, ok := hcluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; ok {
 			hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation] = hcluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
 		}
-		if _, ok := hcluster.Annotations[hyperv1.NetworkTypeOverrideAnnotation]; ok {
-			hcp.Annotations[hyperv1.NetworkTypeOverrideAnnotation] = hcluster.Annotations[hyperv1.NetworkTypeOverrideAnnotation]
-		}
-		if _, ok := hcluster.Annotations[hyperv1.IdentityProviderAnnotation]; ok {
-			hcp.Annotations[hyperv1.IdentityProviderAnnotation] = hcluster.Annotations[hyperv1.IdentityProviderAnnotation]
-		}
-		if _, ok := hcluster.Annotations[hyperv1.NamedCertAnnotation]; ok {
-			hcp.Annotations[hyperv1.NamedCertAnnotation] = hcluster.Annotations[hyperv1.NamedCertAnnotation]
-		}
 		if _, ok := hcluster.Annotations[hyperv1.PortierisImageAnnotation]; ok {
 			hcp.Annotations[hyperv1.PortierisImageAnnotation] = hcluster.Annotations[hyperv1.PortierisImageAnnotation]
 		}
@@ -698,6 +689,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
 	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
 	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
+	hcp.Spec.NetworkType = hcluster.Spec.Networking.NetworkType
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
 	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.Services = hcluster.Spec.Services

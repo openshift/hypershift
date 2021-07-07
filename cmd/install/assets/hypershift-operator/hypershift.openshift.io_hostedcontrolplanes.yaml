@@ -118,6 +118,12 @@ spec:
                 type: object
               machineCIDR:
                 type: string
+              networkType:
+                description: NetworkType specifies the SDN provider used for cluster networking.
+                enum:
+                - OpenShiftSDN
+                - Calico
+                type: string
               platform:
                 properties:
                   aws:
@@ -305,6 +311,7 @@ spec:
             - infraID
             - issuerURL
             - machineCIDR
+            - networkType
             - platform
             - podCIDR
             - pullSecret
