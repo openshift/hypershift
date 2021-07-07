@@ -223,7 +223,9 @@ func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client
 	log.Info("all nodes for nodepool appear to be ready", "count", int(*nodePool.Spec.NodeCount), "namespace", nodePool.Namespace, "name", nodePool.Name)
 }
 
-func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+type WaitForOperatorPredicate func(operator *configv1.ClusterOperator) bool
+
+func WaitForClusterOperators(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, predicates ...WaitForOperatorPredicate) {
 	g := NewWithT(t)
 
 	log.Info("waiting for hostedcluster operators to become ready", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
@@ -239,26 +241,10 @@ func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crcl
 		}
 		ready := true
 		for _, clusterOperator := range clusterOperators.Items {
-			available := false
-			degraded := true
-			for _, cond := range clusterOperator.Status.Conditions {
-				if cond.Type == configv1.OperatorAvailable && cond.Status == configv1.ConditionTrue {
-					available = true
+			for _, passes := range predicates {
+				if !passes(&clusterOperator) {
+					ready = false
 				}
-				if cond.Type == configv1.OperatorDegraded && cond.Status == configv1.ConditionFalse {
-					degraded = false
-				}
-				// TODO: This is a bug in the console operator where it doesn't do its route
-				// health check periodically https://bugzilla.redhat.com/show_bug.cgi?id=1945326
-				// Fortunately, the ingress operator also does a canary route check that ensures
-				// that direct ingress is working so we still have coverage.
-				if clusterOperator.GetName() == "console" {
-					degraded = false
-				}
-			}
-			if !available || degraded {
-				ready = false
-				break
 			}
 		}
 		if !ready {
@@ -270,6 +256,49 @@ func WaitForReadyClusterOperators(t *testing.T, ctx context.Context, client crcl
 	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest cluster operators became ready")
 
 	log.Info("all cluster operators for hostedcluster appear to be ready", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
+}
+
+func OperatorIsReady() func(operator *configv1.ClusterOperator) bool {
+	return func(operator *configv1.ClusterOperator) bool {
+		available := false
+		degraded := true
+		for _, cond := range operator.Status.Conditions {
+			if cond.Type == configv1.OperatorAvailable && cond.Status == configv1.ConditionTrue {
+				available = true
+			}
+			if cond.Type == configv1.OperatorDegraded && cond.Status == configv1.ConditionFalse {
+				degraded = false
+			}
+			// TODO: This is a bug in the console operator where it doesn't do its route
+			// health check periodically https://bugzilla.redhat.com/show_bug.cgi?id=1945326
+			// Fortunately, the ingress operator also does a canary route check that ensures
+			// that direct ingress is working so we still have coverage.
+			if operator.Name == "console" {
+				degraded = false
+			}
+		}
+		matched := available && !degraded
+		if !matched {
+			log.Info("OperatorIsReady", "operator", operator.Name, "available", available, "degraded", degraded)
+		}
+		return matched
+	}
+}
+
+func OperatorAtVersion(version string) func(operator *configv1.ClusterOperator) bool {
+	return func(operator *configv1.ClusterOperator) bool {
+		matched := false
+		for _, actual := range operator.Status.Versions {
+			if actual.Name == "operator" && actual.Version == version {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			log.Info("OperatorAtVersion", "matched", matched, "version", version, "operator", operator.Name, "matched", matched, "versions", operator.Status.Versions)
+		}
+		return matched
+	}
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
