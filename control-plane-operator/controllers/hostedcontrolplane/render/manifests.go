@@ -59,7 +59,6 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
 	c.clusterVersionOperator()
-	c.openshiftControllerManager()
 	c.clusterBootstrap()
 	c.dnsmasq()
 	c.registry()
@@ -76,20 +75,6 @@ func (c *clusterManifestContext) hostedClusterConfigOperator() {
 		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
 		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
 		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) openshiftControllerManager() {
-	c.addManifestFiles(
-		"openshift-controller-manager/openshift-controller-manager-deployment.yaml",
-		"openshift-controller-manager/openshift-controller-manager-config-configmap.yaml",
-		"openshift-controller-manager/cluster-policy-controller-deployment.yaml",
-		"openshift-controller-manager/openshift-controller-manager-secret.yaml",
-		"openshift-controller-manager/openshift-controller-manager-configmap.yaml",
-	)
-	c.addUserManifestFiles(
-		"openshift-controller-manager/00-openshift-controller-manager-namespace.yaml",
-		"openshift-controller-manager/openshift-controller-manager-service-ca.yaml",
 	)
 }
 

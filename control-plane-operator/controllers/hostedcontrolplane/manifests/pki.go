@@ -140,6 +140,15 @@ func OpenShiftControllerManagerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
+func ClusterPolicyControllerCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cluster-policy-controller-cert",
+			Namespace: ns,
+		},
+	}
+}
+
 func KonnectivityServerSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
