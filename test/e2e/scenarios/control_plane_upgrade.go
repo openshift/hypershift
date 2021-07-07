@@ -80,12 +80,24 @@ func TestUpgradeControlPlane(ctx context.Context, o TestUpgradeControlPlaneOptio
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 		t.Logf("Created hostedcluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 
-		// Wait for the cluster to be accessible
-		e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
-
 		// Wait for the first rollout to be complete
 		t.Logf("Waiting for initial cluster rollout")
 		e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, o.FromReleaseImage)
+
+		// Get the newly created nodepool
+		nodepool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hostedCluster.Namespace,
+				Name:      hostedCluster.Name,
+			},
+		}
+		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
+
+		// Ensure the cluster becomes solvent
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
+		e2eutil.WaitForReadyNodes(t, ctx, guestClient, nodepool)
+		e2eutil.WaitForReadyClusterOperators(t, ctx, guestClient, hostedCluster)
 
 		// Update the cluster image
 		t.Logf("Updating cluster image")
@@ -99,5 +111,9 @@ func TestUpgradeControlPlane(ctx context.Context, o TestUpgradeControlPlaneOptio
 		// Wait for the new rollout to be complete
 		t.Logf("Waiting for updated cluster rollout")
 		e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, o.ToReleaseImage)
+
+		// Ensure the cluster remains healthy
+		e2eutil.WaitForReadyNodes(t, ctx, guestClient, nodepool)
+		e2eutil.WaitForReadyClusterOperators(t, ctx, guestClient, hostedCluster)
 	}
 }
