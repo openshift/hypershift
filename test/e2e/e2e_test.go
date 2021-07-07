@@ -50,8 +50,7 @@ func TestScenarios(t *testing.T) {
 				FromReleaseImage:   opts.PreviousReleaseImage,
 				ToReleaseImage:     opts.LatestReleaseImage,
 				ArtifactDir:        opts.ArtifactDir,
-				// For now, this test is disabled in CI
-				Enabled: !opts.IsRunningInCI,
+				Enabled:            opts.UpgradeTestsEnabled,
 			}),
 	}
 
@@ -71,6 +70,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&opts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
 	flag.StringVar(&opts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
 	flag.StringVar(&opts.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
+	flag.BoolVar(&opts.UpgradeTestsEnabled, "e2e.upgrade-tests-enabled", false, "Enables upgrade tests")
 	flag.Parse()
 
 	// Set defaults for the test options
