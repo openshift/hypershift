@@ -290,8 +290,6 @@ func convertProviderConfigToIDPData(
 		}
 		//Handle special case for IBM Cloud's OIDC provider (need to override some fields not available in public api)
 		if configOverride != nil {
-			data.login = configOverride.Login
-			data.challenge = configOverride.Challenge
 			openIDProviderData.URLs = configOverride.URLs
 			openIDProviderData.Claims = configOverride.Claims
 		} else {
@@ -307,23 +305,23 @@ func convertProviderConfigToIDPData(
 				Name:              openIDConfig.Claims.Name,
 				Email:             openIDConfig.Claims.Email,
 			}
-			// openshift CR validating in kube-apiserver does not allow
-			// challenge-redirecting IdPs to be configured with OIDC so it is safe
-			// to allow challenge-issuing flow if it's available on the OIDC side
-			challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(
-				ctx,
-				kclient,
-				urls.Token,
-				openIDConfig.ClientID,
-				namespace,
-				openIDConfig.CA,
-				openIDConfig.ClientSecret,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("error attempting password grant flow: %v", err)
-			}
-			data.challenge = challengeFlowsAllowed
 		}
+		// openshift CR validating in kube-apiserver does not allow
+		// challenge-redirecting IdPs to be configured with OIDC so it is safe
+		// to allow challenge-issuing flow if it's available on the OIDC side
+		challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(
+			ctx,
+			kclient,
+			openIDProviderData.URLs.Token,
+			openIDConfig.ClientID,
+			namespace,
+			openIDConfig.CA,
+			openIDConfig.ClientSecret,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error attempting password grant flow: %v", err)
+		}
+		data.challenge = challengeFlowsAllowed
 		data.provider = openIDProviderData
 	case configv1.IdentityProviderTypeRequestHeader:
 		requestHeaderConfig := providerConfig.RequestHeader

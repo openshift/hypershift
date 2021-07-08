@@ -13,9 +13,9 @@ func init() {
 
 const (
 	// AuditWebhookKubeconfigKey is the key name in the AuditWebhook secret that stores audit webhook kubeconfig
-	AuditWebhookKubeconfigKey           = "webhook-kubeconfig"
-	DisablePKIReconciliationAnnotation  = "hypershift.openshift.io/disable-pki-reconciliation"
-	IdentityProviderOverridesAnnotation = "hypershift.openshift.io/identity-provider-overrides"
+	AuditWebhookKubeconfigKey                 = "webhook-kubeconfig"
+	DisablePKIReconciliationAnnotation        = "hypershift.openshift.io/disable-pki-reconciliation"
+	IdentityProviderOverridesAnnotationPrefix = "idpoverrides.hypershift.openshift.io/"
 )
 
 // HostedClusterSpec defines the desired state of HostedCluster

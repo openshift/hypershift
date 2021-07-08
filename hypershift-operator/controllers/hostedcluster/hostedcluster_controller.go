@@ -654,9 +654,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Annotations = map[string]string{
 		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
 	}
-	if hcluster.Annotations != nil {
-		if _, ok := hcluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; ok {
+	for annotationKey := range hcluster.Annotations {
+		if annotationKey == hyperv1.DisablePKIReconciliationAnnotation {
 			hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation] = hcluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
+		} else if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
+			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
 		}
 	}
 

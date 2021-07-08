@@ -2,10 +2,10 @@ package oauth
 
 import (
 	"encoding/json"
-	"fmt"
 	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -43,10 +43,8 @@ type OAuthConfigParams struct {
 // OpenID api does not support some of the customizations used in the IBMCloud IAM OIDC provider. This can be removed
 // if the public API is adjusted to allow specifying these customizations.
 type ConfigOverride struct {
-	URLs      osinv1.OpenIDURLs   `json:"urls,omitempty"`
-	Claims    osinv1.OpenIDClaims `json:"claims,omitempty"`
-	Login     bool                `json:"login,omitempty"`
-	Challenge bool                `json:"challenge,omitempty"`
+	URLs   osinv1.OpenIDURLs   `json:"urls,omitempty"`
+	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
 func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32) *OAuthServerParams {
@@ -88,13 +86,20 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 	default:
 		p.Replicas = 1
 	}
-	if hcp.Annotations != nil {
-		if configOverride, ok := hcp.Annotations[hyperv1.IdentityProviderOverridesAnnotation]; ok {
-			p.OauthConfigOverrides = map[string]*ConfigOverride{}
-			err := json.Unmarshal([]byte(configOverride), &p.OauthConfigOverrides)
-			if err != nil {
-				//TODO: handle error
-				fmt.Println(err)
+	p.OauthConfigOverrides = map[string]*ConfigOverride{}
+	for annotationKey, annotationValue := range hcp.Annotations {
+		identityProvider := ""
+		if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
+			tokenizedString := strings.Split(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix)
+			if len(tokenizedString) == 2 {
+				identityProvider = tokenizedString[1]
+			}
+		}
+		if identityProvider != "" {
+			providerConfigOverride := ConfigOverride{}
+			err := json.Unmarshal([]byte(annotationValue), providerConfigOverride)
+			if err == nil {
+				p.OauthConfigOverrides[identityProvider] = &providerConfigOverride
 			}
 		}
 	}
