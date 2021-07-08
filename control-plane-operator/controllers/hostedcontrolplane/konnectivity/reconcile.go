@@ -79,7 +79,7 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{
-			"/proxy-server",
+			"/usr/bin/proxy-server",
 		}
 		c.Args = []string{
 			"--logtostderr=true",
@@ -270,7 +270,7 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{
-			"/proxy-agent",
+			"/usr/bin/proxy-agent",
 		}
 		c.Args = []string{
 			"--logtostderr=true",
@@ -330,7 +330,7 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{
-			"/proxy-agent",
+			"/usr/bin/proxy-agent",
 		}
 		c.Args = []string{
 			"--logtostderr=true",
