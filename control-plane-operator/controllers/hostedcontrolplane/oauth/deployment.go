@@ -132,7 +132,7 @@ func oauthVolumeServingCert() *corev1.Volume {
 
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.IngressCert("").Name,
+		SecretName: manifests.OpenShiftOAuthServerCert("").Name,
 	}
 }
 func oauthVolumeSessionSecret() *corev1.Volume {
