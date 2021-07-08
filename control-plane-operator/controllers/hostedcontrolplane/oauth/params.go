@@ -96,10 +96,10 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			}
 		}
 		if identityProvider != "" {
-			providerConfigOverride := ConfigOverride{}
+			providerConfigOverride := &ConfigOverride{}
 			err := json.Unmarshal([]byte(annotationValue), providerConfigOverride)
 			if err == nil {
-				p.OauthConfigOverrides[identityProvider] = &providerConfigOverride
+				p.OauthConfigOverrides[identityProvider] = providerConfigOverride
 			}
 		}
 	}
