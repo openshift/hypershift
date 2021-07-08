@@ -315,17 +315,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
-	if hostedControlPlane.Status.Version == "" {
-		lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer lookupCancel()
-		releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
-		if err != nil {
-			r.Log.Error(err, "failed to look up release image metadata")
-		} else {
-			hostedControlPlane.Status.Version = releaseImage.Version()
-		}
-	}
-
 	if hostedControlPlane.Spec.KubeConfig != nil {
 		hostedControlPlane.Status.KubeConfig = hostedControlPlane.Spec.KubeConfig
 	} else {
@@ -342,6 +331,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// state of any of the managed components. It's basically a placeholder to prove
 	// the orchestration of upgrades works at all.
 	if hostedControlPlane.Status.ReleaseImage != hostedControlPlane.Spec.ReleaseImage {
+		lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer lookupCancel()
+		releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
+		if err != nil {
+			r.Log.Error(err, "failed to look up release image metadata")
+		} else {
+			hostedControlPlane.Status.Version = releaseImage.Version()
+		}
 		hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
 		now := metav1.NewTime(time.Now())
 		hostedControlPlane.Status.LastReleaseImageTransitionTime = &now

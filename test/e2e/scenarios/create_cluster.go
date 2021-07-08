@@ -95,6 +95,6 @@ func TestCreateCluster(ctx context.Context, o TestCreateClusterOptions) func(t *
 
 		e2eutil.WaitForReadyNodes(t, ctx, guestClient, nodepool)
 
-		e2eutil.WaitForReadyClusterOperators(t, ctx, guestClient, hostedCluster)
+		e2eutil.WaitForClusterOperators(t, ctx, guestClient, hostedCluster, e2eutil.OperatorIsReady())
 	}
 }
