@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	k8sutilspointer "k8s.io/utils/pointer"
 )
 
 type HyperShiftNamespace struct {
@@ -62,7 +63,11 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					ServiceAccountName: o.ServiceAccount.Name,
 					Containers: []corev1.Container{
 						{
-							Name:            "operator",
+							Name: "operator",
+							// needed since hypershift operator runs with anyuuid scc
+							SecurityContext: &corev1.SecurityContext{
+								RunAsUser: k8sutilspointer.Int64Ptr(1000),
+							},
 							Image:           o.OperatorImage,
 							ImagePullPolicy: corev1.PullAlways,
 							Env: []corev1.EnvVar{
