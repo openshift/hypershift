@@ -68,6 +68,7 @@ func TestCreateCluster(ctx context.Context, o TestCreateClusterOptions) func(t *
 			NodePoolReplicas: 2,
 			InstanceType:     "m4.large",
 			BaseDomain:       o.BaseDomain,
+			NetworkType:      string(hyperv1.OpenShiftSDN),
 		}
 		log.Info("creating a new cluster", "options", createClusterOpts)
 		err := cmdcluster.CreateCluster(ctx, createClusterOpts)
