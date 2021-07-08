@@ -3,6 +3,7 @@ package konnectivity
 import (
 	"bytes"
 	"fmt"
+	"k8s.io/utils/pointer"
 	"path"
 	"strconv"
 
@@ -231,6 +232,9 @@ func reconcileWorkerAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig
 				Labels: konnectivityAgentLabels,
 			},
 			Spec: corev1.PodSpec{
+				SecurityContext: &corev1.PodSecurityContext{
+					RunAsUser: pointer.Int64Ptr(1000),
+				},
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port)),
 				},
