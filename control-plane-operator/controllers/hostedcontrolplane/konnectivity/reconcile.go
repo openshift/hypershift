@@ -3,6 +3,7 @@ package konnectivity
 import (
 	"bytes"
 	"fmt"
+	"k8s.io/utils/pointer"
 	"path"
 	"strconv"
 
@@ -79,7 +80,7 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{
-			"/proxy-server",
+			"/usr/bin/proxy-server",
 		}
 		c.Args = []string{
 			"--logtostderr=true",
@@ -231,6 +232,9 @@ func reconcileWorkerAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig
 				Labels: konnectivityAgentLabels,
 			},
 			Spec: corev1.PodSpec{
+				SecurityContext: &corev1.PodSecurityContext{
+					RunAsUser: pointer.Int64Ptr(1000),
+				},
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port)),
 				},
@@ -270,7 +274,7 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{
-			"/proxy-agent",
+			"/usr/bin/proxy-agent",
 		}
 		c.Args = []string{
 			"--logtostderr=true",
@@ -330,7 +334,7 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{
-			"/proxy-agent",
+			"/usr/bin/proxy-agent",
 		}
 		c.Args = []string{
 			"--logtostderr=true",

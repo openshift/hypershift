@@ -315,17 +315,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
-	if hostedControlPlane.Status.Version == "" {
-		lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer lookupCancel()
-		releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
-		if err != nil {
-			r.Log.Error(err, "failed to look up release image metadata")
-		} else {
-			hostedControlPlane.Status.Version = releaseImage.Version()
-		}
-	}
-
 	if hostedControlPlane.Spec.KubeConfig != nil {
 		hostedControlPlane.Status.KubeConfig = hostedControlPlane.Spec.KubeConfig
 	} else {
@@ -342,6 +331,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// state of any of the managed components. It's basically a placeholder to prove
 	// the orchestration of upgrades works at all.
 	if hostedControlPlane.Status.ReleaseImage != hostedControlPlane.Spec.ReleaseImage {
+		lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer lookupCancel()
+		releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
+		if err != nil {
+			r.Log.Error(err, "failed to look up release image metadata")
+		} else {
+			hostedControlPlane.Status.Version = releaseImage.Version()
+		}
 		hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
 		now := metav1.NewTime(time.Now())
 		hostedControlPlane.Status.LastReleaseImageTransitionTime = &now
@@ -1063,6 +1060,16 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
 	}
 
+	// OAuth server Cert
+	// For default installs, this is the same as the Ingress Cert because of the console's
+	// assumption that the oauth server is behind the default ingress controller.
+	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthServerCert, func() error {
+		return p.ReconcileOAuthServerCert(oauthServerCert, ingressCert, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
+	}
+
 	// MCS Cert
 	machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, machineConfigServerCert, func() error {
@@ -1665,6 +1672,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.CloudProvider = cloudProvider(hcp)
 	params.PlatformType = platformType(hcp)
 	params.InfraID = hcp.Spec.InfraID
+	params.FIPS = hcp.Spec.FIPS
 
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
