@@ -154,8 +154,6 @@ type ClusterNetworking struct {
 	MachineCIDR string `json:"machineCIDR"`
 	// NetworkType specifies the SDN provider used for cluster networking.
 	// +kubebuilder:default:="OpenShiftSDN"
-	// +unionDiscriminator
-	// +required
 	NetworkType NetworkType `json:"networkType"`
 }
 
