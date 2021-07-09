@@ -68,6 +68,13 @@ type HostedControlPlaneSpec struct {
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 	// use to store data.
 	Etcd EtcdSpec `json:"etcd"`
+
+	// Configs is a set of global config resources as defined in the
+	// openshift configuration API:
+	// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
+	// Each entry contains a resource kind and corresponding configuration content.
+	// +kubebuilder:validation:Optional
+	Configs []ClusterConfiguration `json:"configs,omitempty"`
 }
 
 type AvailabilityPolicy string

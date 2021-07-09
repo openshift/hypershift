@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -8,6 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -57,7 +60,8 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
+	log := ctrl.LoggerFrom(ctx)
 	params := &KubeAPIServerParams{
 		APIServer: configv1.APIServer{
 			Spec: configv1.APIServerSpec{
@@ -234,6 +238,20 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 	}
 	params.KubeConfigRef = hcp.Spec.KubeConfig
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+
+	cfgs := []client.Object{
+		&params.APIServer,
+		&params.Authentication,
+		&params.FeatureGate,
+		&params.Network,
+		&params.OAuth,
+		&params.Image,
+		&params.Scheduler,
+	}
+	err := config.ExtractConfigs(hcp, cfgs)
+	if err != nil {
+		log.Error(err, "Errors encountered extracting cluster configs")
+	}
 	return params
 }
 

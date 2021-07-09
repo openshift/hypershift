@@ -69,6 +69,7 @@ import (
 const (
 	finalizer                      = "hypershift.openshift.io/finalizer"
 	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
+	hostedClusterConfigLabel       = "config.hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
 
 	// TODO (alberto): Eventually these images will be mirrored and pulled from an internal registry.
@@ -510,6 +511,48 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile global config related configmaps and secrets
+	{
+		configMaps := &corev1.ConfigMapList{}
+		if err := r.List(ctx, configMaps, ctrlclient.MatchingLabels{hostedClusterConfigLabel: hcluster.Name}, ctrlclient.InNamespace(hcluster.Namespace)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list related configmaps: %w", err)
+		}
+		for _, sourceCM := range configMaps.Items {
+			destCM := &corev1.ConfigMap{}
+			destCM.Name = sourceCM.Name
+			destCM.Namespace = controlPlaneNamespace.Name
+			if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, destCM, func() error {
+				destCM.Annotations = sourceCM.Annotations
+				destCM.Labels = sourceCM.Labels
+				destCM.Data = sourceCM.Data
+				destCM.BinaryData = sourceCM.BinaryData
+				destCM.Immutable = sourceCM.Immutable
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
+			}
+		}
+		secrets := &corev1.SecretList{}
+		if err := r.List(ctx, secrets, ctrlclient.MatchingLabels{hostedClusterConfigLabel: hcluster.Name}, ctrlclient.InNamespace(hcluster.Namespace)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list related secrets: %w", err)
+		}
+		for _, sourceSecret := range secrets.Items {
+			destSecret := &corev1.Secret{}
+			destSecret.Name = sourceSecret.Name
+			destSecret.Namespace = controlPlaneNamespace.Name
+			if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, destSecret, func() error {
+				destSecret.Annotations = sourceSecret.Annotations
+				destSecret.Labels = sourceSecret.Labels
+				destSecret.Data = sourceSecret.Data
+				destSecret.Immutable = sourceSecret.Immutable
+				destSecret.Type = sourceSecret.Type
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile secret %s/%s: %w", destSecret.Namespace, destSecret.Name, err)
+			}
+		}
+	}
+
 	// Reconcile the HostedControlPlane
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hcp, func() error {
@@ -728,6 +771,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if rolloutComplete {
 		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 	}
+
+	hcp.Spec.Configs = hcluster.Spec.Configs
 
 	return nil
 }

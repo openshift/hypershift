@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 
 	configv1 "github.com/openshift/api/config/v1"
 )
@@ -81,6 +82,13 @@ type HostedClusterSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed"}
 	Etcd EtcdSpec `json:"etcd"`
+
+	// Configs is a set of global config resources as defined in the
+	// openshift configuration API:
+	// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
+	// Each entry contains a resource kind and corresponding configuration content.
+	// +kubebuilder:validation:Optional
+	Configs []ClusterConfiguration `json:"configs,omitempty"`
 }
 
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
@@ -429,6 +437,22 @@ type ClusterVersionStatus struct {
 	// +kubebuilder:validation:Required
 	// +required
 	ObservedGeneration int64 `json:"observedGeneration"`
+}
+
+// ClusterConfiguration contains a single global configuration
+// resource for a HostedCluster.
+type ClusterConfiguration struct {
+	// Kind is the API kind of the configuration resource
+	// contained in Content
+	// +kubebuilder:validation:Required
+	// +required
+	Kind string `json:"kind"`
+
+	// Content embeds the configuration resource
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Required
+	// +required
+	Content runtime.RawExtension `json:"content"`
 }
 
 // +kubebuilder:object:root=true
