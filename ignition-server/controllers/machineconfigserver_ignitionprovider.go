@@ -80,7 +80,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	}
 
 	// Wait for the pod server the payload.
-	if err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
+	if err := wait.PollImmediate(10*time.Second, 300*time.Second, func() (bool, error) {
 		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
 			return false, err
 		}
