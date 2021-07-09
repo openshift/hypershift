@@ -697,23 +697,18 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Annotations = map[string]string{
 		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
 	}
-	if hcluster.Annotations != nil {
-		if _, ok := hcluster.Annotations[hyperv1.SecurePortOverrideAnnotation]; ok {
-			hcp.Annotations[hyperv1.SecurePortOverrideAnnotation] = hcluster.Annotations[hyperv1.SecurePortOverrideAnnotation]
-		}
-		if _, ok := hcluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; ok {
+	for annotationKey := range hcluster.Annotations {
+		if annotationKey == hyperv1.DisablePKIReconciliationAnnotation {
 			hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation] = hcluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
-		}
-		if _, ok := hcluster.Annotations[hyperv1.PortierisImageAnnotation]; ok {
+		} else if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
+			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
+		} else if annotationKey == hyperv1.PortierisImageAnnotation {
 			hcp.Annotations[hyperv1.PortierisImageAnnotation] = hcluster.Annotations[hyperv1.PortierisImageAnnotation]
-		}
-		if _, ok := hcluster.Annotations[hyperv1.KMSKPInfoAnnotation]; ok {
+		} else if annotationKey == hyperv1.KMSKPInfoAnnotation {
 			hcp.Annotations[hyperv1.KMSKPInfoAnnotation] = hcluster.Annotations[hyperv1.KMSKPInfoAnnotation]
-		}
-		if _, ok := hcluster.Annotations[hyperv1.KMSKPRegionAnnotation]; ok {
+		} else if annotationKey == hyperv1.KMSKPRegionAnnotation {
 			hcp.Annotations[hyperv1.KMSKPRegionAnnotation] = hcluster.Annotations[hyperv1.KMSKPRegionAnnotation]
-		}
-		if _, ok := hcluster.Annotations[hyperv1.KMSImageAnnotation]; ok {
+		} else if annotationKey == hyperv1.KMSImageAnnotation {
 			hcp.Annotations[hyperv1.KMSImageAnnotation] = hcluster.Annotations[hyperv1.KMSImageAnnotation]
 		}
 	}

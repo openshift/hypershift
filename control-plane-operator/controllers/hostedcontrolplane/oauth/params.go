@@ -2,11 +2,14 @@ package oauth
 
 import (
 	"context"
+	"encoding/json"
+	osinv1 "github.com/openshift/api/osin/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -21,6 +24,9 @@ type OAuthServerParams struct {
 	config.DeploymentConfig `json:",inline"`
 	OAuth                   configv1.OAuth     `json:"oauth"`
 	APIServer               configv1.APIServer `json:"apiServer"`
+	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
+	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
+	OauthConfigOverrides map[string]*ConfigOverride
 }
 
 type OAuthConfigParams struct {
@@ -31,6 +37,18 @@ type OAuthConfigParams struct {
 	MinTLSVersion            string
 	IdentityProviders        []configv1.IdentityProvider
 	AccessTokenMaxAgeSeconds int32
+	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
+	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
+	OauthConfigOverrides map[string]*ConfigOverride
+}
+
+// ConfigOverride defines the oauth parameters that can be overriden in special use cases. The only supported
+// use case for this currently is the IBMCloud IAM OIDC provider. These parameters are necessary since the public
+// OpenID api does not support some of the customizations used in the IBMCloud IAM OIDC provider. This can be removed
+// if the public API is adjusted to allow specifying these customizations.
+type ConfigOverride struct {
+	URLs   osinv1.OpenIDURLs   `json:"urls,omitempty"`
+	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
 func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32) *OAuthServerParams {
@@ -77,6 +95,23 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 	if err := config.ExtractConfigs(hcp, []client.Object{&p.OAuth, &p.APIServer}); err != nil {
 		log.Error(err, "Errors encountered extracting configs")
 	}
+	p.OauthConfigOverrides = map[string]*ConfigOverride{}
+	for annotationKey, annotationValue := range hcp.Annotations {
+		identityProvider := ""
+		if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
+			tokenizedString := strings.Split(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix)
+			if len(tokenizedString) == 2 {
+				identityProvider = tokenizedString[1]
+			}
+		}
+		if identityProvider != "" {
+			providerConfigOverride := &ConfigOverride{}
+			err := json.Unmarshal([]byte(annotationValue), providerConfigOverride)
+			if err == nil {
+				p.OauthConfigOverrides[identityProvider] = providerConfigOverride
+			}
+		}
+	}
 	return p
 }
 
@@ -89,6 +124,7 @@ func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfi
 		MinTLSVersion:            config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile),
 		IdentityProviders:        p.OAuth.Spec.IdentityProviders,
 		AccessTokenMaxAgeSeconds: p.OAuth.Spec.TokenConfig.AccessTokenMaxAgeSeconds,
+		OauthConfigOverrides:     p.OauthConfigOverrides,
 	}
 }
 

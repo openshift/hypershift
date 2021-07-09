@@ -1556,7 +1556,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, p.OAuthServerImage, p.DeploymentConfig, p.OAuth.Spec.IdentityProviders)
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, p.OAuthServerImage, p.DeploymentConfig, p.OAuth.Spec.IdentityProviders, p.OauthConfigOverrides)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
