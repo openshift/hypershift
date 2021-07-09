@@ -104,6 +104,7 @@ type ClusterParams struct {
 	MachineConfigServerAddress             string                 `json:"machineConfigServerAddress"`
 	SSHKey                                 string                 `json:"sshKey"`
 	InfraID                                string                 `json:"infraID"`
+	FIPS                                   bool                   `json:"fips"`
 	ProviderCredsSecretName                string                 `json:"providerCredsSecretName"`
 	DefaultFeatureGates                    []string
 

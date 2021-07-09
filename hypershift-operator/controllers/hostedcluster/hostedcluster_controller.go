@@ -676,6 +676,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 		hcp.Spec.AuditWebhook = hcluster.Spec.AuditWebhook.DeepCopy()
 	}
+	hcp.Spec.FIPS = hcluster.Spec.FIPS
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
 	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
 	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
@@ -1298,6 +1299,10 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, imag
 									},
 								},
 							},
+						},
+						// needed since control plane operator runs with anyuuid scc
+						SecurityContext: &corev1.SecurityContext{
+							RunAsUser: k8sutilspointer.Int64Ptr(1000),
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
 						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator"},
