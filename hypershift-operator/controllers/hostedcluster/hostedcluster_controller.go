@@ -675,6 +675,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
 	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
 	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
+	hcp.Spec.NetworkType = hcluster.Spec.Networking.NetworkType
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
 	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.Services = hcluster.Spec.Services

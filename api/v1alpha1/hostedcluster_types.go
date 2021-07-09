@@ -152,7 +152,22 @@ type ClusterNetworking struct {
 	ServiceCIDR string `json:"serviceCIDR"`
 	PodCIDR     string `json:"podCIDR"`
 	MachineCIDR string `json:"machineCIDR"`
+	// NetworkType specifies the SDN provider used for cluster networking.
+	// +kubebuilder:default:="OpenShiftSDN"
+	NetworkType NetworkType `json:"networkType"`
 }
+
+// NetworkType specifies the SDN provider used for cluster networking.
+// +kubebuilder:validation:Enum=OpenShiftSDN;Calico
+type NetworkType string
+
+const (
+	// OpenShiftSDN specifies OpenshiftSDN as the SDN provider
+	OpenShiftSDN NetworkType = "OpenShiftSDN"
+
+	// Calico specifies Calico as the SDN provider
+	Calico NetworkType = "Calico"
+)
 
 // PlatformType is a specific supported infrastructure provider.
 // +kubebuilder:validation:Enum=AWS;None;IBMCloud
