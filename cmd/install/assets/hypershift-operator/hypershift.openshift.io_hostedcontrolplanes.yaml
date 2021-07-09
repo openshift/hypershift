@@ -101,6 +101,9 @@ spec:
                 required:
                 - managementType
                 type: object
+              fips:
+                description: FIPS specifies if the nodes for the cluster will be running in FIPS mode
+                type: boolean
               infraID:
                 type: string
               issuerURL:
