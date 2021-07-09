@@ -44,6 +44,10 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
+	// FIPS specifies if the nodes for the cluster will be running in FIPS mode
+	// +optional
+	FIPS bool `json:"fips"`
+
 	// KubeConfig specifies the name and key for the kubeconfig secret
 	// +optional
 	KubeConfig *KubeconfigSecretRef `json:"kubeconfig,omitempty"`

@@ -23,6 +23,9 @@ type HostedClusterSpec struct {
 	// Release specifies the release image to use for this HostedCluster
 	Release Release `json:"release"`
 
+	// +optional
+	FIPS bool `json:"fips"`
+
 	// PullSecret is a pull secret injected into the container runtime of guest
 	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
