@@ -1504,7 +1504,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultIngressController(ctx con
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, oauthHost string, oauthPort int32, kasHost string, kasPort int32) error {
-	p := oauth.NewOAuthServerParams(hcp, releaseImage.ComponentImages(), oauthHost, oauthPort, kasHost, kasPort, hcp.Spec.DNS.BaseDomain)
+	p := oauth.NewOAuthServerParams(hcp, releaseImage.ComponentImages(), oauthHost, oauthPort, kasHost, kasPort)
 
 	sessionSecret := manifests.OAuthServerServiceSessionSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, sessionSecret, func() error {
@@ -1554,14 +1554,14 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 
 	oauthBrowserClient := manifests.OAuthServerBrowserClientManifest(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthBrowserClient, func() error {
-		return oauth.ReconcileBrowserClientWorkerManifest(oauthBrowserClient, p.OwnerRef, p.ExternalHost, p.ExternalPort)
+		return oauth.ReconcileBrowserClientWorkerManifest(oauthBrowserClient, p.OwnerRef, p.ExternalOauthHost, p.ExternalOauthPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth browser client manifest: %w", err)
 	}
 
 	oauthChallengingClient := manifests.OAuthServerChallengingClientManifest(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthChallengingClient, func() error {
-		return oauth.ReconcileChallengingClientWorkerManifest(oauthChallengingClient, p.OwnerRef, p.ExternalHost, p.ExternalPort)
+		return oauth.ReconcileChallengingClientWorkerManifest(oauthChallengingClient, p.OwnerRef, p.ExternalOauthHost, p.ExternalOauthPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth challenging client manifest: %w", err)
 	}
