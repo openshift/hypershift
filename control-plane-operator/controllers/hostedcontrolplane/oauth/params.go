@@ -11,17 +11,23 @@ import (
 
 type OAuthServerParams struct {
 	OwnerRef                config.OwnerRef `json:"ownerRef"`
-	ExternalHost            string          `json:"externalHost"`
-	ExternalPort            int32           `json:"externalPort"`
+	ExternalOauthHost            string          `json:"externalOauthHost"`
+	ExternalOauthPort            int32           `json:"externalOauthPort"`
+	ExternalKASHost             string `json:"externalKASHost"`
+	ExternalKASPort             int32 `json:"externalKASPort"`
 	OAuthServerImage        string
+	BaseDomain string
 	config.DeploymentConfig `json:",inline"`
 	OAuth                   configv1.OAuth     `json:"oauth"`
 	APIServer               configv1.APIServer `json:"apiServer"`
 }
 
 type OAuthConfigParams struct {
-	ExternalHost             string
-	ExternalPort             int32
+	ExternalOauthHost             string
+	ExternalOauthPort             int32
+	ExternalKASHost             string
+	ExternalKASPort             int32
+	BaseDomain string
 	ServingCert              *corev1.Secret
 	CipherSuites             []string
 	MinTLSVersion            string
@@ -29,11 +35,14 @@ type OAuthConfigParams struct {
 	AccessTokenMaxAgeSeconds int32
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, oauthHost string, oauthPort int32, kasHost string, kasPort int32, baseDomain string) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:         config.OwnerRefFrom(hcp),
-		ExternalHost:     host,
-		ExternalPort:     port,
+		ExternalOauthHost:     oauthHost,
+		ExternalOauthPort:     oauthPort,
+		ExternalKASPort: kasPort,
+		ExternalKASHost: kasHost,
+		BaseDomain: baseDomain,
 		OAuthServerImage: images["oauth-server"],
 		OAuth: configv1.OAuth{
 			Spec: configv1.OAuthSpec{
@@ -73,8 +82,10 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 
 func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfigParams {
 	return &OAuthConfigParams{
-		ExternalHost:             p.ExternalHost,
-		ExternalPort:             p.ExternalPort,
+		ExternalKASPort:             p.ExternalKASPort,
+		ExternalKASHost:             p.ExternalKASHost,
+		ExternalOauthPort: p.ExternalOauthPort,
+		ExternalOauthHost:             p.ExternalOauthHost,
 		ServingCert:              servingCert,
 		CipherSuites:             config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile),
 		MinTLSVersion:            config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile),

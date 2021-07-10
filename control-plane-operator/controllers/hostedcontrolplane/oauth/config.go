@@ -100,7 +100,10 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 		OAuthConfig: osinv1.OAuthConfig{
 			MasterCA:                    &caCertPath,
 			MasterURL:                   fmt.Sprintf("https://%s:%d", manifests.OAuthServerService("").Name, OAuthServerPort),
-			MasterPublicURL:             fmt.Sprintf("https://%s:%d", params.ExternalHost, params.ExternalPort),
+			MasterPublicURL:             fmt.Sprintf("https://%s:%d", params.ExternalOauthHost, params.ExternalOauthPort),
+			LoginURL: fmt.Sprintf("https://%s:%d", params.ExternalKASHost, params.ExternalKASPort),
+			AssetPublicURL: fmt.Sprintf("https://console-openshift-console.%s", params.BaseDomain),
+
 			AlwaysShowProviderSelection: false,
 			GrantConfig: osinv1.GrantConfig{
 				Method:               osinv1.GrantHandlerDeny, // force denial as this field must be set per OAuth client
