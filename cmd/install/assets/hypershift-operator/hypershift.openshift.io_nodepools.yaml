@@ -86,21 +86,44 @@ spec:
                 format: int32
                 type: integer
               nodePoolManagement:
-                default:
-                  autoRepair: false
-                  maxSurge: 1
-                  maxUnavailable: 0
                 properties:
                   autoRepair:
                     type: boolean
-                  maxSurge:
-                    default: 1
-                    minimum: 0
-                    type: integer
-                  maxUnavailable:
-                    default: 0
-                    minimum: 0
-                    type: integer
+                  inPlace:
+                    type: object
+                  recreate:
+                    default:
+                      rollingUpdate:
+                        maxSurge: 1
+                        maxUnavailable: 0
+                      strategy: RollingUpdate
+                    properties:
+                      rollingUpdate:
+                        properties:
+                          maxSurge:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            x-kubernetes-int-or-string: true
+                          maxUnavailable:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            x-kubernetes-int-or-string: true
+                        type: object
+                      strategy:
+                        enum:
+                        - RollingUpdate
+                        - OnDelete
+                        type: string
+                    type: object
+                  upgradeType:
+                    enum:
+                    - Replace
+                    - InPlace
+                    type: string
+                required:
+                - upgradeType
                 type: object
               platform:
                 description: NodePoolPlatform is the platform-specific configuration for a node pool. Only one of the platforms should be set.
@@ -200,6 +223,7 @@ spec:
                 type: object
             required:
             - clusterName
+            - nodePoolManagement
             - platform
             - release
             type: object

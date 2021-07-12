@@ -105,6 +105,9 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 			Name:      o.Name,
 		},
 		Spec: hyperv1.NodePoolSpec{
+			Management: hyperv1.NodePoolManagement{
+				UpgradeType: hyperv1.UpgradeTypeReplace,
+			},
 			ClusterName: o.ClusterName,
 			NodeCount:   &o.NodeCount,
 			Release: hyperv1.Release{

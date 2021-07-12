@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const (
@@ -54,8 +55,6 @@ type NodePoolSpec struct {
 	ClusterName string `json:"clusterName"`
 	// +optional
 	NodeCount *int32 `json:"nodeCount"`
-	// +optional
-	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	// TODO (alberto): this ConfigMaps are meant to contain
@@ -68,10 +67,12 @@ type NodePoolSpec struct {
 	//     config: |-
 	Config []v1.LocalObjectReference `json:"config,omitempty"`
 
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={maxSurge: 1, maxUnavailable: 0, autoRepair: false}
 	Management NodePoolManagement `json:"nodePoolManagement"`
-	Platform   NodePoolPlatform   `json:"platform"`
+
+	// +optional
+	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`
+
+	Platform NodePoolPlatform `json:"platform"`
 
 	// Release specifies the release image to use for this NodePool
 	// For a nodePool a given version dictates the ignition config and
@@ -105,15 +106,40 @@ type NodePoolList struct {
 	Items           []NodePool `json:"items"`
 }
 
+type UpgradeType string
+
+const UpgradeTypeInPlace = UpgradeType("InPlace")
+const UpgradeTypeReplace = UpgradeType("Replace")
+
+type UpgradeStrategy string
+
+const UpgradeStrategyRollingUpdate = UpgradeStrategy("RollingUpdate")
+const UpgradeStrategyOnDelete = UpgradeStrategy("OnDelete")
+
+type ReplaceUpgrade struct {
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Enum=RollingUpdate;OnDelete
+	Strategy UpgradeStrategy `json:"strategy"`
+	// +kubebuilder:validation:Optional
+	RollingUpdate *RollingUpdate `json:"rollingUpdate,omitempty"`
+}
+
+type RollingUpdate struct {
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+	MaxSurge       *intstr.IntOrString `json:"maxSurge,omitempty"`
+}
+
+type InPlaceUpgrade struct {
+}
+
 type NodePoolManagement struct {
-	// +optional
-	// +kubebuilder:default=0
-	// +kubebuilder:validation:Minimum=0
-	MaxUnavailable int `json:"maxUnavailable"`
-	// +optional
-	// +kubebuilder:default=1
-	// +kubebuilder:validation:Minimum=0
-	MaxSurge int `json:"maxSurge"`
+	// +kubebuilder:validation:Enum=Replace;InPlace
+	UpgradeType UpgradeType `json:"upgradeType"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default={strategy: "RollingUpdate", rollingUpdate: {maxSurge: 1, maxUnavailable: 0 }}
+	Replace *ReplaceUpgrade `json:"recreate,omitempty"`
+	// +kubebuilder:validation:Optional
+	InPlace *InPlaceUpgrade `json:"inPlace,omitempty"`
 
 	// +optional
 	AutoRepair bool `json:"autoRepair"`

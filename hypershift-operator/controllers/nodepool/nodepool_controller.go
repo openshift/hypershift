@@ -776,15 +776,32 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 
 	// Set upgrade strategy
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	maxUnavailable := intstr.FromInt(nodePool.Spec.Management.MaxUnavailable)
-	maxSurge := intstr.FromInt(nodePool.Spec.Management.MaxSurge)
 	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32Ptr(int32(0))
-	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{
-		Type: capiv1.RollingUpdateMachineDeploymentStrategyType,
-		RollingUpdate: &capiv1.MachineRollingUpdateDeployment{
-			MaxUnavailable: &maxUnavailable,
-			MaxSurge:       &maxSurge,
-		},
+
+	// This is additional backend validation. API validation/default should
+	// prevent this from ever happening.
+
+	// Only upgradeType "Replace" is supported atm.
+	if nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeReplace ||
+		nodePool.Spec.Management.Replace == nil {
+		return fmt.Errorf("this is unsupported. %q upgrade type and a strategy: %q or %q are required",
+			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyRollingUpdate, hyperv1.UpgradeStrategyOnDelete)
+	}
+
+	// RollingUpdate strategy requires MaxUnavailable and MaxSurge
+	if nodePool.Spec.Management.Replace.Strategy == hyperv1.UpgradeStrategyRollingUpdate &&
+		nodePool.Spec.Management.Replace.RollingUpdate == nil {
+		return fmt.Errorf("this is unsupported. %q upgrade type with strategy %q require a MaxUnavailable and MaxSurge",
+			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyRollingUpdate)
+	}
+
+	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{}
+	machineDeployment.Spec.Strategy.Type = capiv1.MachineDeploymentStrategyType(nodePool.Spec.Management.Replace.Strategy)
+	if nodePool.Spec.Management.Replace.RollingUpdate != nil {
+		machineDeployment.Spec.Strategy.RollingUpdate = &capiv1.MachineRollingUpdateDeployment{
+			MaxUnavailable: nodePool.Spec.Management.Replace.RollingUpdate.MaxUnavailable,
+			MaxSurge:       nodePool.Spec.Management.Replace.RollingUpdate.MaxSurge,
+		}
 	}
 
 	// Set selector and template

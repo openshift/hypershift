@@ -251,6 +251,9 @@ aws_secret_access_key = %s
 				Name:      o.Name,
 			},
 			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+				},
 				NodeCount:   &o.NodePoolReplicas,
 				ClusterName: o.Name,
 				Release: hyperv1.Release{
