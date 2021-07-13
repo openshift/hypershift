@@ -807,12 +807,14 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	if !hasPullSecretData {
 		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", pullSecret.Data)
 	}
-	targetPullSecret, err := generateTargetPullSecret(r.Scheme(), pullSecretData, targetNamespace)
+	targetPullSecrets, err := generateTargetPullSecrets(r.Scheme(), pullSecretData, targetNamespace)
 	if err != nil {
-		return fmt.Errorf("failed to create pull secret manifest for target cluster: %w", err)
+		return fmt.Errorf("failed to geneerate pull secret manifests for target cluster: %w", err)
 	}
-	if err := r.Create(ctx, targetPullSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate targetPullSecret: %v", err)
+	for _, ps := range targetPullSecrets {
+		if err := r.Create(ctx, ps); err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create target pull secret manifest (%s): %v", ps.Name, err)
+		}
 	}
 
 	if hcp.Spec.Platform.AWS != nil {
@@ -1837,21 +1839,25 @@ func ensureHCPOwnerRef(hcp *hyperv1.HostedControlPlane, ownerReferences []metav1
 	})
 }
 
-func generateTargetPullSecret(scheme *runtime.Scheme, data []byte, namespace string) (*corev1.ConfigMap, error) {
-	secret := &corev1.Secret{}
-	secret.Name = "pull-secret"
-	secret.Namespace = "openshift-config"
-	secret.Data = map[string][]byte{".dockerconfigjson": data}
-	secret.Type = corev1.SecretTypeDockerConfigJson
-	secretBytes, err := runtime.Encode(serializer.NewCodecFactory(scheme).LegacyCodec(corev1.SchemeGroupVersion), secret)
-	if err != nil {
-		return nil, err
+func generateTargetPullSecrets(scheme *runtime.Scheme, data []byte, namespace string) ([]*corev1.ConfigMap, error) {
+	result := []*corev1.ConfigMap{}
+	for _, ns := range []string{"openshift-config", "openshift"} {
+		secret := &corev1.Secret{}
+		secret.Name = "pull-secret"
+		secret.Namespace = ns
+		secret.Data = map[string][]byte{".dockerconfigjson": data}
+		secret.Type = corev1.SecretTypeDockerConfigJson
+		secretBytes, err := runtime.Encode(serializer.NewCodecFactory(scheme).LegacyCodec(corev1.SchemeGroupVersion), secret)
+		if err != nil {
+			return nil, err
+		}
+		configMap := &corev1.ConfigMap{}
+		configMap.Namespace = namespace
+		configMap.Name = fmt.Sprintf("user-manifest-pullsecret-%s", ns)
+		configMap.Data = map[string]string{"data": string(secretBytes)}
+		result = append(result, configMap)
 	}
-	configMap := &corev1.ConfigMap{}
-	configMap.Namespace = namespace
-	configMap.Name = "user-manifest-pullsecret"
-	configMap.Data = map[string]string{"data": string(secretBytes)}
-	return configMap, nil
+	return result, nil
 }
 
 const awsCredentialsTemplate = `[default]
