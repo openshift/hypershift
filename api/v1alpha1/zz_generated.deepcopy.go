@@ -708,12 +708,12 @@ func (in *NodePoolAutoScaling) DeepCopyInto(out *NodePoolAutoScaling) {
 	*out = *in
 	if in.Min != nil {
 		in, out := &in.Min, &out.Min
-		*out = new(int)
+		*out = new(int32)
 		**out = **in
 	}
 	if in.Max != nil {
 		in, out := &in.Max, &out.Max
-		*out = new(int)
+		*out = new(int32)
 		**out = **in
 	}
 }
