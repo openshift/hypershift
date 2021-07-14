@@ -40,9 +40,13 @@ spec:
       jsonPath: .status.version
       name: Version
       type: string
-    - description: Upgrade in progress
-      jsonPath: .status.conditions[?(@.type=="Upgrading")].status
-      name: Upgrading
+    - description: UpdatingVersion in progress
+      jsonPath: .status.conditions[?(@.type=="UpdatingVersion")].status
+      name: UpdatingVersion
+      type: string
+    - description: UpdatingConfig in progress
+      jsonPath: .status.conditions[?(@.type=="UpdatingConfig")].status
+      name: UpdatingConfig
       type: string
     name: v1alpha1
     schema:
