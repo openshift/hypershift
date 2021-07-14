@@ -7,15 +7,16 @@ import (
 )
 
 const (
-	NodePoolValidReleaseImageConditionType  = "ValidReleaseImage"
-	NodePoolValidAMIConditionType           = "ValidAMI"
-	NodePoolConfigFailedConditionType       = "ConfigFailed"
-	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
-	NodePoolAutorepairEnabledConditionType  = "AutorepairEnabled"
-	NodePoolUpdatingVersionConditionType    = "UpdatingVersion"
-	NodePoolUpdatingConfigConditionType     = "UpdatingConfig"
-	NodePoolAsExpectedConditionReason       = "AsExpected"
-	NodePoolValidationFailedConditionReason = "ValidationFailed"
+	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
+	NodePoolValidAMIConditionType                = "ValidAMI"
+	NodePoolConfigValidConfigConditionType       = "ValidConfig"
+	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
+	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
+	NodePoolAutorepairEnabledConditionType       = "AutorepairEnabled"
+	NodePoolUpdatingVersionConditionType         = "UpdatingVersion"
+	NodePoolUpdatingConfigConditionType          = "UpdatingConfig"
+	NodePoolAsExpectedConditionReason            = "AsExpected"
+	NodePoolValidationFailedConditionReason      = "ValidationFailed"
 )
 
 // The following are reasons for the IgnitionEndpointAvailable condition.
@@ -149,10 +150,10 @@ type NodePoolManagement struct {
 type NodePoolAutoScaling struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=1
-	Min *int `json:"min"`
+	Min *int32 `json:"min"`
 	// +optional
 	// +kubebuilder:validation:Minimum=1
-	Max *int `json:"max"`
+	Max *int32 `json:"max"`
 }
 
 // NodePoolPlatform is the platform-specific configuration for a node

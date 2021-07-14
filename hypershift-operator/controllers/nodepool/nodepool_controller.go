@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -34,6 +35,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -241,6 +245,43 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Error(err, "validating autoscaling parameters failed")
 		return reconcile.Result{}, nil
 	}
+	if isAutoscalingEnabled(nodePool) {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
+			Status:             metav1.ConditionTrue,
+			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", *nodePool.Spec.AutoScaling.Max, *nodePool.Spec.AutoScaling.Min),
+			ObservedGeneration: nodePool.Generation,
+		})
+	} else {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+
+	// Validate management input.
+	if err := validateManagement(nodePool); err != nil {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
+			Status:             metav1.ConditionFalse,
+			Message:            err.Error(),
+			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			ObservedGeneration: nodePool.Generation,
+		})
+		// We don't return the error here as reconciling won't solve the input problem.
+		// An update event will trigger reconciliation.
+		log.Error(err, "validating management parameters failed")
+		return reconcile.Result{}, nil
+	}
+	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		ObservedGeneration: nodePool.Generation,
+	})
 
 	// Validate IgnitionEndpoint.
 	if ignEndpoint == "" {
@@ -336,26 +377,27 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
-	// Check if config needs to be updated.
+	// Validate config input.
 	config, err := r.getConfig(ctx, nodePool)
 	if err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:               hyperv1.NodePoolConfigFailedConditionType,
-			Status:             metav1.ConditionTrue,
+			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
+			Status:             metav1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			Message:            err.Error(),
 			ObservedGeneration: nodePool.Generation,
 		})
 		return ctrl.Result{}, fmt.Errorf("failed to get config: %w", err)
 	}
-	RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolConfigFailedConditionType)
+	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		Type:               hyperv1.NodePoolConfigValidConfigConditionType,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		ObservedGeneration: nodePool.Generation,
+	})
 
+	// Check if config needs to be updated.
 	targetConfigHash := hashStruct(config)
-	compressedConfig, err := compress([]byte(config))
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
-	}
-
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
@@ -388,9 +430,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	} else {
 		RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
-	targetConfigVersionHash := hashStruct(config + targetVersion)
 
 	// 2. - Reconcile towards expected state of the world.
+	targetConfigVersionHash := hashStruct(config + targetVersion)
+	compressedConfig, err := compress([]byte(config))
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
+	}
 
 	// Token Secrets are immutable and follow "prefixName-configVersionHash" naming convention.
 	// Ensure old configVersionHash resources are deleted, i.e token Secret and userdata Secret.
@@ -601,33 +647,6 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32Ptr(int32(0))
 
-	// Set upgrade strategy.
-	// This is additional backend validation. API validation/default should
-	// prevent this from ever happening.
-
-	// Only upgradeType "Replace" is supported atm.
-	if nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeReplace ||
-		nodePool.Spec.Management.Replace == nil {
-		return fmt.Errorf("this is unsupported. %q upgrade type and a strategy: %q or %q are required",
-			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyRollingUpdate, hyperv1.UpgradeStrategyOnDelete)
-	}
-
-	// RollingUpdate strategy requires MaxUnavailable and MaxSurge
-	if nodePool.Spec.Management.Replace.Strategy == hyperv1.UpgradeStrategyRollingUpdate &&
-		nodePool.Spec.Management.Replace.RollingUpdate == nil {
-		return fmt.Errorf("this is unsupported. %q upgrade type with strategy %q require a MaxUnavailable and MaxSurge",
-			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyRollingUpdate)
-	}
-
-	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{}
-	machineDeployment.Spec.Strategy.Type = capiv1.MachineDeploymentStrategyType(nodePool.Spec.Management.Replace.Strategy)
-	if nodePool.Spec.Management.Replace.RollingUpdate != nil {
-		machineDeployment.Spec.Strategy.RollingUpdate = &capiv1.MachineRollingUpdateDeployment{
-			MaxUnavailable: nodePool.Spec.Management.Replace.RollingUpdate.MaxUnavailable,
-			MaxSurge:       nodePool.Spec.Management.Replace.RollingUpdate.MaxSurge,
-		}
-	}
-
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
 		return err
@@ -666,6 +685,16 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 			// Keep current version for later check.
 			Version: machineDeployment.Spec.Template.Spec.Version,
 		},
+	}
+
+	// Set strategy
+	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{}
+	machineDeployment.Spec.Strategy.Type = capiv1.MachineDeploymentStrategyType(nodePool.Spec.Management.Replace.Strategy)
+	if nodePool.Spec.Management.Replace.RollingUpdate != nil {
+		machineDeployment.Spec.Strategy.RollingUpdate = &capiv1.MachineRollingUpdateDeployment{
+			MaxUnavailable: nodePool.Spec.Management.Replace.RollingUpdate.MaxUnavailable,
+			MaxSurge:       nodePool.Spec.Management.Replace.RollingUpdate.MaxSurge,
+		}
 	}
 
 	// Propagate version and userData Secret to the machineDeployment.
@@ -714,40 +743,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 	}
 
-	// Set wanted replicas:
-	// If autoscaling is enabled we reconcile min/max annotations and leave replicas untouched.
-	// TODO (alberto): encapsulate this logic into fun unit testable func setReplicas.
-	if isAutoscalingEnabled(nodePool) {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
-			Status:             metav1.ConditionTrue,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", *nodePool.Spec.AutoScaling.Max, *nodePool.Spec.AutoScaling.Min),
-			ObservedGeneration: nodePool.Generation,
-		})
-
-		if !machineDeployment.CreationTimestamp.IsZero() {
-			// if autoscaling is enabled and the machineDeployment does not exist yet
-			// we start with 1 replica as the autoscaler does not support scaling from zero yet.
-			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
-		}
-		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Max)
-		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(*nodePool.Spec.AutoScaling.Min)
-	}
-
-	// If autoscaling is NOT enabled we reset min/max annotations and reconcile replicas.
-	if !isAutoscalingEnabled(nodePool) {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
-			Status:             metav1.ConditionFalse,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-			ObservedGeneration: nodePool.Generation,
-		})
-
-		machineDeployment.Annotations[autoscalerMaxAnnotation] = "0"
-		machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
-		machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
-	}
+	setMachineDeploymentReplicas(nodePool, machineDeployment)
 
 	nodePool.Status.NodeCount = int(machineDeployment.Status.AvailableReplicas)
 	return nil
@@ -790,6 +786,31 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 		},
 	}
 	return nil
+}
+
+// setMachineDeploymentReplicas sets wanted replicas:
+// If autoscaling is enabled we reconcile min/max annotations and leave replicas untouched.
+func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment *capiv1.MachineDeployment) {
+	if machineDeployment.Annotations == nil {
+		machineDeployment.Annotations = make(map[string]string)
+	}
+
+	if isAutoscalingEnabled(nodePool) {
+		if !machineDeployment.CreationTimestamp.IsZero() {
+			// if autoscaling is enabled and the machineDeployment does not exist yet and so it has nil/0 replicas
+			// we start with 1 replica as the autoscaler does not support scaling from zero yet.
+			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
+		}
+		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(*nodePool.Spec.AutoScaling.Max))
+		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(*nodePool.Spec.AutoScaling.Min))
+	}
+
+	// If autoscaling is NOT enabled we reset min/max annotations and reconcile replicas.
+	if !isAutoscalingEnabled(nodePool) {
+		machineDeployment.Annotations[autoscalerMaxAnnotation] = "0"
+		machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
+		machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
+	}
 }
 
 func getAMI(nodePool *hyperv1.NodePool, region string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
@@ -836,6 +857,7 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 	}
 
 	allConfigPlainText := ""
+	var errors []error
 	for _, config := range nodePool.Spec.Config {
 		configConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -844,13 +866,72 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 			},
 		}
 		if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(configConfigMap), configConfigMap); err != nil {
-			return "", fmt.Errorf("failed to get config ConfigMap: %w", err)
+			errors = append(errors, err)
+			continue
 		}
-		// TODO (alberto): validate ConfigMap ignition content here?
-		allConfigPlainText = allConfigPlainText + "\n---\n" + configConfigMap.Data[TokenSecretConfigKey]
+
+		manifest := configConfigMap.Data[TokenSecretConfigKey]
+		if err := validateConfigManifest([]byte(manifest)); err != nil {
+			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", configConfigMap.Name, err))
+			continue
+		}
+
+		allConfigPlainText = allConfigPlainText + "\n---\n" + manifest
 	}
 
-	return allConfigPlainText, nil
+	return allConfigPlainText, utilerrors.NewAggregate(errors)
+}
+
+// validateManagement does additional backend validation. API validation/default should
+// prevent this from ever fail.
+func validateManagement(nodePool *hyperv1.NodePool) error {
+	// Only upgradeType "Replace" is supported atm.
+	if nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeReplace ||
+		nodePool.Spec.Management.Replace == nil {
+		return fmt.Errorf("this is unsupported. %q upgrade type and a strategy: %q or %q are required",
+			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyRollingUpdate, hyperv1.UpgradeStrategyOnDelete)
+	}
+
+	if nodePool.Spec.Management.Replace.Strategy != hyperv1.UpgradeStrategyRollingUpdate &&
+		nodePool.Spec.Management.Replace.Strategy != hyperv1.UpgradeStrategyOnDelete {
+		return fmt.Errorf("this is unsupported. %q upgrade type only support strategies %q and %q",
+			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyOnDelete, hyperv1.UpgradeStrategyRollingUpdate)
+	}
+
+	// RollingUpdate strategy requires MaxUnavailable and MaxSurge
+	if nodePool.Spec.Management.Replace.Strategy == hyperv1.UpgradeStrategyRollingUpdate &&
+		nodePool.Spec.Management.Replace.RollingUpdate == nil {
+		return fmt.Errorf("this is unsupported. %q upgrade type with strategy %q require a MaxUnavailable and MaxSurge",
+			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyRollingUpdate)
+	}
+
+	return nil
+}
+func validateConfigManifest(manifest []byte) error {
+	scheme := runtime.NewScheme()
+	mcfgv1.Install(scheme)
+	YamlSerializer := serializer.NewSerializerWithOptions(
+		serializer.DefaultMetaFactory, scheme, scheme,
+		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
+	)
+
+	cr, _, err := YamlSerializer.Decode(manifest, nil, nil)
+	if err != nil {
+		return fmt.Errorf("error decoding config: %w", err)
+	}
+
+	switch obj := cr.(type) {
+	case *mcfgv1.MachineConfig:
+	//	TODO (alberto): enable this kinds when they are supported in mcs bootstrap mode
+	// since our mcsIgnitionProvider implementation uses bootstrap mode to render the ignition payload out of an input.
+	// https://github.com/openshift/machine-config-operator/pull/2547
+	//case *mcfgv1.KubeletConfig:
+	//case *mcfgv1.ContainerRuntimeConfig:
+	default:
+		return fmt.Errorf("unsupported config type: %T", obj)
+	}
+
+	return nil
 }
 
 func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, releaseImage string) (*releaseinfo.ReleaseImage, error) {
@@ -897,7 +978,7 @@ func validateAutoscaling(nodePool *hyperv1.NodePool) error {
 			return fmt.Errorf("max must be equal or greater than min. Max: %v, Min: %v", *max, *min)
 		}
 
-		if *max == 0 && *min == 0 {
+		if *max == 0 || *min == 0 {
 			return fmt.Errorf("max and min must be not zero. Max: %v, Min: %v", *max, *min)
 		}
 	}
