@@ -3,8 +3,11 @@ package oauth
 import (
 	"context"
 
+	"encoding/json"
+	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -25,6 +28,13 @@ type OAuthServerParams struct {
 	config.DeploymentConfig `json:",inline"`
 	OAuth                   *configv1.OAuth     `json:"oauth"`
 	APIServer               *configv1.APIServer `json:"apiServer"`
+	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
+	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
+	OauthConfigOverrides map[string]*ConfigOverride
+	// LoginURLOverride can be used to specify an override for the oauth config login url. The need for this arises
+	// when the login a provider uses doesn't conform to the standard login url in hypershift. The only supported use case
+	// for this is IBMCloud Red Hat Openshift
+	LoginURLOverride string
 }
 
 type OAuthConfigParams struct {
@@ -37,6 +47,22 @@ type OAuthConfigParams struct {
 	MinTLSVersion            string
 	IdentityProviders        []configv1.IdentityProvider
 	AccessTokenMaxAgeSeconds int32
+	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
+	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
+	OauthConfigOverrides map[string]*ConfigOverride
+	// LoginURLOverride can be used to specify an override for the oauth config login url. The need for this arises
+	// when the login a provider uses doesn't conform to the standard login url in hypershift. The only supported use case
+	// for this is IBMCloud Red Hat Openshift
+	LoginURLOverride string
+}
+
+// ConfigOverride defines the oauth parameters that can be overriden in special use cases. The only supported
+// use case for this currently is the IBMCloud IAM OIDC provider. These parameters are necessary since the public
+// OpenID api does not support some of the customizations used in the IBMCloud IAM OIDC provider. This can be removed
+// if the public API is adjusted to allow specifying these customizations.
+type ConfigOverride struct {
+	URLs   osinv1.OpenIDURLs   `json:"urls,omitempty"`
+	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
 func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32) *OAuthServerParams {
@@ -66,6 +92,22 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 		p.Replicas = 3
 	default:
 		p.Replicas = 1
+	}
+	p.OauthConfigOverrides = map[string]*ConfigOverride{}
+	for annotationKey, annotationValue := range hcp.Annotations {
+		if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
+			tokenizedString := strings.Split(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix)
+			if len(tokenizedString) == 2 {
+				identityProvider := tokenizedString[1]
+				providerConfigOverride := &ConfigOverride{}
+				err := json.Unmarshal([]byte(annotationValue), providerConfigOverride)
+				if err == nil {
+					p.OauthConfigOverrides[identityProvider] = providerConfigOverride
+				}
+			}
+		} else if annotationKey == hyperv1.OauthLoginURLOverrideAnnotation {
+			p.LoginURLOverride = annotationValue
+		}
 	}
 	return p
 }
@@ -109,6 +151,8 @@ func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfi
 		MinTLSVersion:            p.MinTLSVersion(),
 		IdentityProviders:        p.IdentityProviders(),
 		AccessTokenMaxAgeSeconds: p.AccessTokenMaxAgeSeconds(),
+		OauthConfigOverrides:     p.OauthConfigOverrides,
+		LoginURLOverride:         p.LoginURLOverride,
 	}
 }
 

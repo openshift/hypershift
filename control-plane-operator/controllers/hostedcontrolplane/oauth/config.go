@@ -51,7 +51,7 @@ func ReconcileOAuthServerConfig(ctx context.Context, cm *corev1.ConfigMap, owner
 
 func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace string, params *OAuthConfigParams) (*osinv1.OsinServerConfig, error) {
 	var identityProviders []osinv1.IdentityProvider
-	identityProviders, _, err := convertIdentityProviders(ctx, params.IdentityProviders, client, namespace)
+	identityProviders, _, err := convertIdentityProviders(ctx, params.IdentityProviders, params.OauthConfigOverrides, client, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +122,9 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 			},
 			IdentityProviders: identityProviders,
 		},
+	}
+	if len(params.LoginURLOverride) > 0 {
+		serverConfig.OAuthConfig.LoginURL = params.LoginURLOverride
 	}
 	return serverConfig, nil
 }
