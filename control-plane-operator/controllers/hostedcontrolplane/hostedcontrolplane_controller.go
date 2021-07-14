@@ -115,6 +115,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &etcdv1.EtcdCluster{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &hyperv1.WorkloadConfiguration{}}, handler.EnqueueRequestsFromMapFunc(mapWorkloadConfigurationToHostedControlPlane(r))).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager %w", err)
@@ -452,6 +453,20 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return nil
 	}
 
+	var workloadConfig *hyperv1.WorkloadConfiguration
+	{
+		workloadConfigList := &hyperv1.WorkloadConfigurationList{}
+		if err := r.List(ctx, workloadConfigList, client.InNamespace(hostedControlPlane.Namespace)); err != nil {
+			return fmt.Errorf("failed to list workload configurations: %w", err)
+		}
+		if len(workloadConfigList.Items) > 1 {
+			return fmt.Errorf("more than one WorkloadConfiguration exists in HostedControlPlane namespace %s", hostedControlPlane.Namespace)
+		}
+		if len(workloadConfigList.Items) == 1 {
+			workloadConfig = &workloadConfigList.Items[0]
+		}
+	}
+
 	// Reconcile PKI
 	if _, exists := hostedControlPlane.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
 		r.Log.Info("Reconciling PKI")
@@ -492,7 +507,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	switch hostedControlPlane.Spec.Etcd.ManagementType {
 	case hyperv1.Managed:
-		if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImage); err != nil {
+		if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImage, workloadConfig); err != nil {
 			return fmt.Errorf("failed to reconcile etcd: %w", err)
 		}
 	case hyperv1.Unmanaged:
@@ -505,37 +520,37 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile Konnectivity
 	r.Log.Info("Reconciling Konnectivity")
-	if err := r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImage, infraStatus); err != nil {
+	if err := r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImage, infraStatus, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity: %w", err)
 	}
 
 	// Reconcile kube apiserver
 	r.Log.Info("Reconciling Kube API Server")
-	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OAuthHost, infraStatus.OAuthPort); err != nil {
+	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OAuthHost, infraStatus.OAuthPort, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
 	}
 
 	// Reconcile kube controller manager
 	r.Log.Info("Reconciling Kube Controller Manager")
-	if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, globalConfig, releaseImage); err != nil {
+	if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, globalConfig, releaseImage, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
 	}
 
 	// Reconcile kube scheduler
 	r.Log.Info("Reconciling Kube Scheduler")
-	if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, globalConfig, releaseImage); err != nil {
+	if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, globalConfig, releaseImage, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
 	}
 
 	// Reconcile openshift apiserver
 	r.Log.Info("Reconciling OpenShift API Server")
-	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OpenShiftAPIHost); err != nil {
+	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OpenShiftAPIHost, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver: %w", err)
 	}
 
 	// Reconcile openshift oauth apiserver
 	r.Log.Info("Reconciling OpenShift OAuth API Server")
-	if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OauthAPIServerHost); err != nil {
+	if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OauthAPIServerHost, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 	}
 
@@ -546,19 +561,19 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile oauth server
 	r.Log.Info("Reconciling OAuth Server")
-	if err = r.reconcileOAuthServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OAuthHost, infraStatus.OAuthPort); err != nil {
+	if err = r.reconcileOAuthServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OAuthHost, infraStatus.OAuthPort, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 	}
 
 	// Reconcile openshift controller manager
 	r.Log.Info("Reconciling OpenShift Controller Manager")
-	if err = r.reconcileOpenShiftControllerManager(ctx, hostedControlPlane, globalConfig, releaseImage); err != nil {
+	if err = r.reconcileOpenShiftControllerManager(ctx, hostedControlPlane, globalConfig, releaseImage, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 	}
 
 	// Reconcile cluster policy controller
 	r.Log.Info("Reconciling Cluster Policy Controller")
-	if err = r.reconcileClusterPolicyController(ctx, hostedControlPlane, globalConfig, releaseImage); err != nil {
+	if err = r.reconcileClusterPolicyController(ctx, hostedControlPlane, globalConfig, releaseImage, workloadConfig); err != nil {
 		return fmt.Errorf("failed to reconcile cluster policy controller: %w", err)
 	}
 
@@ -1130,8 +1145,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
+func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages(), workloadConfig)
 
 	// Etcd Operator ServiceAccount
 	operatorServiceAccount := manifests.EtcdOperatorServiceAccount(hcp.Namespace)
@@ -1227,9 +1242,9 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 	return err
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus) error {
+func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus, workloadConfig *hyperv1.WorkloadConfiguration) error {
 	r.Log.Info("Reconciling Konnectivity")
-	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), infraStatus.KonnectivityHost, infraStatus.KonnectivityPort)
+	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, workloadConfig)
 	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
 		return konnectivity.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.ServerDeploymentConfig, p.KonnectivityServerImage)
@@ -1262,8 +1277,8 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthAddress string, oauthPort int32) error {
-	p := kas.NewKubeAPIServerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), oauthAddress, oauthPort)
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthAddress string, oauthPort int32, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := kas.NewKubeAPIServerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), oauthAddress, oauthPort, workloadConfig)
 
 	rootCA := manifests.RootCASecret(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
@@ -1365,8 +1380,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
-	p := kcm.NewKubeControllerManagerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages())
+func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := kcm.NewKubeControllerManagerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), workloadConfig)
 
 	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
@@ -1396,8 +1411,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
-	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImage.ComponentImages(), globalConfig)
+func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImage.ComponentImages(), globalConfig, workloadConfig)
 
 	schedulerConfig := manifests.SchedulerConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, schedulerConfig, func() error {
@@ -1415,8 +1430,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string) error {
-	p := oapi.NewOpenShiftAPIServerParams(hcp, globalConfig, releaseImage.ComponentImages())
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := oapi.NewOpenShiftAPIServerParams(hcp, globalConfig, releaseImage.ComponentImages(), workloadConfig)
 
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, oapicfg, func() error {
@@ -1468,8 +1483,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string) error {
-	p := oapi.NewOpenShiftAPIServerParams(hcp, globalConfig, releaseImage.ComponentImages())
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := oapi.NewOpenShiftAPIServerParams(hcp, globalConfig, releaseImage.ComponentImages(), workloadConfig)
 
 	auditCfg := manifests.OpenShiftOAuthAPIServerAuditConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, auditCfg, func() error {
@@ -1535,8 +1550,8 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultIngressController(ctx con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthHost string, oauthPort int32) error {
-	p := oauth.NewOAuthServerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), oauthHost, oauthPort)
+func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthHost string, oauthPort int32, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := oauth.NewOAuthServerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), oauthHost, oauthPort, workloadConfig)
 
 	sessionSecret := manifests.OAuthServerServiceSessionSecret(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, sessionSecret, func() error {
@@ -1601,8 +1616,8 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
-	p := ocm.NewOpenShiftControllerManagerParams(hcp, globalConfig, releaseImage.ComponentImages())
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := ocm.NewOpenShiftControllerManagerParams(hcp, globalConfig, releaseImage.ComponentImages(), workloadConfig)
 
 	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, config, func() error {
@@ -1635,8 +1650,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
-	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, globalConfig, releaseImage.ComponentImages())
+func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, workloadConfig *hyperv1.WorkloadConfiguration) error {
+	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, globalConfig, releaseImage.ComponentImages(), workloadConfig)
 
 	config := manifests.ClusterPolicyControllerConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, config, func() error {
@@ -2052,5 +2067,27 @@ func cloudProvider(hcp *hyperv1.HostedControlPlane) string {
 		return "external"
 	default:
 		return ""
+	}
+}
+
+func mapWorkloadConfigurationToHostedControlPlane(r *HostedControlPlaneReconciler) func(client.Object) []ctrl.Request {
+	return func(obj client.Object) []ctrl.Request {
+		ctx := context.Background()
+		log := ctrl.LoggerFrom(ctx)
+		workloadConfig, ok := obj.(*hyperv1.WorkloadConfiguration)
+		if !ok {
+			return []ctrl.Request{}
+		}
+		hostedControlPlaneList := &hyperv1.HostedControlPlaneList{}
+		if err := r.List(ctx, hostedControlPlaneList, client.InNamespace(workloadConfig.Namespace)); err != nil {
+			log.Error(err, "cannot get hosted control planes in namespace", "namespace", workloadConfig.Namespace)
+		}
+		if len(hostedControlPlaneList.Items) > 0 {
+			req := ctrl.Request{}
+			req.Name = hostedControlPlaneList.Items[0].Name
+			req.Namespace = hostedControlPlaneList.Items[0].Namespace
+			return []ctrl.Request{req}
+		}
+		return []ctrl.Request{}
 	}
 }

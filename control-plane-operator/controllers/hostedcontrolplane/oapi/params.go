@@ -8,6 +8,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 )
 
 const (
@@ -34,7 +35,7 @@ type OAuthDeploymentParams struct {
 	DeploymentConfig config.DeploymentConfig
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, workloadConfig *hyperv1.WorkloadConfiguration) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
@@ -147,6 +148,9 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 1
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+	config.ApplyWorkloadConfig(workloadConfig, &params.OpenShiftAPIServerDeploymentConfig, manifests.OpenShiftAPIServerDeployment("").Name)
+	config.ApplyWorkloadConfig(workloadConfig, &params.OpenShiftOAuthAPIServerDeploymentConfig, manifests.OpenShiftOAuthAPIServerDeployment("").Name)
+
 	return params
 }
 

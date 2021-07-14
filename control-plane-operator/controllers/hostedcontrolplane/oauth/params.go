@@ -4,14 +4,16 @@ import (
 	"context"
 
 	"encoding/json"
+	"strings"
+
 	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 )
 
 const (
@@ -65,7 +67,7 @@ type ConfigOverride struct {
 	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
-func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32) *OAuthServerParams {
+func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32, workloadConfig *hyperv1.WorkloadConfiguration) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:         config.OwnerRefFrom(hcp),
 		ExternalAPIHost:  hcp.Status.ControlPlaneEndpoint.Host,
@@ -109,6 +111,7 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 			p.LoginURLOverride = annotationValue
 		}
 	}
+	config.ApplyWorkloadConfig(workloadConfig, &p.DeploymentConfig, manifests.OAuthServerDeployment("").Name)
 	return p
 }
 

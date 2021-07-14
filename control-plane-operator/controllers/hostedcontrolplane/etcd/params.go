@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 )
 
 type EtcdParams struct {
@@ -18,7 +19,7 @@ type EtcdParams struct {
 	PVCClaim                 *corev1.PersistentVolumeClaimSpec `json:"pvcClaim"`
 }
 
-func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *EtcdParams {
+func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string, workloadConfig *hyperv1.WorkloadConfiguration) *EtcdParams {
 	p := &EtcdParams{
 		EtcdOperatorImage: images["etcd-operator"],
 		OwnerRef:          config.OwnerRefFrom(hcp),
@@ -32,6 +33,7 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
+	config.ApplyWorkloadConfig(workloadConfig, &p.OperatorDeploymentConfig, manifests.EtcdOperatorDeployment("").Name)
 	p.EtcdDeploymentConfig.Resources = config.ResourcesSpec{
 		etcdContainer().Name: {
 			Requests: corev1.ResourceList{

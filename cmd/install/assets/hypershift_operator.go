@@ -321,6 +321,12 @@ func (o HyperShiftMachineConfigServersCustomResourceDefinition) Build() *apiexte
 	return crd
 }
 
+type HyperShiftWorkloadConfigurationCustomResourceDefinition struct{}
+
+func (o HyperShiftWorkloadConfigurationCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
+	return getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_workloadconfigurations.yaml")
+}
+
 type HyperShiftPrometheusRole struct {
 	Namespace *corev1.Namespace
 }

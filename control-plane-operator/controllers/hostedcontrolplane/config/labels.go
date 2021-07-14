@@ -10,10 +10,14 @@ func (l AdditionalLabels) ApplyTo(podMeta *metav1.ObjectMeta) {
 	if len(l) == 0 {
 		return
 	}
-	if podMeta.Labels == nil {
-		podMeta.Labels = map[string]string{}
+	newLabels := map[string]string{}
+	if podMeta.Labels != nil {
+		for k, v := range podMeta.Labels {
+			newLabels[k] = v
+		}
 	}
 	for k, v := range l {
-		podMeta.Labels[k] = v
+		newLabels[k] = v
 	}
+	podMeta.Labels = newLabels
 }
