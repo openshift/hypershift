@@ -61,7 +61,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		Network:              globalConfig.Network,
 		Image:                globalConfig.Image,
 		Scheduler:            globalConfig.Scheduler,
-		AdvertiseAddress:     config.DefaultAdvertiseAddress,
 		ExternalAddress:      hcp.Status.ControlPlaneEndpoint.Host,
 		ExternalPort:         hcp.Status.ControlPlaneEndpoint.Port,
 		ExternalOAuthAddress: externalOAuthAddress,
@@ -77,6 +76,17 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			ClusterConfigOperator: images["cluster-config-operator"],
 		},
 	}
+	if hcp.Spec.APIAdvertiseAddress != nil {
+		params.AdvertiseAddress = *hcp.Spec.APIAdvertiseAddress
+	} else {
+		params.AdvertiseAddress = config.DefaultAdvertiseAddress
+	}
+	if hcp.Spec.APIPort != nil {
+		params.APIServerPort = *hcp.Spec.APIPort
+	} else {
+		params.APIServerPort = config.DefaultAPIServerPort
+	}
+
 	switch hcp.Spec.Etcd.ManagementType {
 	case hyperv1.Unmanaged:
 		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
@@ -198,7 +208,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		ClusterNetwork:               p.ClusterNetwork(),
 		ServiceNetwork:               p.ServiceNetwork(),
 		NamedCertificates:            p.NamedCertificates(),
-		ApiServerPort:                p.APIServerPort,
+		APIServerPort:                p.APIServerPort,
 		TLSSecurityProfile:           p.TLSSecurityProfile(),
 		AdditionalCORSAllowedOrigins: p.AdditionalCORSAllowedOrigins(),
 		InternalRegistryHostName:     p.InternalRegistryHostName(),
@@ -220,7 +230,7 @@ type KubeAPIServerConfigParams struct {
 	ClusterNetwork               string
 	ServiceNetwork               string
 	NamedCertificates            []configv1.APIServerNamedServingCert
-	ApiServerPort                int32
+	APIServerPort                int32
 	TLSSecurityProfile           *configv1.TLSSecurityProfile
 	AdditionalCORSAllowedOrigins []string
 	InternalRegistryHostName     string
@@ -304,8 +314,12 @@ func externalAddress(endpoint hyperv1.APIEndpoint) string {
 }
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
+	port := config.DefaultAPIServerPort
+	if hcp.Spec.APIPort != nil {
+		port = int(*hcp.Spec.APIPort)
+	}
 	return &KubeAPIServerServiceParams{
-		APIServerPort:  config.DefaultAPIServerPort,
+		APIServerPort:  port,
 		OwnerReference: config.ControllerOwnerRef(hcp),
 	}
 }

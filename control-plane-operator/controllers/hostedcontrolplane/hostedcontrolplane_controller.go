@@ -65,7 +65,6 @@ const (
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
 	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
-	DefaultAPIServerIPAddress  = "172.20.0.1"
 )
 
 var (
@@ -1681,7 +1680,11 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.Namespace = targetNamespace
 	params.ExternalAPIDNSName = infraStatus.APIHost
 	params.ExternalAPIPort = uint(infraStatus.APIPort)
-	params.ExternalAPIAddress = DefaultAPIServerIPAddress
+	if hcp.Spec.APIAdvertiseAddress != nil {
+		params.ExternalAPIAddress = *hcp.Spec.APIAdvertiseAddress
+	} else {
+		params.ExternalAPIAddress = config.DefaultAdvertiseAddress
+	}
 	params.ExternalOauthDNSName = infraStatus.OAuthHost
 	params.ExternalOauthPort = uint(infraStatus.OAuthPort)
 	params.ServiceCIDR = hcp.Spec.ServiceCIDR
@@ -1705,7 +1708,11 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		params.AWSRegion = hcp.Spec.Platform.AWS.Region
 	}
 
-	params.InternalAPIPort = defaultAPIServerPort
+	if hcp.Spec.APIPort != nil {
+		params.InternalAPIPort = uint(*hcp.Spec.APIPort)
+	} else {
+		params.InternalAPIPort = defaultAPIServerPort
+	}
 	params.IssuerURL = hcp.Spec.IssuerURL
 
 	params.NetworkType = hcp.Spec.NetworkType
