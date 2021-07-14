@@ -12,7 +12,6 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
@@ -21,6 +20,7 @@ import (
 
 const (
 	AWSCloudProviderCredsKey = "credentials"
+	configHashAnnotation     = "kube-controller-manager.hypershift.openshift.io/config-hash"
 )
 
 var (
@@ -55,7 +55,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, servingCA *corev1.ConfigMap, p *KubeControllerManagerParams) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev1.ConfigMap, p *KubeControllerManagerParams) error {
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: kcmLabels,
 	}
@@ -73,6 +73,16 @@ func ReconcileDeployment(deployment *appsv1.Deployment, servingCA *corev1.Config
 	for k, v := range kcmLabels {
 		deployment.Spec.Template.ObjectMeta.Labels[k] = v
 	}
+
+	configBytes, ok := config.Data[KubeControllerManagerConfigKey]
+	if !ok {
+		return fmt.Errorf("kube controller manager: configuration is not present in %s configmap", config.Name)
+	}
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+	}
+	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
+
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
@@ -272,7 +282,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	}
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
-		fmt.Sprintf("--cluster-cidr=%s", config.ClusterCIDR(&p.Network)),
+		fmt.Sprintf("--cluster-cidr=%s", p.PodCIDR),
 		fmt.Sprintf("--cluster-signing-cert-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--cluster-signing-key-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerKeyMapKey)),
 		"--configure-cloud-routes=false",
@@ -291,11 +301,11 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
-		fmt.Sprintf("--service-cluster-ip-range=%s", config.ServiceCIDR(&p.Network)),
+		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),
 		"--use-service-account-credentials=true",
 		"--experimental-cluster-signing-duration=26280h",
 	}...)
-	for _, f := range config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection) {
+	for _, f := range p.FeatureGates() {
 		args = append(args, fmt.Sprintf("--feature-gates=%s", f))
 	}
 	return args

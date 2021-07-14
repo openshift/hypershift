@@ -44,6 +44,36 @@ spec:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
+              configuration:
+                description: 'Configuration embeds resources that correspond to the openshift configuration API: https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html'
+                properties:
+                  configMapRefs:
+                    description: ConfigMapRefs holds references to configmaps used in configuration entries so that they can be properly synced by the hypershift operator.
+                    items:
+                      description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                      properties:
+                        name:
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                          type: string
+                      type: object
+                    type: array
+                  items:
+                    description: Items embeds the configuration resource
+                    items:
+                      type: object
+                    type: array
+                    x-kubernetes-preserve-unknown-fields: true
+                  secretRefs:
+                    description: SecretRefs holds references to secrets used in configuration entries so that they can be properly synced by the hypershift operator.
+                    items:
+                      description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                      properties:
+                        name:
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                          type: string
+                      type: object
+                    type: array
+                type: object
               controllerAvailabilityPolicy:
                 description: ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode Defaults to SingleReplica when not set
                 type: string

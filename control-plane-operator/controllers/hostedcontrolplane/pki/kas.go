@@ -6,6 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 )
 
@@ -15,9 +16,8 @@ const (
 	ServiceSignerPublicKey  = "service-account.pub"
 )
 
-func (p *PKIParams) ReconcileKASServerCertSecret(secret, ca *corev1.Secret) error {
-	svc := manifests.KubeAPIServerService(p.Namespace)
-	serviceCIDR := p.Network.Spec.ServiceNetwork[0]
+func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, serviceCIDR string) error {
+	svc := manifests.KubeAPIServerService(secret.Namespace)
 	_, serviceIPNet, err := net.ParseCIDR(serviceCIDR)
 	if err != nil {
 		return fmt.Errorf("cannot parse service CIDR: %w", err)
@@ -36,28 +36,28 @@ func (p *PKIParams) ReconcileKASServerCertSecret(secret, ca *corev1.Secret) erro
 		"127.0.0.1",
 		serviceIP.String(),
 	}
-	if isNumericIP(p.ExternalAPIAddress) {
-		apiServerIPs = append(apiServerIPs, p.ExternalAPIAddress)
+	if isNumericIP(externalAPIAddress) {
+		apiServerIPs = append(apiServerIPs, externalAPIAddress)
 	} else {
-		dnsNames = append(dnsNames, p.ExternalAPIAddress)
+		dnsNames = append(dnsNames, externalAPIAddress)
 	}
-	return p.reconcileSignedCertWithAddresses(secret, ca, "kubernetes", "kubernetes", X509DefaultUsage, X509UsageServerAuth, dnsNames, apiServerIPs)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes", "kubernetes", X509DefaultUsage, X509UsageServerAuth, dnsNames, apiServerIPs)
 }
 
-func (p *PKIParams) ReconcileKASKubeletClientCertSecret(secret, ca *corev1.Secret) error {
-	return p.reconcileSignedCert(secret, ca, "system:kube-apiserver", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
+func ReconcileKASKubeletClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:kube-apiserver", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
 }
 
-func (p *PKIParams) ReconcileKASMachineBootstrapClientCertSecret(secret, ca *corev1.Secret) error {
-	return p.reconcileSignedCert(secret, ca, "system:bootstrapper", "system:bootstrappers", X509DefaultUsage, X509UsageClientAuth)
+func ReconcileKASMachineBootstrapClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:bootstrapper", "system:bootstrappers", X509DefaultUsage, X509UsageClientAuth)
 }
 
-func (p *PKIParams) ReconcileKASAggregatorCertSecret(secret, ca *corev1.Secret) error {
-	return p.reconcileSignedCert(secret, ca, "system:openshift-aggregator", "kubernetes", X509DefaultUsage, X509UsageClientServerAuth)
+func ReconcileKASAggregatorCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:openshift-aggregator", "kubernetes", X509DefaultUsage, X509UsageClientServerAuth)
 }
 
-func (p *PKIParams) ReconcileKASAdminClientCertSecret(secret, ca *corev1.Secret) error {
-	return p.reconcileSignedCert(secret, ca, "system:admin", "system:masters", X509DefaultUsage, X509UsageClientServerAuth)
+func ReconcileKASAdminClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:admin", "system:masters", X509DefaultUsage, X509UsageClientServerAuth)
 }
 
 func nextIP(ip net.IP) net.IP {

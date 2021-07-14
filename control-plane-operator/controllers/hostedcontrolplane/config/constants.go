@@ -8,4 +8,5 @@ const (
 	DefaultEtcdURL               = "https://etcd-client:2379"
 	DefaultAPIServerPort         = 6443
 	DefaultEtcdClusterVersion    = "3.4.9"
+	DefaultServiceNodePortRange  = "30000-32767"
 )

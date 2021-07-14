@@ -102,20 +102,20 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 	return awsMachineTemplate
 }
 
-func IgnitionUserDataSecret(namespace, name, version string) *corev1.Secret {
+func IgnitionUserDataSecret(namespace, name, payloadInputHash string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      fmt.Sprintf("user-data-%s-%s", name, version),
+			Name:      fmt.Sprintf("user-data-%s-%s", name, payloadInputHash),
 		},
 	}
 }
 
-func TokenSecret(namespace, name, version string) *corev1.Secret {
+func TokenSecret(namespace, name, payloadInputHash string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      fmt.Sprintf("token-%s-%s", name, version),
+			Name:      fmt.Sprintf("token-%s-%s", name, payloadInputHash),
 		},
 	}
 }

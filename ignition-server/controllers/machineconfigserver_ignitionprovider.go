@@ -1,7 +1,10 @@
 package controllers
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -26,14 +29,15 @@ const (
 )
 
 // MCSIgnitionProvider is an IgnitionProvider that uses
-// MachineConfigServer pods to build ignition payload contents.
+// MachineConfigServer pods to build ignition payload contents
+// out of a given releaseImage and a config string containing 0..N MachineConfig yaml definitions.
 type MCSIgnitionProvider struct {
 	Client          client.Client
 	ReleaseProvider releaseinfo.Provider
 	Namespace       string
 }
 
-func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string) (payload []byte, err error) {
+func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
 	// TODO(alberto): If the MCS supports binding address
 	// https://github.com/openshift/machine-config-operator/pull/2630/files
 	// we could bind it to localhost and get the payload by execing
@@ -44,9 +48,21 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
+	compressedConfig, err := compress([]byte(config))
+	if err != nil {
+		return nil, fmt.Errorf("failed to compress config: %w", err)
+	}
 	mcsServiceAccount := machineConfigServerServiceAccount(p.Namespace)
 	mcsRoleBinding := machineConfigServerRoleBinding(mcsServiceAccount)
-	mcsPod := machineConfigServerPod(p.Namespace, img, mcsServiceAccount)
+
+	// The ConfigMap requires data stored to be a string.
+	// By base64ing the compressed data we ensure all bytes are decodable back.
+	// Otherwise if we'd just string() the bytes, some might not be a valid UTF-8 sequence
+	// and we might lose data.
+	base64CompressedConfig := base64.StdEncoding.EncodeToString(compressedConfig)
+	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
+	mcsPod := machineConfigServerPod(p.Namespace, img,
+		mcsServiceAccount, mcsConfigConfigMap)
 
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
@@ -56,6 +72,9 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 		if err := p.Client.Delete(ctx, mcsRoleBinding); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server RoleBinding: %w", err))
+		}
+		if err := p.Client.Delete(ctx, mcsConfigConfigMap); err != nil && !errors.IsNotFound(err) {
+			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server config ConfigMap: %w", err))
 		}
 		if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
@@ -74,15 +93,21 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
 	}
 
-	mcsPod = machineConfigServerPod(p.Namespace, img, mcsServiceAccount)
+	if err := p.Client.Create(ctx, mcsConfigConfigMap); err != nil {
+		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
+	}
+
+	mcsPod = machineConfigServerPod(p.Namespace, img, mcsServiceAccount,
+		mcsConfigConfigMap)
 	if err := p.Client.Create(ctx, mcsPod); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server Pod: %w", err)
 	}
 
 	// Wait for the pod server the payload.
-	if err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
+	if err := wait.PollImmediate(10*time.Second, 300*time.Second, func() (bool, error) {
 		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
-			return false, err
+			// We don't return the error here so we want to keep retrying.
+			return false, nil
 		}
 
 		// If the machine config server is not ready we return and wait for an update event to reconcile.
@@ -140,7 +165,8 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	return
 }
 
-func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, sa *corev1.ServiceAccount) *corev1.Pod {
+func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, sa *corev1.ServiceAccount,
+	config *corev1.ConfigMap) *corev1.Pod {
 	images := releaseImage.ComponentImages()
 	bootstrapArgs := fmt.Sprintf(`
 mkdir -p /mcc-manifests/bootstrap/manifests
@@ -182,11 +208,13 @@ cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests
 	customMachineConfigArg := `
 cat <<"EOF" > "./copy-ignition-config.sh"
 #!/bin/bash
+set -eo pipefail
 name="${1}"
 oc get cm ${name} -n "${NAMESPACE}" -o jsonpath='{ .data.data }' > "/mcc-manifests/bootstrap/manifests/${name/#ignition-config-//}.yaml"
 EOF
 chmod +x ./copy-ignition-config.sh
-oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh`
+oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh
+cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -245,6 +273,9 @@ oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ prin
 						"/usr/bin/bash",
 					},
 					Args: []string{
+						"-e",
+						"-o",
+						"pipefail",
 						"-c",
 						customMachineConfigArg,
 					},
@@ -252,6 +283,10 @@ oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ prin
 						{
 							Name:      "mcc-manifests",
 							MountPath: "/mcc-manifests",
+						},
+						{
+							Name:      "ign-custom-config",
+							MountPath: "/tmp/custom-config",
 						},
 					},
 				},
@@ -361,6 +396,22 @@ oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ prin
 						},
 					},
 				},
+				{
+					Name: "ign-custom-config",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: config.Name,
+							},
+							Items: []corev1.KeyToPath{
+								{
+									Key:  TokenSecretConfigKey,
+									Path: "base64CompressedConfig",
+								},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -397,4 +448,33 @@ func machineConfigServerRoleBinding(sa *corev1.ServiceAccount) *rbacv1.RoleBindi
 			},
 		},
 	}
+}
+
+func machineConfigServerConfigConfigMap(namespace, config string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:    namespace,
+			GenerateName: resourceGenerateName,
+		},
+		Immutable: k8sutilspointer.BoolPtr(true),
+		Data: map[string]string{
+			TokenSecretConfigKey: config,
+		},
+	}
+}
+
+func compress(content []byte) ([]byte, error) {
+	if len(content) == 0 {
+		return nil, nil
+	}
+	var b bytes.Buffer
+	gz := gzip.NewWriter(&b)
+	if _, err := gz.Write(content); err != nil {
+		return nil, fmt.Errorf("failed to compress content: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return nil, fmt.Errorf("compress closure failure %w", err)
+	}
+	return b.Bytes(), nil
 }

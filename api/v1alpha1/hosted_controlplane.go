@@ -68,6 +68,11 @@ type HostedControlPlaneSpec struct {
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 	// use to store data.
 	Etcd EtcdSpec `json:"etcd"`
+
+	// Configuration embeds resources that correspond to the openshift configuration API:
+	// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
+	// +kubebuilder:validation:Optional
+	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 }
 
 type AvailabilityPolicy string
@@ -89,6 +94,7 @@ const (
 	EtcdAvailable               ConditionType = "EtcdAvailable"
 	KubeAPIServerAvailable      ConditionType = "KubeAPIServerAvailable"
 	InfrastructureReady         ConditionType = "InfrastructureReady"
+	ValidConfiguration          ConditionType = "ValidConfiguration"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane

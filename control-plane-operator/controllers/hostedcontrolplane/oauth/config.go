@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/api"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 )
 
@@ -99,8 +98,9 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 		},
 		OAuthConfig: osinv1.OAuthConfig{
 			MasterCA:                    &caCertPath,
-			MasterURL:                   fmt.Sprintf("https://%s:%d", manifests.OAuthServerService("").Name, OAuthServerPort),
+			MasterURL:                   fmt.Sprintf("https://%s:%d", params.ExternalHost, params.ExternalPort),
 			MasterPublicURL:             fmt.Sprintf("https://%s:%d", params.ExternalHost, params.ExternalPort),
+			LoginURL:                    fmt.Sprintf("https://%s:%d", params.ExternalAPIHost, params.ExternalAPIPort),
 			AlwaysShowProviderSelection: false,
 			GrantConfig: osinv1.GrantConfig{
 				Method:               osinv1.GrantHandlerDeny, // force denial as this field must be set per OAuth client
