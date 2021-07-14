@@ -1,17 +1,19 @@
 package pki
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 type PKIParams struct {
-	// Network - used to obtain the ServiceCIDR of the cluster
-	Network configv1.Network `json:"network"`
+	// ServiceCIDR
+	// Subnet for cluster services
+	ServiceCIDR string `json:"serviceCIDR"`
+
+	// PodCIDR
+	// Subnet for pods
+	PodCIDR string `json:"podCIDR"`
 
 	// ExternalAPIAddress
 	// An externally accessible DNS name or IP for the API server. Currently obtained from the load balancer DNS name.
@@ -37,7 +39,7 @@ type PKIParams struct {
 	Namespace string `json:"namespace"`
 
 	// Owner reference for resources
-	OwnerReference *metav1.OwnerReference `json:"ownerReference"`
+	OwnerRef config.OwnerRef `json:"ownerRef"`
 }
 
 func NewPKIParams(hcp *hyperv1.HostedControlPlane,
@@ -45,14 +47,15 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 	oauthExternalAddress,
 	konnectivityExternalAddress string) *PKIParams {
 	p := &PKIParams{
+		ServiceCIDR:                  hcp.Spec.ServiceCIDR,
+		PodCIDR:                      hcp.Spec.PodCIDR,
 		Namespace:                    hcp.Namespace,
-		Network:                      config.Network(hcp),
 		ExternalAPIAddress:           apiExternalAddress,
 		ExternalKconnectivityAddress: konnectivityExternalAddress,
 		NodeInternalAPIServerIP:      config.DefaultAdvertiseAddress,
 		ExternalOauthAddress:         oauthExternalAddress,
 		IngressSubdomain:             config.IngressSubdomain(hcp),
-		OwnerReference:               config.ControllerOwnerRef(hcp),
+		OwnerRef:                     config.OwnerRefFrom(hcp),
 	}
 	return p
 }

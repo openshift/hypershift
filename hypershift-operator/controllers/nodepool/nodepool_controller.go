@@ -1,6 +1,8 @@
 package nodepool
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -26,7 +28,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -47,13 +48,16 @@ import (
 )
 
 const (
-	finalizer               = "hypershift.openshift.io/finalizer"
-	autoscalerMaxAnnotation = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
-	autoscalerMinAnnotation = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
-	nodePoolAnnotation      = "hypershift.openshift.io/nodePool"
-	TokenSecretReleaseKey   = "release"
-	TokenSecretTokenKey     = "token"
-	TokenSecretAnnotation   = "hypershift.openshift.io/ignition-config"
+	finalizer                       = "hypershift.openshift.io/finalizer"
+	autoscalerMaxAnnotation         = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
+	autoscalerMinAnnotation         = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
+	nodePoolAnnotation              = "hypershift.openshift.io/nodePool"
+	nodePoolAnnotationConfig        = "hypershift.openshift.io/nodePoolConfig"
+	nodePoolAnnotationConfigVersion = "hypershift.openshift.io/nodePoolConfigVersion"
+	TokenSecretReleaseKey           = "release"
+	TokenSecretTokenKey             = "token"
+	TokenSecretConfigKey            = "config"
+	TokenSecretAnnotation           = "hypershift.openshift.io/ignition-config"
 )
 
 type NodePoolReconciler struct {
@@ -77,6 +81,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
+		// TODO (alberto): Let ConfigMaps referenced by the spec.config and also the core ones to trigger reconciliation.
 		Build(r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
@@ -118,10 +123,10 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Generate mcs manifests for the given release
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
-	// TODO (alberto): using odePool.Status.Version here gives a race: if a NodePool is deleted
+	// Fixme (alberto): using nodePool.Status.Version here gives a race: if a NodePool is deleted
 	// before the targeted version is the one in the status then the tokenSecret and userDataSecret would be leaked.
-	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.Status.Version)
-	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.Status.Version)
+	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationConfigVersion])
+	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationConfigVersion])
 	md := machineDeployment(nodePool, hcluster.Spec.InfraID, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 
@@ -199,6 +204,21 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
+func compress(content []byte) ([]byte, error) {
+	if len(content) == 0 {
+		return nil, nil
+	}
+	var b bytes.Buffer
+	gz := gzip.NewWriter(&b)
+	if _, err := gz.Write(content); err != nil {
+		return nil, fmt.Errorf("failed to compress content: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return nil, fmt.Errorf("compress closure failure %w", err)
+	}
+	return b.Bytes(), nil
+}
+
 func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
 	var span trace.Span
 	ctx, span = r.tracer.Start(ctx, "update")
@@ -250,36 +270,76 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	targetVersion := releaseImage.Version()
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
-	if isUpgrading(nodePool, targetVersion) {
-		// Today only the version triggers a new token generation.
-		// Token Secrets are immutable and follow "prefixName-version" naming convention
-		// We'll likely add MachineConfig diffs to trigger token generation
-		// so instead of using "prefix-version" name as authoritative we'll need to use a config + version hash or similar.
+
+	// Create a hash from nodePool.Spec.Config content and
+	// Annotate NodePool with it.
+	var compressedConfig []byte
+	allConfigPlainText := ""
+	if nodePool.Spec.Config != nil {
+		for _, config := range nodePool.Spec.Config {
+			configConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      config.Name,
+					Namespace: nodePool.Namespace,
+				},
+			}
+			if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(configConfigMap), configConfigMap); err != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to get config ConfigMap: %w", err)
+			}
+
+			// TODO (alberto): validate ConfigMap ignition content here?
+			allConfigPlainText = allConfigPlainText + "\n---\n" + configConfigMap.Data[TokenSecretConfigKey]
+		}
+	}
+	targetConfigHash := hashStruct(allConfigPlainText)
+	targetConfigVersionHash := hashStruct(allConfigPlainText + targetVersion)
+	compressedConfig, err = compress([]byte(allConfigPlainText))
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	isUpgrading := isUpgrading(nodePool, targetVersion)
+	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
+	if isUpgrading {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:    hyperv1.NodePoolUpgradingConditionType,
 			Status:  metav1.ConditionTrue,
 			Reason:  hyperv1.NodePoolAsExpectedConditionReason,
 			Message: fmt.Sprintf("Upgrade in progress. Target version: %v", targetVersion),
 		})
-		r.Log.Info("New nodePool version set. Upgrading", "targetVersion", targetVersion)
-
+		r.Log.Info("New nodePool version changed. A new token Secret will be generated",
+			"targetVersion", targetVersion)
+	}
+	if isUpdatingConfig {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:    hyperv1.NodePoolUpdatingConfigConditionType,
+			Status:  metav1.ConditionTrue,
+			Reason:  hyperv1.NodePoolAsExpectedConditionReason,
+			Message: fmt.Sprintf("Updating config in progress"),
+		})
+		r.Log.Info("New nodePool config changed, A new token Secret will be generated",
+			"targetVersion", targetVersion)
+	}
+	if isUpgrading || isUpdatingConfig {
+		// Token Secrets are immutable and follow "prefixName-version-configHash" naming convention
 		// Ensure old versioned resources are deleted, i.e token Secret and userdata Secret.
-		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.Status.Version)
+		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationConfigVersion])
 		if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
 		}
 
-		userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.Status.Version)
+		userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationConfigVersion])
 		if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
 		}
 	}
 
-	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetVersion)
-	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetVersion)
+	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
+	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetConfigVersionHash)
 
 	r.Log.Info("Reconciling token Secret")
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
+		tokenSecret.Immutable = k8sutilspointer.BoolPtr(true)
 		if tokenSecret.Annotations == nil {
 			tokenSecret.Annotations = make(map[string]string)
 		}
@@ -290,6 +350,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			tokenSecret.Data = map[string][]byte{}
 			tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
 			tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
+			tokenSecret.Data[TokenSecretConfigKey] = compressedConfig
 		}
 		return nil
 	}); err != nil {
@@ -323,6 +384,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
+		userDataSecret.Immutable = k8sutilspointer.BoolPtr(true)
 		if userDataSecret.Annotations == nil {
 			userDataSecret.Annotations = make(map[string]string)
 		}
@@ -472,7 +534,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				md, nodePool,
 				userDataSecret,
 				awsMachineTemplate,
-				hcluster.Spec.InfraID, releaseImage)
+				hcluster.Spec.InfraID,
+				targetConfigHash, targetConfigVersionHash,
+				releaseImage)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile machineDeployment %q: %w",
 				ctrlclient.ObjectKeyFromObject(md).String(), err)
@@ -517,6 +581,10 @@ func isUpgrading(nodePool *hyperv1.NodePool, targetVersion string) bool {
 	return targetVersion != nodePool.Status.Version
 }
 
+func isUpdatingConfig(nodePool *hyperv1.NodePool, newConfigHash string) bool {
+	return newConfigHash != nodePool.GetAnnotations()[nodePoolAnnotationConfig]
+}
+
 func defaultNodePoolAMI(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	// TODO: The architecture should be specified from the API
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
@@ -535,17 +603,9 @@ func defaultNodePoolAMI(hcluster *hyperv1.HostedCluster, releaseImage *releasein
 	return regionData.Image, nil
 }
 
-// DeploymentComplete considers a deployment to be complete once all of its desired replicas
+// MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
-	newStatus := &deployment.Status
-	return newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
-		newStatus.Replicas == *(deployment.Spec.Replicas) &&
-		newStatus.AvailableReplicas == *(deployment.Spec.Replicas) &&
-		newStatus.ObservedGeneration >= deployment.Generation
-}
-
-func DeploymentComplete(deployment *appsv1.Deployment) bool {
 	newStatus := &deployment.Status
 	return newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
 		newStatus.Replicas == *(deployment.Spec.Replicas) &&
@@ -701,6 +761,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 	userDataSecret *corev1.Secret,
 	awsMachineTemplate *capiaws.AWSMachineTemplate,
 	CAPIClusterName string,
+	targetConfigHash, targetConfigVersionHash string,
 	releaseImage *releaseinfo.ReleaseImage) error {
 
 	// Set annotations and labels
@@ -715,15 +776,32 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 
 	// Set upgrade strategy
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	maxUnavailable := intstr.FromInt(nodePool.Spec.Management.MaxUnavailable)
-	maxSurge := intstr.FromInt(nodePool.Spec.Management.MaxSurge)
 	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32Ptr(int32(0))
-	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{
-		Type: capiv1.RollingUpdateMachineDeploymentStrategyType,
-		RollingUpdate: &capiv1.MachineRollingUpdateDeployment{
-			MaxUnavailable: &maxUnavailable,
-			MaxSurge:       &maxSurge,
-		},
+
+	// This is additional backend validation. API validation/default should
+	// prevent this from ever happening.
+
+	// Only upgradeType "Replace" is supported atm.
+	if nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeReplace ||
+		nodePool.Spec.Management.Replace == nil {
+		return fmt.Errorf("this is unsupported. %q upgrade type and a strategy: %q or %q are required",
+			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyRollingUpdate, hyperv1.UpgradeStrategyOnDelete)
+	}
+
+	// RollingUpdate strategy requires MaxUnavailable and MaxSurge
+	if nodePool.Spec.Management.Replace.Strategy == hyperv1.UpgradeStrategyRollingUpdate &&
+		nodePool.Spec.Management.Replace.RollingUpdate == nil {
+		return fmt.Errorf("this is unsupported. %q upgrade type with strategy %q require a MaxUnavailable and MaxSurge",
+			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyRollingUpdate)
+	}
+
+	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{}
+	machineDeployment.Spec.Strategy.Type = capiv1.MachineDeploymentStrategyType(nodePool.Spec.Management.Replace.Strategy)
+	if nodePool.Spec.Management.Replace.RollingUpdate != nil {
+		machineDeployment.Spec.Strategy.RollingUpdate = &capiv1.MachineRollingUpdateDeployment{
+			MaxUnavailable: nodePool.Spec.Management.Replace.RollingUpdate.MaxUnavailable,
+			MaxSurge:       nodePool.Spec.Management.Replace.RollingUpdate.MaxSurge,
+		}
 	}
 
 	// Set selector and template
@@ -798,6 +876,11 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(machineDeployment *capiv
 				Message: "",
 			})
 		}
+		if nodePool.Annotations == nil {
+			nodePool.Annotations = make(map[string]string)
+		}
+		nodePool.Annotations[nodePoolAnnotationConfig] = targetConfigHash
+		nodePool.Annotations[nodePoolAnnotationConfigVersion] = targetConfigVersionHash
 	}
 
 	// Set wanted replicas:
@@ -901,10 +984,4 @@ func (r *NodePoolReconciler) listAWSMachineTemplates(nodePool *hyperv1.NodePool)
 		}
 	}
 	return filtered, nil
-}
-
-func MachineConfigServerServiceSelector(machineConfigServerName string) map[string]string {
-	return map[string]string{
-		"app": fmt.Sprintf("machine-config-server-%s", machineConfigServerName),
-	}
 }

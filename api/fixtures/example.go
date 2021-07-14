@@ -55,6 +55,7 @@ type ExampleOptions struct {
 	PublicZoneID     string
 	PrivateZoneID    string
 	Annotations      map[string]string
+	FIPS             bool
 	AWS              ExampleAWSOptions
 	NetworkType      hyperv1.NetworkType
 }
@@ -213,6 +214,7 @@ aws_secret_access_key = %s
 			SigningKey: corev1.LocalObjectReference{Name: signingKeySecret.Name},
 			IssuerURL:  o.IssuerURL,
 			SSHKey:     sshKeyReference,
+			FIPS:       o.FIPS,
 			DNS: hyperv1.DNSSpec{
 				BaseDomain:    o.BaseDomain,
 				PublicZoneID:  o.PublicZoneID,
@@ -249,6 +251,9 @@ aws_secret_access_key = %s
 				Name:      o.Name,
 			},
 			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+				},
 				NodeCount:   &o.NodePoolReplicas,
 				ClusterName: o.Name,
 				Release: hyperv1.Release{

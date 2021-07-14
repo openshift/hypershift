@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 // Etcd secret keys
@@ -21,27 +23,27 @@ const (
 	EtcdPeerCAKey  = "peer-ca.crt"
 )
 
-func (p *PKIParams) ReconcileEtcdClientSecret(secret, ca *corev1.Secret) error {
-	return p.reconcileSignedCertWithKeys(secret, ca, "etcd-client", "kubernetes", X509DefaultUsage, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, EtcdClientCAKey)
+func ReconcileEtcdClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-client", "kubernetes", X509DefaultUsage, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, EtcdClientCAKey)
 }
 
-func (p *PKIParams) ReconcileEtcdServerSecret(secret, ca *corev1.Secret) error {
+func ReconcileEtcdServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
-		fmt.Sprintf("*.etcd.%s.svc", p.Namespace),
-		fmt.Sprintf("etcd-client.%s.svc", p.Namespace),
-		fmt.Sprintf("*.etcd.%s.svc.cluster.local", p.Namespace),
-		fmt.Sprintf("etcd-client.%s.svc.cluster.local", p.Namespace),
+		fmt.Sprintf("*.etcd.%s.svc", secret.Namespace),
+		fmt.Sprintf("etcd-client.%s.svc", secret.Namespace),
+		fmt.Sprintf("*.etcd.%s.svc.cluster.local", secret.Namespace),
+		fmt.Sprintf("etcd-client.%s.svc.cluster.local", secret.Namespace),
 		"etcd",
 		"etcd-client",
 		"localhost",
 	}
-	return p.reconcileSignedCertWithKeysAndAddresses(secret, ca, "etcd-server", "kubernetes", X509DefaultUsage, X509UsageClientServerAuth, EtcdServerCrtKey, EtcdServerKeyKey, EtcdServerCAKey, dnsNames, nil)
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-server", "kubernetes", X509DefaultUsage, X509UsageClientServerAuth, EtcdServerCrtKey, EtcdServerKeyKey, EtcdServerCAKey, dnsNames, nil)
 }
 
-func (p *PKIParams) ReconcileEtcdPeerSecret(secret, ca *corev1.Secret) error {
+func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
-		fmt.Sprintf("*.etcd.%s.svc", p.Namespace),
-		fmt.Sprintf("*.etcd.%s.svc.cluster.local", p.Namespace),
+		fmt.Sprintf("*.etcd.%s.svc", secret.Namespace),
+		fmt.Sprintf("*.etcd.%s.svc.cluster.local", secret.Namespace),
 	}
-	return p.reconcileSignedCertWithKeysAndAddresses(secret, ca, "etcd-peer", "kubernetes", X509DefaultUsage, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, EtcdPeerCAKey, dnsNames, nil)
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-peer", "kubernetes", X509DefaultUsage, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, EtcdPeerCAKey, dnsNames, nil)
 }

@@ -72,25 +72,58 @@ spec:
               clusterName:
                 description: ClusterName is the name of the Cluster this object belongs to.
                 type: string
+              config:
+                description: 'TODO (alberto): this ConfigMaps are meant to contain MachineConfig, KubeletConfig and ContainerRuntimeConfig but MCO only supports MachineConfig in bootstrap mode atm https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119 By contractual convention the ConfigMap structure is as follow: type: ConfigMap   data:     config: |-'
+                items:
+                  description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                  properties:
+                    name:
+                      description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                      type: string
+                  type: object
+                type: array
               nodeCount:
                 format: int32
                 type: integer
               nodePoolManagement:
-                default:
-                  autoRepair: false
-                  maxSurge: 1
-                  maxUnavailable: 0
                 properties:
                   autoRepair:
                     type: boolean
-                  maxSurge:
-                    default: 1
-                    minimum: 0
-                    type: integer
-                  maxUnavailable:
-                    default: 0
-                    minimum: 0
-                    type: integer
+                  inPlace:
+                    type: object
+                  recreate:
+                    default:
+                      rollingUpdate:
+                        maxSurge: 1
+                        maxUnavailable: 0
+                      strategy: RollingUpdate
+                    properties:
+                      rollingUpdate:
+                        properties:
+                          maxSurge:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            x-kubernetes-int-or-string: true
+                          maxUnavailable:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            x-kubernetes-int-or-string: true
+                        type: object
+                      strategy:
+                        enum:
+                        - RollingUpdate
+                        - OnDelete
+                        type: string
+                    type: object
+                  upgradeType:
+                    enum:
+                    - Replace
+                    - InPlace
+                    type: string
+                required:
+                - upgradeType
                 type: object
               platform:
                 description: NodePoolPlatform is the platform-specific configuration for a node pool. Only one of the platforms should be set.
@@ -190,6 +223,7 @@ spec:
                 type: object
             required:
             - clusterName
+            - nodePoolManagement
             - platform
             - release
             type: object

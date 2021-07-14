@@ -1,7 +1,9 @@
 package v1alpha1
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const (
@@ -11,6 +13,7 @@ const (
 	NodePoolAsExpectedConditionReason       = "AsExpected"
 	NodePoolValidationFailedConditionReason = "ValidationFailed"
 	NodePoolUpgradingConditionType          = "Upgrading"
+	NodePoolUpdatingConfigConditionType     = "UpdatingConfig"
 )
 
 // The following are reasons for the IgnitionEndpointAvailable condition.
@@ -52,13 +55,24 @@ type NodePoolSpec struct {
 	ClusterName string `json:"clusterName"`
 	// +optional
 	NodeCount *int32 `json:"nodeCount"`
+
+	// +kubebuilder:validation:Optional
+	// TODO (alberto): this ConfigMaps are meant to contain
+	// MachineConfig, KubeletConfig and ContainerRuntimeConfig but
+	// MCO only supports MachineConfig in bootstrap mode atm
+	// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119
+	// By contractual convention the ConfigMap structure is as follow:
+	// type: ConfigMap
+	//   data:
+	//     config: |-
+	Config []v1.LocalObjectReference `json:"config,omitempty"`
+
+	Management NodePoolManagement `json:"nodePoolManagement"`
+
 	// +optional
 	AutoScaling *NodePoolAutoScaling `json:"autoScaling,omitempty"`
 
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={maxSurge: 1, maxUnavailable: 0, autoRepair: false}
-	Management NodePoolManagement `json:"nodePoolManagement"`
-	Platform   NodePoolPlatform   `json:"platform"`
+	Platform NodePoolPlatform `json:"platform"`
 
 	// Release specifies the release image to use for this NodePool
 	// For a nodePool a given version dictates the ignition config and
@@ -92,15 +106,40 @@ type NodePoolList struct {
 	Items           []NodePool `json:"items"`
 }
 
+type UpgradeType string
+
+const UpgradeTypeInPlace = UpgradeType("InPlace")
+const UpgradeTypeReplace = UpgradeType("Replace")
+
+type UpgradeStrategy string
+
+const UpgradeStrategyRollingUpdate = UpgradeStrategy("RollingUpdate")
+const UpgradeStrategyOnDelete = UpgradeStrategy("OnDelete")
+
+type ReplaceUpgrade struct {
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Enum=RollingUpdate;OnDelete
+	Strategy UpgradeStrategy `json:"strategy"`
+	// +kubebuilder:validation:Optional
+	RollingUpdate *RollingUpdate `json:"rollingUpdate,omitempty"`
+}
+
+type RollingUpdate struct {
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+	MaxSurge       *intstr.IntOrString `json:"maxSurge,omitempty"`
+}
+
+type InPlaceUpgrade struct {
+}
+
 type NodePoolManagement struct {
-	// +optional
-	// +kubebuilder:default=0
-	// +kubebuilder:validation:Minimum=0
-	MaxUnavailable int `json:"maxUnavailable"`
-	// +optional
-	// +kubebuilder:default=1
-	// +kubebuilder:validation:Minimum=0
-	MaxSurge int `json:"maxSurge"`
+	// +kubebuilder:validation:Enum=Replace;InPlace
+	UpgradeType UpgradeType `json:"upgradeType"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default={strategy: "RollingUpdate", rollingUpdate: {maxSurge: 1, maxUnavailable: 0 }}
+	Replace *ReplaceUpgrade `json:"recreate,omitempty"`
+	// +kubebuilder:validation:Optional
+	InPlace *InPlaceUpgrade `json:"inPlace,omitempty"`
 
 	// +optional
 	AutoRepair bool `json:"autoRepair"`

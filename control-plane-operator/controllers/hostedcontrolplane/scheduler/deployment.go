@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -29,7 +30,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, featureGates []string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, featureGates []string, policy configv1.ConfigMapNameReference) error {
 	ownerRef.ApplyTo(deployment)
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
@@ -51,7 +52,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{
-					util.BuildContainer(schedulerContainerMain(), buildSchedulerContainerMain(image, featureGates)),
+					util.BuildContainer(schedulerContainerMain(), buildSchedulerContainerMain(image, deployment.Namespace, featureGates, policy)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(schedulerVolumeConfig(), buildSchedulerVolumeConfig),
@@ -71,7 +72,7 @@ func schedulerContainerMain() *corev1.Container {
 	}
 }
 
-func buildSchedulerContainerMain(image string, featureGates []string) func(*corev1.Container) {
+func buildSchedulerContainerMain(image, namespace string, featureGates []string, policy configv1.ConfigMapNameReference) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		kubeConfigPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeKubeconfig().Name), kas.KubeconfigKey)
 		configPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeConfig().Name), KubeSchedulerConfigKey)
@@ -91,6 +92,10 @@ func buildSchedulerContainerMain(image string, featureGates []string) func(*core
 		}
 		for _, f := range featureGates {
 			c.Args = append(c.Args, fmt.Sprintf("--feature-gates=%s", f))
+		}
+		if len(policy.Name) > 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--policy-config-map=%s", policy.Name))
+			c.Args = append(c.Args, fmt.Sprintf("--policy-config-namespace=%s", namespace))
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}

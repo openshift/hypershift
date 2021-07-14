@@ -9,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/certs"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 var (
@@ -21,20 +21,20 @@ var (
 	X509SignerUsage  = X509DefaultUsage | x509.KeyUsageCertSign
 )
 
-func (p *PKIParams) reconcileSignedCert(secret, ca *corev1.Secret, cn, org string, usage x509.KeyUsage, extUsages []x509.ExtKeyUsage) error {
-	return p.reconcileSignedCertWithKeys(secret, ca, cn, org, usage, extUsages, corev1.TLSCertKey, corev1.TLSPrivateKeyKey, CASignerCertMapKey)
+func reconcileSignedCert(secret *corev1.Secret, ca *corev1.Secret, ownerRef config.OwnerRef, cn, org string, usage x509.KeyUsage, extUsages []x509.ExtKeyUsage) error {
+	return reconcileSignedCertWithKeys(secret, ca, ownerRef, cn, org, usage, extUsages, corev1.TLSCertKey, corev1.TLSPrivateKeyKey, CASignerCertMapKey)
 }
 
-func (p *PKIParams) reconcileSignedCertWithKeys(secret, ca *corev1.Secret, cn, org string, usage x509.KeyUsage, extUsages []x509.ExtKeyUsage, crtKey, keyKey, caKey string) error {
-	return p.reconcileSignedCertWithKeysAndAddresses(secret, ca, cn, org, usage, extUsages, crtKey, keyKey, caKey, nil, nil)
+func reconcileSignedCertWithKeys(secret, ca *corev1.Secret, ownerRef config.OwnerRef, cn, org string, usage x509.KeyUsage, extUsages []x509.ExtKeyUsage, crtKey, keyKey, caKey string) error {
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, cn, org, usage, extUsages, crtKey, keyKey, caKey, nil, nil)
 }
 
-func (p *PKIParams) reconcileSignedCertWithAddresses(secret, ca *corev1.Secret, cn, org string, usage x509.KeyUsage, extUsages []x509.ExtKeyUsage, dnsNames []string, ips []string) error {
-	return p.reconcileSignedCertWithKeysAndAddresses(secret, ca, cn, org, usage, extUsages, corev1.TLSCertKey, corev1.TLSPrivateKeyKey, CASignerCertMapKey, dnsNames, ips)
+func reconcileSignedCertWithAddresses(secret, ca *corev1.Secret, ownerRef config.OwnerRef, cn, org string, usage x509.KeyUsage, extUsages []x509.ExtKeyUsage, dnsNames []string, ips []string) error {
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, cn, org, usage, extUsages, corev1.TLSCertKey, corev1.TLSPrivateKeyKey, CASignerCertMapKey, dnsNames, ips)
 }
 
-func (p *PKIParams) reconcileSignedCertWithKeysAndAddresses(secret, ca *corev1.Secret, cn, org string, usage x509.KeyUsage, extUsages []x509.ExtKeyUsage, crtKey, keyKey, caKey string, dnsNames []string, ips []string) error {
-	util.EnsureOwnerRef(secret, p.OwnerReference)
+func reconcileSignedCertWithKeysAndAddresses(secret *corev1.Secret, ca *corev1.Secret, ownerRef config.OwnerRef, cn, org string, usage x509.KeyUsage, extUsages []x509.ExtKeyUsage, crtKey, keyKey, caKey string, dnsNames []string, ips []string) error {
+	ownerRef.ApplyTo(secret)
 	if !ValidCA(ca) {
 		return fmt.Errorf("invalid CA signer secret %s for cert(cn=%s,o=%s)", ca.Name, cn, org)
 	}

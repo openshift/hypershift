@@ -14,28 +14,21 @@ const (
 )
 
 type OpenShiftControllerManagerParams struct {
-	OpenShiftControllerManagerImage string             `json:"openshiftControllerManagerImage"`
-	DockerBuilderImage              string             `json:"dockerBuilderImage"`
-	DeployerImage                   string             `json:"deployerImage"`
-	APIServer                       configv1.APIServer `json:"apiServer"`
+	OpenShiftControllerManagerImage string              `json:"openshiftControllerManagerImage"`
+	DockerBuilderImage              string              `json:"dockerBuilderImage"`
+	DeployerImage                   string              `json:"deployerImage"`
+	APIServer                       *configv1.APIServer `json:"apiServer"`
 
 	DeploymentConfig config.DeploymentConfig `json:"deploymentConfig"`
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *OpenShiftControllerManagerParams {
+func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *OpenShiftControllerManagerParams {
 	params := &OpenShiftControllerManagerParams{
 		OpenShiftControllerManagerImage: images["openshift-controller-manager"],
 		DockerBuilderImage:              images["docker-builder"],
 		DeployerImage:                   images["deployer"],
-		APIServer: configv1.APIServer{
-			Spec: configv1.APIServerSpec{
-				TLSSecurityProfile: &configv1.TLSSecurityProfile{
-					Type:         configv1.TLSProfileIntermediateType,
-					Intermediate: &configv1.IntermediateTLSProfile{},
-				},
-			},
-		},
+		APIServer:                       globalConfig.APIServer,
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		AdditionalLabels: map[string]string{},
@@ -63,9 +56,15 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, images
 }
 
 func (p *OpenShiftControllerManagerParams) MinTLSVersion() string {
-	return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+	if p.APIServer != nil {
+		return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+	}
+	return config.MinTLSVersion(nil)
 }
 
 func (p *OpenShiftControllerManagerParams) CipherSuites() []string {
-	return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
 }
