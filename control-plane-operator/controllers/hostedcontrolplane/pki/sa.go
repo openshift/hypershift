@@ -7,11 +7,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/certs"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-func (p *PKIParams) ReconcileServiceAccountSigningKeySecret(secret, signingKey *corev1.Secret) error {
-	util.EnsureOwnerRef(secret, p.OwnerReference)
+func ReconcileServiceAccountSigningKeySecret(secret, signingKey *corev1.Secret, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(secret)
 	secret.Type = corev1.SecretTypeOpaque
 	expectedKeys := []string{ServiceSignerPrivateKey, ServiceSignerPublicKey}
 	if !SecretUpToDate(secret, expectedKeys) {

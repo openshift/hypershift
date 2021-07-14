@@ -1,8 +1,6 @@
 package oapi
 
 import (
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -17,9 +15,9 @@ const (
 )
 
 type OpenShiftAPIServerParams struct {
-	APIServer configv1.APIServer `json:"apiServer"`
-	Ingress   configv1.Ingress   `json:"ingress"`
-	EtcdURL   string             `json:"etcdURL"`
+	APIServer        *configv1.APIServer `json:"apiServer"`
+	IngressSubDomain string
+	EtcdURL          string `json:"etcdURL"`
 
 	OpenShiftAPIServerDeploymentConfig      config.DeploymentConfig `json:"openshiftAPIServerDeploymentConfig,inline"`
 	OpenShiftOAuthAPIServerDeploymentConfig config.DeploymentConfig `json:"openshiftOAuthAPIServerDeploymentConfig,inline"`
@@ -36,23 +34,12 @@ type OAuthDeploymentParams struct {
 	DeploymentConfig config.DeploymentConfig
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
-		APIServer: configv1.APIServer{
-			Spec: configv1.APIServerSpec{
-				TLSSecurityProfile: &configv1.TLSSecurityProfile{
-					Type:         configv1.TLSProfileIntermediateType,
-					Intermediate: &configv1.IntermediateTLSProfile{},
-				},
-			},
-		},
-		Ingress: configv1.Ingress{
-			Spec: configv1.IngressSpec{
-				Domain: fmt.Sprintf("apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain),
-			},
-		},
+		APIServer:               globalConfig.APIServer,
+		IngressSubDomain:        config.IngressSubdomain(hcp),
 	}
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
 		AdditionalLabels: map[string]string{},
@@ -164,15 +151,21 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[str
 }
 
 func (p *OpenShiftAPIServerParams) MinTLSVersion() string {
-	return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+	if p.APIServer != nil {
+		return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+	}
+	return config.MinTLSVersion(nil)
 }
 
 func (p *OpenShiftAPIServerParams) CipherSuites() []string {
-	return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
 }
 
 func (p *OpenShiftAPIServerParams) IngressDomain() string {
-	return p.Ingress.Spec.Domain
+	return p.IngressSubDomain
 }
 
 func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams() *OAuthDeploymentParams {

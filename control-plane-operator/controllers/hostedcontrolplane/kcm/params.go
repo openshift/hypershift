@@ -1,6 +1,7 @@
 package kcm
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -15,13 +16,14 @@ import (
 )
 
 type KubeControllerManagerParams struct {
-	FeatureGate         configv1.FeatureGate         `json:"featureGate"`
-	Network             configv1.Network             `json:"network"`
+	FeatureGate         *configv1.FeatureGate        `json:"featureGate"`
 	ServiceCA           []byte                       `json:"serviceCA"`
 	CloudProvider       string                       `json:"cloudProvider"`
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 	Port                int32                        `json:"port"`
+	ServiceCIDR         string
+	PodCIDR             string
 
 	config.DeploymentConfig
 	config.OwnerRef
@@ -33,20 +35,15 @@ const (
 	DefaultPort          = 10257
 )
 
-func NewKubeControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
-		FeatureGate: configv1.FeatureGate{
-			Spec: configv1.FeatureGateSpec{
-				FeatureGateSelection: configv1.FeatureGateSelection{
-					FeatureSet: configv1.Default,
-				},
-			},
-		},
-		Network: config.Network(hcp),
+		FeatureGate: globalConfig.FeatureGate,
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
 		HyperkubeImage: images["hyperkube"],
 		Port:           DefaultPort,
+		ServiceCIDR:    hcp.Spec.ServiceCIDR,
+		PodCIDR:        hcp.Spec.PodCIDR,
 	}
 	params.AdditionalLabels = map[string]string{}
 	params.Scheduling = config.Scheduling{
@@ -106,10 +103,19 @@ func NewKubeControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[
 		params.Replicas = 1
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
-
 	return params
 }
 
 func externalAddress(endpoint hyperv1.APIEndpoint) string {
 	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
+}
+
+func (p *KubeControllerManagerParams) FeatureGates() []string {
+	if p.FeatureGate != nil {
+		return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
+	} else {
+		return config.FeatureGates(&configv1.FeatureGateSelection{
+			FeatureSet: configv1.Default,
+		})
+	}
 }

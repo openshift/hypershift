@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -22,16 +23,17 @@ type KubeAPIServerImages struct {
 }
 
 type KubeAPIServerParams struct {
-	APIServer           configv1.APIServer           `json:"apiServer"`
-	Authentication      configv1.Authentication      `json:"authentication"`
-	FeatureGate         configv1.FeatureGate         `json:"featureGate"`
-	Network             configv1.Network             `json:"network"`
-	OAuth               configv1.OAuth               `json:"oauth"`
-	Image               configv1.Image               `json:"image"`
-	Scheduler           configv1.Scheduler           `json:"scheduler"`
+	APIServer           *configv1.APIServer          `json:"apiServer"`
+	FeatureGate         *configv1.FeatureGate        `json:"featureGate"`
+	Network             *configv1.Network            `json:"network"`
+	Image               *configv1.Image              `json:"image"`
+	Scheduler           *configv1.Scheduler          `json:"scheduler"`
 	CloudProvider       string                       `json:"cloudProvider"`
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 
+	ServiceAccountIssuer string                       `json:"serviceAccountIssuer"`
+	ServiceCIDR          string                       `json:"serviceCIDR"`
+	PodCIDR              string                       `json:"podCIDR"`
 	AdvertiseAddress     string                       `json:"advertiseAddress"`
 	ExternalAddress      string                       `json:"externalAddress"`
 	ExternalPort         int32                        `json:"externalPort"`
@@ -52,72 +54,22 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
-		APIServer: configv1.APIServer{
-			Spec: configv1.APIServerSpec{
-				ServingCerts: configv1.APIServerServingCerts{
-					NamedCertificates: []configv1.APIServerNamedServingCert{},
-				},
-				ClientCA: configv1.ConfigMapNameReference{
-					Name: "",
-				},
-				AdditionalCORSAllowedOrigins: []string{},
-				TLSSecurityProfile: &configv1.TLSSecurityProfile{
-					Type:         configv1.TLSProfileIntermediateType,
-					Intermediate: &configv1.IntermediateTLSProfile{},
-				},
-				Audit: configv1.Audit{
-					Profile: configv1.AuditProfileDefaultType,
-				},
-			},
-		},
-		Authentication: configv1.Authentication{
-			Spec: configv1.AuthenticationSpec{
-				Type: configv1.AuthenticationTypeIntegratedOAuth,
-				OAuthMetadata: configv1.ConfigMapNameReference{
-					Name: manifests.KASOAuthMetadata(hcp.Namespace).Name,
-				},
-				WebhookTokenAuthenticator: nil,
-				ServiceAccountIssuer:      hcp.Spec.IssuerURL,
-			},
-		},
-		FeatureGate: configv1.FeatureGate{
-			Spec: configv1.FeatureGateSpec{
-				FeatureGateSelection: configv1.FeatureGateSelection{
-					FeatureSet:      configv1.Default,
-					CustomNoUpgrade: nil,
-				},
-			},
-		},
-		Network: config.Network(hcp),
-		OAuth: configv1.OAuth{
-			Spec: configv1.OAuthSpec{
-				TokenConfig: configv1.TokenConfig{
-					AccessTokenInactivityTimeout: nil, // Use default
-				},
-			},
-		},
-		Image: configv1.Image{
-			Spec: configv1.ImageSpec{
-				ExternalRegistryHostnames:  []string{},
-				AllowedRegistriesForImport: []configv1.RegistryLocation{},
-			},
-			Status: configv1.ImageStatus{
-				InternalRegistryHostname: config.DefaultImageRegistryHostname,
-			},
-		},
-		Scheduler: configv1.Scheduler{
-			Spec: configv1.SchedulerSpec{
-				DefaultNodeSelector: "",
-			},
-		},
+		APIServer:            globalConfig.APIServer,
+		FeatureGate:          globalConfig.FeatureGate,
+		Network:              globalConfig.Network,
+		Image:                globalConfig.Image,
+		Scheduler:            globalConfig.Scheduler,
 		AdvertiseAddress:     config.DefaultAdvertiseAddress,
 		ExternalAddress:      hcp.Status.ControlPlaneEndpoint.Host,
 		ExternalPort:         hcp.Status.ControlPlaneEndpoint.Port,
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
 		APIServerPort:        config.DefaultAPIServerPort,
+		ServiceAccountIssuer: hcp.Spec.IssuerURL,
+		ServiceCIDR:          hcp.Spec.ServiceCIDR,
+		PodCIDR:              hcp.Spec.PodCIDR,
 
 		Images: KubeAPIServerImages{
 			HyperKube:             images["hyperkube"],
@@ -132,19 +84,6 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 		params.EtcdURL = config.DefaultEtcdURL
 	default:
 		params.EtcdURL = config.DefaultEtcdURL
-	}
-	unprivilegedSecurityContext := corev1.SecurityContext{
-		Capabilities: &corev1.Capabilities{
-			Drop: []corev1.Capability{
-				"MKNOD",
-				"NET_ADMIN",
-			},
-		},
-	}
-	params.SecurityContexts = config.SecurityContextSpec{
-		kasContainerBootstrap().Name:      unprivilegedSecurityContext,
-		kasContainerApplyBootstrap().Name: unprivilegedSecurityContext,
-		kasContainerMain().Name:           unprivilegedSecurityContext,
 	}
 	params.AdditionalLabels = map[string]string{}
 	params.Scheduling = config.Scheduling{
@@ -211,11 +150,19 @@ func NewKubeAPIServerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 }
 
 func (p *KubeAPIServerParams) NamedCertificates() []configv1.APIServerNamedServingCert {
-	return p.APIServer.Spec.ServingCerts.NamedCertificates
+	if p.APIServer != nil {
+		return p.APIServer.Spec.ServingCerts.NamedCertificates
+	} else {
+		return []configv1.APIServerNamedServingCert{}
+	}
 }
 
 func (p *KubeAPIServerParams) AuditPolicyProfile() configv1.AuditProfileType {
-	return p.APIServer.Spec.Audit.Profile
+	if p.APIServer != nil {
+		return p.APIServer.Spec.Audit.Profile
+	} else {
+		return configv1.AuditProfileDefaultType
+	}
 }
 
 func (p *KubeAPIServerParams) ExternalURL() string {
@@ -230,15 +177,19 @@ func (p *KubeAPIServerParams) ExternalKubeconfigKey() string {
 }
 
 func (p *KubeAPIServerParams) ExternalIPConfig() *configv1.ExternalIPConfig {
-	return p.Network.Spec.ExternalIP
+	if p.Network != nil {
+		return p.Network.Spec.ExternalIP
+	} else {
+		return nil
+	}
 }
 
 func (p *KubeAPIServerParams) ClusterNetwork() string {
-	return config.ClusterCIDR(&p.Network)
+	return p.PodCIDR
 }
 
 func (p *KubeAPIServerParams) ServiceNetwork() string {
-	return config.ServiceCIDR(&p.Network)
+	return p.ServiceCIDR
 }
 
 func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
@@ -286,35 +237,66 @@ type KubeAPIServerConfigParams struct {
 }
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {
-	return p.APIServer.Spec.TLSSecurityProfile
+	if p.APIServer != nil {
+		return p.APIServer.Spec.TLSSecurityProfile
+	}
+	return &configv1.TLSSecurityProfile{
+		Type:         configv1.TLSProfileIntermediateType,
+		Intermediate: &configv1.IntermediateTLSProfile{},
+	}
 }
 
 func (p *KubeAPIServerParams) AdditionalCORSAllowedOrigins() []string {
-	return p.APIServer.Spec.AdditionalCORSAllowedOrigins
+	if p.APIServer != nil {
+		return p.APIServer.Spec.AdditionalCORSAllowedOrigins
+	}
+	return []string{}
 }
 
 func (p *KubeAPIServerParams) InternalRegistryHostName() string {
-	return p.Image.Status.InternalRegistryHostname
+	return config.DefaultImageRegistryHostname
 }
 
 func (p *KubeAPIServerParams) ExternalRegistryHostNames() []string {
-	return p.Image.Spec.ExternalRegistryHostnames
+	if p.Image != nil {
+		return p.Image.Spec.ExternalRegistryHostnames
+	} else {
+		return []string{}
+	}
 }
 
 func (p *KubeAPIServerParams) DefaultNodeSelector() string {
-	return p.Scheduler.Spec.DefaultNodeSelector
+	if p.Scheduler != nil {
+		return p.Scheduler.Spec.DefaultNodeSelector
+	} else {
+		return ""
+	}
 }
 
 func (p *KubeAPIServerParams) ServiceAccountIssuerURL() string {
-	return p.Authentication.Spec.ServiceAccountIssuer
+	if p.ServiceAccountIssuer != "" {
+		return p.ServiceAccountIssuer
+	} else {
+		return config.DefaultServiceAccountIssuer
+	}
 }
 
 func (p *KubeAPIServerParams) FeatureGates() []string {
-	return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
+	if p.FeatureGate != nil {
+		return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
+	} else {
+		return config.FeatureGates(&configv1.FeatureGateSelection{
+			FeatureSet: configv1.Default,
+		})
+	}
 }
 
 func (p *KubeAPIServerParams) ServiceNodePortRange() string {
-	return p.Network.Spec.ServiceNodePortRange
+	if p.Network != nil && len(p.Network.Spec.ServiceNodePortRange) > 0 {
+		return p.Network.Spec.ServiceNodePortRange
+	} else {
+		return config.DefaultServiceNodePortRange
+	}
 }
 
 func externalAddress(endpoint hyperv1.APIEndpoint) string {

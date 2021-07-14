@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 
 	configv1 "github.com/openshift/api/config/v1"
 )
@@ -81,6 +82,12 @@ type HostedClusterSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed"}
 	Etcd EtcdSpec `json:"etcd"`
+
+	// Configuration embeds resources that correspond to the openshift configuration API:
+	// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
+	// +kubebuilder:validation:Optional
+	// +optional
+	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 }
 
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
@@ -355,6 +362,10 @@ const (
 	// UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
 	// healthy.
 	UnmanagedEtcdAvailable ConditionType = "UnmanagedEtcdAvailable"
+
+	// ValidHostedClusterConfiguration indicates (if status is true) that the
+	// ClusterConfiguration specified for the HostedCluster is valid.
+	ValidHostedClusterConfiguration ConditionType = "ValidConfiguration"
 )
 
 const (
@@ -421,6 +432,27 @@ type ClusterVersionStatus struct {
 	// +kubebuilder:validation:Required
 	// +required
 	ObservedGeneration int64 `json:"observedGeneration"`
+}
+
+// ClusterConfiguration contains global configuration for a HostedCluster.
+type ClusterConfiguration struct {
+	// SecretRefs holds references to secrets used in configuration entries
+	// so that they can be properly synced by the hypershift operator.
+	// +kubebuilder:validation:Optional
+	// +optional
+	SecretRefs []corev1.LocalObjectReference `json:"secretRefs,omitempty"`
+
+	// ConfigMapRefs holds references to configmaps used in configuration entries
+	// so that they can be properly synced by the hypershift operator.
+	// +kubebuilder:validation:Optional
+	// +optional
+	ConfigMapRefs []corev1.LocalObjectReference `json:"configMapRefs,omitempty"`
+
+	// Items embeds the configuration resource
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Optional
+	// +optional
+	Items []runtime.RawExtension `json:"items,omitempty"`
 }
 
 // +kubebuilder:object:root=true

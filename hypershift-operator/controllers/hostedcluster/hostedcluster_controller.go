@@ -240,6 +240,34 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
 	}
 
+	// Set ValidConfiguration condition
+	{
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				hcp = nil
+			} else {
+				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+			}
+		}
+		condition := metav1.Condition{
+			Type:   string(hyperv1.ValidHostedClusterConfiguration),
+			Status: metav1.ConditionUnknown,
+			Reason: "StatusUnknown",
+		}
+		if hcp != nil {
+			validConfigHCPCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidConfiguration))
+			if validConfigHCPCondition != nil {
+				condition.Status = validConfigHCPCondition.Status
+				condition.Message = validConfigHCPCondition.Message
+				condition.Reason = validConfigHCPCondition.Reason
+			}
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
 	// Set Ignition Server endpoint
 	{
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -510,6 +538,51 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile global config related configmaps and secrets
+	{
+		if hcluster.Spec.Configuration != nil {
+			for _, configMapRef := range hcluster.Spec.Configuration.ConfigMapRefs {
+				sourceCM := &corev1.ConfigMap{}
+				if err := r.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef.Name}, sourceCM); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef.Name, err)
+				}
+				destCM := &corev1.ConfigMap{}
+				destCM.Name = sourceCM.Name
+				destCM.Namespace = controlPlaneNamespace.Name
+				if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, destCM, func() error {
+					destCM.Annotations = sourceCM.Annotations
+					destCM.Labels = sourceCM.Labels
+					destCM.Data = sourceCM.Data
+					destCM.BinaryData = sourceCM.BinaryData
+					destCM.Immutable = sourceCM.Immutable
+					return nil
+				}); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
+				}
+			}
+
+			for _, secretRef := range hcluster.Spec.Configuration.SecretRefs {
+				sourceSecret := &corev1.Secret{}
+				if err := r.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef.Name}, sourceSecret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef.Name, err)
+				}
+				destSecret := &corev1.Secret{}
+				destSecret.Name = sourceSecret.Name
+				destSecret.Namespace = controlPlaneNamespace.Name
+				if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, destSecret, func() error {
+					destSecret.Annotations = sourceSecret.Annotations
+					destSecret.Labels = sourceSecret.Labels
+					destSecret.Data = sourceSecret.Data
+					destSecret.Immutable = sourceSecret.Immutable
+					destSecret.Type = sourceSecret.Type
+					return nil
+				}); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile secret %s/%s: %w", destSecret.Namespace, destSecret.Name, err)
+				}
+			}
+		}
+	}
+
 	// Reconcile the HostedControlPlane
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hcp, func() error {
@@ -714,6 +787,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 	}
 
+	hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
 	return nil
 }
 

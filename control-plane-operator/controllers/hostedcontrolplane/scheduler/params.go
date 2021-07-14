@@ -1,6 +1,8 @@
 package scheduler
 
 import (
+	"context"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -10,21 +12,17 @@ import (
 )
 
 type KubeSchedulerParams struct {
-	FeatureGate             configv1.FeatureGate `json:"featureGate"`
-	OwnerRef                config.OwnerRef      `json:"ownerRef"`
-	HyperkubeImage          string               `json:"hyperkubeImage"`
+	FeatureGate             *configv1.FeatureGate `json:"featureGate"`
+	Scheduler               *configv1.Scheduler   `json:"scheduler"`
+	OwnerRef                config.OwnerRef       `json:"ownerRef"`
+	HyperkubeImage          string                `json:"hyperkubeImage"`
 	config.DeploymentConfig `json:",inline"`
 }
 
-func NewKubeSchedulerParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig config.GlobalConfig) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
-		FeatureGate: configv1.FeatureGate{
-			Spec: configv1.FeatureGateSpec{
-				FeatureGateSelection: configv1.FeatureGateSelection{
-					FeatureSet: configv1.Default,
-				},
-			},
-		},
+		FeatureGate:    globalConfig.FeatureGate,
+		Scheduler:      globalConfig.Scheduler,
 		HyperkubeImage: images["hyperkube"],
 	}
 	params.Scheduling = config.Scheduling{
@@ -45,10 +43,21 @@ func NewKubeSchedulerParams(hcp *hyperv1.HostedControlPlane, images map[string]s
 		params.Replicas = 1
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
-
 	return params
 }
 
 func (p *KubeSchedulerParams) FeatureGates() []string {
-	return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
+	if p.FeatureGate != nil {
+		return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
+	} else {
+		return config.FeatureGates(&configv1.FeatureGateSelection{FeatureSet: configv1.Default})
+	}
+}
+
+func (p *KubeSchedulerParams) SchedulerPolicy() configv1.ConfigMapNameReference {
+	if p.Scheduler != nil {
+		return p.Scheduler.Spec.Policy
+	} else {
+		return configv1.ConfigMapNameReference{}
+	}
 }

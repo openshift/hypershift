@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"context"
 	"fmt"
 	"path"
 
@@ -9,10 +10,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+)
+
+const (
+	configHashAnnotation = "oauth.hypershift.openshift.io/config-hash"
 )
 
 var (
@@ -33,7 +40,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: oauthLabels,
@@ -51,6 +58,14 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	for k, v := range oauthLabels {
 		deployment.Spec.Template.ObjectMeta.Labels[k] = v
 	}
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+	}
+	configBytes, ok := config.Data[OAuthServerConfigKey]
+	if !ok {
+		return fmt.Errorf("oauth server: configuration not found in configmap")
+	}
+	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
@@ -68,6 +83,14 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		},
 	}
 	deploymentConfig.ApplyTo(deployment)
+	if len(identityProviders) > 0 {
+		_, volumeMountInfo, err := convertIdentityProviders(ctx, identityProviders, client, deployment.Namespace)
+		if err != nil {
+			return err
+		}
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volumeMountInfo.Volumes...)
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMountInfo.VolumeMounts.ContainerMounts(oauthContainerMain().Name)...)
+	}
 	return nil
 }
 
