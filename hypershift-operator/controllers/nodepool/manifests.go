@@ -32,7 +32,7 @@ func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string
 	}
 }
 
-func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, controlPlaneNamespace string) *capiaws.AWSMachineTemplate {
+func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (*capiaws.AWSMachineTemplate, string) {
 	subnet := &capiaws.AWSResourceReference{}
 	if nodePool.Spec.Platform.AWS.Subnet != nil {
 		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
@@ -99,7 +99,7 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 	specHash := hashStruct(awsMachineTemplate.Spec.Template.Spec)
 	awsMachineTemplate.SetName(fmt.Sprintf("%s-%s", nodePool.GetName(), specHash))
 
-	return awsMachineTemplate
+	return awsMachineTemplate, specHash
 }
 
 func IgnitionUserDataSecret(namespace, name, payloadInputHash string) *corev1.Secret {

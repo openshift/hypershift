@@ -27,10 +27,14 @@ spec:
         description: HostedControlPlane defines the desired state of HostedControlPlane
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
             type: string
           metadata:
             type: object
@@ -38,22 +42,35 @@ spec:
             description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
             properties:
               auditWebhook:
-                description: AuditWebhook contains metadata for configuring an audit webhook endpoint for a cluster to process cluster audit events. It references a secret that contains the webhook information for the audit webhook endpoint. It is a secret because if the endpoint has MTLS the kubeconfig will contain client keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.
+                description: AuditWebhook contains metadata for configuring an audit
+                  webhook endpoint for a cluster to process cluster audit events.
+                  It references a secret that contains the webhook information for
+                  the audit webhook endpoint. It is a secret because if the endpoint
+                  has MTLS the kubeconfig will contain client keys. This is currently
+                  only supported in IBM Cloud. The kubeconfig needs to be stored in
+                  the secret with a secret key name that corresponds to the constant
+                  AuditWebhookKubeconfigKey.
                 properties:
                   name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
               configuration:
-                description: 'Configuration embeds resources that correspond to the openshift configuration API: https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html'
+                description: 'Configuration embeds resources that correspond to the
+                  openshift configuration API: https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html'
                 properties:
                   configMapRefs:
-                    description: ConfigMapRefs holds references to configmaps used in configuration entries so that they can be properly synced by the hypershift operator.
+                    description: ConfigMapRefs holds references to configmaps used
+                      in configuration entries so that they can be properly synced
+                      by the hypershift operator.
                     items:
-                      description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                      description: LocalObjectReference contains enough information
+                        to let you locate the referenced object inside the same namespace.
                       properties:
                         name:
-                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            TODO: Add other useful fields. apiVersion, kind, uid?'
                           type: string
                       type: object
                     type: array
@@ -64,18 +81,24 @@ spec:
                     type: array
                     x-kubernetes-preserve-unknown-fields: true
                   secretRefs:
-                    description: SecretRefs holds references to secrets used in configuration entries so that they can be properly synced by the hypershift operator.
+                    description: SecretRefs holds references to secrets used in configuration
+                      entries so that they can be properly synced by the hypershift
+                      operator.
                     items:
-                      description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                      description: LocalObjectReference contains enough information
+                        to let you locate the referenced object inside the same namespace.
                       properties:
                         name:
-                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            TODO: Add other useful fields. apiVersion, kind, uid?'
                           type: string
                       type: object
                     type: array
                 type: object
               controllerAvailabilityPolicy:
-                description: ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode Defaults to SingleReplica when not set
+                description: ControllerAvailabilityPolicy specifies whether to run
+                  control plane controllers in HA mode Defaults to SingleReplica when
+                  not set
                 type: string
               dns:
                 description: DNSSpec specifies the DNS configuration in the cluster
@@ -84,41 +107,60 @@ spec:
                     description: BaseDomain is the base domain of the cluster.
                     type: string
                   privateZoneID:
-                    description: PrivateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
+                    description: PrivateZoneID is the Hosted Zone ID where all the
+                      DNS records that are only available internally to the cluster
+                      exist.
                     type: string
                   publicZoneID:
-                    description: PublicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
+                    description: PublicZoneID is the Hosted Zone ID where all the
+                      DNS records that are publicly accessible to the internet exist.
                     type: string
                 required:
                 - baseDomain
                 type: object
               etcd:
-                description: Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components use to store data.
+                description: Etcd contains metadata about the etcd cluster the hypershift
+                  managed Openshift control plane components use to store data.
                 properties:
                   managed:
-                    description: Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
+                    description: Managed provides metadata that defines how the hypershift
+                      controllers manage the etcd cluster
                     type: object
                   managementType:
-                    description: ManagementType defines how the etcd cluster is managed. Unmanaged means the etcd cluster is managed by a system outside the hypershift controllers. Managed means the hypershift controllers manage the provisioning of the etcd cluster and the operations around it
+                    description: ManagementType defines how the etcd cluster is managed.
+                      Unmanaged means the etcd cluster is managed by a system outside
+                      the hypershift controllers. Managed means the hypershift controllers
+                      manage the provisioning of the etcd cluster and the operations
+                      around it
                     enum:
                     - Managed
                     - Unmanaged
                     type: string
                   unmanaged:
-                    description: Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
+                    description: Unmanaged provides metadata that enables the Openshift
+                      controllers to connect to the external etcd cluster
                     properties:
                       endpoint:
-                        description: Endpoint is the full url to connect to the etcd cluster endpoint. An example is https://etcd-client:2379
+                        description: Endpoint is the full url to connect to the etcd
+                          cluster endpoint. An example is https://etcd-client:2379
                         pattern: ^https://
                         type: string
                       tls:
-                        description: TLS defines a reference to a TLS secret that can be used for client MTLS authentication with the etcd cluster
+                        description: TLS defines a reference to a TLS secret that
+                          can be used for client MTLS authentication with the etcd
+                          cluster
                         properties:
                           clientSecret:
-                            description: ClientSecret refers to a secret for client MTLS authentication with the etcd cluster The CA must be stored at secret key etcd-client-ca.crt. The client cert must be stored at secret key etcd-client.crt. The client key must be stored at secret key etcd-client.key.
+                            description: ClientSecret refers to a secret for client
+                              MTLS authentication with the etcd cluster The CA must
+                              be stored at secret key etcd-client-ca.crt. The client
+                              cert must be stored at secret key etcd-client.crt. The
+                              client key must be stored at secret key etcd-client.key.
                             properties:
                               name:
-                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  TODO: Add other useful fields. apiVersion, kind,
+                                  uid?'
                                 type: string
                             type: object
                         required:
@@ -132,14 +174,16 @@ spec:
                 - managementType
                 type: object
               fips:
-                description: FIPS specifies if the nodes for the cluster will be running in FIPS mode
+                description: FIPS specifies if the nodes for the cluster will be running
+                  in FIPS mode
                 type: boolean
               infraID:
                 type: string
               issuerURL:
                 type: string
               kubeconfig:
-                description: KubeConfig specifies the name and key for the kubeconfig secret
+                description: KubeConfig specifies the name and key for the kubeconfig
+                  secret
                 properties:
                   key:
                     type: string
@@ -152,7 +196,8 @@ spec:
               machineCIDR:
                 type: string
               networkType:
-                description: NetworkType specifies the SDN provider used for cluster networking.
+                description: NetworkType specifies the SDN provider used for cluster
+                  networking.
                 enum:
                 - OpenShiftSDN
                 - Calico
@@ -163,7 +208,8 @@ spec:
                     description: AWS contains AWS-specific settings for the HostedCluster
                     properties:
                       cloudProviderConfig:
-                        description: CloudProviderConfig is used to generate the ConfigMap with the cloud config consumed by the Control Plane components.
+                        description: CloudProviderConfig is used to generate the ConfigMap
+                          with the cloud config consumed by the Control Plane components.
                         properties:
                           subnet:
                             description: Subnet is the subnet to use for instances
@@ -172,15 +218,20 @@ spec:
                                 description: ARN of resource
                                 type: string
                               filters:
-                                description: 'Filters is a set of key/value pairs used to identify a resource They are applied according to the rules defined by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
+                                description: 'Filters is a set of key/value pairs
+                                  used to identify a resource They are applied according
+                                  to the rules defined by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
                                 items:
-                                  description: Filter is a filter used to identify an AWS resource
+                                  description: Filter is a filter used to identify
+                                    an AWS resource
                                   properties:
                                     name:
-                                      description: Name of the filter. Filter names are case-sensitive.
+                                      description: Name of the filter. Filter names
+                                        are case-sensitive.
                                       type: string
                                     values:
-                                      description: Values includes one or more filter values. Filter values are case-sensitive.
+                                      description: Values includes one or more filter
+                                        values. Filter values are case-sensitive.
                                       items:
                                         type: string
                                       type: array
@@ -197,27 +248,41 @@ spec:
                             description: VPC specifies the VPC used for the cluster
                             type: string
                           zone:
-                            description: Zone is the availability zone where the instances are created
+                            description: Zone is the availability zone where the instances
+                              are created
                             type: string
                         required:
                         - vpc
                         type: object
                       kubeCloudControllerCreds:
-                        description: KubeCloudControllerCreds is a reference to a secret containing cloud credentials with permissions matching the Kube cloud controller policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
+                        description: KubeCloudControllerCreds is a reference to a
+                          secret containing cloud credentials with permissions matching
+                          the Kube cloud controller policy. The secret should have
+                          exactly one key, `credentials`, whose value is an AWS credentials
+                          file.
                         properties:
                           name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
                             type: string
                         type: object
                       nodePoolManagementCreds:
-                        description: NodePoolManagementCreds is a reference to a secret containing cloud credentials with permissions matching the noe pool management policy. The secret should have exactly one key, `credentials`, whose value is an AWS credentials file.
+                        description: NodePoolManagementCreds is a reference to a secret
+                          containing cloud credentials with permissions matching the
+                          noe pool management policy. The secret should have exactly
+                          one key, `credentials`, whose value is an AWS credentials
+                          file.
                         properties:
                           name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
                             type: string
                         type: object
                       region:
-                        description: Region is the AWS region for the cluster. This is used by CRs that are consumed by OCP Operators. E.g cluster-infrastructure-02-config.yaml and install-config.yaml This is also used by nodePools to fetch the default boot AMI in a given payload.
+                        description: Region is the AWS region for the cluster. This
+                          is used by CRs that are consumed by OCP Operators. E.g cluster-infrastructure-02-config.yaml
+                          and install-config.yaml This is also used by nodePools to
+                          fetch the default boot AMI in a given payload.
                         type: string
                       roles:
                         items:
@@ -235,15 +300,22 @@ spec:
                           type: object
                         type: array
                       serviceEndpoints:
-                        description: ServiceEndpoints list contains custom endpoints which will override default service endpoint of AWS Services. There must be only one ServiceEndpoint for a service.
+                        description: ServiceEndpoints list contains custom endpoints
+                          which will override default service endpoint of AWS Services.
+                          There must be only one ServiceEndpoint for a service.
                         items:
-                          description: AWSServiceEndpoint stores the configuration for services to override existing defaults of AWS Services.
+                          description: AWSServiceEndpoint stores the configuration
+                            for services to override existing defaults of AWS Services.
                           properties:
                             name:
-                              description: Name is the name of the AWS service. This must be provided and cannot be empty.
+                              description: Name is the name of the AWS service. This
+                                must be provided and cannot be empty.
                               type: string
                             url:
-                              description: URL is fully qualified URI with scheme https, that overrides the default generated endpoint for a client. This must be provided and cannot be empty.
+                              description: URL is fully qualified URI with scheme
+                                https, that overrides the default generated endpoint
+                                for a client. This must be provided and cannot be
+                                empty.
                               pattern: ^https://
                               type: string
                           required:
@@ -257,7 +329,8 @@ spec:
                     - region
                     type: object
                   type:
-                    description: Type is the underlying infrastructure provider for the cluster.
+                    description: Type is the underlying infrastructure provider for
+                      the cluster.
                     enum:
                     - AWS
                     - None
@@ -269,10 +342,12 @@ spec:
               podCIDR:
                 type: string
               pullSecret:
-                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                description: LocalObjectReference contains enough information to let
+                  you locate the referenced object inside the same namespace.
                 properties:
                   name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
               releaseImage:
@@ -280,9 +355,11 @@ spec:
               serviceCIDR:
                 type: string
               services:
-                description: Services defines metadata about how control plane services are published in the management cluster.
+                description: Services defines metadata about how control plane services
+                  are published in the management cluster.
                 items:
-                  description: ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
+                  description: ServicePublishingStrategyMapping defines the service
+                    being published and  metadata about the publishing strategy.
                   properties:
                     service:
                       description: Service identifies the type of service being published
@@ -293,23 +370,29 @@ spec:
                       - Konnectivity
                       type: string
                     servicePublishingStrategy:
-                      description: ServicePublishingStrategy defines metadata around how a service is published
+                      description: ServicePublishingStrategy defines metadata around
+                        how a service is published
                       properties:
                         nodePort:
-                          description: NodePort is used to define extra metadata for the NodePort publishing strategy.
+                          description: NodePort is used to define extra metadata for
+                            the NodePort publishing strategy.
                           properties:
                             address:
-                              description: Address is the host/ip that the nodePort service is exposed over
+                              description: Address is the host/ip that the nodePort
+                                service is exposed over
                               type: string
                             port:
-                              description: Port is the nodePort of the service. If <=0 the nodePort is dynamically assigned when the service is created
+                              description: Port is the nodePort of the service. If
+                                <=0 the nodePort is dynamically assigned when the
+                                service is created
                               format: int32
                               type: integer
                           required:
                           - address
                           type: object
                         type:
-                          description: Type defines the publishing strategy used for the service.
+                          description: Type defines the publishing strategy used for
+                            the service.
                           enum:
                           - LoadBalancer
                           - NodePort
@@ -325,17 +408,21 @@ spec:
                   type: object
                 type: array
               signingKey:
-                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                description: LocalObjectReference contains enough information to let
+                  you locate the referenced object inside the same namespace.
                 properties:
                   name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
               sshKey:
-                description: LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.
+                description: LocalObjectReference contains enough information to let
+                  you locate the referenced object inside the same namespace.
                 properties:
                   name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
             required:
@@ -358,25 +445,48 @@ spec:
             description: HostedControlPlaneStatus defines the observed state of HostedControlPlane
             properties:
               conditions:
-                description: 'Condition contains details for one aspect of the current state of the HostedControlPlane. Current condition types are: "Available"'
+                description: 'Condition contains details for one aspect of the current
+                  state of the HostedControlPlane. Current condition types are: "Available"'
                 items:
-                  description: "Condition contains details for one aspect of the current state of this API Resource. --- This struct is intended for direct use as an array at the field path .status.conditions.  For example, type FooStatus struct{     // Represents the observations of a foo's current state.     // Known .status.conditions.type are: \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type     // +patchStrategy=merge     // +listType=map     // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"` \n     // other fields }"
+                  description: "Condition contains details for one aspect of the current
+                    state of this API Resource. --- This struct is intended for direct
+                    use as an array at the field path .status.conditions.  For example,
+                    type FooStatus struct{     // Represents the observations of a
+                    foo's current state.     // Known .status.conditions.type are:
+                    \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type
+                    \    // +patchStrategy=merge     // +listType=map     // +listMapKey=type
+                    \    Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
+                    \n     // other fields }"
                   properties:
                     lastTransitionTime:
-                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      description: lastTransitionTime is the last time the condition
+                        transitioned from one status to another. This should be when
+                        the underlying condition changed.  If that is not known, then
+                        using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: message is a human readable message indicating details about the transition. This may be an empty string.
+                      description: message is a human readable message indicating
+                        details about the transition. This may be an empty string.
                       maxLength: 32768
                       type: string
                     observedGeneration:
-                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
+                      description: observedGeneration represents the .metadata.generation
+                        that the condition was set based upon. For instance, if .metadata.generation
+                        is currently 12, but the .status.conditions[x].observedGeneration
+                        is 9, the condition is out of date with respect to the current
+                        state of the instance.
                       format: int64
                       minimum: 0
                       type: integer
                     reason:
-                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
+                      description: reason contains a programmatic identifier indicating
+                        the reason for the condition's last transition. Producers
+                        of specific condition types may define expected values and
+                        meanings for this field, and whether the values are considered
+                        a guaranteed API. The value should be a CamelCase string.
+                        This field may not be empty.
                       maxLength: 1024
                       minLength: 1
                       pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
@@ -389,7 +499,11 @@ spec:
                       - Unknown
                       type: string
                     type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase. --- Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be useful (see .node.status.conditions), the ability to deconflict is important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        --- Many .condition.type values are consistent across resources
+                        like Available, but because arbitrary conditions can be useful
+                        (see .node.status.conditions), the ability to deconflict is
+                        important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
                       maxLength: 316
                       pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
@@ -402,7 +516,9 @@ spec:
                   type: object
                 type: array
               controlPlaneEndpoint:
-                description: ControlPlaneEndpoint contains the endpoint information by which external clients can access the control plane.  This is populated after the infrastructure is ready.
+                description: ControlPlaneEndpoint contains the endpoint information
+                  by which external clients can access the control plane.  This is
+                  populated after the infrastructure is ready.
                 properties:
                   host:
                     description: Host is the hostname on which the API server is serving.
@@ -417,14 +533,20 @@ spec:
                 type: object
               externalManagedControlPlane:
                 default: true
-                description: ExternalManagedControlPlane indicates to cluster-api that the control plane is managed by an external service. https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468
+                description: ExternalManagedControlPlane indicates to cluster-api
+                  that the control plane is managed by an external service. https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468
                 type: boolean
               initialized:
                 default: false
-                description: Initialized denotes whether or not the control plane has provided a kubeadm-config. Once this condition is marked true, its value is never changed. See the Ready condition for an indication of the current readiness of the cluster's control plane. This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L238-L252
+                description: Initialized denotes whether or not the control plane
+                  has provided a kubeadm-config. Once this condition is marked true,
+                  its value is never changed. See the Ready condition for an indication
+                  of the current readiness of the cluster's control plane. This satisfies
+                  CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L238-L252
                 type: boolean
               kubeConfig:
-                description: KubeConfig is a reference to the secret containing the default kubeconfig for this control plane.
+                description: KubeConfig is a reference to the secret containing the
+                  default kubeconfig for this control plane.
                 properties:
                   key:
                     type: string
@@ -435,18 +557,22 @@ spec:
                 - name
                 type: object
               lastReleaseImageTransitionTime:
-                description: lastReleaseImageTransitionTime is the time of the last update to the current releaseImage property.
+                description: lastReleaseImageTransitionTime is the time of the last
+                  update to the current releaseImage property.
                 format: date-time
                 type: string
               ready:
                 default: false
-                description: Ready denotes that the HostedControlPlane API Server is ready to receive requests This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230
+                description: Ready denotes that the HostedControlPlane API Server
+                  is ready to receive requests This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230
                 type: boolean
               releaseImage:
-                description: ReleaseImage is the release image applied to the hosted control plane.
+                description: ReleaseImage is the release image applied to the hosted
+                  control plane.
                 type: string
               version:
-                description: Version is the semantic version of the release applied by the hosted control plane operator
+                description: Version is the semantic version of the release applied
+                  by the hosted control plane operator
                 type: string
             required:
             - conditions

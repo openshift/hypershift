@@ -40,7 +40,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: oauthLabels,
@@ -84,7 +84,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	}
 	deploymentConfig.ApplyTo(deployment)
 	if len(identityProviders) > 0 {
-		_, volumeMountInfo, err := convertIdentityProviders(ctx, identityProviders, client, deployment.Namespace)
+		_, volumeMountInfo, err := convertIdentityProviders(ctx, identityProviders, providerOverrides, client, deployment.Namespace)
 		if err != nil {
 			return err
 		}

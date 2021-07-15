@@ -76,7 +76,7 @@ func (i *IDPVolumeMountInfo) SecretPath(index int, secretName, field, key string
 	return path.Join(i.VolumeMounts[i.Container][v.Name], key)
 }
 
-func convertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
+func convertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
 	converted := make([]osinv1.IdentityProvider, 0, len(identityProviders))
 	errs := []error{}
 	volumeMountInfo := &IDPVolumeMountInfo{
@@ -87,7 +87,11 @@ func convertIdentityProviders(ctx context.Context, identityProviders []configv1.
 	}
 
 	for i, idp := range defaultIDPMappingMethods(identityProviders) {
-		data, err := convertProviderConfigToIDPData(ctx, &idp.IdentityProviderConfig, i, volumeMountInfo, kclient, namespace)
+		var providerConfigOverride *ConfigOverride = nil
+		if _, ok := providerOverrides[idp.Name]; ok {
+			providerConfigOverride = providerOverrides[idp.Name]
+		}
+		data, err := convertProviderConfigToIDPData(ctx, &idp.IdentityProviderConfig, providerConfigOverride, i, volumeMountInfo, kclient, namespace)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to apply IDP %s config: %v", idp.Name, err))
 			continue
@@ -116,6 +120,7 @@ func defaultIDPMappingMethods(identityProviders []configv1.IdentityProvider) []c
 		if out[i].MappingMethod == "" {
 			out[i].MappingMethod = configv1.MappingMethodClaim
 		}
+
 	}
 
 	return out
@@ -124,6 +129,7 @@ func defaultIDPMappingMethods(identityProviders []configv1.IdentityProvider) []c
 func convertProviderConfigToIDPData(
 	ctx context.Context,
 	providerConfig *configv1.IdentityProviderConfig,
+	configOverride *ConfigOverride,
 	i int,
 	idpVolumeMounts *IDPVolumeMountInfo,
 	kclient crclient.Client,
@@ -299,11 +305,6 @@ func convertProviderConfigToIDPData(
 			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
 		}
 
-		urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA)
-		if err != nil {
-			return nil, err
-		}
-
 		openIDProvider := &osinv1.OpenIDIdentityProvider{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "OpenIDIdentityProvider",
@@ -317,14 +318,24 @@ func convertProviderConfigToIDPData(
 			},
 			ExtraScopes:              openIDConfig.ExtraScopes,
 			ExtraAuthorizeParameters: openIDConfig.ExtraAuthorizeParameters,
-			URLs:                     *urls,
-			Claims: osinv1.OpenIDClaims{
+		}
+		//Handle special case for IBM Cloud's OIDC provider (need to override some fields not available in public api)
+		if configOverride != nil {
+			openIDProvider.URLs = configOverride.URLs
+			openIDProvider.Claims = configOverride.Claims
+		} else {
+			urls, err := discoverOpenIDURLs(ctx, kclient, openIDConfig.Issuer, corev1.ServiceAccountRootCAKey, namespace, openIDConfig.CA)
+			if err != nil {
+				return nil, err
+			}
+			openIDProvider.URLs = *urls
+			openIDProvider.Claims = osinv1.OpenIDClaims{
 				// There is no longer a user-facing setting for ID as it is considered unsafe
 				ID:                []string{configv1.UserIDClaim},
 				PreferredUsername: openIDConfig.Claims.PreferredUsername,
 				Name:              openIDConfig.Claims.Name,
 				Email:             openIDConfig.Claims.Email,
-			},
+			}
 		}
 		if len(openIDConfig.CA.Name) > 0 {
 			openIDProvider.CA = idpVolumeMounts.ConfigMapPath(i, openIDConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
@@ -337,7 +348,7 @@ func convertProviderConfigToIDPData(
 		challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(
 			ctx,
 			kclient,
-			urls.Token,
+			openIDProvider.URLs.Token,
 			openIDConfig.ClientID,
 			namespace,
 			openIDConfig.CA,
@@ -347,13 +358,12 @@ func convertProviderConfigToIDPData(
 			return nil, fmt.Errorf("error attempting password grant flow: %v", err)
 		}
 		data.challenge = challengeFlowsAllowed
-
+		data.provider = openIDProvider
 	case configv1.IdentityProviderTypeRequestHeader:
 		requestHeaderConfig := providerConfig.RequestHeader
 		if requestHeaderConfig == nil {
 			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
 		}
-
 		data.provider = &osinv1.RequestHeaderIdentityProvider{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "RequestHeaderIdentityProvider",
