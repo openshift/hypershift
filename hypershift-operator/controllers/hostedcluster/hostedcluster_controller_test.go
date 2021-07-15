@@ -5,16 +5,18 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	configv1 "github.com/openshift/api/config/v1"
+	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/pointer"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
-	"k8s.io/utils/pointer"
 )
 
 var Now = metav1.NewTime(time.Now())
@@ -367,6 +369,62 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 				if observedArgs.Has(arg) {
 					t.Errorf("Did not expect to find \"%s\" in observed arguments", arg)
 				}
+			}
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
+	tests := []struct {
+		name                        string
+		networking                  *hyperv1.APIServerNetworking
+		expectedAPIAdvertiseAddress *string
+		expectedAPIPort             *int32
+	}{
+		{
+			name:                        "not specified",
+			networking:                  nil,
+			expectedAPIAdvertiseAddress: nil,
+			expectedAPIPort:             nil,
+		},
+		{
+			name: "advertise address specified",
+			networking: &hyperv1.APIServerNetworking{
+				AdvertiseAddress: pointer.StringPtr("1.2.3.4"),
+			},
+			expectedAPIAdvertiseAddress: pointer.StringPtr("1.2.3.4"),
+		},
+		{
+			name: "port specified",
+			networking: &hyperv1.APIServerNetworking{
+				Port: pointer.Int32Ptr(1234),
+			},
+			expectedAPIPort: pointer.Int32Ptr(1234),
+		},
+		{
+			name: "both specified",
+			networking: &hyperv1.APIServerNetworking{
+				Port:             pointer.Int32Ptr(6789),
+				AdvertiseAddress: pointer.StringPtr("9.8.7.6"),
+			},
+			expectedAPIPort:             pointer.Int32Ptr(6789),
+			expectedAPIAdvertiseAddress: pointer.StringPtr("9.8.7.6"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hostedCluster := &hyperv1.HostedCluster{}
+			hostedCluster.Spec.Networking.APIServer = test.networking
+			hostedControlPlane := &hyperv1.HostedControlPlane{}
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			g := NewGomegaWithT(t)
+			if test.networking != nil {
+				g.Expect(hostedControlPlane.Spec.APIPort).To(Equal(test.expectedAPIPort))
+				g.Expect(hostedControlPlane.Spec.APIAdvertiseAddress).To(Equal(test.expectedAPIAdvertiseAddress))
 			}
 		})
 	}

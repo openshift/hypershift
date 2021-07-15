@@ -164,6 +164,23 @@ type ClusterNetworking struct {
 	// NetworkType specifies the SDN provider used for cluster networking.
 	// +kubebuilder:default:="OpenShiftSDN"
 	NetworkType NetworkType `json:"networkType"`
+
+	// APIServer contains advanced network settings for the API server that affect
+	// how the APIServer is exposed inside a worker node.
+	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
+}
+
+// APIServerNetworking specifies how the APIServer is exposed inside a worker node.
+type APIServerNetworking struct {
+	// AdvertiseAddress is the address that workers will use to talk to the
+	// API server. This is an address associated with the loopback adapter of
+	// each worker. If not specified, 172.20.0.1 is used.
+	AdvertiseAddress *string `json:"advertiseAddress,omitempty"`
+
+	// Port is the port at which the APIServer is exposed inside a worker node
+	// Other pods using host networking cannot listen on this port. If not
+	// specified, 6443 is used.
+	Port *int32 `json:"port,omitempty"`
 }
 
 // NetworkType specifies the SDN provider used for cluster networking.

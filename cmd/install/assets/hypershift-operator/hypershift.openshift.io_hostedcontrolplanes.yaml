@@ -41,6 +41,15 @@ spec:
           spec:
             description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
             properties:
+              apiAdvertiseAddress:
+                description: APIAdvertiseAddress is the address at which the APIServer
+                  listens inside a worker.
+                type: string
+              apiPort:
+                description: APIPort is the port at which the APIServer listens inside
+                  a worker
+                format: int32
+                type: integer
               auditWebhook:
                 description: AuditWebhook contains metadata for configuring an audit
                   webhook endpoint for a cluster to process cluster audit events.
