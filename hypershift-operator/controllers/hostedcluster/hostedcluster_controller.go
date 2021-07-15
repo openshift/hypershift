@@ -753,6 +753,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
 	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
 	hcp.Spec.NetworkType = hcluster.Spec.Networking.NetworkType
+	if hcluster.Spec.Networking.APIServer != nil {
+		hcp.Spec.APIAdvertiseAddress = hcluster.Spec.Networking.APIServer.AdvertiseAddress
+		hcp.Spec.APIPort = hcluster.Spec.Networking.APIServer.Port
+	}
+
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
 	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.Services = hcluster.Spec.Services

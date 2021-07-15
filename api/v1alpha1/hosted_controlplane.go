@@ -39,6 +39,14 @@ type HostedControlPlaneSpec struct {
 	Platform    PlatformSpec                `json:"platform"`
 	DNS         DNSSpec                     `json:"dns"`
 
+	// APIPort is the port at which the APIServer listens inside a worker
+	// +optional
+	APIPort *int32 `json:"apiPort,omitempty"`
+	// APIAdvertiseAddress is the address at which the APIServer listens
+	// inside a worker.
+	// +optional
+	APIAdvertiseAddress *string `json:"apiAdvertiseAddress,omitempty"`
+
 	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
 	// Defaults to SingleReplica when not set
 	// +optional

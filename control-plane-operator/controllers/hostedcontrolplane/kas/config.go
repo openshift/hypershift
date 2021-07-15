@@ -81,7 +81,7 @@ func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServer
 			ServingInfo: configv1.HTTPServingInfo{
 				ServingInfo: configv1.ServingInfo{
 					NamedCertificates: configNamedCertificates(p.NamedCertificates),
-					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.ApiServerPort),
+					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.APIServerPort),
 					BindNetwork:       "tcp4",
 					CipherSuites:      hcpconfig.CipherSuites(p.TLSSecurityProfile),
 					MinTLSVersion:     hcpconfig.MinTLSVersion(p.TLSSecurityProfile),

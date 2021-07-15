@@ -52,10 +52,14 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 		Namespace:                    hcp.Namespace,
 		ExternalAPIAddress:           apiExternalAddress,
 		ExternalKconnectivityAddress: konnectivityExternalAddress,
-		NodeInternalAPIServerIP:      config.DefaultAdvertiseAddress,
 		ExternalOauthAddress:         oauthExternalAddress,
 		IngressSubdomain:             config.IngressSubdomain(hcp),
 		OwnerRef:                     config.OwnerRefFrom(hcp),
+	}
+	if hcp.Spec.APIAdvertiseAddress != nil {
+		p.NodeInternalAPIServerIP = *hcp.Spec.APIAdvertiseAddress
+	} else {
+		p.NodeInternalAPIServerIP = config.DefaultAdvertiseAddress
 	}
 	return p
 }
