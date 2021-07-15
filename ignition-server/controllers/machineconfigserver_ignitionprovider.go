@@ -213,14 +213,6 @@ cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests
 	)
 
 	customMachineConfigArg := `
-cat <<"EOF" > "./copy-ignition-config.sh"
-#!/bin/bash
-set -eo pipefail
-name="${1}"
-oc get cm ${name} -n "${NAMESPACE}" -o jsonpath='{ .data.data }' > "/mcc-manifests/bootstrap/manifests/${name/#ignition-config-//}.yaml"
-EOF
-chmod +x ./copy-ignition-config.sh
-oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh
 cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
 
 	return &corev1.Pod{

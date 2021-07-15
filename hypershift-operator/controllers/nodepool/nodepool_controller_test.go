@@ -225,6 +225,26 @@ func TestValidateAutoscaling(t *testing.T) {
 }
 
 func TestGetConfig(t *testing.T) {
+	coreMachineConfig1 := `
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: config-1
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents:
+        source: "[Service]\nType=oneshot\nExecStart=/usr/bin/echo Hello Core\n\n[Install]\nWantedBy=multi-user.target"
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/core.sh
+`
+
 	machineConfig1 := `
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
@@ -278,11 +298,12 @@ spec:
 
 	namespace := "test"
 	testCases := []struct {
-		name     string
-		nodePool *hyperv1.NodePool
-		config   []client.Object
-		expect   string
-		error    bool
+		name                        string
+		nodePool                    *hyperv1.NodePool
+		config                      []client.Object
+		expectedCoreConfigResources int
+		expect                      string
+		error                       bool
 	}{
 		{
 			name: "gets a single valid MachineConfig",
@@ -402,6 +423,49 @@ spec:
 			expect: "",
 			error:  true,
 		},
+		{
+			name: "gets a single valid MachineConfig with a core MachineConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "machineconfig-1",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			config: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "machineconfig-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: machineConfig1,
+					},
+					BinaryData: nil,
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "core-machineconfig",
+						Namespace: namespace,
+						Labels: map[string]string{
+							nodePoolCoreIgnitionConfigLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: coreMachineConfig1,
+					},
+				},
+			},
+			expectedCoreConfigResources: 1,
+			expect:                      "\n---\n" + coreMachineConfig1 + "\n---\n" + machineConfig1,
+			error:                       false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -411,7 +475,7 @@ spec:
 			r := NodePoolReconciler{
 				Client: fake.NewClientBuilder().WithObjects(tc.config...).Build(),
 			}
-			got, err := r.getConfig(context.Background(), tc.nodePool)
+			got, err := r.getConfig(context.Background(), tc.nodePool, tc.expectedCoreConfigResources)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				return
