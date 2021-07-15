@@ -209,8 +209,7 @@ const (
 )
 
 const (
-	SecurePortOverrideAnnotation = "hypershift.openshift.io/secureport-override"
-	PortierisImageAnnotation     = "hypershift.openshift.io/portieris-image"
+	PortierisImageAnnotation = "hypershift.openshift.io/portieris-image"
 )
 
 type PlatformSpec struct {
