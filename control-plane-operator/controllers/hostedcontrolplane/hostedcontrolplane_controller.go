@@ -1627,7 +1627,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 
 	workerServiceCA := manifests.OpenShiftControllerManagerServiceCAWorkerManifest(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, workerServiceCA, func() error {
-		return ocm.ReconcileOpenShiftControllerManagerNamespaceWorkerManifest(workerServiceCA, p.OwnerRef)
+		return ocm.ReconcileOpenShiftControllerManagerServiceCAWorkerManifest(workerServiceCA, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager worker service ca: %w", err)
 	}
