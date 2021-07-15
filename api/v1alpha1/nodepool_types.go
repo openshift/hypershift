@@ -7,21 +7,22 @@ import (
 )
 
 const (
-	NodePoolAMIDiscoveryFailed              = "AMIDiscoveryFailed"
-	NodePoolAutoscalingEnabledConditionType = "AutoscalingEnabled"
-	NodePoolAutorepairEnabledConditionType  = "AutorepairEnabled"
-	NodePoolAsExpectedConditionReason       = "AsExpected"
-	NodePoolValidationFailedConditionReason = "ValidationFailed"
-	NodePoolUpgradingConditionType          = "Upgrading"
-	NodePoolUpdatingConfigConditionType     = "UpdatingConfig"
+	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
+	NodePoolValidAMIConditionType                = "ValidAMI"
+	NodePoolConfigValidConfigConditionType       = "ValidConfig"
+	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
+	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
+	NodePoolAutorepairEnabledConditionType       = "AutorepairEnabled"
+	NodePoolUpdatingVersionConditionType         = "UpdatingVersion"
+	NodePoolUpdatingConfigConditionType          = "UpdatingConfig"
+	NodePoolAsExpectedConditionReason            = "AsExpected"
+	NodePoolValidationFailedConditionReason      = "ValidationFailed"
 )
 
 // The following are reasons for the IgnitionEndpointAvailable condition.
 const (
 	IgnitionEndpointMissingReason string = "IgnitionEndpointMissing"
 	IgnitionCACertMissingReason   string = "IgnitionCACertMissing"
-	IgnitionTokenMissingError     string = "IgnitionTokenError"
-	IgnitionUserDataErrorReason   string = "IgnitionUserDataError"
 )
 
 func init() {
@@ -40,7 +41,8 @@ func init() {
 // +kubebuilder:printcolumn:name="Autoscaling",type="string",JSONPath=".status.conditions[?(@.type==\"AutoscalingEnabled\")].status",description="Autoscaling Enabled"
 // +kubebuilder:printcolumn:name="Autorepair",type="string",JSONPath=".status.conditions[?(@.type==\"AutorepairEnabled\")].status",description="Node Autorepair Enabled"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Current version"
-// +kubebuilder:printcolumn:name="Upgrading",type="string",JSONPath=".status.conditions[?(@.type==\"Upgrading\")].status",description="Upgrade in progress"
+// +kubebuilder:printcolumn:name="UpdatingVersion",type="string",JSONPath=".status.conditions[?(@.type==\"UpdatingVersion\")].status",description="UpdatingVersion in progress"
+// +kubebuilder:printcolumn:name="UpdatingConfig",type="string",JSONPath=".status.conditions[?(@.type==\"UpdatingConfig\")].status",description="UpdatingConfig in progress"
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -148,10 +150,10 @@ type NodePoolManagement struct {
 type NodePoolAutoScaling struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=1
-	Min *int `json:"min"`
+	Min *int32 `json:"min"`
 	// +optional
 	// +kubebuilder:validation:Minimum=1
-	Max *int `json:"max"`
+	Max *int32 `json:"max"`
 }
 
 // NodePoolPlatform is the platform-specific configuration for a node
