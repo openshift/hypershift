@@ -61,6 +61,7 @@ const (
 	nodePoolAnnotationCurrentConfig         = "hypershift.openshift.io/nodePoolCurrentConfig"
 	nodePoolAnnotationCurrentConfigVersion  = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationCurrentProviderConfig = "hypershift.openshift.io/nodePoolCurrentProviderConfig"
+	nodePoolCoreIgnitionConfigLabel         = "hypershift.openshift.io/core-ignition-config"
 	TokenSecretReleaseKey                   = "release"
 	TokenSecretTokenKey                     = "token"
 	TokenSecretConfigKey                    = "config"
@@ -378,7 +379,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Validate config input.
-	config, err := r.getConfig(ctx, nodePool)
+	// 3 expectedCoreConfigResources: fips, ssh and haproxy.
+	config, err := r.getConfig(ctx, nodePool, 3)
 	if err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
@@ -613,8 +615,8 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = make(map[string]string)
 	}
-	tokenSecret.Annotations[TokenSecretAnnotation] = "true"
 	tokenSecret.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
+	tokenSecret.Annotations[TokenSecretAnnotation] = "true"
 
 	if tokenSecret.Data == nil {
 		tokenSecret.Data = map[string][]byte{}
@@ -851,13 +853,23 @@ func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config 
 	}
 }
 
-func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool) (string, error) {
-	if nodePool.Spec.Config == nil {
-		return "", nil
-	}
-
+func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int) (string, error) {
+	var configs []corev1.ConfigMap
 	allConfigPlainText := ""
 	var errors []error
+
+	coreConfigMapList := &corev1.ConfigMapList{}
+	if err := r.List(ctx, coreConfigMapList, client.MatchingLabels{
+		nodePoolCoreIgnitionConfigLabel: "true",
+	}); err != nil {
+		errors = append(errors, err)
+	}
+
+	if len(coreConfigMapList.Items) != expectedCoreConfigResources {
+		errors = append(errors, fmt.Errorf("core ingition config has not been created yet"))
+	}
+
+	configs = coreConfigMapList.Items
 	for _, config := range nodePool.Spec.Config {
 		configConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -869,10 +881,13 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 			errors = append(errors, err)
 			continue
 		}
+		configs = append(configs, *configConfigMap)
+	}
 
-		manifest := configConfigMap.Data[TokenSecretConfigKey]
+	for _, config := range configs {
+		manifest := config.Data[TokenSecretConfigKey]
 		if err := validateConfigManifest([]byte(manifest)); err != nil {
-			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", configConfigMap.Name, err))
+			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
 			continue
 		}
 
