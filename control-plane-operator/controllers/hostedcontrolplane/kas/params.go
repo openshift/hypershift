@@ -87,8 +87,10 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	} else {
 		params.APIServerPort = config.DefaultAPIServerPort
 	}
-	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
-		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
+	if hcp.Annotations != nil {
+		if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
+			params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
+		}
 	}
 
 	switch hcp.Spec.Etcd.ManagementType {
