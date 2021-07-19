@@ -276,6 +276,64 @@ func (o HyperShiftOperatorClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding
 	return binding
 }
 
+type HyperShiftOperatorRole struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftOperatorRole) Build() *rbacv1.Role {
+	role := &rbacv1.Role{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Role",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "hypershift-operator",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"coordination.k8s.io"},
+				Resources: []string{
+					"leases",
+				},
+				Verbs: []string{"*"},
+			},
+		},
+	}
+	return role
+}
+
+type HyperShiftOperatorRoleBinding struct {
+	Role           *rbacv1.Role
+	ServiceAccount *corev1.ServiceAccount
+}
+
+func (o HyperShiftOperatorRoleBinding) Build() *rbacv1.RoleBinding {
+	binding := &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "RoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.ServiceAccount.Namespace,
+			Name:      "hypershift-operator",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     o.Role.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      o.ServiceAccount.Name,
+				Namespace: o.ServiceAccount.Namespace,
+			},
+		},
+	}
+	return binding
+}
+
 type HyperShiftHostedClustersCustomResourceDefinition struct{}
 
 func (o HyperShiftHostedClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
