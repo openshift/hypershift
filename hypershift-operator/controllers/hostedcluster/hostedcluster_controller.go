@@ -88,9 +88,18 @@ var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 type HostedClusterReconciler struct {
 	client.Client
 
-	Log           logr.Logger
-	OperatorImage string
-	Clock         clock.Clock
+	// HostedControlPlaneOperatorImage is the image used to deploy the hosted control
+	// plane operator.
+	HostedControlPlaneOperatorImage string
+
+	// IgnitionServerImage is the image used to deploy the ignition server.
+	IgnitionServerImage string
+
+	// Log is a thread-safe logger.
+	Log logr.Logger
+
+	// Clock is used to determine the time in a testable way.
+	Clock clock.Clock
 
 	tracer trace.Tracer
 }
@@ -1001,7 +1010,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, r.OperatorImage, controlPlaneOperatorServiceAccount)
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, r.HostedControlPlaneOperatorImage, controlPlaneOperatorServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1243,7 +1252,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 					Containers: []corev1.Container{
 						{
 							Name:            ignitionserver.ResourceName,
-							Image:           r.OperatorImage,
+							Image:           r.IgnitionServerImage,
 							ImagePullPolicy: corev1.PullAlways,
 							Env: []corev1.EnvVar{
 								{
