@@ -37,6 +37,7 @@ type Options struct {
 	Namespace                  string
 	HyperShiftImage            string
 	HyperShiftOperatorReplicas int32
+	HyperShiftWebhookReplicas  int32
 	Development                bool
 	Render                     bool
 	ExcludeEtcdManifests       bool
@@ -69,8 +70,10 @@ func NewCommand() *cobra.Command {
 		switch {
 		case opts.Development:
 			opts.HyperShiftOperatorReplicas = 0
+			opts.HyperShiftWebhookReplicas = 0
 		default:
 			opts.HyperShiftOperatorReplicas = 1
+			opts.HyperShiftWebhookReplicas = 1
 		}
 
 		var objects []crclient.Object
@@ -165,6 +168,31 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	serviceMonitor := assets.HyperShiftServiceMonitor{
 		Namespace: operatorNamespace,
 	}.Build()
+	webhookServiceAccount := assets.HyperShiftWebhookServiceAccount{
+		Namespace: operatorNamespace,
+	}.Build()
+	webhookRole := assets.HyperShiftWebhookRole{
+		Namespace: operatorNamespace,
+	}.Build()
+	webhookRoleBinding := assets.HyperShiftWebhookRoleBinding{
+		ServiceAccount: operatorServiceAccount,
+		Role:           webhookRole,
+	}.Build()
+	webhookDeployment := assets.HyperShiftWebhookDeployment{
+		Namespace:      operatorNamespace,
+		OperatorImage:  opts.HyperShiftImage,
+		ServiceAccount: webhookServiceAccount,
+		Replicas:       opts.HyperShiftWebhookReplicas,
+	}.Build()
+	webhookService := assets.HyperShiftWebhookService{
+		Namespace: operatorNamespace,
+	}.Build()
+	validatingWebhookConfiguration := assets.HyperShiftValidatingWebhookConfiguration{
+		Namespace: operatorNamespace,
+	}.Build()
+	webhookServiceMonitor := assets.HyperShiftWebhookServiceMonitor{
+		Namespace: operatorNamespace,
+	}.Build()
 
 	return []crclient.Object{
 		hostedClustersCRD,
@@ -183,6 +211,13 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		prometheusRole,
 		prometheusRoleBinding,
 		serviceMonitor,
+		webhookServiceAccount,
+		webhookRole,
+		webhookRoleBinding,
+		webhookDeployment,
+		webhookService,
+		webhookServiceMonitor,
+		validatingWebhookConfiguration,
 	}
 }
 

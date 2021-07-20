@@ -24,7 +24,7 @@ endif
 
 all: build e2e
 
-build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
+build: ignition-server hypershift-operator hypershift-webhook control-plane-operator hosted-cluster-config-operator hypershift
 
 .PHONY: verify
 verify: deps api fmt vet
@@ -42,6 +42,11 @@ ignition-server:
 .PHONY: hypershift-operator
 hypershift-operator:
 	$(GO_BUILD_RECIPE) -o bin/hypershift-operator ./hypershift-operator
+
+# Build hypershift-webhook binary
+.PHONY: hypershift-webhook
+hypershift-webhook:
+	$(GO_BUILD_RECIPE) -o bin/hypershift-webhook ./hypershift-webhook
 
 .PHONY: control-plane-operator
 control-plane-operator:
