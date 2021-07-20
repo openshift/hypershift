@@ -103,6 +103,7 @@ const (
 	KubeAPIServerAvailable      ConditionType = "KubeAPIServerAvailable"
 	InfrastructureReady         ConditionType = "InfrastructureReady"
 	ValidConfiguration          ConditionType = "ValidConfiguration"
+	ClusterOperatorsAvailable   ConditionType = "ClusterOperatorsAvailable"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane

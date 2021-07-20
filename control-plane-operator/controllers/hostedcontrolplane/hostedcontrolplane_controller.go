@@ -10,12 +10,15 @@ import (
 	"math/big"
 	"math/rand"
 	"net/url"
+	"strings"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
@@ -327,6 +330,88 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Log.Info("Infrastructure is not yet ready")
 			}
 		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+	}
+
+	{
+		newCondition := func() metav1.Condition {
+			secret := manifests.KASServiceKubeconfigSecret(hostedControlPlane.Namespace)
+			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(secret), secret); err != nil {
+				return metav1.Condition{
+					Type:    string(hyperv1.ClusterOperatorsAvailable),
+					Status:  metav1.ConditionUnknown,
+					Reason:  "StatusUnknown",
+					Message: fmt.Sprintf("failed to get kubeconfig secret: %v", err),
+				}
+			}
+			kubeConfig, hasKubeConfig := secret.Data[kas.KubeconfigKey]
+			if !hasKubeConfig {
+				return metav1.Condition{
+					Type:    string(hyperv1.ClusterOperatorsAvailable),
+					Status:  metav1.ConditionUnknown,
+					Reason:  "StatusUnknown",
+					Message: fmt.Sprintf("kubeconfig secret is missing %q key", kas.KubeconfigKey),
+				}
+			}
+			restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeConfig)
+			if err != nil {
+				return metav1.Condition{
+					Type:    string(hyperv1.ClusterOperatorsAvailable),
+					Status:  metav1.ConditionUnknown,
+					Reason:  "StatusUnknown",
+					Message: fmt.Sprintf("invalid kubeconfig secret data: %v", err),
+				}
+			}
+			guestClient, err := client.New(restConfig, client.Options{Scheme: r.Scheme()})
+			if err != nil {
+				return metav1.Condition{
+					Type:    string(hyperv1.ClusterOperatorsAvailable),
+					Status:  metav1.ConditionUnknown,
+					Reason:  "StatusUnknown",
+					Message: fmt.Sprintf("failed to create guest kube client: %v", err),
+				}
+			}
+			clusterOperators := &configv1.ClusterOperatorList{}
+			if err := guestClient.List(ctx, clusterOperators); err != nil {
+				return metav1.Condition{
+					Type:    string(hyperv1.ClusterOperatorsAvailable),
+					Status:  metav1.ConditionUnknown,
+					Reason:  "StatusUnknown",
+					Message: fmt.Sprintf("failed to list cluster operators: %v", err),
+				}
+			}
+			if len(clusterOperators.Items) == 0 {
+				return metav1.Condition{
+					Type:    string(hyperv1.ClusterOperatorsAvailable),
+					Status:  metav1.ConditionUnknown,
+					Reason:  "StatusUnknown",
+					Message: "no clusteroperator resources were found",
+				}
+			}
+			unavailableOperators := sets.NewString()
+			for _, operator := range clusterOperators.Items {
+				for _, cond := range operator.Status.Conditions {
+					if cond.Type == configv1.OperatorAvailable && cond.Status != configv1.ConditionTrue {
+						unavailableOperators.Insert(operator.Name)
+					}
+				}
+			}
+			if unavailableOperators.Len() == 0 {
+				return metav1.Condition{
+					Type:   string(hyperv1.ClusterOperatorsAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: "AsExpected",
+				}
+			} else {
+				return metav1.Condition{
+					Type:    string(hyperv1.ClusterOperatorsAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  "ClusterOperatorsUnavailable",
+					Message: "Some operators are unavailable: " + strings.Join(unavailableOperators.List(), ","),
+				}
+			}
+		}()
 		newCondition.ObservedGeneration = hostedControlPlane.Generation
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
