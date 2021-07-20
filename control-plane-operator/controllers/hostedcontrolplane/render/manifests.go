@@ -153,9 +153,9 @@ kind: ConfigMap
 metadata:
   name: {{ .name }}
   labels:
-    ignition-config: "true"
+    hypershift.openshift.io/core-ignition-config: "true"
 data:
-  data: |-
+  config: |-
 {{ indent 4 .content }}
 `
 
