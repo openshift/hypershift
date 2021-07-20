@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 )
 
 const (
@@ -23,7 +24,7 @@ type KonnectivityParams struct {
 	AgentDeamonSetConfig    config.DeploymentConfig
 }
 
-func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32) *KonnectivityParams {
+func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32, workloadConfig *hyperv1.WorkloadConfiguration) *KonnectivityParams {
 	p := &KonnectivityParams{
 		KonnectivityServerImage: images["konnectivity-server"],
 		KonnectivityAgentImage:  images["konnectivity-agent"],
@@ -40,6 +41,8 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.ServerDeploymentConfig.Replicas = 1
+	config.ApplyWorkloadConfig(workloadConfig, &p.ServerDeploymentConfig, manifests.KonnectivityServerDeployment("").Name)
+
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{
@@ -49,6 +52,8 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.AgentDeploymentConfig.Replicas = 1
+	config.ApplyWorkloadConfig(workloadConfig, &p.AgentDeploymentConfig, manifests.KonnectivityAgentDeployment("").Name)
+
 	p.AgentDeamonSetConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{

@@ -9,6 +9,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 )
 
 type KubeSchedulerParams struct {
@@ -19,7 +20,7 @@ type KubeSchedulerParams struct {
 	config.DeploymentConfig `json:",inline"`
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig config.GlobalConfig) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig config.GlobalConfig, workloadConfig *hyperv1.WorkloadConfiguration) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		FeatureGate:    globalConfig.FeatureGate,
 		Scheduler:      globalConfig.Scheduler,
@@ -43,6 +44,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.Replicas = 1
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+	config.ApplyWorkloadConfig(workloadConfig, &params.DeploymentConfig, manifests.SchedulerDeployment("").Name)
 	return params
 }
 

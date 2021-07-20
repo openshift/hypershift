@@ -7,6 +7,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 )
 
 const (
@@ -21,7 +22,7 @@ type ClusterPolicyControllerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *ClusterPolicyControllerParams {
+func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, workloadConfig *hyperv1.WorkloadConfiguration) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
 		Image:     images["cluster-policy-controller"],
 		APIServer: globalConfig.APIServer,
@@ -48,6 +49,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 		params.DeploymentConfig.Replicas = 1
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+	config.ApplyWorkloadConfig(workloadConfig, &params.DeploymentConfig, manifests.ClusterPolicyControllerDeployment("").Name)
 	return params
 }
 
