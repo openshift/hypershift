@@ -139,6 +139,13 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		ClusterRole:    operatorClusterRole,
 		ServiceAccount: operatorServiceAccount,
 	}.Build()
+	operatorRole := assets.HyperShiftOperatorRole{
+		Namespace: operatorNamespace,
+	}.Build()
+	operatorRoleBinding := assets.HyperShiftOperatorRoleBinding{
+		ServiceAccount: operatorServiceAccount,
+		Role:           operatorRole,
+	}.Build()
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		Namespace:      operatorNamespace,
 		OperatorImage:  opts.HyperShiftImage,
@@ -169,6 +176,8 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		operatorServiceAccount,
 		operatorClusterRole,
 		operatorClusterRoleBinding,
+		operatorRole,
+		operatorRoleBinding,
 		operatorDeployment,
 		operatorService,
 		prometheusRole,

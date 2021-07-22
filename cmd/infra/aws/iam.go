@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"text/template"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -22,25 +24,6 @@ import (
 )
 
 const (
-	// requires Provider ARN and Issuer URL
-	oidcTrustPolicyTemplate = `{
-		"Version": "2012-10-17",
-		"Statement": [
-			{
-				"Effect": "Allow",
-				"Principal": {
-					"Federated": "%s"
-				},
-					"Action": "sts:AssumeRoleWithWebIdentity",
-				"Condition": {
-					"StringEquals": {
-						"%s:sub": "%s"
-					}
-				}
-			}
-		]
-	}`
-
 	ingressPermPolicy = `{
 	"Version": "2012-10-17",
 	"Statement": [
@@ -351,7 +334,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
-	ingressTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, providerName, "system:serviceaccount:openshift-ingress-operator:ingress-operator")
+	ingressTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-ingress-operator:ingress-operator")
 	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", ingressTrustPolicy, ingressPermPolicy)
 	if err != nil {
 		return nil, err
@@ -362,7 +345,9 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		Name:      "cloud-credentials",
 	})
 
-	registryTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, providerName, "system:serviceaccount:openshift-image-registry:cluster-image-registry-operator")
+	registryTrustPolicy := oidcTrustPolicy(providerARN, providerName,
+		"system:serviceaccount:openshift-image-registry:cluster-image-registry-operator",
+		"system:serviceaccount:openshift-image-registry:registry")
 	arn, err = o.CreateOIDCRole(iamClient, "openshift-image-registry", registryTrustPolicy, imageRegistryPermPolicy)
 	if err != nil {
 		return nil, err
@@ -373,7 +358,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		Name:      "installer-cloud-credentials",
 	})
 
-	csiTrustPolicy := fmt.Sprintf(oidcTrustPolicyTemplate, providerARN, providerName, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator")
+	csiTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator")
 	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-operator", csiTrustPolicy, awsEBSCSIPermPolicy)
 	if err != nil {
 		return nil, err
@@ -681,4 +666,61 @@ func iamTags(infraID, name string) []*iam.Tag {
 		})
 	}
 	return tags
+}
+
+type oidcTrustPolicyParams struct {
+	ProviderARN     string
+	ProviderName    string
+	ServiceAccounts string
+}
+
+const (
+	oidcTrustPolicyTemplate = `{
+		"Version": "2012-10-17",
+		"Statement": [
+			{
+				"Effect": "Allow",
+				"Principal": {
+					"Federated": "{{ .ProviderARN }}"
+				},
+					"Action": "sts:AssumeRoleWithWebIdentity",
+				"Condition": {
+					"StringEquals": {
+						"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
+					}
+				}
+			}
+		]
+	}`
+)
+
+func oidcTrustPolicy(providerARN, providerName string, serviceAccounts ...string) string {
+	params := oidcTrustPolicyParams{
+		ProviderARN:  providerARN,
+		ProviderName: providerName,
+	}
+	if len(serviceAccounts) == 1 {
+		params.ServiceAccounts = fmt.Sprintf("%q", serviceAccounts[0])
+	} else {
+		sas := &bytes.Buffer{}
+		fmt.Fprintf(sas, "[")
+		for i, sa := range serviceAccounts {
+			fmt.Fprintf(sas, "%q", sa)
+			if i < len(serviceAccounts)-1 {
+				fmt.Fprintf(sas, ", ")
+			}
+		}
+		fmt.Fprintf(sas, "]")
+		params.ServiceAccounts = sas.String()
+	}
+
+	tmpl, err := template.New("oidcTrustPolicy").Parse(oidcTrustPolicyTemplate)
+	if err != nil {
+		panic(fmt.Sprintf("programmer error, oidcTrustPolicyTemplate failed to parse: %v", err))
+	}
+	b := &bytes.Buffer{}
+	if err = tmpl.Execute(b, params); err != nil {
+		panic(fmt.Sprintf("failed to execute oidcTrustPolicyTemplate: %v", err))
+	}
+	return b.String()
 }

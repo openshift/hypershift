@@ -57,6 +57,14 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			},
 		},
 	}
+	if hcp.Annotations != nil {
+		if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {
+			p.KonnectivityServerImage = hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]
+		}
+		if _, ok := hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
+			p.KonnectivityAgentImage = hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]
+		}
+	}
 	return p
 }
 
