@@ -89,7 +89,11 @@ type NodePoolSpec struct {
 type NodePoolStatus struct {
 	// NodeCount is the most recently observed number of replicas.
 	// +optional
-	NodeCount  int                `json:"nodeCount"`
+	NodeCount int32 `json:"nodeCount"`
+
+	// TODO (alberto): store list of existing nodes?
+	// Nodes []corev1.Nodes
+
 	Conditions []metav1.Condition `json:"conditions"`
 
 	// Version is the semantic version of the release applied by
@@ -148,12 +152,10 @@ type NodePoolManagement struct {
 }
 
 type NodePoolAutoScaling struct {
-	// +optional
 	// +kubebuilder:validation:Minimum=1
-	Min *int32 `json:"min"`
-	// +optional
+	Min int32 `json:"min"`
 	// +kubebuilder:validation:Minimum=1
-	Max *int32 `json:"max"`
+	Max int32 `json:"max"`
 }
 
 // NodePoolPlatform is the platform-specific configuration for a node

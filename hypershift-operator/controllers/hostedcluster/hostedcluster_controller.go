@@ -72,7 +72,7 @@ const (
 	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
 
 	// TODO (alberto): Eventually these images will be mirrored and pulled from an internal registry.
-	imageClusterAutoscaler = "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0"
+	imageClusterAutoscaler = "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0"
 	imageCAPI              = "k8s.gcr.io/cluster-api/cluster-api-controller:v0.4.0-beta.0"
 	// TODO (alberto): update when v1alpha4 / v.0.7 release is cut.
 	// This comes from the post submit job https://github.com/kubernetes/test-infra/pull/22532/files
@@ -1914,6 +1914,11 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.Ser
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
 		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
 		"--clusterapi-cloud-config-authoritative",
+		// TODO (alberto): Is this a fair assumption?
+		// There's currently pods with local storage e.g grafana and image-registry.
+		// Without this option after after a scaling out operation and an “unfortunate” reschedule
+		// we might end up locked with three nodes.
+		"--skip-nodes-with-local-storage=false",
 		"--alsologtostderr",
 		"--v=4",
 	}
