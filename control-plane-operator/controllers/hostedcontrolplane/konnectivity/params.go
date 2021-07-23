@@ -57,6 +57,9 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			},
 		},
 	}
+	p.AgentDeamonSetConfig.Scheduling = config.Scheduling{
+		PriorityClass: DefaultPriorityClass,
+	}
 	if hcp.Annotations != nil {
 		if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {
 			p.KonnectivityServerImage = hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]
