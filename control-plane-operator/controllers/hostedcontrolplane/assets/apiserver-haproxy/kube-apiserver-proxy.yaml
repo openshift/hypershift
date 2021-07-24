@@ -10,6 +10,9 @@ spec:
   containers:
   - name: haproxy
     image: {{ imageFor "haproxy-router" }}
+    priorityClassName: system-node-critical
+    securityContext:
+      runAsUser: 1001
     livenessProbe:
       failureThreshold: 3
       initialDelaySeconds: 120
