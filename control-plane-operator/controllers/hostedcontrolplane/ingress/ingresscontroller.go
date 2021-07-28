@@ -36,9 +36,19 @@ func reconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 		Type: operatorv1.LoadBalancerServiceStrategyType,
 	}
 	switch platformType {
+	case hyperv1.NonePlatform:
+		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+			Type: operatorv1.HostNetworkStrategyType,
+		}
+		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
+			Name: manifests.IngressDefaultIngressControllerCert().Name,
+		}
 	case hyperv1.IBMCloudPlatform:
-		ingressController.Spec.EndpointPublishingStrategy.LoadBalancer = &operatorv1.LoadBalancerStrategy{
-			Scope: operatorv1.ExternalLoadBalancer,
+		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+			Type: operatorv1.LoadBalancerServiceStrategyType,
+			LoadBalancer: &operatorv1.LoadBalancerStrategy{
+				Scope: operatorv1.ExternalLoadBalancer,
+			},
 		}
 		ingressController.Spec.NodePlacement = &operatorv1.NodePlacement{
 			Tolerations: []corev1.Toleration{
@@ -49,6 +59,9 @@ func reconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 			},
 		}
 	default:
+		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+			Type: operatorv1.LoadBalancerServiceStrategyType,
+		}
 		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
 			Name: manifests.IngressDefaultIngressControllerCert().Name,
 		}

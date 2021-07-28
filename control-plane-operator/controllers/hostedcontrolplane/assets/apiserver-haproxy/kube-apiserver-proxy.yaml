@@ -10,15 +10,32 @@ spec:
   containers:
   - name: haproxy
     image: {{ imageFor "haproxy-router" }}
+    priorityClassName: system-node-critical
+    securityContext:
+      runAsUser: 1001
+    resources:
+      limits:
+        cpu: 300m
+        memory: 512M
+      requests:
+        cpu: 13m
+        memory: 16M
     livenessProbe:
       failureThreshold: 3
       initialDelaySeconds: 120
       periodSeconds: 120
       successThreshold: 1
-      tcpSocket:
+      httpGet:
+        path: /version
+        scheme: HTTPS
         host: {{ .ExternalAPIAddress }}
         port: {{ .InternalAPIPort }}
       timeoutSeconds: 60
+    ports:
+    - containerPort: {{ .InternalAPIPort }}
+      hostPort: {{ .InternalAPIPort }}
+      protocol: TCP
+      name: apiserver
     command:
     - haproxy
     - -f
