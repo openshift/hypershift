@@ -24,4 +24,9 @@ spec:
       maxInQueue: 0
       maxRunning: 0
       maxWaitInQueue: 0s
+{{- if eq .PlatformType "None" }}
+  storage:
+    emptyDir: {}
+{{- else }}
   storage: {}
+{{- end }}
