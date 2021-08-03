@@ -13,6 +13,7 @@ func ReconcileMachineConfigServerCert(secret, ca *corev1.Secret, ownerRef config
 		"machine-config-server",
 		fmt.Sprintf("machine-config-server.%s.svc", secret.Namespace),
 		fmt.Sprintf("machine-config-server.%s.svc.cluster.local", secret.Namespace),
+		fmt.Sprintf("*.machine-config-server.%s.svc.cluster.local", secret.Namespace),
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "machine-config-server", "openshift", X509DefaultUsage, X509UsageClientServerAuth, hostNames, nil)
 }
