@@ -42,10 +42,8 @@ type CreateIAMOutput struct {
 	IssuerURL   string                       `json:"issuerURL"`
 	Roles       []hyperv1.AWSRoleCredentials `json:"roles"`
 
-	KubeCloudControllerUserAccessKeyID     string `json:"kubeCloudControllerUserAccessKeyID"`
-	KubeCloudControllerUserAccessKeySecret string `json:"kubeCloudControllerUserAccessKeySecret"`
-	NodePoolManagementUserAccessKeyID      string `json:"nodePoolManagementUserAccessKeyID"`
-	NodePoolManagementUserAccessKeySecret  string `json:"nodePoolManagementUserAccessKeySecret"`
+	KubeCloudControllerRoleARN string `json:"kubeCloudControllerRoleARN"`
+	NodePoolManagementRoleARN  string `json:"nodePoolManagementRoleARN"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -155,20 +153,6 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		return nil, err
 	}
 	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
-
-	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller"), cloudControllerPolicy); err != nil {
-		return nil, err
-	} else {
-		results.KubeCloudControllerUserAccessKeyID = aws.StringValue(key.AccessKeyId)
-		results.KubeCloudControllerUserAccessKeySecret = aws.StringValue(key.SecretAccessKey)
-	}
-
-	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "node-pool"), nodePoolPolicy); err != nil {
-		return nil, err
-	} else {
-		results.NodePoolManagementUserAccessKeyID = aws.StringValue(key.AccessKeyId)
-		results.NodePoolManagementUserAccessKeySecret = aws.StringValue(key.SecretAccessKey)
-	}
 
 	return results, nil
 }

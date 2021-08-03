@@ -216,6 +216,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
 		IgnitionServerImage:           ignitionServerImage,
+		TokenMinterImage:              operatorImage,
 		AvailabilityProberImage:       availabilityProberImage,
 		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{

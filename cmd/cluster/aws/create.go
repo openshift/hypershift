@@ -151,22 +151,20 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.InfraID = infraID
 
 	exampleOptions.AWS = &apifixtures.ExampleAWSOptions{
-		Region:                                 infra.Region,
-		Zone:                                   infra.Zone,
-		VPCID:                                  infra.VPCID,
-		SubnetID:                               infra.PrivateSubnetID,
-		SecurityGroupID:                        infra.SecurityGroupID,
-		InstanceProfile:                        iamInfo.ProfileName,
-		InstanceType:                           opts.AWSPlatform.InstanceType,
-		Roles:                                  iamInfo.Roles,
-		KubeCloudControllerUserAccessKeyID:     iamInfo.KubeCloudControllerUserAccessKeyID,
-		KubeCloudControllerUserAccessKeySecret: iamInfo.KubeCloudControllerUserAccessKeySecret,
-		NodePoolManagementUserAccessKeyID:      iamInfo.NodePoolManagementUserAccessKeyID,
-		NodePoolManagementUserAccessKeySecret:  iamInfo.NodePoolManagementUserAccessKeySecret,
-		RootVolumeSize:                         opts.AWSPlatform.RootVolumeSize,
-		RootVolumeType:                         opts.AWSPlatform.RootVolumeType,
-		RootVolumeIOPS:                         opts.AWSPlatform.RootVolumeIOPS,
-		ResourceTags:                           tags,
+		Region:                     infra.Region,
+		Zone:                       infra.Zone,
+		VPCID:                      infra.VPCID,
+		SubnetID:                   infra.PrivateSubnetID,
+		SecurityGroupID:            infra.SecurityGroupID,
+		InstanceProfile:            iamInfo.ProfileName,
+		InstanceType:               opts.AWSPlatform.InstanceType,
+		Roles:                      iamInfo.Roles,
+		KubeCloudControllerRoleARN: iamInfo.KubeCloudControllerRoleARN,
+		NodePoolManagementRoleARN:  iamInfo.NodePoolManagementRoleARN,
+		RootVolumeSize:             opts.AWSPlatform.RootVolumeSize,
+		RootVolumeType:             opts.AWSPlatform.RootVolumeType,
+		RootVolumeIOPS:             opts.AWSPlatform.RootVolumeIOPS,
+		ResourceTags:               tags,
 	}
 	return nil
 }
