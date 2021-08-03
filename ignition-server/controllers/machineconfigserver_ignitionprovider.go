@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
-	"net/http"
+	"net"
 	"time"
 
+	"github.com/openshift/hypershift/certs"
 	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -54,6 +57,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	}
 	mcsServiceAccount := machineConfigServerServiceAccount(p.Namespace)
 	mcsRoleBinding := machineConfigServerRoleBinding(mcsServiceAccount)
+	mcsService := machineConfigServerService(p.Namespace)
 
 	// The ConfigMap requires data stored to be a string.
 	// By base64ing the compressed data we ensure all bytes are decodable back.
@@ -76,6 +80,9 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if err := p.Client.Delete(ctx, mcsConfigConfigMap); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server config ConfigMap: %w", err))
 		}
+		if err := p.Client.Delete(ctx, mcsService); err != nil && !errors.IsNotFound(err) {
+			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server headless service: %w", err))
+		}
 		if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
 		}
@@ -95,6 +102,10 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 
 	if err := p.Client.Create(ctx, mcsConfigConfigMap); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
+	}
+
+	if err := p.Client.Create(ctx, mcsService); err != nil {
+		return nil, fmt.Errorf("failed to create machine config server headless service: %w", err)
 	}
 
 	mcsPod = machineConfigServerPod(p.Namespace, img, mcsServiceAccount,
@@ -121,35 +132,57 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if mcsPod.Status.PodIP == "" || !mcsReady {
 			return false, nil
 		}
-
+		// // get the service
+		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsService), mcsService); err != nil {
+			// We don't return the error here so we want to keep retrying.
+			return false, nil
+		}
+		//Generate Cert
+		if err := generateCert(mcsService); err != nil {
+			return false, fmt.Errorf("error generating cert for machine config server headless service: %w", err)
+		}
 		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%s/config/master", mcsPod.Status.PodIP, "8080"), nil)
-		if err != nil {
-			return false, fmt.Errorf("error building http request for machine config server pod: %w", err)
-		}
-		// We pass expected Headers to return the right config version.
-		// https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
-		// https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
-		// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
-		proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
+		// proxyReq, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%s/config/master", mcsPod.Status.PodIP, "8080"), nil)
+		// if err != nil {
+		//  return false, fmt.Errorf("error building http request for machine config server pod: %w", err)
+		// }
+		// // We pass expected Headers to return the right config version.
+		// // https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
+		// // https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
+		// // https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
+		// proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
 
-		// Send proxy request.
-		client := &http.Client{
-			Timeout: 5 * time.Second,
-		}
-		res, err := client.Do(proxyReq)
-		if err != nil {
-			return false, fmt.Errorf("error sending http request for machine config server pod: %w", err)
-		}
+		// // Send proxy request.
+		// client := &http.Client{
+		//  Timeout: 5 * time.Second,
+		// }
+		// res, err := client.Do(proxyReq)
+		// if err != nil {
+		//  return false, fmt.Errorf("error sending http request for machine config server pod: %w", err)
+		// }
 
-		if res.StatusCode != http.StatusOK {
-			return false, fmt.Errorf("request to the machine config server did not returned a 200, this is unexpected")
-		}
+		// if res.StatusCode != http.StatusOK {
+		//  return false, fmt.Errorf("request to the machine config server did not returned a 200, this is unexpected")
+		// }
 
-		defer res.Body.Close()
-		payload, err = ioutil.ReadAll(res.Body)
+		// defer res.Body.Close()
+		// payload, err = ioutil.ReadAll(res.Body)
+		// if err != nil {
+		//  return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
+		// }
+		tlsConf := &tls.Config{}
+		conn, err := tls.Dial("tcp", fmt.Sprintf("https://%s.%s.svc.cluster.local/", mcsService.Name, mcsService.Namespace), tlsConf)
 		if err != nil {
-			return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
+			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
+		}
+		defer conn.Close()
+		_, err = conn.Read(payload)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return false, fmt.Errorf("read timeout to get payload from machine config server: %w", err)
+			} else {
+				return false, fmt.Errorf("error getting payload from machine config server: %w", err)
+			}
 		}
 		if payload == nil {
 			return false, nil
@@ -220,6 +253,9 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    namespace,
 			GenerateName: resourceGenerateName,
+			Labels: map[string]string{
+				"app": "machine-config-server",
+			},
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName:            sa.Name,
@@ -464,6 +500,29 @@ func machineConfigServerConfigConfigMap(namespace, config string) *corev1.Config
 	}
 }
 
+func machineConfigServerService(namespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "machine-config-server",
+			Namespace: namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app": "machine-config-server",
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "machineconfig",
+					Port:     8080,
+					Protocol: corev1.ProtocolTCP,
+				},
+			},
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: corev1.ClusterIPNone,
+		},
+	}
+}
+
 func compress(content []byte) ([]byte, error) {
 	if len(content) == 0 {
 		return nil, nil
@@ -477,4 +536,25 @@ func compress(content []byte) ([]byte, error) {
 		return nil, fmt.Errorf("compress closure failure %w", err)
 	}
 	return b.Bytes(), nil
+}
+
+func generateCert(mcsService *corev1.Service) error {
+	podWildcard := "*." + mcsService.Name + "." + mcsService.Namespace + ".svc.cluster.local"
+	//machineConfigServerCert := manifests.MachineConfigServerCert(mcsHeadlessSvc.Namespace)
+	og := "openshift"
+	cfg := &certs.CertCfg{
+		Subject: pkix.Name{
+			CommonName:   podWildcard,
+			Organization: []string{og},
+		},
+		DNSNames:  []string{podWildcard},
+		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		Validity:  certs.ValidityTenYears,
+		IsCA:      true,
+	}
+	_, _, err := certs.GenerateSelfSignedCertificate(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to generate CA : %w", err)
+	}
+	return nil
 }
