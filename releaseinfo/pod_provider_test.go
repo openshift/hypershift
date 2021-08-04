@@ -9,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
-	"github.com/openshift/hypershift/control-plane-operator/releaseinfo/fixtures"
+	"github.com/openshift/hypershift/releaseinfo/fixtures"
 )
 
 func TestDeserialization(t *testing.T) {

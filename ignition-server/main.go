@@ -13,8 +13,8 @@ import (
 	"time"
 
 	hyperapi "github.com/openshift/hypershift/api"
-	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	"github.com/openshift/hypershift/ignition-server/controllers"
+	"github.com/openshift/hypershift/releaseinfo"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
