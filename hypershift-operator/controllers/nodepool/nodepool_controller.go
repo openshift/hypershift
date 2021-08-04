@@ -24,7 +24,7 @@ import (
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
