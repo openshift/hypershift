@@ -81,7 +81,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server config ConfigMap: %w", err))
 		}
 		if err := p.Client.Delete(ctx, mcsService); err != nil && !errors.IsNotFound(err) {
-			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server headless service: %w", err))
+			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server service: %w", err))
 		}
 		if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
@@ -105,7 +105,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	}
 
 	if err := p.Client.Create(ctx, mcsService); err != nil {
-		return nil, fmt.Errorf("failed to create machine config server headless service: %w", err)
+		return nil, fmt.Errorf("failed to create machine config server service: %w", err)
 	}
 
 	mcsPod = machineConfigServerPod(p.Namespace, img, mcsServiceAccount,
@@ -141,35 +141,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if err := generateCert(mcsService); err != nil {
 			return false, fmt.Errorf("error generating cert for machine config server headless service: %w", err)
 		}
-		// Build proxy request.
-		// proxyReq, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%s/config/master", mcsPod.Status.PodIP, "8080"), nil)
-		// if err != nil {
-		//  return false, fmt.Errorf("error building http request for machine config server pod: %w", err)
-		// }
-		// // We pass expected Headers to return the right config version.
-		// // https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
-		// // https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
-		// // https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
-		// proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
 
-		// // Send proxy request.
-		// client := &http.Client{
-		//  Timeout: 5 * time.Second,
-		// }
-		// res, err := client.Do(proxyReq)
-		// if err != nil {
-		//  return false, fmt.Errorf("error sending http request for machine config server pod: %w", err)
-		// }
-
-		// if res.StatusCode != http.StatusOK {
-		//  return false, fmt.Errorf("request to the machine config server did not returned a 200, this is unexpected")
-		// }
-
-		// defer res.Body.Close()
-		// payload, err = ioutil.ReadAll(res.Body)
-		// if err != nil {
-		//  return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
-		// }
 		tlsConf := &tls.Config{}
 		conn, err := tls.Dial("tcp", fmt.Sprintf("https://%s.%s.svc.cluster.local/", mcsService.Name, mcsService.Namespace), tlsConf)
 		if err != nil {
