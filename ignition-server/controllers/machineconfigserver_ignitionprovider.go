@@ -514,12 +514,11 @@ func generateCert(mcsService *corev1.Service) error {
 	dnsNames := []string{
 		fmt.Sprintf("*.%s.%s.svc.cluster.local", mcsService.Name, mcsService.Namespace),
 	}
-	//machineConfigServerCert := manifests.MachineConfigServerCert(mcsHeadlessSvc.Namespace)
 	og := "openshift"
 	cfg := &certs.CertCfg{
 		Subject: pkix.Name{
-			CommonName:   "machine-config-server",
-			Organization: []string{og},
+			CommonName:         "machine-config-server",
+			OrganizationalUnit: []string{og},
 		},
 		DNSNames:  dnsNames,
 		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
