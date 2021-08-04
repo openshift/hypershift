@@ -95,10 +95,15 @@ deps:
 	$(GO) mod vendor
 	$(GO) mod verify
 
-# Build the docker image
+# Build the docker image with official golang image
 .PHONY: docker-build
 docker-build:
 	${RUNTIME} build . -t ${IMG}
+
+# Build the docker image copying binaries from workspace
+.PHONY: docker-build-fast
+docker-build-fast: build
+	${RUNTIME} build . -t ${IMG} -f Dockerfile.fast
 
 # Push the docker image
 .PHONY: docker-push
