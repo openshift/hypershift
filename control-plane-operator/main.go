@@ -137,7 +137,8 @@ func NewStartCommand() *cobra.Command {
 		releaseProvider := &releaseinfo.StaticProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.PodProvider{
-					Pods: kubeClient.CoreV1().Pods(namespace),
+					Pods:    kubeClient.CoreV1().Pods(namespace),
+					Secrets: kubeClient.CoreV1().Secrets(namespace),
 				},
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},

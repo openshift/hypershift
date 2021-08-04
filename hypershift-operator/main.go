@@ -172,7 +172,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		Client: mgr.GetClient(),
 		ReleaseProvider: &releaseinfo.CachedProvider{
 			Inner: &releaseinfo.PodProvider{
-				Pods: kubeClient.CoreV1().Pods(opts.Namespace),
+				Pods:    kubeClient.CoreV1().Pods(opts.Namespace),
+				Secrets: kubeClient.CoreV1().Secrets(opts.Namespace),
 			},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},

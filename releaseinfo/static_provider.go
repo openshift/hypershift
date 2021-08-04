@@ -21,11 +21,11 @@ type StaticProviderDecorator struct {
 	lock sync.Mutex
 }
 
-func (p *StaticProviderDecorator) Lookup(ctx context.Context, image string) (*ReleaseImage, error) {
+func (p *StaticProviderDecorator) Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	releaseImage, err := p.Delegate.Lookup(ctx, image)
+	releaseImage, err := p.Delegate.Lookup(ctx, image, pullSecret)
 	if err != nil {
 		return nil, err
 	}

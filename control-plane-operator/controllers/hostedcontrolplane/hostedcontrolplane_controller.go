@@ -347,11 +347,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// state of any of the managed components. It's basically a placeholder to prove
 	// the orchestration of upgrades works at all.
 	if hostedControlPlane.Status.ReleaseImage != hostedControlPlane.Spec.ReleaseImage {
-		lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer lookupCancel()
-		releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
+		releaseImage, err := r.LookupReleaseImage(ctx, hostedControlPlane)
 		if err != nil {
 			r.Log.Error(err, "failed to look up release image metadata")
+			return ctrl.Result{}, err
 		} else {
 			hostedControlPlane.Status.Version = releaseImage.Version()
 		}
@@ -372,6 +371,16 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	r.Log.Info("Successfully reconciled")
 	return ctrl.Result{}, nil
+}
+
+func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return nil, err
+	}
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer lookupCancel()
+	return r.ReleaseProvider.Lookup(lookupCtx, hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
@@ -400,9 +409,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	r.Log.Info("Looking up release image metadata", "image", hostedControlPlane.Spec.ReleaseImage)
-	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer lookupCancel()
-	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
+	releaseImage, err := r.LookupReleaseImage(ctx, hostedControlPlane)
 	if err != nil {
 		return fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
@@ -571,7 +578,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 }
 
 func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hcp.Spec.ReleaseImage)
+	releaseImage, err := r.LookupReleaseImage(ctx, hcp)
 	if err != nil {
 		return fmt.Errorf("failed to look up release info: %w", err)
 	}

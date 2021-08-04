@@ -331,7 +331,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.IgnitionCACertMissingReason)
 
 	// Validate and get releaseImage.
-	releaseImage, err := r.getReleaseImage(ctx, nodePool.Spec.Release.Image)
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Spec.Release.Image)
 	if err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
@@ -934,13 +934,20 @@ func validateConfigManifest(manifest []byte) error {
 	return nil
 }
 
-func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, releaseImage string) (*releaseinfo.ReleaseImage, error) {
+func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, releaseImage string) (*releaseinfo.ReleaseImage, error) {
+	pullSecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
+		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
+	}
+	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
+		return nil, fmt.Errorf("pull secret %s/%s missing %q key", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
+	}
 	ReleaseImage, err := func(ctx context.Context) (*releaseinfo.ReleaseImage, error) {
 		ctx, span := r.tracer.Start(ctx, "image-lookup")
 		defer span.End()
 		lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
 		defer lookupCancel()
-		img, err := r.ReleaseProvider.Lookup(lookupCtx, releaseImage)
+		img, err := r.ReleaseProvider.Lookup(lookupCtx, releaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 		}

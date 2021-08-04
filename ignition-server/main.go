@@ -118,13 +118,15 @@ func payloadStoreReconciler(ctx context.Context) error {
 		return fmt.Errorf("unable to create kube client: %w", err)
 	}
 
+	namespace := os.Getenv(namespaceEnvVariableName)
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
 		IgnitionProvider: &controllers.MCSIgnitionProvider{
 			ReleaseProvider: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.PodProvider{
-					Pods: kubeClient.CoreV1().Pods(os.Getenv(namespaceEnvVariableName)),
+					Pods:    kubeClient.CoreV1().Pods(namespace),
+					Secrets: kubeClient.CoreV1().Secrets(namespace),
 				},
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
