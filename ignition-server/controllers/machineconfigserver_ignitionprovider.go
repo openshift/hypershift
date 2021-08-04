@@ -139,7 +139,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 		//Generate Cert
 		if err := generateCert(mcsService); err != nil {
-			return false, fmt.Errorf("error generating cert for machine config server headless service: %w", err)
+			return false, fmt.Errorf("error generating cert for machine config server service: %w", err)
 		}
 
 		tlsConf := &tls.Config{}
@@ -511,15 +511,17 @@ func compress(content []byte) ([]byte, error) {
 }
 
 func generateCert(mcsService *corev1.Service) error {
-	podWildcard := "*." + mcsService.Name + "." + mcsService.Namespace + ".svc.cluster.local"
+	dnsNames := []string{
+		fmt.Sprintf("*.%s.%s.svc.cluster.local", mcsService.Name, mcsService.Namespace),
+	}
 	//machineConfigServerCert := manifests.MachineConfigServerCert(mcsHeadlessSvc.Namespace)
 	og := "openshift"
 	cfg := &certs.CertCfg{
 		Subject: pkix.Name{
-			CommonName:   podWildcard,
+			CommonName:   "machine-config-server",
 			Organization: []string{og},
 		},
-		DNSNames:  []string{podWildcard},
+		DNSNames:  dnsNames,
 		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		Validity:  certs.ValidityTenYears,
 		IsCA:      true,
