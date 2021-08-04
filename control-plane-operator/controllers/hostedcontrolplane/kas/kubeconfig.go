@@ -18,30 +18,30 @@ const (
 
 func ReconcileServiceKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
 	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, apiServerPort)
-	return reconcileKubeconfig(secret, cert, ca, svcURL, "", ownerRef)
+	return reconcileKubeconfig(secret, cert, ca, svcURL, "", "service", ownerRef)
 }
 
 func ReconcileServiceCAPIKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
 	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, apiServerPort)
 	// The client used by CAPI machine controller expects the kubeconfig to have this key
 	// https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
-	return reconcileKubeconfig(secret, cert, ca, svcURL, "value", ownerRef)
+	return reconcileKubeconfig(secret, cert, ca, svcURL, "value", "capi", ownerRef)
 }
 
 func ReconcileLocalhostKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
 	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
-	return reconcileKubeconfig(secret, cert, ca, localhostURL, "", ownerRef)
+	return reconcileKubeconfig(secret, cert, ca, localhostURL, "", manifests.KubeconfigScopeLocal, ownerRef)
 }
 
 func ReconcileExternalKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, externalURL, secretKey string) error {
-	return reconcileKubeconfig(secret, cert, ca, externalURL, secretKey, ownerRef)
+	return reconcileKubeconfig(secret, cert, ca, externalURL, secretKey, manifests.KubeconfigScopeExternal, ownerRef)
 }
 
 func ReconcileBootstrapKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, externalURL string) error {
-	return reconcileKubeconfig(secret, cert, ca, externalURL, "", ownerRef)
+	return reconcileKubeconfig(secret, cert, ca, externalURL, "", manifests.KubeconfigScopeBootstrap, ownerRef)
 }
 
-func reconcileKubeconfig(secret, cert, ca *corev1.Secret, url, key string, ownerRef config.OwnerRef) error {
+func reconcileKubeconfig(secret, cert, ca *corev1.Secret, url string, key string, scope manifests.KubeconfigScope, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(secret)
 	caBytes := ca.Data[pki.CASignerCertMapKey]
 	crtBytes, keyBytes := cert.Data[corev1.TLSCertKey], cert.Data[corev1.TLSPrivateKeyKey]
@@ -55,6 +55,10 @@ func reconcileKubeconfig(secret, cert, ca *corev1.Secret, url, key string, owner
 	if key == "" {
 		key = KubeconfigKey
 	}
+	if secret.Labels == nil {
+		secret.Labels = map[string]string{}
+	}
+	secret.Labels[manifests.KubeconfigScopeLabel] = string(scope)
 	secret.Data[key] = kubeCfgBytes
 	return nil
 }
