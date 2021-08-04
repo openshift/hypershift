@@ -38,12 +38,20 @@ type MCSIgnitionProvider struct {
 }
 
 func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
+	pullSecret := &corev1.Secret{}
+	if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: "pull-secret"}, pullSecret); err != nil {
+		return nil, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
+		return nil, fmt.Errorf("pull secret %s/%s missing %q key", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
+	}
+
 	// TODO(alberto): If the MCS supports binding address
 	// https://github.com/openshift/machine-config-operator/pull/2630/files
 	// we could bind it to localhost and get the payload by execing
 	// https://zhimin-wen.medium.com/programing-exec-into-a-pod-5f2a70bd93bb
 	// Otherwise with the current approach the mcs pod is temporary exposed in the pod network every time a payload is generated.
-	img, err := p.ReleaseProvider.Lookup(ctx, releaseImage)
+	img, err := p.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}

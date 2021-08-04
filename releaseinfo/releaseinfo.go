@@ -17,7 +17,7 @@ import (
 // Provider knows how to find the release image metadata for an image referred
 // to by its pullspec.
 type Provider interface {
-	Lookup(ctx context.Context, image string) (*ReleaseImage, error)
+	Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error)
 }
 
 // ReleaseImage wraps an ImageStream with some utilities that help the user

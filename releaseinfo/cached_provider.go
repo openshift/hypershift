@@ -18,7 +18,7 @@ type CachedProvider struct {
 	once sync.Once
 }
 
-func (p *CachedProvider) Lookup(ctx context.Context, image string) (releaseImage *ReleaseImage, err error) {
+func (p *CachedProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (releaseImage *ReleaseImage, err error) {
 	// Purge the cache every once in a while as a simple leak mitigation
 	p.once.Do(func() {
 		go func() {
@@ -40,7 +40,7 @@ func (p *CachedProvider) Lookup(ctx context.Context, image string) (releaseImage
 	if entry, ok := p.Cache[image]; ok {
 		return entry, nil
 	}
-	entry, err := p.Inner.Lookup(ctx, image)
+	entry, err := p.Inner.Lookup(ctx, image, pullSecret)
 	if err != nil {
 		return nil, err
 	}
