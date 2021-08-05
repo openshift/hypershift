@@ -28,3 +28,4 @@ tools/bin
 
 .kube
 /kubeconfig
+.dockerignore
