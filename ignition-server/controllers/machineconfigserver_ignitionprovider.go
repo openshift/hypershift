@@ -59,7 +59,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	mcsServiceAccount := machineConfigServerServiceAccount(p.Namespace)
 	mcsRoleBinding := machineConfigServerRoleBinding(mcsServiceAccount)
 	mcsService := machineConfigServerService(p.Namespace)
-
+	log.Println("Print just for debug ")
 	// The ConfigMap requires data stored to be a string.
 	// By base64ing the compressed data we ensure all bytes are decodable back.
 	// Otherwise if we'd just string() the bytes, some might not be a valid UTF-8 sequence
