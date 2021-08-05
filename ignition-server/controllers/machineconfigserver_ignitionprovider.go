@@ -167,6 +167,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 
 	// Return the named values if everything went ok
 	// so if any deletion in the defer call fails, the func returns an error.
+	fmt.Println(payload)
 	return
 }
 
