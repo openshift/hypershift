@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"time"
@@ -149,7 +150,19 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
 		defer conn.Close()
-		_, err = conn.Read(payload)
+		tmp := make([]byte, 256)
+		for {
+			n, err := conn.Read(payload)
+			if err != nil {
+				if err != io.EOF {
+					return false, fmt.Errorf("read error: %w", err)
+				}
+				break
+			}
+			payload = append(payload, tmp[:n]...)
+
+		}
+
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				return false, fmt.Errorf("read timeout to get payload from machine config server: %w", err)
@@ -158,6 +171,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			}
 		}
 		if payload == nil {
+			log.Println("Payload is nil:", payload)
 			return false, nil
 		}
 
