@@ -14,7 +14,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/util"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -45,6 +44,7 @@ func NewCreateCommand() *cobra.Command {
 		ClusterName:  "example",
 		NodeCount:    2,
 		ReleaseImage: "",
+		InstanceType: "m4.large",
 	}
 
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the NodePool")
@@ -98,7 +98,7 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 	nodePool = &hyperv1.NodePool{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "NodePool",
-			APIVersion: corev1.SchemeGroupVersion.String(),
+			APIVersion: hyperv1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: o.Namespace,
@@ -121,6 +121,27 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
+		if len(o.InstanceProfile) == 0 {
+			o.InstanceProfile = fmt.Sprintf("%s-worker", hcluster.Spec.InfraID)
+		}
+		if len(o.SubnetID) == 0 {
+			if hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
+				o.SubnetID = *hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID
+			} else {
+				return fmt.Errorf("subnet ID was not specified and cannot be determined from HostedCluster")
+			}
+		}
+		if len(o.SecurityGroupID) == 0 {
+			defaultNodePool := &hyperv1.NodePool{}
+			if err := client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Name}, defaultNodePool); err != nil {
+				return fmt.Errorf("security group ID was not specified and cannot be determined from default nodepool: %v", err)
+			}
+			if defaultNodePool.Spec.Platform.AWS == nil || len(defaultNodePool.Spec.Platform.AWS.SecurityGroups) == 0 ||
+				defaultNodePool.Spec.Platform.AWS.SecurityGroups[0].ID == nil {
+				return fmt.Errorf("security group ID was not specified and cannot be determined from default nodepool")
+			}
+			o.SecurityGroupID = *defaultNodePool.Spec.Platform.AWS.SecurityGroups[0].ID
+		}
 		nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
 			InstanceType:    o.InstanceType,
 			InstanceProfile: o.InstanceProfile,
