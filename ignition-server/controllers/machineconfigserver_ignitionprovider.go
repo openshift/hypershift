@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -167,7 +168,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 
 	// Return the named values if everything went ok
 	// so if any deletion in the defer call fails, the func returns an error.
-	fmt.Println("Payload is:", payload)
+	log.Println("Payload is:", payload)
 	return
 }
 
