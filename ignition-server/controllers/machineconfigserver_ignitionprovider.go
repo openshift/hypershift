@@ -143,7 +143,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 
 		tlsConf := &tls.Config{}
-		conn, err := tls.Dial("tcp", fmt.Sprintf("%s.%s.svc.cluster.local:8080", mcsService.Name, mcsService.Namespace), tlsConf)
+		conn, err := tls.Dial("tcp", fmt.Sprintf("%s.%s.svc.cluster.local:443", mcsService.Name, mcsService.Namespace), tlsConf)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
@@ -485,8 +485,8 @@ func machineConfigServerService(namespace string) *corev1.Service {
 			Ports: []corev1.ServicePort{
 				{
 					Name:     "machineconfig",
-					Port:     8080,
-					Protocol: corev1.ProtocolTCP,
+					Port:     443,
+					Protocol: corev1.Protocol(corev1.URISchemeHTTPS),
 				},
 			},
 			Type:      corev1.ServiceTypeClusterIP,
