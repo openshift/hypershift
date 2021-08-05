@@ -23,7 +23,6 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8sutilspointer "k8s.io/utils/pointer"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -37,7 +36,7 @@ const (
 // MachineConfigServer pods to build ignition payload contents
 // out of a given releaseImage and a config string containing 0..N MachineConfig yaml definitions.
 type MCSIgnitionProvider struct {
-	Client          client.Client
+	Client          ctrlclient.Client
 	ReleaseProvider releaseinfo.Provider
 	Namespace       string
 }
@@ -60,7 +59,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	mcsServiceAccount := machineConfigServerServiceAccount(p.Namespace)
 	mcsRoleBinding := machineConfigServerRoleBinding(mcsServiceAccount)
 	mcsService := machineConfigServerService(p.Namespace)
-	log.Println("Print just for debug ")
 	// The ConfigMap requires data stored to be a string.
 	// By base64ing the compressed data we ensure all bytes are decodable back.
 	// Otherwise if we'd just string() the bytes, some might not be a valid UTF-8 sequence
@@ -73,6 +71,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
 		var deleteErrors []error
+		log.Println("pod:", mcsPod)
 		if err := p.Client.Delete(ctx, mcsServiceAccount); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server ServiceAccount: %w", err))
 		}
@@ -155,7 +154,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			n, err := conn.Read(payload)
 			if err != nil {
 				if err != io.EOF {
-					return false, fmt.Errorf("read error: %w", err)
+					return false, fmt.Errorf("error reading  payload from machine config server: %w", err)
 				}
 				break
 			}
