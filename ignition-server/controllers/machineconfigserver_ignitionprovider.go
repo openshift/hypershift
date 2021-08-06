@@ -71,7 +71,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
 		var deleteErrors []error
-		log.Println("pod:", mcsPod)
 		if err := p.Client.Delete(ctx, mcsServiceAccount); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server ServiceAccount: %w", err))
 		}
@@ -94,6 +93,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			err = utilerrors.NewAggregate(deleteErrors)
 		}
 	}()
+	log.Println("Create Resources")
 	if err := p.Client.Create(ctx, mcsServiceAccount); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server ServiceAccount: %w", err)
 	}
@@ -123,7 +123,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			// We don't return the error here so we want to keep retrying.
 			return false, nil
 		}
-
+		log.Println("pod fetched", mcsPod.Name)
 		// If the machine config server is not ready we return and wait for an update event to reconcile.
 		mcsReady := false
 		for _, cond := range mcsPod.Status.Conditions {
@@ -151,7 +151,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
 		defer conn.Close()
-		log.Println("connection succeful", conn.ConnectionState().HandshakeComplete)
+		log.Println("connection successful", conn.ConnectionState().HandshakeComplete)
 		tmp := make([]byte, 256)
 		for {
 			n, err := conn.Read(payload)
