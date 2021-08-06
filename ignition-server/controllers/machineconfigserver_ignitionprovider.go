@@ -84,9 +84,11 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if err := p.Client.Delete(ctx, mcsService); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server service: %w", err))
 		}
+		log.Println("delete pod before", mcsPod.Name)
 		if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
 		}
+		log.Println("delete pod After", mcsPod.Name)
 		// We return this in the named returned values.
 		if deleteErrors != nil {
 			err = utilerrors.NewAggregate(deleteErrors)
@@ -114,7 +116,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	if err := p.Client.Create(ctx, mcsPod); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server Pod: %w", err)
 	}
-
+	log.Println("pod created", mcsPod.Name)
 	// Wait for the pod server the payload.
 	if err := wait.PollImmediate(10*time.Second, 300*time.Second, func() (bool, error) {
 		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
@@ -144,11 +146,12 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 
 		tlsConf := &tls.Config{}
-		conn, err := tls.Dial("tcp", fmt.Sprintf("%s.%s.svc.cluster.local:443", mcsService.Name, mcsService.Namespace), tlsConf)
+		conn, err := tls.Dial("tcp", fmt.Sprintf("%s.%s.svc.cluster.local:8443", mcsService.Name, mcsService.Namespace), tlsConf)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
 		defer conn.Close()
+		log.Println("connection succeful", conn.ConnectionState().HandshakeComplete)
 		tmp := make([]byte, 256)
 		for {
 			n, err := conn.Read(payload)
@@ -161,7 +164,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			payload = append(payload, tmp[:n]...)
 
 		}
-
+		log.Println("payload reconciled", string(payload))
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				return false, fmt.Errorf("read timeout to get payload from machine config server: %w", err)
@@ -181,7 +184,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 
 	// Return the named values if everything went ok
 	// so if any deletion in the defer call fails, the func returns an error.
-	log.Println("Payload is:", payload)
+	log.Println("Payload is:", string(payload))
 	return
 }
 
@@ -354,9 +357,9 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					},
 					Ports: []corev1.ContainerPort{
 						{
-							Name:          "http",
-							ContainerPort: 8080,
-							Protocol:      corev1.ProtocolTCP,
+							Name:          "https",
+							ContainerPort: 8443,
+							Protocol:      corev1.Protocol(corev1.URISchemeHTTPS),
 						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
@@ -499,8 +502,8 @@ func machineConfigServerService(namespace string) *corev1.Service {
 			},
 			Ports: []corev1.ServicePort{
 				{
-					Name:     "machineconfig",
-					Port:     443,
+					Name:     "https",
+					Port:     8443,
 					Protocol: corev1.Protocol(corev1.URISchemeHTTPS),
 				},
 			},
