@@ -16,15 +16,15 @@ import (
 	"github.com/google/uuid"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/releaseinfo"
 	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
 	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
 	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -331,7 +331,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.IgnitionCACertMissingReason)
 
 	// Validate and get releaseImage.
-	releaseImage, err := r.getReleaseImage(ctx, nodePool.Spec.Release.Image)
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Spec.Release.Image)
 	if err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
@@ -934,13 +934,20 @@ func validateConfigManifest(manifest []byte) error {
 	return nil
 }
 
-func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, releaseImage string) (*releaseinfo.ReleaseImage, error) {
+func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, releaseImage string) (*releaseinfo.ReleaseImage, error) {
+	pullSecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
+		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
+	}
+	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
+		return nil, fmt.Errorf("pull secret %s/%s missing %q key", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
+	}
 	ReleaseImage, err := func(ctx context.Context) (*releaseinfo.ReleaseImage, error) {
 		ctx, span := r.tracer.Start(ctx, "image-lookup")
 		defer span.End()
 		lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
 		defer lookupCancel()
-		img, err := r.ReleaseProvider.Lookup(lookupCtx, releaseImage)
+		img, err := r.ReleaseProvider.Lookup(lookupCtx, releaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 		}

@@ -10,6 +10,27 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
+const (
+	// KubeconfigScopeLabel is used to indicate the usage scope of the kubeconfig
+	KubeconfigScopeLabel = "hypershift.openshift.io/kubeconfig"
+)
+
+const (
+	// KubeconfigScopeExternal means the kubeconfig is for use by cluster-external
+	// clients
+	KubeconfigScopeExternal KubeconfigScope = "external"
+
+	// KubeconfigScopeLocal means the kubeconfig is for use by cluster-local
+	// clients (e.g. the service network)
+	KubeconfigScopeLocal KubeconfigScope = "local"
+
+	// KubeconfigScopeBootstrap means the kubeconfig is passed via ignition to
+	// worker nodes so they can bootstrap
+	KubeconfigScopeBootstrap KubeconfigScope = "bootstrap"
+)
+
+type KubeconfigScope string
+
 func KASLocalhostKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

@@ -23,9 +23,9 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperapi "github.com/openshift/hypershift/api"
-	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/releaseinfo"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp"
@@ -68,6 +68,7 @@ type StartOptions struct {
 	MetricsAddr           string
 	EnableLeaderElection  bool
 	OperatorImage         string
+	IgnitionServerImage   string
 	OpenTelemetryEndpoint string
 }
 
@@ -85,6 +86,7 @@ func NewStartCommand() *cobra.Command {
 		MetricsAddr:           "0",
 		EnableLeaderElection:  false,
 		OperatorImage:         "",
+		IgnitionServerImage:   "",
 		OpenTelemetryEndpoint: "",
 	}
 
@@ -95,6 +97,7 @@ func NewStartCommand() *cobra.Command {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&opts.OperatorImage, "operator-image", opts.OperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -137,10 +140,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if err != nil {
 		return fmt.Errorf("unable to create kube client: %w", err)
 	}
-	lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string) (string, error) {
-		if len(opts.OperatorImage) > 0 {
-			log.Info("using operator image from arguments")
-			return opts.OperatorImage, nil
+	lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string, userSpecifiedImage string) (string, error) {
+		if len(userSpecifiedImage) > 0 {
+			log.Info("using image from arguments", "image", userSpecifiedImage)
+			return userSpecifiedImage, nil
 		}
 		deployment, err := deployments.Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
@@ -149,21 +152,28 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		for _, container := range deployment.Spec.Template.Spec.Containers {
 			// TODO: could use downward API for this too, overkill?
 			if container.Name == "operator" {
-				log.Info("using operator image from deployment")
+				log.Info("using image from operator deployment", "image", container.Image)
 				return container.Image, nil
 			}
 		}
 		return "", fmt.Errorf("couldn't locate operator container on deployment")
 	}
-	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName)
+	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.OperatorImage)
 	if err != nil {
 		return fmt.Errorf("failed to find operator image: %w", err)
 	}
-	log.Info("using operator image", "operator-image", operatorImage)
+	log.Info("using hosted control plane operator image", "operator-image", operatorImage)
+
+	ignitionServerImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.IgnitionServerImage)
+	if err != nil {
+		return fmt.Errorf("failed to find operator image: %w", err)
+	}
+	log.Info("using ignition server image", "image", ignitionServerImage)
 
 	if err = (&hostedcluster.HostedClusterReconciler{
-		Client:        mgr.GetClient(),
-		OperatorImage: operatorImage,
+		Client:                          mgr.GetClient(),
+		HostedControlPlaneOperatorImage: operatorImage,
+		IgnitionServerImage:             ignitionServerImage,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -172,7 +182,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		Client: mgr.GetClient(),
 		ReleaseProvider: &releaseinfo.CachedProvider{
 			Inner: &releaseinfo.PodProvider{
-				Pods: kubeClient.CoreV1().Pods(opts.Namespace),
+				Pods:    kubeClient.CoreV1().Pods(opts.Namespace),
+				Secrets: kubeClient.CoreV1().Secrets(opts.Namespace),
 			},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},

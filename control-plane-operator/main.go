@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -18,7 +20,7 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
-	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
+	"github.com/openshift/hypershift/releaseinfo"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -65,6 +67,7 @@ func NewStartCommand() *cobra.Command {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var hostedClusterConfigOperatorImage string
+	var inCluster bool
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "", "The name of the deployment of this operator")
@@ -73,11 +76,15 @@ func NewStartCommand() *cobra.Command {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image. (defaults to match this operator if running in a deployment)")
+	cmd.Flags().BoolVar(&inCluster, "in-cluster", true, "If false, the operator will be assumed to be running outside a kube "+
+		"cluster and will make some internal decisions to ease local development (e.g. using external endpoints where possible"+
+		"to avoid assuming access to the service network)")
 
 	cmd.MarkFlagRequired("namespace")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+		ctx := ctrl.SetupSignalHandler()
 
 		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 			Scheme:             hyperapi.Scheme,
@@ -137,7 +144,8 @@ func NewStartCommand() *cobra.Command {
 		releaseProvider := &releaseinfo.StaticProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.PodProvider{
-					Pods: kubeClient.CoreV1().Pods(namespace),
+					Pods:    kubeClient.CoreV1().Pods(namespace),
+					Secrets: kubeClient.CoreV1().Secrets(namespace),
 				},
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
@@ -149,19 +157,29 @@ func NewStartCommand() *cobra.Command {
 			},
 		}
 
+		var hostedKubeconfigScope manifests.KubeconfigScope
+		if inCluster {
+			hostedKubeconfigScope = manifests.KubeconfigScopeLocal
+		} else {
+			hostedKubeconfigScope = manifests.KubeconfigScopeExternal
+		}
+		apiCacheController, err := hostedapicache.RegisterHostedAPICacheReconciler(mgr, ctx, ctrl.Log.WithName("hosted-api-cache"), hostedKubeconfigScope)
+		if err != nil {
+			setupLog.Error(err, "failed to create controller", "controller", "hosted-api-cache")
+			os.Exit(1)
+		}
+
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:          mgr.GetClient(),
 			ReleaseProvider: releaseProvider,
+			HostedAPICache:  apiCacheController.GetCache(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
 
-		// +kubebuilder:scaffold:builder
-
 		setupLog.Info("starting manager")
-
-		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		if err := mgr.Start(ctx); err != nil {
 			setupLog.Error(err, "problem running manager")
 			os.Exit(1)
 		}

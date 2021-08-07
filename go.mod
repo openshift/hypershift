@@ -13,7 +13,6 @@ require (
 	github.com/onsi/gomega v1.11.0
 	github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
 	github.com/openshift/client-go v0.0.0-20200929181438-91d71ef2122c
-	github.com/openshift/machine-config-operator v0.0.1-0.20200913004441-7eba765c69c9
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/cobra v1.1.1

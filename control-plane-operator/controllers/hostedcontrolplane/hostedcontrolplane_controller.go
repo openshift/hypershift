@@ -12,14 +12,15 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	appsv1 "k8s.io/api/apps/v1"
-
-	"github.com/go-logr/logr"
-	routev1 "github.com/openshift/api/route/v1"
 	"golang.org/x/crypto/bcrypt"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -56,7 +57,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
-	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
+	"github.com/openshift/hypershift/releaseinfo"
 	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 )
 
@@ -102,6 +103,7 @@ type HostedControlPlaneReconciler struct {
 
 	Log             logr.Logger
 	ReleaseProvider releaseinfo.Provider
+	HostedAPICache  hostedapicache.HostedAPICache
 
 	recorder record.EventRecorder
 }
@@ -115,12 +117,12 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &etcdv1.EtcdCluster{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Channel{Source: r.HostedAPICache.Events()}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager %w", err)
 	}
-
-	r.recorder = mgr.GetEventRecorderFor("hosted-control-plane-controller")
 
 	return nil
 }
@@ -331,6 +333,43 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
+	{
+		r.Log.Info("Reconciling hosted cluster version conditions")
+		newCondition := func() metav1.Condition {
+			timeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			var clusterVersion configv1.ClusterVersion
+			if err := r.HostedAPICache.Get(timeout, client.ObjectKey{Name: "version"}, &clusterVersion); err != nil {
+				return metav1.Condition{
+					Type:    string(hyperv1.ClusterVersionFailing),
+					Status:  metav1.ConditionUnknown,
+					Reason:  "StatusUnknown",
+					Message: fmt.Sprintf("failed to get clusterversion: %v", err),
+				}
+			}
+			for _, cond := range clusterVersion.Status.Conditions {
+				if cond.Type == "Failing" {
+					if cond.Status == configv1.ConditionTrue {
+						return metav1.Condition{
+							Type:    string(hyperv1.ClusterVersionFailing),
+							Status:  metav1.ConditionTrue,
+							Reason:  cond.Reason,
+							Message: cond.Message,
+						}
+					}
+				}
+			}
+			return metav1.Condition{
+				Type:   string(hyperv1.ClusterVersionFailing),
+				Status: metav1.ConditionFalse,
+				Reason: "AsExpected",
+			}
+		}()
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+		r.Log.Info("Finished reconciling hosted cluster version conditions")
+	}
+
 	if hostedControlPlane.Spec.KubeConfig != nil {
 		hostedControlPlane.Status.KubeConfig = hostedControlPlane.Spec.KubeConfig
 	} else {
@@ -341,23 +380,35 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	hostedControlPlane.Status.Initialized = true
 
-	// At this point the latest image is considered to be rolled out. If we're transitioning
-	// from one image to another, record that on status and note the time.
-	// TODO: This is an extremely weak check and doesn't take into account the actual
-	// state of any of the managed components. It's basically a placeholder to prove
-	// the orchestration of upgrades works at all.
+	// If a rollout is in progress, compute and record the rollout status. The
+	// image version will be considered rolled out if the hosted CVO reports
+	// having completed the rollout of the semantic version matching the release
+	// image specified on the HCP.
 	if hostedControlPlane.Status.ReleaseImage != hostedControlPlane.Spec.ReleaseImage {
-		lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer lookupCancel()
-		releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
+		releaseImage, err := r.LookupReleaseImage(ctx, hostedControlPlane)
 		if err != nil {
 			r.Log.Error(err, "failed to look up release image metadata")
+			return ctrl.Result{}, err
 		} else {
-			hostedControlPlane.Status.Version = releaseImage.Version()
+			timeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			var clusterVersion configv1.ClusterVersion
+			if err := r.HostedAPICache.Get(timeout, client.ObjectKey{Name: "version"}, &clusterVersion); err != nil {
+				r.Log.Info("failed to get clusterversion, can't determine image version rollout status", "error", err)
+			} else {
+				versionHistory := clusterVersion.Status.History
+				if len(versionHistory) > 0 &&
+					versionHistory[0].Version == releaseImage.Version() &&
+					versionHistory[0].State == configv1.CompletedUpdate {
+					// Rollout to the desired release image version is complete, so record
+					// that fact on the HCP status.
+					now := metav1.NewTime(time.Now())
+					hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
+					hostedControlPlane.Status.Version = releaseImage.Version()
+					hostedControlPlane.Status.LastReleaseImageTransitionTime = &now
+				}
+			}
 		}
-		hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
-		now := metav1.NewTime(time.Now())
-		hostedControlPlane.Status.LastReleaseImageTransitionTime = &now
 	}
 
 	// Always update status based on the current state of the world.
@@ -372,6 +423,16 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	r.Log.Info("Successfully reconciled")
 	return ctrl.Result{}, nil
+}
+
+func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return nil, err
+	}
+	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer lookupCancel()
+	return r.ReleaseProvider.Lookup(lookupCtx, hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
@@ -400,9 +461,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	r.Log.Info("Looking up release image metadata", "image", hostedControlPlane.Spec.ReleaseImage)
-	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer lookupCancel()
-	releaseImage, err := r.ReleaseProvider.Lookup(lookupCtx, hostedControlPlane.Spec.ReleaseImage)
+	releaseImage, err := r.LookupReleaseImage(ctx, hostedControlPlane)
 	if err != nil {
 		return fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
@@ -571,7 +630,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 }
 
 func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hcp.Spec.ReleaseImage)
+	releaseImage, err := r.LookupReleaseImage(ctx, hcp)
 	if err != nil {
 		return fmt.Errorf("failed to look up release info: %w", err)
 	}
