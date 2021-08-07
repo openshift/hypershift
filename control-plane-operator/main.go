@@ -52,8 +52,8 @@ const (
 	// FIXME: Set to upstream image when DNS resolution is fixed for etcd service
 	etcdOperatorImage = "quay.io/hypershift/etcd-operator:v0.9.4-patched"
 	// TODO: Include konnectivity image in release payload
-	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
-	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+	konnectivityServerImage = "registry.ng.bluemix.net/armada-master/rh-apiserver-network-proxy:4cd69ea2ba6d2dbd08cfe6148d2b6e3529737faf"
+	konnectivityAgentImage  = "registry.ng.bluemix.net/armada-master/rh-apiserver-network-proxy:4cd69ea2ba6d2dbd08cfe6148d2b6e3529737faf"
 )
 
 func NewStartCommand() *cobra.Command {
