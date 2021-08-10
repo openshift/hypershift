@@ -36,6 +36,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			},
 		},
 	}
+	params.DeploymentConfig.SetMultizoneSpread(schedulerLabels)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3

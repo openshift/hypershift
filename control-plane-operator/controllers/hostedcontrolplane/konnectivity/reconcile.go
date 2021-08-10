@@ -3,9 +3,10 @@ package konnectivity
 import (
 	"bytes"
 	"fmt"
-	"k8s.io/utils/pointer"
 	"path"
 	"strconv"
+
+	"k8s.io/utils/pointer"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
