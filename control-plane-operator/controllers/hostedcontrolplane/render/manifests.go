@@ -58,7 +58,6 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 
 func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
-	c.clusterVersionOperator()
 	c.clusterBootstrap()
 	c.registry()
 	c.operatorLifecycleManager()
@@ -74,12 +73,6 @@ func (c *clusterManifestContext) hostedClusterConfigOperator() {
 		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
 		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
 		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) clusterVersionOperator() {
-	c.addManifestFiles(
-		"cluster-version-operator/cluster-version-operator-deployment.yaml",
 	)
 }
 
