@@ -31,8 +31,8 @@ var (
 			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
 		},
 		oasKonnectivityProxyContainer().Name: {
-			oasVolumeConfig().Name:             "/etc/kubernetes/config",
-			oasVolumeKonnectivityProxyCert().Name : "/etc/konnectivity-proxy-tls",
+			oasVolumeConfig().Name:                "/etc/kubernetes/config",
+			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
 		},
 	}
 	openShiftAPIServerLabels = map[string]string{
@@ -108,8 +108,6 @@ func buildOASKonnectivityProxyContainer(routerImage string) func(c *corev1.Conta
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
-
-
 
 func buildOASContainerMain(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
@@ -232,7 +230,6 @@ func buildOASVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
 }
-
 
 func oasVolumeKonnectivityProxyCert() *corev1.Volume {
 	return &corev1.Volume{

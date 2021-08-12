@@ -17,7 +17,7 @@ import (
 
 const (
 	openshiftAPIServerConfigKey     = "config.yaml"
-	oasKonnectivityProxyConfigKey = "haproxy.cfg"
+	oasKonnectivityProxyConfigKey   = "haproxy.cfg"
 	defaultInternalRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 )
 
@@ -92,7 +92,7 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 	}
 }
 
-const haproxyTemplate =`
+const haproxyTemplate = `
 frontend http-in
   bind *:10080
   default_backend be
@@ -101,6 +101,6 @@ backend be
   server ks konnectivity-server:8090 ssl verify required ca-file /etc/konnectivity-proxy-tls/ca.crt crt /etc/konnectivity-proxy-tls/tls.pem
 `
 
-func reconcileOASKonnectivityProxyConfig() string{
+func reconcileOASKonnectivityProxyConfig() string {
 	return string(haproxyTemplate)
 }
