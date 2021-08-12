@@ -95,7 +95,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	default:
 		params.EtcdURL = config.DefaultEtcdURL
 	}
-	params.AdditionalLabels = map[string]string{}
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
@@ -139,6 +138,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			},
 		},
 	}
+	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetMultizoneSpread(kasLabels)
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
