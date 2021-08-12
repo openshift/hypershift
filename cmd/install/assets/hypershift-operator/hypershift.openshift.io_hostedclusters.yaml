@@ -448,6 +448,7 @@ spec:
                       - OAuthServer
                       - OIDC
                       - Konnectivity
+                      - Ignition
                       type: string
                     servicePublishingStrategy:
                       description: ServicePublishingStrategy defines metadata around
