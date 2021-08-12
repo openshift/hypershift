@@ -89,6 +89,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 			},
 		},
 	}
+	params.DeploymentConfig.SetMultizoneSpread(kcmLabels)
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider

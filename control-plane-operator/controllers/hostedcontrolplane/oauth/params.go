@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"encoding/json"
+	"strings"
+
 	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -87,6 +88,7 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 			},
 		},
 	}
+	p.DeploymentConfig.SetMultizoneSpread(oauthServerLabels)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		p.Replicas = 3
