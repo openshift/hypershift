@@ -181,10 +181,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if err := (&nodepool.NodePoolReconciler{
 		Client: mgr.GetClient(),
 		ReleaseProvider: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.PodProvider{
-				Pods:    kubeClient.CoreV1().Pods(opts.Namespace),
-				Secrets: kubeClient.CoreV1().Secrets(opts.Namespace),
-			},
+			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},
 	}).SetupWithManager(mgr); err != nil {

@@ -44,6 +44,7 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 			},
 		},
 	}
+	params.DeploymentConfig.SetMultizoneSpread(openShiftControllerManagerLabels)
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:

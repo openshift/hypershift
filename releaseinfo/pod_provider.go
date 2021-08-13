@@ -1,18 +1,14 @@
 package releaseinfo
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"time"
 
-	imageapi "github.com/openshift/api/image/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -124,28 +120,19 @@ func (p *PodProvider) Lookup(ctx context.Context, image string, pullSecret []byt
 		return nil, fmt.Errorf("couldn't lookup coreos metadata: %w", err)
 	}
 
-	var imageStream imageapi.ImageStream
-	if err := json.Unmarshal(imageStreamData, &imageStream); err != nil {
-		return nil, fmt.Errorf("couldn't read image lookup pod %q logs as a serialized ImageStream: %w\nraw logs:\n%s", pod.Name, err, string(imageStreamData))
+	imageStream, err := DeserializeImageStream(imageStreamData)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read image lookup pod %q logs as a serialized ImageStream: %w", pod.Name, err)
 	}
 
-	var coreOSMetaCM corev1.ConfigMap
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(osData), 100).Decode(&coreOSMetaCM); err != nil {
-		return nil, fmt.Errorf("couldn't read image lookup pod %q logs as a serialized ConfigMap: %w\nraw logs:\n%s", pod.Name, err, string(osData))
-	}
-
-	streamData, hasStreamData := coreOSMetaCM.Data["stream"]
-	if !hasStreamData {
-		return nil, fmt.Errorf("coreos stream metadata configmap is missing the 'stream' key")
-	}
-	var coreOSMeta CoreOSStreamMetadata
-	if err := json.Unmarshal([]byte(streamData), &coreOSMeta); err != nil {
-		return nil, fmt.Errorf("couldn't decode stream metadata data: %w\n%s", err, streamData)
+	coreOSMeta, err := DeserializeImageMetadata(osData)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read image lookup pod %q logs as a serialized ConfigMap: %w", pod.Name, err)
 	}
 
 	releaseImage = &ReleaseImage{
-		ImageStream:    &imageStream,
-		StreamMetadata: &coreOSMeta,
+		ImageStream:    imageStream,
+		StreamMetadata: coreOSMeta,
 	}
 	return
 }
