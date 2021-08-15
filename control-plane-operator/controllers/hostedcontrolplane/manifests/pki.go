@@ -229,12 +229,3 @@ func OLMPackageServerCertSecret(ns string) *corev1.Secret {
 		},
 	}
 }
-
-func OASKonnectivityProxyCertSecret(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oas-konnectivity-proxy-cert",
-			Namespace: ns,
-		},
-	}
-}

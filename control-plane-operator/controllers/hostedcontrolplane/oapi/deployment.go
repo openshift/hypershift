@@ -101,9 +101,15 @@ func buildOASKonnectivityProxyContainer(routerImage string) func(c *corev1.Conta
 		}
 		c.Image = routerImage
 		c.Command = []string{
+			"/bin/bash",
+			"-c",
 			"haproxy",
 			"-f",
 			fmt.Sprintf("--f=%s", cpath(oasVolumeConfig().Name, oasKonnectivityProxyConfigKey)),
+		}
+
+		c.Args = []string{
+			fmt.Sprintf("cat /etc/konnectivity-proxy-tls/tls.crt /etc/konnectivity-proxy-tls/tls.key > /tmp/tls.pem; haproxy -f %s", cpath(oasVolumeConfig().Name, oasKonnectivityProxyConfigKey)),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -239,5 +245,5 @@ func oasVolumeKonnectivityProxyCert() *corev1.Volume {
 
 func buildOASVolumeKonnectivityProxyCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = manifests.OASKonnectivityProxyCertSecret("").Name
+	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
 }

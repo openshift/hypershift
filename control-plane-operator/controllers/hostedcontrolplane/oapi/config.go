@@ -98,7 +98,7 @@ frontend http-in
   default_backend be
 backend be
   mode http
-  server ks konnectivity-server:8090 ssl verify required ca-file /etc/konnectivity-proxy-tls/ca.crt crt /etc/konnectivity-proxy-tls/tls.pem
+  server ks konnectivity-server:8090 ssl verify required ca-file /etc/konnectivity-proxy-tls/ca.crt crt /tmp/tls.pem
 `
 
 func reconcileOASKonnectivityProxyConfig() string {
