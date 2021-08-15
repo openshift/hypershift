@@ -39,7 +39,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
-		HaproxyImage:            images["router"],
+		HaproxyImage:            images["haproxy-router"],
 		APIServer:               globalConfig.APIServer,
 		IngressSubDomain:        config.IngressSubdomain(hcp),
 	}
