@@ -2,6 +2,7 @@ package oapi
 
 import (
 	"fmt"
+	"net/url"
 	"path"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -57,10 +58,15 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MatchLabels: openShiftAPIServerLabels,
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels
+	etcdUrlData, err := url.Parse(etcdURL)
+	if err != nil {
+		return err
+	}
+
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, etcdURL)),
+			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, etcdUrlData.Host)),
 			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(haproxyImage)),
 		},
 		Volumes: []corev1.Volume{
@@ -111,7 +117,7 @@ func buildOASKonnectivityProxyContainer(routerImage string) func(c *corev1.Conta
 	}
 }
 
-func buildOASContainerMain(image string, etcdURL string) func(c *corev1.Container) {
+func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		cpath := func(volume, file string) string {
 			return path.Join(volumeMounts.Path(c.Name, volume), file)
@@ -141,7 +147,7 @@ func buildOASContainerMain(image string, etcdURL string) func(c *corev1.Containe
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: fmt.Sprintf("kube-apiserver,%s", etcdURL),
+				Value: fmt.Sprintf("kube-apiserver,%s", etcdHostname),
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
