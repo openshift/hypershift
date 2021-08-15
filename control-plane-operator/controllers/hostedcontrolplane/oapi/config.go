@@ -93,6 +93,24 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 }
 
 const haproxyTemplate = `
+global
+  maxconn 7000
+  log stdout local0
+  log stdout local1 notice
+
+defaults
+  mode http
+  log global
+  option log-health-checks
+  balance roundrobin
+  timeout client 10m
+  timeout server 10m
+  timeout connect 10s
+  timeout client-fin 5s
+  timeout server-fin 5s
+  timeout queue 5s
+  retries 3
+
 frontend http-in
   bind *:10080
   default_backend be
