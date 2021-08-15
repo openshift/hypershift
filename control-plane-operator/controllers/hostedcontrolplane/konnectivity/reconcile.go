@@ -53,6 +53,7 @@ func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 				Labels: konnectivityServerLabels,
 			},
 			Spec: corev1.PodSpec{
+				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(image)),
 				},
@@ -233,6 +234,7 @@ func reconcileWorkerAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig
 				Labels: konnectivityAgentLabels,
 			},
 			Spec: corev1.PodSpec{
+				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				SecurityContext: &corev1.PodSecurityContext{
 					RunAsUser: pointer.Int64Ptr(1000),
 				},
@@ -307,6 +309,7 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 				Labels: konnectivityAgentLabels,
 			},
 			Spec: corev1.PodSpec{
+				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
 				},
