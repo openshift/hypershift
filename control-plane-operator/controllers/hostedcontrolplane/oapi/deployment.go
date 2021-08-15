@@ -60,9 +60,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels
 	etcdUrlData, err := url.Parse(etcdURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse etcd url: %w", err)
 	}
-
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
