@@ -40,6 +40,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 			},
 		},
 	}
+	params.DeploymentConfig.SetMultizoneSpread(clusterPolicyControllerLabels)
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:

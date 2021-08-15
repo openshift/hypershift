@@ -1,6 +1,8 @@
 package hostedcluster
 
 import (
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"testing"
 	"time"
 
@@ -426,6 +428,258 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 				g.Expect(hostedControlPlane.Spec.APIPort).To(Equal(test.expectedAPIPort))
 				g.Expect(hostedControlPlane.Spec.APIAdvertiseAddress).To(Equal(test.expectedAPIAdvertiseAddress))
 			}
+		})
+	}
+}
+
+func TestServiceFirstNodePortAvailable(t *testing.T) {
+	tests := []struct {
+		name              string
+		inputService      *corev1.Service
+		expectedAvailable bool
+	}{
+		{
+			name:              "not specified",
+			inputService:      nil,
+			expectedAvailable: false,
+		},
+		{
+			name: "node port not available",
+			inputService: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-service",
+				},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{
+							Name:       "metrics",
+							Protocol:   corev1.ProtocolTCP,
+							Port:       9393,
+							TargetPort: intstr.FromString("metrics"),
+						},
+					},
+				},
+			},
+			expectedAvailable: false,
+		},
+		{
+			name: "node port available",
+			inputService: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-service",
+				},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{
+							Name:       "metrics",
+							Protocol:   corev1.ProtocolTCP,
+							Port:       9393,
+							TargetPort: intstr.FromString("metrics"),
+							NodePort:   30000,
+						},
+					},
+				},
+			},
+			expectedAvailable: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			isAvailable := serviceFirstNodePortAvailable(test.inputService)
+			g := NewGomegaWithT(t)
+			g.Expect(isAvailable).To(Equal(test.expectedAvailable))
+		})
+	}
+}
+
+func TestServicePublishingStrategyByType(t *testing.T) {
+	tests := []struct {
+		name                              string
+		inputHostedCluster                *hyperv1.HostedCluster
+		inputServiceType                  hyperv1.ServiceType
+		expectedServicePublishingStrategy *hyperv1.ServicePublishingStrategyMapping
+	}{
+		{
+			name: "ignition node port",
+			inputHostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+							},
+						},
+					},
+				},
+			},
+			inputServiceType: hyperv1.Ignition,
+			expectedServicePublishingStrategy: &hyperv1.ServicePublishingStrategyMapping{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.NodePort,
+				},
+			},
+		},
+		{
+			name: "not found",
+			inputHostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+							},
+						},
+					},
+				},
+			},
+			inputServiceType:                  hyperv1.Konnectivity,
+			expectedServicePublishingStrategy: nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			servicePubStrategy := servicePublishingStrategyByType(test.inputHostedCluster, test.inputServiceType)
+			g := NewGomegaWithT(t)
+			if test.expectedServicePublishingStrategy == nil {
+				g.Expect(servicePubStrategy).To(BeNil())
+			} else {
+				g.Expect(test.inputServiceType).To(Equal(test.expectedServicePublishingStrategy.Service))
+				g.Expect(servicePubStrategy.Type).To(Equal(test.expectedServicePublishingStrategy.Type))
+			}
+		})
+	}
+}
+
+func TestReconcileIgnitionServerServiceNodePortFreshInitialization(t *testing.T) {
+	tests := []struct {
+		name                           string
+		inputIgnitionServerService     *corev1.Service
+		inputServicePublishingStrategy *hyperv1.ServicePublishingStrategy
+	}{
+		{
+			name:                       "fresh service initialization",
+			inputIgnitionServerService: ignitionserver.Service("default"),
+			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.NodePort,
+			},
+		},
+		{
+			name:                       "fresh service with node port specified",
+			inputIgnitionServerService: ignitionserver.Service("default"),
+			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{
+					Port: int32(30000),
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			g := NewGomegaWithT(t)
+			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
+			g.Expect(test.inputIgnitionServerService.Spec.Type).To(Equal(corev1.ServiceTypeNodePort))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt(9090)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Port).To(Equal(int32(443)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Name).To(Equal("https"))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+			if test.inputServicePublishingStrategy.NodePort != nil && test.inputServicePublishingStrategy.NodePort.Port > 0 {
+				g.Expect(test.inputIgnitionServerService.Spec.Ports[0].NodePort).To(Equal(test.inputServicePublishingStrategy.NodePort.Port))
+			}
+		})
+	}
+}
+
+func TestReconcileIgnitionServerServiceNodePortExistingService(t *testing.T) {
+	tests := []struct {
+		name                           string
+		inputIgnitionServerService     *corev1.Service
+		inputServicePublishingStrategy *hyperv1.ServicePublishingStrategy
+	}{
+		{
+			name: "existing service keeps nodeport",
+			inputIgnitionServerService: &corev1.Service{
+				ObjectMeta: ignitionserver.Service("default").ObjectMeta,
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{
+							Name:       "https",
+							Port:       443,
+							TargetPort: intstr.FromInt(9090),
+							Protocol:   corev1.ProtocolTCP,
+							NodePort:   int32(30000),
+						},
+					},
+				},
+			},
+			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.NodePort,
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			initialNodePort := test.inputIgnitionServerService.Spec.Ports[0].NodePort
+			reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			g := NewGomegaWithT(t)
+			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
+			g.Expect(test.inputIgnitionServerService.Spec.Type).To(Equal(corev1.ServiceTypeNodePort))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt(9090)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Port).To(Equal(int32(443)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Name).To(Equal("https"))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].NodePort).To(Equal(initialNodePort))
+		})
+	}
+}
+
+func TestReconcileIgnitionServerServiceRoute(t *testing.T) {
+	tests := []struct {
+		name                           string
+		inputIgnitionServerService     *corev1.Service
+		inputServicePublishingStrategy *hyperv1.ServicePublishingStrategy
+	}{
+		{
+			name:                       "fresh service initialization",
+			inputIgnitionServerService: ignitionserver.Service("default"),
+			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+		{
+			name: "existing service",
+			inputIgnitionServerService: &corev1.Service{
+				ObjectMeta: ignitionserver.Service("default").ObjectMeta,
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{
+							Name:       "https",
+							Port:       443,
+							TargetPort: intstr.FromInt(9090),
+							Protocol:   corev1.ProtocolTCP,
+						},
+					},
+				},
+			},
+			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			g := NewGomegaWithT(t)
+			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
+			g.Expect(test.inputIgnitionServerService.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].TargetPort).To(Equal(intstr.FromInt(9090)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Port).To(Equal(int32(443)))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Name).To(Equal("https"))
+			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
 		})
 	}
 }

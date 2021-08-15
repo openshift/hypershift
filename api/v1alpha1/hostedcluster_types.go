@@ -101,7 +101,7 @@ type HostedClusterSpec struct {
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
 type ServicePublishingStrategyMapping struct {
 	// Service identifies the type of service being published
-	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity
+	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition
 	Service                   ServiceType `json:"service"`
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
@@ -137,6 +137,7 @@ var (
 	Konnectivity ServiceType = "Konnectivity"
 	OAuthServer  ServiceType = "OAuthServer"
 	OIDC         ServiceType = "OIDC"
+	Ignition     ServiceType = "Ignition"
 )
 
 // NodePortPublishingStrategy defines the network endpoint that can be used to contact the NodePort service
