@@ -138,11 +138,11 @@ func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Con
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "HTTP_PROXY",
-				Value: "http://127.0.0.1:10081",
+				Value: "http://127.0.0.1:10080",
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: "http://127.0.0.1:10081",
+				Value: "http://127.0.0.1:10080",
 			},
 			{
 				Name:  "NO_PROXY",
