@@ -27,7 +27,6 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 		APIServer: globalConfig.APIServer,
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
-		AdditionalLabels: map[string]string{},
 		Scheduling: config.Scheduling{
 			PriorityClass: DefaultPriorityClass,
 		},
@@ -40,6 +39,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 			},
 		},
 	}
+	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetMultizoneSpread(clusterPolicyControllerLabels)
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {

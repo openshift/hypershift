@@ -2,7 +2,6 @@ package oauth
 
 import (
 	"context"
-
 	"encoding/json"
 	"strings"
 
@@ -89,6 +88,7 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 		},
 	}
 	p.DeploymentConfig.SetMultizoneSpread(oauthServerLabels)
+	p.DeploymentConfig.SetColocation(hcp)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		p.Replicas = 3
