@@ -86,6 +86,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		},
 	}
 	params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels)
+	params.OpenShiftAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
 			PriorityClass: DefaultPriorityClass,
@@ -132,6 +133,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	}
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetColocation(hcp)
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels)
+	params.OpenShiftOAuthAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	switch hcp.Spec.Etcd.ManagementType {
 	case hyperv1.Unmanaged:
 		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint

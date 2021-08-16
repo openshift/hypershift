@@ -7,17 +7,28 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 )
 
 type DeploymentConfig struct {
-	Replicas         int                 `json:"replicas"`
-	Scheduling       Scheduling          `json:"scheduling"`
-	AdditionalLabels AdditionalLabels    `json:"additionalLabels"`
-	SecurityContexts SecurityContextSpec `json:"securityContexts"`
-	LivenessProbes   LivenessProbes      `json:"livenessProbes"`
-	ReadinessProbes  ReadinessProbes     `json:"readinessProbes"`
-	Resources        ResourcesSpec       `json:"resources"`
+	Replicas              int                   `json:"replicas"`
+	Scheduling            Scheduling            `json:"scheduling"`
+	AdditionalLabels      AdditionalLabels      `json:"additionalLabels"`
+	AdditionalAnnotations AdditionalAnnotations `json:"additionalAnnotations"`
+	SecurityContexts      SecurityContextSpec   `json:"securityContexts"`
+	LivenessProbes        LivenessProbes        `json:"livenessProbes"`
+	ReadinessProbes       ReadinessProbes       `json:"readinessProbes"`
+	Resources             ResourcesSpec         `json:"resources"`
+}
+
+func (c *DeploymentConfig) SetRestartAnnotation(objectMetadata metav1.ObjectMeta) {
+	if _, ok := objectMetadata.Annotations[hyperv1.RestartDateAnnotation]; ok {
+		if c.AdditionalAnnotations == nil {
+			c.AdditionalAnnotations = make(AdditionalAnnotations)
+		}
+		c.AdditionalAnnotations[hyperv1.RestartDateAnnotation] = objectMetadata.Annotations[hyperv1.RestartDateAnnotation]
+	}
 }
 
 func (c *DeploymentConfig) SetMultizoneSpread(labels map[string]string) {
@@ -84,6 +95,16 @@ func (c *DeploymentConfig) SetColocation(hcp *hyperv1.HostedControlPlane) {
 
 func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	deployment.Spec.Replicas = pointer.Int32Ptr(int32(c.Replicas))
+	// there are two standard cases currently with hypershift: HA mode where there are 3 replicas spread across
+	// zones and then non ha with one replica. When only 3 zones are available you need to be able to set maxUnavailable
+	// in order to progress the rollout. However, you do not want to set that in the single replica case because it will
+	// result in downtime.
+	if c.Replicas > 1 {
+		maxSurge := intstr.FromInt(3)
+		maxUnavailable := intstr.FromInt(1)
+		deployment.Spec.Strategy.RollingUpdate.MaxSurge = &maxSurge
+		deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &maxUnavailable
+	}
 	c.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&deployment.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)
@@ -91,6 +112,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	c.LivenessProbes.ApplyTo(&deployment.Spec.Template.Spec)
 	c.ReadinessProbes.ApplyTo(&deployment.Spec.Template.Spec)
 	c.Resources.ApplyTo(&deployment.Spec.Template.Spec)
+	c.AdditionalAnnotations.ApplyTo(&deployment.Spec.Template.ObjectMeta)
 }
 
 func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
@@ -102,4 +124,5 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 	c.LivenessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.ReadinessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.Resources.ApplyTo(&daemonset.Spec.Template.Spec)
+	c.AdditionalAnnotations.ApplyTo(&daemonset.Spec.Template.ObjectMeta)
 }

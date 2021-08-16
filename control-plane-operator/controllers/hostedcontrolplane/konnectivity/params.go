@@ -42,6 +42,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	p.ServerDeploymentConfig.Replicas = 1
 	p.ServerDeploymentConfig.SetColocation(hcp)
 	p.ServerDeploymentConfig.SetMultizoneSpread(konnectivityServerLabels)
+	p.ServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{
@@ -51,6 +52,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.AgentDeploymentConfig.Replicas = 1
+	p.AgentDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.AgentDeamonSetConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{

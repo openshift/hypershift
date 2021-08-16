@@ -60,7 +60,6 @@ func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
 	c.clusterVersionOperator()
 	c.clusterBootstrap()
-	c.dnsmasq()
 	c.registry()
 	c.operatorLifecycleManager()
 	c.userManifestsBootstrapper()
@@ -102,13 +101,6 @@ func (c *clusterManifestContext) machineConfigServer() {
 	c.addManifestFiles(
 		"machine-config-server/machine-config-server-configmap.yaml",
 		"machine-config-server/machine-config-server-kubeconfig-secret.yaml",
-	)
-}
-
-func (c *clusterManifestContext) dnsmasq() {
-	c.addManifestFiles(
-		"dnsmasq/dnsmasq-conf.configmap.yaml",
-		"dnsmasq/resolv-dnsmasq.configmap.yaml",
 	)
 }
 
