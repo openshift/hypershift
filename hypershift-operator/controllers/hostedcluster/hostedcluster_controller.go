@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"strings"
 	"time"
 
@@ -1345,10 +1346,40 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
 							},
+							LivenessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									TCPSocket: &corev1.TCPSocketAction{
+										Port: intstr.FromInt(9090),
+									},
+								},
+								InitialDelaySeconds: 120,
+								TimeoutSeconds:      5,
+								PeriodSeconds:       60,
+								FailureThreshold:    6,
+								SuccessThreshold:    1,
+							},
+							ReadinessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									TCPSocket: &corev1.TCPSocketAction{
+										Port: intstr.FromInt(9090),
+									},
+								},
+								InitialDelaySeconds: 5,
+								TimeoutSeconds:      5,
+								PeriodSeconds:       60,
+								FailureThreshold:    3,
+								SuccessThreshold:    1,
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "https",
 									ContainerPort: 9090,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("40Mi"),
+									corev1.ResourceCPU:    resource.MustParse("10m"),
 								},
 							},
 							VolumeMounts: []corev1.VolumeMount{
@@ -1724,6 +1755,12 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, sa *corev1.Se
 							"--alsologtostderr",
 							"--v=4",
 						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("20Mi"),
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+							},
+						},
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "capi-webhooks-tls",
@@ -2073,6 +2110,12 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.Ser
 										FieldPath: "metadata.namespace",
 									},
 								},
+							},
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("35Mi"),
+								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
 						Command: []string{"/cluster-autoscaler"},
