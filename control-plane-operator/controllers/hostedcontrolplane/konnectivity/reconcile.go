@@ -101,7 +101,8 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			strconv.Itoa(KonnectivityServerLocalPort),
 			"--agent-port",
 			strconv.Itoa(KonnectivityServerPort),
-			"--health-port=8092",
+			"--health-port",
+			strconv.Itoa(healthPort),
 			"--admin-port=8093",
 			"--mode=http-connect",
 			"--proxy-strategies=destHost,defaultRoute",
@@ -289,6 +290,8 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(
 			host,
 			"--proxy-server-port",
 			fmt.Sprint(port),
+			"--health-server-port",
+			fmt.Sprint(healthPort),
 			"--agent-identifiers=default-route=true",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
@@ -349,6 +352,8 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 			manifests.KonnectivityServerService("").Name,
 			"--proxy-server-port",
 			fmt.Sprint(KonnectivityServerPort),
+			"--health-server-port",
+			fmt.Sprint(healthPort),
 			"--agent-identifiers",
 			agentIDs.String(),
 		}
