@@ -18,6 +18,9 @@ spec:
     metadata:
       annotations:
         workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+{{ if .RestartDate }}
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
       labels:
         app: olm-operator
     spec:

@@ -18,6 +18,9 @@ spec:
     metadata:
       annotations:
         include.release.openshift.io/self-managed-high-availability: "true"
+{{ if .RestartDate }}
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
       labels:
         app: packageserver
     spec:

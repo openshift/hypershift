@@ -783,9 +783,10 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
 		} else if annotationKey == hyperv1.KonnectivityAgentImageAnnotation || annotationKey == hyperv1.KonnectivityServerImageAnnotation {
 			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
+		} else if annotationKey == hyperv1.RestartDateAnnotation {
+			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
 		}
 	}
-
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SigningKey.Name) > 0 {
 		hcp.Spec.SigningKey = corev1.LocalObjectReference{Name: controlplaneoperator.SigningKey(hcp.Namespace).Name}
@@ -1047,8 +1048,12 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
+	restartDateAnnotation := ""
+	if _, ok := hcluster.Annotations[hyperv1.RestartDateAnnotation]; ok {
+		restartDateAnnotation = hcluster.Annotations[hyperv1.RestartDateAnnotation]
+	}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, r.HostedControlPlaneOperatorImage, controlPlaneOperatorServiceAccount)
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, r.HostedControlPlaneOperatorImage, controlPlaneOperatorServiceAccount, restartDateAnnotation)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1291,6 +1296,9 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
+		if _, ok := hcluster.Annotations[hyperv1.RestartDateAnnotation]; ok {
+			ignitionServerDeployment.Annotations[hyperv1.RestartDateAnnotation] = hcluster.Annotations[hyperv1.RestartDateAnnotation]
+		}
 		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Replicas: k8sutilspointer.Int32Ptr(1),
@@ -1435,7 +1443,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 	return nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, image string, sa *corev1.ServiceAccount) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, image string, sa *corev1.ServiceAccount, restartDateAnnotation string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -1476,6 +1484,12 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, imag
 				},
 			},
 		},
+	}
+	if len(restartDateAnnotation) > 0 {
+		if deployment.Spec.Template.Annotations == nil {
+			deployment.Spec.Template.Annotations = make(map[string]string)
+		}
+		deployment.Spec.Template.Annotations[hyperv1.RestartDateAnnotation] = restartDateAnnotation
 	}
 	return nil
 }
