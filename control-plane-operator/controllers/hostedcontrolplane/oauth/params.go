@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"encoding/json"
@@ -124,6 +125,7 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 	p.DeploymentConfig.SetMultizoneSpread(oauthServerLabels)
 	p.DeploymentConfig.SetColocation(hcp)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		p.Replicas = 3
