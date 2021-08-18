@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"time"
 
@@ -168,13 +167,9 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			return false, fmt.Errorf("request to the machine config server did not returned a 200, this is unexpected")
 		}
 		defer res.Body.Close()
-		payload, err := ioutil.ReadAll(res.Body)
+		payload, err = ioutil.ReadAll(res.Body)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				return false, fmt.Errorf("read timeout to get payload from machine config server: %w", err)
-			} else {
-				return false, fmt.Errorf("error getting payload from machine config server: %w", err)
-			}
+			return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
 		}
 		if payload == nil {
 			return false, nil
