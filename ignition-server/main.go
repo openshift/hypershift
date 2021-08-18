@@ -13,10 +13,9 @@ import (
 	"time"
 
 	hyperapi "github.com/openshift/hypershift/api"
-	"github.com/openshift/hypershift/control-plane-operator/releaseinfo"
 	"github.com/openshift/hypershift/ignition-server/controllers"
+	"github.com/openshift/hypershift/releaseinfo"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -112,20 +111,12 @@ func payloadStoreReconciler(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
-
-	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		return fmt.Errorf("unable to create kube client: %w", err)
-	}
-
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
 		IgnitionProvider: &controllers.MCSIgnitionProvider{
 			ReleaseProvider: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.PodProvider{
-					Pods: kubeClient.CoreV1().Pods(os.Getenv(namespaceEnvVariableName)),
-				},
+				Inner: &releaseinfo.RegistryClientProvider{},
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 			Client:    mgr.GetClient(),

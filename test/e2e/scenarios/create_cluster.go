@@ -90,11 +90,12 @@ func TestCreateCluster(ctx context.Context, o TestCreateClusterOptions) func(t *
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 		log.Info("created nodepool", "namespace", nodepool.Namespace, "name", nodepool.Name)
 
-		// Perform some very basic assertions about the guest cluster
+		// Wait for nodes to report ready
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
+		e2eutil.WaitForNReadyNodes(t, ctx, guestClient, *nodepool.Spec.NodeCount)
 
-		e2eutil.WaitForReadyNodes(t, ctx, guestClient, nodepool)
-
-		e2eutil.WaitForClusterOperators(t, ctx, guestClient, hostedCluster, e2eutil.OperatorIsReady())
+		// Wait for the rollout to be reported complete
+		log.Info("waiting for cluster rollout", "image", o.ReleaseImage)
+		e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, o.ReleaseImage)
 	}
 }

@@ -27,19 +27,21 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 		APIServer: globalConfig.APIServer,
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
-		AdditionalLabels: map[string]string{},
 		Scheduling: config.Scheduling{
 			PriorityClass: DefaultPriorityClass,
 		},
 		Resources: map[string]corev1.ResourceRequirements{
 			cpcContainerMain().Name: {
 				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("200Mi"),
+					corev1.ResourceMemory: resource.MustParse("100Mi"),
 					corev1.ResourceCPU:    resource.MustParse("10m"),
 				},
 			},
 		},
 	}
+	params.DeploymentConfig.SetColocation(hcp)
+	params.DeploymentConfig.SetMultizoneSpread(clusterPolicyControllerLabels)
+	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:

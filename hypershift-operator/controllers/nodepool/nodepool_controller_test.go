@@ -107,8 +107,8 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: nil,
-						Max: nil,
+						Min: 0,
+						Max: 0,
 					},
 				},
 			},
@@ -119,8 +119,8 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(1),
-						Max: pointer.Int32Ptr(2),
+						Min: 1,
+						Max: 2,
 					},
 				},
 			},
@@ -155,44 +155,8 @@ func TestValidateAutoscaling(t *testing.T) {
 				Spec: hyperv1.NodePoolSpec{
 					NodeCount: pointer.Int32Ptr(1),
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(1),
-						Max: pointer.Int32Ptr(2),
-					},
-				},
-			},
-			error: true,
-		},
-		{
-			name: "fails when min is nil",
-			nodePool: &hyperv1.NodePool{
-				Spec: hyperv1.NodePoolSpec{
-					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: nil,
-						Max: pointer.Int32Ptr(2),
-					},
-				},
-			},
-			error: true,
-		},
-		{
-			name: "fails when max is nil",
-			nodePool: &hyperv1.NodePool{
-				Spec: hyperv1.NodePoolSpec{
-					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(2),
-						Max: nil,
-					},
-				},
-			},
-			error: true,
-		},
-		{
-			name: "fails when min is nil",
-			nodePool: &hyperv1.NodePool{
-				Spec: hyperv1.NodePoolSpec{
-					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: nil,
-						Max: pointer.Int32Ptr(2),
+						Min: 1,
+						Max: 2,
 					},
 				},
 			},
@@ -203,8 +167,8 @@ func TestValidateAutoscaling(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(2),
-						Max: pointer.Int32Ptr(0),
+						Min: 2,
+						Max: 0,
 					},
 				},
 			},
@@ -215,8 +179,8 @@ func TestValidateAutoscaling(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(0),
-						Max: pointer.Int32Ptr(2),
+						Min: 0,
+						Max: 2,
 					},
 				},
 			},
@@ -227,8 +191,8 @@ func TestValidateAutoscaling(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(3),
-						Max: pointer.Int32Ptr(2),
+						Min: 3,
+						Max: 2,
 					},
 				},
 			},
@@ -239,8 +203,8 @@ func TestValidateAutoscaling(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(1),
-						Max: pointer.Int32Ptr(2),
+						Min: 1,
+						Max: 2,
 					},
 				},
 			},
@@ -476,7 +440,9 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 				},
 			},
 			machineDeployment: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
 			},
 			expectReplicas: 5,
 			expectAutoscalerAnnotations: map[string]string{
@@ -490,13 +456,15 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(1),
-						Max: pointer.Int32Ptr(5),
+						Min: 1,
+						Max: 5,
 					},
 				},
 			},
 			machineDeployment: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
 				Spec: capiv1.MachineDeploymentSpec{
 					Replicas: pointer.Int32Ptr(3),
 				},
@@ -514,17 +482,13 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: pointer.Int32Ptr(1),
-						Max: pointer.Int32Ptr(5),
+						Min: 1,
+						Max: 5,
 					},
 				},
 			},
-			machineDeployment: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{
-					CreationTimestamp: metav1.Now(),
-				},
-			},
-			expectReplicas: 1,
+			machineDeployment: &capiv1.MachineDeployment{},
+			expectReplicas:    1,
 			expectAutoscalerAnnotations: map[string]string{
 				autoscalerMinAnnotation: "1",
 				autoscalerMaxAnnotation: "5",

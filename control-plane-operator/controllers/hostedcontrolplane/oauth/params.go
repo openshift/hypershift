@@ -2,12 +2,14 @@ package oauth
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"encoding/json"
+	"strings"
+
 	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -87,6 +89,41 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 			},
 		},
 	}
+	p.LivenessProbes = config.LivenessProbes{
+		oauthContainerMain().Name: {
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTPS,
+					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 120,
+			TimeoutSeconds:      10,
+			PeriodSeconds:       60,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+	}
+	p.ReadinessProbes = config.ReadinessProbes{
+		oauthContainerMain().Name: {
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTPS,
+					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 10,
+			TimeoutSeconds:      10,
+			PeriodSeconds:       30,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+	}
+	p.DeploymentConfig.SetMultizoneSpread(oauthServerLabels)
+	p.DeploymentConfig.SetColocation(hcp)
+	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		p.Replicas = 3

@@ -78,6 +78,9 @@ spec:
                     format: int32
                     minimum: 1
                     type: integer
+                required:
+                - max
+                - min
                 type: object
               clusterName:
                 description: ClusterName is the name of the Cluster this object belongs
@@ -340,6 +343,7 @@ spec:
                 type: array
               nodeCount:
                 description: NodeCount is the most recently observed number of replicas.
+                format: int32
                 type: integer
               version:
                 description: Version is the semantic version of the release applied

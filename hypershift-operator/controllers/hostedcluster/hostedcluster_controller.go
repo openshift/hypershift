@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"strings"
 	"time"
 
@@ -72,7 +73,7 @@ const (
 	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
 
 	// TODO (alberto): Eventually these images will be mirrored and pulled from an internal registry.
-	imageClusterAutoscaler = "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.20.0"
+	imageClusterAutoscaler = "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0"
 	imageCAPI              = "k8s.gcr.io/cluster-api/cluster-api-controller:v0.4.0-beta.0"
 	// TODO (alberto): update when v1alpha4 / v.0.7 release is cut.
 	// This comes from the post submit job https://github.com/kubernetes/test-infra/pull/22532/files
@@ -88,9 +89,18 @@ var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 type HostedClusterReconciler struct {
 	client.Client
 
-	Log           logr.Logger
-	OperatorImage string
-	Clock         clock.Clock
+	// HostedControlPlaneOperatorImage is the image used to deploy the hosted control
+	// plane operator.
+	HostedControlPlaneOperatorImage string
+
+	// IgnitionServerImage is the image used to deploy the ignition server.
+	IgnitionServerImage string
+
+	// Log is a thread-safe logger.
+	Log logr.Logger
+
+	// Clock is used to determine the time in a testable way.
+	Clock clock.Clock
 
 	tracer trace.Tracer
 }
@@ -119,6 +129,13 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
 		Complete(r)
+}
+
+// serviceFirstNodePortAvailable checks if the first port in a service has a node port available. Utilized to
+// check status of the ignition service
+func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
+	return svc != nil && len(svc.Spec.Ports) > 0 && svc.Spec.Ports[0].NodePort > 0
+
 }
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -270,15 +287,46 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set Ignition Server endpoint
 	{
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
-			}
+		serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
+		if serviceStrategy == nil {
+			// We don't return the error here as reconciling won't solve the input problem.
+			// An update event will trigger reconciliation.
+			r.Log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
+			return ctrl.Result{}, nil
 		}
-		if err == nil && ignitionServerRoute.Spec.Host != "" {
-			hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		switch serviceStrategy.Type {
+		case hyperv1.Route:
+			ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
+			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
+				}
+			}
+			if err == nil && ignitionServerRoute.Spec.Host != "" {
+				hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
+			}
+		case hyperv1.NodePort:
+			if serviceStrategy.NodePort == nil {
+				// We don't return the error here as reconciling won't solve the input problem.
+				// An update event will trigger reconciliation.
+				r.Log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
+				return ctrl.Result{}, nil
+			}
+			ignitionService := ignitionserver.Service(controlPlaneNamespace.GetName())
+			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("failed to get ignition service: %w", err)
+				}
+			}
+			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
+				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address, ignitionService.Spec.Ports[0].NodePort)
+			}
+		default:
+			// We don't return the error here as reconciling won't solve the input problem.
+			// An update event will trigger reconciliation.
+			r.Log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
+			return ctrl.Result{}, nil
 		}
 	}
 
@@ -736,9 +784,10 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
 		} else if annotationKey == hyperv1.KonnectivityAgentImageAnnotation || annotationKey == hyperv1.KonnectivityServerImageAnnotation {
 			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
+		} else if annotationKey == hyperv1.RestartDateAnnotation {
+			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
 		}
 	}
-
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SigningKey.Name) > 0 {
 		hcp.Spec.SigningKey = corev1.LocalObjectReference{Name: controlplaneoperator.SigningKey(hcp.Namespace).Name}
@@ -1000,13 +1049,55 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
+	restartDateAnnotation := ""
+	if _, ok := hcluster.Annotations[hyperv1.RestartDateAnnotation]; ok {
+		restartDateAnnotation = hcluster.Annotations[hyperv1.RestartDateAnnotation]
+	}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, r.OperatorImage, controlPlaneOperatorServiceAccount)
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, r.HostedControlPlaneOperatorImage, controlPlaneOperatorServiceAccount, restartDateAnnotation)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
 	}
 
+	return nil
+}
+
+func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
+	for _, mapping := range hcp.Spec.Services {
+		if mapping.Service == svcType {
+			return &mapping.ServicePublishingStrategy
+		}
+	}
+	return nil
+}
+
+func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
+	svc.Spec.Selector = map[string]string{
+		"app": ignitionserver.ResourceName,
+	}
+	var portSpec corev1.ServicePort
+	if len(svc.Spec.Ports) > 0 {
+		portSpec = svc.Spec.Ports[0]
+	} else {
+		svc.Spec.Ports = []corev1.ServicePort{portSpec}
+	}
+	portSpec.Port = int32(443)
+	portSpec.Name = "https"
+	portSpec.Protocol = corev1.ProtocolTCP
+	portSpec.TargetPort = intstr.FromInt(9090)
+	switch strategy.Type {
+	case hyperv1.NodePort:
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+		if portSpec.NodePort == 0 && strategy.NodePort != nil {
+			portSpec.NodePort = strategy.NodePort.Port
+		}
+	case hyperv1.Route:
+		svc.Spec.Type = corev1.ServiceTypeClusterIP
+	default:
+		return fmt.Errorf("invalid publishing strategy for Ignition service: %s", strategy.Type)
+	}
+	svc.Spec.Ports[0] = portSpec
 	return nil
 }
 
@@ -1020,55 +1111,57 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
+	serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
+	if serviceStrategy == nil {
+		return fmt.Errorf("Ignition service strategy not specified")
+	}
 	// Reconcile service
-	// TODO (alberto): enable nodePort choice at the hostedClusterAPI
 	ignitionServerService := ignitionserver.Service(controlPlaneNamespace.Name)
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerService, func() error {
-		ignitionServerService.Spec.Ports = []corev1.ServicePort{
-			{
-				Name:       "https",
-				Protocol:   corev1.ProtocolTCP,
-				Port:       443,
-				TargetPort: intstr.FromString("https"),
-			},
-		}
-		ignitionServerService.Spec.Selector = map[string]string{
-			"app": ignitionserver.ResourceName,
-		}
-		ignitionServerService.Spec.Type = corev1.ServiceTypeClusterIP
-		return nil
+		return reconcileIgnitionServerService(ignitionServerService, serviceStrategy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition service: %w", err)
 	} else {
 		span.AddEvent("reconciled ignition server service", trace.WithAttributes(attribute.String("result", string(result))))
 	}
+	var ignitionServerDNSName string
+	switch serviceStrategy.Type {
+	case hyperv1.Route:
+		// Reconcile route
+		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.Name)
+		if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerRoute, func() error {
+			if ignitionServerRoute.Annotations == nil {
+				ignitionServerRoute.Annotations = map[string]string{}
+			}
+			ignitionServerRoute.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
+			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
+				Termination: routev1.TLSTerminationPassthrough,
+			}
+			ignitionServerRoute.Spec.To = routev1.RouteTargetReference{
+				Kind:   "Service",
+				Name:   ignitionserver.ResourceName,
+				Weight: k8sutilspointer.Int32Ptr(100),
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition route: %w", err)
+		} else {
+			span.AddEvent("reconciled ignition server route", trace.WithAttributes(attribute.String("result", string(result))))
+		}
 
-	// Reconcile route
-	ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.Name)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, ignitionServerRoute, func() error {
-		if ignitionServerRoute.Annotations == nil {
-			ignitionServerRoute.Annotations = map[string]string{}
+		// The route must be admitted and assigned a host before we can generate certs
+		if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
+			r.Log.Info("ignition server reconciliation waiting for ignition server route to be assigned a host value")
+			return nil
 		}
-		ignitionServerRoute.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
-		ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
-			Termination: routev1.TLSTerminationPassthrough,
+		ignitionServerDNSName = ignitionServerRoute.Status.Ingress[0].Host
+	case hyperv1.NodePort:
+		if serviceStrategy.NodePort == nil {
+			return fmt.Errorf("nodeport metadata not specified for ignition service")
 		}
-		ignitionServerRoute.Spec.To = routev1.RouteTargetReference{
-			Kind:   "Service",
-			Name:   ignitionserver.ResourceName,
-			Weight: k8sutilspointer.Int32Ptr(100),
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ignition route: %w", err)
-	} else {
-		span.AddEvent("reconciled ignition server route", trace.WithAttributes(attribute.String("result", string(result))))
-	}
-
-	// The route must be admitted and assigned a host before we can generate certs
-	if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
-		r.Log.Info("ignition server reconciliation waiting for ignition server route to be assigned a host value")
-		return nil
+		ignitionServerDNSName = serviceStrategy.NodePort.Address
+	default:
+		return fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type)
 	}
 
 	// Reconcile a root CA for ignition serving certificates. We only create this
@@ -1105,9 +1198,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 	servingCertSecret := ignitionserver.IgnitionServingCertSecret(controlPlaneNamespace.Name)
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, servingCertSecret, func() error {
 		if servingCertSecret.CreationTimestamp.IsZero() {
-			if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
-				return fmt.Errorf("ignition server route has no host")
-			}
 			caCert, err := certs.PemToCertificate(caCertSecret.Data[corev1.TLSCertKey])
 			if err != nil {
 				return fmt.Errorf("couldn't get ca cert: %w", err)
@@ -1120,7 +1210,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 				Subject:   pkix.Name{CommonName: "ignition-server", Organization: []string{"openshift"}},
 				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 				Validity:  certs.ValidityOneYear,
-				DNSNames:  []string{ignitionServerRoute.Status.Ingress[0].Host},
+				DNSNames:  []string{ignitionServerDNSName},
 			}
 			key, crt, err := certs.GenerateSignedCertificate(caKey, caCert, cfg)
 			if err != nil {
@@ -1208,6 +1298,9 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
+		if _, ok := hcluster.Annotations[hyperv1.RestartDateAnnotation]; ok {
+			ignitionServerDeployment.Annotations[hyperv1.RestartDateAnnotation] = hcluster.Annotations[hyperv1.RestartDateAnnotation]
+		}
 		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Replicas: k8sutilspointer.Int32Ptr(1),
@@ -1244,7 +1337,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 					Containers: []corev1.Container{
 						{
 							Name:            ignitionserver.ResourceName,
-							Image:           r.OperatorImage,
+							Image:           r.IgnitionServerImage,
 							ImagePullPolicy: corev1.PullAlways,
 							Env: []corev1.EnvVar{
 								{
@@ -1262,10 +1355,40 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
 							},
+							LivenessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									TCPSocket: &corev1.TCPSocketAction{
+										Port: intstr.FromInt(9090),
+									},
+								},
+								InitialDelaySeconds: 120,
+								TimeoutSeconds:      5,
+								PeriodSeconds:       60,
+								FailureThreshold:    6,
+								SuccessThreshold:    1,
+							},
+							ReadinessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									TCPSocket: &corev1.TCPSocketAction{
+										Port: intstr.FromInt(9090),
+									},
+								},
+								InitialDelaySeconds: 5,
+								TimeoutSeconds:      5,
+								PeriodSeconds:       60,
+								FailureThreshold:    3,
+								SuccessThreshold:    1,
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "https",
 									ContainerPort: 9090,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("40Mi"),
+									corev1.ResourceCPU:    resource.MustParse("10m"),
 								},
 							},
 							VolumeMounts: []corev1.VolumeMount{
@@ -1352,7 +1475,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 	return nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, image string, sa *corev1.ServiceAccount) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, image string, sa *corev1.ServiceAccount, restartDateAnnotation string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -1393,6 +1516,12 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, imag
 				},
 			},
 		},
+	}
+	if len(restartDateAnnotation) > 0 {
+		if deployment.Spec.Template.Annotations == nil {
+			deployment.Spec.Template.Annotations = make(map[string]string)
+		}
+		deployment.Spec.Template.Annotations[hyperv1.RestartDateAnnotation] = restartDateAnnotation
 	}
 	return nil
 }
@@ -1640,6 +1769,12 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, sa *corev1.Se
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("20Mi"),
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+							},
 						},
 						VolumeMounts: []corev1.VolumeMount{
 							{
@@ -1906,6 +2041,11 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.Ser
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
 		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
 		"--clusterapi-cloud-config-authoritative",
+		// TODO (alberto): Is this a fair assumption?
+		// There's currently pods with local storage e.g grafana and image-registry.
+		// Without this option after after a scaling out operation and an “unfortunate” reschedule
+		// we might end up locked with three nodes.
+		"--skip-nodes-with-local-storage=false",
 		"--alsologtostderr",
 		"--v=4",
 	}
@@ -1990,6 +2130,12 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.Ser
 										FieldPath: "metadata.namespace",
 									},
 								},
+							},
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("35Mi"),
+								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
 						Command: []string{"/cluster-autoscaler"},

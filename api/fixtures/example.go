@@ -208,6 +208,12 @@ aws_secret_access_key = %s
 						Type: hyperv1.LoadBalancer,
 					},
 				},
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
 			},
 			InfraID:    o.InfraID,
 			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},

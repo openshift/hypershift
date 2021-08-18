@@ -33,9 +33,7 @@ spec:
           operator: "Equal"
           value: "true"
           effect: NoSchedule
-{{ if .MasterPriorityClass }}
-      priorityClassName: {{ .MasterPriorityClass }}
-{{ end }}
+      priorityClassName: "system-cluster-critical"
       containers:
       - image: {{ imageFor "hosted-cluster-config-operator" }}
         name: hosted-cluster-config-operator
@@ -59,15 +57,10 @@ spec:
         - "--namespace"
         - "$(POD_NAMESPACE)"{{range $controller := .HostedClusterConfigOperatorControllers }}
         - "--controllers={{$controller}}"{{end}}
-{{ if .HostedClusterConfigOperatorResources }}
-        resources:{{ range .HostedClusterConfigOperatorResources }}{{ range .ResourceRequest }}
-          requests: {{ if .CPU }}
-            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
-            memory: {{ .Memory }}{{ end }}{{ end }}{{ range .ResourceLimit }}
-          limits: {{ if .CPU }}
-            cpu: {{ .CPU }}{{ end }}{{ if .Memory }}
-            memory: {{ .Memory }}{{ end }}{{ end }}{{ end }}
-{{ end }}
+        resources:
+          requests:
+            cpu: 10m
+            memory: 60Mi
         volumeMounts:
         - mountPath: /etc/kubernetes/kubeconfig
           name: kubeconfig

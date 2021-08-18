@@ -15,6 +15,10 @@ spec:
     metadata:
       labels:
         olm.catalogSource: community-operators
+{{ if .RestartDate }}
+      annotations:
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
     spec:
       nodeSelector:
         kubernetes.io/os: linux
@@ -50,4 +54,4 @@ spec:
           resources:
             requests:
               cpu: 10m
-              memory: 50Mi
+              memory: 160Mi

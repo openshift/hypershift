@@ -18,6 +18,9 @@ spec:
     metadata:
       annotations:
         workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+{{ if .RestartDate }}
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
       labels:
         app: olm-operator
     spec:
@@ -68,7 +71,7 @@ spec:
               value: /etc/openshift/kubeconfig/kubeconfig
           resources:
             requests:
-              cpu: 10m
+              cpu: 20m
               memory: 160Mi
           volumeMounts:
             - mountPath: /var/run/secrets/serving-cert

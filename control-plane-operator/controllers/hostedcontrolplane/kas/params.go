@@ -95,7 +95,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	default:
 		params.EtcdURL = config.DefaultEtcdURL
 	}
-	params.AdditionalLabels = map[string]string{}
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
@@ -105,11 +104,14 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(params.APIServerPort)),
-					Path:   "livez",
+					Path:   "livez?exclude=etcd",
 				},
 			},
-			InitialDelaySeconds: 45,
-			TimeoutSeconds:      10,
+			InitialDelaySeconds: 300,
+			PeriodSeconds:       180,
+			TimeoutSeconds:      160,
+			FailureThreshold:    6,
+			SuccessThreshold:    1,
 		},
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
@@ -121,8 +123,11 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 					Path:   "readyz",
 				},
 			},
-			InitialDelaySeconds: 10,
-			TimeoutSeconds:      10,
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       30,
+			TimeoutSeconds:      120,
+			FailureThreshold:    6,
+			SuccessThreshold:    1,
 		},
 	}
 	params.Resources = map[string]corev1.ResourceRequirements{
@@ -134,11 +139,14 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		},
 		kasContainerMain().Name: {
 			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("1Gi"),
-				corev1.ResourceCPU:    resource.MustParse("265m"),
+				corev1.ResourceMemory: resource.MustParse("1500Mi"),
+				corev1.ResourceCPU:    resource.MustParse("350m"),
 			},
 		},
 	}
+	params.DeploymentConfig.SetColocation(hcp)
+	params.DeploymentConfig.SetMultizoneSpread(kasLabels)
+	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider

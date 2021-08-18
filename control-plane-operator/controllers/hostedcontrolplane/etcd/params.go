@@ -18,6 +18,10 @@ type EtcdParams struct {
 	PVCClaim                 *corev1.PersistentVolumeClaimSpec `json:"pvcClaim"`
 }
 
+var etcdLabels = map[string]string{
+	"app": "etcd",
+}
+
 func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *EtcdParams {
 	p := &EtcdParams{
 		EtcdOperatorImage: images["etcd-operator"],
@@ -32,6 +36,8 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
+	p.OperatorDeploymentConfig.SetMultizoneSpread(etcdOperatorDeploymentLabels)
+	p.OperatorDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.EtcdDeploymentConfig.Resources = config.ResourcesSpec{
 		etcdContainer().Name: {
 			Requests: corev1.ResourceList{
@@ -40,6 +46,8 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
+	p.EtcdDeploymentConfig.SetMultizoneSpread(etcdLabels)
+	p.EtcdDeploymentConfig.SetColocationAnchor(hcp)
 	p.OperatorDeploymentConfig.Replicas = 1
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
