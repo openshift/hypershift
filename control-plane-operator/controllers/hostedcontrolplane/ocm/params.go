@@ -9,10 +9,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-const (
-	DefaultPriorityClass = "system-node-critical"
-)
-
 type OpenShiftControllerManagerParams struct {
 	OpenShiftControllerManagerImage string              `json:"openshiftControllerManagerImage"`
 	DockerBuilderImage              string              `json:"dockerBuilderImage"`
@@ -32,7 +28,7 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: DefaultPriorityClass,
+			PriorityClass: config.DefaultPriorityClass,
 		},
 		Resources: map[string]corev1.ResourceRequirements{
 			ocmContainerMain().Name: {

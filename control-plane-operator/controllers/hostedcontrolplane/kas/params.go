@@ -96,7 +96,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.EtcdURL = config.DefaultEtcdURL
 	}
 	params.Scheduling = config.Scheduling{
-		PriorityClass: config.DefaultPriorityClass,
+		PriorityClass: config.APICriticalPriorityClass,
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		kasContainerMain().Name: {
