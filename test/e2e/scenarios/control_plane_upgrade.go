@@ -94,7 +94,7 @@ func TestUpgradeControlPlane(ctx context.Context, o TestUpgradeControlPlaneOptio
 		// Sanity check the cluster by waiting for the nodes to report ready
 		log.Info("waiting for guest client to become available")
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
-		e2eutil.WaitForReadyNodes(t, ctx, guestClient, nodepool)
+		e2eutil.WaitForNReadyNodes(t, ctx, guestClient, *nodepool.Spec.NodeCount)
 
 		// Wait for the first rollout to be complete
 		log.Info("waiting for initial cluster rollout", "image", o.FromReleaseImage)

@@ -52,6 +52,15 @@ func TestScenarios(t *testing.T) {
 				ArtifactDir:        opts.ArtifactDir,
 				Enabled:            opts.UpgradeTestsEnabled,
 			}),
+		"Autoscaling": scenarios.TestAutoscaling(ctx,
+			scenarios.TestAutoscalingOptions{
+				AWSCredentialsFile: opts.AWSCredentialsFile,
+				AWSRegion:          opts.Region,
+				PullSecretFile:     opts.PullSecretFile,
+				ReleaseImage:       opts.LatestReleaseImage,
+				ArtifactDir:        opts.ArtifactDir,
+				BaseDomain:         opts.BaseDomain,
+			}),
 	}
 
 	for name := range tests {

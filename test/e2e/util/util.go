@@ -191,12 +191,13 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
-func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
+func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
 	g := NewWithT(t)
 
-	log.Info("waiting for nodepool nodes to become ready", "namespace", nodePool.Namespace, "name", nodePool.Name)
+	log.Info("waiting for nodes to become ready", "want", n)
 	nodes := &corev1.NodeList{}
 	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
+		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {
 			return false, nil
@@ -212,7 +213,7 @@ func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client
 				}
 			}
 		}
-		if len(readyNodes) != int(*nodePool.Spec.NodeCount) {
+		if len(readyNodes) != int(n) {
 			return false, nil
 		}
 		log.Info("all nodes are ready", "count", len(nodes.Items))
@@ -220,7 +221,8 @@ func WaitForReadyNodes(t *testing.T, ctx context.Context, client crclient.Client
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest nodes became ready")
 
-	log.Info("all nodes for nodepool appear to be ready", "count", int(*nodePool.Spec.NodeCount), "namespace", nodePool.Namespace, "name", nodePool.Name)
+	log.Info("all nodes for nodepool appear to be ready", "count", n, "namespace")
+	return nodes.Items
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
