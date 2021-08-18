@@ -47,10 +47,6 @@ var (
 			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
 			kasVolumeEgressSelectorConfig().Name:   "/etc/kubernetes/egress-selector",
 		},
-		kasContainerPortieries().Name: {
-			kasVolumeLocalhostKubeconfig().Name: "/etc/openshift/kubeconfig",
-			kasVolumePortierisCerts().Name:      "/etc/certs",
-		},
 	}
 
 	cloudProviderConfigVolumeMount = util.PodVolumeMounts{
@@ -142,8 +138,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		},
 	}
 	if len(images.Portieris) > 0 {
-		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, util.BuildContainer(kasContainerPortieries(), buildKASContainerPortieries(images.Portieris)))
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, util.BuildVolume(kasVolumePortierisCerts(), buildKASVolumePortierisCerts))
+		applyPortieriesConfig(&deployment.Spec.Template.Spec, images.Portieris)
 	}
 	deploymentConfig.ApplyTo(deployment)
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
@@ -513,45 +508,4 @@ func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookR
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
 		kasAuditWebhookConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
-}
-
-func kasContainerPortieries() *corev1.Container {
-	return &corev1.Container{
-		Name: "portieris",
-	}
-}
-
-func buildKASContainerPortieries(image string) func(c *corev1.Container) {
-	return func(c *corev1.Container) {
-		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
-		c.Command = []string{
-			"/portieris",
-		}
-		c.Args = []string{
-			"--kubeconfig=/etc/openshift/kubeconfig/kubeconfig",
-			"--alsologtostderr",
-			"-v=4",
-		}
-		c.Ports = []corev1.ContainerPort{
-			{
-				Name:          "http",
-				ContainerPort: 8000,
-				Protocol:      corev1.ProtocolTCP,
-			},
-		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
-	}
-}
-
-func kasVolumePortierisCerts() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "portieris-certs",
-	}
-}
-
-func buildKASVolumePortierisCerts(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: v.Name,
-	}
 }
