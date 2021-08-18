@@ -38,15 +38,15 @@ func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client
 	err := client.Create(ctx, namespace)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create test namespace")
 	g.Expect(namespace.Name).ToNot(BeEmpty(), "generated namespace has no name")
-	log.Info("created test namespace", "name", namespace.Name)
+	t.Logf("Created test namespace: %s", namespace.Name)
 	return namespace
 }
 
 // DumpHostedCluster tries to dump important resources related to the HostedCluster, and
 // logs any failures along the way.
-func DumpHostedCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir string) {
+func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir string) {
 	if len(artifactDir) == 0 {
-		log.Info("skipping cluster dump because no artifact dir was provided")
+		t.Logf("Skipping cluster dump because no artifact dir was provided")
 		return
 	}
 	err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
@@ -55,13 +55,13 @@ func DumpHostedCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster
 		ArtifactDir: artifactDir,
 	})
 	if err != nil {
-		log.Error(err, "failed to dump cluster")
+		t.Errorf("Failed to dump cluster: %v", err)
 	}
 }
 
 // DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,
 // logging any failures along the way.
-func DumpAndDestroyHostedCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, awsCreds string, awsRegion string, baseDomain string, artifactDir string) {
+func DumpAndDestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, awsCreds string, awsRegion string, baseDomain string, artifactDir string) {
 	// TODO: Figure out why this is slow
 	//DumpHostedCluster(ctx, hostedCluster, artifactDir)
 
@@ -76,26 +76,26 @@ func DumpAndDestroyHostedCluster(ctx context.Context, hostedCluster *hyperv1.Hos
 		ClusterGracePeriod: 15 * time.Minute,
 	}
 
-	log.Info("waiting for cluster to be destroyed", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
+	t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		err := cmdcluster.DestroyCluster(ctx, opts)
 		if err != nil {
-			log.Error(err, "failed to destroy cluster, will retry")
+			t.Errorf("Failed to destroy cluster, will retry: %v", err)
 			return false, nil
 		}
 		return true, nil
 	}, ctx.Done())
 	if err != nil {
-		log.Error(err, "failed to destroy cluster")
+		t.Errorf("Failed to destroy cluster: %v", err)
 	} else {
-		log.Info("destroyed cluster", "namespace", opts.Namespace, "name", opts.Name)
+		t.Logf("Destroyed cluster. Namespace: %s, name: %s", opts.Namespace, opts.Name)
 	}
 }
 
 // DeleteNamespace deletes and finalizes the given namespace, logging any failures
 // along the way.
-func DeleteNamespace(ctx context.Context, client crclient.Client, namespace string) {
-	log.Info("deleting namespace", "namespace", namespace)
+func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, namespace string) {
+	t.Logf("Deleting namespace: %s", namespace)
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		err := client.Delete(ctx, ns, &crclient.DeleteOptions{})
@@ -103,37 +103,37 @@ func DeleteNamespace(ctx context.Context, client crclient.Client, namespace stri
 			if errors.IsNotFound(err) {
 				return true, nil
 			}
-			log.Error(err, "failed to delete namespace, will retry", "namespace", namespace)
+			t.Errorf("Failed to delete namespace: %s, will retry: %v", namespace, err)
 			return false, nil
 		}
 		return true, nil
 	}, ctx.Done())
 	if err != nil {
-		log.Error(err, "failed to delete namespace")
+		t.Errorf("Failed to delete namespace: %v", err)
 		return
 	}
 
-	log.Info("waiting for namespace to be finalized", "namespace", namespace)
+	t.Logf("Waiting for namespace to be finalized. Namespace: %s", namespace)
 	err = wait.PollInfinite(1*time.Second, func() (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(ns), ns); err != nil {
 			if errors.IsNotFound(err) {
 				return true, nil
 			}
-			log.Error(err, "failed to get namespace", "namespace", namespace)
+			t.Errorf("Failed to get namespace: %s. %v", namespace, err)
 			return false, nil
 		}
 		return false, nil
 	})
 	if err != nil {
-		log.Error(err, "namespace was not finalized")
+		t.Errorf("Namespace was not finalized: %v", err)
 	} else {
-		log.Info("deleted namespace", "namespace", namespace)
+		t.Logf("Deleted namespace: %s", namespace)
 	}
 }
 
-func WaitForGuestKubeConfig(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
-	log.Info("waiting for hostedcluster kubeconfig to be published", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
+func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
+	t.Logf("Waiting for hostedcluster kubeconfig to be published. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 	var guestKubeConfigSecret corev1.Secret
 	err := wait.PollUntil(1*time.Second, func() (done bool, err error) {
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
@@ -155,7 +155,7 @@ func WaitForGuestKubeConfig(ctx context.Context, client crclient.Client, hostedC
 	if err != nil {
 		return nil, fmt.Errorf("kubeconfig didn't become available: %w", err)
 	}
-	log.Info("found kubeconfig for cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
+	t.Logf("Found kubeconfig for cluster. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 
 	// TODO: this key should probably be published or an API constant
 	data, hasData := guestKubeConfigSecret.Data["kubeconfig"]
@@ -168,13 +168,13 @@ func WaitForGuestKubeConfig(ctx context.Context, client crclient.Client, hostedC
 func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
 	g := NewWithT(t)
 
-	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(ctx, client, hostedCluster)
+	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
 
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
 
-	log.Info("waiting for a successful connection to the guest apiserver")
+	t.Logf("Waiting for a successful connection to the guest apiserver")
 	var guestClient crclient.Client
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -188,14 +188,14 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	}, waitForGuestClientCtx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to establish a connection to the guest apiserver")
 
-	log.Info("successfully connected to the guest apiserver")
+	t.Logf("successfully connected to the guest apiserver")
 	return guestClient
 }
 
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
 	g := NewWithT(t)
 
-	log.Info("waiting for nodes to become ready", "want", n)
+	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
 	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
 		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
@@ -217,24 +217,24 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 		if len(readyNodes) != int(n) {
 			return false, nil
 		}
-		log.Info("all nodes are ready", "count", len(nodes.Items))
+		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
 		return true, nil
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest nodes became ready")
 
-	log.Info("all nodes for nodepool appear to be ready", "count", n, "namespace")
+	t.Logf("All nodes for nodepool appear to be ready. Count: %v", n)
 	return nodes.Items
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	g := NewWithT(t)
 
-	log.Info("waiting for hostedcluster to rollout image", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "image", image)
+	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
 		latest := hostedCluster.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(latest), latest)
 		if err != nil {
-			log.Error(err, "failed to get hostedcluster")
+			t.Errorf("Failed to get hostedcluster: %v", err)
 			return false, nil
 		}
 
@@ -247,56 +247,56 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 			latest.Status.Version.History[0].State == configv1.CompletedUpdate
 
 		if isAvailable && rolloutComplete {
+			t.Logf("Waiting for hostedcluster rollout. Image: %s, isAvailable: %v, rolloutComplete: %v", image, isAvailable, rolloutComplete)
 			return true, nil
 		}
-		log.Info("waiting for hostedcluster rollout", "image", image, "isAvailable", isAvailable, "rolloutComplete", rolloutComplete)
 		return false, nil
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
 
-	log.Info("observed hostedcluster to have successfully rolled out image", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "image", image)
+	t.Logf("Observed hostedcluster to have successfully rolled out image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 }
 
 // DumpGuestCluster tries to collect resources from the from the hosted cluster,
 // and logs any failures that occur.
-func DumpGuestCluster(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, destDir string) {
+func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, destDir string) {
 	if len(destDir) == 0 {
-		log.Info("skipping guest cluster dump because no dest dir was provided")
+		t.Logf("Skipping guest cluster dump because no dest dir was provided")
 		return
 	}
 	kubeconfigTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	kubeconfig, err := WaitForGuestKubeConfig(kubeconfigTimeout, client, hostedCluster)
+	kubeconfig, err := WaitForGuestKubeConfig(t, kubeconfigTimeout, client, hostedCluster)
 	if err != nil {
-		log.Error(err, "failed to get guest kubeconfig")
+		t.Errorf("Failed to get guest kubeconfig: %v", err)
 		return
 	}
 
 	kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
 	if err != nil {
-		log.Error(err, "failed to create temporary directory")
+		t.Errorf("Failed to create temporary directory: %v", err)
 		return
 	}
 	defer func() {
 		if err := os.Remove(kubeconfigFile.Name()); err != nil {
-			log.Error(err, "failed to remote temp file", "file", kubeconfigFile.Name())
+			t.Errorf("Failed to remote temp file: %s: %v", kubeconfigFile.Name(), err)
 		}
 	}()
 
 	if _, err := kubeconfigFile.Write(kubeconfig); err != nil {
-		log.Error(err, "failed to write kubeconfig")
+		t.Errorf("Failed to write kubeconfig: %v", err)
 		return
 	}
 	if err := kubeconfigFile.Close(); err != nil {
-		log.Error(err, "failed to close kubeconfig file")
+		t.Errorf("Failed to close kubeconfig file: %v", err)
 		return
 	}
 
 	dumpDir := filepath.Join(destDir, "hostedcluster-"+hostedCluster.Name)
-	log.Info("dumping guest cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "dest", dumpDir)
+	t.Logf("Dumping guest cluster. Namespace: %s, name: %s, dest: %s", hostedCluster.Namespace, hostedCluster.Name, dumpDir)
 	if err := cmdcluster.DumpGuestCluster(ctx, kubeconfigFile.Name(), dumpDir); err != nil {
-		log.Error(err, "failed to dump guest cluster")
+		t.Errorf("Failed to dump guest cluster: %v", err)
 		return
 	}
-	log.Info("dumped guest cluster data", "dir", dumpDir)
+	t.Logf("Dumped guest cluster data. Dir: %s", dumpDir)
 }
