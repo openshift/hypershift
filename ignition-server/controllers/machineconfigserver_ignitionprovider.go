@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"time"
 
@@ -22,7 +23,6 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8sutilspointer "k8s.io/utils/pointer"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -36,7 +36,7 @@ const (
 // MachineConfigServer pods to build ignition payload contents
 // out of a given releaseImage and a config string containing 0..N MachineConfig yaml definitions.
 type MCSIgnitionProvider struct {
-	Client          client.Client
+	Client          ctrlclient.Client
 	ReleaseProvider releaseinfo.Provider
 	Namespace       string
 }
@@ -85,11 +85,13 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
 		}
+		log.Println("delete pod After", mcsPod.Name)
 		// We return this in the named returned values.
 		if deleteErrors != nil {
 			err = utilerrors.NewAggregate(deleteErrors)
 		}
 	}()
+	log.Println("Create Resources")
 	if err := p.Client.Create(ctx, mcsServiceAccount); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server ServiceAccount: %w", err)
 	}
@@ -170,7 +172,11 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		defer res.Body.Close()
 		payload, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return false, fmt.Errorf("read timeout to get payload from machine config server: %w", err)
+			} else {
+				return false, fmt.Errorf("error getting payload from machine config server: %w", err)
+			}
 		}
 		if payload == nil {
 			log.Println("Payload is nil")
@@ -184,6 +190,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 
 	// Return the named values if everything went ok
 	// so if any deletion in the defer call fails, the func returns an error.
+	log.Println("Payload is:", string(payload))
 	return
 }
 
