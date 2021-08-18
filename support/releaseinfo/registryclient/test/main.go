@@ -69,10 +69,10 @@ func (o *Options) Extract(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to extract files from image: %w", err)
 		}
-		if bytes.Compare(fixtures.ImageReferencesJSON_4_8, result[imageRefsFile]) != 0 {
+		if !bytes.Equal(fixtures.ImageReferencesJSON_4_8, result[imageRefsFile]) {
 			return fmt.Errorf("unexpected image refs file:\n%s", string(result[imageRefsFile]))
 		}
-		if bytes.Compare(fixtures.CoreOSBootImagesYAML_4_8, result[bootImagesFile]) != 0 {
+		if !bytes.Equal(fixtures.CoreOSBootImagesYAML_4_8, result[bootImagesFile]) {
 			return fmt.Errorf("unexpected boot images file:\n%s", string(result[bootImagesFile]))
 		}
 	}

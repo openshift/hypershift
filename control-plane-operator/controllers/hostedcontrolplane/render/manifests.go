@@ -215,11 +215,6 @@ func (c *clusterManifestContext) addUserManifest(name, content string) {
 	c.userManifests[name] = content
 }
 
-func trimFirstSegment(s string) string {
-	parts := strings.Split(s, ".")
-	return strings.Join(parts[1:], ".")
-}
-
 func userConfigMapName(file string) string {
 	parts := strings.Split(file, ".")
 	return "user-manifest-" + strings.ReplaceAll(parts[0], "_", "-")

@@ -85,7 +85,7 @@ func buildSchedulerContainerMain(image, namespace string, featureGates []string,
 		c.Args = []string{
 			fmt.Sprintf("--config=%s", configPath),
 			fmt.Sprintf("--cert-dir=%s", certWorkDir),
-			fmt.Sprintf("--port=0"),
+			"--port=0",
 			fmt.Sprintf("--authentication-kubeconfig=%s", kubeConfigPath),
 			fmt.Sprintf("--authorization-kubeconfig=%s", kubeConfigPath),
 			"-v=2",

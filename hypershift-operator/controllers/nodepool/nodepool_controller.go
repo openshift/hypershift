@@ -44,7 +44,6 @@ import (
 	k8sutilspointer "k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -68,7 +67,7 @@ const (
 )
 
 type NodePoolReconciler struct {
-	ctrlclient.Client
+	client.Client
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
 
@@ -299,7 +298,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Validate Ignition CA Secret.
 	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
-	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(caSecret), caSecret); err != nil {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(caSecret), caSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 				Type:               string(hyperv1.IgnitionEndpointAvailable),
@@ -499,7 +498,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			targetVersion, targetConfigHash, targetConfigVersionHash)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
-			ctrlclient.ObjectKeyFromObject(md).String(), err)
+			client.ObjectKeyFromObject(md).String(), err)
 	} else {
 		log.Info("Reconciled MachineDeployment", "result", result)
 		span.AddEvent("reconciled machinedeployment", trace.WithAttributes(attribute.String("result", string(result))))
@@ -511,7 +510,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return r.reconcileMachineHealthCheck(mhc, nodePool, infraID)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineHealthCheck %q: %w",
-				ctrlclient.ObjectKeyFromObject(mhc).String(), err)
+				client.ObjectKeyFromObject(mhc).String(), err)
 		} else {
 			log.Info("Reconciled MachineHealthCheck", "result", result)
 			span.AddEvent("reconciled machinehealthchecks", trace.WithAttributes(attribute.String("result", string(result))))
@@ -555,7 +554,7 @@ func (r NodePoolReconciler) reconcileAWSMachineTemplate(ctx context.Context,
 			Namespace: controlPlaneNamespace,
 		},
 	}
-	if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(currentAWSMachineTemplate), currentAWSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(currentAWSMachineTemplate), currentAWSMachineTemplate); err != nil && !apierrors.IsNotFound(err) {
 		return nil, fmt.Errorf("error getting existing AWSMachineTemplate: %w", err)
 	}
 
@@ -592,7 +591,7 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 	if userDataSecret.Annotations == nil {
 		userDataSecret.Annotations = make(map[string]string)
 	}
-	userDataSecret.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
+	userDataSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 
 	encodedCACert := base64.StdEncoding.EncodeToString(CA)
 	encodedToken := base64.StdEncoding.EncodeToString(token)
@@ -614,7 +613,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 		tokenSecret.Annotations = make(map[string]string)
 	}
 	tokenSecret.Annotations[TokenSecretAnnotation] = "true"
-	tokenSecret.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
+	tokenSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 
 	if tokenSecret.Data == nil {
 		tokenSecret.Data = map[string][]byte{}
@@ -638,7 +637,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	if machineDeployment.GetAnnotations() == nil {
 		machineDeployment.Annotations = map[string]string{}
 	}
-	machineDeployment.Annotations[nodePoolAnnotation] = ctrlclient.ObjectKeyFromObject(nodePool).String()
+	machineDeployment.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 	if machineDeployment.GetLabels() == nil {
 		machineDeployment.Labels = map[string]string{}
 	}
@@ -865,7 +864,7 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 				Namespace: nodePool.Namespace,
 			},
 		}
-		if err := r.Get(ctx, ctrlclient.ObjectKeyFromObject(configConfigMap), configConfigMap); err != nil {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(configConfigMap), configConfigMap); err != nil {
 			errors = append(errors, err)
 			continue
 		}
@@ -1032,7 +1031,7 @@ func GetHostedClusterByName(ctx context.Context, c client.Client, namespace, nam
 	return hcluster, nil
 }
 
-func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj ctrlclient.Object) []reconcile.Request {
+func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj client.Object) []reconcile.Request {
 	var result []reconcile.Request
 
 	hc, ok := obj.(*hyperv1.HostedCluster)
@@ -1058,7 +1057,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj ctrlclient.Obj
 	return result
 }
 
-func enqueueParentNodePool(obj ctrlclient.Object) []reconcile.Request {
+func enqueueParentNodePool(obj client.Object) []reconcile.Request {
 	var nodePoolName string
 	if obj.GetAnnotations() != nil {
 		nodePoolName = obj.GetAnnotations()[nodePoolAnnotation]
@@ -1080,7 +1079,7 @@ func (r *NodePoolReconciler) listAWSMachineTemplates(nodePool *hyperv1.NodePool)
 	for i, AWSMachineTemplate := range awsMachineTemplateList.Items {
 		if AWSMachineTemplate.GetAnnotations() != nil {
 			if annotation, ok := AWSMachineTemplate.GetAnnotations()[nodePoolAnnotation]; ok &&
-				annotation == ctrlclient.ObjectKeyFromObject(nodePool).String() {
+				annotation == client.ObjectKeyFromObject(nodePool).String() {
 				filtered = append(filtered, awsMachineTemplateList.Items[i])
 			}
 		}

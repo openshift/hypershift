@@ -319,10 +319,6 @@ func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 	}
 }
 
-func externalAddress(endpoint hyperv1.APIEndpoint) string {
-	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
-}
-
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
 	port := config.DefaultAPIServerPort
 	if hcp.Spec.APIPort != nil {

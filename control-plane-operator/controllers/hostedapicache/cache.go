@@ -37,7 +37,7 @@ type HostedAPICache interface {
 }
 
 // NotInitializedError means the cache isn't yet ready to use.
-var NotInitializedError = errors.New("api cache hasn't yet been initialized")
+var ErrNotInitialized = errors.New("api cache hasn't yet been initialized")
 
 // hostedAPICache is the HostedAPICache implementation backed by a cache.Cache
 // and a set of event handlers wired to that cache. The cache is rebuilt in
@@ -194,7 +194,7 @@ func (h *hostedAPICache) Get(ctx context.Context, key client.ObjectKey, obj clie
 	h.lock.Lock()
 	defer h.lock.Unlock()
 	if h.cache == nil {
-		return NotInitializedError
+		return ErrNotInitialized
 	}
 	return h.cache.Get(ctx, key, obj)
 }
@@ -203,7 +203,7 @@ func (h *hostedAPICache) List(ctx context.Context, list client.ObjectList, opts 
 	h.lock.Lock()
 	defer h.lock.Unlock()
 	if h.cache == nil {
-		return NotInitializedError
+		return ErrNotInitialized
 	}
 	return h.cache.List(ctx, list, opts...)
 }

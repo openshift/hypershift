@@ -182,13 +182,10 @@ func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime
 	cfg.SetKind("ExternalIPRangerAdmissionConfig")
 	conf := []string{}
 	if externalIPConfig != nil && externalIPConfig.Policy != nil {
-		conf := []string{}
 		for _, cidr := range externalIPConfig.Policy.RejectedCIDRs {
 			conf = append(conf, "!"+cidr)
 		}
-		for _, cidr := range externalIPConfig.Policy.AllowedCIDRs {
-			conf = append(conf, cidr)
-		}
+		conf = append(conf, externalIPConfig.Policy.AllowedCIDRs...)
 	}
 	unstructured.SetNestedStringSlice(cfg.Object, conf, "externalIPNetworkCIDRs")
 	allowIngressIP := externalIPConfig != nil && len(externalIPConfig.AutoAssignCIDRs) > 0

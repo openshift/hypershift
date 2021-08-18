@@ -115,16 +115,6 @@ func pullSecretBase64(data []byte) func() string {
 	}
 }
 
-func base64Func(params interface{}, rc *renderContext) func(string) string {
-	return func(fileName string) string {
-		result, err := rc.substituteParams(params, fileName)
-		if err != nil {
-			panic(err.Error())
-		}
-		return base64.StdEncoding.EncodeToString([]byte(result))
-	}
-}
-
 func includeDataFunc() func(string, int) string {
 	return func(data string, indent int) string {
 		input := bytes.NewBufferString(data)

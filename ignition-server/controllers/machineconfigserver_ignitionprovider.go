@@ -19,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8sutilspointer "k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ IgnitionProvider = (*MCSIgnitionProvider)(nil)
@@ -113,7 +112,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 
 	// Wait for the pod server the payload.
 	if err := wait.PollImmediate(10*time.Second, 300*time.Second, func() (bool, error) {
-		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
+		if err := p.Client.Get(ctx, client.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
 			// We don't return the error here so we want to keep retrying.
 			return false, nil
 		}

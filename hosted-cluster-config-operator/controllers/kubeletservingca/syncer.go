@@ -16,9 +16,6 @@ import (
 // syncInterval is the amount of time to use between checks
 var syncInterval = 20 * time.Minute
 
-// hostedClusterConfigOperatorConfig is the name of the source configmap on the management cluster
-const hostedClusterConfigOperatorConfig = "hosted-cluster-config-operator"
-
 type KubeletServingCASyncer struct {
 	TargetClient kubeclient.Interface
 	Log          logr.Logger
