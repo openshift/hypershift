@@ -1761,6 +1761,9 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.PlatformType = platformType(hcp)
 	params.InfraID = hcp.Spec.InfraID
 	params.FIPS = hcp.Spec.FIPS
+	if _, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
+		params.RestartDate = hcp.Annotations[hyperv1.RestartDateAnnotation]
+	}
 
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:

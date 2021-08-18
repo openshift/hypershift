@@ -18,6 +18,9 @@ spec:
     metadata:
       annotations:
         include.release.openshift.io/self-managed-high-availability: "true"
+{{ if .RestartDate }}
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
       labels:
         app: packageserver
     spec:
@@ -65,7 +68,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 50Mi
+            memory: 70Mi
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:

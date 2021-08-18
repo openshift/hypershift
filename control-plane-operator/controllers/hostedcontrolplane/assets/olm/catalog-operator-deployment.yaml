@@ -18,6 +18,9 @@ spec:
     metadata:
       annotations:
         workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+{{ if .RestartDate }}
+        openshift.io/restartedAt: "{{ .RestartDate }}"
+{{ end }}
       labels:
         app: catalog-operator
     spec:
@@ -66,7 +69,7 @@ spec:
           resources:
             requests:
               cpu: 10m
-              memory: 80Mi
+              memory: 70Mi
           volumeMounts:
             - mountPath: /var/run/secrets/serving-cert
               name: serving-cert

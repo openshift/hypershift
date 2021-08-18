@@ -24,6 +24,10 @@ const (
 	//KonnectivityAgentImageAnnotation is a temporary annotation that allows the specification of the konnectivity agent image.
 	//This will be removed when Konnectivity is added to the Openshift release payload
 	KonnectivityAgentImageAnnotation = "hypershift.openshift.io/konnectivity-agent-image"
+	// RestartDateAnnotation is a annotation that can be used to trigger a rolling restart of all components managed by hypershift.
+	// it is important in some situations like CA rotation where components need to be fully restarted to pick up new CAs. It's also
+	// important in some recovery situations where a fresh start of the component helps fix symptoms a user might be experiencing.
+	RestartDateAnnotation = "hypershift.openshift.io/restart-date"
 )
 
 // HostedClusterSpec defines the desired state of HostedCluster

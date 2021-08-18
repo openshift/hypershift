@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"encoding/json"
 	"strings"
@@ -88,7 +89,41 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 			},
 		},
 	}
+	p.LivenessProbes = config.LivenessProbes{
+		oauthContainerMain().Name: {
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTPS,
+					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 120,
+			TimeoutSeconds:      10,
+			PeriodSeconds:       60,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+	}
+	p.ReadinessProbes = config.ReadinessProbes{
+		oauthContainerMain().Name: {
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTPS,
+					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 10,
+			TimeoutSeconds:      10,
+			PeriodSeconds:       30,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+	}
 	p.DeploymentConfig.SetMultizoneSpread(oauthServerLabels)
+	p.DeploymentConfig.SetColocation(hcp)
+	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		p.Replicas = 3

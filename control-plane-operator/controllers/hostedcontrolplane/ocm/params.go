@@ -31,7 +31,6 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 		APIServer:                       globalConfig.APIServer,
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
-		AdditionalLabels: map[string]string{},
 		Scheduling: config.Scheduling{
 			PriorityClass: DefaultPriorityClass,
 		},
@@ -44,8 +43,9 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 			},
 		},
 	}
+	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetMultizoneSpread(openShiftControllerManagerLabels)
-
+	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.DeploymentConfig.Replicas = 3
