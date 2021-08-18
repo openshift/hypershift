@@ -137,8 +137,8 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			return false, fmt.Errorf("failed to get machine config server service: %w", err)
 		}
 		// Get  Machine config certs
-		var caCert []byte
-		//var cert tls.Certificate
+		var caCert, tlsCert, tlsKey []byte
+		var cert tls.Certificate
 		var ok bool
 		machineConfigServerCert := manifests.MachineConfigServerCert(p.Namespace)
 		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(machineConfigServerCert), machineConfigServerCert); err != nil {
@@ -149,25 +149,25 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)
-		// if tlsCert, ok = machineConfigServerCert.Data["tls.crt"]; !ok {
-		// 	return false, fmt.Errorf("failed to get tls cert: %w", err)
-		// }
-		// if tlsKey, ok = machineConfigServerCert.Data["tls.key"]; !ok {
-		// 	return false, fmt.Errorf("failed to get tls key: %w", err)
-		// }
-		// cert, err := tls.X509KeyPair(tlsCert, tlsKey)
-		// if err != nil {
-		// 	return false, fmt.Errorf("failed to load cert: %w", err)
-		// }
+		if tlsCert, ok = machineConfigServerCert.Data["tls.crt"]; !ok {
+			return false, fmt.Errorf("failed to get tls cert: %w", err)
+		}
+		if tlsKey, ok = machineConfigServerCert.Data["tls.key"]; !ok {
+			return false, fmt.Errorf("failed to get tls key: %w", err)
+		}
+		cert, err := tls.X509KeyPair(tlsCert, tlsKey)
+		if err != nil {
+			return false, fmt.Errorf("failed to load cert: %w", err)
+		}
 		client := &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					RootCAs: caCertPool,
-					//Certificates: []tls.Certificate{cert},
+					RootCAs:      caCertPool,
+					Certificates: []tls.Certificate{cert},
 				},
 			},
 		}
-		res, err := client.Get(fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", mcsService.Name, p.Namespace))
+		res, err := client.Get(fmt.Sprintf("https://%s.%s.%s.svc.cluster.local:8443", mcsPod.Name, mcsService.Name, p.Namespace))
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
