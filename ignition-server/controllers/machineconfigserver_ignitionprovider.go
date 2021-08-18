@@ -89,9 +89,9 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if err := p.Client.Delete(ctx, mcsService); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server headless service: %w", err))
 		}
-		if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
-			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
-		}
+		// if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
+		// 	deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
+		// }
 		// We return this in the named returned values.
 		if deleteErrors != nil {
 			err = utilerrors.NewAggregate(deleteErrors)
