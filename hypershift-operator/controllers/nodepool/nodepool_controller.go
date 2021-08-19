@@ -250,7 +250,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
 			Status:             metav1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", *nodePool.Spec.AutoScaling.Max, *nodePool.Spec.AutoScaling.Min),
+			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", nodePool.Spec.AutoScaling.Max, nodePool.Spec.AutoScaling.Min),
 			ObservedGeneration: nodePool.Generation,
 		})
 	} else {
@@ -745,7 +745,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 
 	setMachineDeploymentReplicas(nodePool, machineDeployment)
 
-	nodePool.Status.NodeCount = int(machineDeployment.Status.AvailableReplicas)
+	nodePool.Status.NodeCount = machineDeployment.Status.AvailableReplicas
 	return nil
 }
 
@@ -796,13 +796,13 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	}
 
 	if isAutoscalingEnabled(nodePool) {
-		if !machineDeployment.CreationTimestamp.IsZero() {
+		if machineDeployment.CreationTimestamp.IsZero() {
 			// if autoscaling is enabled and the machineDeployment does not exist yet and so it has nil/0 replicas
 			// we start with 1 replica as the autoscaler does not support scaling from zero yet.
 			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
 		}
-		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(*nodePool.Spec.AutoScaling.Max))
-		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(*nodePool.Spec.AutoScaling.Min))
+		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))
+		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Min))
 	}
 
 	// If autoscaling is NOT enabled we reset min/max annotations and reconcile replicas.
@@ -977,16 +977,12 @@ func validateAutoscaling(nodePool *hyperv1.NodePool) error {
 		max := nodePool.Spec.AutoScaling.Max
 		min := nodePool.Spec.AutoScaling.Min
 
-		if max == nil || min == nil {
-			return fmt.Errorf("max and min must be not nil. Max: %v, Min: %v", max, min)
+		if max < min {
+			return fmt.Errorf("max must be equal or greater than min. Max: %v, Min: %v", max, min)
 		}
 
-		if *max < *min {
-			return fmt.Errorf("max must be equal or greater than min. Max: %v, Min: %v", *max, *min)
-		}
-
-		if *max == 0 || *min == 0 {
-			return fmt.Errorf("max and min must be not zero. Max: %v, Min: %v", *max, *min)
+		if max == 0 || min == 0 {
+			return fmt.Errorf("max and min must be not zero. Max: %v, Min: %v", max, min)
 		}
 	}
 

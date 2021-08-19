@@ -313,6 +313,7 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
 				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
 				"--clusterapi-cloud-config-authoritative",
+				"--skip-nodes-with-local-storage=false",
 				"--alsologtostderr",
 				"--v=4",
 			},
@@ -335,6 +336,7 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
 				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
 				"--clusterapi-cloud-config-authoritative",
+				"--skip-nodes-with-local-storage=false",
 				"--alsologtostderr",
 				"--v=4",
 				"--max-nodes-total=100",
@@ -355,7 +357,7 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 					Name:      "test-secret",
 				},
 			}
-			err := reconcileAutoScalerDeployment(deployment, sa, secret, test.AutoscalerOptions)
+			err := reconcileAutoScalerDeployment(deployment, sa, secret, test.AutoscalerOptions, imageClusterAutoscaler)
 			if err != nil {
 				t.Error(err)
 			}

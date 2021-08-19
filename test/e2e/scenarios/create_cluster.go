@@ -92,7 +92,7 @@ func TestCreateCluster(ctx context.Context, o TestCreateClusterOptions) func(t *
 
 		// Wait for nodes to report ready
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
-		e2eutil.WaitForReadyNodes(t, ctx, guestClient, nodepool)
+		e2eutil.WaitForNReadyNodes(t, ctx, guestClient, *nodepool.Spec.NodeCount)
 
 		// Wait for the rollout to be reported complete
 		log.Info("waiting for cluster rollout", "image", o.ReleaseImage)

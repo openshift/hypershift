@@ -28,6 +28,14 @@ const (
 	// it is important in some situations like CA rotation where components need to be fully restarted to pick up new CAs. It's also
 	// important in some recovery situations where a fresh start of the component helps fix symptoms a user might be experiencing.
 	RestartDateAnnotation = "hypershift.openshift.io/restart-date"
+	// ClusterAPIManagerImage is an annotation that allows the specification of the cluster api manager image.
+	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
+	// no images can be pulled from registries outside of IBM Cloud's official regional registries
+	ClusterAPIManagerImage = "hypershift.openshift.io/capi-manager-image"
+	// ClusterAutoscalerImage is an annotation that allows the specification of the cluster autoscaler image.
+	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
+	//no images can be pulled from registries outside of IBM Cloud's official regional registries
+	ClusterAutoscalerImage = "hypershift.openshift.io/cluster-autoscaler-image"
 )
 
 // HostedClusterSpec defines the desired state of HostedCluster
