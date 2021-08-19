@@ -934,11 +934,15 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hclu
 	}
 
 	// Reconcile CAPI manager deployment
+	capiImage := imageCAPI
+	if _, ok := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]; ok {
+		capiImage = hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
+	}
 	capiManagerDeployment := clusterapi.ClusterAPIManagerDeployment(controlPlaneNamespace.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, capiManagerServiceAccount)
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, capiManagerServiceAccount, capiImage)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -1462,9 +1466,13 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 		}
 
 		// Reconcile autoscaler deployment
+		clusterAutoScalerImage := imageClusterAutoscaler
+		if _, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
+			clusterAutoScalerImage = hcluster.Annotations[hyperv1.ClusterAutoscalerImage]
+		}
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -1721,7 +1729,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	return nil
 }
 
-func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount) error {
+func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, capiManagerImage string) error {
 	defaultMode := int32(420)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
@@ -1752,7 +1760,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, sa *corev1.Se
 				Containers: []corev1.Container{
 					{
 						Name:            "manager",
-						Image:           imageCAPI,
+						Image:           capiManagerImage,
 						ImagePullPolicy: corev1.PullAlways,
 						Env: []corev1.EnvVar{
 							{
@@ -2034,7 +2042,7 @@ func reconcileCAPIAWSProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -2113,7 +2121,7 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.Ser
 				Containers: []corev1.Container{
 					{
 						Name:            "cluster-autoscaler",
-						Image:           imageClusterAutoscaler,
+						Image:           clusterAutoScalerImage,
 						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{
