@@ -3,10 +3,9 @@ package oapi
 import (
 	"encoding/json"
 	"fmt"
-	"path"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"path"
 
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
@@ -18,6 +17,7 @@ import (
 
 const (
 	openshiftAPIServerConfigKey     = "config.yaml"
+	oasKonnectivityProxyConfigKey   = "haproxy.cfg"
 	defaultInternalRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 )
 
@@ -38,6 +38,8 @@ func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, in
 		return fmt.Errorf("failed to serialize openshift apiserver config: %w", err)
 	}
 	cm.Data[openshiftAPIServerConfigKey] = string(serializedConfig)
+	oasKonnectivityProxyConfig := reconcileOASKonnectivityProxyConfig()
+	cm.Data[oasKonnectivityProxyConfigKey] = oasKonnectivityProxyConfig
 	return nil
 }
 
@@ -88,4 +90,35 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 			CA: cpath(oasVolumeEtcdClientCA().Name, pki.CASignerCertMapKey),
 		},
 	}
+}
+
+const haproxyTemplate = `
+global
+  maxconn 7000
+  log stdout local0
+  log stdout local1 notice
+
+defaults
+  mode http
+  log global
+  option log-health-checks
+  balance roundrobin
+  timeout client 10m
+  timeout server 10m
+  timeout connect 10s
+  timeout client-fin 5s
+  timeout server-fin 5s
+  timeout queue 5s
+  retries 3
+
+frontend http-in
+  bind *:10080
+  default_backend be
+backend be
+  mode http
+  server ks konnectivity-server-local:8090 ssl verify required ca-file /etc/konnectivity-proxy-tls/ca.crt crt /tmp/tls.pem
+`
+
+func reconcileOASKonnectivityProxyConfig() string {
+	return string(haproxyTemplate)
 }

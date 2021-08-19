@@ -2,6 +2,7 @@ package oapi
 
 import (
 	"fmt"
+	"net/url"
 	"path"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,13 +31,17 @@ var (
 			oasVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
 			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
 		},
+		oasKonnectivityProxyContainer().Name: {
+			oasVolumeConfig().Name:                "/etc/kubernetes/config",
+			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
+		},
 	}
 	openShiftAPIServerLabels = map[string]string{
 		"app": "openshift-apiserver",
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, haproxyImage string, etcdURL string) error {
 	ownerRef.ApplyTo(deployment)
 
 	maxUnavailable := intstr.FromInt(1)
@@ -53,10 +58,15 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MatchLabels: openShiftAPIServerLabels,
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels
+	etcdUrlData, err := url.Parse(etcdURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse etcd url: %w", err)
+	}
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image)),
+			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, etcdUrlData.Host)),
+			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(haproxyImage)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
@@ -68,6 +78,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(oasVolumeKubeconfig(), buildOASVolumeKubeconfig),
 			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
 			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
+			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
 		},
 	}
 
@@ -82,7 +93,30 @@ func oasContainerMain() *corev1.Container {
 	}
 }
 
-func buildOASContainerMain(image string) func(c *corev1.Container) {
+func oasKonnectivityProxyContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "oas-konnectivity-proxy",
+	}
+}
+
+func buildOASKonnectivityProxyContainer(routerImage string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		cpath := func(volume, file string) string {
+			return path.Join(volumeMounts.Path(c.Name, volume), file)
+		}
+		c.Image = routerImage
+		c.Command = []string{
+			"/bin/bash",
+			"-c",
+		}
+		c.Args = []string{
+			fmt.Sprintf("cat /etc/konnectivity-proxy-tls/tls.crt /etc/konnectivity-proxy-tls/tls.key > /tmp/tls.pem; haproxy -f %s", cpath(oasVolumeConfig().Name, oasKonnectivityProxyConfigKey)),
+		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+	}
+}
+
+func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		cpath := func(volume, file string) string {
 			return path.Join(volumeMounts.Path(c.Name, volume), file)
@@ -100,6 +134,20 @@ func buildOASContainerMain(image string) func(c *corev1.Container) {
 			"--requestheader-extra-headers-prefix=X-Remote-Extra-",
 			"--client-ca-file=/etc/kubernetes/config/serving-ca.crt",
 			fmt.Sprintf("--client-ca-file=%s", cpath(oasVolumeServingCA().Name, pki.CASignerCertMapKey)),
+		}
+		c.Env = []corev1.EnvVar{
+			{
+				Name:  "HTTP_PROXY",
+				Value: "http://127.0.0.1:10080",
+			},
+			{
+				Name:  "HTTPS_PROXY",
+				Value: "http://127.0.0.1:10080",
+			},
+			{
+				Name:  "NO_PROXY",
+				Value: fmt.Sprintf("kube-apiserver,%s", etcdHostname),
+			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.WorkingDir = volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name)
@@ -202,4 +250,15 @@ func oasVolumeEtcdClientCert() *corev1.Volume {
 func buildOASVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
+}
+
+func oasVolumeKonnectivityProxyCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oas-konnectivity-proxy-cert",
+	}
+}
+
+func buildOASVolumeKonnectivityProxyCert(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{}
+	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
 }
