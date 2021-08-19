@@ -81,6 +81,10 @@ type HostedControlPlaneSpec struct {
 	// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
 	// +kubebuilder:validation:Optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
+
+	// SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
+	// cluster when applicable.
+	SecretEncryption *SecretEncryptionSpec `json:"secretEncryption,omitempty"`
 }
 
 type AvailabilityPolicy string
