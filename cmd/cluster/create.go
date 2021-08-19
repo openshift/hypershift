@@ -44,6 +44,7 @@ type Options struct {
 	Annotations        []string
 	NetworkType        string
 	FIPS               bool
+	Platform           string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -74,11 +75,12 @@ func NewCreateCommand() *cobra.Command {
 		Render:             false,
 		InfrastructureJSON: "",
 		Region:             "us-east-1",
-		InfraID:            "",
+		InfraID:            fmt.Sprintf("%s-%s", "example", utilrand.String(5)),
 		InstanceType:       "m4.large",
 		Annotations:        []string{},
 		NetworkType:        string(v1alpha1.OpenShiftSDN),
 		FIPS:               false,
+		Platform:           "aws",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -98,9 +100,12 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
 	cmd.Flags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico or OpenshiftSDN.")
 	cmd.Flags().BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster")
+	cmd.Flags().StringVar(&opts.Platform, "platform", opts.Platform, "The platform to use for the cluster")
 
 	cmd.MarkFlagRequired("pull-secret")
-	cmd.MarkFlagRequired("aws-creds")
+	cmd.MarkFlagRequired("ssh-key")
+	//cmd.MarkFlagRequired("aws-creds")
+	cmd.MarkFlagRequired("platform")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -151,118 +156,156 @@ func CreateCluster(ctx context.Context, opts Options) error {
 	client := util.GetClientOrDie()
 
 	// Load or create infrastructure for the cluster
-	var infra *awsinfra.CreateInfraOutput
-	if len(opts.InfrastructureJSON) > 0 {
-		rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
-		if err != nil {
-			return fmt.Errorf("failed to read infra json file: %w", err)
-		}
-		infra = &awsinfra.CreateInfraOutput{}
-		if err = json.Unmarshal(rawInfra, infra); err != nil {
-			return fmt.Errorf("failed to load infra json: %w", err)
-		}
-	}
-	if opts.BaseDomain == "" {
-		if infra != nil {
-			opts.BaseDomain = infra.BaseDomain
-		} else {
-			return fmt.Errorf("base-domain flag is required if infra-json is not provided")
-		}
-	}
-	if infra == nil {
-		infraID := opts.InfraID
-		if len(infraID) == 0 {
-			infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
-		}
-		opt := awsinfra.CreateInfraOptions{
-			Region:             opts.Region,
-			InfraID:            infraID,
-			AWSCredentialsFile: opts.AWSCredentialsFile,
-			Name:               opts.Name,
-			BaseDomain:         opts.BaseDomain,
-		}
-		infra, err = opt.CreateInfra(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
-		}
-	}
-
-	var iamInfo *awsinfra.CreateIAMOutput
-	if len(opts.IAMJSON) > 0 {
-		rawIAM, err := ioutil.ReadFile(opts.IAMJSON)
-		if err != nil {
-			return fmt.Errorf("failed to read iam json file: %w", err)
-		}
-		iamInfo = &awsinfra.CreateIAMOutput{}
-		if err = json.Unmarshal(rawIAM, iamInfo); err != nil {
-			return fmt.Errorf("failed to load infra json: %w", err)
-		}
-	} else {
-		opt := awsinfra.CreateIAMOptions{
-			Region:             opts.Region,
-			AWSCredentialsFile: opts.AWSCredentialsFile,
-			InfraID:            infra.InfraID,
-			IssuerURL:          opts.IssuerURL,
-		}
-		iamInfo, err = opt.CreateIAM(ctx, client)
-		if err != nil {
-			return fmt.Errorf("failed to create iam: %w", err)
-		}
-	}
-
-	exampleObjects := apifixtures.ExampleOptions{
-		Namespace:        opts.Namespace,
-		Name:             infra.Name,
-		Annotations:      annotations,
-		ReleaseImage:     opts.ReleaseImage,
-		PullSecret:       pullSecret,
-		SigningKey:       iamInfo.ServiceAccountSigningKey,
-		IssuerURL:        iamInfo.IssuerURL,
-		SSHKey:           sshKey,
-		NodePoolReplicas: opts.NodePoolReplicas,
-		InfraID:          infra.InfraID,
-		ComputeCIDR:      infra.ComputeCIDR,
-		BaseDomain:       infra.BaseDomain,
-		PublicZoneID:     infra.PublicZoneID,
-		PrivateZoneID:    infra.PrivateZoneID,
-		NetworkType:      v1alpha1.NetworkType(opts.NetworkType),
-		FIPS:             opts.FIPS,
-		AWS: apifixtures.ExampleAWSOptions{
-			Region:                                 infra.Region,
-			Zone:                                   infra.Zone,
-			VPCID:                                  infra.VPCID,
-			SubnetID:                               infra.PrivateSubnetID,
-			SecurityGroupID:                        infra.SecurityGroupID,
-			InstanceProfile:                        iamInfo.ProfileName,
-			InstanceType:                           opts.InstanceType,
-			Roles:                                  iamInfo.Roles,
-			KubeCloudControllerUserAccessKeyID:     iamInfo.KubeCloudControllerUserAccessKeyID,
-			KubeCloudControllerUserAccessKeySecret: iamInfo.KubeCloudControllerUserAccessKeySecret,
-			NodePoolManagementUserAccessKeyID:      iamInfo.NodePoolManagementUserAccessKeyID,
-			NodePoolManagementUserAccessKeySecret:  iamInfo.NodePoolManagementUserAccessKeySecret,
-		},
-	}.Resources().AsObjects()
-
-	switch {
-	case opts.Render:
-		for _, object := range exampleObjects {
-			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+	if opts.Platform == "aws" {
+		var infra *awsinfra.CreateInfraOutput
+		if len(opts.InfrastructureJSON) > 0 {
+			rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
 			if err != nil {
-				return fmt.Errorf("failed to encode objects: %w", err)
+				return fmt.Errorf("failed to read infra json file: %w", err)
 			}
-			fmt.Println("---")
+			infra = &awsinfra.CreateInfraOutput{}
+			if err = json.Unmarshal(rawInfra, infra); err != nil {
+				return fmt.Errorf("failed to load infra json: %w", err)
+			}
 		}
-	default:
-		for _, object := range exampleObjects {
-			key := crclient.ObjectKeyFromObject(object)
-			object.SetLabels(map[string]string{util.AutoInfraLabelName: infra.InfraID})
-			if err := client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli")); err != nil {
-				return fmt.Errorf("failed to apply object %q: %w", key, err)
+		if opts.BaseDomain == "" {
+			if infra != nil {
+				opts.BaseDomain = infra.BaseDomain
+			} else {
+				return fmt.Errorf("base-domain flag is required if infra-json is not provided")
 			}
-			log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
+		}
+		if infra == nil {
+			opt := awsinfra.CreateInfraOptions{
+				Region:             opts.Region,
+				InfraID:            opts.InfraID,
+				AWSCredentialsFile: opts.AWSCredentialsFile,
+				Name:               opts.Name,
+				BaseDomain:         opts.BaseDomain,
+			}
+			infra, err = opt.CreateInfra(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to create infra: %w", err)
+			}
+		}
+
+		var iamInfo *awsinfra.CreateIAMOutput
+		if len(opts.IAMJSON) > 0 {
+			rawIAM, err := ioutil.ReadFile(opts.IAMJSON)
+			if err != nil {
+				return fmt.Errorf("failed to read iam json file: %w", err)
+			}
+			iamInfo = &awsinfra.CreateIAMOutput{}
+			if err = json.Unmarshal(rawIAM, iamInfo); err != nil {
+				return fmt.Errorf("failed to load infra json: %w", err)
+			}
+		} else {
+			opt := awsinfra.CreateIAMOptions{
+				Region:             opts.Region,
+				AWSCredentialsFile: opts.AWSCredentialsFile,
+				InfraID:            infra.InfraID,
+				IssuerURL:          opts.IssuerURL,
+			}
+			iamInfo, err = opt.CreateIAM(ctx, client)
+			if err != nil {
+				return fmt.Errorf("failed to create iam: %w", err)
+			}
+		}
+
+		exampleObjects := apifixtures.ExampleOptions{
+			Namespace:        opts.Namespace,
+			Name:             infra.Name,
+			Annotations:      annotations,
+			ReleaseImage:     opts.ReleaseImage,
+			PullSecret:       pullSecret,
+			SigningKey:       iamInfo.ServiceAccountSigningKey,
+			IssuerURL:        iamInfo.IssuerURL,
+			SSHKey:           sshKey,
+			NodePoolReplicas: opts.NodePoolReplicas,
+			InfraID:          infra.InfraID,
+			ComputeCIDR:      infra.ComputeCIDR,
+			BaseDomain:       infra.BaseDomain,
+			PublicZoneID:     infra.PublicZoneID,
+			PrivateZoneID:    infra.PrivateZoneID,
+			NetworkType:      v1alpha1.NetworkType(opts.NetworkType),
+			FIPS:             opts.FIPS,
+			AWS: apifixtures.ExampleAWSOptions{
+				Region:                                 infra.Region,
+				Zone:                                   infra.Zone,
+				VPCID:                                  infra.VPCID,
+				SubnetID:                               infra.PrivateSubnetID,
+				SecurityGroupID:                        infra.SecurityGroupID,
+				InstanceProfile:                        iamInfo.ProfileName,
+				InstanceType:                           opts.InstanceType,
+				Roles:                                  iamInfo.Roles,
+				KubeCloudControllerUserAccessKeyID:     iamInfo.KubeCloudControllerUserAccessKeyID,
+				KubeCloudControllerUserAccessKeySecret: iamInfo.KubeCloudControllerUserAccessKeySecret,
+				NodePoolManagementUserAccessKeyID:      iamInfo.NodePoolManagementUserAccessKeyID,
+				NodePoolManagementUserAccessKeySecret:  iamInfo.NodePoolManagementUserAccessKeySecret,
+			},
+		}.Resources().AsObjects()
+
+		switch {
+		case opts.Render:
+			for _, object := range exampleObjects {
+				err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+				if err != nil {
+					return fmt.Errorf("failed to encode objects: %w", err)
+				}
+				fmt.Println("---")
+			}
+		default:
+			for _, object := range exampleObjects {
+				key := crclient.ObjectKeyFromObject(object)
+				object.SetLabels(map[string]string{util.AutoInfraLabelName: infra.InfraID})
+				if err := client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli")); err != nil {
+					return fmt.Errorf("failed to apply object %q: %w", key, err)
+				}
+				log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
+			}
+			return nil
 		}
 		return nil
-	}
 
-	return nil
+	} else {
+		//case platform none or baremetal
+		exampleObjects := apifixtures.ExampleOptions{
+			Namespace:        opts.Namespace,
+			Name:             opts.Name,
+			Annotations:      annotations,
+			ReleaseImage:     opts.ReleaseImage,
+			PullSecret:       pullSecret,
+			IssuerURL:        "https://kubernetes.default.svc",
+			SSHKey:           sshKey,
+			NodePoolReplicas: opts.NodePoolReplicas,
+			ComputeCIDR:      "10.0.0.0/16",
+			PublicZoneID:     "",
+			PrivateZoneID:    "",
+			NetworkType:      v1alpha1.NetworkType(opts.NetworkType),
+			FIPS:             opts.FIPS,
+		}.Resources().AsObjects()
+
+		switch {
+		case opts.Render:
+			for _, object := range exampleObjects {
+				err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+				if err != nil {
+					return fmt.Errorf("failed to encode objects: %w", err)
+				}
+				fmt.Println("---")
+			}
+		default:
+			for _, object := range exampleObjects {
+				key := crclient.ObjectKeyFromObject(object)
+				object.SetLabels(map[string]string{util.AutoInfraLabelName: opts.InfraID})
+				if err := client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli")); err != nil {
+					return fmt.Errorf("failed to apply object %q: %w", key, err)
+				}
+				log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
+			}
+			return nil
+		}
+
+		return nil
+	}
 }
