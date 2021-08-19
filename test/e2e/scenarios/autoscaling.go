@@ -70,6 +70,8 @@ func TestAutoscaling(ctx context.Context, o TestAutoscalingOptions) func(t *test
 			InstanceType:     "m4.large",
 			BaseDomain:       o.BaseDomain,
 			NetworkType:      string(hyperv1.OpenShiftSDN),
+			RootVolumeSize:   64,
+			RootVolumeType:   "gp2",
 		}
 		t.Logf("Creating a new cluster. Options: %v", createClusterOpts)
 		err := cmdcluster.CreateCluster(ctx, createClusterOpts)
