@@ -73,6 +73,8 @@ func TestUpgradeControlPlane(ctx context.Context, o TestUpgradeControlPlaneOptio
 			InstanceType:     "m4.large",
 			BaseDomain:       o.BaseDomain,
 			NetworkType:      string(hyperv1.OpenShiftSDN),
+			RootVolumeSize:   64,
+			RootVolumeType:   "gp2",
 		}
 		err := cmdcluster.CreateCluster(ctx, createClusterOpts)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")

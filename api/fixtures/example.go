@@ -70,6 +70,9 @@ type ExampleAWSOptions struct {
 	KubeCloudControllerUserAccessKeySecret string
 	NodePoolManagementUserAccessKeyID      string
 	NodePoolManagementUserAccessKeySecret  string
+	RootVolumeSize                         int64
+	RootVolumeType                         string
+	RootVolumeIOPS                         int64
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -265,6 +268,11 @@ aws_secret_access_key = %s
 					{
 						ID: &o.AWS.SecurityGroupID,
 					},
+				},
+				RootVolume: &hyperv1.Volume{
+					Size: o.AWS.RootVolumeSize,
+					Type: o.AWS.RootVolumeType,
+					IOPS: o.AWS.RootVolumeIOPS,
 				},
 			}
 		}
