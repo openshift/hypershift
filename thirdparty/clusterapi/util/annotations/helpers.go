@@ -21,7 +21,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	clusterv1 "github.com/alknopfler/hypershift/thirdparty/clusterapi/api/v1alpha4"
 )
 
 // IsPaused returns true if the Cluster is paused or the object has the `paused` annotation.

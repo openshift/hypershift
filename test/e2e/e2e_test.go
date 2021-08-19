@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"testing"
 
-	e2elog "github.com/openshift/hypershift/test/e2e/log"
-	"github.com/openshift/hypershift/test/e2e/scenarios"
-	"github.com/openshift/hypershift/version"
+	e2elog "github.com/alknopfler/hypershift/test/e2e/log"
+	"github.com/alknopfler/hypershift/test/e2e/scenarios"
+	"github.com/alknopfler/hypershift/version"
 	"k8s.io/apimachinery/pkg/util/errors"
 )
 

@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openshift/hypershift/releaseinfo/fixtures"
-	"github.com/openshift/hypershift/releaseinfo/registryclient"
+	"github.com/alknopfler/hypershift/releaseinfo/fixtures"
+	"github.com/alknopfler/hypershift/releaseinfo/registryclient"
 	"github.com/spf13/cobra"
 )
 

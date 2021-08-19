@@ -12,10 +12,10 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const (

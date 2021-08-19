@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	hyperapi "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/util"
+	hyperapi "github.com/alknopfler/hypershift/api"
+	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
+	"github.com/alknopfler/hypershift/cmd/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"

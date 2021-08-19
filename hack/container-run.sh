@@ -22,6 +22,6 @@ fi
 
 IMAGE=docker.io/openshift/origin-release:golang-1.16
 
-ENGINE_CMD="${ENGINE} run --rm -v $(pwd):/go/src/github.com/openshift/hypershift:Z  -w /go/src/github.com/openshift/hypershift $IMAGE"
+ENGINE_CMD="${ENGINE} run --rm -v $(pwd):/go/src/github.com/alknopfler/hypershift:Z  -w /go/src/github.com/alknopfler/hypershift $IMAGE"
 
 ${ENGINE_CMD} $*

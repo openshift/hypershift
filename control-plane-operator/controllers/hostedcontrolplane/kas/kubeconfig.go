@@ -7,9 +7,9 @@ import (
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 )
 
 const (

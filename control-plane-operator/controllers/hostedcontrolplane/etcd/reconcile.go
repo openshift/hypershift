@@ -6,10 +6,10 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
-	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	etcdv1 "github.com/alknopfler/hypershift/thirdparty/etcd/v1beta2"
 )
 
 func ReconcileOperatorServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {

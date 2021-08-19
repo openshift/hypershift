@@ -13,7 +13,7 @@ The `hypershift` CLI tool helps you install and work with HyperShift.
 Install the `hypershift` CLI using Go:
 
 ```shell
-go install github.com/openshift/hypershift@latest
+go install github.com/alknopfler/hypershift@latest
 ```
 
 The `hypershift` tool will be installed to `$GOBIN/hypershift`.

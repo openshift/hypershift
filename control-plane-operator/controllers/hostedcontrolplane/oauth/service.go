@@ -6,9 +6,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	routev1 "github.com/openshift/api/route/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 const (

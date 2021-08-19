@@ -8,12 +8,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/alknopfler/hypershift/control-plane-operator/api"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
-	"github.com/openshift/hypershift/control-plane-operator/api"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 )
 
 const (

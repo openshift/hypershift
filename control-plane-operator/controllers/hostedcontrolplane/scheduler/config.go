@@ -11,8 +11,8 @@ import (
 	schedulerv1 "k8s.io/kube-scheduler/config/v1beta1"
 	"k8s.io/utils/pointer"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 )
 
 const (

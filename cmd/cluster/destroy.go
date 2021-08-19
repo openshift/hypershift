@@ -17,9 +17,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
-	"github.com/openshift/hypershift/cmd/util"
+	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
+	awsinfra "github.com/alknopfler/hypershift/cmd/infra/aws"
+	"github.com/alknopfler/hypershift/cmd/util"
 )
 
 const (

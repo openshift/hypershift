@@ -6,8 +6,8 @@ import (
 
 	"github.com/docker/distribution/registry/client/auth"
 
-	"github.com/openshift/hypershift/thirdparty/kubernetes/pkg/credentialprovider"
-	"github.com/openshift/hypershift/thirdparty/library-go/pkg/image/registryclient"
+	"github.com/alknopfler/hypershift/thirdparty/kubernetes/pkg/credentialprovider"
+	"github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/registryclient"
 )
 
 // NewFromFile creates a new credential store for the provided Docker config.json

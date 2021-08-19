@@ -13,8 +13,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
-	hyperapi "github.com/openshift/hypershift/api"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
+	hyperapi "github.com/alknopfler/hypershift/api"
+	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/operator"
 )
 
 const (

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"reflect"
 
-	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	clusterv1 "github.com/alknopfler/hypershift/thirdparty/clusterapi/api/v1alpha4"
 	"k8s.io/apimachinery/pkg/types"
 )
 

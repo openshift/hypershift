@@ -11,8 +11,8 @@ import (
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
+	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers"
+	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/operator"
 )
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {

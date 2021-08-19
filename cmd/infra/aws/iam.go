@@ -20,7 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	jose "gopkg.in/square/go-jose.v2"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
 )
 
 const (

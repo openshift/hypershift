@@ -7,7 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
 )
 
 type renderContext struct {

@@ -19,7 +19,7 @@ import (
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 
-	common "github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
+	common "github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers"
 )
 
 type ControllerSetupFunc func(*HostedClusterConfigOperatorConfig) error

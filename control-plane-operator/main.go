@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedapicache"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -18,9 +18,9 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
-	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
-	"github.com/openshift/hypershift/releaseinfo"
+	hyperapi "github.com/alknopfler/hypershift/control-plane-operator/api"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	"github.com/alknopfler/hypershift/releaseinfo"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"

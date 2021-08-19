@@ -8,7 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/openshift/hypershift/certs"
+	"github.com/alknopfler/hypershift/certs"
 )
 
 const (

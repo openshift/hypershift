@@ -1,7 +1,7 @@
 package cloud
 
 import (
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 )
 
 func ProviderConfigKey(provider string) string {

@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/spf13/cobra"
 
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	awsutil "github.com/alknopfler/hypershift/cmd/infra/aws/util"
 )
 
 type CreateInfraOptions struct {

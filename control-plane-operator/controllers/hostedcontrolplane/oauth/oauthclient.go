@@ -6,10 +6,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	oauthv1 "github.com/openshift/api/oauth/v1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 func ReconcileBrowserClientWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef, externalHost string, externalPort int32) error {

@@ -22,7 +22,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	awsutil "github.com/alknopfler/hypershift/cmd/infra/aws/util"
 )
 
 type DestroyInfraOptions struct {

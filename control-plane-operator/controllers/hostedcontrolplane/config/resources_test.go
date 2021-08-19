@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/api"
+	"github.com/alknopfler/hypershift/control-plane-operator/api"
 )
 
 func TestSetResources(t *testing.T) {

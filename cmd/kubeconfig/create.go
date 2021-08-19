@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/util"
+	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
+	"github.com/alknopfler/hypershift/cmd/util"
 )
 
 // TODO: NEXT: incorporate into an fzf workflow

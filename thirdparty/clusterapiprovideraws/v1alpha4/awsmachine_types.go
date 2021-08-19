@@ -17,8 +17,8 @@ limitations under the License.
 package v1alpha4
 
 import (
-	clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	"github.com/openshift/hypershift/thirdparty/clusterapi/errors"
+	clusterv1 "github.com/alknopfler/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	"github.com/alknopfler/hypershift/thirdparty/clusterapi/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

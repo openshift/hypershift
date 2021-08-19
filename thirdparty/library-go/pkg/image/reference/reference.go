@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openshift/hypershift/thirdparty/library-go/pkg/image/internal/digest"
-	"github.com/openshift/hypershift/thirdparty/library-go/pkg/image/internal/reference"
+	"github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/internal/digest"
+	"github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/internal/reference"
 )
 
 // DockerImageReference points to a Docker image.

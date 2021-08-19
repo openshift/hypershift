@@ -6,13 +6,13 @@ import (
 	"context"
 	"testing"
 
+	e2eutil "github.com/alknopfler/hypershift/test/e2e/util"
 	. "github.com/onsi/gomega"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
+	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
+	cmdcluster "github.com/alknopfler/hypershift/cmd/cluster"
 )
 
 type TestCreateClusterOptions struct {

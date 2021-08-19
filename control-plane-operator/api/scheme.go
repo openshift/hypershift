@@ -17,13 +17,13 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
+	capiv1 "github.com/alknopfler/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	capiaws "github.com/alknopfler/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	capiibm "github.com/alknopfler/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
+	etcd "github.com/alknopfler/hypershift/thirdparty/etcd/v1beta2"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
-	capiibm "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
-	etcd "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
 )
 
 var (

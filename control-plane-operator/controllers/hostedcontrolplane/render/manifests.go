@@ -8,8 +8,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
-	"github.com/openshift/hypershift/releaseinfo"
+	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
+	"github.com/alknopfler/hypershift/releaseinfo"
 )
 
 func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) (map[string][]byte, error) {
