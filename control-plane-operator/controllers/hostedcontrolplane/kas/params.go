@@ -20,6 +20,9 @@ type KubeAPIServerImages struct {
 	ClusterConfigOperator string `json:"clusterConfigOperator"`
 	CLI                   string `json:"cli"`
 	HyperKube             string `json:"hyperKube"`
+	IBMCloudKMS           string `json:"ibmcloudKMS"`
+	AWSKMS                string `json:"awsKMS"`
+	Portieris             string `json:"portieris"`
 }
 
 type KubeAPIServerParams struct {
@@ -86,6 +89,9 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	} else {
 		params.APIServerPort = config.DefaultAPIServerPort
 	}
+	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
+		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
+	}
 
 	switch hcp.Spec.Etcd.ManagementType {
 	case hyperv1.Unmanaged:
@@ -98,19 +104,103 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
+	baseLivenessProbeConfig := corev1.Probe{
+		Handler: corev1.Handler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Scheme: corev1.URISchemeHTTPS,
+				Port:   intstr.FromInt(int(params.APIServerPort)),
+				Path:   "livez?exclude=etcd",
+			},
+		},
+		InitialDelaySeconds: 300,
+		PeriodSeconds:       180,
+		TimeoutSeconds:      160,
+		FailureThreshold:    6,
+		SuccessThreshold:    1,
+	}
+	if hcp.Spec.SecretEncryption != nil {
+		// Adjust KAS liveness probe to not have a hard depdendency on kms so problems isolated to kms don't
+		// cause the entire kube-apiserver to restart and potentially enter CrashloopBackoff
+		totalProviderInstances := 0
+		switch hcp.Spec.SecretEncryption.SecretEncryptionType {
+		case hyperv1.KMS:
+			if hcp.Spec.SecretEncryption.KMS != nil {
+				switch hcp.Spec.SecretEncryption.KMS.Provider {
+				case hyperv1.AWS:
+					if hcp.Spec.SecretEncryption.KMS.AWS != nil {
+						// Always will have an active key
+						totalProviderInstances = 1
+						if hcp.Spec.SecretEncryption.KMS.AWS.BackupKey != nil && len(hcp.Spec.SecretEncryption.KMS.AWS.BackupKey.ARN) > 0 {
+							totalProviderInstances++
+						}
+					}
+				case hyperv1.IBMCloud:
+					if hcp.Spec.SecretEncryption.KMS.IBMCloud != nil {
+						totalProviderInstances = len(hcp.Spec.SecretEncryption.KMS.IBMCloud.KeyList)
+					}
+				}
+			}
+		}
+		for i := 0; i < totalProviderInstances; i++ {
+			baseLivenessProbeConfig.HTTPGet.Path = baseLivenessProbeConfig.HTTPGet.Path + fmt.Sprintf("&exclude=kms-provider-%d", i)
+		}
+	}
 	params.LivenessProbes = config.LivenessProbes{
-		kasContainerMain().Name: {
+		kasContainerMain().Name: baseLivenessProbeConfig,
+		kasContainerIBMCloudKMS().Name: corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(ibmCloudKMSHealthPort)),
+					Path:   "healthz/liveness",
+				},
+			},
+			InitialDelaySeconds: 120,
+			PeriodSeconds:       300,
+			TimeoutSeconds:      160,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+		kasContainerAWSKMSBackup().Name: corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(backupAWSKMSHealthPort),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 120,
+			PeriodSeconds:       300,
+			TimeoutSeconds:      160,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+		kasContainerAWSKMSActive().Name: corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(activeAWSKMSHealthPort),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 120,
+			PeriodSeconds:       300,
+			TimeoutSeconds:      160,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+		kasContainerPortieries().Name: corev1.Probe{
 			Handler: corev1.Handler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(params.APIServerPort)),
-					Path:   "livez?exclude=etcd",
+					Port:   intstr.FromInt(portierisPort),
+					Path:   "health/liveness",
 				},
 			},
-			InitialDelaySeconds: 300,
-			PeriodSeconds:       180,
+			InitialDelaySeconds: 120,
+			PeriodSeconds:       300,
 			TimeoutSeconds:      160,
-			FailureThreshold:    6,
+			FailureThreshold:    3,
 			SuccessThreshold:    1,
 		},
 	}
@@ -143,6 +233,24 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 				corev1.ResourceCPU:    resource.MustParse("350m"),
 			},
 		},
+		kasContainerAWSKMSActive().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("10Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		},
+		kasContainerAWSKMSBackup().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("10Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		},
+		kasContainerIBMCloudKMS().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("10Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		},
 	}
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetMultizoneSpread(kasLabels)
@@ -154,6 +262,12 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
 		params.AuditWebhookRef = hcp.Spec.AuditWebhook
+	}
+	if _, ok := hcp.Annotations[hyperv1.AWSKMSProviderImage]; ok {
+		params.Images.AWSKMS = hcp.Annotations[hyperv1.AWSKMSProviderImage]
+	}
+	if _, ok := hcp.Annotations[hyperv1.IBMCloudKMSProviderImage]; ok {
+		params.Images.IBMCloudKMS = hcp.Annotations[hyperv1.IBMCloudKMSProviderImage]
 	}
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {

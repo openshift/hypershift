@@ -433,6 +433,219 @@ spec:
                 required:
                 - image
                 type: object
+              secretEncryption:
+                description: SecretEncryption contains metadata about the kubernetes
+                  secret encryption strategy being used for the cluster when applicable.
+                properties:
+                  aescbc:
+                    description: AESCBC defines metadata about the AESCBC secret encryption
+                      strategy
+                    properties:
+                      activeKey:
+                        description: ActiveKey defines the active key used to encrypt
+                          new secrets
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      backupKey:
+                        description: BackupKey defines the old key during the rotation
+                          process so previously created secrets can continue to be
+                          decrypted until they are all re-encrypted with the active
+                          key.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                    required:
+                    - activeKey
+                    type: object
+                  kms:
+                    description: KMS defines metadata about the kms secret encryption
+                      strategy
+                    properties:
+                      aws:
+                        description: AWS defines metadata about the configuration
+                          of the AWS KMS Secret Encryption provider
+                        properties:
+                          activeKey:
+                            description: ActiveKey defines the active key used to
+                              encrypt new secrets
+                            properties:
+                              arn:
+                                description: ARN is the Amazon Resource Name for the
+                                  encryption key
+                                pattern: '^arn:'
+                                type: string
+                            required:
+                            - arn
+                            type: object
+                          auth:
+                            description: Auth defines metadata about the management
+                              of credentials used to interact with AWS KMS
+                            properties:
+                              type:
+                                description: Type defines different strategies for
+                                  the management of credentials used to interact with
+                                  AWS KMS
+                                enum:
+                                - Unmanaged
+                                type: string
+                              unmanaged:
+                                description: Unmanaged defines the auth metadata the
+                                  customer provides to interact with AWS KMS
+                                properties:
+                                  credentials:
+                                    description: Credentials contains the name of
+                                      the secret that holds the aws credentials that
+                                      can be used to make the necessary KMS calls.
+                                      It should at key AWSCredentialsFileSecretKey
+                                      contain the aws credentials file that can be
+                                      used to configure AWS SDKs
+                                    properties:
+                                      name:
+                                        description: 'Name of the referent. More info:
+                                          https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                          TODO: Add other useful fields. apiVersion,
+                                          kind, uid?'
+                                        type: string
+                                    type: object
+                                required:
+                                - credentials
+                                type: object
+                            type: object
+                          backupKey:
+                            description: BackupKey defines the old key during the
+                              rotation process so previously created secrets can continue
+                              to be decrypted until they are all re-encrypted with
+                              the active key.
+                            properties:
+                              arn:
+                                description: ARN is the Amazon Resource Name for the
+                                  encryption key
+                                pattern: '^arn:'
+                                type: string
+                            required:
+                            - arn
+                            type: object
+                          region:
+                            description: Region contains the AWS region
+                            type: string
+                        required:
+                        - activeKey
+                        - auth
+                        - region
+                        type: object
+                      ibmcloud:
+                        description: IBMCloud defines metadata for the IBM Cloud KMS
+                          encryption strategy
+                        properties:
+                          auth:
+                            description: Auth defines metadata for how authentication
+                              is done with IBM Cloud KMS
+                            properties:
+                              managed:
+                                description: Managed defines metadata around the service
+                                  to service authentication strategy for the IBM Cloud
+                                  KMS system (all provider managed).
+                                type: object
+                              type:
+                                description: Type defines the IBM Cloud KMS authentication
+                                  strategy
+                                enum:
+                                - Managed
+                                - Unmanaged
+                                type: string
+                              unmanaged:
+                                description: Unmanaged defines the auth metadata the
+                                  customer provides to interact with IBM Cloud KMS
+                                properties:
+                                  credentials:
+                                    description: Credentials should reference a secret
+                                      with a key field of IBMCloudIAMAPIKeySecretKey
+                                      that contains a apikey to call IBM Cloud KMS
+                                      APIs
+                                    properties:
+                                      name:
+                                        description: 'Name of the referent. More info:
+                                          https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                          TODO: Add other useful fields. apiVersion,
+                                          kind, uid?'
+                                        type: string
+                                    type: object
+                                required:
+                                - credentials
+                                type: object
+                            required:
+                            - type
+                            type: object
+                          keyList:
+                            description: KeyList defines the list of keys used for
+                              data encryption
+                            items:
+                              description: IBMCloudKMSKeyEntry defines metadata for
+                                an IBM Cloud KMS encryption key
+                              properties:
+                                correlationID:
+                                  description: CorrelationID is an identifier used
+                                    to track all api call usage from hypershift
+                                  type: string
+                                crkID:
+                                  description: CRKID is the customer rook key id
+                                  type: string
+                                instanceID:
+                                  description: InstanceID is the id for the key protect
+                                    instance
+                                  type: string
+                                keyVersion:
+                                  description: KeyVersion is a unique number associated
+                                    with the key. The number increments whenever a
+                                    new key is enabled for data encryption.
+                                  type: integer
+                                url:
+                                  description: URL is the url to call key protect
+                                    apis over
+                                  pattern: ^https://
+                                  type: string
+                              required:
+                              - correlationID
+                              - crkID
+                              - instanceID
+                              - keyVersion
+                              - url
+                              type: object
+                            type: array
+                          region:
+                            description: Region is the IBM Cloud region
+                            type: string
+                        required:
+                        - auth
+                        - keyList
+                        - region
+                        type: object
+                      provider:
+                        description: Provider defines the KMS provider
+                        enum:
+                        - IBMCloud
+                        - AWS
+                        type: string
+                    required:
+                    - provider
+                    type: object
+                  type:
+                    description: SecretEncryptionType defines the type of kube secret
+                      encryption being used
+                    enum:
+                    - kms
+                    - aescbc
+                    type: string
+                required:
+                - type
+                type: object
               services:
                 description: 'Services defines metadata about how control plane services
                   are published in the management cluster. TODO (alberto): include
