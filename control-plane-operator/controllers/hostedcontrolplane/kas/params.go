@@ -87,10 +87,8 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	} else {
 		params.APIServerPort = config.DefaultAPIServerPort
 	}
-	if hcp.Annotations != nil {
-		if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
-			params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
-		}
+	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
+		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
 	}
 
 	switch hcp.Spec.Etcd.ManagementType {
@@ -147,6 +145,12 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("1500Mi"),
 				corev1.ResourceCPU:    resource.MustParse("350m"),
+			},
+		},
+		kasContainerPortieries().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("20Mi"),
+				corev1.ResourceCPU:    resource.MustParse("5m"),
 			},
 		},
 	}
