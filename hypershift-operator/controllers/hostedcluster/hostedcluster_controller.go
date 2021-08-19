@@ -21,9 +21,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/openshift/hypershift/api"
 	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
@@ -644,7 +646,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	switch hcluster.Spec.Platform.Type {
 	// We run the AWS controller for NonePlatform for now
 	// So nodePools can be created to expose ign endpoints that can be used for byo machines to join.
-	case hyperv1.AWSPlatform, hyperv1.NonePlatform:
+	case hyperv1.AWSPlatform:
 		// Reconcile external AWSCluster
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 			r.Log.Error(err, "failed to get control plane ref")
@@ -676,6 +678,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		infraCR = ibmCluster
 	default:
 		// TODO(alberto): for platform None implement back a "pass through" infra CR similar to externalInfraCluster.
+		infraCR = nil
 	}
 
 	// Reconcile the CAPI Cluster resource
@@ -1698,26 +1701,40 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	cluster.Annotations = map[string]string{
 		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
 	}
-	gvk, err := apiutil.GVKForObject(infraCR, api.Scheme)
-	if err != nil {
-		return err
+	var gvk schema.GroupVersionKind
+	var err error
+	if infraCR != nil {
+		gvk, err = apiutil.GVKForObject(infraCR, api.Scheme)
+		if err != nil {
+			return err
+		}
+		cluster.Spec = capiv1.ClusterSpec{
+			ControlPlaneEndpoint: capiv1.APIEndpoint{},
+			ControlPlaneRef: &corev1.ObjectReference{
+				APIVersion: "hypershift.openshift.io/v1alpha1",
+				Kind:       "HostedControlPlane",
+				Namespace:  hcp.Namespace,
+				Name:       hcp.Name,
+			},
+			InfrastructureRef: &corev1.ObjectReference{
+				APIVersion: gvk.GroupVersion().String(),
+				Kind:       gvk.Kind,
+				Namespace:  infraCR.GetNamespace(),
+				Name:       infraCR.GetName(),
+			},
+		}
+	} else {
+		cluster.Spec = capiv1.ClusterSpec{
+			ControlPlaneEndpoint: capiv1.APIEndpoint{},
+			ControlPlaneRef: &corev1.ObjectReference{
+				APIVersion: "hypershift.openshift.io/v1alpha1",
+				Kind:       "HostedControlPlane",
+				Namespace:  hcp.Namespace,
+				Name:       hcp.Name,
+			},
+			InfrastructureRef: &corev1.ObjectReference{},
+		}
 	}
-	cluster.Spec = capiv1.ClusterSpec{
-		ControlPlaneEndpoint: capiv1.APIEndpoint{},
-		ControlPlaneRef: &corev1.ObjectReference{
-			APIVersion: "hypershift.openshift.io/v1alpha1",
-			Kind:       "HostedControlPlane",
-			Namespace:  hcp.Namespace,
-			Name:       hcp.Name,
-		},
-		InfrastructureRef: &corev1.ObjectReference{
-			APIVersion: gvk.GroupVersion().String(),
-			Kind:       gvk.Kind,
-			Namespace:  infraCR.GetNamespace(),
-			Name:       infraCR.GetName(),
-		},
-	}
-
 	return nil
 }
 
