@@ -189,6 +189,20 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			FailureThreshold:    3,
 			SuccessThreshold:    1,
 		},
+		kasContainerPortieries().Name: corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTPS,
+					Port:   intstr.FromInt(portierisPort),
+					Path:   "health/liveness",
+				},
+			},
+			InitialDelaySeconds: 120,
+			PeriodSeconds:       300,
+			TimeoutSeconds:      160,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
 		kasContainerMain().Name: {

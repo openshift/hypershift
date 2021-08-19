@@ -5,6 +5,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+const portierisPort = 8000
+
 var (
 	portieriesVolumeMounts = util.PodVolumeMounts{
 		kasContainerPortieries().Name: {
@@ -40,7 +42,7 @@ func buildKASContainerPortieries(image string) func(c *corev1.Container) {
 		c.Ports = []corev1.ContainerPort{
 			{
 				Name:          "http",
-				ContainerPort: 8000,
+				ContainerPort: portierisPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
