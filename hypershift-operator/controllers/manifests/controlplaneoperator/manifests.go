@@ -1,15 +1,15 @@
 package controlplaneoperator
 
 import (
-	capiawsv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
-	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
+	capiawsv1 "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapiprovideraws/v1alpha4"
+	capiibmv1 "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	capiv1 "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/api/v1alpha4"
 )
 
 func OperatorDeployment(controlPlaneOperatorNamespace string) *appsv1.Deployment {

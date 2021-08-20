@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
+	etcdv1 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
 )
 
 const (

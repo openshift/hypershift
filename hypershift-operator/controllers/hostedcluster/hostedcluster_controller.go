@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/api"
-	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
+	capiibmv1 "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -58,13 +58,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	capiv1 "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/api/v1alpha4"
+	capiawsv1 "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapiprovideraws/v1alpha4"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiawsv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
 )
 
 const (

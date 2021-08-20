@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	capiv1 "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/api/v1alpha4"
+	capiaws "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapiprovideraws/v1alpha4"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
