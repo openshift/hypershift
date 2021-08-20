@@ -110,7 +110,8 @@ docker-build-fast: build
 # Push the docker image
 .PHONY: docker-push
 docker-push:
-	${RUNTIME} push ${IMG}
+	${RUNTIME} tags localhost/hypershift quay.io/amorgant/hypershift
+	${RUNTIME} push quay.io/amorgant/hypershift
 
 .PHONY: run-local
 run-local:
