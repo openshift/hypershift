@@ -642,7 +642,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
 	}
 
-	r.Log.Info("xxxxx-PLATFORM: ", hcluster.Spec.Platform.Type)
+	r.Log.Info("xxxxx-PLATFORM: ", "platformType", hcluster.Spec.Platform.Type)
 
 	var infraCR client.Object
 	switch hcluster.Spec.Platform.Type {
@@ -680,7 +680,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		infraCR = ibmCluster
 	default:
 		// TODO(alberto): for platform None implement back a "pass through" infra CR similar to externalInfraCluster.
-		r.Log.Info("xxxxx-Entra por platform none")
+		r.Log.Info("xxxxx-Entra por platform none", "", "")
 		infraCR = nil
 	}
 
