@@ -159,7 +159,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 
 	// Load or create infrastructure for the cluster
 	if opts.Platform == "aws" {
-		log.Error(errors.New("xxxx-Entra por cmd aws"), "xxxx-Entra por cmd aws", "cmd-create-cluster", opts.Platform)
+		fmt.Println("xxxx-Entra por cmd aws" + opts.Platform)
 		var infra *awsinfra.CreateInfraOutput
 		if len(opts.InfrastructureJSON) > 0 {
 			rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
@@ -272,7 +272,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 
 	} else {
 		//case platform none or baremetal
-		log.Error(errors.New("xxxx-Entra por cmd baremetal none"), "xxxx-Entra por cmd baremetal none", "cmd-create-cluster", opts.Platform)
+		fmt.Println("xxxx-Entra por cmd baremetal none" + opts.Platform)
 		exampleObjects := apifixtures.ExampleOptions{
 			Namespace:        opts.Namespace,
 			Name:             opts.Name,
@@ -290,7 +290,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			FIPS:             opts.FIPS,
 		}.Resources().AsObjects()
 
-		log.Error(errors.New("xxxx-El example object es"), "xxxx-El example object es", "example-object", exampleObjects)
+		fmt.Println(exampleObjects)
 		switch {
 		case opts.Render:
 			for _, object := range exampleObjects {
