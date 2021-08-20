@@ -7,7 +7,7 @@ IMG ?= hypershift:latest
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
 # Runtime CLI to use for building and pushing images
-RUNTIME ?= docker
+RUNTIME ?= podman
 
 CONTROLLER_GEN=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen
 
@@ -25,6 +25,8 @@ endif
 all: build e2e
 
 build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
+
+deploy: docker-build docker-push
 
 .PHONY: verify
 verify: deps api fmt vet
