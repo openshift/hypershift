@@ -290,7 +290,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			FIPS:             opts.FIPS,
 		}.Resources().AsObjects()
 
-		log.Info("xxxx-El example object es", "example-object", exampleObjects)
+		log.Error(errors.New("xxxx-El example object es"), "xxxx-El example object es", "example-object", exampleObjects)
 		switch {
 		case opts.Render:
 			for _, object := range exampleObjects {
