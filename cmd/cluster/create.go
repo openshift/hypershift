@@ -101,6 +101,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
 	cmd.Flags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico or OpenshiftSDN.")
 	cmd.Flags().BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster")
+	cmd.Flags().StringVar(&opts.Platform, "platform", opts.Platform, "The cluster platform. Supports either aws or none.")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("ssh-key")
