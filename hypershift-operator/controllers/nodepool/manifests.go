@@ -12,6 +12,11 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	EC2VolumeDefaultSize int64  = 16
+	EC2VolumeDefaultType string = "gp2"
+)
+
 func machineDeployment(nodePool *hyperv1.NodePool, clusterName string, controlPlaneNamespace string) *capiv1.MachineDeployment {
 	resourcesName := generateName(clusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	return &capiv1.MachineDeployment{
@@ -45,7 +50,20 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 			subnet.Filters = append(subnet.Filters, filter)
 		}
 	}
-
+	rootVolume := &capiaws.Volume{}
+	if nodePool.Spec.Platform.AWS.EC2RootVolume.Type != "" {
+		rootVolume.Type = nodePool.Spec.Platform.AWS.EC2RootVolume.Type
+	} else {
+		rootVolume.Type = EC2VolumeDefaultType
+	}
+	if nodePool.Spec.Platform.AWS.EC2RootVolume.Size > 0 {
+		rootVolume.Size = int64(nodePool.Spec.Platform.AWS.EC2RootVolume.Size)
+	} else {
+		rootVolume.Size = EC2VolumeDefaultSize
+	}
+	if nodePool.Spec.Platform.AWS.EC2RootVolume.IOPS > 0 {
+		rootVolume.IOPS = int64(nodePool.Spec.Platform.AWS.EC2RootVolume.IOPS)
+	}
 	securityGroups := []capiaws.AWSResourceReference{}
 	for _, sg := range nodePool.Spec.Platform.AWS.SecurityGroups {
 		filters := []capiaws.Filter{}
@@ -92,6 +110,7 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 					},
 					AdditionalSecurityGroups: securityGroups,
 					Subnet:                   subnet,
+					RootVolume:               rootVolume,
 				},
 			},
 		},

@@ -30,6 +30,9 @@ type CreateNodePoolOptions struct {
 	SecurityGroupID string
 	InstanceProfile string
 	Render          bool
+	RootVolumeType  string
+	RootVolumeIOPS  int
+	RootVolumeSize  int
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -40,11 +43,14 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateNodePoolOptions{
-		Name:         "example",
-		Namespace:    "clusters",
-		ClusterName:  "example",
-		NodeCount:    2,
-		ReleaseImage: "",
+		Name:           "example",
+		Namespace:      "clusters",
+		ClusterName:    "example",
+		NodeCount:      2,
+		ReleaseImage:   "",
+		RootVolumeType: "gp2",
+		RootVolumeSize: 16,
+		RootVolumeIOPS: 0,
 	}
 
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the NodePool")
@@ -53,6 +59,9 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ClusterName, "cluster-name", opts.ClusterName, "The name of the HostedCluster nodes in this pool will join")
 	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The release image for nodes. If empty, defaults to the same release image as the HostedCluster.")
 	cmd.Flags().StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "The AWS instance type of the NodePool")
+	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
+	cmd.Flags().IntVar(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
+	cmd.Flags().IntVar(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
 	cmd.Flags().StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The AWS subnet ID in which to create the NodePool")
 	cmd.Flags().StringVar(&opts.SecurityGroupID, "securitygroup-id", opts.SecurityGroupID, "The AWS security group in which to create the NodePool")
 	cmd.Flags().StringVar(&opts.InstanceProfile, "instance-profile", opts.InstanceProfile, "The AWS instance profile for the NodePool")
@@ -131,6 +140,11 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 				{
 					ID: &o.SecurityGroupID,
 				},
+			},
+			EC2RootVolume: hyperv1.EC2RootVolume{
+				Type: o.RootVolumeType,
+				Size: o.RootVolumeSize,
+				IOPS: o.RootVolumeIOPS,
 			},
 		}
 	}

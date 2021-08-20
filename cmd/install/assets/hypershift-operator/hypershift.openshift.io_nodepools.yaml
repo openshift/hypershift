@@ -159,6 +159,27 @@ spec:
                         description: InstanceType defines the ec2 instance type. eg.
                           m4-large
                         type: string
+                      rootVolume:
+                        description: EC2RootVolume defines the root volume for EC2
+                          instances in the machine pool.
+                        properties:
+                          iops:
+                            description: IOPS defines the amount of provisioned IOPS.
+                              This is only valid for type io1.
+                            minimum: 0
+                            type: integer
+                          size:
+                            description: Size defines the size of the volume in gibibytes
+                              (GiB).
+                            minimum: 0
+                            type: integer
+                          type:
+                            description: Type defines the type of the volume.
+                            type: string
+                        required:
+                        - size
+                        - type
+                        type: object
                       securityGroups:
                         description: SecurityGroups is the set of security groups
                           to associate with nodepool machines

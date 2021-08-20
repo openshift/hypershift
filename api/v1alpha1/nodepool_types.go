@@ -180,6 +180,10 @@ type AWSNodePoolPlatform struct {
 	// SecurityGroups is the set of security groups to associate with nodepool machines
 	// +optional
 	SecurityGroups []AWSResourceReference `json:"securityGroups,omitempty"`
+	// EC2RootVolume defines the root volume for EC2 instances in the machine pool.
+	//
+	// +optional
+	EC2RootVolume EC2RootVolume `json:"rootVolume"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
@@ -208,4 +212,22 @@ type Filter struct {
 
 	// Values includes one or more filter values. Filter values are case-sensitive.
 	Values []string `json:"values"`
+}
+
+// EC2RootVolume defines the storage for an ec2 instance.
+type EC2RootVolume struct {
+	// IOPS defines the amount of provisioned IOPS. This is only valid
+	// for type io1.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	IOPS int `json:"iops"`
+
+	// Size defines the size of the volume in gibibytes (GiB).
+	//
+	// +kubebuilder:validation:Minimum=0
+	Size int `json:"size"`
+
+	// Type defines the type of the volume.
+	Type string `json:"type"`
 }
