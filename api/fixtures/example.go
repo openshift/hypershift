@@ -58,6 +58,7 @@ type ExampleOptions struct {
 	FIPS             bool
 	AWS              ExampleAWSOptions
 	NetworkType      hyperv1.NetworkType
+	PlatformType     string
 }
 
 type ExampleAWSOptions struct {
@@ -226,23 +227,28 @@ aws_secret_access_key = %s
 				PublicZoneID:  o.PublicZoneID,
 				PrivateZoneID: o.PrivateZoneID,
 			},
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-				AWS: &hyperv1.AWSPlatformSpec{
-					Region: o.AWS.Region,
-					Roles:  o.AWS.Roles,
-					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
-						VPC: o.AWS.VPCID,
-						Subnet: &hyperv1.AWSResourceReference{
-							ID: &o.AWS.SubnetID,
-						},
-						Zone: o.AWS.Zone,
-					},
-					KubeCloudControllerCreds: corev1.LocalObjectReference{Name: kubeCloudControllerCredsSecret.Name},
-					NodePoolManagementCreds:  corev1.LocalObjectReference{Name: nodePoolManagementCredsSecret.Name},
-				},
-			},
+			Platform: hyperv1.PlatformSpec{},
 		},
+	}
+
+	switch o.PlatformType {
+	case "aws":
+		cluster.Spec.Platform.Type = hyperv1.AWSPlatform
+		cluster.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+			Region: o.AWS.Region,
+			Roles:  o.AWS.Roles,
+			CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+				VPC: o.AWS.VPCID,
+				Subnet: &hyperv1.AWSResourceReference{
+					ID: &o.AWS.SubnetID,
+				},
+				Zone: o.AWS.Zone,
+			},
+			KubeCloudControllerCreds: corev1.LocalObjectReference{Name: kubeCloudControllerCredsSecret.Name},
+			NodePoolManagementCreds:  corev1.LocalObjectReference{Name: nodePoolManagementCredsSecret.Name},
+		}
+	case "none":
+		cluster.Spec.Platform.Type = hyperv1.NonePlatform
 	}
 
 	var nodePool *hyperv1.NodePool
