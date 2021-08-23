@@ -2465,6 +2465,7 @@ func reconcileMachineConfigServerService(svc *corev1.Service) error {
 	portSpec.Name = "https"
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(8443)
+	svc.Spec.Ports[0] = portSpec
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.ClusterIP = corev1.ClusterIPNone
 	return nil
