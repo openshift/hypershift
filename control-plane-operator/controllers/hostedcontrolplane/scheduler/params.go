@@ -39,6 +39,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetMultizoneSpread(schedulerLabels)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3

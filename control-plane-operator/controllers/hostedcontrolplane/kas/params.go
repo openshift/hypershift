@@ -147,6 +147,8 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetMultizoneSpread(kasLabels)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
+
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider

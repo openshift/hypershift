@@ -1,8 +1,6 @@
 package config
 
 import (
-	"fmt"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -52,7 +50,7 @@ func (c *DeploymentConfig) SetMultizoneSpread(labels map[string]string) {
 const colocationLabelKey = "hypershift.openshift.io/hosted-control-plane"
 
 func colocationLabel(hcp *hyperv1.HostedControlPlane) string {
-	return fmt.Sprintf("%s-%s", hcp.Namespace, hcp.Name)
+	return clusterKey(hcp)
 }
 
 // SetColocationAnchor sets labels on the deployment to establish pods of this
@@ -88,6 +86,74 @@ func (c *DeploymentConfig) SetColocation(hcp *hyperv1.HostedControlPlane) {
 					},
 				},
 				TopologyKey: corev1.LabelHostname,
+			},
+		},
+	}
+}
+
+const (
+	controlPlaneWorkloadTolerationKey = "hypershift.openshift.io/control-plane"
+	controlPlaneNodeLabel             = "hypershift.openshift.io/control-plane"
+
+	clusterWorkloadTolerationKey = "hypershift.openshift.io/cluster"
+	clusterNodeLabel             = "hypershift.openshift.io/cluster"
+
+	// cluster-specific weight for soft affinity rule to node
+	clusterNodeSchedulingAffinityWeight = 100
+
+	// generic control plane workload weight for soft affinity rule to node
+	controlPlaneNodeSchedulingAffinityWeight = clusterNodeSchedulingAffinityWeight / 2
+)
+
+func clusterKey(hcp *hyperv1.HostedControlPlane) string {
+	return hcp.Namespace
+}
+
+func (c *DeploymentConfig) SetControlPlaneIsolation(hcp *hyperv1.HostedControlPlane) {
+	c.Scheduling.Tolerations = []corev1.Toleration{
+		{
+			Key:      controlPlaneWorkloadTolerationKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    "true",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+		{
+			Key:      clusterWorkloadTolerationKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    clusterKey(hcp),
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}
+
+	if c.Scheduling.Affinity == nil {
+		c.Scheduling.Affinity = &corev1.Affinity{}
+	}
+	if c.Scheduling.Affinity.NodeAffinity == nil {
+		c.Scheduling.Affinity.NodeAffinity = &corev1.NodeAffinity{}
+	}
+	c.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution = []corev1.PreferredSchedulingTerm{
+		{
+			Weight: controlPlaneNodeSchedulingAffinityWeight,
+			Preference: corev1.NodeSelectorTerm{
+				MatchExpressions: []corev1.NodeSelectorRequirement{
+					{
+						Key:      controlPlaneNodeLabel,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{"true"},
+					},
+				},
+			},
+		},
+		{
+			Weight: clusterNodeSchedulingAffinityWeight,
+			Preference: corev1.NodeSelectorTerm{
+				MatchExpressions: []corev1.NodeSelectorRequirement{
+					{
+						Key:      clusterNodeLabel,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{clusterKey(hcp)},
+					},
+				},
 			},
 		},
 	}
