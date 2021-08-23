@@ -1253,7 +1253,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 					"pods/log",
 					"serviceaccounts",
 					"pods",
-					"services",
 					// This is needed by the MCS ignitionProvider to create an ephemeral ConfigMap
 					// with the machine config to mount it into the MCS Pod that generates the final payload.
 					"configmaps",

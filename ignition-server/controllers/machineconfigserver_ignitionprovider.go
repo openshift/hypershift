@@ -361,6 +361,11 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					},
 					Ports: []corev1.ContainerPort{
 						{
+							Name:          "http",
+							ContainerPort: 8080,
+							Protocol:      corev1.ProtocolTCP,
+						},
+						{
 							Name:          "https",
 							ContainerPort: 8443,
 							Protocol:      corev1.ProtocolTCP,
