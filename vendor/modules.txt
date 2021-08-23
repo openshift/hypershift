@@ -197,16 +197,10 @@ github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
 ## explicit
-github.com/openshift/api/build/v1
 github.com/openshift/api/config/v1
 github.com/openshift/api/image/docker10
 github.com/openshift/api/image/dockerpre012
 github.com/openshift/api/image/v1
-github.com/openshift/api/kubecontrolplane/v1
-github.com/openshift/api/oauth/v1
-github.com/openshift/api/openshiftcontrolplane/v1
-github.com/openshift/api/operator/v1
-github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
 # github.com/openshift/client-go v0.0.0-20200929181438-91d71ef2122c
@@ -219,6 +213,19 @@ github.com/openshift/client-go/config/informers/externalversions/config
 github.com/openshift/client-go/config/informers/externalversions/config/v1
 github.com/openshift/client-go/config/informers/externalversions/internalinterfaces
 github.com/openshift/client-go/config/listers/config/v1
+# github.com/openshift/hypershift/api v0.0.0-00010101000000-000000000000 => ./api
+## explicit
+github.com/openshift/hypershift/api
+github.com/openshift/hypershift/api/fixtures
+github.com/openshift/hypershift/api/v1alpha1
+github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/api/v1alpha4
+github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/errors
+github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/util
+github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/util/annotations
+github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/util/conditions
+github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/util/patch
+github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapiprovideraws/v1alpha4
+github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapiprovideribmcloud/v1alpha4
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
@@ -306,9 +313,6 @@ go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
 # golang.org/x/crypto v0.0.0-20201002170205-7f63de1d35b0
-## explicit
-golang.org/x/crypto/bcrypt
-golang.org/x/crypto/blowfish
 golang.org/x/crypto/ed25519
 golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/pbkdf2
@@ -469,9 +473,6 @@ google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/timestamppb
 # gopkg.in/inf.v0 v0.9.1
 gopkg.in/inf.v0
-# gopkg.in/ini.v1 v1.51.0
-## explicit
-gopkg.in/ini.v1
 # gopkg.in/square/go-jose.v2 v2.3.1
 ## explicit
 gopkg.in/square/go-jose.v2
@@ -585,11 +586,8 @@ k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/reflect
 # k8s.io/apiserver v0.20.2
-## explicit
 k8s.io/apiserver/pkg/apis/apiserver
 k8s.io/apiserver/pkg/apis/apiserver/v1beta1
-k8s.io/apiserver/pkg/apis/audit
-k8s.io/apiserver/pkg/apis/audit/v1beta1
 # k8s.io/client-go v0.20.2
 ## explicit
 k8s.io/client-go/discovery
@@ -818,22 +816,12 @@ k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
 # k8s.io/component-base v0.20.2
-## explicit
 k8s.io/component-base/config
 k8s.io/component-base/config/v1alpha1
 # k8s.io/klog/v2 v2.5.0
-## explicit
 k8s.io/klog/v2
-# k8s.io/kube-aggregator v0.20.2
-## explicit
-k8s.io/kube-aggregator/pkg/apis/apiregistration
-k8s.io/kube-aggregator/pkg/apis/apiregistration/v1
 # k8s.io/kube-openapi v0.0.0-20201113171705-d219536bb9fd
 k8s.io/kube-openapi/pkg/util/proto
-# k8s.io/kube-scheduler v0.20.2
-## explicit
-k8s.io/kube-scheduler/config/v1
-k8s.io/kube-scheduler/config/v1beta1
 # k8s.io/utils v0.0.0-20210111153108-fddb29f9d009
 ## explicit
 k8s.io/utils/buffer
@@ -900,8 +888,8 @@ sigs.k8s.io/controller-tools/pkg/schemapatcher/internal/yaml
 sigs.k8s.io/controller-tools/pkg/version
 sigs.k8s.io/controller-tools/pkg/webhook
 # sigs.k8s.io/structured-merge-diff/v4 v4.0.3
-## explicit
 sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.2.0
 ## explicit
 sigs.k8s.io/yaml
+# github.com/openshift/hypershift/api => ./api

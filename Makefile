@@ -24,7 +24,7 @@ endif
 
 all: build e2e
 
-build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
+build: api-module ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
 
 .PHONY: verify
 verify: deps api fmt vet
@@ -32,6 +32,11 @@ verify: deps api fmt vet
 	git diff-files --quiet --ignore-submodules
 	$(eval STATUS = $(shell git status -s))
 	$(if $(strip $(STATUS)),$(error untracked files detected))
+	$(MAKE) -C api verify
+
+.PHONY: api-module
+api-module:
+	$(MAKE) -C api build
 
 # Build ignition-server binary
 .PHONY: ignition-server
@@ -45,7 +50,8 @@ hypershift-operator:
 
 .PHONY: control-plane-operator
 control-plane-operator:
-	$(GO_BUILD_RECIPE) -o bin/control-plane-operator ./control-plane-operator
+	$(MAKE) -C control-plane-operator build
+	cp control-plane-operator/bin/control-plane-operator bin/control-plane-operator
 
 # Build hosted-cluster-config-operator binary
 .PHONY: hosted-cluster-config-operator
@@ -60,8 +66,8 @@ hypershift:
 # deepcopy code and CRD manifest files.
 .PHONY: api
 api:
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./vendor/github.com/openshift/hypershift/api/..."
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/openshift/hypershift/api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
 # Target to generate deepcopy code and CRDs for etcd types in thirdparty package
 .PHONY: etcd-api
