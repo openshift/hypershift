@@ -680,7 +680,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		infraCR = ibmCluster
 	default:
 		// TODO(alberto): for platform None implement back a "pass through" infra CR similar to externalInfraCluster.
-		r.Log.Info("xxxxx-Entra por platform none", "", "")
+		r.Log.Info("xxxxx-Entra por platform none....", "", "")
 		infraCR = nil
 	}
 
@@ -1706,7 +1706,6 @@ func reconcileIBMCloudCluster(ibmCluster *capiibmv1.IBMCluster, hcluster *hyperv
 func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, infraCR client.Object) error {
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
-		fmt.Errorf("xxxxxx-entra por creationTimestamp != nil")
 		return nil
 	}
 
@@ -1716,7 +1715,6 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	var gvk schema.GroupVersionKind
 	var err error
 	if infraCR != nil {
-		fmt.Errorf("xxxxxx-entra por infracr != nil")
 		gvk, err = apiutil.GVKForObject(infraCR, api.Scheme)
 		if err != nil {
 			return err
@@ -1737,7 +1735,6 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 			},
 		}
 	} else {
-		fmt.Errorf("xxxxxx-entra por infracr = nil ")
 		cluster.Spec = capiv1.ClusterSpec{
 			ControlPlaneEndpoint: capiv1.APIEndpoint{},
 			ControlPlaneRef: &corev1.ObjectReference{
