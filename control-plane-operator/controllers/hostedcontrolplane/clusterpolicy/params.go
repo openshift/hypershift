@@ -42,6 +42,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetMultizoneSpread(clusterPolicyControllerLabels)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
