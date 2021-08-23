@@ -2461,12 +2461,7 @@ func reconcileMachineConfigServerService(svc *corev1.Service) error {
 		"app": "machine-config-server",
 	}
 	var portSpec corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		portSpec = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{portSpec}
-	}
-	portSpec.Port = int32(443)
+	portSpec.Port = int32(8443)
 	portSpec.Name = "https"
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(8443)
