@@ -65,7 +65,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	}
 	mcsServiceAccount := machineConfigServerServiceAccount(p.Namespace)
 	mcsRoleBinding := machineConfigServerRoleBinding(mcsServiceAccount)
-	mcsService := machineConfigServerService(p.Namespace)
+
 	// The ConfigMap requires data stored to be a string.
 	// By base64ing the compressed data we ensure all bytes are decodable back.
 	// Otherwise if we'd just string() the bytes, some might not be a valid UTF-8 sequence
@@ -86,9 +86,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if err := p.Client.Delete(ctx, mcsConfigConfigMap); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server config ConfigMap: %w", err))
 		}
-		if err := p.Client.Delete(ctx, mcsService); err != nil && !errors.IsNotFound(err) {
-			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server headless service: %w", err))
-		}
 		// if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
 		// 	deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
 		// }
@@ -106,9 +103,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	}
 	if err := p.Client.Create(ctx, mcsConfigConfigMap); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
-	}
-	if err := p.Client.Create(ctx, mcsService); err != nil {
-		return nil, fmt.Errorf("failed to create machine config server headless service: %w", err)
 	}
 	mcsPod = machineConfigServerPod(p.Namespace, img, mcsServiceAccount,
 		mcsConfigConfigMap)
@@ -131,10 +125,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 		if mcsPod.Status.PodIP == "" || !mcsReady {
 			return false, nil
-		}
-		// get the service
-		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsService), mcsService); err != nil {
-			return false, fmt.Errorf("failed to get machine config server service: %w", err)
 		}
 		// Get  Machine config certs
 		var caCert, tlsCert, tlsKey []byte
@@ -167,7 +157,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 				},
 			},
 		}
-		res, err := client.Get(fmt.Sprintf("https://%s.%s.%s.svc.cluster.local:8443", mcsPod.Name, mcsService.Name, p.Namespace))
+		res, err := client.Get(fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace))
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
@@ -491,29 +481,6 @@ func machineConfigServerConfigConfigMap(namespace, config string) *corev1.Config
 		Immutable: k8sutilspointer.BoolPtr(true),
 		Data: map[string]string{
 			TokenSecretConfigKey: config,
-		},
-	}
-}
-
-func machineConfigServerService(namespace string) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "machine-config-server",
-			Namespace: namespace,
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{
-				"app": "machine-config-server",
-			},
-			Ports: []corev1.ServicePort{
-				{
-					Name:     "https",
-					Port:     8443,
-					Protocol: corev1.ProtocolTCP,
-				},
-			},
-			Type:      corev1.ServiceTypeClusterIP,
-			ClusterIP: corev1.ClusterIPNone,
 		},
 	}
 }
