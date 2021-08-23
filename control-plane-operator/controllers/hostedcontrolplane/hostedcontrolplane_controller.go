@@ -1182,17 +1182,15 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Ingress Cert
 	ingressCert := manifests.IngressCert(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, ingressCert, func() error {
-		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress, p.IngressSubdomain)
+		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
 	}
 
 	// OAuth server Cert
-	// For default installs, this is the same as the Ingress Cert because of the console's
-	// assumption that the oauth server is behind the default ingress controller.
 	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthServerCert, func() error {
-		return p.ReconcileOAuthServerCert(oauthServerCert, ingressCert, rootCASecret)
+		return p.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
 	}
@@ -1670,13 +1668,20 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		return fmt.Errorf("failed to reconcile error template secret: %w", err)
 	}
 
-	ingressServingCert := manifests.IngressCert(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(ingressServingCert), ingressServingCert); err != nil {
-		return fmt.Errorf("cannot get ingress serving cert: %w", err)
+	oauthServingCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(oauthServingCert), oauthServingCert); err != nil {
+		return fmt.Errorf("cannot get oauth serving cert: %w", err)
 	}
+	oauthServingCertManifest := manifests.OAuthServerCertWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthServingCertManifest, func() error {
+		return oauth.ReconcileOAuthServerCertWorkerManifest(oauthServingCertManifest, config.OwnerRefFrom(hcp), oauthServingCert)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth server cert worker manifest: %w", err)
+	}
+
 	oauthConfig := manifests.OAuthServerConfig(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, oauthConfig, func() error {
-		return oauth.ReconcileOAuthServerConfig(ctx, oauthConfig, p.OwnerRef, r.Client, p.ConfigParams(ingressServingCert))
+		return oauth.ReconcileOAuthServerConfig(ctx, oauthConfig, p.OwnerRef, r.Client, p.ConfigParams(oauthServingCert))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth server config: %w", err)
 	}

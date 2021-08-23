@@ -171,6 +171,7 @@ func (c *clusterManifestContext) operatorLifecycleManager() {
 	c.addManifestFiles(
 		"olm/catalog-metrics-service.yaml",
 		"olm/olm-metrics-service.yaml",
+		"olm/olm-client-ca-secret.yaml",
 		"olm/olm-operator-deployment.yaml",
 		"olm/catalog-operator-deployment.yaml",
 		"olm/packageserver-secret.yaml",

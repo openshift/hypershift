@@ -5,15 +5,16 @@ import (
 
 	"github.com/go-logr/logr"
 
-	certsv1beta1 "k8s.io/api/certificates/v1beta1"
+	certsv1 "k8s.io/api/certificates/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
-	certslister "k8s.io/client-go/listers/certificates/v1beta1"
+	certsv1lister "k8s.io/client-go/listers/certificates/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 type AutoApprover struct {
-	Lister     certslister.CertificateSigningRequestLister
+	Lister     certsv1lister.CertificateSigningRequestLister
 	KubeClient kubeclient.Interface
 	Log        logr.Logger
 }
@@ -36,20 +37,21 @@ func (a *AutoApprover) Reconcile(_ context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, err
 }
 
-func (a *AutoApprover) approveCSR(csr *certsv1beta1.CertificateSigningRequest) error {
-	csr.Status.Conditions = append(csr.Status.Conditions, certsv1beta1.CertificateSigningRequestCondition{
-		Type:           certsv1beta1.CertificateApproved,
+func (a *AutoApprover) approveCSR(csr *certsv1.CertificateSigningRequest) error {
+	csr.Status.Conditions = append(csr.Status.Conditions, certsv1.CertificateSigningRequestCondition{
+		Type:           certsv1.CertificateApproved,
+		Status:         corev1.ConditionTrue,
 		Reason:         "KubectlApprove",
 		Message:        "This CSR was automatically approved.",
 		LastUpdateTime: metav1.Now(),
 	})
-	var _, err = a.KubeClient.CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(context.TODO(), csr, metav1.UpdateOptions{})
+	var _, err = a.KubeClient.CertificatesV1().CertificateSigningRequests().UpdateApproval(context.TODO(), csr.GetName(), csr, metav1.UpdateOptions{})
 	return err
 }
 
-func isApproved(csr *certsv1beta1.CertificateSigningRequest) bool {
+func isApproved(csr *certsv1.CertificateSigningRequest) bool {
 	for _, c := range csr.Status.Conditions {
-		if c.Type == certsv1beta1.CertificateApproved {
+		if c.Type == certsv1.CertificateApproved {
 			return true
 		}
 	}

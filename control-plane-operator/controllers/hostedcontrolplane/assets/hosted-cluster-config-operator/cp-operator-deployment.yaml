@@ -36,6 +36,7 @@ spec:
       priorityClassName: "system-cluster-critical"
       containers:
       - image: {{ imageFor "hosted-cluster-config-operator" }}
+        imagePullPolicy: Always
         name: hosted-cluster-config-operator
 {{ if .HostedClusterConfigOperatorSecurity }}
         securityContext:
