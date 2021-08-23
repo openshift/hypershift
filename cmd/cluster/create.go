@@ -280,7 +280,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			PullSecret:       pullSecret,
 			IssuerURL:        "https://kubernetes.default.svc",
 			SSHKey:           sshKey,
-			NodePoolReplicas: opts.NodePoolReplicas,
+			NodePoolReplicas: 0,
 			ComputeCIDR:      "10.0.0.0/16",
 			PublicZoneID:     "",
 			PrivateZoneID:    "",
