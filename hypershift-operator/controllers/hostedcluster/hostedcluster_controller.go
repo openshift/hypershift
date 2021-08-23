@@ -1706,6 +1706,7 @@ func reconcileIBMCloudCluster(ibmCluster *capiibmv1.IBMCluster, hcluster *hyperv
 func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, infraCR client.Object) error {
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
+		fmt.Errorf("xxxxxx-entra por creationTimestamp != nil")
 		return nil
 	}
 
