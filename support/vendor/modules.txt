@@ -27,16 +27,18 @@ github.com/docker/distribution/registry/client/transport
 github.com/docker/distribution/registry/storage/cache
 github.com/docker/distribution/registry/storage/cache/memory
 # github.com/docker/go-metrics v0.0.1
+## explicit
 github.com/docker/go-metrics
 # github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7
+## explicit
 github.com/docker/libtrust
 # github.com/evanphx/json-patch v4.9.0+incompatible
 github.com/evanphx/json-patch
 # github.com/fsnotify/fsnotify v1.4.9
 github.com/fsnotify/fsnotify
-# github.com/go-logr/logr v0.4.0
+# github.com/go-logr/logr v0.3.0
 github.com/go-logr/logr
-# github.com/gogo/protobuf v1.3.2
+# github.com/gogo/protobuf v1.3.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
 # github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
@@ -64,6 +66,7 @@ github.com/googleapis/gnostic/extensions
 github.com/googleapis/gnostic/jsonschema
 github.com/googleapis/gnostic/openapiv2
 # github.com/gorilla/mux v1.8.0
+## explicit
 github.com/gorilla/mux
 # github.com/hashicorp/golang-lru v0.5.4
 github.com/hashicorp/golang-lru
@@ -84,18 +87,6 @@ github.com/modern-go/concurrent
 github.com/modern-go/reflect2
 # github.com/onsi/gomega v1.11.0
 ## explicit
-github.com/onsi/gomega
-github.com/onsi/gomega/format
-github.com/onsi/gomega/internal/assertion
-github.com/onsi/gomega/internal/asyncassertion
-github.com/onsi/gomega/internal/oraclematcher
-github.com/onsi/gomega/internal/testingtsupport
-github.com/onsi/gomega/matchers
-github.com/onsi/gomega/matchers/support/goraph/bipartitegraph
-github.com/onsi/gomega/matchers/support/goraph/edge
-github.com/onsi/gomega/matchers/support/goraph/node
-github.com/onsi/gomega/matchers/support/goraph/util
-github.com/onsi/gomega/types
 # github.com/opencontainers/go-digest v1.0.0
 ## explicit
 github.com/opencontainers/go-digest
@@ -105,24 +96,9 @@ github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
 ## explicit
-github.com/openshift/api/config/v1
 github.com/openshift/api/image/docker10
 github.com/openshift/api/image/dockerpre012
 github.com/openshift/api/image/v1
-# github.com/openshift/hypershift v0.0.0-20210819135446-4190c8b9f343
-## explicit
-github.com/openshift/hypershift/releaseinfo/fixtures
-github.com/openshift/hypershift/releaseinfo/registryclient
-github.com/openshift/hypershift/thirdparty/docker/pkg/archive
-github.com/openshift/hypershift/thirdparty/kubernetes/pkg/credentialprovider
-github.com/openshift/hypershift/thirdparty/library-go/pkg/image/dockerv1client
-github.com/openshift/hypershift/thirdparty/library-go/pkg/image/internal/digest
-github.com/openshift/hypershift/thirdparty/library-go/pkg/image/internal/reference
-github.com/openshift/hypershift/thirdparty/library-go/pkg/image/reference
-github.com/openshift/hypershift/thirdparty/library-go/pkg/image/registryclient
-github.com/openshift/hypershift/thirdparty/oc/pkg/cli/image/manifest
-github.com/openshift/hypershift/thirdparty/oc/pkg/cli/image/manifest/dockercredentials
-github.com/openshift/hypershift/thirdparty/oc/pkg/helpers/image/dockerlayer/add
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
@@ -153,9 +129,6 @@ golang.org/x/crypto/ssh/terminal
 ## explicit
 golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
-golang.org/x/net/html
-golang.org/x/net/html/atom
-golang.org/x/net/html/charset
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
@@ -168,22 +141,6 @@ golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 # golang.org/x/text v0.3.4
-golang.org/x/text/encoding
-golang.org/x/text/encoding/charmap
-golang.org/x/text/encoding/htmlindex
-golang.org/x/text/encoding/internal
-golang.org/x/text/encoding/internal/identifier
-golang.org/x/text/encoding/japanese
-golang.org/x/text/encoding/korean
-golang.org/x/text/encoding/simplifiedchinese
-golang.org/x/text/encoding/traditionalchinese
-golang.org/x/text/encoding/unicode
-golang.org/x/text/internal/language
-golang.org/x/text/internal/language/compact
-golang.org/x/text/internal/tag
-golang.org/x/text/internal/utf8internal
-golang.org/x/text/language
-golang.org/x/text/runes
 golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
@@ -284,7 +241,7 @@ k8s.io/api/scheduling/v1beta1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apiextensions-apiserver v0.20.2
+# k8s.io/apiextensions-apiserver v0.20.1
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1
 # k8s.io/apimachinery v0.20.2
@@ -297,7 +254,6 @@ k8s.io/apimachinery/pkg/apis/meta/internalversion
 k8s.io/apimachinery/pkg/apis/meta/internalversion/scheme
 k8s.io/apimachinery/pkg/apis/meta/v1
 k8s.io/apimachinery/pkg/apis/meta/v1/unstructured
-k8s.io/apimachinery/pkg/apis/meta/v1/validation
 k8s.io/apimachinery/pkg/apis/meta/v1beta1
 k8s.io/apimachinery/pkg/conversion
 k8s.io/apimachinery/pkg/conversion/queryparams
@@ -416,12 +372,11 @@ k8s.io/client-go/util/workqueue
 # k8s.io/component-base v0.20.2
 k8s.io/component-base/config
 k8s.io/component-base/config/v1alpha1
-# k8s.io/klog/v2 v2.5.0
+# k8s.io/klog/v2 v2.4.0
 k8s.io/klog/v2
 # k8s.io/kube-openapi v0.0.0-20201113171705-d219536bb9fd
 k8s.io/kube-openapi/pkg/util/proto
 # k8s.io/utils v0.0.0-20210111153108-fddb29f9d009
-## explicit
 k8s.io/utils/buffer
 k8s.io/utils/integer
 k8s.io/utils/pointer
@@ -466,7 +421,7 @@ sigs.k8s.io/controller-runtime/pkg/webhook/admission
 sigs.k8s.io/controller-runtime/pkg/webhook/conversion
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/certwatcher
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
-# sigs.k8s.io/structured-merge-diff/v4 v4.0.3
+# sigs.k8s.io/structured-merge-diff/v4 v4.0.2
 sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.2.0
 sigs.k8s.io/yaml

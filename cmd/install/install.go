@@ -28,7 +28,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/version"
+	"github.com/openshift/hypershift/cmd/version"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )

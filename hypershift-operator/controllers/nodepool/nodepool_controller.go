@@ -23,7 +23,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
-	"github.com/openshift/hypershift/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"

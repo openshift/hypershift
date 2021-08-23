@@ -5,8 +5,11 @@ go 1.16
 require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/docker/distribution v2.6.0-rc.1.0.20180920194744-16128bbac47f+incompatible
-	github.com/google/go-cmp v0.5.5
-	github.com/onsi/gomega v1.11.0
+	github.com/docker/go-metrics v0.0.1 // indirect
+	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
+	github.com/google/go-cmp v0.5.5 // indirect
+	github.com/gorilla/mux v1.8.0 // indirect
+	github.com/onsi/gomega v1.11.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
 	github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
@@ -17,6 +20,5 @@ require (
 	k8s.io/api v0.20.2
 	k8s.io/apimachinery v0.20.2
 	k8s.io/client-go v0.20.2
-	k8s.io/utils v0.0.0-20210111153108-fddb29f9d009
 	sigs.k8s.io/controller-runtime v0.8.2
 )

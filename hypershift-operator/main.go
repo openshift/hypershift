@@ -25,7 +25,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
-	"github.com/openshift/hypershift/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp"
