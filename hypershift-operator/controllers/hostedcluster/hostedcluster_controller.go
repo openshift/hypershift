@@ -1715,7 +1715,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	var gvk schema.GroupVersionKind
 	var err error
 	if infraCR != nil {
-		fmt.Println("xxxxxx-entra por infracr != nil")
+		fmt.Errorf("xxxxxx-entra por infracr != nil")
 		gvk, err = apiutil.GVKForObject(infraCR, api.Scheme)
 		if err != nil {
 			return err
@@ -1736,7 +1736,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 			},
 		}
 	} else {
-		fmt.Println("xxxxxx-entra por infracr = nil ")
+		fmt.Errorf("xxxxxx-entra por infracr = nil ")
 		cluster.Spec = capiv1.ClusterSpec{
 			ControlPlaneEndpoint: capiv1.APIEndpoint{},
 			ControlPlaneRef: &corev1.ObjectReference{
