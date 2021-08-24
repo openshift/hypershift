@@ -81,6 +81,9 @@ type HostedControlPlaneSpec struct {
 	// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
 	// +kubebuilder:validation:Optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
+
+	// ImageContentSources lists sources/repositories for the release-image content.
+	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 }
 
 type AvailabilityPolicy string
