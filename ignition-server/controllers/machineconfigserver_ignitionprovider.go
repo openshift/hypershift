@@ -165,7 +165,14 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			},
 		}
 		log.Println("Log 6")
-		res, err := client.Get(fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace))
+		// Build proxy request.
+		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace), nil)
+		if err != nil {
+			return false, fmt.Errorf("error building http request for machine config server pod: %w", err)
+		}
+		proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
+		//res, err := client.Get(fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace))
+		res, err := client.Do(proxyReq)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
