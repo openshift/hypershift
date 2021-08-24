@@ -686,6 +686,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the CAPI Cluster resource
 	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
+	r.Log.Info("xxxxx-PARAM: ", "r.Client: ", r.Client, "capicluster: ", capiCluster, "controlPlaneNamespace.Name: ", controlPlaneNamespace.Name, "hcluster.Spec.InfraID", hcluster.Spec.InfraID)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiCluster, func() error {
 		return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
 	})
