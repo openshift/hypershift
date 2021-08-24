@@ -9,11 +9,8 @@ replace github.com/openshift/hypershift/support => ../support
 require (
 	cloud.google.com/go v0.58.0 // indirect
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/docker/go-metrics v0.0.1 // indirect
-	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/go-logr/logr v0.4.0
 	github.com/google/uuid v1.1.2
-	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/onsi/gomega v1.11.0
 	github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
 	github.com/openshift/hypershift/api v0.0.0-00010101000000-000000000000
