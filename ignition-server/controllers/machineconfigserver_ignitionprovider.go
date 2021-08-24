@@ -167,7 +167,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 		log.Println("Log 6")
 		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("dns:///%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace), nil)
+		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace), nil)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
