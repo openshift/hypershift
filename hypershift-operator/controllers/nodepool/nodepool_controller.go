@@ -910,6 +910,7 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 func validateConfigManifest(manifest []byte) error {
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
+
 	YamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
 		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true},

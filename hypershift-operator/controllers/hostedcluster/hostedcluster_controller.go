@@ -820,6 +820,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcluster.Spec.Etcd.ManagementType == hyperv1.Managed && hcluster.Spec.Etcd.Managed != nil {
 		hcp.Spec.Etcd.Managed = hcluster.Spec.Etcd.Managed.DeepCopy()
 	}
+	if hcluster.Spec.ImageContentSources != nil {
+		hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
+	}
 
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
