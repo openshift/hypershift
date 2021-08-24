@@ -174,7 +174,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		//res, err := client.Get(fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace))
 		res, err := client.Do(proxyReq)
 		if err != nil {
-			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
+			return false, fmt.Errorf("error sending https request for machine config server pod: %w", err)
 		}
 		log.Println("Status Code", res.StatusCode)
 		if res.StatusCode != http.StatusOK {
