@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net"
 	"net/http"
 	"time"
 
@@ -183,11 +182,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		defer res.Body.Close()
 		payload, err = ioutil.ReadAll(res.Body)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				return false, fmt.Errorf("read timeout to get payload from machine config server: %w", err)
-			} else {
-				return false, fmt.Errorf("error getting payload from machine config server: %w", err)
-			}
+			return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
 		}
 		if payload == nil {
 			return false, nil
