@@ -97,18 +97,22 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	if err := p.Client.Create(ctx, mcsServiceAccount); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server ServiceAccount: %w", err)
 	}
+
 	mcsRoleBinding = machineConfigServerRoleBinding(mcsServiceAccount)
 	if err := p.Client.Create(ctx, mcsRoleBinding); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
 	}
+
 	if err := p.Client.Create(ctx, mcsConfigConfigMap); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
 	}
+
 	mcsPod = machineConfigServerPod(p.Namespace, img, mcsServiceAccount,
 		mcsConfigConfigMap)
 	if err := p.Client.Create(ctx, mcsPod); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server Pod: %w", err)
 	}
+
 	// Wait for the pod server the payload.
 	if err := wait.PollImmediate(10*time.Second, 300*time.Second, func() (bool, error) {
 		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
@@ -159,8 +163,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			Timeout: 5 * time.Second,
 		}
 		// Build proxy request.
-		//proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Status.PodIP, p.Namespace), nil)
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s:8443", mcsPod.Status.PodIP), nil)
+		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace), nil)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
