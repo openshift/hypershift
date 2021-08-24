@@ -42,7 +42,6 @@ type MCSIgnitionProvider struct {
 }
 
 func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
-	log.Println("Log 1")
 	pullSecret := &corev1.Secret{}
 	if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: "pull-secret"}, pullSecret); err != nil {
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)
@@ -76,7 +75,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
 	mcsPod := machineConfigServerPod(p.Namespace, img,
 		mcsServiceAccount, mcsConfigConfigMap)
-	log.Println("Log 2")
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
 		var deleteErrors []error
@@ -97,7 +95,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			err = utilerrors.NewAggregate(deleteErrors)
 		}
 	}()
-	log.Println("Log 3")
 	if err := p.Client.Create(ctx, mcsServiceAccount); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server ServiceAccount: %w", err)
 	}
@@ -113,7 +110,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	if err := p.Client.Create(ctx, mcsPod); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server Pod: %w", err)
 	}
-	log.Println("Log 4")
 	// Wait for the pod server the payload.
 	if err := wait.PollImmediate(10*time.Second, 300*time.Second, func() (bool, error) {
 		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
@@ -131,7 +127,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if mcsPod.Status.PodIP == "" || !mcsReady {
 			return false, nil
 		}
-		log.Println("Log 5")
 		// Get  Machine config certs
 		var caCert, tlsCert, tlsKey []byte
 		var cert tls.Certificate
@@ -165,7 +160,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			},
 			Timeout: 5 * time.Second,
 		}
-		log.Println("Log 6")
 		// Build proxy request.
 		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Status.PodIP, p.Namespace), nil)
 		if err != nil {
