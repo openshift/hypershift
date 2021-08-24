@@ -163,13 +163,18 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 				},
 				TLSHandshakeTimeout: 500 * time.Millisecond,
 			},
+			Timeout: 5 * time.Second,
 		}
 		log.Println("Log 6")
 		// Build proxy request.
 		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace), nil)
 		if err != nil {
-			return false, fmt.Errorf("error building http request for machine config server pod: %w", err)
+			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
+		// We pass expected Headers to return the right config version.
+		// https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
+		// https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
+		// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
 		proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
 		//res, err := client.Get(fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace))
 		res, err := client.Do(proxyReq)
