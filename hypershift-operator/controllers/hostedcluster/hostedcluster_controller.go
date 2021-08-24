@@ -1717,6 +1717,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	if infraCR != nil {
 		gvk, err = apiutil.GVKForObject(infraCR, api.Scheme)
 		if err != nil {
+			fmt.Errorf("Error getting GVK for object %v: %v", infraCR, err)
 			return err
 		}
 		cluster.Spec = capiv1.ClusterSpec{
