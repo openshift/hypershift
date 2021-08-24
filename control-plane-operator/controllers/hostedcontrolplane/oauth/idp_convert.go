@@ -25,7 +25,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
 
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const (

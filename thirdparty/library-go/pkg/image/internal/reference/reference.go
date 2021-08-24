@@ -27,7 +27,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/internal/digest"
+	"github.com/openshift/hypershift/thirdparty/library-go/pkg/image/internal/digest"
 )
 
 const (

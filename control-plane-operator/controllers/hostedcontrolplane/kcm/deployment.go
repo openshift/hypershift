@@ -10,12 +10,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const (

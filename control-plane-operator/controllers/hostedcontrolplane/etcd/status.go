@@ -9,8 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	etcdv1 "github.com/alknopfler/hypershift/thirdparty/etcd/v1beta2"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
 )
 
 const (

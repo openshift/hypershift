@@ -20,9 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/alknopfler/hypershift/api"
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	cmdcluster "github.com/alknopfler/hypershift/cmd/cluster"
+	hyperapi "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
 )
 
 func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client, prefix string) *corev1.Namespace {

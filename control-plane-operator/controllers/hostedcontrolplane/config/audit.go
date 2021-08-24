@@ -5,7 +5,7 @@ import (
 
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1beta1"
 
-	"github.com/alknopfler/hypershift/control-plane-operator/api"
+	"github.com/openshift/hypershift/control-plane-operator/api"
 )
 
 func SerializeAuditPolicy(policy *auditv1.Policy) ([]byte, error) {

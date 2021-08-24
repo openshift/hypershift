@@ -6,11 +6,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	capiv1 "github.com/alknopfler/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
 	"github.com/onsi/gomega"
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"

@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha4
 
 import (
-	capierrors "github.com/alknopfler/hypershift/thirdparty/clusterapi/errors"
+	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/labels"

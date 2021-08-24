@@ -9,8 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	"github.com/alknopfler/hypershift/control-plane-operator/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/api"
 )
 
 type GlobalConfig struct {

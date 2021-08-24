@@ -21,7 +21,7 @@ import (
 	"net"
 	"strings"
 
-	capierrors "github.com/alknopfler/hypershift/thirdparty/clusterapi/errors"
+	capierrors "github.com/openshift/hypershift/thirdparty/clusterapi/errors"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

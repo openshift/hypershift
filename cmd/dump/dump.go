@@ -3,7 +3,7 @@ package dump
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/alknopfler/hypershift/cmd/cluster"
+	"github.com/openshift/hypershift/cmd/cluster"
 )
 
 func NewCommand() *cobra.Command {

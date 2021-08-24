@@ -11,12 +11,12 @@ import (
 	"github.com/docker/distribution/manifest/schema1"
 	"github.com/docker/distribution/manifest/schema2"
 
-	"github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/dockerv1client"
-	imagereference "github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/reference"
-	"github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/registryclient"
-	"github.com/alknopfler/hypershift/thirdparty/oc/pkg/helpers/image/dockerlayer/add"
 	"github.com/opencontainers/go-digest"
 	imagespecv1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/openshift/hypershift/thirdparty/library-go/pkg/image/dockerv1client"
+	imagereference "github.com/openshift/hypershift/thirdparty/library-go/pkg/image/reference"
+	"github.com/openshift/hypershift/thirdparty/library-go/pkg/image/registryclient"
+	"github.com/openshift/hypershift/thirdparty/oc/pkg/helpers/image/dockerlayer/add"
 )
 
 // PreferManifestList specifically requests a manifest list first

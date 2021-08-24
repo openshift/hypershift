@@ -13,16 +13,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/autoapprover"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/clusteroperator"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/cmca"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/infrastatus"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/kubeadminpwd"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/kubeletservingca"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/node"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/operator"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/autoapprover"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusteroperator"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/infrastatus"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeadminpwd"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeletservingca"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/node"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
 )
 
 const (

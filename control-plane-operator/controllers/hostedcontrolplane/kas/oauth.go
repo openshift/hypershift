@@ -5,7 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 func ReconcileOauthMetadata(cfg *corev1.ConfigMap, ownerRef config.OwnerRef, externalOAuthAddress string, externalOAuthPort int32) error {

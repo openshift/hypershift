@@ -19,9 +19,9 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	awsutil "github.com/alknopfler/hypershift/cmd/infra/aws/util"
-	"github.com/alknopfler/hypershift/cmd/util"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 type CreateIAMOptions struct {

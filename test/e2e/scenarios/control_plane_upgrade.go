@@ -6,11 +6,11 @@ import (
 	"context"
 	"testing"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	cmdcluster "github.com/alknopfler/hypershift/cmd/cluster"
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
 
-	e2eutil "github.com/alknopfler/hypershift/test/e2e/util"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )

@@ -4,9 +4,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 type EtcdParams struct {

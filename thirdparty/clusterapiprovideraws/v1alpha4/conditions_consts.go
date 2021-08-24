@@ -16,7 +16,7 @@ limitations under the License.
 
 package v1alpha4
 
-import clusterv1 "github.com/alknopfler/hypershift/thirdparty/clusterapi/api/v1alpha4"
+import clusterv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
 
 const (
 	// PrincipalCredentialRetrievedCondition reports on whether Principal credentials could be retrieved successfully.

@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"testing"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	cmdcluster "github.com/alknopfler/hypershift/cmd/cluster"
-	e2eutil "github.com/alknopfler/hypershift/test/e2e/util"
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"

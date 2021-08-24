@@ -10,16 +10,16 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/alknopfler/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/api/v1alpha1"
 
-	hyperapi "github.com/alknopfler/hypershift/api"
-	apifixtures "github.com/alknopfler/hypershift/api/fixtures"
-	awsinfra "github.com/alknopfler/hypershift/cmd/infra/aws"
-	"github.com/alknopfler/hypershift/version"
+	hyperapi "github.com/openshift/hypershift/api"
+	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/version"
 	"github.com/spf13/cobra"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
-	"github.com/alknopfler/hypershift/cmd/util"
+	"github.com/openshift/hypershift/cmd/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 

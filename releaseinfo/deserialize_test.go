@@ -3,7 +3,7 @@ package releaseinfo
 import (
 	"testing"
 
-	"github.com/alknopfler/hypershift/releaseinfo/fixtures"
+	"github.com/openshift/hypershift/releaseinfo/fixtures"
 )
 
 func TestDeserializeImageStream(t *testing.T) {

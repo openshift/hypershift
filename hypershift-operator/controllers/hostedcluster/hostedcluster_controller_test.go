@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alknopfler/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/google/go-cmp/cmp"
@@ -17,9 +17,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	"github.com/alknopfler/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 )
 
 var Now = metav1.NewTime(time.Now())

@@ -8,7 +8,7 @@ import (
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/alknopfler/hypershift/api"
+	hyperapi "github.com/openshift/hypershift/api"
 )
 
 // GetConfigOrDie creates a REST config from current context

@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	hyperapi "github.com/alknopfler/hypershift/api"
-	"github.com/alknopfler/hypershift/ignition-server/controllers"
-	"github.com/alknopfler/hypershift/releaseinfo"
+	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/ignition-server/controllers"
+	"github.com/openshift/hypershift/releaseinfo"
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"

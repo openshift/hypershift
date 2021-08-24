@@ -22,10 +22,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	createcmd "github.com/alknopfler/hypershift/cmd/create"
-	destroycmd "github.com/alknopfler/hypershift/cmd/destroy"
-	dumpcmd "github.com/alknopfler/hypershift/cmd/dump"
-	installcmd "github.com/alknopfler/hypershift/cmd/install"
+	createcmd "github.com/openshift/hypershift/cmd/create"
+	destroycmd "github.com/openshift/hypershift/cmd/destroy"
+	dumpcmd "github.com/openshift/hypershift/cmd/dump"
+	installcmd "github.com/openshift/hypershift/cmd/install"
 )
 
 func main() {

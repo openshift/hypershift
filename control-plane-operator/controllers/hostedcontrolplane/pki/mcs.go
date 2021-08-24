@@ -5,7 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 func ReconcileMachineConfigServerCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {

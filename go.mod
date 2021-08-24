@@ -1,4 +1,4 @@
-module github.com/alknopfler/hypershift
+module github.com/openshift/hypershift
 
 go 1.16
 

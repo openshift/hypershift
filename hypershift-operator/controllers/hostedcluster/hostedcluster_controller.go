@@ -27,19 +27,19 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/alknopfler/hypershift/api"
-	capiibmv1 "github.com/alknopfler/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
+	"github.com/openshift/hypershift/api"
+	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	"github.com/alknopfler/hypershift/certs"
-	"github.com/alknopfler/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	"github.com/openshift/hypershift/certs"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -59,14 +59,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	"github.com/alknopfler/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/alknopfler/hypershift/hypershift-operator/controllers/manifests/autoscaler"
-	"github.com/alknopfler/hypershift/hypershift-operator/controllers/manifests/clusterapi"
-	"github.com/alknopfler/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	hyperutil "github.com/alknopfler/hypershift/hypershift-operator/controllers/util"
-	capiv1 "github.com/alknopfler/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiawsv1 "github.com/alknopfler/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	capiawsv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
 )
 
 const (
@@ -686,7 +686,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the CAPI Cluster resource
 	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
-	r.Log.Info("xxxxx-PARAM: ", "r.Client: ", r.Client, "capicluster: ", capiCluster, "controlPlaneNamespace.Name: ", controlPlaneNamespace.Name, "hcluster.Spec.InfraID", hcluster.Spec.InfraID)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiCluster, func() error {
 		return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
 	})

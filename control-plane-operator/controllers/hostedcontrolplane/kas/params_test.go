@@ -8,8 +8,8 @@ import (
 
 	"k8s.io/utils/pointer"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
-	"github.com/alknopfler/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
 // TODO (cewong): Add tests for other params

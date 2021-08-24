@@ -11,11 +11,11 @@ import (
 	"github.com/docker/distribution/registry/client/transport"
 	"k8s.io/client-go/rest"
 
-	dockerarchive "github.com/alknopfler/hypershift/thirdparty/docker/pkg/archive"
-	"github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/reference"
-	"github.com/alknopfler/hypershift/thirdparty/library-go/pkg/image/registryclient"
-	"github.com/alknopfler/hypershift/thirdparty/oc/pkg/cli/image/manifest"
-	"github.com/alknopfler/hypershift/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
+	dockerarchive "github.com/openshift/hypershift/thirdparty/docker/pkg/archive"
+	"github.com/openshift/hypershift/thirdparty/library-go/pkg/image/reference"
+	"github.com/openshift/hypershift/thirdparty/library-go/pkg/image/registryclient"
+	"github.com/openshift/hypershift/thirdparty/oc/pkg/cli/image/manifest"
+	"github.com/openshift/hypershift/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
 )
 
 // ExtractImageFiles extracts a list of files from a registry image given the image reference, pull secret and the

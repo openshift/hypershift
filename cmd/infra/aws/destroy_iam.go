@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	awsutil "github.com/alknopfler/hypershift/cmd/infra/aws/util"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
 
 type DestroyIAMOptions struct {

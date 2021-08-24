@@ -10,8 +10,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/controllers"
-	"github.com/alknopfler/hypershift/hosted-cluster-config-operator/operator"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
 )
 
 const (

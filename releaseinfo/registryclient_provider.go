@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alknopfler/hypershift/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/releaseinfo/registryclient"
 )
 
 const (

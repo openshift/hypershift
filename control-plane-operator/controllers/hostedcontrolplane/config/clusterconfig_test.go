@@ -6,8 +6,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 
-	hyperv1 "github.com/alknopfler/hypershift/api/v1alpha1"
 	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
 var featureGateBytes = `
