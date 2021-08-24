@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
 
@@ -175,7 +174,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if err != nil {
 			return false, fmt.Errorf("error sending https request for machine config server pod: %w", err)
 		}
-		log.Println("Status Code", res.StatusCode)
 		if res.StatusCode != http.StatusOK {
 			return false, fmt.Errorf("request to the machine config server did not returned a 200, this is unexpected")
 		}

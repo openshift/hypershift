@@ -2455,9 +2455,9 @@ func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Conte
 	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
 		return reconcileMachineConfigServerService(mcsService)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile ignition service: %w", err)
+		return fmt.Errorf("failed to reconcile machine config server  service: %w", err)
 	} else {
-		span.AddEvent("reconciled ignition server service", trace.WithAttributes(attribute.String("result", string(result))))
+		span.AddEvent("reconciled machine config server service", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	return nil
