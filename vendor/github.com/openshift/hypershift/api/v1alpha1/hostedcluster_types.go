@@ -108,6 +108,20 @@ type HostedClusterSpec struct {
 	// +kubebuilder:validation:Optional
 	// +optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
+
+	// ImageContentSources lists sources/repositories for the release-image content.
+	// +optional
+	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
+}
+
+// ImageContentSource defines a list of sources/repositories that can be used to pull content.
+type ImageContentSource struct {
+	// Source is the repository that users refer to, e.g. in image pull specifications.
+	Source string `json:"source"`
+
+	// Mirrors is one or more repositories that may also contain the same images.
+	// +optional
+	Mirrors []string `json:"mirrors,omitempty"`
 }
 
 // ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
