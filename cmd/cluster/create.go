@@ -288,6 +288,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			NetworkType:      v1alpha1.NetworkType(opts.NetworkType),
 			FIPS:             opts.FIPS,
 			PlatformType:     opts.Platform,
+			InfraID:          opts.InfraID,
 		}.Resources().AsObjects()
 
 		switch {
