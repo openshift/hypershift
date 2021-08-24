@@ -2,7 +2,6 @@ package oauth
 
 import (
 	"context"
-
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"encoding/json"
