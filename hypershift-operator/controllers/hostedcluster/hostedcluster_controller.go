@@ -24,14 +24,13 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	"github.com/openshift/hypershift/api"
 	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"github.com/go-logr/logr"
