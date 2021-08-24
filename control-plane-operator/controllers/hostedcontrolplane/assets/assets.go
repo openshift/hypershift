@@ -4,7 +4,6 @@ import "embed"
 
 //go:embed apiserver-haproxy/*
 //go:embed cluster-bootstrap/*
-//go:embed cluster-version-operator/*
 //go:embed hosted-cluster-config-operator/*
 //go:embed ignition-configs/*
 //go:embed install-config/*
