@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"time"
 
@@ -87,9 +88,9 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if err := p.Client.Delete(ctx, mcsConfigConfigMap); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server config ConfigMap: %w", err))
 		}
-		// if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
-		// 	deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
-		// }
+		if err := p.Client.Delete(ctx, mcsPod); err != nil && !errors.IsNotFound(err) {
+			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server pod: %w", err))
+		}
 		// We return this in the named returned values.
 		if deleteErrors != nil {
 			err = utilerrors.NewAggregate(deleteErrors)
@@ -182,7 +183,11 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		defer res.Body.Close()
 		payload, err = ioutil.ReadAll(res.Body)
 		if err != nil {
-			return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return false, fmt.Errorf("read timeout to get payload from machine config server: %w", err)
+			} else {
+				return false, fmt.Errorf("error getting payload from machine config server: %w", err)
+			}
 		}
 		if payload == nil {
 			return false, nil
