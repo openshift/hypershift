@@ -1511,7 +1511,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 
 	deployment := manifests.OpenShiftAPIServerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage)
+		return oapi.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.HaproxyImage, p.EtcdURL)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
