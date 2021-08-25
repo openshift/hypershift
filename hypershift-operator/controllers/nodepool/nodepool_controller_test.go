@@ -6,7 +6,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 
 	"github.com/onsi/gomega"
 	. "github.com/onsi/gomega"

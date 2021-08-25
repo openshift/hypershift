@@ -7,13 +7,9 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
-
-	"github.com/spf13/cobra"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -23,7 +19,6 @@ import (
 	"github.com/openshift/hypershift/releaseinfo"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
@@ -100,7 +95,7 @@ func NewStartCommand() *cobra.Command {
 			// return the updated resource. All client consumers will need audited to
 			// ensure they are tolerant of stale data (or we need a cache or client that
 			// makes stronger coherence guarantees).
-			ClientBuilder: &uncachedClientBuilder{},
+			// TODO: ClientDisableCacheFor:,
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
@@ -183,18 +178,4 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	return cmd
-}
-
-type uncachedClientBuilder struct{}
-
-func (n *uncachedClientBuilder) WithUncached(_ ...client.Object) cluster.ClientBuilder {
-	return n
-}
-
-func (n *uncachedClientBuilder) Build(_ cache.Cache, config *rest.Config, options client.Options) (client.Client, error) {
-	c, err := client.New(config, options)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
 }

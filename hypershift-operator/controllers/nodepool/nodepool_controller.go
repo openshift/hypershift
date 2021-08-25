@@ -20,10 +20,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/releaseinfo"
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
-	"github.com/openshift/hypershift/thirdparty/clusterapi/util/patch"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
@@ -42,6 +38,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capi "sigs.k8s.io/cluster-api/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	"sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -626,7 +627,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 }
 
 func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
-	machineDeployment *capiv1.MachineDeployment,
+	machineDeployment *capi.MachineDeployment,
 	nodePool *hyperv1.NodePool,
 	userDataSecret *corev1.Secret,
 	machineTemplateCR client.Object,
