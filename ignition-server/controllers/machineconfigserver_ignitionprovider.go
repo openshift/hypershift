@@ -273,7 +273,6 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					Effect:   "NoSchedule",
 				},
 			},
-			Hostname: resourceGenerateName,
 			InitContainers: []corev1.Container{
 				{
 					Image: images["machine-config-operator"],
