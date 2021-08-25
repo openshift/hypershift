@@ -74,6 +74,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
 	mcsPod := machineConfigServerPod(p.Namespace, img,
 		mcsServiceAccount, mcsConfigConfigMap)
+
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
 		var deleteErrors []error
@@ -119,6 +120,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			// We don't return the error here so we want to keep retrying.
 			return false, nil
 		}
+
 		// If the machine config server is not ready we return and wait for an update event to reconcile.
 		mcsReady := false
 		for _, cond := range mcsPod.Status.Conditions {
@@ -130,6 +132,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if mcsPod.Status.PodIP == "" || !mcsReady {
 			return false, nil
 		}
+
 		// Get  Machine config certs
 		var caCert, tlsCert, tlsKey []byte
 		var cert tls.Certificate
@@ -162,8 +165,9 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			},
 			Timeout: 5 * time.Second,
 		}
+
 		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace), nil)
+		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443/config/master", mcsPod.Name, p.Namespace), nil)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
@@ -179,6 +183,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if res.StatusCode != http.StatusOK {
 			return false, fmt.Errorf("request to the machine config server did not returned a 200, this is unexpected")
 		}
+
 		defer res.Body.Close()
 		payload, err = ioutil.ReadAll(res.Body)
 		if err != nil {
