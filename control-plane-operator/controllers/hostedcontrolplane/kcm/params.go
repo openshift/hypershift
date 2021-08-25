@@ -2,7 +2,6 @@ package kcm
 
 import (
 	"context"
-	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -107,10 +106,6 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
-}
-
-func externalAddress(endpoint hyperv1.APIEndpoint) string {
-	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
 }
 
 func (p *KubeControllerManagerParams) FeatureGates() []string {

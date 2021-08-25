@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -108,8 +107,6 @@ type HostedControlPlaneReconciler struct {
 	Log             logr.Logger
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
-
-	recorder record.EventRecorder
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -1851,54 +1848,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	return manifests, nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServerServiceNodePortResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) error {
-	svc := manifests.KubeAPIServerService(namespace)
-	var nodePort int32 = 0
-	if nodePortMetadata.Port > 0 {
-		nodePort = nodePortMetadata.Port
-	}
-	var kubeAPIServerServiceData corev1.Service
-	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, &kubeAPIServerServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-	if len(kubeAPIServerServiceData.Spec.Ports) > 0 && kubeAPIServerServiceData.Spec.Ports[0].NodePort > 0 {
-		r.Log.Info("Preserving existing nodePort for service", "nodePort", kubeAPIServerServiceData.Spec.Ports[0].NodePort)
-		nodePort = kubeAPIServerServiceData.Spec.Ports[0].NodePort
-	}
-	r.Log.Info("Updating KubeAPI service")
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-		return reconcileKubeAPIServerServiceNodePort(svc, nodePort)
-	})
-	return err
-}
-
-func (r *HostedControlPlaneReconciler) updateStatusKubeAPIServerServiceNodePort(ctx context.Context, namespace string, servicePublishingStrategyMapping hyperv1.ServicePublishingStrategyMapping, status *InfrastructureStatus) error {
-	r.Log.Info("Retrieving KubeAPI service to get nodePort value")
-	svc := manifests.KubeAPIServerService(namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
-		return err
-	}
-	if !(svc.Spec.Ports[0].NodePort > 0) {
-		return fmt.Errorf("nodePort not populated")
-	}
-	r.Log.Info("Fetched Kube API service nodePort", "nodePort", svc.Spec.Ports[0].NodePort)
-	status.APIHost = servicePublishingStrategyMapping.NodePort.Address
-	status.APIPort = svc.Spec.Ports[0].NodePort
-	return nil
-}
-
-func reconcileKubeAPIServerServiceNodePort(svc *corev1.Service, nodePort int32) error {
-	svc.Spec.Ports = KubeAPIServerServicePorts(defaultAPIServerPort)
-	if nodePort > 0 {
-		svc.Spec.Ports[0].NodePort = nodePort
-	}
-	svc.Spec.Selector = KubeAPIServerServiceSelector()
-	svc.Spec.Type = corev1.ServiceTypeNodePort
-	return nil
-}
-
 func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	route := manifests.OIDCRoute(hcp.GetNamespace())
 	r.Log.Info("Updating OIDC route")
@@ -2148,22 +2097,6 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	secret.Name = "kubeadmin-password"
 	secret.Data = map[string][]byte{"password": []byte(password)}
 	return secret
-}
-
-func generateKubeconfigSecret(namespace string, ref *hyperv1.KubeconfigSecretRef, kubeconfigBytes []byte) (*corev1.Secret, error) {
-	var name, key string
-	if ref != nil {
-		name = ref.Name
-		key = ref.Key
-	} else {
-		name = DefaultAdminKubeconfigName
-		key = DefaultAdminKubeconfigKey
-	}
-	secret := &corev1.Secret{}
-	secret.Namespace = namespace
-	secret.Name = name
-	secret.Data = map[string][]byte{key: kubeconfigBytes}
-	return secret, nil
 }
 
 func generateImageRegistrySecret() string {

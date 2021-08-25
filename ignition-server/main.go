@@ -172,7 +172,6 @@ func run(ctx context.Context, opts Options) error {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(payload)
-		return
 	})
 
 	server := http.Server{

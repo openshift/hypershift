@@ -404,12 +404,12 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2ifac
 	deleteVPC := func(out *ec2.DescribeVpcsOutput, _ bool) bool {
 		for _, vpc := range out.Vpcs {
 			var childErrs []error
-			childErrs = append(errs, o.DestroyELBs(ctx, elbclient, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroyVPCEndpoints(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroyRouteTables(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroyNATGateways(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(errs, o.DestroySubnets(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyELBs(ctx, elbclient, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyVPCEndpoints(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyRouteTables(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyNATGateways(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroySubnets(ctx, ec2client, vpc.VpcId)...)
 			if len(childErrs) > 0 {
 				errs = append(errs, childErrs...)
 				continue

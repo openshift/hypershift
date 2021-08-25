@@ -60,10 +60,6 @@ var (
 			kasAuditWebhookConfigFileVolume().Name: "/etc/kubernetes/auditwebhook",
 		},
 	}
-
-	// volume mounts in apply bootstrap container
-	applyWorkMountPath       = "/work"
-	applyKubeconfigMountPath = "/var/secrets/localhost-kubeconfig"
 )
 
 var kasLabels = map[string]string{

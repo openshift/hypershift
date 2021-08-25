@@ -24,7 +24,7 @@ func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
 		return "", fmt.Errorf("failed to list availability zones: %w", err)
 	}
 	if len(result.AvailabilityZones) == 0 {
-		return "", fmt.Errorf("No availability zones found")
+		return "", fmt.Errorf("no availability zones found")
 
 	}
 	zone := aws.StringValue(result.AvailabilityZones[0].ZoneName)
@@ -295,7 +295,7 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		log.Info("Found existing elastic IP for NAT gateway", "id", allocationID)
 	}
 	natGatewayName := fmt.Sprintf("%s-nat-%s", o.InfraID, availabilityZone)
-	natGateway, err := o.existingNATGateway(client, natGatewayName)
+	natGateway, _ := o.existingNATGateway(client, natGatewayName)
 	if natGateway == nil {
 		gatewayResult, err := client.CreateNatGateway(&ec2.CreateNatGatewayInput{
 			AllocationId:      aws.String(allocationID),
@@ -423,6 +423,9 @@ func (o *CreateInfraOptions) CreatePublicRouteTable(client ec2iface.EC2API, vpcI
 			},
 		},
 	})
+	if err != nil {
+		return "", err
+	}
 	if len(routeTableInfo.RouteTables) == 0 {
 		return "", fmt.Errorf("no route tables associated with the vpc")
 	}

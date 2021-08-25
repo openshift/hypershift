@@ -21,9 +21,10 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/openshift/hypershift/api"
 	capiibmv1 "github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapiprovideribmcloud/v1alpha4"
@@ -50,7 +51,6 @@ import (
 	k8sutilspointer "k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -410,13 +410,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		var src corev1.Secret
 		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name}, &src)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to get cloud controller provider creds %s: %w", hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name, err)
 		}
 		dest := manifests.AWSKubeCloudControllerCreds(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["credentials"]
 			if !srcHasData {
-				return fmt.Errorf("hostedcluster provider credentials secret %q must have a credentials key", src.Name)
+				return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key", src.Name)
 			}
 			dest.Type = corev1.SecretTypeOpaque
 			if dest.Data == nil {
@@ -425,6 +425,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			dest.Data["credentials"] = srcData
 			return nil
 		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile cloud controller provider creds: %w", err)
+		}
 	}
 
 	// Reconcile the platform provider node pool management credentials secret by
@@ -450,13 +453,16 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			dest.Data["credentials"] = srcData
 			return nil
 		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile node pool provider creds: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane pull secret by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	{
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
@@ -472,6 +478,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			dst.Data[".dockerconfigjson"] = srcData
 			return nil
 		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane audit webhook config if specified
@@ -479,7 +488,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	{
 		if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 			var src corev1.Secret
-			if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.AuditWebhook.Name}, &src); err != nil {
+			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.AuditWebhook.Name}, &src); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to get audit webhook config %s: %w", hcluster.Spec.AuditWebhook.Name, err)
 			}
 			configData, ok := src.Data[hyperv1.AuditWebhookKubeconfigKey]
@@ -511,7 +520,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	if len(hcluster.Spec.SigningKey.Name) > 0 {
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &src); err != nil {
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get signing key %s: %w", hcluster.Spec.SigningKey.Name, err)
 		}
 		dest := controlplaneoperator.SigningKey(controlPlaneNamespace.Name)
@@ -527,6 +536,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			dest.Data["key"] = srcData
 			return nil
 		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile signing key: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane SSH secret by resolving the source secret reference
@@ -591,7 +603,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if hcluster.Spec.Configuration != nil {
 			for _, configMapRef := range hcluster.Spec.Configuration.ConfigMapRefs {
 				sourceCM := &corev1.ConfigMap{}
-				if err := r.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef.Name}, sourceCM); err != nil {
+				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef.Name}, sourceCM); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef.Name, err)
 				}
 				destCM := &corev1.ConfigMap{}
@@ -611,7 +623,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 			for _, secretRef := range hcluster.Spec.Configuration.SecretRefs {
 				sourceSecret := &corev1.Secret{}
-				if err := r.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef.Name}, sourceSecret); err != nil {
+				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef.Name}, sourceSecret); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef.Name, err)
 				}
 				destSecret := &corev1.Secret{}
@@ -773,7 +785,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 
 	hcp.Annotations = map[string]string{
-		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
 	for annotationKey := range hcluster.Annotations {
 		if annotationKey == hyperv1.DisablePKIReconciliationAnnotation {
@@ -892,6 +904,9 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hclu
 		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = certs.PrivateKeyToPem(key)
 		return nil
 	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi webhook tls secret: %w", err)
+	}
 
 	// Reconcile CAPI manager service account
 	capiManagerServiceAccount := clusterapi.CAPIManagerServiceAccount(controlPlaneNamespace.Name)
@@ -1140,7 +1155,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 			if ignitionServerRoute.Annotations == nil {
 				ignitionServerRoute.Annotations = map[string]string{}
 			}
-			ignitionServerRoute.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
+			ignitionServerRoute.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
 				Termination: routev1.TLSTerminationPassthrough,
 			}
@@ -1307,7 +1322,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		if _, ok := hcluster.Annotations[hyperv1.RestartDateAnnotation]; ok {
 			ignitionServerDeployment.Annotations[hyperv1.RestartDateAnnotation] = hcluster.Annotations[hyperv1.RestartDateAnnotation]
 		}
-		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
+		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Replicas: k8sutilspointer.Int32Ptr(1),
 			Selector: &metav1.LabelSelector{
@@ -1668,7 +1683,7 @@ func reconcileControlPlaneOperatorRoleBinding(binding *rbacv1.RoleBinding, role 
 func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
 	// We only create this resource once and then let CAPI own it
 	awsCluster.Annotations = map[string]string{
-		hostedClusterAnnotation:    ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		hostedClusterAnnotation:    client.ObjectKeyFromObject(hcluster).String(),
 		capiv1.ManagedByAnnotation: "external",
 	}
 
@@ -1687,7 +1702,7 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 
 func reconcileIBMCloudCluster(ibmCluster *capiibmv1.IBMCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
 	ibmCluster.Annotations = map[string]string{
-		hostedClusterAnnotation:    ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		hostedClusterAnnotation:    client.ObjectKeyFromObject(hcluster).String(),
 		capiv1.ManagedByAnnotation: "external",
 	}
 
@@ -1707,7 +1722,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	}
 
 	cluster.Annotations = map[string]string{
-		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
 	gvk, err := apiutil.GVKForObject(infraCR, api.Scheme)
 	if err != nil {
@@ -2424,7 +2439,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	return true, nil
 }
 
-func enqueueParentHostedCluster(obj ctrlclient.Object) []reconcile.Request {
+func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
 	var hostedClusterName string
 	if obj.GetAnnotations() != nil {
 		hostedClusterName = obj.GetAnnotations()[hostedClusterAnnotation]

@@ -74,7 +74,8 @@ func CipherSuites(securityProfile *configv1.TLSSecurityProfile) []string {
 	var ciphers []string
 	if securityProfile.Type == configv1.TLSProfileCustomType {
 		ciphers = securityProfile.Custom.Ciphers
+	} else {
+		ciphers = configv1.TLSProfiles[securityProfile.Type].Ciphers
 	}
-	ciphers = configv1.TLSProfiles[securityProfile.Type].Ciphers
 	return OpenSSLToIANACipherSuites(ciphers)
 }
