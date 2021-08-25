@@ -21,7 +21,7 @@ const (
 	openshiftAPIServerConfigKey     = "config.yaml"
 	oasKonnectivityProxyConfigKey   = "haproxy.cfg"
 	defaultInternalRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
-	haproxyCombinedPemLocation = "/tmp/tls.pem"
+	haproxyCombinedPemLocation      = "/tmp/tls.pem"
 )
 
 func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string) error {
@@ -127,5 +127,5 @@ func reconcileOASKonnectivityProxyConfig() string {
 		dir := volumeMounts.Path(oasKonnectivityProxyContainer().Name, volume)
 		return path.Join(dir, file)
 	}
-	return fmt.Sprintf(haproxyTemplate, konnectivity.KonnectivityServerLocalPort, manifests.KonnectivityServerLocalService("").Name, konnectivity.KonnectivityServerLocalPort, cpath(oasVolumeKonnectivityProxyCert().Name,"ca.crt"), haproxyCombinedPemLocation)
+	return fmt.Sprintf(haproxyTemplate, konnectivity.KonnectivityServerLocalPort, manifests.KonnectivityServerLocalService("").Name, konnectivity.KonnectivityServerLocalPort, cpath(oasVolumeKonnectivityProxyCert().Name, "ca.crt"), haproxyCombinedPemLocation)
 }
