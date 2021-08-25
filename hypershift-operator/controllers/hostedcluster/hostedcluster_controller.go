@@ -2477,7 +2477,7 @@ func reconcileMachineConfigServerService(svc *corev1.Service) error {
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(8443)
 	svc.Spec.Ports[0] = portSpec
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
+	svc.Spec.Type = corev1.ClusterIPNone
 	svc.Spec.ClusterIP = corev1.ClusterIPNone
 	svc.Spec.PublishNotReadyAddresses = true
 	svc.ObjectMeta.Annotations = map[string]string{
