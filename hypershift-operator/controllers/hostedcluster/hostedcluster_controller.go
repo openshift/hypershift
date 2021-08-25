@@ -2479,6 +2479,7 @@ func reconcileMachineConfigServerService(svc *corev1.Service) error {
 	svc.Spec.Ports[0] = portSpec
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.ClusterIP = corev1.ClusterIPNone
+	svc.Spec.PublishNotReadyAddresses = true
 	svc.ObjectMeta.Annotations = map[string]string{
 		"service.alpha.kubernetes.io/tolerate-unready-endpoints": "true",
 	}
