@@ -10,10 +10,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-const (
-	DefaultPriorityClass = "system-node-critical"
-)
-
 type OpenShiftAPIServerParams struct {
 	APIServer        *configv1.APIServer `json:"apiServer"`
 	IngressSubDomain string
@@ -43,7 +39,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	}
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: DefaultPriorityClass,
+			PriorityClass: config.APICriticalPriorityClass,
 		},
 		LivenessProbes: config.LivenessProbes{
 			oasContainerMain().Name: {
@@ -90,7 +86,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	params.OpenShiftAPIServerDeploymentConfig.SetControlPlaneIsolation(hcp)
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: DefaultPriorityClass,
+			PriorityClass: config.DefaultPriorityClass,
 		},
 		LivenessProbes: config.LivenessProbes{
 			oauthContainerMain().Name: {

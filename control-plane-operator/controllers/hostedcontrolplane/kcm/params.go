@@ -30,8 +30,7 @@ type KubeControllerManagerParams struct {
 }
 
 const (
-	DefaultPriorityClass = "system-node-critical"
-	DefaultPort          = 10257
+	DefaultPort = 10257
 )
 
 func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *KubeControllerManagerParams {
@@ -45,7 +44,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		PodCIDR:        hcp.Spec.PodCIDR,
 	}
 	params.Scheduling = config.Scheduling{
-		PriorityClass: DefaultPriorityClass,
+		PriorityClass: config.DefaultPriorityClass,
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		kcmContainerMain().Name: {

@@ -80,7 +80,7 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 		APIServer:        globalConfig.APIServer,
 	}
 	p.Scheduling = config.Scheduling{
-		PriorityClass: config.DefaultPriorityClass,
+		PriorityClass: config.APICriticalPriorityClass,
 	}
 	p.Resources = map[string]corev1.ResourceRequirements{
 		oauthContainerMain().Name: {

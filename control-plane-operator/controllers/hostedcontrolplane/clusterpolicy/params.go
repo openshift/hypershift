@@ -9,10 +9,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-const (
-	DefaultPriorityClass = "system-node-critical"
-)
-
 type ClusterPolicyControllerParams struct {
 	Image     string              `json:"image"`
 	APIServer *configv1.APIServer `json:"apiServer"`
@@ -28,7 +24,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: DefaultPriorityClass,
+			PriorityClass: config.DefaultPriorityClass,
 		},
 		Resources: map[string]corev1.ResourceRequirements{
 			cpcContainerMain().Name: {

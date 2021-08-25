@@ -4,6 +4,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -332,6 +333,57 @@ func (o HyperShiftOperatorRoleBinding) Build() *rbacv1.RoleBinding {
 		},
 	}
 	return binding
+}
+
+type HyperShiftControlPlanePriorityClass struct{}
+
+func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PriorityClass",
+			APIVersion: schedulingv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-control-plane",
+		},
+		Value:         100000000,
+		GlobalDefault: false,
+		Description:   "This priority class should be used for hypershift control plane pods not critical to serving the API.",
+	}
+}
+
+type HyperShiftAPICriticalPriorityClass struct{}
+
+func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PriorityClass",
+			APIVersion: schedulingv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-api-critical",
+		},
+		Value:         100001000,
+		GlobalDefault: false,
+		Description:   "This priority class should be used for hypershift control plane pods critical to serving the API.",
+	}
+}
+
+type HyperShiftEtcdPriorityClass struct{}
+
+func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PriorityClass",
+			APIVersion: schedulingv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-etcd",
+		},
+		Value:         100002000,
+		GlobalDefault: false,
+		Description:   "This priority class should be used for hypershift etcd pods.",
+	}
 }
 
 type HyperShiftHostedClustersCustomResourceDefinition struct{}

@@ -23,6 +23,8 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 
 	hyperapi "github.com/openshift/hypershift/api"
@@ -113,11 +115,23 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 		if err != nil {
 			return err
 		}
-		err = client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift"))
-		if err != nil {
-			return err
+		if object.GetObjectKind().GroupVersionKind().Kind == "PriorityClass" {
+			// PriorityClasses can not be patched as the value field is immutable
+			if err := client.Create(ctx, object, &crclient.CreateOptions{}); err != nil {
+				if apierrors.IsAlreadyExists(err) {
+					fmt.Printf("already exists: %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+				} else {
+					return err
+				}
+			} else {
+				fmt.Printf("created %s %s/%s\n", "PriorityClass", object.GetNamespace(), object.GetName())
+			}
+		} else {
+			if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err != nil {
+				return err
+			}
+			fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 		}
-		fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 	}
 	return nil
 }
@@ -128,6 +142,9 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	hostedControlPlanesCRD := assets.HyperShiftHostedControlPlaneCustomResourceDefinition{}.Build()
 	externalInfraClustersCRD := assets.HyperShiftExternalInfraClustersCustomResourceDefinition{}.Build()
 	machineConfigServersCRD := assets.HyperShiftMachineConfigServersCustomResourceDefinition{}.Build()
+	controlPlanePriorityClass := assets.HyperShiftControlPlanePriorityClass{}.Build()
+	etcdPriorityClass := assets.HyperShiftEtcdPriorityClass{}.Build()
+	apiCriticalPriorityClass := assets.HyperShiftAPICriticalPriorityClass{}.Build()
 	operatorNamespace := assets.HyperShiftNamespace{
 		Name: opts.Namespace,
 	}.Build()
@@ -172,6 +189,9 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		hostedControlPlanesCRD,
 		externalInfraClustersCRD,
 		machineConfigServersCRD,
+		controlPlanePriorityClass,
+		apiCriticalPriorityClass,
+		etcdPriorityClass,
 		operatorNamespace,
 		operatorServiceAccount,
 		operatorClusterRole,

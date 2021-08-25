@@ -1,7 +1,15 @@
 package config
 
 const (
-	DefaultPriorityClass         = "system-node-critical"
+	// APICriticalPriorityClass is for pods that are required for API calls and
+	// resource admission to succeed. This includes pods like kube-apiserver,
+	// aggregated API servers, and webhooks.
+	APICriticalPriorityClass = "hypershift-api-critical"
+
+	// DefaultPriorityClass is for pods in the Hypershift control plane that are
+	// not API critical but still need elevated priority.
+	DefaultPriorityClass = "hypershift-control-plane"
+
 	DefaultServiceAccountIssuer  = "https://kubernetes.default.svc"
 	DefaultImageRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 	DefaultAdvertiseAddress      = "172.20.0.1"
