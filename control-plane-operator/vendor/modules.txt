@@ -117,6 +117,7 @@ github.com/openshift/api/kubecontrolplane/v1
 github.com/openshift/api/oauth/v1
 github.com/openshift/api/openshiftcontrolplane/v1
 github.com/openshift/api/operator/v1
+github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1

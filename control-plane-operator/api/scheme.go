@@ -4,6 +4,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	oauthv1 "github.com/openshift/api/oauth/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/api/operator/v1alpha1"
 	osinv1 "github.com/openshift/api/osin/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
@@ -60,4 +61,5 @@ func init() {
 	etcd.AddToScheme(Scheme)
 	kasv1beta1.AddToScheme(Scheme)
 	openshiftcpv1.AddToScheme(Scheme)
+	v1alpha1.AddToScheme(Scheme)
 }
