@@ -12,6 +12,7 @@ func ReconcileMachineConfigServerCert(secret, ca *corev1.Secret, ownerRef config
 	hostNames := []string{
 		"machine-config-server",
 		fmt.Sprintf("machine-config-server.%s", secret.Namespace),
+		fmt.Sprintf("*.machine-config-server.%s", secret.Namespace),
 		fmt.Sprintf("machine-config-server.%s.svc", secret.Namespace),
 		fmt.Sprintf("machine-config-server.%s.svc.cluster.local", secret.Namespace),
 		fmt.Sprintf("*.machine-config-server.%s.svc.cluster.local", secret.Namespace),
