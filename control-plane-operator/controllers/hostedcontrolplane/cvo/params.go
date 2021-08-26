@@ -37,11 +37,6 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane) *CVOParams {
 	p.DeploymentConfig.SetColocation(hcp)
 	p.DeploymentConfig.SetMultizoneSpread(cvoLabels)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		p.DeploymentConfig.Replicas = 3
-	default:
-		p.DeploymentConfig.Replicas = 1
-	}
+	p.DeploymentConfig.Replicas = 1
 	return p
 }
