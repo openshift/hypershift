@@ -1,10 +1,11 @@
 package hostedcluster
 
 import (
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"testing"
 	"time"
+
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
@@ -357,7 +358,10 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 					Name:      "test-secret",
 				},
 			}
-			err := reconcileAutoScalerDeployment(deployment, sa, secret, test.AutoscalerOptions, imageClusterAutoscaler)
+			hc := &hyperv1.HostedCluster{}
+			hc.Name = "name"
+			hc.Namespace = "namespace"
+			err := reconcileAutoScalerDeployment(deployment, hc, sa, secret, test.AutoscalerOptions, imageClusterAutoscaler)
 			if err != nil {
 				t.Error(err)
 			}
