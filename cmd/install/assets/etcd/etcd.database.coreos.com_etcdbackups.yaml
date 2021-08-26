@@ -22,10 +22,14 @@ spec:
         description: EtcdBackup represents a Kubernetes EtcdBackup Custom Resource.
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
             type: string
           metadata:
             type: object
@@ -36,10 +40,13 @@ spec:
                 description: ABS defines the ABS backup source spec.
                 properties:
                   absSecret:
-                    description: The name of the secret object that stores the Azure storage credential
+                    description: The name of the secret object that stores the Azure
+                      storage credential
                     type: string
                   path:
-                    description: 'Path is the full abs path where the backup is saved. The format of the path must be: "<abs-container-name>/<path-to-backup-file>" e.g: "myabscontainer/etcd.backup"'
+                    description: 'Path is the full abs path where the backup is saved.
+                      The format of the path must be: "<abs-container-name>/<path-to-backup-file>"
+                      e.g: "myabscontainer/etcd.backup"'
                     type: string
                 required:
                 - absSecret
@@ -49,22 +56,31 @@ spec:
                 description: BackupPolicy configures the backup process.
                 properties:
                   backupIntervalInSecond:
-                    description: BackupIntervalInSecond is to specify how often operator take snapshot 0 is magic number to indicate one-shot backup
+                    description: BackupIntervalInSecond is to specify how often operator
+                      take snapshot 0 is magic number to indicate one-shot backup
                     format: int64
                     type: integer
                   maxBackups:
-                    description: MaxBackups is to specify how many backups we want to keep 0 is magic number to indicate un-limited backups
+                    description: MaxBackups is to specify how many backups we want
+                      to keep 0 is magic number to indicate un-limited backups
                     type: integer
                   timeoutInSecond:
-                    description: TimeoutInSecond is the maximal allowed time in second of the entire backup process.
+                    description: TimeoutInSecond is the maximal allowed time in second
+                      of the entire backup process.
                     format: int64
                     type: integer
                 type: object
               clientTLSSecret:
-                description: 'ClientTLSSecret is the secret containing the etcd TLS client certs and must contain the following data items: data:    "etcd-client.crt": <pem-encoded-cert>    "etcd-client.key": <pem-encoded-key>    "etcd-client-ca.crt": <pem-encoded-ca-cert>'
+                description: 'ClientTLSSecret is the secret containing the etcd TLS
+                  client certs and must contain the following data items: data:    "etcd-client.crt":
+                  <pem-encoded-cert>    "etcd-client.key": <pem-encoded-key>    "etcd-client-ca.crt":
+                  <pem-encoded-ca-cert>'
                 type: string
               etcdEndpoints:
-                description: EtcdEndpoints specifies the endpoints of an etcd cluster. When multiple endpoints are given, the backup operator retrieves the backup from the endpoint that has the most up-to-date state. The given endpoints must belong to the same etcd cluster.
+                description: EtcdEndpoints specifies the endpoints of an etcd cluster.
+                  When multiple endpoints are given, the backup operator retrieves
+                  the backup from the endpoint that has the most up-to-date state.
+                  The given endpoints must belong to the same etcd cluster.
                 items:
                   type: string
                 type: array
@@ -72,10 +88,16 @@ spec:
                 description: GCS defines the GCS backup source spec.
                 properties:
                   gcpSecret:
-                    description: "The name of the secret object that stores the Google storage credential containing at most ONE of the following: An access token with file name of 'access-token'. JSON credentials with file name of 'credentials.json'. \n If omitted, client will use the default application credentials."
+                    description: "The name of the secret object that stores the Google
+                      storage credential containing at most ONE of the following:
+                      An access token with file name of 'access-token'. JSON credentials
+                      with file name of 'credentials.json'. \n If omitted, client
+                      will use the default application credentials."
                     type: string
                   path:
-                    description: 'Path is the full GCS path where the backup is saved. The format of the path must be: "<gcs-bucket-name>/<path-to-backup-file>" e.g: "mygcsbucket/etcd.backup"'
+                    description: 'Path is the full GCS path where the backup is saved.
+                      The format of the path must be: "<gcs-bucket-name>/<path-to-backup-file>"
+                      e.g: "mygcsbucket/etcd.backup"'
                     type: string
                 required:
                 - path
@@ -84,13 +106,23 @@ spec:
                 description: OSS defines the OSS backup source spec.
                 properties:
                   endpoint:
-                    description: "Endpoint is the OSS service endpoint on alibaba cloud, defaults to \"http://oss-cn-hangzhou.aliyuncs.com\". \n Details about regions and endpoints, see:  https://www.alibabacloud.com/help/doc-detail/31837.htm"
+                    description: "Endpoint is the OSS service endpoint on alibaba
+                      cloud, defaults to \"http://oss-cn-hangzhou.aliyuncs.com\".
+                      \n Details about regions and endpoints, see:  https://www.alibabacloud.com/help/doc-detail/31837.htm"
                     type: string
                   ossSecret:
-                    description: "The name of the secret object that stores the credential which will be used to access Alibaba Cloud OSS. \n The secret must contain the following keys/fields:     accessKeyID     accessKeySecret \n The format of secret: \n   apiVersion: v1   kind: Secret   metadata:     name: <my-credential-name>   type: Opaque   data:     accessKeyID: <base64 of my-access-key-id>     accessKeySecret: <base64 of my-access-key-secret>"
+                    description: "The name of the secret object that stores the credential
+                      which will be used to access Alibaba Cloud OSS. \n The secret
+                      must contain the following keys/fields:     accessKeyID     accessKeySecret
+                      \n The format of secret: \n   apiVersion: v1   kind: Secret
+                      \  metadata:     name: <my-credential-name>   type: Opaque   data:
+                      \    accessKeyID: <base64 of my-access-key-id>     accessKeySecret:
+                      <base64 of my-access-key-secret>"
                     type: string
                   path:
-                    description: 'Path is the full abs path where the backup is saved. The format of the path must be: "<oss-bucket-name>/<path-to-backup-file>" e.g: "mybucket/etcd.backup"'
+                    description: 'Path is the full abs path where the backup is saved.
+                      The format of the path must be: "<oss-bucket-name>/<path-to-backup-file>"
+                      e.g: "mybucket/etcd.backup"'
                     type: string
                 required:
                 - ossSecret
@@ -100,16 +132,26 @@ spec:
                 description: S3 defines the S3 backup source spec.
                 properties:
                   awsSecret:
-                    description: "The name of the secret object that stores the AWS credential and config files. The file name of the credential MUST be 'credentials'. The file name of the config MUST be 'config'. The profile to use in both files will be 'default'. \n AWSSecret overwrites the default etcd operator wide AWS credential and config."
+                    description: "The name of the secret object that stores the AWS
+                      credential and config files. The file name of the credential
+                      MUST be 'credentials'. The file name of the config MUST be 'config'.
+                      The profile to use in both files will be 'default'. \n AWSSecret
+                      overwrites the default etcd operator wide AWS credential and
+                      config."
                     type: string
                   endpoint:
-                    description: Endpoint if blank points to aws. If specified, can point to s3 compatible object stores.
+                    description: Endpoint if blank points to aws. If specified, can
+                      point to s3 compatible object stores.
                     type: string
                   forcePathStyle:
-                    description: ForcePathStyle forces to use path style over the default subdomain style. This is useful when you have an s3 compatible endpoint that doesn't support subdomain buckets.
+                    description: ForcePathStyle forces to use path style over the
+                      default subdomain style. This is useful when you have an s3
+                      compatible endpoint that doesn't support subdomain buckets.
                     type: boolean
                   path:
-                    description: 'Path is the full s3 path where the backup is saved. The format of the path must be: "<s3-bucket-name>/<path-to-backup-file>" e.g: "mybucket/etcd.backup"'
+                    description: 'Path is the full s3 path where the backup is saved.
+                      The format of the path must be: "<s3-bucket-name>/<path-to-backup-file>"
+                      e.g: "mybucket/etcd.backup"'
                     type: string
                 required:
                 - awsSecret
@@ -117,26 +159,31 @@ spec:
                 - path
                 type: object
               storageType:
-                description: StorageType is the etcd backup storage type. We need this field because CRD doesn't support validation against invalid fields and we cannot verify invalid backup storage source.
+                description: StorageType is the etcd backup storage type. We need
+                  this field because CRD doesn't support validation against invalid
+                  fields and we cannot verify invalid backup storage source.
                 type: string
             required:
             - storageType
             type: object
           status:
-            description: BackupStatus represents the status of the EtcdBackup Custom Resource.
+            description: BackupStatus represents the status of the EtcdBackup Custom
+              Resource.
             properties:
               Reason:
                 description: Reason indicates the reason for any backup related failures.
                 type: string
               etcdRevision:
-                description: EtcdRevision is the revision of etcd's KV store where the backup is performed on.
+                description: EtcdRevision is the revision of etcd's KV store where
+                  the backup is performed on.
                 format: int64
                 type: integer
               etcdVersion:
                 description: EtcdVersion is the version of the backup etcd server.
                 type: string
               lastSuccessDate:
-                description: LastSuccessDate indicate the time to get snapshot last time
+                description: LastSuccessDate indicate the time to get snapshot last
+                  time
                 format: date-time
                 type: string
               succeeded:

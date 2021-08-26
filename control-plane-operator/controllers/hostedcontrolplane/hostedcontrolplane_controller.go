@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/openshift/api/operator/v1alpha1"
+	"sigs.k8s.io/cluster-api/util/annotations"
+
 	"math/big"
 	"math/rand"
 	"net/url"
@@ -38,7 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/openshift/hypershift/api/v1alpha1/thirdparty/clusterapi/util"
+	"sigs.k8s.io/cluster-api/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
@@ -455,7 +457,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 			r.Log.Info("Cluster Controller has not yet set OwnerRef")
 			return nil
 		}
-		if util.IsPaused(cluster, hostedControlPlane) {
+		if annotations.IsPaused(cluster, hostedControlPlane) {
 			r.Log.Info("HostedControlPlane or linked Cluster is marked as paused. Won't reconcile")
 			return nil
 		}
