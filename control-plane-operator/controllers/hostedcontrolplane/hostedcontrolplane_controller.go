@@ -1883,9 +1883,9 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 func (r *HostedControlPlaneReconciler) reconcileImageContentSourcePolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	imageContentSource := manifests.ImageContentSourcePolicy()
 	imageContentSource.Spec.RepositoryDigestMirrors = []v1alpha1.RepositoryDigestMirrors{}
-	for _, imageContentSourceEntry := range hcp.Spec.ImageContentSources{
+	for _, imageContentSourceEntry := range hcp.Spec.ImageContentSources {
 		imageContentSource.Spec.RepositoryDigestMirrors = append(imageContentSource.Spec.RepositoryDigestMirrors, v1alpha1.RepositoryDigestMirrors{
-			Source: imageContentSourceEntry.Source,
+			Source:  imageContentSourceEntry.Source,
 			Mirrors: imageContentSourceEntry.Mirrors,
 		})
 	}
