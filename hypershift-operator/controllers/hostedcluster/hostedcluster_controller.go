@@ -2466,6 +2466,9 @@ func reconcileMachineConfigServerService(svc *corev1.Service) error {
 	svc.Spec.Selector = map[string]string{
 		"app": "machine-config-server",
 	}
+	svc.ObjectMeta.Labels = map[string]string{
+		"app": "machine-config-server",
+	}
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]
