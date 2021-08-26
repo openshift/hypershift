@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	healthPort = 2041
+	healthPort                      = 2041
+	systemNodeCriticalPriorityClass = "system-node-critical"
 )
 
 type KonnectivityParams struct {
@@ -97,7 +98,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.AgentDeamonSetConfig.Scheduling = config.Scheduling{
-		PriorityClass: config.DefaultPriorityClass,
+		PriorityClass: systemNodeCriticalPriorityClass,
 	}
 	p.AgentDeamonSetConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityAgentContainer().Name: {

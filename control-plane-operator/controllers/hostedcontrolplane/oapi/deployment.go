@@ -144,7 +144,7 @@ func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Con
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: fmt.Sprintf("https://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "NO_PROXY",
