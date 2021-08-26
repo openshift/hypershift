@@ -29,17 +29,21 @@ var (
 
 // TestScenarios runs all the e2e tests. Any new tests need to be added to this
 // list in order for them to run.
+// TODO: For now, the UpgradeControlPlane test is being used for testing all
+// major functionality until we can do parallel tests; otherwise it's just too
+// slow to separate things out
 func TestScenarios(t *testing.T) {
 	tests := map[string]func(t *testing.T){
-		"CreateCluster": scenarios.TestCreateCluster(ctx,
-			scenarios.TestCreateClusterOptions{
-				AWSCredentialsFile: opts.AWSCredentialsFile,
-				AWSRegion:          opts.Region,
-				PullSecretFile:     opts.PullSecretFile,
-				ReleaseImage:       opts.LatestReleaseImage,
-				ArtifactDir:        opts.ArtifactDir,
-				BaseDomain:         opts.BaseDomain,
-			}),
+		// TODO: Re-enable once tests can be parallelized
+		//"CreateCluster": scenarios.TestCreateCluster(ctx,
+		//	scenarios.TestCreateClusterOptions{
+		//		AWSCredentialsFile: opts.AWSCredentialsFile,
+		//		AWSRegion:          opts.Region,
+		//		PullSecretFile:     opts.PullSecretFile,
+		//		ReleaseImage:       opts.LatestReleaseImage,
+		//		ArtifactDir:        opts.ArtifactDir,
+		//		BaseDomain:         opts.BaseDomain,
+		//	}),
 		"UpgradeControlPlane": scenarios.TestUpgradeControlPlane(ctx,
 			scenarios.TestUpgradeControlPlaneOptions{
 				AWSCredentialsFile: opts.AWSCredentialsFile,
@@ -51,15 +55,16 @@ func TestScenarios(t *testing.T) {
 				ArtifactDir:        opts.ArtifactDir,
 				Enabled:            opts.UpgradeTestsEnabled,
 			}),
-		"Autoscaling": scenarios.TestAutoscaling(ctx,
-			scenarios.TestAutoscalingOptions{
-				AWSCredentialsFile: opts.AWSCredentialsFile,
-				AWSRegion:          opts.Region,
-				PullSecretFile:     opts.PullSecretFile,
-				ReleaseImage:       opts.LatestReleaseImage,
-				ArtifactDir:        opts.ArtifactDir,
-				BaseDomain:         opts.BaseDomain,
-			}),
+		// TODO: Re-enable once tests can be parallelized
+		//"Autoscaling": scenarios.TestAutoscaling(ctx,
+		//	scenarios.TestAutoscalingOptions{
+		//		AWSCredentialsFile: opts.AWSCredentialsFile,
+		//		AWSRegion:          opts.Region,
+		//		PullSecretFile:     opts.PullSecretFile,
+		//		ReleaseImage:       opts.LatestReleaseImage,
+		//		ArtifactDir:        opts.ArtifactDir,
+		//		BaseDomain:         opts.BaseDomain,
+		//	}),
 	}
 
 	for name := range tests {
