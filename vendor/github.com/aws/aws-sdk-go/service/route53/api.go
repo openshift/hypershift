@@ -13,6 +13,105 @@ import (
 	"github.com/aws/aws-sdk-go/private/protocol/restxml"
 )
 
+const opActivateKeySigningKey = "ActivateKeySigningKey"
+
+// ActivateKeySigningKeyRequest generates a "aws/request.Request" representing the
+// client's request for the ActivateKeySigningKey operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See ActivateKeySigningKey for more information on using the ActivateKeySigningKey
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the ActivateKeySigningKeyRequest method.
+//    req, resp := client.ActivateKeySigningKeyRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/ActivateKeySigningKey
+func (c *Route53) ActivateKeySigningKeyRequest(input *ActivateKeySigningKeyInput) (req *request.Request, output *ActivateKeySigningKeyOutput) {
+	op := &request.Operation{
+		Name:       opActivateKeySigningKey,
+		HTTPMethod: "POST",
+		HTTPPath:   "/2013-04-01/keysigningkey/{HostedZoneId}/{Name}/activate",
+	}
+
+	if input == nil {
+		input = &ActivateKeySigningKeyInput{}
+	}
+
+	output = &ActivateKeySigningKeyOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// ActivateKeySigningKey API operation for Amazon Route 53.
+//
+// Activates a key-signing key (KSK) so that it can be used for signing by DNSSEC.
+// This operation changes the KSK status to ACTIVE.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Route 53's
+// API operation ActivateKeySigningKey for usage and error information.
+//
+// Returned Error Codes:
+//   * ErrCodeConcurrentModification "ConcurrentModification"
+//   Another user submitted a request to create, update, or delete the object
+//   at the same time that you did. Retry the request.
+//
+//   * ErrCodeNoSuchKeySigningKey "NoSuchKeySigningKey"
+//   The specified key-signing key (KSK) doesn't exist.
+//
+//   * ErrCodeInvalidKeySigningKeyStatus "InvalidKeySigningKeyStatus"
+//   The key-signing key (KSK) status isn't valid or another KSK has the status
+//   INTERNAL_FAILURE.
+//
+//   * ErrCodeInvalidSigningStatus "InvalidSigningStatus"
+//   Your hosted zone status isn't valid for this operation. In the hosted zone,
+//   change the status to enable DNSSEC or disable DNSSEC.
+//
+//   * ErrCodeInvalidKMSArn "InvalidKMSArn"
+//   The KeyManagementServiceArn that you specified isn't valid to use with DNSSEC
+//   signing.
+//
+//   * ErrCodeInvalidInput "InvalidInput"
+//   The input is not valid.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/ActivateKeySigningKey
+func (c *Route53) ActivateKeySigningKey(input *ActivateKeySigningKeyInput) (*ActivateKeySigningKeyOutput, error) {
+	req, out := c.ActivateKeySigningKeyRequest(input)
+	return out, req.Send()
+}
+
+// ActivateKeySigningKeyWithContext is the same as ActivateKeySigningKey with the addition of
+// the ability to pass a context and additional request options.
+//
+// See ActivateKeySigningKey for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *Route53) ActivateKeySigningKeyWithContext(ctx aws.Context, input *ActivateKeySigningKeyInput, opts ...request.Option) (*ActivateKeySigningKeyOutput, error) {
+	req, out := c.ActivateKeySigningKeyRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
 const opAssociateVPCWithHostedZone = "AssociateVPCWithHostedZone"
 
 // AssociateVPCWithHostedZoneRequest generates a "aws/request.Request" representing the
@@ -62,11 +161,12 @@ func (c *Route53) AssociateVPCWithHostedZoneRequest(input *AssociateVPCWithHoste
 // To perform the association, the VPC and the private hosted zone must already
 // exist. You can't convert a public hosted zone into a private hosted zone.
 //
-// If you want to associate a VPC that was created by using one AWS account
-// with a private hosted zone that was created by using a different account,
-// the AWS account that created the private hosted zone must first submit a
-// CreateVPCAssociationAuthorization request. Then the account that created
-// the VPC must submit an AssociateVPCWithHostedZone request.
+// If you want to associate a VPC that was created by using one Amazon Web Services
+// account with a private hosted zone that was created by using a different
+// account, the Amazon Web Services account that created the private hosted
+// zone must first submit a CreateVPCAssociationAuthorization request. Then
+// the account that created the VPC must submit an AssociateVPCWithHostedZone
+// request.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -121,7 +221,7 @@ func (c *Route53) AssociateVPCWithHostedZoneRequest(input *AssociateVPCWithHoste
 //   To get the current limit on the number of Amazon VPCs that you can associate
 //   with a private hosted zone, see GetHostedZoneLimit (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetHostedZoneLimit.html).
 //   To request a higher limit, create a case (http://aws.amazon.com/route53-request)
-//   with the AWS Support Center.
+//   with the Amazon Web Services Support Center.
 //
 //   * ErrCodePriorRequestNotComplete "PriorRequestNotComplete"
 //   If Amazon Route 53 can't process a request before the next request arrives,
@@ -248,9 +348,9 @@ func (c *Route53) ChangeResourceRecordSetsRequest(input *ChangeResourceRecordSet
 //    * DELETE: Deletes an existing resource record set that has the specified
 //    values.
 //
-//    * UPSERT: If a resource record set does not already exist, AWS creates
-//    it. If a resource set does exist, Route 53 updates it with the values
-//    in the request.
+//    * UPSERT: If a resource record set does not already exist, Amazon Web
+//    Services creates it. If a resource set does exist, Route 53 updates it
+//    with the values in the request.
 //
 // Syntaxes for Creating, Updating, and Deleting Resource Record Sets
 //
@@ -378,7 +478,7 @@ func (c *Route53) ChangeTagsForResourceRequest(input *ChangeTagsForResourceInput
 //
 // For information about using tags for cost allocation, see Using Cost Allocation
 // Tags (https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html)
-// in the AWS Billing and Cost Management User Guide.
+// in the Billing and Cost Management User Guide.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -525,11 +625,11 @@ func (c *Route53) CreateHealthCheckRequest(input *CreateHealthCheckInput) (req *
 //   For information about how to get the current limit for an account, see GetAccountLimit
 //   (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetAccountLimit.html).
 //   To request a higher limit, create a case (http://aws.amazon.com/route53-request)
-//   with the AWS Support Center.
+//   with the Amazon Web Services Support Center.
 //
-//   You have reached the maximum number of active health checks for an AWS account.
-//   To request a higher limit, create a case (http://aws.amazon.com/route53-request)
-//   with the AWS Support Center.
+//   You have reached the maximum number of active health checks for an Amazon
+//   Web Services account. To request a higher limit, create a case (http://aws.amazon.com/route53-request)
+//   with the Amazon Web Services Support Center.
 //
 //   * ErrCodeHealthCheckAlreadyExists "HealthCheckAlreadyExists"
 //   The health check you're attempting to create already exists. Amazon Route
@@ -650,6 +750,9 @@ func (c *Route53) CreateHostedZoneRequest(input *CreateHostedZoneInput) (req *re
 // records are not yet available on all Route 53 DNS servers. When the NS and
 // SOA records are available, the status of the zone changes to INSYNC.
 //
+// The CreateHostedZone request requires the caller to have an ec2:DescribeVpcs
+// permission.
+//
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
 // the error.
@@ -682,7 +785,7 @@ func (c *Route53) CreateHostedZoneRequest(input *CreateHostedZoneInput) (req *re
 //   delegation set, see GetReusableDelegationSetLimit (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetReusableDelegationSetLimit.html).
 //
 //   To request a higher limit, create a case (http://aws.amazon.com/route53-request)
-//   with the AWS Support Center.
+//   with the Amazon Web Services Support Center.
 //
 //   * ErrCodeInvalidVPCId "InvalidVPCId"
 //   The VPC ID that you specified either isn't a valid ID or the current account
@@ -739,6 +842,119 @@ func (c *Route53) CreateHostedZone(input *CreateHostedZoneInput) (*CreateHostedZ
 // for more information on using Contexts.
 func (c *Route53) CreateHostedZoneWithContext(ctx aws.Context, input *CreateHostedZoneInput, opts ...request.Option) (*CreateHostedZoneOutput, error) {
 	req, out := c.CreateHostedZoneRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
+const opCreateKeySigningKey = "CreateKeySigningKey"
+
+// CreateKeySigningKeyRequest generates a "aws/request.Request" representing the
+// client's request for the CreateKeySigningKey operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See CreateKeySigningKey for more information on using the CreateKeySigningKey
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the CreateKeySigningKeyRequest method.
+//    req, resp := client.CreateKeySigningKeyRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/CreateKeySigningKey
+func (c *Route53) CreateKeySigningKeyRequest(input *CreateKeySigningKeyInput) (req *request.Request, output *CreateKeySigningKeyOutput) {
+	op := &request.Operation{
+		Name:       opCreateKeySigningKey,
+		HTTPMethod: "POST",
+		HTTPPath:   "/2013-04-01/keysigningkey",
+	}
+
+	if input == nil {
+		input = &CreateKeySigningKeyInput{}
+	}
+
+	output = &CreateKeySigningKeyOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// CreateKeySigningKey API operation for Amazon Route 53.
+//
+// Creates a new key-signing key (KSK) associated with a hosted zone. You can
+// only have two KSKs per hosted zone.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Route 53's
+// API operation CreateKeySigningKey for usage and error information.
+//
+// Returned Error Codes:
+//   * ErrCodeNoSuchHostedZone "NoSuchHostedZone"
+//   No hosted zone exists with the ID that you specified.
+//
+//   * ErrCodeInvalidArgument "InvalidArgument"
+//   Parameter name is not valid.
+//
+//   * ErrCodeInvalidInput "InvalidInput"
+//   The input is not valid.
+//
+//   * ErrCodeInvalidKMSArn "InvalidKMSArn"
+//   The KeyManagementServiceArn that you specified isn't valid to use with DNSSEC
+//   signing.
+//
+//   * ErrCodeInvalidKeySigningKeyStatus "InvalidKeySigningKeyStatus"
+//   The key-signing key (KSK) status isn't valid or another KSK has the status
+//   INTERNAL_FAILURE.
+//
+//   * ErrCodeInvalidSigningStatus "InvalidSigningStatus"
+//   Your hosted zone status isn't valid for this operation. In the hosted zone,
+//   change the status to enable DNSSEC or disable DNSSEC.
+//
+//   * ErrCodeInvalidKeySigningKeyName "InvalidKeySigningKeyName"
+//   The key-signing key (KSK) name that you specified isn't a valid name.
+//
+//   * ErrCodeKeySigningKeyAlreadyExists "KeySigningKeyAlreadyExists"
+//   You've already created a key-signing key (KSK) with this name or with the
+//   same customer managed customer master key (CMK) ARN.
+//
+//   * ErrCodeTooManyKeySigningKeys "TooManyKeySigningKeys"
+//   You've reached the limit for the number of key-signing keys (KSKs). Remove
+//   at least one KSK, and then try again.
+//
+//   * ErrCodeConcurrentModification "ConcurrentModification"
+//   Another user submitted a request to create, update, or delete the object
+//   at the same time that you did. Retry the request.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/CreateKeySigningKey
+func (c *Route53) CreateKeySigningKey(input *CreateKeySigningKeyInput) (*CreateKeySigningKeyOutput, error) {
+	req, out := c.CreateKeySigningKeyRequest(input)
+	return out, req.Send()
+}
+
+// CreateKeySigningKeyWithContext is the same as CreateKeySigningKey with the addition of
+// the ability to pass a context and additional request options.
+//
+// See CreateKeySigningKey for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *Route53) CreateKeySigningKeyWithContext(ctx aws.Context, input *CreateKeySigningKeyInput, opts ...request.Option) (*CreateKeySigningKeyOutput, error) {
+	req, out := c.CreateKeySigningKeyRequest(input)
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -815,17 +1031,17 @@ func (c *Route53) CreateQueryLoggingConfigRequest(input *CreateQueryLoggingConfi
 //
 //    * You must create the log group in the us-east-1 region.
 //
-//    * You must use the same AWS account to create the log group and the hosted
-//    zone that you want to configure query logging for.
+//    * You must use the same Amazon Web Services account to create the log
+//    group and the hosted zone that you want to configure query logging for.
 //
 //    * When you create log groups for query logging, we recommend that you
 //    use a consistent prefix, for example: /aws/route53/hosted zone name In
 //    the next step, you'll create a resource policy, which controls access
-//    to one or more log groups and the associated AWS resources, such as Route
-//    53 hosted zones. There's a limit on the number of resource policies that
-//    you can create, so we recommend that you use a consistent prefix so you
-//    can use the same resource policy for all the log groups that you create
-//    for query logging.
+//    to one or more log groups and the associated Amazon Web Services resources,
+//    such as Route 53 hosted zones. There's a limit on the number of resource
+//    policies that you can create, so we recommend that you use a consistent
+//    prefix so you can use the same resource policy for all the log groups
+//    that you create for query logging.
 //
 // Create a CloudWatch Logs resource policy, and give it the permissions that
 // Route 53 needs to create log streams and to send query logs to log streams.
@@ -837,7 +1053,8 @@ func (c *Route53) CreateQueryLoggingConfigRequest(input *CreateQueryLoggingConfi
 // arn:aws:logs:us-east-1:123412341234:log-group:/aws/route53/*
 //
 // You can't use the CloudWatch console to create or edit a resource policy.
-// You must use the CloudWatch API, one of the AWS SDKs, or the AWS CLI.
+// You must use the CloudWatch API, one of the Amazon Web Services SDKs, or
+// the CLI.
 //
 // Log Streams and Edge Locations
 //
@@ -930,6 +1147,10 @@ func (c *Route53) CreateQueryLoggingConfigRequest(input *CreateQueryLoggingConfi
 //
 //      * The resource policy hasn't finished propagating yet.
 //
+//      * The Key management service (KMS) key you specified doesn’t exist or
+//      it can’t be used with the log group associated with query log. Update
+//      or provide a resource policy to grant permissions for the KMS key.
+//
 // See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/CreateQueryLoggingConfig
 func (c *Route53) CreateQueryLoggingConfig(input *CreateQueryLoggingConfigInput) (*CreateQueryLoggingConfigOutput, error) {
 	req, out := c.CreateQueryLoggingConfigRequest(input)
@@ -997,7 +1218,8 @@ func (c *Route53) CreateReusableDelegationSetRequest(input *CreateReusableDelega
 // CreateReusableDelegationSet API operation for Amazon Route 53.
 //
 // Creates a delegation set (a group of four name servers) that can be reused
-// by multiple hosted zones that were created by the same AWS account.
+// by multiple hosted zones that were created by the same Amazon Web Services
+// account.
 //
 // You can also create a reusable delegation set that uses the four name servers
 // that are associated with an existing hosted zone. Specify the hosted zone
@@ -1065,13 +1287,13 @@ func (c *Route53) CreateReusableDelegationSetRequest(input *CreateReusableDelega
 //   To get the current limit on the number of Amazon VPCs that you can associate
 //   with a private hosted zone, see GetHostedZoneLimit (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetHostedZoneLimit.html).
 //   To request a higher limit, create a case (http://aws.amazon.com/route53-request)
-//   with the AWS Support Center.
+//   with the Amazon Web Services Support Center.
 //
 //   * ErrCodeHostedZoneNotFound "HostedZoneNotFound"
 //   The specified HostedZone can't be found.
 //
 //   * ErrCodeInvalidArgument "InvalidArgument"
-//   Parameter name is invalid.
+//   Parameter name is not valid.
 //
 //   * ErrCodeInvalidInput "InvalidInput"
 //   The input is not valid.
@@ -1177,14 +1399,14 @@ func (c *Route53) CreateTrafficPolicyRequest(input *CreateTrafficPolicyInput) (r
 //   To get the current limit for an account, see GetAccountLimit (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetAccountLimit.html).
 //
 //   To request a higher limit, create a case (http://aws.amazon.com/route53-request)
-//   with the AWS Support Center.
+//   with the Amazon Web Services Support Center.
 //
 //   * ErrCodeTrafficPolicyAlreadyExists "TrafficPolicyAlreadyExists"
 //   A traffic policy that has the same value for Name already exists.
 //
 //   * ErrCodeInvalidTrafficPolicyDocument "InvalidTrafficPolicyDocument"
 //   The format of the traffic policy document that you specified in the Document
-//   element is invalid.
+//   element is not valid.
 //
 // See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/CreateTrafficPolicy
 func (c *Route53) CreateTrafficPolicy(input *CreateTrafficPolicyInput) (*CreateTrafficPolicyOutput, error) {
@@ -1284,7 +1506,7 @@ func (c *Route53) CreateTrafficPolicyInstanceRequest(input *CreateTrafficPolicyI
 //   (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetAccountLimit.html).
 //
 //   To request a higher limit, create a case (http://aws.amazon.com/route53-request)
-//   with the AWS Support Center.
+//   with the Amazon Web Services Support Center.
 //
 //   * ErrCodeNoSuchTrafficPolicy "NoSuchTrafficPolicy"
 //   No traffic policy exists with the specified ID.
@@ -1397,7 +1619,7 @@ func (c *Route53) CreateTrafficPolicyVersionRequest(input *CreateTrafficPolicyVe
 //
 //   * ErrCodeInvalidTrafficPolicyDocument "InvalidTrafficPolicyDocument"
 //   The format of the traffic policy document that you specified in the Document
-//   element is invalid.
+//   element is not valid.
 //
 // See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/CreateTrafficPolicyVersion
 func (c *Route53) CreateTrafficPolicyVersion(input *CreateTrafficPolicyVersionInput) (*CreateTrafficPolicyVersionOutput, error) {
@@ -1465,12 +1687,12 @@ func (c *Route53) CreateVPCAssociationAuthorizationRequest(input *CreateVPCAssoc
 
 // CreateVPCAssociationAuthorization API operation for Amazon Route 53.
 //
-// Authorizes the AWS account that created a specified VPC to submit an AssociateVPCWithHostedZone
-// request to associate the VPC with a specified hosted zone that was created
-// by a different account. To submit a CreateVPCAssociationAuthorization request,
-// you must use the account that created the hosted zone. After you authorize
-// the association, use the account that created the VPC to submit an AssociateVPCWithHostedZone
-// request.
+// Authorizes the Amazon Web Services account that created a specified VPC to
+// submit an AssociateVPCWithHostedZone request to associate the VPC with a
+// specified hosted zone that was created by a different account. To submit
+// a CreateVPCAssociationAuthorization request, you must use the account that
+// created the hosted zone. After you authorize the association, use the account
+// that created the VPC to submit an AssociateVPCWithHostedZone request.
 //
 // If you want to associate multiple VPCs that you created by using one account
 // with a hosted zone that you created by using a different account, you must
@@ -1522,6 +1744,109 @@ func (c *Route53) CreateVPCAssociationAuthorization(input *CreateVPCAssociationA
 // for more information on using Contexts.
 func (c *Route53) CreateVPCAssociationAuthorizationWithContext(ctx aws.Context, input *CreateVPCAssociationAuthorizationInput, opts ...request.Option) (*CreateVPCAssociationAuthorizationOutput, error) {
 	req, out := c.CreateVPCAssociationAuthorizationRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
+const opDeactivateKeySigningKey = "DeactivateKeySigningKey"
+
+// DeactivateKeySigningKeyRequest generates a "aws/request.Request" representing the
+// client's request for the DeactivateKeySigningKey operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See DeactivateKeySigningKey for more information on using the DeactivateKeySigningKey
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the DeactivateKeySigningKeyRequest method.
+//    req, resp := client.DeactivateKeySigningKeyRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/DeactivateKeySigningKey
+func (c *Route53) DeactivateKeySigningKeyRequest(input *DeactivateKeySigningKeyInput) (req *request.Request, output *DeactivateKeySigningKeyOutput) {
+	op := &request.Operation{
+		Name:       opDeactivateKeySigningKey,
+		HTTPMethod: "POST",
+		HTTPPath:   "/2013-04-01/keysigningkey/{HostedZoneId}/{Name}/deactivate",
+	}
+
+	if input == nil {
+		input = &DeactivateKeySigningKeyInput{}
+	}
+
+	output = &DeactivateKeySigningKeyOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// DeactivateKeySigningKey API operation for Amazon Route 53.
+//
+// Deactivates a key-signing key (KSK) so that it will not be used for signing
+// by DNSSEC. This operation changes the KSK status to INACTIVE.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Route 53's
+// API operation DeactivateKeySigningKey for usage and error information.
+//
+// Returned Error Codes:
+//   * ErrCodeConcurrentModification "ConcurrentModification"
+//   Another user submitted a request to create, update, or delete the object
+//   at the same time that you did. Retry the request.
+//
+//   * ErrCodeNoSuchKeySigningKey "NoSuchKeySigningKey"
+//   The specified key-signing key (KSK) doesn't exist.
+//
+//   * ErrCodeInvalidKeySigningKeyStatus "InvalidKeySigningKeyStatus"
+//   The key-signing key (KSK) status isn't valid or another KSK has the status
+//   INTERNAL_FAILURE.
+//
+//   * ErrCodeInvalidSigningStatus "InvalidSigningStatus"
+//   Your hosted zone status isn't valid for this operation. In the hosted zone,
+//   change the status to enable DNSSEC or disable DNSSEC.
+//
+//   * ErrCodeKeySigningKeyInUse "KeySigningKeyInUse"
+//   The key-signing key (KSK) that you specified can't be deactivated because
+//   it's the only KSK for a currently-enabled DNSSEC. Disable DNSSEC signing,
+//   or add or enable another KSK.
+//
+//   * ErrCodeKeySigningKeyInParentDSRecord "KeySigningKeyInParentDSRecord"
+//   The key-signing key (KSK) is specified in a parent DS record.
+//
+//   * ErrCodeInvalidInput "InvalidInput"
+//   The input is not valid.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/DeactivateKeySigningKey
+func (c *Route53) DeactivateKeySigningKey(input *DeactivateKeySigningKeyInput) (*DeactivateKeySigningKeyOutput, error) {
+	req, out := c.DeactivateKeySigningKeyRequest(input)
+	return out, req.Send()
+}
+
+// DeactivateKeySigningKeyWithContext is the same as DeactivateKeySigningKey with the addition of
+// the ability to pass a context and additional request options.
+//
+// See DeactivateKeySigningKey for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *Route53) DeactivateKeySigningKeyWithContext(ctx aws.Context, input *DeactivateKeySigningKeyInput, opts ...request.Option) (*DeactivateKeySigningKeyOutput, error) {
+	req, out := c.DeactivateKeySigningKeyRequest(input)
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -1582,7 +1907,7 @@ func (c *Route53) DeleteHealthCheckRequest(input *DeleteHealthCheckInput) (req *
 // For more information, see Replacing and Deleting Health Checks (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/health-checks-creating-deleting.html#health-checks-deleting.html)
 // in the Amazon Route 53 Developer Guide.
 //
-// If you're using AWS Cloud Map and you configured Cloud Map to create a Route
+// If you're using Cloud Map and you configured Cloud Map to create a Route
 // 53 health check when you register an instance, you can't use the Route 53
 // DeleteHealthCheck command to delete the health check. The health check is
 // deleted automatically when you deregister the instance; there can be a delay
@@ -1673,8 +1998,8 @@ func (c *Route53) DeleteHostedZoneRequest(input *DeleteHostedZoneInput) (req *re
 //
 // Deletes a hosted zone.
 //
-// If the hosted zone was created by another service, such as AWS Cloud Map,
-// see Deleting Public Hosted Zones That Were Created by Another Service (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/DeleteHostedZone.html#delete-public-hosted-zone-created-by-another-service)
+// If the hosted zone was created by another service, such as Cloud Map, see
+// Deleting Public Hosted Zones That Were Created by Another Service (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/DeleteHostedZone.html#delete-public-hosted-zone-created-by-another-service)
 // in the Amazon Route 53 Developer Guide for information about how to delete
 // it. (The process is the same for public and private hosted zones that were
 // created by another service.)
@@ -1716,7 +2041,7 @@ func (c *Route53) DeleteHostedZoneRequest(input *DeleteHostedZoneInput) (req *re
 //    zone.
 //
 //    * Use the ListHostedZones action to get a list of the hosted zones associated
-//    with the current AWS account.
+//    with the current Amazon Web Services account.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -1762,6 +2087,106 @@ func (c *Route53) DeleteHostedZone(input *DeleteHostedZoneInput) (*DeleteHostedZ
 // for more information on using Contexts.
 func (c *Route53) DeleteHostedZoneWithContext(ctx aws.Context, input *DeleteHostedZoneInput, opts ...request.Option) (*DeleteHostedZoneOutput, error) {
 	req, out := c.DeleteHostedZoneRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
+const opDeleteKeySigningKey = "DeleteKeySigningKey"
+
+// DeleteKeySigningKeyRequest generates a "aws/request.Request" representing the
+// client's request for the DeleteKeySigningKey operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See DeleteKeySigningKey for more information on using the DeleteKeySigningKey
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the DeleteKeySigningKeyRequest method.
+//    req, resp := client.DeleteKeySigningKeyRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/DeleteKeySigningKey
+func (c *Route53) DeleteKeySigningKeyRequest(input *DeleteKeySigningKeyInput) (req *request.Request, output *DeleteKeySigningKeyOutput) {
+	op := &request.Operation{
+		Name:       opDeleteKeySigningKey,
+		HTTPMethod: "DELETE",
+		HTTPPath:   "/2013-04-01/keysigningkey/{HostedZoneId}/{Name}",
+	}
+
+	if input == nil {
+		input = &DeleteKeySigningKeyInput{}
+	}
+
+	output = &DeleteKeySigningKeyOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// DeleteKeySigningKey API operation for Amazon Route 53.
+//
+// Deletes a key-signing key (KSK). Before you can delete a KSK, you must deactivate
+// it. The KSK must be deactivated before you can delete it regardless of whether
+// the hosted zone is enabled for DNSSEC signing.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Route 53's
+// API operation DeleteKeySigningKey for usage and error information.
+//
+// Returned Error Codes:
+//   * ErrCodeConcurrentModification "ConcurrentModification"
+//   Another user submitted a request to create, update, or delete the object
+//   at the same time that you did. Retry the request.
+//
+//   * ErrCodeNoSuchKeySigningKey "NoSuchKeySigningKey"
+//   The specified key-signing key (KSK) doesn't exist.
+//
+//   * ErrCodeInvalidKeySigningKeyStatus "InvalidKeySigningKeyStatus"
+//   The key-signing key (KSK) status isn't valid or another KSK has the status
+//   INTERNAL_FAILURE.
+//
+//   * ErrCodeInvalidSigningStatus "InvalidSigningStatus"
+//   Your hosted zone status isn't valid for this operation. In the hosted zone,
+//   change the status to enable DNSSEC or disable DNSSEC.
+//
+//   * ErrCodeInvalidKMSArn "InvalidKMSArn"
+//   The KeyManagementServiceArn that you specified isn't valid to use with DNSSEC
+//   signing.
+//
+//   * ErrCodeInvalidInput "InvalidInput"
+//   The input is not valid.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/DeleteKeySigningKey
+func (c *Route53) DeleteKeySigningKey(input *DeleteKeySigningKeyInput) (*DeleteKeySigningKeyOutput, error) {
+	req, out := c.DeleteKeySigningKeyRequest(input)
+	return out, req.Send()
+}
+
+// DeleteKeySigningKeyWithContext is the same as DeleteKeySigningKey with the addition of
+// the ability to pass a context and additional request options.
+//
+// See DeleteKeySigningKey for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *Route53) DeleteKeySigningKeyWithContext(ctx aws.Context, input *DeleteKeySigningKeyInput, opts ...request.Option) (*DeleteKeySigningKeyOutput, error) {
+	req, out := c.DeleteKeySigningKeyRequest(input)
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -2203,9 +2628,9 @@ func (c *Route53) DeleteVPCAssociationAuthorizationRequest(input *DeleteVPCAssoc
 // account. You must use the account that created the hosted zone to submit
 // a DeleteVPCAssociationAuthorization request.
 //
-// Sending this request only prevents the AWS account that created the VPC from
-// associating the VPC with the Amazon Route 53 hosted zone in the future. If
-// the VPC is already associated with the hosted zone, DeleteVPCAssociationAuthorization
+// Sending this request only prevents the Amazon Web Services account that created
+// the VPC from associating the VPC with the Amazon Route 53 hosted zone in
+// the future. If the VPC is already associated with the hosted zone, DeleteVPCAssociationAuthorization
 // won't disassociate the VPC from the hosted zone. If you want to delete an
 // existing association, use DisassociateVPCFromHostedZone.
 //
@@ -2252,6 +2677,110 @@ func (c *Route53) DeleteVPCAssociationAuthorization(input *DeleteVPCAssociationA
 // for more information on using Contexts.
 func (c *Route53) DeleteVPCAssociationAuthorizationWithContext(ctx aws.Context, input *DeleteVPCAssociationAuthorizationInput, opts ...request.Option) (*DeleteVPCAssociationAuthorizationOutput, error) {
 	req, out := c.DeleteVPCAssociationAuthorizationRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
+const opDisableHostedZoneDNSSEC = "DisableHostedZoneDNSSEC"
+
+// DisableHostedZoneDNSSECRequest generates a "aws/request.Request" representing the
+// client's request for the DisableHostedZoneDNSSEC operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See DisableHostedZoneDNSSEC for more information on using the DisableHostedZoneDNSSEC
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the DisableHostedZoneDNSSECRequest method.
+//    req, resp := client.DisableHostedZoneDNSSECRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/DisableHostedZoneDNSSEC
+func (c *Route53) DisableHostedZoneDNSSECRequest(input *DisableHostedZoneDNSSECInput) (req *request.Request, output *DisableHostedZoneDNSSECOutput) {
+	op := &request.Operation{
+		Name:       opDisableHostedZoneDNSSEC,
+		HTTPMethod: "POST",
+		HTTPPath:   "/2013-04-01/hostedzone/{Id}/disable-dnssec",
+	}
+
+	if input == nil {
+		input = &DisableHostedZoneDNSSECInput{}
+	}
+
+	output = &DisableHostedZoneDNSSECOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// DisableHostedZoneDNSSEC API operation for Amazon Route 53.
+//
+// Disables DNSSEC signing in a specific hosted zone. This action does not deactivate
+// any key-signing keys (KSKs) that are active in the hosted zone.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Route 53's
+// API operation DisableHostedZoneDNSSEC for usage and error information.
+//
+// Returned Error Codes:
+//   * ErrCodeNoSuchHostedZone "NoSuchHostedZone"
+//   No hosted zone exists with the ID that you specified.
+//
+//   * ErrCodeInvalidArgument "InvalidArgument"
+//   Parameter name is not valid.
+//
+//   * ErrCodeConcurrentModification "ConcurrentModification"
+//   Another user submitted a request to create, update, or delete the object
+//   at the same time that you did. Retry the request.
+//
+//   * ErrCodeKeySigningKeyInParentDSRecord "KeySigningKeyInParentDSRecord"
+//   The key-signing key (KSK) is specified in a parent DS record.
+//
+//   * ErrCodeDNSSECNotFound "DNSSECNotFound"
+//   The hosted zone doesn't have any DNSSEC resources.
+//
+//   * ErrCodeInvalidKeySigningKeyStatus "InvalidKeySigningKeyStatus"
+//   The key-signing key (KSK) status isn't valid or another KSK has the status
+//   INTERNAL_FAILURE.
+//
+//   * ErrCodeInvalidKMSArn "InvalidKMSArn"
+//   The KeyManagementServiceArn that you specified isn't valid to use with DNSSEC
+//   signing.
+//
+//   * ErrCodeInvalidInput "InvalidInput"
+//   The input is not valid.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/DisableHostedZoneDNSSEC
+func (c *Route53) DisableHostedZoneDNSSEC(input *DisableHostedZoneDNSSECInput) (*DisableHostedZoneDNSSECOutput, error) {
+	req, out := c.DisableHostedZoneDNSSECRequest(input)
+	return out, req.Send()
+}
+
+// DisableHostedZoneDNSSECWithContext is the same as DisableHostedZoneDNSSEC with the addition of
+// the ability to pass a context and additional request options.
+//
+// See DisableHostedZoneDNSSEC for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *Route53) DisableHostedZoneDNSSECWithContext(ctx aws.Context, input *DisableHostedZoneDNSSECInput, opts ...request.Option) (*DisableHostedZoneDNSSECOutput, error) {
+	req, out := c.DisableHostedZoneDNSSECRequest(input)
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -2312,12 +2841,12 @@ func (c *Route53) DisassociateVPCFromHostedZoneRequest(input *DisassociateVPCFro
 //    the account that created the hosted zone or the account that created the
 //    Amazon VPC.
 //
-//    * Some services, such as AWS Cloud Map and Amazon Elastic File System
-//    (Amazon EFS) automatically create hosted zones and associate VPCs with
-//    the hosted zones. A service can create a hosted zone using your account
-//    or using its own account. You can disassociate a VPC from a hosted zone
-//    only if the service created the hosted zone using your account. When you
-//    run DisassociateVPCFromHostedZone (https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListHostedZonesByVPC.html),
+//    * Some services, such as Cloud Map and Amazon Elastic File System (Amazon
+//    EFS) automatically create hosted zones and associate VPCs with the hosted
+//    zones. A service can create a hosted zone using your account or using
+//    its own account. You can disassociate a VPC from a hosted zone only if
+//    the service created the hosted zone using your account. When you run DisassociateVPCFromHostedZone
+//    (https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListHostedZonesByVPC.html),
 //    if the hosted zone has a value for OwningAccount, you can use DisassociateVPCFromHostedZone.
 //    If the hosted zone has a value for OwningService, you can't use DisassociateVPCFromHostedZone.
 //
@@ -2364,6 +2893,113 @@ func (c *Route53) DisassociateVPCFromHostedZone(input *DisassociateVPCFromHosted
 // for more information on using Contexts.
 func (c *Route53) DisassociateVPCFromHostedZoneWithContext(ctx aws.Context, input *DisassociateVPCFromHostedZoneInput, opts ...request.Option) (*DisassociateVPCFromHostedZoneOutput, error) {
 	req, out := c.DisassociateVPCFromHostedZoneRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
+const opEnableHostedZoneDNSSEC = "EnableHostedZoneDNSSEC"
+
+// EnableHostedZoneDNSSECRequest generates a "aws/request.Request" representing the
+// client's request for the EnableHostedZoneDNSSEC operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See EnableHostedZoneDNSSEC for more information on using the EnableHostedZoneDNSSEC
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the EnableHostedZoneDNSSECRequest method.
+//    req, resp := client.EnableHostedZoneDNSSECRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/EnableHostedZoneDNSSEC
+func (c *Route53) EnableHostedZoneDNSSECRequest(input *EnableHostedZoneDNSSECInput) (req *request.Request, output *EnableHostedZoneDNSSECOutput) {
+	op := &request.Operation{
+		Name:       opEnableHostedZoneDNSSEC,
+		HTTPMethod: "POST",
+		HTTPPath:   "/2013-04-01/hostedzone/{Id}/enable-dnssec",
+	}
+
+	if input == nil {
+		input = &EnableHostedZoneDNSSECInput{}
+	}
+
+	output = &EnableHostedZoneDNSSECOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// EnableHostedZoneDNSSEC API operation for Amazon Route 53.
+//
+// Enables DNSSEC signing in a specific hosted zone.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Route 53's
+// API operation EnableHostedZoneDNSSEC for usage and error information.
+//
+// Returned Error Codes:
+//   * ErrCodeNoSuchHostedZone "NoSuchHostedZone"
+//   No hosted zone exists with the ID that you specified.
+//
+//   * ErrCodeInvalidArgument "InvalidArgument"
+//   Parameter name is not valid.
+//
+//   * ErrCodeConcurrentModification "ConcurrentModification"
+//   Another user submitted a request to create, update, or delete the object
+//   at the same time that you did. Retry the request.
+//
+//   * ErrCodeKeySigningKeyWithActiveStatusNotFound "KeySigningKeyWithActiveStatusNotFound"
+//   A key-signing key (KSK) with ACTIVE status wasn't found.
+//
+//   * ErrCodeInvalidKMSArn "InvalidKMSArn"
+//   The KeyManagementServiceArn that you specified isn't valid to use with DNSSEC
+//   signing.
+//
+//   * ErrCodeHostedZonePartiallyDelegated "HostedZonePartiallyDelegated"
+//   The hosted zone nameservers don't match the parent nameservers. The hosted
+//   zone and parent must have the same nameservers.
+//
+//   * ErrCodeDNSSECNotFound "DNSSECNotFound"
+//   The hosted zone doesn't have any DNSSEC resources.
+//
+//   * ErrCodeInvalidKeySigningKeyStatus "InvalidKeySigningKeyStatus"
+//   The key-signing key (KSK) status isn't valid or another KSK has the status
+//   INTERNAL_FAILURE.
+//
+//   * ErrCodeInvalidInput "InvalidInput"
+//   The input is not valid.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/EnableHostedZoneDNSSEC
+func (c *Route53) EnableHostedZoneDNSSEC(input *EnableHostedZoneDNSSECInput) (*EnableHostedZoneDNSSECOutput, error) {
+	req, out := c.EnableHostedZoneDNSSECRequest(input)
+	return out, req.Send()
+}
+
+// EnableHostedZoneDNSSECWithContext is the same as EnableHostedZoneDNSSEC with the addition of
+// the ability to pass a context and additional request options.
+//
+// See EnableHostedZoneDNSSEC for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *Route53) EnableHostedZoneDNSSECWithContext(ctx aws.Context, input *EnableHostedZoneDNSSECInput, opts ...request.Option) (*EnableHostedZoneDNSSECOutput, error) {
+	req, out := c.EnableHostedZoneDNSSECRequest(input)
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -2420,10 +3056,10 @@ func (c *Route53) GetAccountLimitRequest(input *GetAccountLimitInput) (req *requ
 // in the Amazon Route 53 Developer Guide. To request a higher limit, open a
 // case (https://console.aws.amazon.com/support/home#/case/create?issueType=service-limit-increase&limitType=service-code-route53).
 //
-// You can also view account limits in AWS Trusted Advisor. Sign in to the AWS
-// Management Console and open the Trusted Advisor console at https://console.aws.amazon.com/trustedadvisor/
-// (https://console.aws.amazon.com/trustedadvisor). Then choose Service limits
-// in the navigation pane.
+// You can also view account limits in Amazon Web Services Trusted Advisor.
+// Sign in to the Amazon Web Services Management Console and open the Trusted
+// Advisor console at https://console.aws.amazon.com/trustedadvisor/ (https://console.aws.amazon.com/trustedadvisor).
+// Then choose Service limits in the navigation pane.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -2592,10 +3228,12 @@ func (c *Route53) GetCheckerIpRangesRequest(input *GetCheckerIpRangesInput) (req
 
 // GetCheckerIpRanges API operation for Amazon Route 53.
 //
+// Route 53 does not perform authorization for this API because it retrieves
+// information that is already available to the public.
 //
 // GetCheckerIpRanges still works, but we recommend that you download ip-ranges.json,
-// which includes IP address ranges for all AWS services. For more information,
-// see IP Address Ranges of Amazon Route 53 Servers (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/route-53-ip-addresses.html)
+// which includes IP address ranges for all Amazon Web Services services. For
+// more information, see IP Address Ranges of Amazon Route 53 Servers (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/route-53-ip-addresses.html)
 // in the Amazon Route 53 Developer Guide.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
@@ -2621,6 +3259,92 @@ func (c *Route53) GetCheckerIpRanges(input *GetCheckerIpRangesInput) (*GetChecke
 // for more information on using Contexts.
 func (c *Route53) GetCheckerIpRangesWithContext(ctx aws.Context, input *GetCheckerIpRangesInput, opts ...request.Option) (*GetCheckerIpRangesOutput, error) {
 	req, out := c.GetCheckerIpRangesRequest(input)
+	req.SetContext(ctx)
+	req.ApplyOptions(opts...)
+	return out, req.Send()
+}
+
+const opGetDNSSEC = "GetDNSSEC"
+
+// GetDNSSECRequest generates a "aws/request.Request" representing the
+// client's request for the GetDNSSEC operation. The "output" return
+// value will be populated with the request's response once the request completes
+// successfully.
+//
+// Use "Send" method on the returned Request to send the API call to the service.
+// the "output" return value is not valid until after Send returns without error.
+//
+// See GetDNSSEC for more information on using the GetDNSSEC
+// API call, and error handling.
+//
+// This method is useful when you want to inject custom logic or configuration
+// into the SDK's request lifecycle. Such as custom headers, or retry logic.
+//
+//
+//    // Example sending a request using the GetDNSSECRequest method.
+//    req, resp := client.GetDNSSECRequest(params)
+//
+//    err := req.Send()
+//    if err == nil { // resp is now filled
+//        fmt.Println(resp)
+//    }
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/GetDNSSEC
+func (c *Route53) GetDNSSECRequest(input *GetDNSSECInput) (req *request.Request, output *GetDNSSECOutput) {
+	op := &request.Operation{
+		Name:       opGetDNSSEC,
+		HTTPMethod: "GET",
+		HTTPPath:   "/2013-04-01/hostedzone/{Id}/dnssec",
+	}
+
+	if input == nil {
+		input = &GetDNSSECInput{}
+	}
+
+	output = &GetDNSSECOutput{}
+	req = c.newRequest(op, input, output)
+	return
+}
+
+// GetDNSSEC API operation for Amazon Route 53.
+//
+// Returns information about DNSSEC for a specific hosted zone, including the
+// key-signing keys (KSKs) in the hosted zone.
+//
+// Returns awserr.Error for service API and SDK errors. Use runtime type assertions
+// with awserr.Error's Code and Message methods to get detailed information about
+// the error.
+//
+// See the AWS API reference guide for Amazon Route 53's
+// API operation GetDNSSEC for usage and error information.
+//
+// Returned Error Codes:
+//   * ErrCodeNoSuchHostedZone "NoSuchHostedZone"
+//   No hosted zone exists with the ID that you specified.
+//
+//   * ErrCodeInvalidArgument "InvalidArgument"
+//   Parameter name is not valid.
+//
+//   * ErrCodeInvalidInput "InvalidInput"
+//   The input is not valid.
+//
+// See also, https://docs.aws.amazon.com/goto/WebAPI/route53-2013-04-01/GetDNSSEC
+func (c *Route53) GetDNSSEC(input *GetDNSSECInput) (*GetDNSSECOutput, error) {
+	req, out := c.GetDNSSECRequest(input)
+	return out, req.Send()
+}
+
+// GetDNSSECWithContext is the same as GetDNSSEC with the addition of
+// the ability to pass a context and additional request options.
+//
+// See GetDNSSEC for details on how to use this API operation.
+//
+// The context must be non-nil and will be used for request cancellation. If
+// the context is nil a panic will occur. In the future the SDK may create
+// sub-contexts for http.Requests. See https://golang.org/pkg/context/
+// for more information on using Contexts.
+func (c *Route53) GetDNSSECWithContext(ctx aws.Context, input *GetDNSSECInput, opts ...request.Option) (*GetDNSSECOutput, error) {
+	req, out := c.GetDNSSECRequest(input)
 	req.SetContext(ctx)
 	req.ApplyOptions(opts...)
 	return out, req.Send()
@@ -2672,6 +3396,9 @@ func (c *Route53) GetGeoLocationRequest(input *GetGeoLocationInput) (req *reques
 //
 // Gets information about whether a specified geographic location is supported
 // for Amazon Route 53 geolocation resource record sets.
+//
+// Route 53 does not perform authorization for this API because it retrieves
+// information that is already available to the public.
 //
 // Use the following syntax to determine whether a continent is supported for
 // geolocation:
@@ -2858,7 +3585,7 @@ func (c *Route53) GetHealthCheckCountRequest(input *GetHealthCheckCountInput) (r
 // GetHealthCheckCount API operation for Amazon Route 53.
 //
 // Retrieves the number of health checks that are associated with the current
-// AWS account.
+// Amazon Web Services account.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -3015,6 +3742,10 @@ func (c *Route53) GetHealthCheckStatusRequest(input *GetHealthCheckStatusInput) 
 // GetHealthCheckStatus API operation for Amazon Route 53.
 //
 // Gets status of a specified health check.
+//
+// This API is intended for use during development to diagnose behavior. It
+// doesn’t support production use-cases with high query rates that require
+// immediate and actionable responses.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -3180,7 +3911,7 @@ func (c *Route53) GetHostedZoneCountRequest(input *GetHostedZoneCountInput) (req
 // GetHostedZoneCount API operation for Amazon Route 53.
 //
 // Retrieves the number of hosted zones that are associated with the current
-// AWS account.
+// Amazon Web Services account.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -3782,7 +4513,7 @@ func (c *Route53) GetTrafficPolicyInstanceCountRequest(input *GetTrafficPolicyIn
 // GetTrafficPolicyInstanceCount API operation for Amazon Route 53.
 //
 // Gets the number of traffic policy instances that are associated with the
-// current AWS account.
+// current Amazon Web Services account.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -3862,6 +4593,9 @@ func (c *Route53) ListGeoLocationsRequest(input *ListGeoLocationsInput) (req *re
 // 53 supports subdivisions for a country (for example, states or provinces),
 // the subdivisions for that country are listed in alphabetical order immediately
 // after the corresponding country.
+//
+// Route 53 does not perform authorization for this API because it retrieves
+// information that is already available to the public.
 //
 // For a list of supported geolocation codes, see the GeoLocation (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GeoLocation.html)
 // data type.
@@ -3950,7 +4684,7 @@ func (c *Route53) ListHealthChecksRequest(input *ListHealthChecksInput) (req *re
 // ListHealthChecks API operation for Amazon Route 53.
 //
 // Retrieve a list of the health checks that are associated with the current
-// AWS account.
+// Amazon Web Services account.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -4092,8 +4826,8 @@ func (c *Route53) ListHostedZonesRequest(input *ListHostedZonesInput) (req *requ
 // ListHostedZones API operation for Amazon Route 53.
 //
 // Retrieves a list of the public and private hosted zones that are associated
-// with the current AWS account. The response includes a HostedZones child element
-// for each hosted zone.
+// with the current Amazon Web Services account. The response includes a HostedZones
+// child element for each hosted zone.
 //
 // Amazon Route 53 returns a maximum of 100 items in each response. If you have
 // a lot of hosted zones, you can use the maxitems parameter to list them in
@@ -4236,7 +4970,7 @@ func (c *Route53) ListHostedZonesByNameRequest(input *ListHostedZonesByNameInput
 //
 // Retrieves a list of your hosted zones in lexicographic order. The response
 // includes a HostedZones child element for each hosted zone created by the
-// current AWS account.
+// current Amazon Web Services account.
 //
 // ListHostedZonesByName sorts hosted zones by name with the labels reversed.
 // For example:
@@ -4272,17 +5006,17 @@ func (c *Route53) ListHostedZonesByNameRequest(input *ListHostedZonesByNameInput
 //    the current response.
 //
 //    * If the value of IsTruncated in the response is true, there are more
-//    hosted zones associated with the current AWS account. If IsTruncated is
-//    false, this response includes the last hosted zone that is associated
-//    with the current account. The NextDNSName element and NextHostedZoneId
+//    hosted zones associated with the current Amazon Web Services account.
+//    If IsTruncated is false, this response includes the last hosted zone that
+//    is associated with the current account. The NextDNSName element and NextHostedZoneId
 //    elements are omitted from the response.
 //
 //    * The NextDNSName and NextHostedZoneId elements in the response contain
 //    the domain name and the hosted zone ID of the next hosted zone that is
-//    associated with the current AWS account. If you want to list more hosted
-//    zones, make another call to ListHostedZonesByName, and specify the value
-//    of NextDNSName and NextHostedZoneId in the dnsname and hostedzoneid parameters,
-//    respectively.
+//    associated with the current Amazon Web Services account. If you want to
+//    list more hosted zones, make another call to ListHostedZonesByName, and
+//    specify the value of NextDNSName and NextHostedZoneId in the dnsname and
+//    hostedzoneid parameters, respectively.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -4365,16 +5099,19 @@ func (c *Route53) ListHostedZonesByVPCRequest(input *ListHostedZonesByVPCInput) 
 // ListHostedZonesByVPC API operation for Amazon Route 53.
 //
 // Lists all the private hosted zones that a specified VPC is associated with,
-// regardless of which AWS account or AWS service owns the hosted zones. The
-// HostedZoneOwner structure in the response contains one of the following values:
+// regardless of which Amazon Web Services account or Amazon Web Services service
+// owns the hosted zones. The HostedZoneOwner structure in the response contains
+// one of the following values:
 //
 //    * An OwningAccount element, which contains the account number of either
-//    the current AWS account or another AWS account. Some services, such as
-//    AWS Cloud Map, create hosted zones using the current account.
+//    the current Amazon Web Services account or another Amazon Web Services
+//    account. Some services, such as Cloud Map, create hosted zones using the
+//    current account.
 //
-//    * An OwningService element, which identifies the AWS service that created
-//    and owns the hosted zone. For example, if a hosted zone was created by
-//    Amazon Elastic File System (Amazon EFS), the value of Owner is efs.amazonaws.com.
+//    * An OwningService element, which identifies the Amazon Web Services service
+//    that created and owns the hosted zone. For example, if a hosted zone was
+//    created by Amazon Elastic File System (Amazon EFS), the value of Owner
+//    is efs.amazonaws.com.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -4464,8 +5201,8 @@ func (c *Route53) ListQueryLoggingConfigsRequest(input *ListQueryLoggingConfigsI
 // ListQueryLoggingConfigs API operation for Amazon Route 53.
 //
 // Lists the configurations for DNS query logging that are associated with the
-// current AWS account or the configuration that is associated with a specified
-// hosted zone.
+// current Amazon Web Services account or the configuration that is associated
+// with a specified hosted zone.
 //
 // For more information about DNS query logs, see CreateQueryLoggingConfig (https://docs.aws.amazon.com/Route53/latest/APIReference/API_CreateQueryLoggingConfig.html).
 // Additional information, including the format of DNS query logs, appears in
@@ -4616,7 +5353,7 @@ func (c *Route53) ListResourceRecordSetsRequest(input *ListResourceRecordSetsInp
 //
 // Lists the resource record sets in a specified hosted zone.
 //
-// ListResourceRecordSets returns up to 100 resource record sets at a time in
+// ListResourceRecordSets returns up to 300 resource record sets at a time in
 // ASCII order, beginning at a position specified by the name and type elements.
 //
 // Sort order
@@ -4813,7 +5550,7 @@ func (c *Route53) ListReusableDelegationSetsRequest(input *ListReusableDelegatio
 // ListReusableDelegationSets API operation for Amazon Route 53.
 //
 // Retrieves a list of the reusable delegation sets that are associated with
-// the current AWS account.
+// the current Amazon Web Services account.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -4896,7 +5633,7 @@ func (c *Route53) ListTagsForResourceRequest(input *ListTagsForResourceInput) (r
 //
 // For information about using tags for cost allocation, see Using Cost Allocation
 // Tags (https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html)
-// in the AWS Billing and Cost Management User Guide.
+// in the Billing and Cost Management User Guide.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -4995,7 +5732,7 @@ func (c *Route53) ListTagsForResourcesRequest(input *ListTagsForResourcesInput) 
 //
 // For information about using tags for cost allocation, see Using Cost Allocation
 // Tags (https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html)
-// in the AWS Billing and Cost Management User Guide.
+// in the Billing and Cost Management User Guide.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -5091,8 +5828,8 @@ func (c *Route53) ListTrafficPoliciesRequest(input *ListTrafficPoliciesInput) (r
 // ListTrafficPolicies API operation for Amazon Route 53.
 //
 // Gets information about the latest version for every traffic policy that is
-// associated with the current AWS account. Policies are listed in the order
-// that they were created in.
+// associated with the current Amazon Web Services account. Policies are listed
+// in the order that they were created in.
 //
 // For information about how of deleting a traffic policy affects the response
 // from ListTrafficPolicies, see DeleteTrafficPolicy (https://docs.aws.amazon.com/Route53/latest/APIReference/API_DeleteTrafficPolicy.html).
@@ -5175,7 +5912,7 @@ func (c *Route53) ListTrafficPolicyInstancesRequest(input *ListTrafficPolicyInst
 // ListTrafficPolicyInstances API operation for Amazon Route 53.
 //
 // Gets information about the traffic policy instances that you created by using
-// the current AWS account.
+// the current Amazon Web Services account.
 //
 // After you submit an UpdateTrafficPolicyInstance request, there's a brief
 // delay while Amazon Route 53 creates the resource record sets that are specified
@@ -5634,6 +6371,8 @@ func (c *Route53) TestDNSAnswerRequest(input *TestDNSAnswerInput) (req *request.
 // Gets the value that Amazon Route 53 returns in response to a DNS request
 // for a specified record name and type. You can optionally specify the IP address
 // of a DNS resolver, an EDNS0 client subnet IP address, and a subnet mask.
+//
+// This call only supports querying public hosted zones.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -6099,6 +6838,92 @@ func (s *AccountLimit) SetValue(v int64) *AccountLimit {
 	return s
 }
 
+type ActivateKeySigningKeyInput struct {
+	_ struct{} `locationName:"ActivateKeySigningKeyRequest" type:"structure"`
+
+	// A unique string used to identify a hosted zone.
+	//
+	// HostedZoneId is a required field
+	HostedZoneId *string `location:"uri" locationName:"HostedZoneId" type:"string" required:"true"`
+
+	// A string used to identify a key-signing key (KSK). Name can include numbers,
+	// letters, and underscores (_). Name must be unique for each key-signing key
+	// in the same hosted zone.
+	//
+	// Name is a required field
+	Name *string `location:"uri" locationName:"Name" min:"3" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s ActivateKeySigningKeyInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s ActivateKeySigningKeyInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *ActivateKeySigningKeyInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "ActivateKeySigningKeyInput"}
+	if s.HostedZoneId == nil {
+		invalidParams.Add(request.NewErrParamRequired("HostedZoneId"))
+	}
+	if s.HostedZoneId != nil && len(*s.HostedZoneId) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("HostedZoneId", 1))
+	}
+	if s.Name == nil {
+		invalidParams.Add(request.NewErrParamRequired("Name"))
+	}
+	if s.Name != nil && len(*s.Name) < 3 {
+		invalidParams.Add(request.NewErrParamMinLen("Name", 3))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetHostedZoneId sets the HostedZoneId field's value.
+func (s *ActivateKeySigningKeyInput) SetHostedZoneId(v string) *ActivateKeySigningKeyInput {
+	s.HostedZoneId = &v
+	return s
+}
+
+// SetName sets the Name field's value.
+func (s *ActivateKeySigningKeyInput) SetName(v string) *ActivateKeySigningKeyInput {
+	s.Name = &v
+	return s
+}
+
+type ActivateKeySigningKeyOutput struct {
+	_ struct{} `type:"structure"`
+
+	// A complex type that describes change information about changes made to your
+	// hosted zone.
+	//
+	// ChangeInfo is a required field
+	ChangeInfo *ChangeInfo `type:"structure" required:"true"`
+}
+
+// String returns the string representation
+func (s ActivateKeySigningKeyOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s ActivateKeySigningKeyOutput) GoString() string {
+	return s.String()
+}
+
+// SetChangeInfo sets the ChangeInfo field's value.
+func (s *ActivateKeySigningKeyOutput) SetChangeInfo(v *ChangeInfo) *ActivateKeySigningKeyOutput {
+	s.ChangeInfo = v
+	return s
+}
+
 // A complex type that identifies the CloudWatch alarm that you want Amazon
 // Route 53 health checkers to use to determine whether the specified health
 // check is healthy.
@@ -6124,8 +6949,9 @@ type AlarmIdentifier struct {
 	// determine whether this health check is healthy, the region that the alarm
 	// was created in.
 	//
-	// For the current list of CloudWatch regions, see Amazon CloudWatch (https://docs.aws.amazon.com/general/latest/gr/rande.html#cw_region)
-	// in the AWS Service Endpoints chapter of the Amazon Web Services General Reference.
+	// For the current list of CloudWatch regions, see Amazon CloudWatch endpoints
+	// and quotas (https://docs.aws.amazon.com/general/latest/gr/cw_region.html)
+	// in the Amazon Web Services General Reference.
 	//
 	// Region is a required field
 	Region *string `min:"1" type:"string" required:"true" enum:"CloudWatchRegion"`
@@ -6175,9 +7001,9 @@ func (s *AlarmIdentifier) SetRegion(v string) *AlarmIdentifier {
 	return s
 }
 
-// Alias resource record sets only: Information about the AWS resource, such
-// as a CloudFront distribution or an Amazon S3 bucket, that you want to route
-// traffic to.
+// Alias resource record sets only: Information about the Amazon Web Services
+// resource, such as a CloudFront distribution or an Amazon S3 bucket, that
+// you want to route traffic to.
 //
 // When creating resource record sets for a private hosted zone, note the following:
 //
@@ -6195,7 +7021,7 @@ type AliasTarget struct {
 	// Amazon API Gateway custom regional APIs and edge-optimized APIs
 	//
 	// Specify the applicable domain name for your API. You can get the applicable
-	// value using the AWS CLI command get-domain-names (https://docs.aws.amazon.com/cli/latest/reference/apigateway/get-domain-names.html):
+	// value using the CLI command get-domain-names (https://docs.aws.amazon.com/cli/latest/reference/apigateway/get-domain-names.html):
 	//
 	//    * For regional APIs, specify the value of regionalDomainName.
 	//
@@ -6209,8 +7035,8 @@ type AliasTarget struct {
 	//
 	// Enter the API endpoint for the interface endpoint, such as vpce-123456789abcdef01-example-us-east-1a.elasticloadbalancing.us-east-1.vpce.amazonaws.com.
 	// For edge-optimized APIs, this is the domain name for the corresponding CloudFront
-	// distribution. You can get the value of DnsName using the AWS CLI command
-	// describe-vpc-endpoints (https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-vpc-endpoints.html).
+	// distribution. You can get the value of DnsName using the CLI command describe-vpc-endpoints
+	// (https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-vpc-endpoints.html).
 	//
 	// CloudFront distribution
 	//
@@ -6251,29 +7077,30 @@ type AliasTarget struct {
 	// the CNAME attribute for the environment. You can use the following methods
 	// to get the value of the CNAME attribute:
 	//
-	//    * AWS Management Console: For information about how to get the value by
-	//    using the console, see Using Custom Domains with AWS Elastic Beanstalk
-	//    (https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/customdomains.html)
-	//    in the AWS Elastic Beanstalk Developer Guide.
+	//    * Amazon Web Services Management Console: For information about how to
+	//    get the value by using the console, see Using Custom Domains with Elastic
+	//    Beanstalk (https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/customdomains.html)
+	//    in the Elastic Beanstalk Developer Guide.
 	//
 	//    * Elastic Beanstalk API: Use the DescribeEnvironments action to get the
 	//    value of the CNAME attribute. For more information, see DescribeEnvironments
 	//    (https://docs.aws.amazon.com/elasticbeanstalk/latest/api/API_DescribeEnvironments.html)
-	//    in the AWS Elastic Beanstalk API Reference.
+	//    in the Elastic Beanstalk API Reference.
 	//
-	//    * AWS CLI: Use the describe-environments command to get the value of the
-	//    CNAME attribute. For more information, see describe-environments (https://docs.aws.amazon.com/cli/latest/reference/elasticbeanstalk/describe-environments.html)
-	//    in the AWS CLI Command Reference.
+	//    * CLI: Use the describe-environments command to get the value of the CNAME
+	//    attribute. For more information, see describe-environments (https://docs.aws.amazon.com/cli/latest/reference/elasticbeanstalk/describe-environments.html)
+	//    in the CLI Command Reference.
 	//
 	// ELB load balancer
 	//
 	// Specify the DNS name that is associated with the load balancer. Get the DNS
-	// name by using the AWS Management Console, the ELB API, or the AWS CLI.
+	// name by using the Amazon Web Services Management Console, the ELB API, or
+	// the CLI.
 	//
-	//    * AWS Management Console: Go to the EC2 page, choose Load Balancers in
-	//    the navigation pane, choose the load balancer, choose the Description
-	//    tab, and get the value of the DNS name field. If you're routing traffic
-	//    to a Classic Load Balancer, get the value that begins with dualstack.
+	//    * Amazon Web Services Management Console: Go to the EC2 page, choose Load
+	//    Balancers in the navigation pane, choose the load balancer, choose the
+	//    Description tab, and get the value of the DNS name field. If you're routing
+	//    traffic to a Classic Load Balancer, get the value that begins with dualstack.
 	//    If you're routing traffic to another type of load balancer, get the value
 	//    that applies to the record type, A or AAAA.
 	//
@@ -6282,19 +7109,19 @@ type AliasTarget struct {
 	//    Balancers: DescribeLoadBalancers (https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeLoadBalancers.html)
 	//    Application and Network Load Balancers: DescribeLoadBalancers (https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancers.html)
 	//
-	//    * AWS CLI: Use describe-load-balancers to get the value of DNSName. For
-	//    more information, see the applicable guide: Classic Load Balancers: describe-load-balancers
+	//    * CLI: Use describe-load-balancers to get the value of DNSName. For more
+	//    information, see the applicable guide: Classic Load Balancers: describe-load-balancers
 	//    (http://docs.aws.amazon.com/cli/latest/reference/elb/describe-load-balancers.html)
 	//    Application and Network Load Balancers: describe-load-balancers (http://docs.aws.amazon.com/cli/latest/reference/elbv2/describe-load-balancers.html)
 	//
-	// AWS Global Accelerator accelerator
+	// Global Accelerator accelerator
 	//
 	// Specify the DNS name for your accelerator:
 	//
 	//    * Global Accelerator API: To get the DNS name, use DescribeAccelerator
 	//    (https://docs.aws.amazon.com/global-accelerator/latest/api/API_DescribeAccelerator.html).
 	//
-	//    * AWS CLI: To get the DNS name, use describe-accelerator (https://docs.aws.amazon.com/cli/latest/reference/globalaccelerator/describe-accelerator.html).
+	//    * CLI: To get the DNS name, use describe-accelerator (https://docs.aws.amazon.com/cli/latest/reference/globalaccelerator/describe-accelerator.html).
 	//
 	// Amazon S3 bucket that is configured as a static website
 	//
@@ -6322,9 +7149,9 @@ type AliasTarget struct {
 
 	// Applies only to alias, failover alias, geolocation alias, latency alias,
 	// and weighted alias resource record sets: When EvaluateTargetHealth is true,
-	// an alias resource record set inherits the health of the referenced AWS resource,
-	// such as an ELB load balancer or another resource record set in the hosted
-	// zone.
+	// an alias resource record set inherits the health of the referenced Amazon
+	// Web Services resource, such as an ELB load balancer or another resource record
+	// set in the hosted zone.
 	//
 	// Note the following:
 	//
@@ -6380,11 +7207,11 @@ type AliasTarget struct {
 	//
 	// Other records in the same hosted zone
 	//
-	// If the AWS resource that you specify in DNSName is a record or a group of
-	// records (for example, a group of weighted records) but is not another alias
-	// record, we recommend that you associate a health check with all of the records
-	// in the alias target. For more information, see What Happens When You Omit
-	// Health Checks? (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-complex-configs.html#dns-failover-complex-configs-hc-omitting)
+	// If the Amazon Web Services resource that you specify in DNSName is a record
+	// or a group of records (for example, a group of weighted records) but is not
+	// another alias record, we recommend that you associate a health check with
+	// all of the records in the alias target. For more information, see What Happens
+	// When You Omit Health Checks? (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-complex-configs.html#dns-failover-complex-configs-hc-omitting)
 	// in the Amazon Route 53 Developer Guide.
 	//
 	// For more information and examples, see Amazon Route 53 Health Checks and
@@ -6400,7 +7227,7 @@ type AliasTarget struct {
 	// Amazon API Gateway custom regional APIs and edge-optimized APIs
 	//
 	// Specify the hosted zone ID for your API. You can get the applicable value
-	// using the AWS CLI command get-domain-names (https://docs.aws.amazon.com/cli/latest/reference/apigateway/get-domain-names.html):
+	// using the CLI command get-domain-names (https://docs.aws.amazon.com/cli/latest/reference/apigateway/get-domain-names.html):
 	//
 	//    * For regional APIs, specify the value of regionalHostedZoneId.
 	//
@@ -6409,7 +7236,7 @@ type AliasTarget struct {
 	// Amazon Virtual Private Cloud interface VPC endpoint
 	//
 	// Specify the hosted zone ID for your interface endpoint. You can get the value
-	// of HostedZoneId using the AWS CLI command describe-vpc-endpoints (https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-vpc-endpoints.html).
+	// of HostedZoneId using the CLI command describe-vpc-endpoints (https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-vpc-endpoints.html).
 	//
 	// CloudFront distribution
 	//
@@ -6421,25 +7248,24 @@ type AliasTarget struct {
 	//
 	// Specify the hosted zone ID for the region that you created the environment
 	// in. The environment must have a regionalized subdomain. For a list of regions
-	// and the corresponding hosted zone IDs, see AWS Elastic Beanstalk (https://docs.aws.amazon.com/general/latest/gr/rande.html#elasticbeanstalk_region)
-	// in the "AWS Service Endpoints" chapter of the Amazon Web Services General
-	// Reference.
+	// and the corresponding hosted zone IDs, see Elastic Beanstalk endpoints and
+	// quotas (https://docs.aws.amazon.com/general/latest/gr/elasticbeanstalk.html)
+	// in the the Amazon Web Services General Reference.
 	//
 	// ELB load balancer
 	//
 	// Specify the value of the hosted zone ID for the load balancer. Use the following
 	// methods to get the hosted zone ID:
 	//
-	//    * Service Endpoints (https://docs.aws.amazon.com/general/latest/gr/elb.html)
-	//    table in the "Elastic Load Balancing Endpoints and Quotas" topic in the
-	//    Amazon Web Services General Reference: Use the value that corresponds
-	//    with the region that you created your load balancer in. Note that there
-	//    are separate columns for Application and Classic Load Balancers and for
-	//    Network Load Balancers.
+	//    * Elastic Load Balancing endpoints and quotas (https://docs.aws.amazon.com/general/latest/gr/elb.html)
+	//    topic in the Amazon Web Services General Reference: Use the value that
+	//    corresponds with the region that you created your load balancer in. Note
+	//    that there are separate columns for Application and Classic Load Balancers
+	//    and for Network Load Balancers.
 	//
-	//    * AWS Management Console: Go to the Amazon EC2 page, choose Load Balancers
-	//    in the navigation pane, select the load balancer, and get the value of
-	//    the Hosted zone field on the Description tab.
+	//    * Amazon Web Services Management Console: Go to the Amazon EC2 page, choose
+	//    Load Balancers in the navigation pane, select the load balancer, and get
+	//    the value of the Hosted zone field on the Description tab.
 	//
 	//    * Elastic Load Balancing API: Use DescribeLoadBalancers to get the applicable
 	//    value. For more information, see the applicable guide: Classic Load Balancers:
@@ -6448,14 +7274,14 @@ type AliasTarget struct {
 	//    Load Balancers: Use DescribeLoadBalancers (https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancers.html)
 	//    to get the value of CanonicalHostedZoneId.
 	//
-	//    * AWS CLI: Use describe-load-balancers to get the applicable value. For
-	//    more information, see the applicable guide: Classic Load Balancers: Use
-	//    describe-load-balancers (http://docs.aws.amazon.com/cli/latest/reference/elb/describe-load-balancers.html)
+	//    * CLI: Use describe-load-balancers to get the applicable value. For more
+	//    information, see the applicable guide: Classic Load Balancers: Use describe-load-balancers
+	//    (http://docs.aws.amazon.com/cli/latest/reference/elb/describe-load-balancers.html)
 	//    to get the value of CanonicalHostedZoneNameId. Application and Network
 	//    Load Balancers: Use describe-load-balancers (http://docs.aws.amazon.com/cli/latest/reference/elbv2/describe-load-balancers.html)
 	//    to get the value of CanonicalHostedZoneId.
 	//
-	// AWS Global Accelerator accelerator
+	// Global Accelerator accelerator
 	//
 	// Specify Z2BJ6XQ5FK7U4H.
 	//
@@ -6763,14 +7589,11 @@ func (s *ChangeBatch) SetComment(v string) *ChangeBatch {
 type ChangeInfo struct {
 	_ struct{} `type:"structure"`
 
-	// A complex type that describes change information about changes made to your
-	// hosted zone.
-	//
-	// This element contains an ID that you use when performing a GetChange (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetChange.html)
-	// action to get detailed information about the change.
+	// A comment you can provide.
 	Comment *string `type:"string"`
 
-	// The ID of the request.
+	// This element contains an ID that you use when performing a GetChange (https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetChange.html)
+	// action to get detailed information about the change.
 	//
 	// Id is a required field
 	Id *string `type:"string" required:"true"`
@@ -7439,6 +8262,196 @@ func (s *CreateHostedZoneOutput) SetVPC(v *VPC) *CreateHostedZoneOutput {
 	return s
 }
 
+type CreateKeySigningKeyInput struct {
+	_ struct{} `locationName:"CreateKeySigningKeyRequest" type:"structure" xmlURI:"https://route53.amazonaws.com/doc/2013-04-01/"`
+
+	// A unique string that identifies the request.
+	//
+	// CallerReference is a required field
+	CallerReference *string `min:"1" type:"string" required:"true"`
+
+	// The unique string (ID) used to identify a hosted zone.
+	//
+	// HostedZoneId is a required field
+	HostedZoneId *string `type:"string" required:"true"`
+
+	// The Amazon resource name (ARN) for a customer managed customer master key
+	// (CMK) in Key Management Service (KMS). The KeyManagementServiceArn must be
+	// unique for each key-signing key (KSK) in a single hosted zone. To see an
+	// example of KeyManagementServiceArn that grants the correct permissions for
+	// DNSSEC, scroll down to Example.
+	//
+	// You must configure the customer managed CMK as follows:
+	//
+	// Status
+	//
+	// Enabled
+	//
+	// Key spec
+	//
+	// ECC_NIST_P256
+	//
+	// Key usage
+	//
+	// Sign and verify
+	//
+	// Key policy
+	//
+	// The key policy must give permission for the following actions:
+	//
+	//    * DescribeKey
+	//
+	//    * GetPublicKey
+	//
+	//    * Sign
+	//
+	// The key policy must also include the Amazon Route 53 service in the principal
+	// for your account. Specify the following:
+	//
+	//    * "Service": "dnssec-route53.amazonaws.com"
+	//
+	// For more information about working with a customer managed CMK in KMS, see
+	// Key Management Service concepts (https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html).
+	//
+	// KeyManagementServiceArn is a required field
+	KeyManagementServiceArn *string `type:"string" required:"true"`
+
+	// A string used to identify a key-signing key (KSK). Name can include numbers,
+	// letters, and underscores (_). Name must be unique for each key-signing key
+	// in the same hosted zone.
+	//
+	// Name is a required field
+	Name *string `min:"3" type:"string" required:"true"`
+
+	// A string specifying the initial status of the key-signing key (KSK). You
+	// can set the value to ACTIVE or INACTIVE.
+	//
+	// Status is a required field
+	Status *string `min:"5" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s CreateKeySigningKeyInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s CreateKeySigningKeyInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *CreateKeySigningKeyInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "CreateKeySigningKeyInput"}
+	if s.CallerReference == nil {
+		invalidParams.Add(request.NewErrParamRequired("CallerReference"))
+	}
+	if s.CallerReference != nil && len(*s.CallerReference) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("CallerReference", 1))
+	}
+	if s.HostedZoneId == nil {
+		invalidParams.Add(request.NewErrParamRequired("HostedZoneId"))
+	}
+	if s.KeyManagementServiceArn == nil {
+		invalidParams.Add(request.NewErrParamRequired("KeyManagementServiceArn"))
+	}
+	if s.Name == nil {
+		invalidParams.Add(request.NewErrParamRequired("Name"))
+	}
+	if s.Name != nil && len(*s.Name) < 3 {
+		invalidParams.Add(request.NewErrParamMinLen("Name", 3))
+	}
+	if s.Status == nil {
+		invalidParams.Add(request.NewErrParamRequired("Status"))
+	}
+	if s.Status != nil && len(*s.Status) < 5 {
+		invalidParams.Add(request.NewErrParamMinLen("Status", 5))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetCallerReference sets the CallerReference field's value.
+func (s *CreateKeySigningKeyInput) SetCallerReference(v string) *CreateKeySigningKeyInput {
+	s.CallerReference = &v
+	return s
+}
+
+// SetHostedZoneId sets the HostedZoneId field's value.
+func (s *CreateKeySigningKeyInput) SetHostedZoneId(v string) *CreateKeySigningKeyInput {
+	s.HostedZoneId = &v
+	return s
+}
+
+// SetKeyManagementServiceArn sets the KeyManagementServiceArn field's value.
+func (s *CreateKeySigningKeyInput) SetKeyManagementServiceArn(v string) *CreateKeySigningKeyInput {
+	s.KeyManagementServiceArn = &v
+	return s
+}
+
+// SetName sets the Name field's value.
+func (s *CreateKeySigningKeyInput) SetName(v string) *CreateKeySigningKeyInput {
+	s.Name = &v
+	return s
+}
+
+// SetStatus sets the Status field's value.
+func (s *CreateKeySigningKeyInput) SetStatus(v string) *CreateKeySigningKeyInput {
+	s.Status = &v
+	return s
+}
+
+type CreateKeySigningKeyOutput struct {
+	_ struct{} `type:"structure"`
+
+	// A complex type that describes change information about changes made to your
+	// hosted zone.
+	//
+	// ChangeInfo is a required field
+	ChangeInfo *ChangeInfo `type:"structure" required:"true"`
+
+	// The key-signing key (KSK) that the request creates.
+	//
+	// KeySigningKey is a required field
+	KeySigningKey *KeySigningKey `type:"structure" required:"true"`
+
+	// The unique URL representing the new key-signing key (KSK).
+	//
+	// Location is a required field
+	Location *string `location:"header" locationName:"Location" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s CreateKeySigningKeyOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s CreateKeySigningKeyOutput) GoString() string {
+	return s.String()
+}
+
+// SetChangeInfo sets the ChangeInfo field's value.
+func (s *CreateKeySigningKeyOutput) SetChangeInfo(v *ChangeInfo) *CreateKeySigningKeyOutput {
+	s.ChangeInfo = v
+	return s
+}
+
+// SetKeySigningKey sets the KeySigningKey field's value.
+func (s *CreateKeySigningKeyOutput) SetKeySigningKey(v *KeySigningKey) *CreateKeySigningKeyOutput {
+	s.KeySigningKey = v
+	return s
+}
+
+// SetLocation sets the Location field's value.
+func (s *CreateKeySigningKeyOutput) SetLocation(v string) *CreateKeySigningKeyOutput {
+	s.Location = &v
+	return s
+}
+
 type CreateQueryLoggingConfigInput struct {
 	_ struct{} `locationName:"CreateQueryLoggingConfigRequest" type:"structure" xmlURI:"https://route53.amazonaws.com/doc/2013-04-01/"`
 
@@ -7450,7 +8463,7 @@ type CreateQueryLoggingConfigInput struct {
 	// To get the ARN for a log group, you can use the CloudWatch console, the DescribeLogGroups
 	// (https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_DescribeLogGroups.html)
 	// API action, the describe-log-groups (https://docs.aws.amazon.com/cli/latest/reference/logs/describe-log-groups.html)
-	// command, or the applicable command in one of the AWS SDKs.
+	// command, or the applicable command in one of the Amazon Web Services SDKs.
 	//
 	// CloudWatchLogsLogGroupArn is a required field
 	CloudWatchLogsLogGroupArn *string `type:"string" required:"true"`
@@ -8088,6 +9101,152 @@ func (s *CreateVPCAssociationAuthorizationOutput) SetVPC(v *VPC) *CreateVPCAssoc
 	return s
 }
 
+// A string repesenting the status of DNSSEC signing.
+type DNSSECStatus struct {
+	_ struct{} `type:"structure"`
+
+	// A string that represents the current hosted zone signing status.
+	//
+	// Status can have one of the following values:
+	//
+	// SIGNING
+	//
+	// DNSSEC signing is enabled for the hosted zone.
+	//
+	// NOT_SIGNING
+	//
+	// DNSSEC signing is not enabled for the hosted zone.
+	//
+	// DELETING
+	//
+	// DNSSEC signing is in the process of being removed for the hosted zone.
+	//
+	// ACTION_NEEDED
+	//
+	// There is a problem with signing in the hosted zone that requires you to take
+	// action to resolve. For example, the customer managed customer master key
+	// (CMK) might have been deleted, or the permissions for the customer managed
+	// CMK might have been changed.
+	//
+	// INTERNAL_FAILURE
+	//
+	// There was an error during a request. Before you can continue to work with
+	// DNSSEC signing, including with key-signing keys (KSKs), you must correct
+	// the problem by enabling or disabling DNSSEC signing for the hosted zone.
+	ServeSignature *string `min:"1" type:"string"`
+
+	// The status message provided for the following DNSSEC signing status: INTERNAL_FAILURE.
+	// The status message includes information about what the problem might be and
+	// steps that you can take to correct the issue.
+	StatusMessage *string `type:"string"`
+}
+
+// String returns the string representation
+func (s DNSSECStatus) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DNSSECStatus) GoString() string {
+	return s.String()
+}
+
+// SetServeSignature sets the ServeSignature field's value.
+func (s *DNSSECStatus) SetServeSignature(v string) *DNSSECStatus {
+	s.ServeSignature = &v
+	return s
+}
+
+// SetStatusMessage sets the StatusMessage field's value.
+func (s *DNSSECStatus) SetStatusMessage(v string) *DNSSECStatus {
+	s.StatusMessage = &v
+	return s
+}
+
+type DeactivateKeySigningKeyInput struct {
+	_ struct{} `locationName:"DeactivateKeySigningKeyRequest" type:"structure"`
+
+	// A unique string used to identify a hosted zone.
+	//
+	// HostedZoneId is a required field
+	HostedZoneId *string `location:"uri" locationName:"HostedZoneId" type:"string" required:"true"`
+
+	// A string used to identify a key-signing key (KSK).
+	//
+	// Name is a required field
+	Name *string `location:"uri" locationName:"Name" min:"3" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s DeactivateKeySigningKeyInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DeactivateKeySigningKeyInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *DeactivateKeySigningKeyInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "DeactivateKeySigningKeyInput"}
+	if s.HostedZoneId == nil {
+		invalidParams.Add(request.NewErrParamRequired("HostedZoneId"))
+	}
+	if s.HostedZoneId != nil && len(*s.HostedZoneId) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("HostedZoneId", 1))
+	}
+	if s.Name == nil {
+		invalidParams.Add(request.NewErrParamRequired("Name"))
+	}
+	if s.Name != nil && len(*s.Name) < 3 {
+		invalidParams.Add(request.NewErrParamMinLen("Name", 3))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetHostedZoneId sets the HostedZoneId field's value.
+func (s *DeactivateKeySigningKeyInput) SetHostedZoneId(v string) *DeactivateKeySigningKeyInput {
+	s.HostedZoneId = &v
+	return s
+}
+
+// SetName sets the Name field's value.
+func (s *DeactivateKeySigningKeyInput) SetName(v string) *DeactivateKeySigningKeyInput {
+	s.Name = &v
+	return s
+}
+
+type DeactivateKeySigningKeyOutput struct {
+	_ struct{} `type:"structure"`
+
+	// A complex type that describes change information about changes made to your
+	// hosted zone.
+	//
+	// ChangeInfo is a required field
+	ChangeInfo *ChangeInfo `type:"structure" required:"true"`
+}
+
+// String returns the string representation
+func (s DeactivateKeySigningKeyOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DeactivateKeySigningKeyOutput) GoString() string {
+	return s.String()
+}
+
+// SetChangeInfo sets the ChangeInfo field's value.
+func (s *DeactivateKeySigningKeyOutput) SetChangeInfo(v *ChangeInfo) *DeactivateKeySigningKeyOutput {
+	s.ChangeInfo = v
+	return s
+}
+
 // A complex type that lists the name servers in a delegation set, as well as
 // the CallerReference and the ID for the delegation set.
 type DelegationSet struct {
@@ -8257,6 +9416,90 @@ func (s DeleteHostedZoneOutput) GoString() string {
 
 // SetChangeInfo sets the ChangeInfo field's value.
 func (s *DeleteHostedZoneOutput) SetChangeInfo(v *ChangeInfo) *DeleteHostedZoneOutput {
+	s.ChangeInfo = v
+	return s
+}
+
+type DeleteKeySigningKeyInput struct {
+	_ struct{} `locationName:"DeleteKeySigningKeyRequest" type:"structure"`
+
+	// A unique string used to identify a hosted zone.
+	//
+	// HostedZoneId is a required field
+	HostedZoneId *string `location:"uri" locationName:"HostedZoneId" type:"string" required:"true"`
+
+	// A string used to identify a key-signing key (KSK).
+	//
+	// Name is a required field
+	Name *string `location:"uri" locationName:"Name" min:"3" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s DeleteKeySigningKeyInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DeleteKeySigningKeyInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *DeleteKeySigningKeyInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "DeleteKeySigningKeyInput"}
+	if s.HostedZoneId == nil {
+		invalidParams.Add(request.NewErrParamRequired("HostedZoneId"))
+	}
+	if s.HostedZoneId != nil && len(*s.HostedZoneId) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("HostedZoneId", 1))
+	}
+	if s.Name == nil {
+		invalidParams.Add(request.NewErrParamRequired("Name"))
+	}
+	if s.Name != nil && len(*s.Name) < 3 {
+		invalidParams.Add(request.NewErrParamMinLen("Name", 3))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetHostedZoneId sets the HostedZoneId field's value.
+func (s *DeleteKeySigningKeyInput) SetHostedZoneId(v string) *DeleteKeySigningKeyInput {
+	s.HostedZoneId = &v
+	return s
+}
+
+// SetName sets the Name field's value.
+func (s *DeleteKeySigningKeyInput) SetName(v string) *DeleteKeySigningKeyInput {
+	s.Name = &v
+	return s
+}
+
+type DeleteKeySigningKeyOutput struct {
+	_ struct{} `type:"structure"`
+
+	// A complex type that describes change information about changes made to your
+	// hosted zone.
+	//
+	// ChangeInfo is a required field
+	ChangeInfo *ChangeInfo `type:"structure" required:"true"`
+}
+
+// String returns the string representation
+func (s DeleteKeySigningKeyOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DeleteKeySigningKeyOutput) GoString() string {
+	return s.String()
+}
+
+// SetChangeInfo sets the ChangeInfo field's value.
+func (s *DeleteKeySigningKeyOutput) SetChangeInfo(v *ChangeInfo) *DeleteKeySigningKeyOutput {
 	s.ChangeInfo = v
 	return s
 }
@@ -8509,21 +9752,22 @@ func (s DeleteTrafficPolicyOutput) GoString() string {
 }
 
 // A complex type that contains information about the request to remove authorization
-// to associate a VPC that was created by one AWS account with a hosted zone
-// that was created with a different AWS account.
+// to associate a VPC that was created by one Amazon Web Services account with
+// a hosted zone that was created with a different Amazon Web Services account.
 type DeleteVPCAssociationAuthorizationInput struct {
 	_ struct{} `locationName:"DeleteVPCAssociationAuthorizationRequest" type:"structure" xmlURI:"https://route53.amazonaws.com/doc/2013-04-01/"`
 
-	// When removing authorization to associate a VPC that was created by one AWS
-	// account with a hosted zone that was created with a different AWS account,
-	// the ID of the hosted zone.
+	// When removing authorization to associate a VPC that was created by one Amazon
+	// Web Services account with a hosted zone that was created with a different
+	// Amazon Web Services account, the ID of the hosted zone.
 	//
 	// HostedZoneId is a required field
 	HostedZoneId *string `location:"uri" locationName:"Id" type:"string" required:"true"`
 
-	// When removing authorization to associate a VPC that was created by one AWS
-	// account with a hosted zone that was created with a different AWS account,
-	// a complex type that includes the ID and region of the VPC.
+	// When removing authorization to associate a VPC that was created by one Amazon
+	// Web Services account with a hosted zone that was created with a different
+	// Amazon Web Services account, a complex type that includes the ID and region
+	// of the VPC.
 	//
 	// VPC is a required field
 	VPC *VPC `type:"structure" required:"true"`
@@ -8630,6 +9874,73 @@ func (s *Dimension) SetValue(v string) *Dimension {
 	return s
 }
 
+type DisableHostedZoneDNSSECInput struct {
+	_ struct{} `locationName:"DisableHostedZoneDNSSECRequest" type:"structure"`
+
+	// A unique string used to identify a hosted zone.
+	//
+	// HostedZoneId is a required field
+	HostedZoneId *string `location:"uri" locationName:"Id" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s DisableHostedZoneDNSSECInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DisableHostedZoneDNSSECInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *DisableHostedZoneDNSSECInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "DisableHostedZoneDNSSECInput"}
+	if s.HostedZoneId == nil {
+		invalidParams.Add(request.NewErrParamRequired("HostedZoneId"))
+	}
+	if s.HostedZoneId != nil && len(*s.HostedZoneId) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("HostedZoneId", 1))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetHostedZoneId sets the HostedZoneId field's value.
+func (s *DisableHostedZoneDNSSECInput) SetHostedZoneId(v string) *DisableHostedZoneDNSSECInput {
+	s.HostedZoneId = &v
+	return s
+}
+
+type DisableHostedZoneDNSSECOutput struct {
+	_ struct{} `type:"structure"`
+
+	// A complex type that describes change information about changes made to your
+	// hosted zone.
+	//
+	// ChangeInfo is a required field
+	ChangeInfo *ChangeInfo `type:"structure" required:"true"`
+}
+
+// String returns the string representation
+func (s DisableHostedZoneDNSSECOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s DisableHostedZoneDNSSECOutput) GoString() string {
+	return s.String()
+}
+
+// SetChangeInfo sets the ChangeInfo field's value.
+func (s *DisableHostedZoneDNSSECOutput) SetChangeInfo(v *ChangeInfo) *DisableHostedZoneDNSSECOutput {
+	s.ChangeInfo = v
+	return s
+}
+
 // A complex type that contains information about the VPC that you want to disassociate
 // from a specified private hosted zone.
 type DisassociateVPCFromHostedZoneInput struct {
@@ -8726,6 +10037,73 @@ func (s DisassociateVPCFromHostedZoneOutput) GoString() string {
 
 // SetChangeInfo sets the ChangeInfo field's value.
 func (s *DisassociateVPCFromHostedZoneOutput) SetChangeInfo(v *ChangeInfo) *DisassociateVPCFromHostedZoneOutput {
+	s.ChangeInfo = v
+	return s
+}
+
+type EnableHostedZoneDNSSECInput struct {
+	_ struct{} `locationName:"EnableHostedZoneDNSSECRequest" type:"structure"`
+
+	// A unique string used to identify a hosted zone.
+	//
+	// HostedZoneId is a required field
+	HostedZoneId *string `location:"uri" locationName:"Id" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s EnableHostedZoneDNSSECInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s EnableHostedZoneDNSSECInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *EnableHostedZoneDNSSECInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "EnableHostedZoneDNSSECInput"}
+	if s.HostedZoneId == nil {
+		invalidParams.Add(request.NewErrParamRequired("HostedZoneId"))
+	}
+	if s.HostedZoneId != nil && len(*s.HostedZoneId) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("HostedZoneId", 1))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetHostedZoneId sets the HostedZoneId field's value.
+func (s *EnableHostedZoneDNSSECInput) SetHostedZoneId(v string) *EnableHostedZoneDNSSECInput {
+	s.HostedZoneId = &v
+	return s
+}
+
+type EnableHostedZoneDNSSECOutput struct {
+	_ struct{} `type:"structure"`
+
+	// A complex type that describes change information about changes made to your
+	// hosted zone.
+	//
+	// ChangeInfo is a required field
+	ChangeInfo *ChangeInfo `type:"structure" required:"true"`
+}
+
+// String returns the string representation
+func (s EnableHostedZoneDNSSECOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s EnableHostedZoneDNSSECOutput) GoString() string {
+	return s.String()
+}
+
+// SetChangeInfo sets the ChangeInfo field's value.
+func (s *EnableHostedZoneDNSSECOutput) SetChangeInfo(v *ChangeInfo) *EnableHostedZoneDNSSECOutput {
 	s.ChangeInfo = v
 	return s
 }
@@ -8836,8 +10214,12 @@ type GeoLocationDetails struct {
 	// The name of the country.
 	CountryName *string `min:"1" type:"string"`
 
-	// The code for the subdivision. Route 53 currently supports only states in
-	// the United States.
+	// The code for the subdivision, such as a particular state within the United
+	// States. For a list of US state abbreviations, see Appendix B: Two–Letter
+	// State and Possession Abbreviations (https://pe.usps.com/text/pub28/28apb.htm)
+	// on the United States Postal Service website. For a list of all supported
+	// subdivision codes, use the ListGeoLocations (https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListGeoLocations.html)
+	// API.
 	SubdivisionCode *string `min:"1" type:"string"`
 
 	// The full name of the subdivision. Route 53 currently supports only states
@@ -9106,6 +10488,83 @@ func (s *GetCheckerIpRangesOutput) SetCheckerIpRanges(v []*string) *GetCheckerIp
 	return s
 }
 
+type GetDNSSECInput struct {
+	_ struct{} `locationName:"GetDNSSECRequest" type:"structure"`
+
+	// A unique string used to identify a hosted zone.
+	//
+	// HostedZoneId is a required field
+	HostedZoneId *string `location:"uri" locationName:"Id" type:"string" required:"true"`
+}
+
+// String returns the string representation
+func (s GetDNSSECInput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s GetDNSSECInput) GoString() string {
+	return s.String()
+}
+
+// Validate inspects the fields of the type to determine if they are valid.
+func (s *GetDNSSECInput) Validate() error {
+	invalidParams := request.ErrInvalidParams{Context: "GetDNSSECInput"}
+	if s.HostedZoneId == nil {
+		invalidParams.Add(request.NewErrParamRequired("HostedZoneId"))
+	}
+	if s.HostedZoneId != nil && len(*s.HostedZoneId) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("HostedZoneId", 1))
+	}
+
+	if invalidParams.Len() > 0 {
+		return invalidParams
+	}
+	return nil
+}
+
+// SetHostedZoneId sets the HostedZoneId field's value.
+func (s *GetDNSSECInput) SetHostedZoneId(v string) *GetDNSSECInput {
+	s.HostedZoneId = &v
+	return s
+}
+
+type GetDNSSECOutput struct {
+	_ struct{} `type:"structure"`
+
+	// The key-signing keys (KSKs) in your account.
+	//
+	// KeySigningKeys is a required field
+	KeySigningKeys []*KeySigningKey `type:"list" required:"true"`
+
+	// A string repesenting the status of DNSSEC.
+	//
+	// Status is a required field
+	Status *DNSSECStatus `type:"structure" required:"true"`
+}
+
+// String returns the string representation
+func (s GetDNSSECOutput) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s GetDNSSECOutput) GoString() string {
+	return s.String()
+}
+
+// SetKeySigningKeys sets the KeySigningKeys field's value.
+func (s *GetDNSSECOutput) SetKeySigningKeys(v []*KeySigningKey) *GetDNSSECOutput {
+	s.KeySigningKeys = v
+	return s
+}
+
+// SetStatus sets the Status field's value.
+func (s *GetDNSSECOutput) SetStatus(v *DNSSECStatus) *GetDNSSECOutput {
+	s.Status = v
+	return s
+}
+
 // A request for information about whether a specified geographic location is
 // supported for Amazon Route 53 geolocation resource record sets.
 type GetGeoLocationInput struct {
@@ -9133,12 +10592,12 @@ type GetGeoLocationInput struct {
 	// standard 3166-1 alpha-2 (https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2).
 	CountryCode *string `location:"querystring" locationName:"countrycode" min:"1" type:"string"`
 
-	// For SubdivisionCode, Amazon Route 53 supports only states of the United States.
-	// For a list of state abbreviations, see Appendix B: Two–Letter State and
-	// Possession Abbreviations (https://pe.usps.com/text/pub28/28apb.htm) on the
-	// United States Postal Service website.
-	//
-	// If you specify subdivisioncode, you must also specify US for CountryCode.
+	// The code for the subdivision, such as a particular state within the United
+	// States. For a list of US state abbreviations, see Appendix B: Two–Letter
+	// State and Possession Abbreviations (https://pe.usps.com/text/pub28/28apb.htm)
+	// on the United States Postal Service website. For a list of all supported
+	// subdivision codes, use the ListGeoLocations (https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListGeoLocations.html)
+	// API.
 	SubdivisionCode *string `location:"querystring" locationName:"subdivisioncode" min:"1" type:"string"`
 }
 
@@ -9218,7 +10677,7 @@ func (s *GetGeoLocationOutput) SetGeoLocationDetails(v *GeoLocationDetails) *Get
 }
 
 // A request for the number of health checks that are associated with the current
-// AWS account.
+// Amazon Web Services account.
 type GetHealthCheckCountInput struct {
 	_ struct{} `locationName:"GetHealthCheckCountRequest" type:"structure"`
 }
@@ -9237,7 +10696,8 @@ func (s GetHealthCheckCountInput) GoString() string {
 type GetHealthCheckCountOutput struct {
 	_ struct{} `type:"structure"`
 
-	// The number of health checks associated with the current AWS account.
+	// The number of health checks associated with the current Amazon Web Services
+	// account.
 	//
 	// HealthCheckCount is a required field
 	HealthCheckCount *int64 `type:"long" required:"true"`
@@ -9385,7 +10845,7 @@ type GetHealthCheckOutput struct {
 	_ struct{} `type:"structure"`
 
 	// A complex type that contains information about one health check that is associated
-	// with the current AWS account.
+	// with the current Amazon Web Services account.
 	//
 	// HealthCheck is a required field
 	HealthCheck *HealthCheck `type:"structure" required:"true"`
@@ -9483,7 +10943,7 @@ func (s *GetHealthCheckStatusOutput) SetHealthCheckObservations(v []*HealthCheck
 }
 
 // A request to retrieve a count of all the hosted zones that are associated
-// with the current AWS account.
+// with the current Amazon Web Services account.
 type GetHostedZoneCountInput struct {
 	_ struct{} `locationName:"GetHostedZoneCountRequest" type:"structure"`
 }
@@ -9503,7 +10963,7 @@ type GetHostedZoneCountOutput struct {
 	_ struct{} `type:"structure"`
 
 	// The total number of public and private hosted zones that are associated with
-	// the current AWS account.
+	// the current Amazon Web Services account.
 	//
 	// HostedZoneCount is a required field
 	HostedZoneCount *int64 `type:"long" required:"true"`
@@ -10024,7 +11484,7 @@ func (s *GetTrafficPolicyInput) SetVersion(v int64) *GetTrafficPolicyInput {
 }
 
 // Request to get the number of traffic policy instances that are associated
-// with the current AWS account.
+// with the current Amazon Web Services account.
 type GetTrafficPolicyInstanceCountInput struct {
 	_ struct{} `locationName:"GetTrafficPolicyInstanceCountRequest" type:"structure"`
 }
@@ -10045,7 +11505,7 @@ type GetTrafficPolicyInstanceCountOutput struct {
 	_ struct{} `type:"structure"`
 
 	// The number of traffic policy instances that are associated with the current
-	// AWS account.
+	// Amazon Web Services account.
 	//
 	// TrafficPolicyInstanceCount is a required field
 	TrafficPolicyInstanceCount *int64 `type:"integer" required:"true"`
@@ -10163,7 +11623,7 @@ func (s *GetTrafficPolicyOutput) SetTrafficPolicy(v *TrafficPolicy) *GetTrafficP
 }
 
 // A complex type that contains information about one health check that is associated
-// with the current AWS account.
+// with the current Amazon Web Services account.
 type HealthCheck struct {
 	_ struct{} `type:"structure"`
 
@@ -10188,7 +11648,7 @@ type HealthCheck struct {
 	// HealthCheckVersion is a required field
 	HealthCheckVersion *int64 `min:"1" type:"long" required:"true"`
 
-	// The identifier that Amazon Route 53assigned to the health check when you
+	// The identifier that Amazon Route 53 assigned to the health check when you
 	// created it. When you add or update a resource record set, you use this value
 	// to specify which health check to use. The value can be up to 64 characters
 	// long.
@@ -10446,8 +11906,9 @@ type HealthCheckConfig struct {
 	Inverted *bool `type:"boolean"`
 
 	// Specify whether you want Amazon Route 53 to measure the latency between health
-	// checkers in multiple AWS regions and your endpoint, and to display CloudWatch
-	// latency graphs on the Health Checks page in the Route 53 console.
+	// checkers in multiple Amazon Web Services regions and your endpoint, and to
+	// display CloudWatch latency graphs on the Health Checks page in the Route
+	// 53 console.
 	//
 	// You can't change the value of MeasureLatency after you create a health check.
 	MeasureLatency *bool `type:"boolean"`
@@ -10487,6 +11948,13 @@ type HealthCheckConfig struct {
 	// the file /docs/route53-health-check.html. You can also include query string
 	// parameters, for example, /welcome.html?language=jp&login=y.
 	ResourcePath *string `type:"string"`
+
+	// The Amazon Resource Name (ARN) for the Route 53 Application Recovery Controller
+	// routing control.
+	//
+	// For more information about Route 53 Application Recovery Controller, see
+	// Route 53 Application Recovery Controller Developer Guide. (https://docs.aws.amazon.com/r53recovery/latest/dg/what-is-route-53-recovery.html).
+	RoutingControlArn *string `min:"1" type:"string"`
 
 	// If the value of Type is HTTP_STR_MATCH or HTTPS_STR_MATCH, the string that
 	// you want Amazon Route 53 to search for in the response body from the specified
@@ -10534,6 +12002,11 @@ type HealthCheckConfig struct {
 	//    checkers consider to be healthy and compares that number with the value
 	//    of HealthThreshold.
 	//
+	//    * RECOVERY_CONTROL: The health check is assocated with a Route53 Application
+	//    Recovery Controller routing control. If the routing control state is ON,
+	//    the health check is considered healthy. If the state is OFF, the health
+	//    check is considered unhealthy.
+	//
 	// For more information, see How Route 53 Determines Whether an Endpoint Is
 	// Healthy (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-determining-health-of-endpoints.html)
 	// in the Amazon Route 53 Developer Guide.
@@ -10566,6 +12039,9 @@ func (s *HealthCheckConfig) Validate() error {
 	}
 	if s.RequestInterval != nil && *s.RequestInterval < 10 {
 		invalidParams.Add(request.NewErrParamMinValue("RequestInterval", 10))
+	}
+	if s.RoutingControlArn != nil && len(*s.RoutingControlArn) < 1 {
+		invalidParams.Add(request.NewErrParamMinLen("RoutingControlArn", 1))
 	}
 	if s.Type == nil {
 		invalidParams.Add(request.NewErrParamRequired("Type"))
@@ -10669,6 +12145,12 @@ func (s *HealthCheckConfig) SetRequestInterval(v int64) *HealthCheckConfig {
 // SetResourcePath sets the ResourcePath field's value.
 func (s *HealthCheckConfig) SetResourcePath(v string) *HealthCheckConfig {
 	s.ResourcePath = &v
+	return s
+}
+
+// SetRoutingControlArn sets the RoutingControlArn field's value.
+func (s *HealthCheckConfig) SetRoutingControlArn(v string) *HealthCheckConfig {
+	s.RoutingControlArn = &v
 	return s
 }
 
@@ -10901,18 +12383,18 @@ func (s *HostedZoneLimit) SetValue(v int64) *HostedZoneLimit {
 type HostedZoneOwner struct {
 	_ struct{} `type:"structure"`
 
-	// If the hosted zone was created by an AWS account, or was created by an AWS
-	// service that creates hosted zones using the current account, OwningAccount
-	// contains the account ID of that account. For example, when you use AWS Cloud
-	// Map to create a hosted zone, Cloud Map creates the hosted zone using the
-	// current AWS account.
+	// If the hosted zone was created by an Amazon Web Services account, or was
+	// created by an Amazon Web Services service that creates hosted zones using
+	// the current account, OwningAccount contains the account ID of that account.
+	// For example, when you use Cloud Map to create a hosted zone, Cloud Map creates
+	// the hosted zone using the current Amazon Web Services account.
 	OwningAccount *string `type:"string"`
 
-	// If an AWS service uses its own account to create a hosted zone and associate
-	// the specified VPC with that hosted zone, OwningService contains an abbreviation
-	// that identifies the service. For example, if Amazon Elastic File System (Amazon
-	// EFS) created a hosted zone and associated a VPC with the hosted zone, the
-	// value of OwningService is efs.amazonaws.com.
+	// If an Amazon Web Services service uses its own account to create a hosted
+	// zone and associate the specified VPC with that hosted zone, OwningService
+	// contains an abbreviation that identifies the service. For example, if Amazon
+	// Elastic File System (Amazon EFS) created a hosted zone and associated a VPC
+	// with the hosted zone, the value of OwningService is efs.amazonaws.com.
 	OwningService *string `type:"string"`
 }
 
@@ -10958,7 +12440,8 @@ type HostedZoneSummary struct {
 	Name *string `type:"string" required:"true"`
 
 	// The owner of a private hosted zone that the specified VPC is associated with.
-	// The owner can be either an AWS account or an AWS service.
+	// The owner can be either an Amazon Web Services account or an Amazon Web Services
+	// service.
 	//
 	// Owner is a required field
 	Owner *HostedZoneOwner `type:"structure" required:"true"`
@@ -10989,6 +12472,245 @@ func (s *HostedZoneSummary) SetName(v string) *HostedZoneSummary {
 // SetOwner sets the Owner field's value.
 func (s *HostedZoneSummary) SetOwner(v *HostedZoneOwner) *HostedZoneSummary {
 	s.Owner = v
+	return s
+}
+
+// A key-signing key (KSK) is a complex type that represents a public/private
+// key pair. The private key is used to generate a digital signature for the
+// zone signing key (ZSK). The public key is stored in the DNS and is used to
+// authenticate the ZSK. A KSK is always associated with a hosted zone; it cannot
+// exist by itself.
+type KeySigningKey struct {
+	_ struct{} `type:"structure"`
+
+	// The date when the key-signing key (KSK) was created.
+	CreatedDate *time.Time `type:"timestamp"`
+
+	// A string that represents a DNSKEY record.
+	DNSKEYRecord *string `type:"string"`
+
+	// A string that represents a delegation signer (DS) record.
+	DSRecord *string `type:"string"`
+
+	// A string used to represent the delegation signer digest algorithm. This value
+	// must follow the guidelines provided by RFC-8624 Section 3.3 (https://tools.ietf.org/html/rfc8624#section-3.3).
+	DigestAlgorithmMnemonic *string `type:"string"`
+
+	// An integer used to represent the delegation signer digest algorithm. This
+	// value must follow the guidelines provided by RFC-8624 Section 3.3 (https://tools.ietf.org/html/rfc8624#section-3.3).
+	DigestAlgorithmType *int64 `type:"integer"`
+
+	// A cryptographic digest of a DNSKEY resource record (RR). DNSKEY records are
+	// used to publish the public key that resolvers can use to verify DNSSEC signatures
+	// that are used to secure certain kinds of information provided by the DNS
+	// system.
+	DigestValue *string `type:"string"`
+
+	// An integer that specifies how the key is used. For key-signing key (KSK),
+	// this value is always 257.
+	Flag *int64 `type:"integer"`
+
+	// An integer used to identify the DNSSEC record for the domain name. The process
+	// used to calculate the value is described in RFC-4034 Appendix B (https://tools.ietf.org/rfc/rfc4034.txt).
+	KeyTag *int64 `type:"integer"`
+
+	// The Amazon resource name (ARN) used to identify the customer managed customer
+	// master key (CMK) in Key Management Service (KMS). The KmsArn must be unique
+	// for each key-signing key (KSK) in a single hosted zone.
+	//
+	// You must configure the CMK as follows:
+	//
+	// Status
+	//
+	// Enabled
+	//
+	// Key spec
+	//
+	// ECC_NIST_P256
+	//
+	// Key usage
+	//
+	// Sign and verify
+	//
+	// Key policy
+	//
+	// The key policy must give permission for the following actions:
+	//
+	//    * DescribeKey
+	//
+	//    * GetPublicKey
+	//
+	//    * Sign
+	//
+	// The key policy must also include the Amazon Route 53 service in the principal
+	// for your account. Specify the following:
+	//
+	//    * "Service": "dnssec-route53.amazonaws.com"
+	//
+	// For more information about working with the customer managed CMK in KMS,
+	// see Key Management Service concepts (https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html).
+	KmsArn *string `type:"string"`
+
+	// The last time that the key-signing key (KSK) was changed.
+	LastModifiedDate *time.Time `type:"timestamp"`
+
+	// A string used to identify a key-signing key (KSK). Name can include numbers,
+	// letters, and underscores (_). Name must be unique for each key-signing key
+	// in the same hosted zone.
+	Name *string `min:"3" type:"string"`
+
+	// The public key, represented as a Base64 encoding, as required by RFC-4034
+	// Page 5 (https://tools.ietf.org/rfc/rfc4034.txt).
+	PublicKey *string `type:"string"`
+
+	// A string used to represent the signing algorithm. This value must follow
+	// the guidelines provided by RFC-8624 Section 3.1 (https://tools.ietf.org/html/rfc8624#section-3.1).
+	SigningAlgorithmMnemonic *string `type:"string"`
+
+	// An integer used to represent the signing algorithm. This value must follow
+	// the guidelines provided by RFC-8624 Section 3.1 (https://tools.ietf.org/html/rfc8624#section-3.1).
+	SigningAlgorithmType *int64 `type:"integer"`
+
+	// A string that represents the current key-signing key (KSK) status.
+	//
+	// Status can have one of the following values:
+	//
+	// ACTIVE
+	//
+	// The KSK is being used for signing.
+	//
+	// INACTIVE
+	//
+	// The KSK is not being used for signing.
+	//
+	// DELETING
+	//
+	// The KSK is in the process of being deleted.
+	//
+	// ACTION_NEEDED
+	//
+	// There is a problem with the KSK that requires you to take action to resolve.
+	// For example, the customer managed customer master key (CMK) might have been
+	// deleted, or the permissions for the customer managed CMK might have been
+	// changed.
+	//
+	// INTERNAL_FAILURE
+	//
+	// There was an error during a request. Before you can continue to work with
+	// DNSSEC signing, including actions that involve this KSK, you must correct
+	// the problem. For example, you may need to activate or deactivate the KSK.
+	Status *string `min:"5" type:"string"`
+
+	// The status message provided for the following key-signing key (KSK) statuses:
+	// ACTION_NEEDED or INTERNAL_FAILURE. The status message includes information
+	// about what the problem might be and steps that you can take to correct the
+	// issue.
+	StatusMessage *string `type:"string"`
+}
+
+// String returns the string representation
+func (s KeySigningKey) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation
+func (s KeySigningKey) GoString() string {
+	return s.String()
+}
+
+// SetCreatedDate sets the CreatedDate field's value.
+func (s *KeySigningKey) SetCreatedDate(v time.Time) *KeySigningKey {
+	s.CreatedDate = &v
+	return s
+}
+
+// SetDNSKEYRecord sets the DNSKEYRecord field's value.
+func (s *KeySigningKey) SetDNSKEYRecord(v string) *KeySigningKey {
+	s.DNSKEYRecord = &v
+	return s
+}
+
+// SetDSRecord sets the DSRecord field's value.
+func (s *KeySigningKey) SetDSRecord(v string) *KeySigningKey {
+	s.DSRecord = &v
+	return s
+}
+
+// SetDigestAlgorithmMnemonic sets the DigestAlgorithmMnemonic field's value.
+func (s *KeySigningKey) SetDigestAlgorithmMnemonic(v string) *KeySigningKey {
+	s.DigestAlgorithmMnemonic = &v
+	return s
+}
+
+// SetDigestAlgorithmType sets the DigestAlgorithmType field's value.
+func (s *KeySigningKey) SetDigestAlgorithmType(v int64) *KeySigningKey {
+	s.DigestAlgorithmType = &v
+	return s
+}
+
+// SetDigestValue sets the DigestValue field's value.
+func (s *KeySigningKey) SetDigestValue(v string) *KeySigningKey {
+	s.DigestValue = &v
+	return s
+}
+
+// SetFlag sets the Flag field's value.
+func (s *KeySigningKey) SetFlag(v int64) *KeySigningKey {
+	s.Flag = &v
+	return s
+}
+
+// SetKeyTag sets the KeyTag field's value.
+func (s *KeySigningKey) SetKeyTag(v int64) *KeySigningKey {
+	s.KeyTag = &v
+	return s
+}
+
+// SetKmsArn sets the KmsArn field's value.
+func (s *KeySigningKey) SetKmsArn(v string) *KeySigningKey {
+	s.KmsArn = &v
+	return s
+}
+
+// SetLastModifiedDate sets the LastModifiedDate field's value.
+func (s *KeySigningKey) SetLastModifiedDate(v time.Time) *KeySigningKey {
+	s.LastModifiedDate = &v
+	return s
+}
+
+// SetName sets the Name field's value.
+func (s *KeySigningKey) SetName(v string) *KeySigningKey {
+	s.Name = &v
+	return s
+}
+
+// SetPublicKey sets the PublicKey field's value.
+func (s *KeySigningKey) SetPublicKey(v string) *KeySigningKey {
+	s.PublicKey = &v
+	return s
+}
+
+// SetSigningAlgorithmMnemonic sets the SigningAlgorithmMnemonic field's value.
+func (s *KeySigningKey) SetSigningAlgorithmMnemonic(v string) *KeySigningKey {
+	s.SigningAlgorithmMnemonic = &v
+	return s
+}
+
+// SetSigningAlgorithmType sets the SigningAlgorithmType field's value.
+func (s *KeySigningKey) SetSigningAlgorithmType(v int64) *KeySigningKey {
+	s.SigningAlgorithmType = &v
+	return s
+}
+
+// SetStatus sets the Status field's value.
+func (s *KeySigningKey) SetStatus(v string) *KeySigningKey {
+	s.Status = &v
+	return s
+}
+
+// SetStatusMessage sets the StatusMessage field's value.
+func (s *KeySigningKey) SetStatusMessage(v string) *KeySigningKey {
+	s.StatusMessage = &v
 	return s
 }
 
@@ -11212,7 +12934,7 @@ func (s *ListGeoLocationsOutput) SetNextSubdivisionCode(v string) *ListGeoLocati
 }
 
 // A request to retrieve a list of the health checks that are associated with
-// the current AWS account.
+// the current Amazon Web Services account.
 type ListHealthChecksInput struct {
 	_ struct{} `locationName:"ListHealthChecksRequest" type:"structure"`
 
@@ -11261,7 +12983,7 @@ type ListHealthChecksOutput struct {
 	_ struct{} `type:"structure"`
 
 	// A complex type that contains one HealthCheck element for each health check
-	// that is associated with the current AWS account.
+	// that is associated with the current Amazon Web Services account.
 	//
 	// HealthChecks is a required field
 	HealthChecks []*HealthCheck `locationNameList:"HealthCheck" type:"list" required:"true"`
@@ -11333,17 +13055,17 @@ func (s *ListHealthChecksOutput) SetNextMarker(v string) *ListHealthChecksOutput
 }
 
 // Retrieves a list of the public and private hosted zones that are associated
-// with the current AWS account in ASCII order by domain name.
+// with the current Amazon Web Services account in ASCII order by domain name.
 type ListHostedZonesByNameInput struct {
 	_ struct{} `locationName:"ListHostedZonesByNameRequest" type:"structure"`
 
 	// (Optional) For your first request to ListHostedZonesByName, include the dnsname
 	// parameter only if you want to specify the name of the first hosted zone in
 	// the response. If you don't include the dnsname parameter, Amazon Route 53
-	// returns all of the hosted zones that were created by the current AWS account,
-	// in ASCII order. For subsequent requests, include both dnsname and hostedzoneid
-	// parameters. For dnsname, specify the value of NextDNSName from the previous
-	// response.
+	// returns all of the hosted zones that were created by the current Amazon Web
+	// Services account, in ASCII order. For subsequent requests, include both dnsname
+	// and hostedzoneid parameters. For dnsname, specify the value of NextDNSName
+	// from the previous response.
 	DNSName *string `location:"querystring" locationName:"dnsname" type:"string"`
 
 	// (Optional) For your first request to ListHostedZonesByName, do not include
@@ -11495,7 +13217,7 @@ func (s *ListHostedZonesByNameOutput) SetNextHostedZoneId(v string) *ListHostedZ
 }
 
 // Lists all the private hosted zones that a specified VPC is associated with,
-// regardless of which AWS account created the hosted zones.
+// regardless of which Amazon Web Services account created the hosted zones.
 type ListHostedZonesByVPCInput struct {
 	_ struct{} `locationName:"ListHostedZonesByVPCRequest" type:"structure"`
 
@@ -11522,8 +13244,8 @@ type ListHostedZonesByVPCInput struct {
 	// VPCId is a required field
 	VPCId *string `location:"querystring" locationName:"vpcid" type:"string" required:"true"`
 
-	// For the Amazon VPC that you specified for VPCId, the AWS Region that you
-	// created the VPC in.
+	// For the Amazon VPC that you specified for VPCId, the Amazon Web Services
+	// Region that you created the VPC in.
 	//
 	// VPCRegion is a required field
 	VPCRegion *string `location:"querystring" locationName:"vpcregion" min:"1" type:"string" required:"true" enum:"VPCRegion"`
@@ -11599,7 +13321,7 @@ type ListHostedZonesByVPCOutput struct {
 	// MaxItems is a required field
 	MaxItems *string `type:"string" required:"true"`
 
-	// The value that you specified for NextToken in the most recent ListHostedZonesByVPC
+	// The value that you will use for NextToken in the next ListHostedZonesByVPC
 	// request.
 	NextToken *string `type:"string"`
 }
@@ -11633,7 +13355,7 @@ func (s *ListHostedZonesByVPCOutput) SetNextToken(v string) *ListHostedZonesByVP
 }
 
 // A request to retrieve a list of the public and private hosted zones that
-// are associated with the current AWS account.
+// are associated with the current Amazon Web Services account.
 type ListHostedZonesInput struct {
 	_ struct{} `locationName:"ListHostedZonesRequest" type:"structure"`
 
@@ -11773,20 +13495,22 @@ type ListQueryLoggingConfigsInput struct {
 	// with a hosted zone, specify the ID in HostedZoneId.
 	//
 	// If you don't specify a hosted zone ID, ListQueryLoggingConfigs returns all
-	// of the configurations that are associated with the current AWS account.
+	// of the configurations that are associated with the current Amazon Web Services
+	// account.
 	HostedZoneId *string `location:"querystring" locationName:"hostedzoneid" type:"string"`
 
 	// (Optional) The maximum number of query logging configurations that you want
 	// Amazon Route 53 to return in response to the current request. If the current
-	// AWS account has more than MaxResults configurations, use the value of NextToken
-	// (https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListQueryLoggingConfigs.html#API_ListQueryLoggingConfigs_RequestSyntax)
+	// Amazon Web Services account has more than MaxResults configurations, use
+	// the value of NextToken (https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListQueryLoggingConfigs.html#API_ListQueryLoggingConfigs_RequestSyntax)
 	// in the response to get the next page of results.
 	//
 	// If you don't specify a value for MaxResults, Route 53 returns up to 100 configurations.
 	MaxResults *string `location:"querystring" locationName:"maxresults" type:"string"`
 
-	// (Optional) If the current AWS account has more than MaxResults query logging
-	// configurations, use NextToken to get the second and subsequent pages of results.
+	// (Optional) If the current Amazon Web Services account has more than MaxResults
+	// query logging configurations, use NextToken to get the second and subsequent
+	// pages of results.
 	//
 	// For the first ListQueryLoggingConfigs request, omit this value.
 	//
@@ -11827,8 +13551,8 @@ type ListQueryLoggingConfigsOutput struct {
 	_ struct{} `type:"structure"`
 
 	// If a response includes the last of the query logging configurations that
-	// are associated with the current AWS account, NextToken doesn't appear in
-	// the response.
+	// are associated with the current Amazon Web Services account, NextToken doesn't
+	// appear in the response.
 	//
 	// If a response doesn't include the last of the configurations, you can get
 	// more configurations by submitting another ListQueryLoggingConfigs (https://docs.aws.amazon.com/Route53/latest/APIReference/API_ListQueryLoggingConfigs.html)
@@ -11838,7 +13562,7 @@ type ListQueryLoggingConfigsOutput struct {
 
 	// An array that contains one QueryLoggingConfig (https://docs.aws.amazon.com/Route53/latest/APIReference/API_QueryLoggingConfig.html)
 	// element for each configuration for DNS query logging that is associated with
-	// the current AWS account.
+	// the current Amazon Web Services account.
 	//
 	// QueryLoggingConfigs is a required field
 	QueryLoggingConfigs []*QueryLoggingConfig `locationNameList:"QueryLoggingConfig" type:"list" required:"true"`
@@ -12073,7 +13797,7 @@ func (s *ListResourceRecordSetsOutput) SetResourceRecordSets(v []*ResourceRecord
 }
 
 // A request to get a list of the reusable delegation sets that are associated
-// with the current AWS account.
+// with the current Amazon Web Services account.
 type ListReusableDelegationSetsInput struct {
 	_ struct{} `locationName:"ListReusableDelegationSetsRequest" type:"structure"`
 
@@ -12118,12 +13842,12 @@ func (s *ListReusableDelegationSetsInput) SetMaxItems(v string) *ListReusableDel
 }
 
 // A complex type that contains information about the reusable delegation sets
-// that are associated with the current AWS account.
+// that are associated with the current Amazon Web Services account.
 type ListReusableDelegationSetsOutput struct {
 	_ struct{} `type:"structure"`
 
 	// A complex type that contains one DelegationSet element for each reusable
-	// delegation set that was created by the current AWS account.
+	// delegation set that was created by the current Amazon Web Services account.
 	//
 	// DelegationSets is a required field
 	DelegationSets []*DelegationSet `locationNameList:"DelegationSet" type:"list" required:"true"`
@@ -12376,7 +14100,8 @@ func (s *ListTagsForResourcesOutput) SetResourceTagSets(v []*ResourceTagSet) *Li
 }
 
 // A complex type that contains the information about the request to list the
-// traffic policies that are associated with the current AWS account.
+// traffic policies that are associated with the current Amazon Web Services
+// account.
 type ListTrafficPoliciesInput struct {
 	_ struct{} `locationName:"ListTrafficPoliciesRequest" type:"structure"`
 
@@ -12458,7 +14183,7 @@ type ListTrafficPoliciesOutput struct {
 	TrafficPolicyIdMarker *string `min:"1" type:"string" required:"true"`
 
 	// A list that contains one TrafficPolicySummary element for each traffic policy
-	// that was created by the current AWS account.
+	// that was created by the current Amazon Web Services account.
 	//
 	// TrafficPolicySummaries is a required field
 	TrafficPolicySummaries []*TrafficPolicySummary `locationNameList:"TrafficPolicySummary" type:"list" required:"true"`
@@ -12880,7 +14605,7 @@ func (s *ListTrafficPolicyInstancesByPolicyOutput) SetTrafficPolicyInstances(v [
 }
 
 // A request to get information about the traffic policy instances that you
-// created by using the current AWS account.
+// created by using the current Amazon Web Services account.
 type ListTrafficPolicyInstancesInput struct {
 	_ struct{} `locationName:"ListTrafficPolicyInstancesRequest" type:"structure"`
 
@@ -13413,9 +15138,9 @@ func (s *ResourceRecord) SetValue(v string) *ResourceRecord {
 type ResourceRecordSet struct {
 	_ struct{} `type:"structure"`
 
-	// Alias resource record sets only: Information about the AWS resource, such
-	// as a CloudFront distribution or an Amazon S3 bucket, that you want to route
-	// traffic to.
+	// Alias resource record sets only: Information about the Amazon Web Services
+	// resource, such as a CloudFront distribution or an Amazon S3 bucket, that
+	// you want to route traffic to.
 	//
 	// If you're creating resource records sets for a private hosted zone, note
 	// the following:
@@ -13677,9 +15402,9 @@ type ResourceRecordSet struct {
 
 	// Latency-based resource record sets only: The Amazon EC2 Region where you
 	// created the resource that this resource record set refers to. The resource
-	// typically is an AWS resource, such as an EC2 instance or an ELB load balancer,
-	// and is referred to by an IP address or a DNS domain name, depending on the
-	// record type.
+	// typically is an Amazon Web Services resource, such as an EC2 instance or
+	// an ELB load balancer, and is referred to by an IP address or a DNS domain
+	// name, depending on the record type.
 	//
 	// Although creating latency and latency alias resource record sets in a private
 	// hosted zone is allowed, it's not supported.
@@ -13759,8 +15484,8 @@ type ResourceRecordSet struct {
 	// data is encoded for them, see Supported DNS Resource Record Types (https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/ResourceRecordTypes.html)
 	// in the Amazon Route 53 Developer Guide.
 	//
-	// Valid values for basic resource record sets: A | AAAA | CAA | CNAME | MX
-	// | NAPTR | NS | PTR | SOA | SPF | SRV | TXT
+	// Valid values for basic resource record sets: A | AAAA | CAA | CNAME | DS
+	// |MX | NAPTR | NS | PTR | SOA | SPF | SRV | TXT
 	//
 	// Values for weighted, latency, geolocation, and failover resource record sets:
 	// A | AAAA | CAA | CNAME | MX | NAPTR | PTR | SPF | SRV | TXT. When creating
@@ -14196,8 +15921,8 @@ type TestDNSAnswerInput struct {
 
 	// If you want to simulate a request from a specific DNS resolver, specify the
 	// IP address for that resolver. If you omit this value, TestDnsAnswer uses
-	// the IP address of a DNS resolver in the AWS US East (N. Virginia) Region
-	// (us-east-1).
+	// the IP address of a DNS resolver in the Amazon Web Services US East (N. Virginia)
+	// Region (us-east-1).
 	ResolverIP *string `location:"querystring" locationName:"resolverip" type:"string"`
 }
 
@@ -14576,7 +16301,7 @@ func (s *TrafficPolicyInstance) SetTrafficPolicyVersion(v int64) *TrafficPolicyI
 }
 
 // A complex type that contains information about the latest version of one
-// traffic policy that is associated with the current AWS account.
+// traffic policy that is associated with the current Amazon Web Services account.
 type TrafficPolicySummary struct {
 	_ struct{} `type:"structure"`
 
@@ -14596,7 +16321,8 @@ type TrafficPolicySummary struct {
 	// Name is a required field
 	Name *string `type:"string" required:"true"`
 
-	// The number of traffic policies that are associated with the current AWS account.
+	// The number of traffic policies that are associated with the current Amazon
+	// Web Services account.
 	//
 	// TrafficPolicyCount is a required field
 	TrafficPolicyCount *int64 `min:"1" type:"integer" required:"true"`
@@ -15710,6 +17436,9 @@ const (
 
 	// HealthCheckTypeCloudwatchMetric is a HealthCheckType enum value
 	HealthCheckTypeCloudwatchMetric = "CLOUDWATCH_METRIC"
+
+	// HealthCheckTypeRecoveryControl is a HealthCheckType enum value
+	HealthCheckTypeRecoveryControl = "RECOVERY_CONTROL"
 )
 
 // HealthCheckType_Values returns all elements of the HealthCheckType enum
@@ -15722,6 +17451,7 @@ func HealthCheckType_Values() []string {
 		HealthCheckTypeTcp,
 		HealthCheckTypeCalculated,
 		HealthCheckTypeCloudwatchMetric,
+		HealthCheckTypeRecoveryControl,
 	}
 }
 
@@ -15797,6 +17527,9 @@ const (
 
 	// RRTypeCaa is a RRType enum value
 	RRTypeCaa = "CAA"
+
+	// RRTypeDs is a RRType enum value
+	RRTypeDs = "DS"
 )
 
 // RRType_Values returns all elements of the RRType enum
@@ -15814,6 +17547,7 @@ func RRType_Values() []string {
 		RRTypeSpf,
 		RRTypeAaaa,
 		RRTypeCaa,
+		RRTypeDs,
 	}
 }
 
