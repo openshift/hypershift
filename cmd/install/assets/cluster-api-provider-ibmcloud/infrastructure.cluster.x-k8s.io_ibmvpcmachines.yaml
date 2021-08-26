@@ -1,0 +1,127 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.5.0
+  creationTimestamp: null
+  name: ibmvpcmachines.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: IBMVPCMachine
+    listKind: IBMVPCMachineList
+    plural: ibmvpcmachines
+    singular: ibmvpcmachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Cluster infrastructure is ready for IBM VPC instances
+      jsonPath: .status.ready
+      name: Ready
+      type: string
+    name: v1alpha4
+    schema:
+      openAPIV3Schema:
+        description: IBMVPCMachine is the Schema for the ibmvpcmachines API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: IBMVPCMachineSpec defines the desired state of IBMVPCMachine
+            properties:
+              image:
+                description: 'Image is the id of OS image which would be install on
+                  the instance. Example: r134-ed3f775f-ad7e-4e37-ae62-7199b4988b00
+                  TODO: allow user to specify a image name is much reasonable. Example:
+                  ibm-ubuntu-18-04-1-minimal-amd64-2'
+                type: string
+              name:
+                description: Name of the instance
+                type: string
+              primaryNetworkInterface:
+                description: PrimaryNetworkInterface is required to specify subnet
+                properties:
+                  subnet:
+                    description: Subnet ID of the network interface
+                    type: string
+                type: object
+              profile:
+                description: "Profile indicates the flavor of instance. Example: bx2-8x32\tmeans
+                  8 vCPUs\t32 GB RAM\t16 Gbps TODO: add a reference link of profile"
+                type: string
+              providerID:
+                description: ProviderID is the unique identifier as specified by the
+                  cloud provider.
+                type: string
+              sshKeys:
+                description: SSHKeys is the SSH pub keys that will be used to access
+                  VM
+                items:
+                  type: string
+                type: array
+              zone:
+                description: 'Zone is the place where the instance should be created.
+                  Example: us-south-3 TODO: Actually zone is transparent to user.
+                  The field user can access is location. Example: Dallas 2'
+                type: string
+            required:
+            - image
+            - profile
+            - zone
+            type: object
+          status:
+            description: IBMVPCMachineStatus defines the observed state of IBMVPCMachine
+            properties:
+              addresses:
+                description: Addresses contains the GCP instance associated addresses.
+                items:
+                  description: NodeAddress contains information for the node's address.
+                  properties:
+                    address:
+                      description: The node address.
+                      type: string
+                    type:
+                      description: Node address type, one of Hostname, ExternalIP
+                        or InternalIP.
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                type: array
+              instanceID:
+                type: string
+              instanceState:
+                description: InstanceStatus is the status of the GCP instance for
+                  this machine.
+                type: string
+              ready:
+                type: boolean
+            required:
+            - ready
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

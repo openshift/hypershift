@@ -5,7 +5,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -384,51 +383,6 @@ func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
 		GlobalDefault: false,
 		Description:   "This priority class should be used for hypershift etcd pods.",
 	}
-}
-
-type HyperShiftHostedClustersCustomResourceDefinition struct{}
-
-func (o HyperShiftHostedClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	return getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_hostedclusters.yaml")
-}
-
-type HyperShiftNodePoolsCustomResourceDefinition struct{}
-
-func (o HyperShiftNodePoolsCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	return getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_nodepools.yaml")
-}
-
-type HyperShiftHostedControlPlaneCustomResourceDefinition struct{}
-
-func (o HyperShiftHostedControlPlaneCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml")
-	if crd.Labels == nil {
-		crd.Labels = map[string]string{}
-	}
-	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
-	return crd
-}
-
-type HyperShiftExternalInfraClustersCustomResourceDefinition struct{}
-
-func (o HyperShiftExternalInfraClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_externalinfraclusters.yaml")
-	if crd.Labels == nil {
-		crd.Labels = map[string]string{}
-	}
-	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
-	return crd
-}
-
-type HyperShiftMachineConfigServersCustomResourceDefinition struct{}
-
-func (o HyperShiftMachineConfigServersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_machineconfigservers.yaml")
-	if crd.Labels == nil {
-		crd.Labels = map[string]string{}
-	}
-	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
-	return crd
 }
 
 type HyperShiftPrometheusRole struct {
