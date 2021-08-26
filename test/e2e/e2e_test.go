@@ -59,6 +59,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
 	flag.StringVar(&globalOpts.defaultClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
 	flag.StringVar(&globalOpts.defaultClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
+	flag.StringVar(&globalOpts.Platform, "e2e.platform", "", "The platform to use for the operator If none specified, the default is used.")
 	flag.Var(&globalOpts.additionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
 
 	flag.Parse()
@@ -172,6 +173,7 @@ type options struct {
 
 	defaultClusterOptions cmdcluster.Options
 	additionalTags        stringSliceVar
+	Platform              string
 }
 
 func (o *options) DefaultClusterOptions() cmdcluster.Options {
@@ -217,6 +219,7 @@ func (o *options) Complete() error {
 	o.defaultClusterOptions.NetworkType = string(hyperv1.OpenShiftSDN)
 	o.defaultClusterOptions.RootVolumeSize = 64
 	o.defaultClusterOptions.RootVolumeType = "gp2"
+	o.defaultClusterOptions.Platform = string(hyperv1.AWSPlatform)
 	o.defaultClusterOptions.AdditionalTags = o.additionalTags
 
 	return nil

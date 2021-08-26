@@ -61,6 +61,8 @@ type ExampleOptions struct {
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
+	PlatformType                     string
+	APIServerAddress                 string
 }
 
 type ExampleAWSOptions struct {
@@ -192,38 +194,8 @@ aws_secret_access_key = %s
 				MachineCIDR: o.ComputeCIDR,
 				NetworkType: o.NetworkType,
 			},
-			Services: []hyperv1.ServicePublishingStrategyMapping{
-				{
-					Service: hyperv1.APIServer,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.LoadBalancer,
-					},
-				},
-				{
-					Service: hyperv1.OAuthServer,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					},
-				},
-				{
-					Service: hyperv1.OIDC,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					},
-				},
-				{
-					Service: hyperv1.Konnectivity,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					},
-				},
-				{
-					Service: hyperv1.Ignition,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					},
-				},
-			},
+
+			Services:   []hyperv1.ServicePublishingStrategyMapping{},
 			InfraID:    o.InfraID,
 			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
 			IssuerURL:  o.IssuerURL,
@@ -236,24 +208,97 @@ aws_secret_access_key = %s
 			},
 			ControllerAvailabilityPolicy:     o.ControlPlaneAvailabilityPolicy,
 			InfrastructureAvailabilityPolicy: o.InfrastructureAvailabilityPolicy,
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-				AWS: &hyperv1.AWSPlatformSpec{
-					Region: o.AWS.Region,
-					Roles:  o.AWS.Roles,
-					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
-						VPC: o.AWS.VPCID,
-						Subnet: &hyperv1.AWSResourceReference{
-							ID: &o.AWS.SubnetID,
-						},
-						Zone: o.AWS.Zone,
-					},
-					KubeCloudControllerCreds: corev1.LocalObjectReference{Name: kubeCloudControllerCredsSecret.Name},
-					NodePoolManagementCreds:  corev1.LocalObjectReference{Name: nodePoolManagementCredsSecret.Name},
-					ResourceTags:             o.AWS.ResourceTags,
+			Platform:                         hyperv1.PlatformSpec{},
+		},
+	}
+
+	switch o.PlatformType {
+	case string(hyperv1.AWSPlatform):
+		cluster.Spec.Platform.Type = hyperv1.AWSPlatform
+		cluster.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+			Region: o.AWS.Region,
+			Roles:  o.AWS.Roles,
+			CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+				VPC: o.AWS.VPCID,
+				Subnet: &hyperv1.AWSResourceReference{
+					ID: &o.AWS.SubnetID,
+				},
+				Zone: o.AWS.Zone,
+			},
+			KubeCloudControllerCreds: corev1.LocalObjectReference{Name: kubeCloudControllerCredsSecret.Name},
+			NodePoolManagementCreds:  corev1.LocalObjectReference{Name: nodePoolManagementCredsSecret.Name},
+			ResourceTags:             o.AWS.ResourceTags,
+		}
+		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+			{
+				Service: hyperv1.APIServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.LoadBalancer,
 				},
 			},
-		},
+			{
+				Service: hyperv1.OAuthServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.OIDC,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Konnectivity,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.LoadBalancer,
+				},
+			},
+			{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+		}
+
+	case string(hyperv1.NonePlatform):
+		cluster.Spec.Platform.Type = hyperv1.NonePlatform
+		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+			{
+				Service: hyperv1.APIServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.NodePort,
+					NodePort: &hyperv1.NodePortPublishingStrategy{
+						Address: o.APIServerAddress,
+					},
+				},
+			},
+			{
+				Service: hyperv1.OAuthServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.OIDC,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Konnectivity,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+		}
 	}
 
 	var nodePool *hyperv1.NodePool

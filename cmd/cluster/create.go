@@ -31,8 +31,8 @@ type Options struct {
 	Namespace                        string
 	Name                             string
 	ReleaseImage                     string
-	PullSecretFile                   string
 	ControlPlaneOperatorImage        string
+	PullSecretFile                   string
 	AWSCredentialsFile               string
 	AdditionalTags                   []string
 	GenerateSSH                      bool
@@ -58,6 +58,8 @@ type Options struct {
 	ControlPlaneAvailabilityPolicy   string
 	InfrastructureAvailabilityPolicy string
 	EtcdStorageClass                 string
+	Platform                         string
+	APIServerAddress                 string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -72,6 +74,7 @@ func NewCreateCommand() *cobra.Command {
 		Name:                             "example",
 		ReleaseImage:                     "",
 		ControlPlaneOperatorImage:        "",
+		BaseDomain:                       "",
 		PullSecretFile:                   "",
 		AWSCredentialsFile:               "",
 		SSHKeyFile:                       "",
@@ -91,6 +94,8 @@ func NewCreateCommand() *cobra.Command {
 		ControlPlaneAvailabilityPolicy:   "SingleReplica",
 		InfrastructureAvailabilityPolicy: "HighlyAvailable",
 		EtcdStorageClass:                 "",
+		Platform:                         string(hyperv1.AWSPlatform),
+		APIServerAddress:                 "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -120,6 +125,8 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
 	cmd.Flags().StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
+	cmd.Flags().StringVar(&opts.Platform, "platform", opts.Platform, "The platform to use for the cluster. Currently only supports 'AWS' and 'None'")
+	cmd.Flags().StringVar(&opts.APIServerAddress, "external-api-server-address", opts.APIServerAddress, "The external API Server Addreess when using platform none")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -212,20 +219,22 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		if len(infraID) == 0 {
 			infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
 		}
-		opt := awsinfra.CreateInfraOptions{
-			Region:             opts.Region,
-			InfraID:            infraID,
-			AWSCredentialsFile: opts.AWSCredentialsFile,
-			Name:               opts.Name,
-			BaseDomain:         opts.BaseDomain,
-			AdditionalTags:     opts.AdditionalTags,
-		}
-		infra, err = opt.CreateInfra(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create infra: %w", err)
+
+		if opts.Platform == string(hyperv1.AWSPlatform) {
+			opt := awsinfra.CreateInfraOptions{
+				Region:             opts.Region,
+				InfraID:            infraID,
+				AWSCredentialsFile: opts.AWSCredentialsFile,
+				Name:               opts.Name,
+				BaseDomain:         opts.BaseDomain,
+				AdditionalTags:     opts.AdditionalTags,
+			}
+			infra, err = opt.CreateInfra(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to create infra: %w", err)
+			}
 		}
 	}
-
 	var iamInfo *awsinfra.CreateIAMOutput
 	if len(opts.IAMJSON) > 0 {
 		rawIAM, err := ioutil.ReadFile(opts.IAMJSON)
@@ -237,17 +246,22 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			return fmt.Errorf("failed to load infra json: %w", err)
 		}
 	} else {
-		opt := awsinfra.CreateIAMOptions{
-			Region:             opts.Region,
-			AWSCredentialsFile: opts.AWSCredentialsFile,
-			InfraID:            infra.InfraID,
-			IssuerURL:          opts.IssuerURL,
-			AdditionalTags:     opts.AdditionalTags,
+		if opts.Platform == string(hyperv1.AWSPlatform) {
+			opt := awsinfra.CreateIAMOptions{
+				Region:             opts.Region,
+				AWSCredentialsFile: opts.AWSCredentialsFile,
+				InfraID:            infra.InfraID,
+				IssuerURL:          opts.IssuerURL,
+				AdditionalTags:     opts.AdditionalTags,
+			}
+			iamInfo, err = opt.CreateIAM(ctx, client)
+			if err != nil {
+				return fmt.Errorf("failed to create iam: %w", err)
+			}
 		}
-		iamInfo, err = opt.CreateIAM(ctx, client)
-		if err != nil {
-			return fmt.Errorf("failed to create iam: %w", err)
-		}
+	}
+	if opts.Platform == string(hyperv1.NonePlatform) && opts.APIServerAddress == "" {
+		return fmt.Errorf("failed to get the External API Server. Use --external-api-server-address to specify a valid address")
 	}
 
 	tagMap, err := util.ParseAWSTags(opts.AdditionalTags)
@@ -261,7 +275,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 
 	exampleObjects := apifixtures.ExampleOptions{
 		Namespace:                        opts.Namespace,
-		Name:                             infra.Name,
+		Name:                             opts.Name,
 		Annotations:                      annotations,
 		ReleaseImage:                     opts.ReleaseImage,
 		PullSecret:                       pullSecret,
@@ -269,18 +283,30 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		SSHPublicKey:                     sshKey,
 		SSHPrivateKey:                    sshPrivateKey,
 		NodePoolReplicas:                 opts.NodePoolReplicas,
-		InfraID:                          infra.InfraID,
-		ComputeCIDR:                      infra.ComputeCIDR,
-		BaseDomain:                       infra.BaseDomain,
-		PublicZoneID:                     infra.PublicZoneID,
-		PrivateZoneID:                    infra.PrivateZoneID,
+		InfraID:                          opts.InfraID,
+		ComputeCIDR:                      "10.0.0.0/16",
+		BaseDomain:                       opts.BaseDomain,
+		PublicZoneID:                     "",
+		PrivateZoneID:                    "",
 		NetworkType:                      hyperv1.NetworkType(opts.NetworkType),
 		FIPS:                             opts.FIPS,
 		AutoRepair:                       opts.AutoRepair,
 		ControlPlaneAvailabilityPolicy:   hyperv1.AvailabilityPolicy(opts.ControlPlaneAvailabilityPolicy),
 		InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(opts.InfrastructureAvailabilityPolicy),
 		EtcdStorageClass:                 opts.EtcdStorageClass,
-		AWS: apifixtures.ExampleAWSOptions{
+		PlatformType:                     opts.Platform,
+		APIServerAddress:                 opts.APIServerAddress,
+	}
+
+	if opts.Platform == string(hyperv1.AWSPlatform) {
+		exampleObjects.Name = infra.Name
+		exampleObjects.IssuerURL = iamInfo.IssuerURL
+		exampleObjects.InfraID = infra.InfraID
+		exampleObjects.ComputeCIDR = infra.ComputeCIDR
+		exampleObjects.BaseDomain = infra.BaseDomain
+		exampleObjects.PublicZoneID = infra.PublicZoneID
+		exampleObjects.PrivateZoneID = infra.PrivateZoneID
+		exampleObjects.AWS = apifixtures.ExampleAWSOptions{
 			Region:                                 infra.Region,
 			Zone:                                   infra.Zone,
 			VPCID:                                  infra.VPCID,
@@ -297,12 +323,13 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			RootVolumeType:                         opts.RootVolumeType,
 			RootVolumeIOPS:                         opts.RootVolumeIOPS,
 			ResourceTags:                           tags,
-		},
-	}.Resources().AsObjects()
+		}
+	}
+	objects := exampleObjects.Resources().AsObjects()
 
 	switch {
 	case opts.Render:
-		for _, object := range exampleObjects {
+		for _, object := range objects {
 			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
 			if err != nil {
 				return fmt.Errorf("failed to encode objects: %w", err)
@@ -310,9 +337,9 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			fmt.Println("---")
 		}
 	default:
-		for _, object := range exampleObjects {
+		for _, object := range objects {
 			key := crclient.ObjectKeyFromObject(object)
-			object.SetLabels(map[string]string{util.AutoInfraLabelName: infra.InfraID})
+			object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleObjects.InfraID})
 			if err := client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli")); err != nil {
 				return fmt.Errorf("failed to apply object %q: %w", key, err)
 			}

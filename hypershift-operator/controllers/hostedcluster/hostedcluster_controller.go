@@ -827,7 +827,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	switch hcluster.Spec.Platform.Type {
 	// We run the AWS controller for NonePlatform for now
 	// So nodePools can be created to expose ign endpoints that can be used for byo machines to join.
-	case hyperv1.AWSPlatform, hyperv1.NonePlatform:
+	case hyperv1.AWSPlatform:
 		// Reconcile external AWSCluster
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 			r.Log.Error(err, "failed to get control plane ref")
@@ -859,6 +859,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		infraCR = ibmCluster
 	default:
 		// TODO(alberto): for platform None implement back a "pass through" infra CR similar to externalInfraCluster.
+		r.Log.Info("Platform None")
+		infraCR = nil //TODO create thirdparty object for NonePlatform
 	}
 
 	// Reconcile cluster prometheus RBAC resources if enabled
@@ -2018,10 +2020,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	cluster.Annotations = map[string]string{
 		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
-	gvk, err := apiutil.GVKForObject(infraCR, api.Scheme)
-	if err != nil {
-		return err
-	}
+
 	cluster.Spec = capiv1.ClusterSpec{
 		ControlPlaneEndpoint: capiv1.APIEndpoint{},
 		ControlPlaneRef: &corev1.ObjectReference{
@@ -2030,14 +2029,23 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 			Namespace:  hcp.Namespace,
 			Name:       hcp.Name,
 		},
-		InfrastructureRef: &corev1.ObjectReference{
+		InfrastructureRef: &corev1.ObjectReference{},
+	}
+
+	if infraCR != nil {
+		var gvk schema.GroupVersionKind
+		gvk, err := apiutil.GVKForObject(infraCR, api.Scheme)
+		if err != nil {
+			return err
+		}
+
+		cluster.Spec.InfrastructureRef = &corev1.ObjectReference{
 			APIVersion: gvk.GroupVersion().String(),
 			Kind:       gvk.Kind,
 			Namespace:  infraCR.GetNamespace(),
 			Name:       infraCR.GetName(),
-		},
+		}
 	}
-
 	return nil
 }
 
