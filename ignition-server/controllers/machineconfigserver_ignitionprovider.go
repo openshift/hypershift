@@ -258,6 +258,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 		Spec: corev1.PodSpec{
 			ServiceAccountName:            sa.Name,
 			TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
 			Tolerations: []corev1.Toleration{
 				{
 					Key:      "multi-az-worker",
