@@ -160,7 +160,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			Timeout: 5 * time.Second,
 		}
 		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s:8443", mcsPodHeadlessDomain), nil)
+		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s:8443/config/master", mcsPodHeadlessDomain), nil)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
