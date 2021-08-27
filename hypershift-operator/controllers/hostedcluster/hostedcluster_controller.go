@@ -24,8 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	capiibmv1 "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	"github.com/openshift/hypershift/api"
 	"go.opentelemetry.io/otel"
