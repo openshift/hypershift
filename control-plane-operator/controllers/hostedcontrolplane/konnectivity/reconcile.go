@@ -97,7 +97,6 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			cpath(konnectivityVolumeServerCerts().Name, corev1.TLSPrivateKeyKey),
 			"--server-ca-cert",
 			cpath(konnectivityVolumeServerCerts().Name, pki.CASignerCertMapKey),
-			"--mode=grpc",
 			"--server-port",
 			strconv.Itoa(KonnectivityServerLocalPort),
 			"--agent-port",
