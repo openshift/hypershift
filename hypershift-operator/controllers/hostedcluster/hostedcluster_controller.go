@@ -853,14 +853,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Platform.Type = hyperv1.IBMCloudPlatform
 	}
 
-	// Only update release image (triggering a new rollout) after existing rollouts
-	// have reached a terminal state.
-	rolloutComplete := hcluster.Status.Version != nil &&
-		hcluster.Status.Version.History != nil &&
-		hcluster.Status.Version.History[0].State == configv1.CompletedUpdate
-	if rolloutComplete {
-		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
-	}
+	// always reconcile the release image (facilitates rolling forward)
+	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 
 	hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
 	return nil
@@ -2247,7 +2241,7 @@ func computeClusterVersionStatus(clock clock.Clock, hcluster *hyperv1.HostedClus
 	// quite right because the intent here is to identify a terminal rollout
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
-	hcpRolloutComplete := hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage
+	hcpRolloutComplete := (hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
 	if !hcpRolloutComplete {
 		return version
 	}
