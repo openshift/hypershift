@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -55,6 +56,7 @@ type ExampleOptions struct {
 	Annotations                      map[string]string
 	FIPS                             bool
 	AutoRepair                       bool
+	EtcdStorageClass                 string
 	AWS                              ExampleAWSOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
@@ -170,6 +172,15 @@ aws_secret_access_key = %s
 			},
 			Etcd: hyperv1.EtcdSpec{
 				ManagementType: hyperv1.Managed,
+				Managed: &hyperv1.ManagedEtcdSpec{
+					Storage: hyperv1.ManagedEtcdStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdStorage,
+						PersistentVolume: hyperv1.PersistentVolumeEtcdStorageSpec{
+							StorageClassName: o.EtcdStorageClass,
+							Size:             resource.MustParse("4Gi"),
+						},
+					},
+				},
 			},
 			Networking: hyperv1.ClusterNetworking{
 				ServiceCIDR: "172.31.0.0/16",

@@ -1,6 +1,8 @@
 package etcd
 
 import (
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -10,15 +12,18 @@ import (
 )
 
 type EtcdParams struct {
-	ClusterVersion            string
-	EtcdOperatorImage         string
-	OwnerRef                  config.OwnerRef `json:"ownerRef"`
-	OperatorDeploymentConfig  config.DeploymentConfig
-	EtcdDeploymentConfig      config.DeploymentConfig
-	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec"`
+	EtcdOperatorImage string
+
+	OwnerRef         config.OwnerRef `json:"ownerRef"`
+	DeploymentConfig config.DeploymentConfig
+
+	SnapshotInterval time.Duration
+	SnapshotTTL      time.Duration
+
+	ManagedEtcdSpec hyperv1.ManagedEtcdSpec
 }
 
-var etcdLabels = map[string]string{
+var etcdPodSelector = map[string]string{
 	"app": "etcd",
 }
 
@@ -26,20 +31,10 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 	p := &EtcdParams{
 		EtcdOperatorImage: images["etcd-operator"],
 		OwnerRef:          config.OwnerRefFrom(hcp),
-		ClusterVersion:    config.DefaultEtcdClusterVersion,
+		SnapshotInterval:  30 * time.Minute,
+		SnapshotTTL:       2 * time.Hour,
 	}
-	p.OperatorDeploymentConfig.Resources = config.ResourcesSpec{
-		etcdOperatorContainer().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("50Mi"),
-				corev1.ResourceCPU:    resource.MustParse("10m"),
-			},
-		},
-	}
-	p.OperatorDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.OperatorDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.OperatorDeploymentConfig.SetControlPlaneIsolation(hcp)
-	p.EtcdDeploymentConfig.Resources = config.ResourcesSpec{
+	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		etcdContainer().Name: {
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("600Mi"),
@@ -47,23 +42,37 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
-	if p.EtcdDeploymentConfig.AdditionalLabels == nil {
-		p.EtcdDeploymentConfig.AdditionalLabels = make(map[string]string)
+	if p.DeploymentConfig.AdditionalLabels == nil {
+		p.DeploymentConfig.AdditionalLabels = make(map[string]string)
 	}
-	p.EtcdDeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponent] = "etcd"
-	p.EtcdDeploymentConfig.Scheduling.PriorityClass = config.EtcdPriorityClass
-	p.EtcdDeploymentConfig.SetColocationAnchor(hcp)
-	p.EtcdDeploymentConfig.SetControlPlaneIsolation(hcp)
-	p.OperatorDeploymentConfig.Replicas = 1
+	p.DeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponent] = "etcd"
+	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	p.DeploymentConfig.SetMultizoneSpread(etcdPodSelector)
+	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
+	p.DeploymentConfig.SetColocationAnchor(hcp)
+
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
-		p.EtcdDeploymentConfig.Replicas = 3
-		p.EtcdDeploymentConfig.SetMultizoneSpread(etcdLabels)
+		p.DeploymentConfig.Replicas = 3
 	default:
-		p.EtcdDeploymentConfig.Replicas = 1
+		// TODO: handle non-HA
+		p.DeploymentConfig.Replicas = 3
 	}
-	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed && hcp.Spec.Etcd.Managed != nil {
-		p.PersistentVolumeClaimSpec = hcp.Spec.Etcd.Managed.PersistentVolumeClaimSpec
+
+	// TODO: Figure out validation and defaulting sooner than this point
+	if hcp.Spec.Etcd.Managed != nil {
+		p.ManagedEtcdSpec = *hcp.Spec.Etcd.Managed
+	} else {
+		p.ManagedEtcdSpec = hyperv1.ManagedEtcdSpec{
+			Storage: hyperv1.ManagedEtcdStorageSpec{
+				Type: hyperv1.PersistentVolumeEtcdStorage,
+				PersistentVolume: hyperv1.PersistentVolumeEtcdStorageSpec{
+					StorageClassName: "gp2",
+					Size:             resource.MustParse("4Gi"),
+				},
+			},
+		}
 	}
+
 	return p
 }
