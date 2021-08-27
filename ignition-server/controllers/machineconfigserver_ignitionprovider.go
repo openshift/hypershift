@@ -131,7 +131,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 		// Get  Machine config certs
 		var caCert []byte
-		var cert tls.Certificate
 		var ok bool
 		machineConfigServerCert := manifests.MachineConfigServerCert(p.Namespace)
 		if err := p.Client.Get(ctx, client.ObjectKeyFromObject(machineConfigServerCert), machineConfigServerCert); err != nil {
@@ -148,7 +147,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		client := &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					RootCAs:      caCertPool,
+					RootCAs: caCertPool,
 				},
 			},
 			Timeout: 5 * time.Second,
