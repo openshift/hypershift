@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -70,7 +73,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
 	mcsPod := machineConfigServerPod(p.Namespace, img,
 		mcsServiceAccount, mcsConfigConfigMap)
-
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
 		var deleteErrors []error
@@ -116,7 +118,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			// We don't return the error here so we want to keep retrying.
 			return false, nil
 		}
-
 		// If the machine config server is not ready we return and wait for an update event to reconcile.
 		mcsReady := false
 		for _, cond := range mcsPod.Status.Conditions {
@@ -128,31 +129,55 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if mcsPod.Status.PodIP == "" || !mcsReady {
 			return false, nil
 		}
-
-		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%s/config/master", mcsPod.Status.PodIP, "8080"), nil)
+		// Get  Machine config certs
+		var caCert, tlsCert, tlsKey []byte
+		var cert tls.Certificate
+		var ok bool
+		machineConfigServerCert := manifests.MachineConfigServerCert(p.Namespace)
+		if err := p.Client.Get(ctx, client.ObjectKeyFromObject(machineConfigServerCert), machineConfigServerCert); err != nil {
+			return false, fmt.Errorf("failed to get machine config server secret: %w", err)
+		}
+		if caCert, ok = machineConfigServerCert.Data["ca.crt"]; !ok {
+			return false, fmt.Errorf("failed to get Certificate from mcs-crt: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+		if tlsCert, ok = machineConfigServerCert.Data["tls.crt"]; !ok {
+			return false, fmt.Errorf("failed to get tls cert: %w", err)
+		}
+		if tlsKey, ok = machineConfigServerCert.Data["tls.key"]; !ok {
+			return false, fmt.Errorf("failed to get tls key: %w", err)
+		}
+		cert, err := tls.X509KeyPair(tlsCert, tlsKey)
 		if err != nil {
-			return false, fmt.Errorf("error building http request for machine config server pod: %w", err)
+			return false, fmt.Errorf("failed to load cert: %w", err)
+		}
+		client := &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					RootCAs:      caCertPool,
+					Certificates: []tls.Certificate{cert},
+				},
+			},
+			Timeout: 5 * time.Second,
+		}
+		// Build proxy request.
+		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace), nil)
+		if err != nil {
+			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
 		// We pass expected Headers to return the right config version.
 		// https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
 		// https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
 		// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
 		proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
-
-		// Send proxy request.
-		client := &http.Client{
-			Timeout: 5 * time.Second,
-		}
 		res, err := client.Do(proxyReq)
 		if err != nil {
-			return false, fmt.Errorf("error sending http request for machine config server pod: %w", err)
+			return false, fmt.Errorf("error sending https request for machine config server pod: %w", err)
 		}
-
 		if res.StatusCode != http.StatusOK {
 			return false, fmt.Errorf("request to the machine config server did not returned a 200, this is unexpected")
 		}
-
 		defer res.Body.Close()
 		payload, err = ioutil.ReadAll(res.Body)
 		if err != nil {
@@ -227,6 +252,9 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:    namespace,
 			GenerateName: resourceGenerateName,
+			Labels: map[string]string{
+				"app": "machine-config-server",
+			},
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName:            sa.Name,
@@ -340,6 +368,11 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 						{
 							Name:          "http",
 							ContainerPort: 8080,
+							Protocol:      corev1.ProtocolTCP,
+						},
+						{
+							Name:          "https",
+							ContainerPort: 8443,
 							Protocol:      corev1.ProtocolTCP,
 						},
 					},
