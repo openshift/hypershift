@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
@@ -478,12 +479,56 @@ type EtcdSpec struct {
 }
 
 type ManagedEtcdSpec struct {
+	// Storage configures how etcd data is persisted.
+	Storage ManagedEtcdStorageSpec `json:"storage"`
+}
 
-	//TODO: Ultimately backup policies, etc can be defined here.
+// +kubebuilder:validation:Enum=PersistentVolume
+type ManagedEtcdStorageType string
 
-	// PersistentVolumeClaimSpec provides a PersistentVolumeClaimSpec that allows the managed etcd to use persistent storage
+const (
+	// PersistentVolumeEtcdStorage uses PersistentVolumes for etcd storage.
+	PersistentVolumeEtcdStorage ManagedEtcdStorageType = "PersistentVolume"
+)
+
+var (
+	DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("4Gi")
+)
+
+// ManagedEtcdStorageSpec describes the storage configuration for etcd data.
+type ManagedEtcdStorageSpec struct {
+	// Type is the kind of persistent storage implementation to use for etcd.
+	//
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +unionDiscriminator
+	Type ManagedEtcdStorageType `json:"type"`
+
+	// PersistentVolume is the configuration for PersistentVolume etcd storage.
+	// With this implementation, a PersistentVolume will be allocated for every
+	// etcd member (either 1 or 3 depending on the HostedCluster control plane
+	// availability configuration).
+	//
 	// +optional
-	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
+	PersistentVolume *PersistentVolumeEtcdStorageSpec `json:"persistentVolume,omitempty"`
+}
+
+// PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
+// etcd storage.
+type PersistentVolumeEtcdStorageSpec struct {
+	// StorageClassName is the StorageClass of the data volume for each etcd member.
+	//
+	// See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1.
+	//
+	// +optional
+	// +immutable
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// Size is the minimum size of the data volume for each etcd member.
+	//
+	// +optional
+	// +kubebuilder:default="4Gi"
+	Size *resource.Quantity `json:"size,omitempty"`
 }
 
 // UnmanagedEtcdSpec defines metadata that enables the Openshift controllers to connect to the external etcd cluster

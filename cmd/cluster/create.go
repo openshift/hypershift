@@ -57,6 +57,7 @@ type Options struct {
 	RootVolumeSize                   int64
 	ControlPlaneAvailabilityPolicy   string
 	InfrastructureAvailabilityPolicy string
+	EtcdStorageClass                 string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -89,6 +90,7 @@ func NewCreateCommand() *cobra.Command {
 		RootVolumeIOPS:                   0,
 		ControlPlaneAvailabilityPolicy:   "SingleReplica",
 		InfrastructureAvailabilityPolicy: "HighlyAvailable",
+		EtcdStorageClass:                 "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -117,6 +119,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InfrastructureAvailabilityPolicy, "infra-availability-policy", opts.InfrastructureAvailabilityPolicy, "Availability policy for infrastructure services in guest cluster. Supported options: SingleReplica, HighlyAvailable")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
+	cmd.Flags().StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -276,6 +279,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		AutoRepair:                       opts.AutoRepair,
 		ControlPlaneAvailabilityPolicy:   hyperv1.AvailabilityPolicy(opts.ControlPlaneAvailabilityPolicy),
 		InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(opts.InfrastructureAvailabilityPolicy),
+		EtcdStorageClass:                 opts.EtcdStorageClass,
 		AWS: apifixtures.ExampleAWSOptions{
 			Region:                                 infra.Region,
 			Zone:                                   infra.Zone,

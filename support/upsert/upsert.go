@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	routev1 "github.com/openshift/api/route/v1"
-	etcdv1beta2 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -66,8 +65,6 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 		defaultServiceSpec(&existingTyped.Spec, &obj.(*corev1.Service).Spec)
 	case *routev1.Route:
 		defaultRouteSpec(&existingTyped.Spec, &obj.(*routev1.Route).Spec)
-	case *etcdv1beta2.EtcdCluster:
-		defaultEtcdClusterSpec(&existingTyped.Spec, &obj.(*etcdv1beta2.EtcdCluster).Spec)
 	}
 
 	if equality.Semantic.DeepEqual(existing, obj) {
@@ -103,12 +100,6 @@ func mutate(f controllerutil.MutateFn, key crclient.ObjectKey, obj crclient.Obje
 // * https://github.com/kubernetes/kubernetes/blob/e5976909c6fb129228a67515e0f86336a53884f0/pkg/apis/apps/v1/zz_generated.defaults.go
 // * https://github.com/openshift/openshift-apiserver/blob/c3b45895167907f149184fb170e4cae1bf28576f/pkg/route/apis/route/v1/defaults.go
 // * https://github.com/kubernetes/kubernetes/blob/e5976909c6fb129228a67515e0f86336a53884f0/pkg/apis/batch/v1/zz_generated.defaults.go
-
-func defaultEtcdClusterSpec(original, mutated *etcdv1beta2.ClusterSpec) {
-	if mutated.Repository == "" {
-		mutated.Repository = original.Repository
-	}
-}
 
 func defaultRouteSpec(original, mutated *routev1.RouteSpec) {
 	if mutated.To.Weight == nil {

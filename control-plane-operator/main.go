@@ -50,8 +50,8 @@ func main() {
 }
 
 const (
-	// FIXME: Set to upstream image when DNS resolution is fixed for etcd service
-	etcdOperatorImage = "quay.io/hypershift/etcd-operator:v0.9.4-patched"
+	// TODO: This should come from an OCP build.
+	defaultEtcdOperatorImage = "quay.io/hypershift/etcd-cloud-operator:latest"
 	// TODO: Include konnectivity image in release payload
 	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
@@ -68,6 +68,7 @@ func NewStartCommand() *cobra.Command {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var hostedClusterConfigOperatorImage string
+	var etcdOperatorImage string
 	var inCluster bool
 	var enableCIDebugOutput bool
 
@@ -78,6 +79,7 @@ func NewStartCommand() *cobra.Command {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image. (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&etcdOperatorImage, "etcd-operator-image", defaultEtcdOperatorImage, "The etcd-operator image (defaults to the same image as this operator if running in a deployment)")
 	cmd.Flags().BoolVar(&inCluster, "in-cluster", true, "If false, the operator will be assumed to be running outside a kube "+
 		"cluster and will make some internal decisions to ease local development (e.g. using external endpoints where possible"+
 		"to avoid assuming access to the service network)")
@@ -121,10 +123,9 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to create kube client")
 			os.Exit(1)
 		}
-		lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string) (string, error) {
-			if len(hostedClusterConfigOperatorImage) > 0 {
-				setupLog.Info("using operator image from arguments")
-				return hostedClusterConfigOperatorImage, nil
+		lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string, overrideValue string) (string, error) {
+			if len(overrideValue) > 0 {
+				return overrideValue, nil
 			}
 			deployment, err := deployments.Get(context.TODO(), name, metav1.GetOptions{})
 			if err != nil {
@@ -139,12 +140,12 @@ func NewStartCommand() *cobra.Command {
 			}
 			return "", fmt.Errorf("couldn't locate operator container on deployment")
 		}
-		hostedClusterConfigOperatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName)
+		hostedClusterConfigOperatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, hostedClusterConfigOperatorImage)
 		if err != nil {
 			setupLog.Error(err, fmt.Sprintf("failed to find operator image: %s", err), "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
-		setupLog.Info("using operator image", "operator-image", hostedClusterConfigOperatorImage)
+		setupLog.Info("discovered hosted cluster config operator image", "-image", hostedClusterConfigOperatorImage)
 
 		// Use the control-plane-operator's image for the socks5 proxy image as well
 		socks5ProxyImage := hostedClusterConfigOperatorImage
