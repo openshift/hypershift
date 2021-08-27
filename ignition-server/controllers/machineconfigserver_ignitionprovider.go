@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -259,6 +260,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			ServiceAccountName:            sa.Name,
 			TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
 			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
+			Subdomain:                     ignitionserver.MCSService("").Name,
 			Tolerations: []corev1.Toleration{
 				{
 					Key:      "multi-az-worker",
