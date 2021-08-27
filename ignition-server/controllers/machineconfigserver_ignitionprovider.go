@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"time"
 
@@ -129,6 +130,12 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if mcsPod.Status.PodIP == "" || !mcsReady {
 			return false, nil
 		}
+		mcsPodHeadlessDomain := fmt.Sprintf("%s.machine-config-server.%s.svc.cluster.local", mcsPod.Name, p.Namespace)
+		ips, err := net.LookupIP(mcsPodHeadlessDomain)
+		if err != nil || len(ips) == 0 {
+			return false, nil
+		}
+
 		// Get  Machine config certs
 		var caCert []byte
 		var ok bool
@@ -153,7 +160,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			Timeout: 5 * time.Second,
 		}
 		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443", mcsPod.Name, p.Namespace), nil)
+		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s:8443", mcsPodHeadlessDomain), nil)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
@@ -164,6 +171,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
 		res, err := client.Do(proxyReq)
 		if err != nil {
+			//logging error and not erroring so polling loop kicks back in
 			return false, fmt.Errorf("error sending https request for machine config server pod: %w", err)
 		}
 		if res.StatusCode != http.StatusOK {
