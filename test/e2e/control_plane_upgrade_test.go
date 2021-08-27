@@ -16,10 +16,6 @@ import (
 )
 
 func TestUpgradeControlPlane(t *testing.T) {
-	//if !globalOpts.Enabled {
-	//	t.Skipf("upgrade test is disabled")
-	//}
-
 	t.Parallel()
 	g := NewWithT(t)
 
