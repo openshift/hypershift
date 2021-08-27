@@ -83,7 +83,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 			},
 		},
 	}
-	params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels)
+	params.OpenShiftAPIServerDeploymentConfig.SetColocation(hcp)
 	params.OpenShiftAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.OpenShiftAPIServerDeploymentConfig.SetControlPlaneIsolation(hcp)
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
@@ -131,7 +131,6 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		},
 	}
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetColocation(hcp)
-	params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels)
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.Etcd.ManagementType {
@@ -146,6 +145,8 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	case hyperv1.HighlyAvailable:
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 3
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 3
+		params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels)
+		params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels)
 	default:
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 1
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 1

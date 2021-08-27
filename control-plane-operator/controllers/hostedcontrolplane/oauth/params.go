@@ -122,12 +122,12 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 			SuccessThreshold:    1,
 		},
 	}
-	p.DeploymentConfig.SetMultizoneSpread(oauthServerLabels)
 	p.DeploymentConfig.SetColocation(hcp)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
+		p.DeploymentConfig.SetMultizoneSpread(oauthServerLabels)
 		p.Replicas = 3
 	default:
 		p.Replicas = 1
