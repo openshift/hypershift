@@ -1040,7 +1040,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj client.Object)
 	}
 
 	nodePoolList := &hyperv1.NodePoolList{}
-	if err := r.List(context.Background(), nodePoolList); err != nil {
+	if err := r.List(context.Background(), nodePoolList, client.InNamespace(hc.Namespace)); err != nil {
 		ctrl.LoggerFrom(context.Background()).Error(err, "Failed to list nodePools")
 		return result
 	}
