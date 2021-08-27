@@ -149,7 +149,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
 					RootCAs:      caCertPool,
-					Certificates: []tls.Certificate{cert},
 				},
 			},
 			Timeout: 5 * time.Second,
