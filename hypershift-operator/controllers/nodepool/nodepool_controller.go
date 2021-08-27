@@ -84,10 +84,11 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
 		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
-		// TODO (alberto): Let ConfigMaps referenced by the spec.config and also the core ones to trigger reconciliation.
 		Build(r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
@@ -1069,6 +1070,45 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj client.Object)
 			result = append(result,
 				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
 			)
+		}
+	}
+
+	return result
+}
+
+func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reconcile.Request {
+	var result []reconcile.Request
+
+	cm, ok := obj.(*corev1.ConfigMap)
+	if !ok {
+		panic(fmt.Sprintf("Expected a ConfigMap but got a %T", obj))
+	}
+
+	// Get all NodePools in the ConfigMap Namespace.
+	nodePoolList := &hyperv1.NodePoolList{}
+	if err := r.List(context.Background(), nodePoolList, client.InNamespace(cm.Namespace)); err != nil {
+		return result
+	}
+
+	// If the ConfigMap is a core one reconcile all NodePools.
+	if _, ok := obj.GetLabels()[nodePoolCoreIgnitionConfigLabel]; ok {
+		for key := range nodePoolList.Items {
+			result = append(result,
+				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
+			)
+		}
+		return result
+	}
+
+	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
+	for key := range nodePoolList.Items {
+		for _, v := range nodePoolList.Items[key].Spec.Config {
+			if v.Name == cm.Name {
+				result = append(result,
+					reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
+				)
+				break
+			}
 		}
 	}
 
