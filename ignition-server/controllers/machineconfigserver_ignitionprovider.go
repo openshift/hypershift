@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
 	"time"
@@ -247,11 +248,11 @@ EOF
 chmod +x ./copy-ignition-config.sh
 oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh
 cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
-
+	name := fmt.Sprintf(resourceGenerateName, rand.Int31())
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    namespace,
-			GenerateName: resourceGenerateName,
+			Namespace: namespace,
+			Name:      name,
 			Labels: map[string]string{
 				"app": "machine-config-server",
 			},
@@ -261,6 +262,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
 			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
 			Subdomain:                     ignitionserver.MCSService("").Name,
+			Hostname:                      name,
 			Tolerations: []corev1.Toleration{
 				{
 					Key:      "multi-az-worker",
