@@ -35,8 +35,8 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane) *CVOParams {
 		},
 	}
 	p.DeploymentConfig.SetColocation(hcp)
-	p.DeploymentConfig.SetMultizoneSpread(cvoLabels)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	p.DeploymentConfig.Replicas = 1
 	return p
 }
