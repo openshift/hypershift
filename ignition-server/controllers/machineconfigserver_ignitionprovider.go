@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8sutilspointer "k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ IgnitionProvider = (*MCSIgnitionProvider)(nil)
@@ -38,7 +37,7 @@ const (
 // MachineConfigServer pods to build ignition payload contents
 // out of a given releaseImage and a config string containing 0..N MachineConfig yaml definitions.
 type MCSIgnitionProvider struct {
-	Client          ctrlclient.Client
+	Client          client.Client
 	ReleaseProvider releaseinfo.Provider
 	Namespace       string
 }
@@ -147,7 +146,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		var cert tls.Certificate
 		var ok bool
 		machineConfigServerCert := manifests.MachineConfigServerCert(p.Namespace)
-		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(machineConfigServerCert), machineConfigServerCert); err != nil {
+		if err := p.Client.Get(ctx, client.ObjectKeyFromObject(machineConfigServerCert), machineConfigServerCert); err != nil {
 			return false, fmt.Errorf("failed to get machine config server secret: %w", err)
 		}
 		if caCert, ok = machineConfigServerCert.Data["ca.crt"]; !ok {
