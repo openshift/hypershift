@@ -9,10 +9,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -133,6 +136,12 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			return false, nil
 		}
 
+		mcsPodHeadlessDomain := fmt.Sprintf("%s.machine-config-server.%s.svc.cluster.local", mcsPod.Name, p.Namespace)
+		ips, err := net.LookupIP(mcsPodHeadlessDomain)
+		if err != nil || len(ips) == 0 {
+			return false, nil
+		}
+
 		// Get  Machine config certs
 		var caCert, tlsCert, tlsKey []byte
 		var cert tls.Certificate
@@ -152,7 +161,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if tlsKey, ok = machineConfigServerCert.Data["tls.key"]; !ok {
 			return false, fmt.Errorf("failed to get tls key: %w", err)
 		}
-		cert, err := tls.X509KeyPair(tlsCert, tlsKey)
+		cert, err = tls.X509KeyPair(tlsCert, tlsKey)
 		if err != nil {
 			return false, fmt.Errorf("failed to load cert: %w", err)
 		}
@@ -167,7 +176,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 
 		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s.machine-config-server.%s.svc.cluster.local:8443/config/master", mcsPod.Name, p.Namespace), nil)
+		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s:8443/config/master", mcsPodHeadlessDomain), nil)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
@@ -253,11 +262,11 @@ EOF
 chmod +x ./copy-ignition-config.sh
 oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh
 cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
-
+	name := fmt.Sprintf("machine-config-server-%d", rand.Int31())
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    namespace,
-			GenerateName: resourceGenerateName,
+			Namespace: namespace,
+			Name:      name,
 			Labels: map[string]string{
 				"app": "machine-config-server",
 			},
@@ -265,6 +274,9 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 		Spec: corev1.PodSpec{
 			ServiceAccountName:            sa.Name,
 			TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
+			Subdomain:                     ignitionserver.MCSService("").Name,
+			Hostname:                      name,
 			Tolerations: []corev1.Toleration{
 				{
 					Key:      "multi-az-worker",
@@ -273,7 +285,6 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					Effect:   "NoSchedule",
 				},
 			},
-			Hostname: GenerateName,
 			InitContainers: []corev1.Container{
 				{
 					Image: images["machine-config-operator"],
