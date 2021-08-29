@@ -9,7 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
-	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
+	etcdv1 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
 )
 
 func ReconcileOperatorServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {

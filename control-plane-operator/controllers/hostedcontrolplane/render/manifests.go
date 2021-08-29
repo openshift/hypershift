@@ -9,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
-	"github.com/openshift/hypershift/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
 func RenderClusterManifests(params *ClusterParams, image *releaseinfo.ReleaseImage, pullSecret []byte, secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) (map[string][]byte, error) {
@@ -58,7 +58,6 @@ func newClusterManifestContext(images, versions map[string]string, params interf
 
 func (c *clusterManifestContext) setupManifests() {
 	c.hostedClusterConfigOperator()
-	c.clusterVersionOperator()
 	c.clusterBootstrap()
 	c.registry()
 	c.operatorLifecycleManager()
@@ -74,12 +73,6 @@ func (c *clusterManifestContext) hostedClusterConfigOperator() {
 		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
 		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
 		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) clusterVersionOperator() {
-	c.addManifestFiles(
-		"cluster-version-operator/cluster-version-operator-deployment.yaml",
 	)
 }
 
@@ -220,11 +213,6 @@ func (c *clusterManifestContext) addUserManifestFiles(name ...string) {
 
 func (c *clusterManifestContext) addUserManifest(name, content string) {
 	c.userManifests[name] = content
-}
-
-func trimFirstSegment(s string) string {
-	parts := strings.Split(s, ".")
-	return strings.Join(parts[1:], ".")
 }
 
 func userConfigMapName(file string) string {

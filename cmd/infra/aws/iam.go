@@ -481,7 +481,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 	}
 	hasRole := false
 	for _, role := range instanceProfile.Roles {
-		if aws.StringValue(role.RoleName) == aws.StringValue(role.RoleName) {
+		if aws.StringValue(role.RoleName) == roleName {
 			hasRole = true
 		}
 	}

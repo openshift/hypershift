@@ -24,8 +24,10 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
+	capiibmv1 "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	"github.com/openshift/hypershift/api"
-	capiibmv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -36,8 +38,8 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	"github.com/openshift/hypershift/certs"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/certs"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -50,7 +52,6 @@ import (
 	k8sutilspointer "k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -63,8 +64,8 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiawsv1 "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 )
 
 const (
@@ -410,13 +411,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		var src corev1.Secret
 		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name}, &src)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get provider creds %s: %w", hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to get cloud controller provider creds %s: %w", hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name, err)
 		}
 		dest := manifests.AWSKubeCloudControllerCreds(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["credentials"]
 			if !srcHasData {
-				return fmt.Errorf("hostedcluster provider credentials secret %q must have a credentials key", src.Name)
+				return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key", src.Name)
 			}
 			dest.Type = corev1.SecretTypeOpaque
 			if dest.Data == nil {
@@ -425,6 +426,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			dest.Data["credentials"] = srcData
 			return nil
 		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile cloud controller provider creds: %w", err)
+		}
 	}
 
 	// Reconcile the platform provider node pool management credentials secret by
@@ -450,13 +454,16 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			dest.Data["credentials"] = srcData
 			return nil
 		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile node pool provider creds: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane pull secret by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	{
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
@@ -472,6 +479,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			dst.Data[".dockerconfigjson"] = srcData
 			return nil
 		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane audit webhook config if specified
@@ -479,7 +489,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	{
 		if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 			var src corev1.Secret
-			if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.AuditWebhook.Name}, &src); err != nil {
+			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.AuditWebhook.Name}, &src); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to get audit webhook config %s: %w", hcluster.Spec.AuditWebhook.Name, err)
 			}
 			configData, ok := src.Data[hyperv1.AuditWebhookKubeconfigKey]
@@ -511,7 +521,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	if len(hcluster.Spec.SigningKey.Name) > 0 {
 		var src corev1.Secret
-		if err := r.Client.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &src); err != nil {
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SigningKey.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get signing key %s: %w", hcluster.Spec.SigningKey.Name, err)
 		}
 		dest := controlplaneoperator.SigningKey(controlPlaneNamespace.Name)
@@ -527,6 +537,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			dest.Data["key"] = srcData
 			return nil
 		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile signing key: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane SSH secret by resolving the source secret reference
@@ -591,7 +604,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if hcluster.Spec.Configuration != nil {
 			for _, configMapRef := range hcluster.Spec.Configuration.ConfigMapRefs {
 				sourceCM := &corev1.ConfigMap{}
-				if err := r.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef.Name}, sourceCM); err != nil {
+				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef.Name}, sourceCM); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef.Name, err)
 				}
 				destCM := &corev1.ConfigMap{}
@@ -611,7 +624,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 			for _, secretRef := range hcluster.Spec.Configuration.SecretRefs {
 				sourceSecret := &corev1.Secret{}
-				if err := r.Get(ctx, ctrlclient.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef.Name}, sourceSecret); err != nil {
+				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef.Name}, sourceSecret); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef.Name, err)
 				}
 				destSecret := &corev1.Secret{}
@@ -778,7 +791,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 
 	hcp.Annotations = map[string]string{
-		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
 	for annotationKey := range hcluster.Annotations {
 		if annotationKey == hyperv1.DisablePKIReconciliationAnnotation {
@@ -824,6 +837,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	if hcluster.Spec.Etcd.ManagementType == hyperv1.Managed && hcluster.Spec.Etcd.Managed != nil {
 		hcp.Spec.Etcd.Managed = hcluster.Spec.Etcd.Managed.DeepCopy()
+	}
+	if hcluster.Spec.ImageContentSources != nil {
+		hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
 	}
 
 	switch hcluster.Spec.Platform.Type {
@@ -894,6 +910,9 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hclu
 		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = certs.PrivateKeyToPem(key)
 		return nil
 	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi webhook tls secret: %w", err)
+	}
 
 	// Reconcile CAPI manager service account
 	capiManagerServiceAccount := clusterapi.CAPIManagerServiceAccount(controlPlaneNamespace.Name)
@@ -947,7 +966,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hclu
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, capiManagerServiceAccount, capiImage)
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, capiManagerServiceAccount, capiImage)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -995,7 +1014,7 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiAwsProviderDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2453
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, capiAwsProviderServiceAccount)
+		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, hcluster, capiAwsProviderServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider deployment: %w", err)
@@ -1058,12 +1077,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
-	restartDateAnnotation := ""
-	if _, ok := hcluster.Annotations[hyperv1.RestartDateAnnotation]; ok {
-		restartDateAnnotation = hcluster.Annotations[hyperv1.RestartDateAnnotation]
-	}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, r.HostedControlPlaneOperatorImage, controlPlaneOperatorServiceAccount, restartDateAnnotation)
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, r.HostedControlPlaneOperatorImage, controlPlaneOperatorServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1142,7 +1157,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 			if ignitionServerRoute.Annotations == nil {
 				ignitionServerRoute.Annotations = map[string]string{}
 			}
-			ignitionServerRoute.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
+			ignitionServerRoute.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
 				Termination: routev1.TLSTerminationPassthrough,
 			}
@@ -1306,10 +1321,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
-		if _, ok := hcluster.Annotations[hyperv1.RestartDateAnnotation]; ok {
-			ignitionServerDeployment.Annotations[hyperv1.RestartDateAnnotation] = hcluster.Annotations[hyperv1.RestartDateAnnotation]
-		}
-		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = ctrlclient.ObjectKeyFromObject(hcluster).String()
+		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Replicas: k8sutilspointer.Int32Ptr(1),
 			Selector: &metav1.LabelSelector{
@@ -1410,6 +1422,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 				},
 			},
 		}
+		hyperutil.SetColocation(hcluster, ignitionServerDeployment)
+		hyperutil.SetRestartAnnotation(hcluster, ignitionServerDeployment)
+		hyperutil.SetControlPlaneIsolation(hcluster, ignitionServerDeployment)
+		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
@@ -1477,7 +1493,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 		}
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -1487,7 +1503,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 	return nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, image string, sa *corev1.ServiceAccount, restartDateAnnotation string) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -1529,12 +1545,10 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, imag
 			},
 		},
 	}
-	if len(restartDateAnnotation) > 0 {
-		if deployment.Spec.Template.Annotations == nil {
-			deployment.Spec.Template.Annotations = make(map[string]string)
-		}
-		deployment.Spec.Template.Annotations[hyperv1.RestartDateAnnotation] = restartDateAnnotation
-	}
+	hyperutil.SetColocation(hc, deployment)
+	hyperutil.SetRestartAnnotation(hc, deployment)
+	hyperutil.SetControlPlaneIsolation(hc, deployment)
+	hyperutil.SetDefaultPriorityClass(deployment)
 	return nil
 }
 
@@ -1670,7 +1684,7 @@ func reconcileControlPlaneOperatorRoleBinding(binding *rbacv1.RoleBinding, role 
 func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
 	// We only create this resource once and then let CAPI own it
 	awsCluster.Annotations = map[string]string{
-		hostedClusterAnnotation:    ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		hostedClusterAnnotation:    client.ObjectKeyFromObject(hcluster).String(),
 		capiv1.ManagedByAnnotation: "external",
 	}
 
@@ -1687,9 +1701,9 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 	return nil
 }
 
-func reconcileIBMCloudCluster(ibmCluster *capiibmv1.IBMCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
+func reconcileIBMCloudCluster(ibmCluster *capiibmv1.IBMVPCCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
 	ibmCluster.Annotations = map[string]string{
-		hostedClusterAnnotation:    ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		hostedClusterAnnotation:    client.ObjectKeyFromObject(hcluster).String(),
 		capiv1.ManagedByAnnotation: "external",
 	}
 
@@ -1709,7 +1723,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	}
 
 	cluster.Annotations = map[string]string{
-		hostedClusterAnnotation: ctrlclient.ObjectKeyFromObject(hcluster).String(),
+		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
 	gvk, err := apiutil.GVKForObject(infraCR, api.Scheme)
 	if err != nil {
@@ -1734,20 +1748,17 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	return nil
 }
 
-func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, capiManagerImage string) error {
+func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, capiManagerImage string) error {
 	defaultMode := int32(420)
+	capiManagerLabels := map[string]string{"name": "cluster-api"}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"name": "cluster-api",
-			},
+			MatchLabels: capiManagerLabels,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"name": "cluster-api",
-				},
+				Labels: capiManagerLabels,
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName: sa.Name,
@@ -1800,6 +1811,10 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, sa *corev1.Se
 			},
 		},
 	}
+	hyperutil.SetColocation(hc, deployment)
+	hyperutil.SetRestartAnnotation(hc, deployment)
+	hyperutil.SetControlPlaneIsolation(hc, deployment)
+	hyperutil.SetDefaultPriorityClass(deployment)
 	return nil
 }
 
@@ -1887,20 +1902,17 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 	return nil
 }
 
-func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount) error {
+func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount) error {
 	defaultMode := int32(420)
+	capaLabels := map[string]string{"control-plane": "capa-controller-manager"}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"control-plane": "capa-controller-manager",
-			},
+			MatchLabels: capaLabels,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"control-plane": "capa-controller-manager",
-				},
+				Labels: capaLabels,
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            sa.Name,
@@ -1993,6 +2005,10 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, sa *corev
 			},
 		},
 	}
+	hyperutil.SetColocation(hc, deployment)
+	hyperutil.SetRestartAnnotation(hc, deployment)
+	hyperutil.SetControlPlaneIsolation(hc, deployment)
+	hyperutil.SetDefaultPriorityClass(deployment)
 
 	return nil
 }
@@ -2047,7 +2063,7 @@ func reconcileCAPIAWSProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -2158,6 +2174,10 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, sa *corev1.Ser
 		},
 	}
 
+	hyperutil.SetColocation(hc, deployment)
+	hyperutil.SetRestartAnnotation(hc, deployment)
+	hyperutil.SetControlPlaneIsolation(hc, deployment)
+	hyperutil.SetDefaultPriorityClass(deployment)
 	return nil
 }
 
@@ -2426,7 +2446,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	return true, nil
 }
 
-func enqueueParentHostedCluster(obj ctrlclient.Object) []reconcile.Request {
+func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
 	var hostedClusterName string
 	if obj.GetAnnotations() != nil {
 		hostedClusterName = obj.GetAnnotations()[hostedClusterAnnotation]

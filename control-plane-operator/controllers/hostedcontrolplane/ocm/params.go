@@ -9,10 +9,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-const (
-	DefaultPriorityClass = "system-node-critical"
-)
-
 type OpenShiftControllerManagerParams struct {
 	OpenShiftControllerManagerImage string              `json:"openshiftControllerManagerImage"`
 	DockerBuilderImage              string              `json:"dockerBuilderImage"`
@@ -32,7 +28,7 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: DefaultPriorityClass,
+			PriorityClass: config.DefaultPriorityClass,
 		},
 		Resources: map[string]corev1.ResourceRequirements{
 			ocmContainerMain().Name: {
@@ -44,12 +40,12 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 		},
 	}
 	params.DeploymentConfig.SetColocation(hcp)
-	params.DeploymentConfig.SetMultizoneSpread(openShiftControllerManagerLabels)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.DeploymentConfig.Replicas = 3
+		params.DeploymentConfig.SetMultizoneSpread(openShiftControllerManagerLabels)
 	default:
 		params.DeploymentConfig.Replicas = 1
 	}

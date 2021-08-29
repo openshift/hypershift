@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	DefaultPriorityClass = "system-node-critical"
-	healthPort           = 2041
+	healthPort                      = 2041
+	systemNodeCriticalPriorityClass = "system-node-critical"
 )
 
 type KonnectivityParams struct {
@@ -59,7 +59,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.ServerDeploymentConfig.Replicas = 1
 	p.ServerDeploymentConfig.SetColocation(hcp)
-	p.ServerDeploymentConfig.SetMultizoneSpread(konnectivityServerLabels)
 	p.ServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.ServerDeploymentConfig.SetControlPlaneIsolation(hcp)
 
@@ -89,6 +88,9 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.AgentDeploymentConfig.Replicas = 1
 	p.AgentDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	p.AgentDeploymentConfig.SetColocation(hcp)
+	p.AgentDeploymentConfig.SetControlPlaneIsolation(hcp)
+
 	p.AgentDeamonSetConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{
@@ -98,7 +100,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.AgentDeamonSetConfig.Scheduling = config.Scheduling{
-		PriorityClass: DefaultPriorityClass,
+		PriorityClass: systemNodeCriticalPriorityClass,
 	}
 	p.AgentDeamonSetConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityAgentContainer().Name: {

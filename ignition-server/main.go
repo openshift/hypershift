@@ -14,7 +14,7 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/ignition-server/controllers"
-	"github.com/openshift/hypershift/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -172,7 +172,6 @@ func run(ctx context.Context, opts Options) error {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(payload)
-		return
 	})
 
 	server := http.Server{

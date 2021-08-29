@@ -2,7 +2,6 @@ package kcm
 
 import (
 	"context"
-	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -31,8 +30,7 @@ type KubeControllerManagerParams struct {
 }
 
 const (
-	DefaultPriorityClass = "system-node-critical"
-	DefaultPort          = 10257
+	DefaultPort = 10257
 )
 
 func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *KubeControllerManagerParams {
@@ -46,7 +44,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		PodCIDR:        hcp.Spec.PodCIDR,
 	}
 	params.Scheduling = config.Scheduling{
-		PriorityClass: DefaultPriorityClass,
+		PriorityClass: config.DefaultPriorityClass,
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		kcmContainerMain().Name: {
@@ -89,7 +87,6 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		},
 	}
 	params.DeploymentConfig.SetColocation(hcp)
-	params.DeploymentConfig.SetMultizoneSpread(kcmLabels)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.Platform.Type {
@@ -102,15 +99,12 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3
+		params.DeploymentConfig.SetMultizoneSpread(kcmLabels)
 	default:
 		params.Replicas = 1
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
-}
-
-func externalAddress(endpoint hyperv1.APIEndpoint) string {
-	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
 }
 
 func (p *KubeControllerManagerParams) FeatureGates() []string {

@@ -2,7 +2,10 @@ package oapi
 
 import (
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
+	"net/url"
 	"path"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,13 +33,17 @@ var (
 			oasVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
 			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
 		},
+		oasKonnectivityProxyContainer().Name: {
+			oasVolumeConfig().Name:                "/etc/kubernetes/config",
+			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
+		},
 	}
 	openShiftAPIServerLabels = map[string]string{
 		"app": "openshift-apiserver",
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, haproxyImage string, etcdURL string) error {
 	ownerRef.ApplyTo(deployment)
 
 	maxUnavailable := intstr.FromInt(1)
@@ -53,10 +60,15 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MatchLabels: openShiftAPIServerLabels,
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels
+	etcdUrlData, err := url.Parse(etcdURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse etcd url: %w", err)
+	}
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image)),
+			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0])),
+			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(haproxyImage)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
@@ -68,6 +80,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(oasVolumeKubeconfig(), buildOASVolumeKubeconfig),
 			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
 			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
+			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
 		},
 	}
 
@@ -82,7 +95,30 @@ func oasContainerMain() *corev1.Container {
 	}
 }
 
-func buildOASContainerMain(image string) func(c *corev1.Container) {
+func oasKonnectivityProxyContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "oas-konnectivity-proxy",
+	}
+}
+
+func buildOASKonnectivityProxyContainer(routerImage string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		cpath := func(volume, file string) string {
+			return path.Join(volumeMounts.Path(c.Name, volume), file)
+		}
+		c.Image = routerImage
+		c.Command = []string{
+			"/bin/bash",
+			"-c",
+		}
+		c.Args = []string{
+			fmt.Sprintf("cat %s %s > %s; haproxy -f %s", cpath(oasVolumeKonnectivityProxyCert().Name, "tls.crt"), cpath(oasVolumeKonnectivityProxyCert().Name, "tls.key"), haproxyCombinedPemLocation, cpath(oasVolumeConfig().Name, oasKonnectivityProxyConfigKey)),
+		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+	}
+}
+
+func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		cpath := func(volume, file string) string {
 			return path.Join(volumeMounts.Path(c.Name, volume), file)
@@ -100,6 +136,20 @@ func buildOASContainerMain(image string) func(c *corev1.Container) {
 			"--requestheader-extra-headers-prefix=X-Remote-Extra-",
 			"--client-ca-file=/etc/kubernetes/config/serving-ca.crt",
 			fmt.Sprintf("--client-ca-file=%s", cpath(oasVolumeServingCA().Name, pki.CASignerCertMapKey)),
+		}
+		c.Env = []corev1.EnvVar{
+			{
+				Name:  "HTTP_PROXY",
+				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
+			},
+			{
+				Name:  "HTTPS_PROXY",
+				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
+			},
+			{
+				Name:  "NO_PROXY",
+				Value: fmt.Sprintf("%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname),
+			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.WorkingDir = volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name)
@@ -202,4 +252,15 @@ func oasVolumeEtcdClientCert() *corev1.Volume {
 func buildOASVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
+}
+
+func oasVolumeKonnectivityProxyCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oas-konnectivity-proxy-cert",
+	}
+}
+
+func buildOASVolumeKonnectivityProxyCert(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{}
+	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
 }

@@ -96,7 +96,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.EtcdURL = config.DefaultEtcdURL
 	}
 	params.Scheduling = config.Scheduling{
-		PriorityClass: config.DefaultPriorityClass,
+		PriorityClass: config.APICriticalPriorityClass,
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		kasContainerMain().Name: {
@@ -145,7 +145,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		},
 	}
 	params.DeploymentConfig.SetColocation(hcp)
-	params.DeploymentConfig.SetMultizoneSpread(kasLabels)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 
@@ -161,6 +160,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3
+		params.DeploymentConfig.SetMultizoneSpread(kasLabels)
 	default:
 		params.Replicas = 1
 	}
@@ -317,10 +317,6 @@ func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 	} else {
 		return config.DefaultServiceNodePortRange
 	}
-}
-
-func externalAddress(endpoint hyperv1.APIEndpoint) string {
-	return fmt.Sprintf("%s:%d", endpoint.Host, endpoint.Port)
 }
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {

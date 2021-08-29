@@ -168,6 +168,9 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	if c.Replicas > 1 {
 		maxSurge := intstr.FromInt(3)
 		maxUnavailable := intstr.FromInt(1)
+		if deployment.Spec.Strategy.RollingUpdate == nil {
+			deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{}
+		}
 		deployment.Spec.Strategy.RollingUpdate.MaxSurge = &maxSurge
 		deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &maxUnavailable
 	}

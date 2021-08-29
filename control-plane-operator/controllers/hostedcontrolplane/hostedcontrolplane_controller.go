@@ -7,6 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"github.com/openshift/api/operator/v1alpha1"
+	"sigs.k8s.io/cluster-api/util/annotations"
+
 	"math/big"
 	"math/rand"
 	"net/url"
@@ -15,10 +18,6 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"golang.org/x/crypto/bcrypt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -27,12 +26,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
+	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
+	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,24 +40,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/openshift/hypershift/thirdparty/clusterapi/util"
+	"sigs.k8s.io/cluster-api/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
-	"github.com/openshift/hypershift/releaseinfo"
-	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
+	cpoutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	etcdv1 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
+	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
 const (
@@ -104,8 +109,6 @@ type HostedControlPlaneReconciler struct {
 	Log             logr.Logger
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
-
-	recorder record.EventRecorder
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -454,7 +457,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 			r.Log.Info("Cluster Controller has not yet set OwnerRef")
 			return nil
 		}
-		if util.IsPaused(cluster, hostedControlPlane) {
+		if annotations.IsPaused(cluster, hostedControlPlane) {
 			r.Log.Info("HostedControlPlane or linked Cluster is marked as paused. Won't reconcile")
 			return nil
 		}
@@ -619,6 +622,20 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reconciling Cluster Policy Controller")
 	if err = r.reconcileClusterPolicyController(ctx, hostedControlPlane, globalConfig, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster policy controller: %w", err)
+	}
+
+	// Reconcile cluster version operator
+	r.Log.Info("Reonciling Cluster Version Operator")
+	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane); err != nil {
+		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
+	}
+
+	// Reconcile Image Content Source Policy
+	if hostedControlPlane.Spec.ImageContentSources != nil {
+		r.Log.Info("Reconciling Image Content Source Policy")
+		if err = r.reconcileImageContentSourcePolicy(ctx, hostedControlPlane); err != nil {
+			return fmt.Errorf("failed to reconcile image content source policy: %w", err)
+		}
 	}
 
 	// Install the control plane into the infrastructure
@@ -1493,7 +1510,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 
 	deployment := manifests.OpenShiftAPIServerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage)
+		return oapi.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.HaproxyImage, p.EtcdURL)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
@@ -1713,6 +1730,18 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	p := cvo.NewCVOParams(hcp)
+
+	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, deployment, func() error {
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
 	targetNamespace := hcp.GetNamespace()
 
@@ -1821,54 +1850,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	return manifests, nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServerServiceNodePortResources(ctx context.Context, hcp *hyperv1.HostedControlPlane, namespace string, nodePortMetadata hyperv1.NodePortPublishingStrategy) error {
-	svc := manifests.KubeAPIServerService(namespace)
-	var nodePort int32 = 0
-	if nodePortMetadata.Port > 0 {
-		nodePort = nodePortMetadata.Port
-	}
-	var kubeAPIServerServiceData corev1.Service
-	r.Log.Info("Checking for existing service", "serviceName", svc.Name, "namespace", svc.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, &kubeAPIServerServiceData); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-	if len(kubeAPIServerServiceData.Spec.Ports) > 0 && kubeAPIServerServiceData.Spec.Ports[0].NodePort > 0 {
-		r.Log.Info("Preserving existing nodePort for service", "nodePort", kubeAPIServerServiceData.Spec.Ports[0].NodePort)
-		nodePort = kubeAPIServerServiceData.Spec.Ports[0].NodePort
-	}
-	r.Log.Info("Updating KubeAPI service")
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.OwnerReferences = ensureHCPOwnerRef(hcp, svc.OwnerReferences)
-		return reconcileKubeAPIServerServiceNodePort(svc, nodePort)
-	})
-	return err
-}
-
-func (r *HostedControlPlaneReconciler) updateStatusKubeAPIServerServiceNodePort(ctx context.Context, namespace string, servicePublishingStrategyMapping hyperv1.ServicePublishingStrategyMapping, status *InfrastructureStatus) error {
-	r.Log.Info("Retrieving KubeAPI service to get nodePort value")
-	svc := manifests.KubeAPIServerService(namespace)
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: svc.Name}, svc); err != nil {
-		return err
-	}
-	if !(svc.Spec.Ports[0].NodePort > 0) {
-		return fmt.Errorf("nodePort not populated")
-	}
-	r.Log.Info("Fetched Kube API service nodePort", "nodePort", svc.Spec.Ports[0].NodePort)
-	status.APIHost = servicePublishingStrategyMapping.NodePort.Address
-	status.APIPort = svc.Spec.Ports[0].NodePort
-	return nil
-}
-
-func reconcileKubeAPIServerServiceNodePort(svc *corev1.Service, nodePort int32) error {
-	svc.Spec.Ports = KubeAPIServerServicePorts(defaultAPIServerPort)
-	if nodePort > 0 {
-		svc.Spec.Ports[0].NodePort = nodePort
-	}
-	svc.Spec.Selector = KubeAPIServerServiceSelector()
-	svc.Spec.Type = corev1.ServiceTypeNodePort
-	return nil
-}
-
 func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	route := manifests.OIDCRoute(hcp.GetNamespace())
 	r.Log.Info("Updating OIDC route")
@@ -1899,6 +1880,53 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 		return nil
 	})
 	return err
+}
+
+func (r *HostedControlPlaneReconciler) reconcileImageContentSourcePolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	imageContentSource := manifests.ImageContentSourcePolicy()
+	imageContentSource.Spec.RepositoryDigestMirrors = []v1alpha1.RepositoryDigestMirrors{}
+	for _, imageContentSourceEntry := range hcp.Spec.ImageContentSources {
+		imageContentSource.Spec.RepositoryDigestMirrors = append(imageContentSource.Spec.RepositoryDigestMirrors, v1alpha1.RepositoryDigestMirrors{
+			Source:  imageContentSourceEntry.Source,
+			Mirrors: imageContentSourceEntry.Mirrors,
+		})
+	}
+	r.Log.Info("Updating ImageContentSource Ignition Config")
+	scheme := runtime.NewScheme()
+	v1alpha1.Install(scheme)
+	yamlSerializer := jsonserializer.NewSerializerWithOptions(
+		jsonserializer.DefaultMetaFactory, scheme, scheme,
+		jsonserializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true})
+	imageContentSourceBytesBuffer := bytes.NewBuffer([]byte{})
+	err := yamlSerializer.Encode(imageContentSource, imageContentSourceBytesBuffer)
+	if err != nil {
+		return err
+	}
+	imageContentSourceIgnitionConfig := manifests.ImageContentSourcePolicyIgnitionConfig(hcp.GetNamespace())
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, imageContentSourceIgnitionConfig, func() error {
+		return reconcileImageContentSourceIgnitionConfig(imageContentSourceIgnitionConfig, imageContentSourceBytesBuffer.Bytes())
+	})
+	if err != nil {
+		return err
+	}
+	r.Log.Info("Updating ImageContentSource CRD user manifest")
+	imageContentSourceWorkerManifest := manifests.ImageContentSourcePolicyUserManifest(hcp.GetNamespace())
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, imageContentSourceWorkerManifest, func() error {
+		return cpoutil.ReconcileWorkerManifest(imageContentSourceWorkerManifest, imageContentSource)
+	})
+	return err
+}
+
+func reconcileImageContentSourceIgnitionConfig(ignitionConfig *corev1.ConfigMap, serializedImageContentSourcePolicy []byte) error {
+	if ignitionConfig.Data == nil {
+		ignitionConfig.Data = map[string]string{}
+	}
+	ignitionConfig.Data[manifests.IgnitionConfigKey] = string(serializedImageContentSourcePolicy)
+	if ignitionConfig.Labels == nil {
+		ignitionConfig.Labels = map[string]string{}
+	}
+	ignitionConfig.Labels[manifests.CoreIgnitionFieldLabelKey] = manifests.CoreIgnitionFieldLabelValue
+	return nil
 }
 
 func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, namespace string, manifests map[string][]byte) error {
@@ -2071,22 +2099,6 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	secret.Name = "kubeadmin-password"
 	secret.Data = map[string][]byte{"password": []byte(password)}
 	return secret
-}
-
-func generateKubeconfigSecret(namespace string, ref *hyperv1.KubeconfigSecretRef, kubeconfigBytes []byte) (*corev1.Secret, error) {
-	var name, key string
-	if ref != nil {
-		name = ref.Name
-		key = ref.Key
-	} else {
-		name = DefaultAdminKubeconfigName
-		key = DefaultAdminKubeconfigKey
-	}
-	secret := &corev1.Secret{}
-	secret.Namespace = namespace
-	secret.Name = name
-	secret.Data = map[string][]byte{key: kubeconfigBytes}
-	return secret, nil
 }
 
 func generateImageRegistrySecret() string {

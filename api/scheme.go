@@ -12,9 +12,9 @@ import (
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
-	capiibm "github.com/openshift/hypershift/thirdparty/clusterapiprovideribmcloud/v1alpha4"
+	capiibm "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )

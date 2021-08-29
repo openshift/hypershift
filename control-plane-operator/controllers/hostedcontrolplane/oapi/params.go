@@ -10,10 +10,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 )
 
-const (
-	DefaultPriorityClass = "system-node-critical"
-)
-
 type OpenShiftAPIServerParams struct {
 	APIServer        *configv1.APIServer `json:"apiServer"`
 	IngressSubDomain string
@@ -24,6 +20,7 @@ type OpenShiftAPIServerParams struct {
 	config.OwnerRef                         `json:",inline"`
 	OpenShiftAPIServerImage                 string `json:"openshiftAPIServerImage"`
 	OAuthAPIServerImage                     string `json:"oauthAPIServerImage"`
+	HaproxyImage                            string `json:"haproxyImage"`
 }
 
 type OAuthDeploymentParams struct {
@@ -38,12 +35,13 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
+		HaproxyImage:            images["haproxy-router"],
 		APIServer:               globalConfig.APIServer,
 		IngressSubDomain:        config.IngressSubdomain(hcp),
 	}
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: DefaultPriorityClass,
+			PriorityClass: config.APICriticalPriorityClass,
 		},
 		LivenessProbes: config.LivenessProbes{
 			oasContainerMain().Name: {
@@ -85,12 +83,12 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 			},
 		},
 	}
-	params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels)
+	params.OpenShiftAPIServerDeploymentConfig.SetColocation(hcp)
 	params.OpenShiftAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.OpenShiftAPIServerDeploymentConfig.SetControlPlaneIsolation(hcp)
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: DefaultPriorityClass,
+			PriorityClass: config.DefaultPriorityClass,
 		},
 		LivenessProbes: config.LivenessProbes{
 			oauthContainerMain().Name: {
@@ -133,7 +131,6 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		},
 	}
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetColocation(hcp)
-	params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels)
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.Etcd.ManagementType {
@@ -148,6 +145,8 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	case hyperv1.HighlyAvailable:
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 3
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 3
+		params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels)
+		params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels)
 	default:
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 1
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 1

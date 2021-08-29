@@ -564,14 +564,6 @@ func isValidURL(rawurl string, optional bool) bool {
 	return u.Scheme == "https" && len(u.Host) > 0 && len(u.Fragment) == 0
 }
 
-func createFileStringSource(filepath string) configv1.StringSource {
-	return configv1.StringSource{
-		StringSourceSpec: configv1.StringSourceSpec{
-			File: filepath,
-		},
-	}
-}
-
 func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, name, key string) (http.RoundTripper, error) {
 	// copy default transport
 	transport := net.SetTransportDefaults(&http.Transport{

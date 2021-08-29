@@ -43,3 +43,37 @@
           --e2e.aws-credentials-file /my/aws-credentials \
           --e2e.pull-secret-file /my/pull-secret
    ```
+
+### How to visualize the Go dependency graph
+
+On MacOS, get a nice PDF of the graph:
+
+```
+brew install graphviz
+go get golang.org/x/exp/cmd/modgraphviz
+go mod graph | modgraphviz | dot -T pdf | open -a Preview.app -f
+```
+
+### How to update the HyperShift API CRDs
+
+After making changes to types in the `api` package, make sure to update the
+associated CRD files:
+
+```shell
+$ make api
+```
+
+### How to update third-party API types and CRDs
+
+To update third-party API types (e.g. `sigs.k8s.io/cluster-api`), edit the dependency
+version in `go.mod` and then update the contents of `vendor`:
+
+```shell
+$ go mod vendor
+```
+
+Then update the associated CRD files:
+
+```shell
+$ make api
+```

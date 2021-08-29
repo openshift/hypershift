@@ -8,7 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/openshift/hypershift/certs"
+	"github.com/openshift/hypershift/support/certs"
 )
 
 const (
@@ -57,10 +57,7 @@ func hasCAHash(secret *corev1.Secret, ca *corev1.Secret) bool {
 		return false
 	}
 	desiredHash := computeCAHash(ca)
-	if desiredHash != actualHash {
-		return false
-	}
-	return true
+	return desiredHash == actualHash
 }
 
 func computeCAHash(ca *corev1.Secret) string {

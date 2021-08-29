@@ -16,7 +16,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"github.com/openshift/hypershift/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -38,7 +38,7 @@ const (
 // MachineConfigServer pods to build ignition payload contents
 // out of a given releaseImage and a config string containing 0..N MachineConfig yaml definitions.
 type MCSIgnitionProvider struct {
-	Client          client.Client
+	Client          ctrlclient.Client
 	ReleaseProvider releaseinfo.Provider
 	Namespace       string
 }
@@ -119,7 +119,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 
 	// Wait for the pod server the payload.
 	if err := wait.PollImmediate(10*time.Second, 300*time.Second, func() (bool, error) {
-		if err := p.Client.Get(ctx, ctrlclient.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
+		if err := p.Client.Get(ctx, client.ObjectKeyFromObject(mcsPod), mcsPod); err != nil {
 			// We don't return the error here so we want to keep retrying.
 			return false, nil
 		}

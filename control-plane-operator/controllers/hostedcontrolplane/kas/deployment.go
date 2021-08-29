@@ -60,10 +60,6 @@ var (
 			kasAuditWebhookConfigFileVolume().Name: "/etc/kubernetes/auditwebhook",
 		},
 	}
-
-	// volume mounts in apply bootstrap container
-	applyWorkMountPath       = "/work"
-	applyKubeconfigMountPath = "/var/secrets/localhost-kubeconfig"
 )
 
 var kasLabels = map[string]string{
@@ -88,6 +84,18 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	ownerRef.ApplyTo(deployment)
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(0)
+
+	// preserve existing resource requirements for main KAS container
+	mainContainer := findContainer(kasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		resources := mainContainer.Resources
+		if len(resources.Requests) > 0 || len(resources.Limits) > 0 {
+			if deploymentConfig.Resources != nil {
+				deploymentConfig.Resources[kasContainerMain().Name] = resources
+			}
+		}
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: kasLabels,
@@ -505,4 +513,13 @@ func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookR
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
 		kasAuditWebhookConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
+}
+
+func findContainer(name string, containers []corev1.Container) *corev1.Container {
+	for i, c := range containers {
+		if c.Name == name {
+			return &containers[i]
+		}
+	}
+	return nil
 }

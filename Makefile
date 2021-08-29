@@ -59,14 +59,35 @@ hypershift:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api:
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud etcd-api
+
+.PHONY: hypershift-api
+hypershift-api:
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+	rm -rf cmd/install/assets/hypershift-operator/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
-# Target to generate deepcopy code and CRDs for etcd types in thirdparty package
+.PHONY: cluster-api
+cluster-api:
+	rm -rf cmd/install/assets/cluster-api/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/addons/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api
+
+.PHONY: cluster-api-provider-aws
+cluster-api-provider-aws:
+	rm -rf cmd/install/assets/cluster-api-provider-aws/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/exp/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
+
+.PHONY: cluster-api-provider-ibmcloud
+cluster-api-provider-ibmcloud:
+	rm -rf cmd/install/assets/cluster-api-provider-ibmcloud/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
+
 .PHONY: etcd-api
 etcd-api:
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./thirdparty/etcd/..."
+	rm -rf cmd/install/assets/etcd/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./thirdparty/etcd/..." output:crd:artifacts:config=cmd/install/assets/etcd
 
 # Run tests

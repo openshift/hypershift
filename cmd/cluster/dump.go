@@ -23,8 +23,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
-	capiaws "github.com/openshift/hypershift/thirdparty/clusterapiprovideraws/v1alpha4"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 )
 
 type DumpOptions struct {

@@ -20,15 +20,18 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/version"
+	"github.com/openshift/hypershift/cmd/version"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -73,13 +76,7 @@ func NewCommand() *cobra.Command {
 			opts.HyperShiftOperatorReplicas = 1
 		}
 
-		var objects []crclient.Object
-
-		objects = append(objects, hyperShiftOperatorManifests(opts)...)
-		objects = append(objects, clusterAPIManifests()...)
-		if !opts.ExcludeEtcdManifests {
-			objects = append(objects, etcdManifests()...)
-		}
+		objects := hyperShiftOperatorManifests(opts)
 
 		switch {
 		case opts.Render:
@@ -113,21 +110,31 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 		if err != nil {
 			return err
 		}
-		err = client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift"))
-		if err != nil {
-			return err
+		if object.GetObjectKind().GroupVersionKind().Kind == "PriorityClass" {
+			// PriorityClasses can not be patched as the value field is immutable
+			if err := client.Create(ctx, object, &crclient.CreateOptions{}); err != nil {
+				if apierrors.IsAlreadyExists(err) {
+					fmt.Printf("already exists: %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+				} else {
+					return err
+				}
+			} else {
+				fmt.Printf("created %s %s/%s\n", "PriorityClass", object.GetNamespace(), object.GetName())
+			}
+		} else {
+			if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err != nil {
+				return err
+			}
+			fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 		}
-		fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 	}
 	return nil
 }
 
 func hyperShiftOperatorManifests(opts Options) []crclient.Object {
-	hostedClustersCRD := assets.HyperShiftHostedClustersCustomResourceDefinition{}.Build()
-	nodePoolsCRD := assets.HyperShiftNodePoolsCustomResourceDefinition{}.Build()
-	hostedControlPlanesCRD := assets.HyperShiftHostedControlPlaneCustomResourceDefinition{}.Build()
-	externalInfraClustersCRD := assets.HyperShiftExternalInfraClustersCustomResourceDefinition{}.Build()
-	machineConfigServersCRD := assets.HyperShiftMachineConfigServersCustomResourceDefinition{}.Build()
+	controlPlanePriorityClass := assets.HyperShiftControlPlanePriorityClass{}.Build()
+	etcdPriorityClass := assets.HyperShiftEtcdPriorityClass{}.Build()
+	apiCriticalPriorityClass := assets.HyperShiftAPICriticalPriorityClass{}.Build()
 	operatorNamespace := assets.HyperShiftNamespace{
 		Name: opts.Namespace,
 	}.Build()
@@ -166,74 +173,29 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		Namespace: operatorNamespace,
 	}.Build()
 
-	return []crclient.Object{
-		hostedClustersCRD,
-		nodePoolsCRD,
-		hostedControlPlanesCRD,
-		externalInfraClustersCRD,
-		machineConfigServersCRD,
-		operatorNamespace,
-		operatorServiceAccount,
-		operatorClusterRole,
-		operatorClusterRoleBinding,
-		operatorRole,
-		operatorRoleBinding,
-		operatorDeployment,
-		operatorService,
-		prometheusRole,
-		prometheusRoleBinding,
-		serviceMonitor,
-	}
-}
+	var objects []crclient.Object
 
-func clusterAPIManifests() []crclient.Object {
-	clusterResourceSetBindingsCRD := assets.ClusterAPIClusterResourceSetBindingsCustomResourceDefinition{}.Build()
-	clustersCRD := assets.ClusterAPIClusterResourceSetsCustomResourceDefinition{}.Build()
-	clusterResourceSetsCRD := assets.ClusterAPIClustersCustomResourceDefinition{}.Build()
-	machineDeploymentsCRD := assets.ClusterAPIMachineDeploymentsCustomResourceDefinition{}.Build()
-	machineHealthChecksCRD := assets.ClusterAPIMachineHealthChecksCustomResourceDefinition{}.Build()
-	machinesCRD := assets.ClusterAPIMachinesCustomResourceDefinition{}.Build()
-	machineSetsCRD := assets.ClusterAPIMachineSetsCustomResourceDefinition{}.Build()
-	awsClusterControllerIdentitiesCRD := assets.ClusterAPIAWSClusterControllerIdentitiesCustomResourceDefinition{}.Build()
-	awsClusterRoleIdentitiesCRD := assets.ClusterAPIAWSClusterRoleIdentitiesCustomResourceDefinition{}.Build()
-	awsClustersCRD := assets.ClusterAPIAWSClustersCustomResourceDefinition{}.Build()
-	awsClusterStaticIdentitiesCRD := assets.ClusterAPIAWSClusterStaticIdentitiesCustomResourceDefinition{}.Build()
-	awsMachinePoolsCRD := assets.ClusterAPIAWSMachinePoolsCustomResourceDefinition{}.Build()
-	awsMachinesCRD := assets.ClusterAPIAWSMachinesCustomResourceDefinition{}.Build()
-	awsMachineTemplatesCRD := assets.ClusterAPIAWSMachineTemplatesCustomResourceDefinition{}.Build()
-	awsManagedClustersCRD := assets.ClusterAPIAWSManagedClustersCustomResourceDefinition{}.Build()
-	awsManagedMachinePoolsCRD := assets.ClusterAPIAWSManagedMachinePoolsCustomResourceDefinition{}.Build()
-	ibmCloudClustersCRD := assets.ClusterAPIIBMCloudClustersCustomResourceDefinition{}.Build()
+	objects = append(objects, assets.CustomResourceDefinitions(func(path string) bool {
+		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
+			return false
+		}
+		return true
+	})...)
 
-	return []crclient.Object{
-		clusterResourceSetBindingsCRD,
-		clusterResourceSetsCRD,
-		clustersCRD,
-		machineDeploymentsCRD,
-		machineHealthChecksCRD,
-		machinesCRD,
-		machineSetsCRD,
-		awsClustersCRD,
-		awsMachinePoolsCRD,
-		awsMachinesCRD,
-		awsMachineTemplatesCRD,
-		awsManagedClustersCRD,
-		awsManagedMachinePoolsCRD,
-		awsClusterControllerIdentitiesCRD,
-		awsClusterRoleIdentitiesCRD,
-		awsClusterStaticIdentitiesCRD,
-		ibmCloudClustersCRD,
-	}
-}
+	objects = append(objects, controlPlanePriorityClass)
+	objects = append(objects, apiCriticalPriorityClass)
+	objects = append(objects, etcdPriorityClass)
+	objects = append(objects, operatorNamespace)
+	objects = append(objects, operatorServiceAccount)
+	objects = append(objects, operatorClusterRole)
+	objects = append(objects, operatorClusterRoleBinding)
+	objects = append(objects, operatorRole)
+	objects = append(objects, operatorRoleBinding)
+	objects = append(objects, operatorDeployment)
+	objects = append(objects, operatorService)
+	objects = append(objects, prometheusRole)
+	objects = append(objects, prometheusRoleBinding)
+	objects = append(objects, serviceMonitor)
 
-func etcdManifests() []crclient.Object {
-	clustersCRD := assets.EtcdClustersCustomResourceDefinition{}.Build()
-	backupsCRD := assets.EtcdBackupsCustomResourceDefinition{}.Build()
-	restoresCRD := assets.EtcdRestoresCustomResourceDefinition{}.Build()
-
-	return []crclient.Object{
-		clustersCRD,
-		backupsCRD,
-		restoresCRD,
-	}
+	return objects
 }

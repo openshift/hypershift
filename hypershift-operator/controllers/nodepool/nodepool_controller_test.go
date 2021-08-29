@@ -6,9 +6,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	capiv1 "github.com/openshift/hypershift/thirdparty/clusterapi/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 
-	"github.com/onsi/gomega"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -53,8 +52,8 @@ func TestIsUpdatingConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
-			g.Expect(isUpdatingConfig(tc.nodePool, tc.target)).To(gomega.Equal(tc.expect))
+			g := NewWithT(t)
+			g.Expect(isUpdatingConfig(tc.nodePool, tc.target)).To(Equal(tc.expect))
 		})
 	}
 }
@@ -214,7 +213,7 @@ func TestValidateAutoscaling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 			err := validateAutoscaling(tc.nodePool)
 			if tc.error {
 				g.Expect(err).Should(HaveOccurred())
@@ -407,7 +406,7 @@ spec:
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 
 			r := NodePoolReconciler{
 				Client: fake.NewClientBuilder().WithObjects(tc.config...).Build(),
@@ -418,7 +417,7 @@ spec:
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(got).To(gomega.Equal(tc.expect))
+			g.Expect(got).To(Equal(tc.expect))
 		})
 	}
 }
@@ -498,10 +497,10 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 			setMachineDeploymentReplicas(tc.nodePool, tc.machineDeployment)
-			g.Expect(*tc.machineDeployment.Spec.Replicas).To(gomega.Equal(tc.expectReplicas))
-			g.Expect(tc.machineDeployment.Annotations).To(gomega.Equal(tc.expectAutoscalerAnnotations))
+			g.Expect(*tc.machineDeployment.Spec.Replicas).To(Equal(tc.expectReplicas))
+			g.Expect(tc.machineDeployment.Annotations).To(Equal(tc.expectAutoscalerAnnotations))
 		})
 	}
 }
@@ -614,7 +613,7 @@ func TestValidateManagement(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 			err := validateManagement(tc.nodePool)
 			if tc.error {
 				g.Expect(err).Should(HaveOccurred())

@@ -6,7 +6,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	etcdv1 "github.com/openshift/hypershift/thirdparty/etcd/v1beta2"
+	etcdv1 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
 )
 
 func EtcdOperatorServiceAccount(ns string) *corev1.ServiceAccount {

@@ -4,7 +4,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -334,49 +334,55 @@ func (o HyperShiftOperatorRoleBinding) Build() *rbacv1.RoleBinding {
 	return binding
 }
 
-type HyperShiftHostedClustersCustomResourceDefinition struct{}
+type HyperShiftControlPlanePriorityClass struct{}
 
-func (o HyperShiftHostedClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	return getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_hostedclusters.yaml")
-}
-
-type HyperShiftNodePoolsCustomResourceDefinition struct{}
-
-func (o HyperShiftNodePoolsCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	return getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_nodepools.yaml")
-}
-
-type HyperShiftHostedControlPlaneCustomResourceDefinition struct{}
-
-func (o HyperShiftHostedControlPlaneCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml")
-	if crd.Labels == nil {
-		crd.Labels = map[string]string{}
+func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PriorityClass",
+			APIVersion: schedulingv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-control-plane",
+		},
+		Value:         100000000,
+		GlobalDefault: false,
+		Description:   "This priority class should be used for hypershift control plane pods not critical to serving the API.",
 	}
-	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
-	return crd
 }
 
-type HyperShiftExternalInfraClustersCustomResourceDefinition struct{}
+type HyperShiftAPICriticalPriorityClass struct{}
 
-func (o HyperShiftExternalInfraClustersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_externalinfraclusters.yaml")
-	if crd.Labels == nil {
-		crd.Labels = map[string]string{}
+func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PriorityClass",
+			APIVersion: schedulingv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-api-critical",
+		},
+		Value:         100001000,
+		GlobalDefault: false,
+		Description:   "This priority class should be used for hypershift control plane pods critical to serving the API.",
 	}
-	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
-	return crd
 }
 
-type HyperShiftMachineConfigServersCustomResourceDefinition struct{}
+type HyperShiftEtcdPriorityClass struct{}
 
-func (o HyperShiftMachineConfigServersCustomResourceDefinition) Build() *apiextensionsv1.CustomResourceDefinition {
-	crd := getCustomResourceDefinition("hypershift-operator/hypershift.openshift.io_machineconfigservers.yaml")
-	if crd.Labels == nil {
-		crd.Labels = map[string]string{}
+func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PriorityClass",
+			APIVersion: schedulingv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-etcd",
+		},
+		Value:         100002000,
+		GlobalDefault: false,
+		Description:   "This priority class should be used for hypershift etcd pods.",
 	}
-	crd.Labels["cluster.x-k8s.io/v1alpha4"] = "v1alpha1"
-	return crd
 }
 
 type HyperShiftPrometheusRole struct {
