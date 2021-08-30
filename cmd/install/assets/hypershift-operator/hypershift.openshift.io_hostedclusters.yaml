@@ -228,7 +228,7 @@ spec:
                                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                   x-kubernetes-int-or-string: true
                                 description: 'Limits describes the maximum amount
-                                  of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                  of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                 type: object
                               requests:
                                 additionalProperties:
@@ -241,7 +241,7 @@ spec:
                                   of compute resources required. If Requests is omitted
                                   for a container, it defaults to Limits if that is
                                   explicitly specified, otherwise to an implementation-defined
-                                  value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                  value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                 type: object
                             type: object
                           selector:
@@ -377,6 +377,11 @@ spec:
                 type: array
               infraID:
                 description: InfraID is used to identify the cluster in cloud platforms
+                type: string
+              infrastructureAvailabilityPolicy:
+                description: InfrastructureAvailabilityPolicy specifies whether to
+                  run infrastructure services that run on the guest cluster nodes
+                  in HA mode Defaults to SingleReplica when not set
                 type: string
               issuerURL:
                 default: https://kubernetes.default.svc

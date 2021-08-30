@@ -12,10 +12,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
-func ReconcileDefaultIngressControllerWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef, ingressSubdomain string, platformType hyperv1.PlatformType) error {
+func ReconcileDefaultIngressControllerWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32) error {
 	ownerRef.ApplyTo(cm)
 	ingressController := manifests.IngressDefaultIngressController()
-	if err := reconcileDefaultIngressController(ingressController, ingressSubdomain, platformType); err != nil {
+	if err := reconcileDefaultIngressController(ingressController, ingressSubdomain, platformType, replicas); err != nil {
 		return err
 	}
 	return util.ReconcileWorkerManifest(cm, ingressController)
@@ -30,10 +30,13 @@ func ReconcileDefaultIngressControllerCertWorkerManifest(cm *corev1.ConfigMap, o
 	return util.ReconcileWorkerManifest(cm, certSecret)
 }
 
-func reconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType) error {
+func reconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32) error {
 	ingressController.Spec.Domain = ingressSubdomain
 	ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 		Type: operatorv1.LoadBalancerServiceStrategyType,
+	}
+	if replicas > 0 {
+		ingressController.Spec.Replicas = &(replicas)
 	}
 	switch platformType {
 	case hyperv1.NonePlatform:

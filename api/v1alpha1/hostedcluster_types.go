@@ -97,6 +97,12 @@ type HostedClusterSpec struct {
 	// +optional
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
+	// InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
+	// run on the guest cluster nodes in HA mode
+	// Defaults to SingleReplica when not set
+	// +optional
+	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
+
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 	// use to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.
 	// +kubebuilder:validation:Optional
