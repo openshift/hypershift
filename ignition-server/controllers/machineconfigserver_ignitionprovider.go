@@ -414,7 +414,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					Name: "mcs-tls",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: "ignition-server-serving-cert",
+							SecretName: "mcs-crt",
 						},
 					},
 				},
