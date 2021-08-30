@@ -766,9 +766,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the Ignition server
-	if err = r.reconcileIgnitionServer(ctx, hcluster, hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
-	}
+	//if err = r.reconcileIgnitionServer(ctx, hcluster, hcp); err != nil {
+	//	return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
+	//}
 
 	// Reconcile the Ignition server
 	if err = r.reconcileMachineConfigServer(ctx, hcluster, hcp); err != nil {

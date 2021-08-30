@@ -248,7 +248,7 @@ EOF
 chmod +x ./copy-ignition-config.sh
 oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh
 cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
-	name := fmt.Sprintf("%s-%d", resourceGenerateName, rand.Int31())
+	name := fmt.Sprintf("%s%d", resourceGenerateName, rand.Int31())
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
