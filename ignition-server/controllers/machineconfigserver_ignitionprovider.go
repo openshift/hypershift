@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"io/ioutil"
 	"math/rand"
 	"net"
@@ -31,6 +30,7 @@ var _ IgnitionProvider = (*MCSIgnitionProvider)(nil)
 
 const (
 	resourceGenerateName = "machine-config-server-"
+	mcsPodSubdomain      = "machine-config-server"
 )
 
 // MCSIgnitionProvider is an IgnitionProvider that uses
@@ -248,11 +248,11 @@ EOF
 chmod +x ./copy-ignition-config.sh
 oc get cm -l ignition-config="true" -n "${NAMESPACE}" --no-headers | awk '{ print $1 }' | xargs -n1 ./copy-ignition-config.sh
 cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
-	name := fmt.Sprintf("%s%d", resourceGenerateName, rand.Int31())
+	podName := fmt.Sprintf("%s%d", resourceGenerateName, rand.Int31())
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      name,
+			Name:      podName,
 			Labels: map[string]string{
 				"app": "machine-config-server",
 			},
@@ -261,11 +261,11 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			ServiceAccountName:            sa.Name,
 			TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
 			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
-			Subdomain:                     ignitionserver.MCSService("").Name,
-			Hostname:                      name,
+			Subdomain:                     mcsPodSubdomain,
+			Hostname:                      podName,
 			Tolerations: []corev1.Toleration{
 				{
-					Key:      "multi-az-worker",
+					Key:      "hypershift.openshift.io/cluster",
 					Operator: "Equal",
 					Value:    "true",
 					Effect:   "NoSchedule",
@@ -366,14 +366,8 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 						"bootstrap",
 						"--bootstrap-kubeconfig=/etc/openshift/kubeconfig",
 						"--secure-port=8443",
-						"--insecure-port=8080",
 					},
 					Ports: []corev1.ContainerPort{
-						{
-							Name:          "http",
-							ContainerPort: 8080,
-							Protocol:      corev1.ProtocolTCP,
-						},
 						{
 							Name:          "https",
 							ContainerPort: 8443,
