@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
-	"net"
 	"net/http"
 	"time"
 
@@ -132,11 +131,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		if mcsPod.Status.PodIP == "" || !mcsReady {
 			return false, nil
 		}
-		mcsPodHeadlessDomain := fmt.Sprintf("%s.machine-config-server.%s.svc.cluster.local", mcsPod.Name, p.Namespace)
-		ips, err := net.LookupIP(mcsPodHeadlessDomain)
-		if err != nil || len(ips) == 0 {
-			return false, nil
-		}
 
 		// Get  Machine config certs
 		var caCert []byte
@@ -162,6 +156,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			Timeout: 60 * time.Second,
 		}
 		// Build proxy request.
+		mcsPodHeadlessDomain := fmt.Sprintf("%s.machine-config-server.%s.svc.cluster.local", mcsPod.Name, p.Namespace)
 		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s:8443/config/master", mcsPodHeadlessDomain), nil)
 		if err != nil {
 			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
