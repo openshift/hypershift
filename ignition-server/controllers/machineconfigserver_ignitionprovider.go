@@ -159,7 +159,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 					RootCAs: caCertPool,
 				},
 			},
-			Timeout: 5 * time.Second,
+			Timeout: 60 * time.Second,
 		}
 		// Build proxy request.
 		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("https://%s:8443/config/master", mcsPodHeadlessDomain), nil)
@@ -173,7 +173,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
 		res, err := client.Do(proxyReq)
 		if err != nil {
-			//logging error and not erroring so polling loop kicks back in
 			return false, fmt.Errorf("error sending https request for machine config server pod: %w", err)
 		}
 		if res.StatusCode != http.StatusOK {
