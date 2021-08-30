@@ -60,6 +60,7 @@ const (
 	nodePoolAnnotationCurrentConfig         = "hypershift.openshift.io/nodePoolCurrentConfig"
 	nodePoolAnnotationCurrentConfigVersion  = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationCurrentProviderConfig = "hypershift.openshift.io/nodePoolCurrentProviderConfig"
+	nodePoolCoreIgnitionConfigLabel         = "hypershift.openshift.io/core-ignition-config"
 	TokenSecretReleaseKey                   = "release"
 	TokenSecretTokenKey                     = "token"
 	TokenSecretConfigKey                    = "config"
@@ -83,10 +84,11 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
 		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
-		// TODO (alberto): Let ConfigMaps referenced by the spec.config and also the core ones to trigger reconciliation.
 		Build(r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
@@ -377,7 +379,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Validate config input.
-	config, err := r.getConfig(ctx, nodePool)
+	// 3 expectedCoreConfigResources: fips, ssh and haproxy.
+	// TODO (alberto): consider moving the expectedCoreConfigResources check
+	// into the token Secret controller so we don't block Machine infra creation on this.
+	config, err := r.getConfig(ctx, nodePool, 3)
 	if err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
@@ -612,6 +617,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = make(map[string]string)
 	}
+
 	tokenSecret.Annotations[TokenSecretAnnotation] = "true"
 	tokenSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 
@@ -850,13 +856,23 @@ func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config 
 	}
 }
 
-func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool) (string, error) {
-	if nodePool.Spec.Config == nil {
-		return "", nil
-	}
-
+func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int) (string, error) {
+	var configs []corev1.ConfigMap
 	allConfigPlainText := ""
 	var errors []error
+
+	coreConfigMapList := &corev1.ConfigMapList{}
+	if err := r.List(ctx, coreConfigMapList, client.MatchingLabels{
+		nodePoolCoreIgnitionConfigLabel: "true",
+	}); err != nil {
+		errors = append(errors, err)
+	}
+
+	if len(coreConfigMapList.Items) != expectedCoreConfigResources {
+		errors = append(errors, fmt.Errorf("core ingition config has not been created yet"))
+	}
+
+	configs = coreConfigMapList.Items
 	for _, config := range nodePool.Spec.Config {
 		configConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -868,10 +884,13 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 			errors = append(errors, err)
 			continue
 		}
+		configs = append(configs, *configConfigMap)
+	}
 
-		manifest := configConfigMap.Data[TokenSecretConfigKey]
+	for _, config := range configs {
+		manifest := config.Data[TokenSecretConfigKey]
 		if err := validateConfigManifest([]byte(manifest)); err != nil {
-			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", configConfigMap.Name, err))
+			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
 			continue
 		}
 
@@ -1051,6 +1070,45 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj client.Object)
 			result = append(result,
 				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
 			)
+		}
+	}
+
+	return result
+}
+
+func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reconcile.Request {
+	var result []reconcile.Request
+
+	cm, ok := obj.(*corev1.ConfigMap)
+	if !ok {
+		panic(fmt.Sprintf("Expected a ConfigMap but got a %T", obj))
+	}
+
+	// Get all NodePools in the ConfigMap Namespace.
+	nodePoolList := &hyperv1.NodePoolList{}
+	if err := r.List(context.Background(), nodePoolList, client.InNamespace(cm.Namespace)); err != nil {
+		return result
+	}
+
+	// If the ConfigMap is a core one reconcile all NodePools.
+	if _, ok := obj.GetLabels()[nodePoolCoreIgnitionConfigLabel]; ok {
+		for key := range nodePoolList.Items {
+			result = append(result,
+				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
+			)
+		}
+		return result
+	}
+
+	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
+	for key := range nodePoolList.Items {
+		for _, v := range nodePoolList.Items[key].Spec.Config {
+			if v.Name == cm.Name {
+				result = append(result,
+					reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
+				)
+				break
+			}
 		}
 	}
 
