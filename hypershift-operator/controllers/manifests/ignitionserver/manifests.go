@@ -86,12 +86,3 @@ func RoleBinding(namespace string) *rbacv1.RoleBinding {
 		},
 	}
 }
-
-func MCSService(namespace string) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      "machine-config-server",
-		},
-	}
-}

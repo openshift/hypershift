@@ -770,11 +770,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
 
-	// Reconcile the Ignition server
-	if err = r.reconcileMachineConfigServer(ctx, hcluster, hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine config server: %w", err)
-	}
-
 	r.Log.Info("successfully reconciled")
 	return ctrl.Result{}, nil
 }
@@ -2455,54 +2450,4 @@ func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
 	return []reconcile.Request{
 		{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
 	}
-}
-
-func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
-	var span trace.Span
-	ctx, span = r.tracer.Start(ctx, "reconcile-machine-config-server")
-	defer span.End()
-
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err != nil {
-		return fmt.Errorf("failed to get control plane namespace: %w", err)
-	}
-
-	// Reconcile service
-	mcsService := ignitionserver.MCSService(controlPlaneNamespace.Name)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
-		return reconcileMachineConfigServerService(mcsService)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine config server  service: %w", err)
-	} else {
-		span.AddEvent("reconciled machine config server service", trace.WithAttributes(attribute.String("result", string(result))))
-	}
-
-	return nil
-}
-
-func reconcileMachineConfigServerService(svc *corev1.Service) error {
-	svc.Spec.Selector = map[string]string{
-		"app": "machine-config-server",
-	}
-	svc.ObjectMeta.Labels = map[string]string{
-		"app": "machine-config-server",
-	}
-	var portSpec corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		portSpec = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{portSpec}
-	}
-	portSpec.Port = int32(8443)
-	portSpec.Name = "https"
-	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(8443)
-	svc.Spec.Ports[0] = portSpec
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.ClusterIP = corev1.ClusterIPNone
-	svc.Spec.PublishNotReadyAddresses = true
-	svc.ObjectMeta.Annotations = map[string]string{
-		"service.alpha.kubernetes.io/tolerate-unready-endpoints": "true",
-	}
-	return nil
 }
