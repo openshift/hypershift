@@ -56,29 +56,6 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 			},
 			ExpectedImage: "a",
 		},
-		"hostedcontrolplane rollout is deferred due to existing rollout": {
-			Cluster: hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec: hyperv1.HostedClusterSpec{
-					Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
-					Release: hyperv1.Release{Image: "b"},
-				},
-				Status: hyperv1.HostedClusterStatus{
-					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{Image: "a"},
-						History: []configv1.UpdateHistory{
-							{Image: "a", State: configv1.PartialUpdate},
-						},
-					},
-				},
-			},
-			ControlPlane: hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status:     hyperv1.HostedControlPlaneStatus{},
-			},
-			ExpectedImage: "a",
-		},
 		"hostedcontrolplane rollout happens after existing rollout is complete": {
 			Cluster: hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
@@ -90,6 +67,30 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{Image: "a"},
 						History: []configv1.UpdateHistory{
+							{Image: "a", State: configv1.CompletedUpdate},
+						},
+					},
+				},
+			},
+			ControlPlane: hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
+				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
+				Status:     hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
+			},
+			ExpectedImage: "b",
+		},
+		"hostedcontrolplane rollout happens after existing rollout is complete and desired rollout is partial": {
+			Cluster: hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
+				Spec: hyperv1.HostedClusterSpec{
+					Etcd:    hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Release: hyperv1.Release{Image: "b"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{Image: "b"},
+						History: []configv1.UpdateHistory{
+							{Image: "b", State: configv1.PartialUpdate},
 							{Image: "a", State: configv1.CompletedUpdate},
 						},
 					},
@@ -138,6 +139,31 @@ func TestComputeClusterVersionStatus(t *testing.T) {
 				Desired: hyperv1.Release{Image: "a"},
 				History: []configv1.UpdateHistory{
 					{Image: "a", State: configv1.PartialUpdate, StartedTime: Now},
+				},
+			},
+		},
+		"hosted cluster spec is newer than completed control plane spec should not cause update to be completed": {
+			Cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "b"}},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{Image: "b"},
+						History: []configv1.UpdateHistory{
+							{Image: "b", Version: "", State: configv1.PartialUpdate, StartedTime: Now},
+							{Image: "a", Version: "1.0.0", State: configv1.CompletedUpdate, StartedTime: Now, CompletionTime: &Later},
+						},
+					},
+				},
+			},
+			ControlPlane: hyperv1.HostedControlPlane{
+				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
+				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a", Version: "1.0.0", LastReleaseImageTransitionTime: &Now},
+			},
+			ExpectedStatus: hyperv1.ClusterVersionStatus{
+				Desired: hyperv1.Release{Image: "b"},
+				History: []configv1.UpdateHistory{
+					{Image: "b", Version: "", State: configv1.PartialUpdate, StartedTime: Now},
+					{Image: "a", Version: "1.0.0", State: configv1.CompletedUpdate, StartedTime: Now, CompletionTime: &Later},
 				},
 			},
 		},
