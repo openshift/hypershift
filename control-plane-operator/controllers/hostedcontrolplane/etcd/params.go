@@ -36,7 +36,6 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
-	p.OperatorDeploymentConfig.SetMultizoneSpread(etcdOperatorDeploymentLabels)
 	p.OperatorDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.OperatorDeploymentConfig.SetControlPlaneIsolation(hcp)
 	p.EtcdDeploymentConfig.Resources = config.ResourcesSpec{
@@ -47,13 +46,13 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
-	p.EtcdDeploymentConfig.SetMultizoneSpread(etcdLabels)
 	p.EtcdDeploymentConfig.SetColocationAnchor(hcp)
 	p.EtcdDeploymentConfig.SetControlPlaneIsolation(hcp)
 	p.OperatorDeploymentConfig.Replicas = 1
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		p.EtcdDeploymentConfig.Replicas = 3
+		p.EtcdDeploymentConfig.SetMultizoneSpread(etcdLabels)
 	default:
 		p.EtcdDeploymentConfig.Replicas = 1
 	}

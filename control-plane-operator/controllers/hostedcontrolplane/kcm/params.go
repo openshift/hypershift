@@ -87,7 +87,6 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		},
 	}
 	params.DeploymentConfig.SetColocation(hcp)
-	params.DeploymentConfig.SetMultizoneSpread(kcmLabels)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.Platform.Type {
@@ -100,6 +99,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3
+		params.DeploymentConfig.SetMultizoneSpread(kcmLabels)
 	default:
 		params.Replicas = 1
 	}
