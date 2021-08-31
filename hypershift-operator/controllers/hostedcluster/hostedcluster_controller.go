@@ -766,12 +766,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the Ignition server
-	//if err = r.reconcileIgnitionServer(ctx, hcluster, hcp); err != nil {
-	//	return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
-	//}
+	if err = r.reconcileIgnitionServer(ctx, hcluster, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
+	}
 
 	// Reconcile the Ignition server
-	if err = r.reconcileMachineConfigServer(ctx, hcluster, hcp); err != nil {
+	if err = r.reconcileMachineConfigServer(ctx, hcluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine config server: %w", err)
 	}
 
@@ -2457,7 +2457,7 @@ func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
 	}
 }
 
-func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	var span trace.Span
 	ctx, span = r.tracer.Start(ctx, "reconcile-machine-config-server")
 	defer span.End()
