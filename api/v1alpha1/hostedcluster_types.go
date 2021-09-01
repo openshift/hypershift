@@ -379,6 +379,10 @@ type EtcdSpec struct {
 type ManagedEtcdSpec struct {
 
 	//TODO: Ultimately backup policies, etc can be defined here.
+
+	// PersistentVolumeClaimSpec provides a PersistentVolumeClaimSpec that allows the managed etcd to use persistent storage
+	// +optional
+	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
 }
 
 // UnmanagedEtcdSpec defines metadata that enables the Openshift controllers to connect to the external etcd cluster

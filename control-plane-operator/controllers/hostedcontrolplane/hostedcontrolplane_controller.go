@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+
 	"github.com/openshift/api/operator/v1alpha1"
 	"sigs.k8s.io/cluster-api/util/annotations"
 
@@ -1264,7 +1265,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, etcdCluster, func() error {
 		etcdCluster.OwnerReferences = ensureHCPOwnerRef(hcp, etcdCluster.OwnerReferences)
-		return etcd.ReconcileCluster(etcdCluster, p.OwnerRef, p.EtcdDeploymentConfig, p.ClusterVersion, p.PVCClaim)
+		return etcd.ReconcileCluster(etcdCluster, p.OwnerRef, p.EtcdDeploymentConfig, p.ClusterVersion, p.PersistentVolumeClaimSpec)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
 	}
