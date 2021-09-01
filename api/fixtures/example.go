@@ -205,7 +205,7 @@ aws_secret_access_key = %s
 				{
 					Service: hyperv1.Konnectivity,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.LoadBalancer,
+						Type: hyperv1.Route,
 					},
 				},
 				{

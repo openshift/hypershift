@@ -13,6 +13,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	routev1 "github.com/openshift/api/route/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -177,6 +179,8 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 		if portSpec.NodePort == 0 && strategy.NodePort != nil {
 			portSpec.NodePort = strategy.NodePort.Port
 		}
+	case hyperv1.Route:
+		svc.Spec.Type = corev1.ServiceTypeClusterIP
 	default:
 		return fmt.Errorf("invalid publishing strategy for Konnectivity service: %s", strategy.Type)
 	}
@@ -184,7 +188,22 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	return nil
 }
 
-func ReconcileServerServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
+func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(route)
+	route.Spec.To = routev1.RouteTargetReference{
+		Kind: "Service",
+		Name: manifests.KonnectivityServerRoute(route.Namespace).Name,
+	}
+	route.Spec.TLS = &routev1.TLSConfig{
+		Termination: routev1.TLSTerminationPassthrough,
+	}
+	route.Spec.Port = &routev1.RoutePort{
+		TargetPort: intstr.FromInt(KonnectivityServerPort),
+	}
+	return nil
+}
+
+func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
@@ -211,6 +230,12 @@ func ReconcileServerServiceStatus(svc *corev1.Service, strategy *hyperv1.Service
 		}
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
+	case hyperv1.Route:
+		if route.Spec.Host == "" {
+			return
+		}
+		port = 443
+		host = route.Spec.Host
 	}
 	return
 }

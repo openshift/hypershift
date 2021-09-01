@@ -62,6 +62,15 @@ func KonnectivityServerService(hostedClusterNamespace string) *corev1.Service {
 	}
 }
 
+func KonnectivityServerRoute(hostedClusterNamespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      konnectivityServerServiceName,
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
 func OpenshiftAPIServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
