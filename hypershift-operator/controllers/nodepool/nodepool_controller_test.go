@@ -466,6 +466,61 @@ spec:
 			expect:                      "\n---\n" + coreMachineConfig1 + "\n---\n" + machineConfig1,
 			error:                       false,
 		},
+		{
+			name: "gets a single valid MachineConfig with a core MachineConfig and ignores independent namespace",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "machineconfig-1",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			config: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "machineconfig-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: machineConfig1,
+					},
+					BinaryData: nil,
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "core-machineconfig",
+						Namespace: namespace,
+						Labels: map[string]string{
+							nodePoolCoreIgnitionConfigLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: coreMachineConfig1,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "core-machineconfig",
+						Namespace: "separatenamespace",
+						Labels: map[string]string{
+							nodePoolCoreIgnitionConfigLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: coreMachineConfig1,
+					},
+				},
+			},
+			expectedCoreConfigResources: 1,
+			expect:                      "\n---\n" + coreMachineConfig1 + "\n---\n" + machineConfig1,
+			error:                       false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -475,7 +530,7 @@ spec:
 			r := NodePoolReconciler{
 				Client: fake.NewClientBuilder().WithObjects(tc.config...).Build(),
 			}
-			got, err := r.getConfig(context.Background(), tc.nodePool, tc.expectedCoreConfigResources)
+			got, err := r.getConfig(context.Background(), tc.nodePool, tc.expectedCoreConfigResources, namespace)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				return
