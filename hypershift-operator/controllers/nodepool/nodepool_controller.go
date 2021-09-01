@@ -14,6 +14,7 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	"github.com/openshift/api/operator/v1alpha1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -84,10 +85,11 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
 		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
+		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
-		// TODO (alberto): Let ConfigMaps referenced by the spec.config and also the core ones to trigger reconciliation.
 		Build(r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
@@ -378,10 +380,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Validate config input.
-	// 3 expectedCoreConfigResources: fips, ssh and haproxy.
+	// 3 generic core config resoures: fips, ssh and haproxy.
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
 	// into the token Secret controller so we don't block Machine infra creation on this.
-	config, err := r.getConfig(ctx, nodePool, 3)
+	expectedCoreConfigResources := 3
+	if len(hcluster.Spec.ImageContentSources) > 0 {
+		// additional core config resource created when image content source specified.
+		expectedCoreConfigResources += 1
+	}
+	config, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace)
 	if err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
@@ -855,7 +862,7 @@ func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config 
 	}
 }
 
-func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int) (string, error) {
+func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int, controlPlaneResource string) (string, error) {
 	var configs []corev1.ConfigMap
 	allConfigPlainText := ""
 	var errors []error
@@ -863,7 +870,7 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 	coreConfigMapList := &corev1.ConfigMapList{}
 	if err := r.List(ctx, coreConfigMapList, client.MatchingLabels{
 		nodePoolCoreIgnitionConfigLabel: "true",
-	}); err != nil {
+	}, client.InNamespace(controlPlaneResource)); err != nil {
 		errors = append(errors, err)
 	}
 
@@ -927,6 +934,7 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 func validateConfigManifest(manifest []byte) error {
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
+	v1alpha1.Install(scheme)
 
 	YamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
@@ -940,6 +948,7 @@ func validateConfigManifest(manifest []byte) error {
 
 	switch obj := cr.(type) {
 	case *mcfgv1.MachineConfig:
+	case *v1alpha1.ImageContentSourcePolicy:
 	//	TODO (alberto): enable this kinds when they are supported in mcs bootstrap mode
 	// since our mcsIgnitionProvider implementation uses bootstrap mode to render the ignition payload out of an input.
 	// https://github.com/openshift/machine-config-operator/pull/2547
@@ -1069,6 +1078,45 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj client.Object)
 			result = append(result,
 				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
 			)
+		}
+	}
+
+	return result
+}
+
+func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reconcile.Request {
+	var result []reconcile.Request
+
+	cm, ok := obj.(*corev1.ConfigMap)
+	if !ok {
+		panic(fmt.Sprintf("Expected a ConfigMap but got a %T", obj))
+	}
+
+	// Get all NodePools in the ConfigMap Namespace.
+	nodePoolList := &hyperv1.NodePoolList{}
+	if err := r.List(context.Background(), nodePoolList, client.InNamespace(cm.Namespace)); err != nil {
+		return result
+	}
+
+	// If the ConfigMap is a core one reconcile all NodePools.
+	if _, ok := obj.GetLabels()[nodePoolCoreIgnitionConfigLabel]; ok {
+		for key := range nodePoolList.Items {
+			result = append(result,
+				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
+			)
+		}
+		return result
+	}
+
+	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
+	for key := range nodePoolList.Items {
+		for _, v := range nodePoolList.Items[key].Spec.Config {
+			if v.Name == cm.Name {
+				result = append(result,
+					reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
+				)
+				break
+			}
 		}
 	}
 

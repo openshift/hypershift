@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	IgnitionConfigKey           = "data"
+	IgnitionConfigKey           = "config"
 	CoreIgnitionFieldLabelKey   = "hypershift.openshift.io/core-ignition-config"
 	CoreIgnitionFieldLabelValue = "true"
 )

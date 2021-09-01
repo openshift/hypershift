@@ -771,6 +771,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
 
+	// Reconcile the Ignition server
+	if err = r.reconcileMachineConfigServer(ctx, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine config server: %w", err)
+	}
+
 	r.Log.Info("successfully reconciled")
 	return ctrl.Result{}, nil
 }
@@ -853,14 +858,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Platform.Type = hyperv1.IBMCloudPlatform
 	}
 
-	// Only update release image (triggering a new rollout) after existing rollouts
-	// have reached a terminal state.
-	rolloutComplete := hcluster.Status.Version != nil &&
-		hcluster.Status.Version.History != nil &&
-		hcluster.Status.Version.History[0].State == configv1.CompletedUpdate
-	if rolloutComplete {
-		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
-	}
+	// always reconcile the release image (facilitates rolling forward)
+	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 
 	hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
 	return nil
@@ -2247,7 +2246,7 @@ func computeClusterVersionStatus(clock clock.Clock, hcluster *hyperv1.HostedClus
 	// quite right because the intent here is to identify a terminal rollout
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
-	hcpRolloutComplete := hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage
+	hcpRolloutComplete := (hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
 	if !hcpRolloutComplete {
 		return version
 	}
@@ -2451,4 +2450,47 @@ func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
 	return []reconcile.Request{
 		{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
 	}
+}
+
+func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	var span trace.Span
+	ctx, span = r.tracer.Start(ctx, "reconcile-machine-config-server")
+	defer span.End()
+
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err != nil {
+		return fmt.Errorf("failed to get control plane namespace: %w", err)
+	}
+
+	// Reconcile service
+	mcsService := ignitionserver.MCSService(controlPlaneNamespace.Name)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, mcsService, func() error {
+		return reconcileMachineConfigServerService(mcsService)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine config server  service: %w", err)
+	} else {
+		span.AddEvent("reconciled machine config server service", trace.WithAttributes(attribute.String("result", string(result))))
+	}
+
+	return nil
+}
+
+func reconcileMachineConfigServerService(svc *corev1.Service) error {
+	svc.Spec.Selector = map[string]string{
+		"app": "machine-config-server",
+	}
+	var portSpec corev1.ServicePort
+	if len(svc.Spec.Ports) > 0 {
+		portSpec = svc.Spec.Ports[0]
+	} else {
+		svc.Spec.Ports = []corev1.ServicePort{portSpec}
+	}
+	portSpec.Port = int32(8443)
+	portSpec.Name = "https"
+	portSpec.Protocol = corev1.ProtocolTCP
+	portSpec.TargetPort = intstr.FromInt(8443)
+	svc.Spec.Ports[0] = portSpec
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
+	svc.Spec.ClusterIP = corev1.ClusterIPNone
+	return nil
 }
