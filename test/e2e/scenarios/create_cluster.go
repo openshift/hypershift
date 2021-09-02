@@ -31,6 +31,7 @@ type TestCreateClusterOptions struct {
 // is recommended to use it as a PR blocker test.
 func TestCreateCluster(ctx context.Context, o TestCreateClusterOptions) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		client := e2eutil.GetClientOrDie()
@@ -49,9 +50,10 @@ func TestCreateCluster(ctx context.Context, o TestCreateClusterOptions) func(t *
 
 		// Ensure we clean up after the test
 		defer func() {
-			e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, o.ArtifactDir)
-			e2eutil.DumpAndDestroyHostedCluster(context.Background(), hostedCluster, o.AWSCredentialsFile, o.AWSRegion, o.BaseDomain, o.ArtifactDir)
-			e2eutil.DeleteNamespace(context.Background(), client, namespace.Name)
+			// TODO: Figure out why this is slow
+			//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, o.ArtifactDir)
+			e2eutil.DumpAndDestroyHostedCluster(t, context.Background(), hostedCluster, o.AWSCredentialsFile, o.AWSRegion, o.BaseDomain, o.ArtifactDir)
+			e2eutil.DeleteNamespace(t, context.Background(), client, namespace.Name)
 		}()
 
 		// Create the cluster
@@ -70,14 +72,14 @@ func TestCreateCluster(ctx context.Context, o TestCreateClusterOptions) func(t *
 			BaseDomain:       o.BaseDomain,
 			NetworkType:      string(hyperv1.OpenShiftSDN),
 		}
-		log.Info("creating a new cluster", "options", createClusterOpts)
+		t.Logf("Creating a new cluster. Options: %v", createClusterOpts)
 		err := cmdcluster.CreateCluster(ctx, createClusterOpts)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
 
 		// Get the newly created cluster
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-		log.Info("found the new hostedcluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
+		t.Logf("Found the new hostedcluster. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 
 		// Get the newly created nodepool
 		nodepool := &hyperv1.NodePool{
@@ -88,14 +90,14 @@ func TestCreateCluster(ctx context.Context, o TestCreateClusterOptions) func(t *
 		}
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
-		log.Info("created nodepool", "namespace", nodepool.Namespace, "name", nodepool.Name)
+		t.Logf("Created nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
 
 		// Wait for nodes to report ready
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 		e2eutil.WaitForNReadyNodes(t, ctx, guestClient, *nodepool.Spec.NodeCount)
 
 		// Wait for the rollout to be reported complete
-		log.Info("waiting for cluster rollout", "image", o.ReleaseImage)
+		t.Logf("Waiting for cluster rollout. Image: %s", o.ReleaseImage)
 		e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, o.ReleaseImage)
 	}
 }
