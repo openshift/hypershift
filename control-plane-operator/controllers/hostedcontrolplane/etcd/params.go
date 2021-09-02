@@ -10,12 +10,12 @@ import (
 )
 
 type EtcdParams struct {
-	ClusterVersion           string
-	EtcdOperatorImage        string
-	OwnerRef                 config.OwnerRef `json:"ownerRef"`
-	OperatorDeploymentConfig config.DeploymentConfig
-	EtcdDeploymentConfig     config.DeploymentConfig
-	PVCClaim                 *corev1.PersistentVolumeClaimSpec `json:"pvcClaim"`
+	ClusterVersion            string
+	EtcdOperatorImage         string
+	OwnerRef                  config.OwnerRef `json:"ownerRef"`
+	OperatorDeploymentConfig  config.DeploymentConfig
+	EtcdDeploymentConfig      config.DeploymentConfig
+	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec"`
 }
 
 var etcdLabels = map[string]string{
@@ -55,6 +55,9 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 		p.EtcdDeploymentConfig.SetMultizoneSpread(etcdLabels)
 	default:
 		p.EtcdDeploymentConfig.Replicas = 1
+	}
+	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed && hcp.Spec.Etcd.Managed != nil {
+		p.PersistentVolumeClaimSpec = hcp.Spec.Etcd.Managed.PersistentVolumeClaimSpec
 	}
 	return p
 }
