@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+
 	"github.com/openshift/api/operator/v1alpha1"
 	"sigs.k8s.io/cluster-api/util/annotations"
 
@@ -697,6 +698,15 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity service: %w", err)
 	}
+	if serviceStrategy.Type != hyperv1.Route {
+		return nil
+	}
+	kasRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, kasRoute, func() error {
+		return konnectivity.ReconcileRoute(kasRoute, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile API server route: %w", err)
+	}
 	return nil
 }
 
@@ -831,7 +841,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Konnectivity)
 	if serviceStrategy == nil {
-		err = fmt.Errorf("Konnectivity service strategy not specified")
+		err = fmt.Errorf("konnectivity service strategy not specified")
 		return
 	}
 	svc := manifests.KonnectivityServerService(hcp.Namespace)
@@ -843,7 +853,19 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx co
 		err = fmt.Errorf("failed to get konnectivity service: %w", err)
 		return
 	}
-	return konnectivity.ReconcileServerServiceStatus(svc, serviceStrategy)
+	var route *routev1.Route
+	if serviceStrategy.Type == hyperv1.Route {
+		route = manifests.KonnectivityServerRoute(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
+			if apierrors.IsNotFound(err) {
+				err = nil
+				return
+			}
+			err = fmt.Errorf("failed to get konnectivity route: %w", err)
+			return
+		}
+	}
+	return konnectivity.ReconcileServerServiceStatus(svc, route, serviceStrategy)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
