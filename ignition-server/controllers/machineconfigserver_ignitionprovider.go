@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -25,6 +29,7 @@ var _ IgnitionProvider = (*MCSIgnitionProvider)(nil)
 
 const (
 	resourceGenerateName = "machine-config-server-"
+	mcsPodSubdomain      = "machine-config-server"
 )
 
 // MCSIgnitionProvider is an IgnitionProvider that uses
@@ -129,26 +134,44 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			return false, nil
 		}
 
-		// Build proxy request.
-		proxyReq, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%s/config/master", mcsPod.Status.PodIP, "8080"), nil)
+		// Get  Machine config certs
+		var caCert []byte
+		var ok bool
+		machineConfigServerCert := manifests.MachineConfigServerCert(p.Namespace)
+		if err := p.Client.Get(ctx, client.ObjectKeyFromObject(machineConfigServerCert), machineConfigServerCert); err != nil {
+			return false, fmt.Errorf("failed to get machine config server secret: %w", err)
+		}
+		if caCert, ok = machineConfigServerCert.Data["ca.crt"]; !ok {
+			return false, fmt.Errorf("failed to get Certificate from mcs-crt: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
 		if err != nil {
-			return false, fmt.Errorf("error building http request for machine config server pod: %w", err)
+			return false, fmt.Errorf("failed to load cert: %w", err)
+		}
+		client := &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					RootCAs: caCertPool,
+				},
+			},
+			Timeout: 5 * time.Second,
+		}
+		// Build proxy request.
+		mcsPodHeadlessDomain := fmt.Sprintf("%s.machine-config-server.%s.svc.cluster.local", mcsPod.Name, p.Namespace)
+		proxyReq, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://%s:8443/config/master", mcsPodHeadlessDomain), nil)
+		if err != nil {
+			return false, fmt.Errorf("error building https request for machine config server pod: %w", err)
 		}
 		// We pass expected Headers to return the right config version.
 		// https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
 		// https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
 		// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
 		proxyReq.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
-
-		// Send proxy request.
-		client := &http.Client{
-			Timeout: 5 * time.Second,
-		}
 		res, err := client.Do(proxyReq)
 		if err != nil {
-			return false, fmt.Errorf("error sending http request for machine config server pod: %w", err)
+			return false, fmt.Errorf("error sending https request for machine config server pod: %w", err)
 		}
-
 		if res.StatusCode != http.StatusOK {
 			return false, fmt.Errorf("request to the machine config server did not returned a 200, this is unexpected")
 		}
@@ -196,7 +219,6 @@ exec machine-config-operator bootstrap \
 --dns-config-file=/assets/manifests/cluster-dns-02-config.yaml \
 --dest-dir=/mcc-manifests \
 --pull-secret=/assets/manifests/pull-secret.yaml
-
 # Use our own version of configpools that swap master and workers
 mv /mcc-manifests/bootstrap/manifests /mcc-manifests/bootstrap/manifests.tmp
 mkdir /mcc-manifests/bootstrap/manifests
@@ -215,22 +237,21 @@ cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests
 	customMachineConfigArg := `
 cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
 
+	podName := fmt.Sprintf("%s%d", resourceGenerateName, rand.Int31())
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    namespace,
-			GenerateName: resourceGenerateName,
+			Namespace: namespace,
+			Name:      podName,
+			Labels: map[string]string{
+				"app": "machine-config-server",
+			},
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName:            sa.Name,
 			TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
-			Tolerations: []corev1.Toleration{
-				{
-					Key:      "multi-az-worker",
-					Operator: "Equal",
-					Value:    "true",
-					Effect:   "NoSchedule",
-				},
-			},
+			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
+			Subdomain:                     mcsPodSubdomain,
+			Hostname:                      podName,
 			InitContainers: []corev1.Container{
 				{
 					Image: images["machine-config-operator"],
@@ -326,12 +347,11 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 						"bootstrap",
 						"--bootstrap-kubeconfig=/etc/openshift/kubeconfig",
 						"--secure-port=8443",
-						"--insecure-port=8080",
 					},
 					Ports: []corev1.ContainerPort{
 						{
-							Name:          "http",
-							ContainerPort: 8080,
+							Name:          "https",
+							ContainerPort: 8443,
 							Protocol:      corev1.ProtocolTCP,
 						},
 					},
@@ -369,7 +389,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					Name: "mcs-tls",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: "ignition-server-serving-cert",
+							SecretName: "mcs-crt",
 						},
 					},
 				},
