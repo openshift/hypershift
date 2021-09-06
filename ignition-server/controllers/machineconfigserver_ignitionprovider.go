@@ -252,6 +252,12 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
 			Subdomain:                     mcsPodSubdomain,
 			Hostname:                      podName,
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "hypershift.openshift.io/cluster",
+					Operator: corev1.TolerationOpExists,
+				},
+			},
 			InitContainers: []corev1.Container{
 				{
 					Image: images["machine-config-operator"],
