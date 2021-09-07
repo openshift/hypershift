@@ -222,7 +222,6 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		Annotations:      annotations,
 		ReleaseImage:     opts.ReleaseImage,
 		PullSecret:       pullSecret,
-		SigningKey:       iamInfo.ServiceAccountSigningKey,
 		IssuerURL:        iamInfo.IssuerURL,
 		SSHKey:           sshKey,
 		NodePoolReplicas: opts.NodePoolReplicas,

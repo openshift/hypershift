@@ -33,12 +33,11 @@ type CreateIAMOptions struct {
 }
 
 type CreateIAMOutput struct {
-	Region                   string                       `json:"region"`
-	ProfileName              string                       `json:"profileName"`
-	InfraID                  string                       `json:"infraID"`
-	IssuerURL                string                       `json:"issuerURL"`
-	ServiceAccountSigningKey []byte                       `json:"serviceAccountSigningKey"`
-	Roles                    []hyperv1.AWSRoleCredentials `json:"roles"`
+	Region      string                       `json:"region"`
+	ProfileName string                       `json:"profileName"`
+	InfraID     string                       `json:"infraID"`
+	IssuerURL   string                       `json:"issuerURL"`
+	Roles       []hyperv1.AWSRoleCredentials `json:"roles"`
 
 	KubeCloudControllerUserAccessKeyID     string `json:"kubeCloudControllerUserAccessKeyID"`
 	KubeCloudControllerUserAccessKeySecret string `json:"kubeCloudControllerUserAccessKeySecret"`

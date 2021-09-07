@@ -1092,15 +1092,8 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 
 	// Service account signing key secret
 	serviceAccountSigningKeySecret := manifests.ServiceAccountSigningKeySecret(hcp.Namespace)
-	var signingKeySecret *corev1.Secret
-	if len(hcp.Spec.SigningKey.Name) > 0 {
-		signingKeySecret = &corev1.Secret{}
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.SigningKey.Name}, signingKeySecret); err != nil {
-			return fmt.Errorf("failed to get signing key %s: %w", hcp.Spec.SigningKey.Name, err)
-		}
-	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, serviceAccountSigningKeySecret, func() error {
-		return pki.ReconcileServiceAccountSigningKeySecret(serviceAccountSigningKeySecret, signingKeySecret, p.OwnerRef)
+		return pki.ReconcileServiceAccountSigningKeySecret(serviceAccountSigningKeySecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server service account key secret: %w", err)
 	}

@@ -60,10 +60,6 @@ type HostedClusterSpec struct {
 	// +optional
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 
-	// SigningKey is a reference to a Secret containing a single key "key"
-	// +optional
-	SigningKey corev1.LocalObjectReference `json:"signingKey,omitempty"`
-
 	// +kubebuilder:default:="https://kubernetes.default.svc"
 	IssuerURL string `json:"issuerURL"`
 

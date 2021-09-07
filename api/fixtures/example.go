@@ -16,7 +16,6 @@ type ExampleResources struct {
 	PullSecret                  *corev1.Secret
 	KubeCloudControllerAWSCreds *corev1.Secret
 	NodePoolManagementAWSCreds  *corev1.Secret
-	SigningKey                  *corev1.Secret
 	SSHKey                      *corev1.Secret
 	Cluster                     *hyperv1.HostedCluster
 	NodePool                    *hyperv1.NodePool
@@ -26,7 +25,6 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	objects := []crclient.Object{
 		o.Namespace,
 		o.PullSecret,
-		o.SigningKey,
 		o.KubeCloudControllerAWSCreds,
 		o.NodePoolManagementAWSCreds,
 		o.Cluster,
@@ -45,7 +43,6 @@ type ExampleOptions struct {
 	Name             string
 	ReleaseImage     string
 	PullSecret       []byte
-	SigningKey       []byte
 	IssuerURL        string
 	SSHKey           []byte
 	NodePoolReplicas int32
@@ -127,20 +124,6 @@ aws_secret_access_key = %s
 		o.AWS.NodePoolManagementUserAccessKeyID,
 		o.AWS.NodePoolManagementUserAccessKeySecret)
 
-	signingKeySecret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace.Name,
-			Name:      o.Name + "-signing-key",
-		},
-		Data: map[string][]byte{
-			"key": o.SigningKey,
-		},
-	}
-
 	var sshKeySecret *corev1.Secret
 	var sshKeyReference corev1.LocalObjectReference
 	if len(o.SSHKey) > 0 {
@@ -217,7 +200,6 @@ aws_secret_access_key = %s
 			},
 			InfraID:    o.InfraID,
 			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
-			SigningKey: corev1.LocalObjectReference{Name: signingKeySecret.Name},
 			IssuerURL:  o.IssuerURL,
 			SSHKey:     sshKeyReference,
 			FIPS:       o.FIPS,
@@ -293,7 +275,6 @@ aws_secret_access_key = %s
 		PullSecret:                  pullSecret,
 		KubeCloudControllerAWSCreds: kubeCloudControllerCredsSecret,
 		NodePoolManagementAWSCreds:  nodePoolManagementCredsSecret,
-		SigningKey:                  signingKeySecret,
 		SSHKey:                      sshKeySecret,
 		Cluster:                     cluster,
 		NodePool:                    nodePool,
