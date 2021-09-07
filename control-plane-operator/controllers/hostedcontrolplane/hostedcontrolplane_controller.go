@@ -1836,9 +1836,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.APIAvailabilityPolicy = render.SingleReplica
 	params.ControllerAvailabilityPolicy = render.SingleReplica
-	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
-		params.ControllerAvailabilityPolicy = render.HighlyAvailable
-	}
 	params.InfrastructureAvailabilityPolicy = render.SingleReplica
 	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.HighlyAvailable {
 		params.InfrastructureAvailabilityPolicy = render.HighlyAvailable
