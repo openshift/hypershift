@@ -636,15 +636,6 @@ spec:
                   - servicePublishingStrategy
                   type: object
                 type: array
-              signingKey:
-                description: SigningKey is a reference to a Secret containing a single
-                  key "key"
-                properties:
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                      TODO: Add other useful fields. apiVersion, kind, uid?'
-                    type: string
-                type: object
               sshKey:
                 description: SSHKey is a reference to a Secret containing a single
                   key "id_rsa.pub", whose value is the public part of an SSH key that

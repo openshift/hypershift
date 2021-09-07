@@ -3,12 +3,8 @@ package aws
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"net/url"
 	"strings"
@@ -264,18 +260,6 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		InfraID:   o.InfraID,
 		IssuerURL: o.IssuerURL,
 	}
-
-	// Create the service account signing key
-	privKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return nil, err
-	}
-
-	output.ServiceAccountSigningKey = pem.EncodeToMemory(&pem.Block{
-		Type:    "RSA PRIVATE KEY",
-		Headers: nil,
-		Bytes:   x509.MarshalPKCS1PrivateKey(privKey),
-	})
 
 	// Discover the thumbprint for the CA on the OIDC discovery endpoint
 	url, err := url.Parse(o.IssuerURL)
