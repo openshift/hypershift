@@ -42,7 +42,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -126,7 +125,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		// return the updated resource. All client consumers will need audited to
 		// ensure they are tolerant of stale data (or we need a cache or client that
 		// makes stronger coherence guarantees).
-		ClientBuilder: &uncachedClientBuilder{},
+		NewClient: uncachedNewClient,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
@@ -218,13 +217,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	return mgr.Start(ctx)
 }
 
-type uncachedClientBuilder struct{}
-
-func (n *uncachedClientBuilder) WithUncached(_ ...client.Object) cluster.ClientBuilder {
-	return n
-}
-
-func (n *uncachedClientBuilder) Build(_ cache.Cache, config *rest.Config, options client.Options) (client.Client, error) {
+func uncachedNewClient(_ cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
 	c, err := client.New(config, options)
 	if err != nil {
 		return nil, err

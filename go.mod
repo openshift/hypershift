@@ -17,7 +17,7 @@ require (
 	github.com/onsi/gomega v1.14.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
-	github.com/openshift/api v0.0.0-20201019163320-c6a5ec25f267
+	github.com/openshift/api v0.0.0-20210713130143-be21c6cb1bea
 	github.com/openshift/client-go v0.0.0-20200929181438-91d71ef2122c
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.7.0
@@ -40,7 +40,7 @@ require (
 	k8s.io/client-go v0.21.4
 	k8s.io/component-base v0.21.4
 	k8s.io/kube-aggregator v0.20.2
-	k8s.io/kube-scheduler v0.20.2
+	k8s.io/kube-scheduler v0.21.4
 	k8s.io/utils v0.0.0-20210802155522-efc7438f0176
 	sigs.k8s.io/cluster-api v0.4.2
 	sigs.k8s.io/cluster-api-provider-aws v0.7.0
@@ -50,16 +50,7 @@ require (
 )
 
 replace (
-	k8s.io/api => k8s.io/api v0.20.2
-	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.20.2
-	k8s.io/apimachinery => k8s.io/apimachinery v0.20.2
-	k8s.io/apiserver => k8s.io/apiserver v0.20.2
-	k8s.io/client-go => k8s.io/client-go v0.20.2
-	k8s.io/component-base => k8s.io/component-base v0.20.2
-	k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.20.2
-	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.20.2
 	k8s.io/utils => k8s.io/utils v0.0.0-20210111153108-fddb29f9d009
 	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v0.4.2
-	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.8.2
 	sigs.k8s.io/controller-tools => sigs.k8s.io/controller-tools v0.5.0
 )

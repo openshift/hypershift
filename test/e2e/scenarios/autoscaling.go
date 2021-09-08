@@ -105,14 +105,10 @@ func TestAutoscaling(ctx context.Context, o TestAutoscalingOptions) func(t *test
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 		var max int32 = 3
 
-		// These Deployments have replicas=2 with
+		// This Deployment have replicas=2 with
 		// anti-affinity rules resulting in scheduling constraints
 		// that prevent the cluster from ever scaling back down to 1:
 		// aws-ebs-csi-driver-controller
-		// console
-		// router-default
-		// thanos-querier
-		// prometheus-adapter
 		var min int32 = 2
 		nodepool.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
 			Min: min,
