@@ -1,6 +1,9 @@
 package config
 
 const (
+	// EtcdPriorityClass is for etcd pods.
+	EtcdPriorityClass = "hypershift-etcd"
+
 	// APICriticalPriorityClass is for pods that are required for API calls and
 	// resource admission to succeed. This includes pods like kube-apiserver,
 	// aggregated API servers, and webhooks.

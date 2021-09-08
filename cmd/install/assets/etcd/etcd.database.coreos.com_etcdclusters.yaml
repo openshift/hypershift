@@ -971,6 +971,10 @@ spec:
                           backing this claim.
                         type: string
                     type: object
+                  priorityClassName:
+                    description: PriorityClassName specifies the pod's priority class
+                      name.
+                    type: string
                   resources:
                     description: Resources is the resource requirements for the etcd
                       container. This field cannot be updated once the cluster is

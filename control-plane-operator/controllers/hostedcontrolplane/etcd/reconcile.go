@@ -116,6 +116,7 @@ func buildEtcdOperatorContainer(image string) func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"etcd-operator"}
 		c.Args = []string{"-create-crd=false"}
+		c.ImagePullPolicy = corev1.PullAlways
 		c.Env = []corev1.EnvVar{
 			{
 				Name: "MY_POD_NAMESPACE",
@@ -173,8 +174,7 @@ func ReconcileCluster(cluster *etcdv1.EtcdCluster, ownerRef config.OwnerRef, etc
 	}
 	podPolicy.Affinity = etcdDeploymentConfig.Scheduling.Affinity
 	podPolicy.Tolerations = etcdDeploymentConfig.Scheduling.Tolerations
-	// TODO: Figure out how to set priority class on etcd pods
-	// podPolicy.PriorityClass = p.EtcdScheduling.PriorityClass
+	podPolicy.PriorityClassName = etcdDeploymentConfig.Scheduling.PriorityClass
 	if sc, ok := etcdDeploymentConfig.SecurityContexts[etcdContainer().Name]; ok {
 		podPolicy.SecurityContext = &corev1.PodSecurityContext{
 			SELinuxOptions: sc.SELinuxOptions,

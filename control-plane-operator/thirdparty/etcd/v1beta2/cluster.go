@@ -18,7 +18,7 @@ import (
 	"errors"
 	"strings"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -125,6 +125,9 @@ type PodPolicy struct {
 
 	// Tolerations specifies the pod's tolerations.
 	Tolerations []v1.Toleration `json:"tolerations,omitempty"`
+
+	// PriorityClassName specifies the pod's priority class name.
+	PriorityClassName string `json:"priorityClassName,omitempty"`
 
 	// List of environment variables to set in the etcd container.
 	// This is used to configure etcd process. etcd cluster cannot be created, when
