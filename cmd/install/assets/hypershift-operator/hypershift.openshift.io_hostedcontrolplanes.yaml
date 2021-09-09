@@ -339,7 +339,7 @@ spec:
               infrastructureAvailabilityPolicy:
                 description: InfrastructureAvailabilityPolicy specifies whether to
                   run infrastructure services that run on the guest cluster nodes
-                  in HA mode Defaults to SingleReplica when not set
+                  in HA mode Defaults to HighlyAvailable when not set
                 type: string
               issuerURL:
                 type: string
