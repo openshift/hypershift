@@ -1287,19 +1287,16 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
+		ignitionServerLabels := map[string]string{"app": ignitionserver.ResourceName}
 		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Replicas: k8sutilspointer.Int32Ptr(1),
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": ignitionserver.ResourceName,
-				},
+				MatchLabels: ignitionServerLabels,
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": ignitionserver.ResourceName,
-					},
+					Labels: ignitionServerLabels,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:            sa.Name,
@@ -1389,9 +1386,23 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 			},
 		}
 		hyperutil.SetColocation(hcluster, ignitionServerDeployment)
-		hyperutil.SetRestartAnnotation(hcluster, ignitionServerDeployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, ignitionServerDeployment)
 		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
+		switch hcluster.Spec.ControllerAvailabilityPolicy {
+		case hyperv1.HighlyAvailable:
+			maxSurge := intstr.FromInt(1)
+			maxUnavailable := intstr.FromInt(1)
+			ignitionServerDeployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
+			ignitionServerDeployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
+				MaxSurge:       &maxSurge,
+				MaxUnavailable: &maxUnavailable,
+			}
+			ignitionServerDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+			hyperutil.SetMultizoneSpread(ignitionServerLabels, ignitionServerDeployment)
+		default:
+			ignitionServerDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+		}
+
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
@@ -1758,6 +1769,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",
+							"--leader-elect=true",
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -1778,9 +1790,26 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 		},
 	}
 	hyperutil.SetColocation(hc, deployment)
-	hyperutil.SetRestartAnnotation(hc, deployment)
+	// TODO (alberto): Reconsider enable this back when we face a real need
+	// with no better solution.
+	// hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
+	switch hc.Spec.ControllerAvailabilityPolicy {
+	case hyperv1.HighlyAvailable:
+		maxSurge := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(1)
+		deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
+		deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
+			MaxSurge:       &maxSurge,
+			MaxUnavailable: &maxUnavailable,
+		}
+		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+		hyperutil.SetMultizoneSpread(capiManagerLabels, deployment)
+	default:
+		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+	}
+
 	return nil
 }
 
@@ -1843,6 +1872,13 @@ func reconcileCAPIManagerRole(role *rbacv1.Role) error {
 				"events",
 				"nodes",
 				"secrets",
+			},
+			Verbs: []string{"*"},
+		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
 			},
 			Verbs: []string{"*"},
 		},
@@ -1942,6 +1978,7 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",
+							"--leader-elect=true",
 						},
 						Ports: []corev1.ContainerPort{
 							{
@@ -1972,9 +2009,25 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 		},
 	}
 	hyperutil.SetColocation(hc, deployment)
-	hyperutil.SetRestartAnnotation(hc, deployment)
+	// TODO (alberto): Reconsider enable this back when we face a real need
+	// with no better solution.
+	// hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
+	switch hc.Spec.ControllerAvailabilityPolicy {
+	case hyperv1.HighlyAvailable:
+		maxSurge := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(1)
+		deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
+		deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
+			MaxSurge:       &maxSurge,
+			MaxUnavailable: &maxUnavailable,
+		}
+		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+		hyperutil.SetMultizoneSpread(capaLabels, deployment)
+	default:
+		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+	}
 
 	return nil
 }
@@ -1986,6 +2039,7 @@ func reconcileCAPIAWSProviderRole(role *rbacv1.Role) error {
 			Resources: []string{
 				"events",
 				"secrets",
+				"configmaps",
 			},
 			Verbs: []string{"*"},
 		},
@@ -2007,6 +2061,13 @@ func reconcileCAPIAWSProviderRole(role *rbacv1.Role) error {
 			APIGroups: []string{"hypershift.openshift.io"},
 			Resources: []string{"*"},
 			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
+			},
+			Verbs: []string{"*"},
 		},
 	}
 	return nil
