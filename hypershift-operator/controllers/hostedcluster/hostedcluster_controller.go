@@ -1103,6 +1103,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 
 	serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
 	if serviceStrategy == nil {
+		//lint:ignore ST1005 Ignition is proper name
 		return fmt.Errorf("Ignition service strategy not specified")
 	}
 	// Reconcile service

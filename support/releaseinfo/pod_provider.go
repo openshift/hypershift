@@ -137,21 +137,16 @@ func (p *PodProvider) Lookup(ctx context.Context, image string, pullSecret []byt
 	return
 }
 
-func getContainerLogs(ctx context.Context, pods v1.PodInterface, podName, containerName string) (result []byte, err error) {
+func getContainerLogs(ctx context.Context, pods v1.PodInterface, podName, containerName string) ([]byte, error) {
 	req := pods.GetLogs(podName, &corev1.PodLogOptions{Container: containerName})
 	logs, err := req.Stream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read logs from %s/%s: %w", podName, containerName, err)
 	}
-	defer func() {
-		if err := logs.Close(); err != nil {
-			err = fmt.Errorf("failed to close log stream from %s/%s: %w", podName, containerName, err)
-		}
-	}()
-	if data, err := ioutil.ReadAll(logs); err != nil {
-		err = fmt.Errorf("couldn't decode logs from %s/%s: %w", podName, containerName, err)
-	} else {
-		result = data
+	defer logs.Close()
+	data, err := ioutil.ReadAll(logs)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't decode logs from %s/%s: %w", podName, containerName, err)
 	}
-	return
+	return data, nil
 }

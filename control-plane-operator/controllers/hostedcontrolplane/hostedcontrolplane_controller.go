@@ -690,6 +690,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	p := konnectivity.NewKonnectivityServiceParams(hcp)
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Konnectivity)
 	if serviceStrategy == nil {
+		//lint:ignore ST1005 Konnectivity is proper name
 		return fmt.Errorf("Konnectivity service strategy not specified")
 	}
 	konnectivityServerService := manifests.KonnectivityServerService(hcp.Namespace)
@@ -1882,7 +1883,7 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 		}
 		u, err := url.Parse(hcp.Spec.IssuerURL)
 		if err != nil {
-			return fmt.Errorf("Unable to parse issuer URL: %s", hcp.Spec.IssuerURL)
+			return fmt.Errorf("unable to parse issuer URL: %s", hcp.Spec.IssuerURL)
 		}
 		route.OwnerReferences = ensureHCPOwnerRef(hcp, route.OwnerReferences)
 		route.Spec = routev1.RouteSpec{
