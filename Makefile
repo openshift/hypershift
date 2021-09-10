@@ -116,6 +116,11 @@ deps:
 	$(GO) mod vendor
 	$(GO) mod verify
 
+# Run staticcheck
+.PHONY: staticcheck
+staticcheck:
+	$(GO) run honnef.co/go/tools/cmd/staticcheck ./control-plane-operator/controllers/... ./hypershift-operator/controllers/... ./ignition-server/... ./hosted-cluster-config-operator/... ./cmd/... ./support/certs/... ./support/releaseinfo/...
+
 # Build the docker image with official golang image
 .PHONY: docker-build
 docker-build:
