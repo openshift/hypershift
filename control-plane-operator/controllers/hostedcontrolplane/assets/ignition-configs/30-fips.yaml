@@ -3,6 +3,6 @@ kind: MachineConfig
 metadata:
   name: 30-fips
   labels:
-    machineconfiguration.openshift.io/role: master
+    machineconfiguration.openshift.io/role: worker
 spec:
   fips: {{ .FIPS }}

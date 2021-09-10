@@ -1907,6 +1907,9 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 
 func (r *HostedControlPlaneReconciler) reconcileImageContentSourcePolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	imageContentSource := manifests.ImageContentSourcePolicy()
+	imageContentSource.Labels = map[string]string{
+		"machineconfiguration.openshift.io/role": "worker",
+	}
 	imageContentSource.Spec.RepositoryDigestMirrors = []v1alpha1.RepositoryDigestMirrors{}
 	for _, imageContentSourceEntry := range hcp.Spec.ImageContentSources {
 		imageContentSource.Spec.RepositoryDigestMirrors = append(imageContentSource.Spec.RepositoryDigestMirrors, v1alpha1.RepositoryDigestMirrors{
