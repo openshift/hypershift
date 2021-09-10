@@ -1607,7 +1607,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 
 func (r *HostedControlPlaneReconciler) reconcileDefaultIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	replicas := int32(2)
-	if hcp.Spec.InfrastructureAvailabilityPolicy != hyperv1.HighlyAvailable {
+	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.SingleReplica {
 		replicas = 1
 	}
 	ingressControllerManifest := manifests.IngressDefaultIngressControllerWorkerManifest(hcp.Namespace)
@@ -1828,9 +1828,9 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.NetworkType = hcp.Spec.NetworkType
 	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.APIAvailabilityPolicy = render.SingleReplica
-	params.InfrastructureAvailabilityPolicy = render.SingleReplica
-	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.HighlyAvailable {
-		params.InfrastructureAvailabilityPolicy = render.HighlyAvailable
+	params.InfrastructureAvailabilityPolicy = render.HighlyAvailable
+	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.SingleReplica {
+		params.InfrastructureAvailabilityPolicy = render.SingleReplica
 	}
 	params.SSHKey = string(sshKeyData)
 

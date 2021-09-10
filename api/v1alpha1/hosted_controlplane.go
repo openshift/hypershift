@@ -53,7 +53,7 @@ type HostedControlPlaneSpec struct {
 
 	// InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
 	// run on the guest cluster nodes in HA mode
-	// Defaults to SingleReplica when not set
+	// Defaults to HighlyAvailable when not set
 	// +optional
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
