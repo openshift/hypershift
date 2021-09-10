@@ -22,12 +22,17 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+# Change HOME to writeable location in CI for staticcheck
+ifeq ("/","${HOME}")
+HOME=/tmp
+endif
+
 all: build e2e
 
 build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
 
 .PHONY: verify
-verify: deps api fmt vet
+verify: staticcheck deps api fmt vet
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	$(eval STATUS = $(shell git status -s))
@@ -117,9 +122,10 @@ deps:
 	$(GO) mod verify
 
 # Run staticcheck
+# How to ignore failures https://staticcheck.io/docs/configuration#line-based-linter-directives
 .PHONY: staticcheck
 staticcheck:
-	$(GO) run honnef.co/go/tools/cmd/staticcheck ./control-plane-operator/controllers/... ./hypershift-operator/controllers/... ./ignition-server/... ./hosted-cluster-config-operator/... ./cmd/... ./support/certs/... ./support/releaseinfo/...
+	HOME=$(HOME) $(GO) run honnef.co/go/tools/cmd/staticcheck ./control-plane-operator/controllers/... ./hypershift-operator/controllers/... ./ignition-server/... ./hosted-cluster-config-operator/... ./cmd/... ./support/certs/... ./support/releaseinfo/...
 
 # Build the docker image with official golang image
 .PHONY: docker-build
