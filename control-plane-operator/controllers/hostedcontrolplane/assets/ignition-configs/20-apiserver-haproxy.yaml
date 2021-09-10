@@ -3,7 +3,7 @@ kind: MachineConfig
 metadata:
   name: 20-apiserver-haproxy
   labels:
-    machineconfiguration.openshift.io/role: master
+    machineconfiguration.openshift.io/role: worker
 spec:
   config:
     ignition:
