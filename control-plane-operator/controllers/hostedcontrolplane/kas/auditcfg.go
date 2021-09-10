@@ -277,7 +277,7 @@ func ReconcileAuditConfig(auditCfgMap *corev1.ConfigMap, ownerRef config.OwnerRe
 	}
 	policy, ok := auditPolicies[auditProfile]
 	if !ok {
-		return fmt.Errorf("Invalid audit policy profile: %s", auditProfile)
+		return fmt.Errorf("invalid audit policy profile: %s", auditProfile)
 	}
 	policyBytes, err := config.SerializeAuditPolicy(policy)
 	if err != nil {

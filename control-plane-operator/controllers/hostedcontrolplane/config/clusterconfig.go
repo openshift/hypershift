@@ -134,13 +134,13 @@ func validateAuthenticationReferencedResources(cfg *configv1.Authentication, sec
 	var errs []error
 	if len(cfg.Spec.OAuthMetadata.Name) > 0 {
 		if !configMaps.Has(cfg.Spec.OAuthMetadata.Name) {
-			errs = append(errs, fmt.Errorf("Authentication: oauth metadata configmap %s is not included in configmap references", cfg.Spec.OAuthMetadata.Name))
+			errs = append(errs, fmt.Errorf("authentication: oauth metadata configmap %s is not included in configmap references", cfg.Spec.OAuthMetadata.Name))
 		}
 	}
 	if cfg.Spec.WebhookTokenAuthenticator != nil {
 		if len(cfg.Spec.WebhookTokenAuthenticator.KubeConfig.Name) > 0 {
 			if !secrets.Has(cfg.Spec.WebhookTokenAuthenticator.KubeConfig.Name) {
-				errs = append(errs, fmt.Errorf("Authentication: webhook token authenticator kubeconfig %s is not included in secret references", cfg.Spec.WebhookTokenAuthenticator.KubeConfig.Name))
+				errs = append(errs, fmt.Errorf("authentication: webhook token authenticator kubeconfig %s is not included in secret references", cfg.Spec.WebhookTokenAuthenticator.KubeConfig.Name))
 			}
 		}
 	}
@@ -151,7 +151,7 @@ func validateImageReferencedResources(cfg *configv1.Image, secrets, configMaps s
 	var errs []error
 	if len(cfg.Spec.AdditionalTrustedCA.Name) > 0 {
 		if !configMaps.Has(cfg.Spec.AdditionalTrustedCA.Name) {
-			errs = append(errs, fmt.Errorf("Image: additional trusted CA configmap %s is not included in configmap references", cfg.Spec.AdditionalTrustedCA.Name))
+			errs = append(errs, fmt.Errorf("image: additional trusted CA configmap %s is not included in configmap references", cfg.Spec.AdditionalTrustedCA.Name))
 		}
 	}
 	return errs
@@ -279,7 +279,7 @@ func validateSchedulerReferencedResources(cfg *configv1.Scheduler, secrets, conf
 	var errs []error
 	if len(cfg.Spec.Policy.Name) > 0 {
 		if !configMaps.Has(cfg.Spec.Policy.Name) {
-			errs = append(errs, fmt.Errorf("Scheduler: policy configmap %s is not included in referenced configmaps", cfg.Spec.Policy.Name))
+			errs = append(errs, fmt.Errorf("scheduler: policy configmap %s is not included in referenced configmaps", cfg.Spec.Policy.Name))
 		}
 	}
 	return errs
