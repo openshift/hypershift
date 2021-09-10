@@ -87,6 +87,10 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.AgentDeploymentConfig.Replicas = 1
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+		p.AgentDeploymentConfig.Replicas = 3
+	}
+	p.AgentDeploymentConfig.SetMultizoneSpread(konnectivityAgentLabels)
 	p.AgentDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.AgentDeploymentConfig.SetColocation(hcp)
 	p.AgentDeploymentConfig.SetControlPlaneIsolation(hcp)
