@@ -107,7 +107,11 @@ type ClusterParams struct {
 	InfraID                                string                 `json:"infraID"`
 	FIPS                                   bool                   `json:"fips"`
 	ProviderCredsSecretName                string                 `json:"providerCredsSecretName"`
-	DefaultFeatureGates                    []string
+	// CatalogRolloutCronSchedule is a crontab-formatted string that dictates at
+	// which time default catalog rollouts occur.
+	CatalogRolloutCronSchedule string `json:"catalogRolloutCronSchedule"`
+
+	DefaultFeatureGates []string
 
 	// AWS params
 	AWSRegion string `json:"awsRegion"`
