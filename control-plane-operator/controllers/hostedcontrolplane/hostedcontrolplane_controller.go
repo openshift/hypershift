@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"sigs.k8s.io/cluster-api/util"
@@ -374,14 +375,21 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Log.Info("Finished reconciling hosted cluster version conditions")
 	}
 
-	if hostedControlPlane.Spec.KubeConfig != nil {
-		hostedControlPlane.Status.KubeConfig = hostedControlPlane.Spec.KubeConfig
+	kubeconfig := manifests.KASExternalKubeconfigSecret(hostedControlPlane.Namespace, hostedControlPlane.Spec.KubeConfig)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeconfig), kubeconfig); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, err
+		}
 	} else {
 		hostedControlPlane.Status.KubeConfig = &hyperv1.KubeconfigSecretRef{
-			Name: DefaultAdminKubeconfigName,
+			Name: kubeconfig.Name,
 			Key:  DefaultAdminKubeconfigKey,
 		}
+		if hostedControlPlane.Spec.KubeConfig != nil {
+			hostedControlPlane.Status.KubeConfig.Key = hostedControlPlane.Spec.KubeConfig.Key
+		}
 	}
+
 	hostedControlPlane.Status.Initialized = true
 
 	// If a rollout is in progress, compute and record the rollout status. The
