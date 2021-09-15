@@ -36,6 +36,21 @@ const (
 	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
 	//no images can be pulled from registries outside of IBM Cloud's official regional registries
 	ClusterAutoscalerImage = "hypershift.openshift.io/cluster-autoscaler-image"
+	// AWSKMSProviderImage is an annotation that allows the specification of the AWS kms provider image.
+	// Upstream code located at: https://github.com/kubernetes-sigs/aws-encryption-provider
+	AWSKMSProviderImage = "hypershift.openshift.io/aws-kms-provider-image"
+	// IBMCloudKMSProviderImage is an annotation that allows the specification of the IBM Cloud kms provider image.
+	IBMCloudKMSProviderImage = "hypershift.openshift.io/ibmcloud-kms-provider-image"
+
+	// AESCBCKeySecretKey defines the Kubernetes secret key name that contains the aescbc encryption key
+	// in the AESCBC secret encryption strategy
+	AESCBCKeySecretKey = "key"
+	// IBMCloudIAMAPIKeySecretKey defines the Kubernetes secret key name that contains
+	// the customer IBMCloud apikey in the unmanaged authentication strategy for IBMCloud KMS secret encryption
+	IBMCloudIAMAPIKeySecretKey = "iam_apikey"
+	// AWSCredentialsFileSecretKey defines the Kubernetes secret key name that contains
+	// the customer AWS credentials in the unmanaged authentication strategy for AWS KMS secret encryption
+	AWSCredentialsFileSecretKey = "credentials"
 )
 
 // HostedClusterSpec defines the desired state of HostedCluster
@@ -114,6 +129,11 @@ type HostedClusterSpec struct {
 	// ImageContentSources lists sources/repositories for the release-image content.
 	// +optional
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
+
+	// SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
+	// cluster when applicable.
+	// +optional
+	SecretEncryption *SecretEncryptionSpec `json:"secretEncryption,omitempty"`
 }
 
 // ImageContentSource defines a list of sources/repositories that can be used to pull content.
@@ -406,6 +426,159 @@ type EtcdTLSConfig struct {
 	// The client cert must be stored at secret key etcd-client.crt.
 	// The client key must be stored at secret key etcd-client.key.
 	ClientSecret corev1.LocalObjectReference `json:"clientSecret"`
+}
+
+// SecretEncryptionType defines the type of kube secret encryption being used.
+// +kubebuilder:validation:Enum=kms;aescbc
+type SecretEncryptionType string
+
+const (
+	// KMS integrates with a cloud provider's key management service to do secret encryption
+	KMS SecretEncryptionType = "kms"
+	// AESCBC uses AES-CBC with PKCS#7 padding to do secret encryption
+	AESCBC SecretEncryptionType = "aescbc"
+)
+
+// SecretEncryptionSpec contains metadata about the kubernetes secret encryption strategy being used for the
+// cluster when applicable.
+type SecretEncryptionSpec struct {
+	// Type defines the type of kube secret encryption being used
+	// +unionDiscriminator
+	Type SecretEncryptionType `json:"type"`
+
+	// KMS defines metadata about the kms secret encryption strategy
+	// +optional
+	KMS *KMSSpec `json:"kms,omitempty"`
+
+	// AESCBC defines metadata about the AESCBC secret encryption strategy
+	// +optional
+	AESCBC *AESCBCSpec `json:"aescbc,omitempty"`
+}
+
+// KMSProvider defines the supported KMS providers
+// +kubebuilder:validation:Enum=IBMCloud;AWS
+type KMSProvider string
+
+const (
+	IBMCloud KMSProvider = "IBMCloud"
+	AWS      KMSProvider = "AWS"
+)
+
+// KMSSpec defines metadata about the kms secret encryption strategy
+type KMSSpec struct {
+	// Provider defines the KMS provider
+	// +unionDiscriminator
+	Provider KMSProvider `json:"provider"`
+	// IBMCloud defines metadata for the IBM Cloud KMS encryption strategy
+	// +optional
+	IBMCloud *IBMCloudKMSSpec `json:"ibmcloud,omitempty"`
+	// AWS defines metadata about the configuration of the AWS KMS Secret Encryption provider
+	// +optional
+	AWS *AWSKMSSpec `json:"aws,omitempty"`
+}
+
+// IBMCloudKMSSpec defines metadata for the IBM Cloud KMS encryption strategy
+type IBMCloudKMSSpec struct {
+	// Region is the IBM Cloud region
+	Region string `json:"region"`
+	// Auth defines metadata for how authentication is done with IBM Cloud KMS
+	Auth IBMCloudKMSAuthSpec `json:"auth"`
+	// KeyList defines the list of keys used for data encryption
+	KeyList []IBMCloudKMSKeyEntry `json:"keyList"`
+}
+
+// IBMCloudKMSKeyEntry defines metadata for an IBM Cloud KMS encryption key
+type IBMCloudKMSKeyEntry struct {
+	// CRKID is the customer rook key id
+	CRKID string `json:"crkID"`
+	// InstanceID is the id for the key protect instance
+	InstanceID string `json:"instanceID"`
+	// CorrelationID is an identifier used to track all api call usage from hypershift
+	CorrelationID string `json:"correlationID"`
+	// URL is the url to call key protect apis over
+	// +kubebuilder:validation:Pattern=`^https://`
+	URL string `json:"url"`
+	// KeyVersion is a unique number associated with the key. The number increments whenever a new
+	// key is enabled for data encryption.
+	KeyVersion int `json:"keyVersion"`
+}
+
+// IBMCloudKMSAuthSpec defines metadata for how authentication is done with IBM Cloud KMS
+type IBMCloudKMSAuthSpec struct {
+	// Type defines the IBM Cloud KMS authentication strategy
+	// +unionDiscriminator
+	Type IBMCloudKMSAuthType `json:"type"`
+	// Unmanaged defines the auth metadata the customer provides to interact with IBM Cloud KMS
+	// +optional
+	Unmanaged *IBMCloudKMSUnmanagedAuthSpec `json:"unmanaged,omitempty"`
+	// Managed defines metadata around the service to service authentication strategy for the IBM Cloud
+	// KMS system (all provider managed).
+	// +optional
+	Managed *IBMCloudKMSManagedAuthSpec `json:"managed,omitempty"`
+}
+
+// IBMCloudKMSAuthType defines the IBM Cloud KMS authentication strategy
+// +kubebuilder:validation:Enum=Managed;Unmanaged
+type IBMCloudKMSAuthType string
+
+const (
+	// IBMCloudKMSManagedAuth defines the KMS authentication strategy where the IKS/ROKS platform uses
+	// service to service auth to call IBM Cloud KMS APIs (no customer credentials requried)
+	IBMCloudKMSManagedAuth IBMCloudKMSAuthType = "Managed"
+	// IBMCloudKMSUnmanagedAuth defines the KMS authentication strategy where a customer supplies IBM Cloud
+	// authentication to interact with IBM Cloud KMS APIs
+	IBMCloudKMSUnmanagedAuth IBMCloudKMSAuthType = "Unmanaged"
+)
+
+// IBMCloudKMSUnmanagedAuthSpec defines the auth metadata the customer provides to interact with IBM Cloud KMS
+type IBMCloudKMSUnmanagedAuthSpec struct {
+	// Credentials should reference a secret with a key field of IBMCloudIAMAPIKeySecretKey that contains a apikey to
+	// call IBM Cloud KMS APIs
+	Credentials corev1.LocalObjectReference `json:"credentials"`
+}
+
+// IBMCloudKMSManagedAuthSpec defines metadata around the service to service authentication strategy for the IBM Cloud
+// KMS system (all provider managed).
+type IBMCloudKMSManagedAuthSpec struct {
+}
+
+// AWSKMSSpec defines metadata about the configuration of the AWS KMS Secret Encryption provider
+type AWSKMSSpec struct {
+	// Region contains the AWS region
+	Region string `json:"region"`
+	// ActiveKey defines the active key used to encrypt new secrets
+	ActiveKey AWSKMSKeyEntry `json:"activeKey"`
+	// BackupKey defines the old key during the rotation process so previously created
+	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
+	// +optional
+	BackupKey *AWSKMSKeyEntry `json:"backupKey,omitempty"`
+	// Auth defines metadata about the management of credentials used to interact with AWS KMS
+	Auth AWSKMSAuthSpec `json:"auth"`
+}
+
+// AWSKMSAuthSpec defines metadata about the management of credentials used to interact with AWS KMS
+type AWSKMSAuthSpec struct {
+	// Credentials contains the name of the secret that holds the aws credentials that can be used
+	// to make the necessary KMS calls. It should at key AWSCredentialsFileSecretKey contain the
+	// aws credentials file that can be used to configure AWS SDKs
+	Credentials corev1.LocalObjectReference `json:"credentials"`
+}
+
+// AWSKMSKeyEntry defines metadata to locate the encryption key in AWS
+type AWSKMSKeyEntry struct {
+	// ARN is the Amazon Resource Name for the encryption key
+	// +kubebuilder:validation:Pattern=`^arn:`
+	ARN string `json:"arn"`
+}
+
+// AESCBCSpec defines metadata about the AESCBC secret encryption strategy
+type AESCBCSpec struct {
+	// ActiveKey defines the active key used to encrypt new secrets
+	ActiveKey corev1.LocalObjectReference `json:"activeKey"`
+	// BackupKey defines the old key during the rotation process so previously created
+	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
+	// +optional
+	BackupKey *corev1.LocalObjectReference `json:"backupKey,omitempty"`
 }
 
 const (

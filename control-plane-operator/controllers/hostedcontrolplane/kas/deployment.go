@@ -2,6 +2,7 @@ package kas
 
 import (
 	"fmt"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"path"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -60,6 +61,12 @@ var (
 			kasAuditWebhookConfigFileVolume().Name: "/etc/kubernetes/auditwebhook",
 		},
 	}
+
+	genericSecretEncryptionConfigFileVolumeMount = util.PodVolumeMounts{
+		kasContainerMain().Name: {
+			kasVolumeSecretEncryptionConfigFile().Name: "/etc/kubernetes/secret-encryption",
+		},
+	}
 )
 
 var kasLabels = map[string]string{
@@ -73,7 +80,10 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	cloudProviderConfigRef *corev1.LocalObjectReference,
 	images KubeAPIServerImages,
 	config *corev1.ConfigMap,
-	auditWebhookRef *corev1.LocalObjectReference) error {
+	auditWebhookRef *corev1.LocalObjectReference,
+	secretEncryptionData *hyperv1.SecretEncryptionSpec,
+	aesCBCActiveKey []byte,
+	aesCBCBackupKey []byte) error {
 
 	configBytes, ok := config.Data[KubeAPIServerConfigKey]
 	if !ok {
@@ -145,12 +155,42 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 		},
 	}
-	deploymentConfig.ApplyTo(deployment)
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
 	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec)
 	if auditWebhookRef != nil {
 		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, auditWebhookRef)
 	}
+	if secretEncryptionData != nil {
+		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
+		switch secretEncryptionData.Type {
+		case hyperv1.KMS:
+			if secretEncryptionData.KMS == nil {
+				return fmt.Errorf("kms metadata not specified")
+			}
+			switch secretEncryptionData.KMS.Provider {
+			case hyperv1.IBMCloud:
+				err := applyIBMCloudKMSConfig(&deployment.Spec.Template.Spec, secretEncryptionData.KMS.IBMCloud, images.IBMCloudKMS)
+				if err != nil {
+					return err
+				}
+			case hyperv1.AWS:
+				err := applyAWSKMSConfig(&deployment.Spec.Template.Spec, secretEncryptionData.KMS.AWS.ActiveKey, secretEncryptionData.KMS.AWS.BackupKey, secretEncryptionData.KMS.AWS.Auth, secretEncryptionData.KMS.AWS.Region, images.AWSKMS)
+				if err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("unrecognized secret encryption type %s", secretEncryptionData.Type)
+			}
+		case hyperv1.AESCBC:
+			err := applyAESCBCKeyHashAnnotation(&deployment.Spec.Template, aesCBCActiveKey, aesCBCBackupKey)
+			if err != nil {
+				return err
+			}
+		default:
+			//nothing needed to be done
+		}
+	}
+	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
 
@@ -522,4 +562,31 @@ func findContainer(name string, containers []corev1.Container) *corev1.Container
 		}
 	}
 	return nil
+}
+
+func kasVolumeKMSSocket() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "kms-socket",
+	}
+}
+
+func buildVolumeKMSSocket(v *corev1.Volume) {
+	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
+}
+
+func applyGenericSecretEncryptionConfig(podSpec *corev1.PodSpec) {
+	var container *corev1.Container
+	for i, c := range podSpec.Containers {
+		if c.Name == kasContainerMain().Name {
+			container = &podSpec.Containers[i]
+			break
+		}
+	}
+	if container == nil {
+		panic("main kube apiserver container not found in spec")
+	}
+	container.Args = append(container.Args, fmt.Sprintf("--encryption-provider-config=%s/%s", genericSecretEncryptionConfigFileVolumeMount.Path(kasContainerMain().Name, kasVolumeSecretEncryptionConfigFile().Name), secretEncryptionConfigurationKey))
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeSecretEncryptionConfigFile(), buildVolumeSecretEncryptionConfigFile))
+	container.VolumeMounts = append(container.VolumeMounts,
+		genericSecretEncryptionConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 }

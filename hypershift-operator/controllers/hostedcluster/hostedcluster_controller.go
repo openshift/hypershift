@@ -483,6 +483,160 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile the HostedControlPlane Secret Encryption Info
+	if hcluster.Spec.SecretEncryption != nil {
+		r.Log.Info("Reconciling secret encryption configuration")
+		switch hcluster.Spec.SecretEncryption.Type {
+		case hyperv1.AESCBC:
+			if hcluster.Spec.SecretEncryption.AESCBC == nil || len(hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name) == 0 {
+				r.Log.Error(fmt.Errorf("aescbc metadata  is nil"), "")
+				// don't return error here as reconciling won't fix input error
+				return ctrl.Result{}, nil
+			}
+			var src corev1.Secret
+			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name}, &src); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to get active aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name, err)
+			}
+			if _, ok := src.Data[hyperv1.AESCBCKeySecretKey]; !ok {
+				r.Log.Error(fmt.Errorf("no key field %s specified for aescbc active key secret", hyperv1.AESCBCKeySecretKey), "")
+				// don't return error here as reconciling won't fix input error
+				return ctrl.Result{}, nil
+			}
+			hostedControlPlaneActiveKeySecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlPlaneNamespace.Name,
+					Name:      src.Name,
+				},
+			}
+			_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneActiveKeySecret, func() error {
+				if hostedControlPlaneActiveKeySecret.Data == nil {
+					hostedControlPlaneActiveKeySecret.Data = map[string][]byte{}
+				}
+				hostedControlPlaneActiveKeySecret.Data[hyperv1.AESCBCKeySecretKey] = src.Data[hyperv1.AESCBCKeySecretKey]
+				hostedControlPlaneActiveKeySecret.Type = corev1.SecretTypeOpaque
+				return nil
+			})
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed reconciling aescbc active key: %w", err)
+			}
+			if hcluster.Spec.SecretEncryption.AESCBC.BackupKey != nil && len(hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name) > 0 {
+				var src corev1.Secret
+				if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name}, &src); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to get backup aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name, err)
+				}
+				if _, ok := src.Data[hyperv1.AESCBCKeySecretKey]; !ok {
+					r.Log.Error(fmt.Errorf("no key field %s specified for aescbc backup key secret", hyperv1.AESCBCKeySecretKey), "")
+					// don't return error here as reconciling won't fix input error
+					return ctrl.Result{}, nil
+				}
+				hostedControlPlaneBackupKeySecret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: controlPlaneNamespace.Name,
+						Name:      src.Name,
+					},
+				}
+				_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneBackupKeySecret, func() error {
+					if hostedControlPlaneBackupKeySecret.Data == nil {
+						hostedControlPlaneBackupKeySecret.Data = map[string][]byte{}
+					}
+					hostedControlPlaneBackupKeySecret.Data[hyperv1.AESCBCKeySecretKey] = src.Data[hyperv1.AESCBCKeySecretKey]
+					hostedControlPlaneBackupKeySecret.Type = corev1.SecretTypeOpaque
+					return nil
+				})
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed reconciling aescbc backup key: %w", err)
+				}
+			}
+		case hyperv1.KMS:
+			if hcluster.Spec.SecretEncryption.KMS == nil {
+				r.Log.Error(fmt.Errorf("kms metadata nil"), "")
+				// don't return error here as reconciling won't fix input error
+				return ctrl.Result{}, nil
+			}
+			switch hcluster.Spec.SecretEncryption.KMS.Provider {
+			case hyperv1.IBMCloud:
+				if hcluster.Spec.SecretEncryption.KMS.IBMCloud == nil {
+					r.Log.Error(fmt.Errorf("ibm kms metadata nil"), "")
+					// don't return error here as reconciling won't fix input error
+					return ctrl.Result{}, nil
+				}
+				if hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Type == hyperv1.IBMCloudKMSUnmanagedAuth {
+					if hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged == nil || len(hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged.Credentials.Name) == 0 {
+						r.Log.Error(fmt.Errorf("ibm unmanaged auth credential nil"), "")
+						// don't return error here as reconciling won't fix input error
+						return ctrl.Result{}, nil
+					}
+					var src corev1.Secret
+					if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged.Credentials.Name}, &src); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to get ibmcloud kms credentials %s: %w", hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged.Credentials.Name, err)
+					}
+					if _, ok := src.Data[hyperv1.IBMCloudIAMAPIKeySecretKey]; !ok {
+						r.Log.Error(fmt.Errorf("no ibmcloud iam apikey field %s specified in auth secret", hyperv1.IBMCloudIAMAPIKeySecretKey), "")
+						// don't return error here as reconciling won't fix input error
+						return ctrl.Result{}, nil
+					}
+					hostedControlPlaneIBMCloudKMSAuthSecret := &corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace: controlPlaneNamespace.Name,
+							Name:      src.Name,
+						},
+					}
+					_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneIBMCloudKMSAuthSecret, func() error {
+						if hostedControlPlaneIBMCloudKMSAuthSecret.Data == nil {
+							hostedControlPlaneIBMCloudKMSAuthSecret.Data = map[string][]byte{}
+						}
+						hostedControlPlaneIBMCloudKMSAuthSecret.Data[hyperv1.IBMCloudIAMAPIKeySecretKey] = src.Data[hyperv1.IBMCloudIAMAPIKeySecretKey]
+						hostedControlPlaneIBMCloudKMSAuthSecret.Type = corev1.SecretTypeOpaque
+						return nil
+					})
+					if err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed reconciling aescbc backup key: %w", err)
+					}
+				}
+			case hyperv1.AWS:
+				if hcluster.Spec.SecretEncryption.KMS.AWS == nil || len(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name) == 0 {
+					r.Log.Error(fmt.Errorf("aws kms metadata nil"), "")
+					// don't return error here as reconciling won't fix input error
+					return ctrl.Result{}, nil
+				}
+				var src corev1.Secret
+				if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name}, &src); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to get ibmcloud kms credentials %s: %w", hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged.Credentials.Name, err)
+				}
+				if _, ok := src.Data[hyperv1.AWSCredentialsFileSecretKey]; !ok {
+					r.Log.Error(fmt.Errorf("aws credential key %s not present in auth secret", hyperv1.AWSCredentialsFileSecretKey), "")
+					// don't return error here as reconciling won't fix input error
+					return ctrl.Result{}, nil
+				}
+				hostedControlPlaneAWSKMSAuthSecret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: controlPlaneNamespace.Name,
+						Name:      src.Name,
+					},
+				}
+				_, err = controllerutil.CreateOrUpdate(ctx, r.Client, hostedControlPlaneAWSKMSAuthSecret, func() error {
+					if hostedControlPlaneAWSKMSAuthSecret.Data == nil {
+						hostedControlPlaneAWSKMSAuthSecret.Data = map[string][]byte{}
+					}
+					hostedControlPlaneAWSKMSAuthSecret.Data[hyperv1.AWSCredentialsFileSecretKey] = src.Data[hyperv1.AWSCredentialsFileSecretKey]
+					hostedControlPlaneAWSKMSAuthSecret.Type = corev1.SecretTypeOpaque
+					return nil
+				})
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed reconciling aws kms backup key: %w", err)
+				}
+			default:
+				r.Log.Error(fmt.Errorf("unsupported kms provider %s", hcluster.Spec.SecretEncryption.KMS.Provider), "")
+				// don't return error here as reconciling won't fix input error
+				return ctrl.Result{}, nil
+			}
+		default:
+			r.Log.Error(fmt.Errorf("unsupported encryption type %s", hcluster.Spec.SecretEncryption.Type), "")
+			// don't return error here as reconciling won't fix input error
+			return ctrl.Result{}, nil
+		}
+	}
+
 	// Reconcile the HostedControlPlane audit webhook config if specified
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	{
@@ -778,6 +932,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
 		} else if annotationKey == hyperv1.RestartDateAnnotation {
 			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
+		} else if annotationKey == hyperv1.IBMCloudKMSProviderImage || annotationKey == hyperv1.AWSKMSProviderImage {
+			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
 		}
 	}
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
@@ -812,6 +968,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	if hcluster.Spec.ImageContentSources != nil {
 		hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
+	}
+	if hcluster.Spec.SecretEncryption != nil {
+		hcp.Spec.SecretEncryption = hcluster.Spec.SecretEncryption.DeepCopy()
 	}
 
 	switch hcluster.Spec.Platform.Type {

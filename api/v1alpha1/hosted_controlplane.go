@@ -90,6 +90,11 @@ type HostedControlPlaneSpec struct {
 	// ImageContentSources lists sources/repositories for the release-image content.
 	// +optional
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
+
+	// SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
+	// cluster when applicable.
+	// +optional
+	SecretEncryption *SecretEncryptionSpec `json:"secretEncryption,omitempty"`
 }
 
 type AvailabilityPolicy string

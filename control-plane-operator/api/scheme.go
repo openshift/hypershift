@@ -25,6 +25,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/config/v1"
 )
 
 var (
@@ -62,4 +63,5 @@ func init() {
 	kasv1beta1.AddToScheme(Scheme)
 	openshiftcpv1.AddToScheme(Scheme)
 	v1alpha1.AddToScheme(Scheme)
+	apiserverconfigv1.AddToScheme(Scheme)
 }
