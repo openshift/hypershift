@@ -13,8 +13,8 @@ spec:
   type: ClusterIP
   ports:
     - name: https-metrics
-      port: 8081
+      port: 8443
       protocol: TCP
-      targetPort: metrics
+      targetPort: 8443
   selector:
     app: catalog-operator

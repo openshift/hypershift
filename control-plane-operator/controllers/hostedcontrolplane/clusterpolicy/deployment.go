@@ -7,7 +7,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -40,7 +39,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MatchLabels: clusterPolicyControllerLabels,
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = clusterPolicyControllerLabels
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(cpcContainerMain(), buildOCMContainerMain(image)),
 	}
@@ -69,6 +67,7 @@ func buildOCMContainerMain(image string) func(*corev1.Container) {
 			path.Join(volumeMounts.Path(c.Name, cpcVolumeConfig().Name), configKey),
 			"--kubeconfig",
 			path.Join(volumeMounts.Path(c.Name, cpcVolumeKubeconfig().Name), kas.KubeconfigKey),
+			"--namespace=openshift-kube-controller-manager",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}

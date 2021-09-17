@@ -15,6 +15,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/version"
 	"github.com/spf13/cobra"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
@@ -52,22 +53,15 @@ func NewCreateCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	// FIXME: (cewong) The latest image can be used when we have the ability to run multiple minor
-	// versions of the control plane. For now, we will use the latest 4.8.x release.
-	/*
-
-		var releaseImage string
-		defaultVersion, err := version.LookupDefaultOCPVersion()
-		if err != nil {
-			fmt.Println("WARN: Unable to lookup default OCP version with error:", err)
-			fmt.Println("WARN: The 'release-image' flag is required in this case.")
-			releaseImage = ""
-		} else {
-			releaseImage = defaultVersion.PullSpec
-		}
-	*/
-
-	releaseImage := "quay.io/openshift-release-dev/ocp-release:4.8.6-x86_64"
+	var releaseImage string
+	defaultVersion, err := version.LookupDefaultOCPVersion()
+	if err != nil {
+		fmt.Println("WARN: Unable to lookup default OCP version with error:", err)
+		fmt.Println("WARN: The 'release-image' flag is required in this case.")
+		releaseImage = ""
+	} else {
+		releaseImage = defaultVersion.PullSpec
+	}
 
 	opts := Options{
 		Namespace:          "clusters",

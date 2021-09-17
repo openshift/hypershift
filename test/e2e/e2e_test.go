@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/openshift/hypershift/cmd/version"
 	e2elog "github.com/openshift/hypershift/test/e2e/log"
 	"github.com/openshift/hypershift/test/e2e/scenarios"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -131,15 +132,11 @@ type options struct {
 // up additional contextual defaulting.
 func (o *options) Complete() error {
 	if len(o.LatestReleaseImage) == 0 {
-		// FIXME: (cewong) Use default OCP version when we are able to
-		/*
-			defaultVersion, err := version.LookupDefaultOCPVersion()
-			if err != nil {
-				return fmt.Errorf("couldn't look up default OCP version: %w", err)
-			}
-			o.LatestReleaseImage = defaultVersion.PullSpec
-		*/
-		o.LatestReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.8.6-x86_64"
+		defaultVersion, err := version.LookupDefaultOCPVersion()
+		if err != nil {
+			return fmt.Errorf("couldn't look up default OCP version: %w", err)
+		}
+		o.LatestReleaseImage = defaultVersion.PullSpec
 	}
 	// TODO: This is actually basically a required field right now. Maybe the input
 	// to tests should be a small API spec that describes the tests and their

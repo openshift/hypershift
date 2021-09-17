@@ -19,7 +19,7 @@ func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
 		informerFactory.Start(ctx.Done())
 		return nil
 	}))
-	csrs := informerFactory.Certificates().V1beta1().CertificateSigningRequests()
+	csrs := informerFactory.Certificates().V1().CertificateSigningRequests()
 	reconciler := &AutoApprover{
 		Lister:     csrs.Lister(),
 		KubeClient: cfg.TargetKubeClient(),

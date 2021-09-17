@@ -35,6 +35,24 @@ func OAuthServerService(ns string) *corev1.Service {
 	}
 }
 
+func OAuthServerCertWorkerManifest(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-manifest-oauth-serving-cert",
+			Namespace: ns,
+		},
+	}
+}
+
+func OAuthServerCert() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "oauth-serving-cert",
+			Namespace: "openshift-config-managed",
+		},
+	}
+}
+
 func OAuthServerServiceSessionSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
