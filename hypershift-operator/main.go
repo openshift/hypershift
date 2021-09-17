@@ -173,6 +173,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		Client:                          mgr.GetClient(),
 		HostedControlPlaneOperatorImage: operatorImage,
 		IgnitionServerImage:             ignitionServerImage,
+		ReleaseProvider: &releaseinfo.CachedProvider{
+			Inner: &releaseinfo.RegistryClientProvider{},
+			Cache: map[string]*releaseinfo.ReleaseImage{},
+		},
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}

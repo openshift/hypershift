@@ -25,7 +25,9 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/blang/semver"
 	capiibmv1 "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	"github.com/openshift/hypershift/api"
 	"go.opentelemetry.io/otel"
@@ -39,6 +41,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -92,6 +95,9 @@ type HostedClusterReconciler struct {
 	// HostedControlPlaneOperatorImage is the image used to deploy the hosted control
 	// plane operator.
 	HostedControlPlaneOperatorImage string
+
+	// releaseProvider looks up the OCP version for the release images in HostedClusters
+	ReleaseProvider releaseinfo.Provider
 
 	// IgnitionServerImage is the image used to deploy the ignition server.
 	IgnitionServerImage string
@@ -1042,9 +1048,21 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	// Reconcile operator deployment
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+	controlPlaneOperatorImage, err := getControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HostedControlPlaneOperatorImage, pullSecretBytes)
+	if err != nil {
+		return err
+	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, r.HostedControlPlaneOperatorImage, controlPlaneOperatorServiceAccount)
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, controlPlaneOperatorServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1479,6 +1497,30 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 	}
 
 	return nil
+}
+
+func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
+		return val, nil
+	}
+	releaseInfo, err := releaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecret)
+	if err != nil {
+		return "", err
+	}
+	version, err := semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return "", err
+	}
+	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
+	pullSpec := "registry.ci.openshift.org/hypershift/hypershift"
+	switch versionMajMin {
+	case "4.9", "4.10":
+		return hypershiftOperatorImage, nil
+	case "4.8":
+		return fmt.Sprintf("%s:%s", pullSpec, versionMajMin), nil
+	default:
+		return "", fmt.Errorf("unsupported release image with version %s", versionMajMin)
+	}
 }
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount) error {
