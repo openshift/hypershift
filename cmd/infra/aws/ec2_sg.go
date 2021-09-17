@@ -1,16 +1,20 @@
 package aws
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
+
+const duplicatePermissionErrorCode = "InvalidPermission.Duplicate"
 
 func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, vpcID string) (string, error) {
 	groupName := fmt.Sprintf("%s-worker-sg", o.InfraID)
@@ -216,8 +220,14 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 			GroupId:       aws.String(securityGroupID),
 			IpPermissions: egressToAuthorize,
 		})
+		var awsErr awserr.Error
 		if err != nil {
-			return "", fmt.Errorf("cannot apply security group egress permissions: %w", err)
+			if errors.As(err, &awsErr) {
+				// only return an error if the permission has not already been set
+				if awsErr.Code() != duplicatePermissionErrorCode {
+					return "", fmt.Errorf("cannot apply security group egress permissions: %w", err)
+				}
+			}
 		}
 		log.Info("Authorized egress rules on security group", "id", securityGroupID)
 	}
@@ -226,8 +236,14 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 			GroupId:       aws.String(securityGroupID),
 			IpPermissions: ingressToAuthorize,
 		})
+		var awsErr awserr.Error
 		if err != nil {
-			return "", fmt.Errorf("cannot apply security group ingress permissions: %w", err)
+			if errors.As(err, &awsErr) {
+				// only return an error if the permission has not already been set
+				if awsErr.Code() != duplicatePermissionErrorCode {
+					return "", fmt.Errorf("cannot apply security group ingress permissions: %w", err)
+				}
+			}
 		}
 		log.Info("Authorized ingress rules on security group", "id", securityGroupID)
 	}
