@@ -144,4 +144,4 @@ docker-push:
 
 .PHONY: run-local
 run-local:
-	bin/hypershift-operator run --operator-image=$(IMAGE)
+	bin/hypershift-operator run

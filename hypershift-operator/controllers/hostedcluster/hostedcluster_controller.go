@@ -91,9 +91,10 @@ var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 type HostedClusterReconciler struct {
 	client.Client
 
-	// HostedControlPlaneOperatorImage is the image used to deploy the hosted control
-	// plane operator.
-	HostedControlPlaneOperatorImage string
+	// HypershiftOperatorImage is the image used to deploy the control plane operator if
+	// 1) There is no hypershift.openshift.io/control-plane-operator-image annotation on the HostedCluster and
+	// 2) The OCP version being deployed is the latest version supported by Hypershift
+	HypershiftOperatorImage string
 
 	// releaseProvider looks up the OCP version for the release images in HostedClusters
 	ReleaseProvider releaseinfo.Provider
@@ -1055,7 +1056,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	if !ok {
 		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	controlPlaneOperatorImage, err := getControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HostedControlPlaneOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := getControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return err
 	}

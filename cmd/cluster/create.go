@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	hyperapi "github.com/openshift/hypershift/api"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
@@ -24,27 +24,28 @@ import (
 )
 
 type Options struct {
-	Namespace          string
-	Name               string
-	ReleaseImage       string
-	PullSecretFile     string
-	AWSCredentialsFile string
-	SSHKeyFile         string
-	NodePoolReplicas   int32
-	Render             bool
-	InfraID            string
-	InfrastructureJSON string
-	IAMJSON            string
-	InstanceType       string
-	Region             string
-	BaseDomain         string
-	IssuerURL          string
-	PublicZoneID       string
-	PrivateZoneID      string
-	Annotations        []string
-	NetworkType        string
-	FIPS               bool
-	AutoRepair         bool
+	Namespace                 string
+	Name                      string
+	ReleaseImage              string
+	ControlPlaneOperatorImage string
+	PullSecretFile            string
+	AWSCredentialsFile        string
+	SSHKeyFile                string
+	NodePoolReplicas          int32
+	Render                    bool
+	InfraID                   string
+	InfrastructureJSON        string
+	IAMJSON                   string
+	InstanceType              string
+	Region                    string
+	BaseDomain                string
+	IssuerURL                 string
+	PublicZoneID              string
+	PrivateZoneID             string
+	Annotations               []string
+	NetworkType               string
+	FIPS                      bool
+	AutoRepair                bool
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -65,27 +66,29 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:          "clusters",
-		Name:               "example",
-		ReleaseImage:       releaseImage,
-		PullSecretFile:     "",
-		AWSCredentialsFile: "",
-		SSHKeyFile:         "",
-		NodePoolReplicas:   2,
-		Render:             false,
-		InfrastructureJSON: "",
-		Region:             "us-east-1",
-		InfraID:            "",
-		InstanceType:       "m4.large",
-		Annotations:        []string{},
-		NetworkType:        string(v1alpha1.OpenShiftSDN),
-		FIPS:               false,
-		AutoRepair:         false,
+		Namespace:                 "clusters",
+		Name:                      "example",
+		ReleaseImage:              releaseImage,
+		ControlPlaneOperatorImage: "",
+		PullSecretFile:            "",
+		AWSCredentialsFile:        "",
+		SSHKeyFile:                "",
+		NodePoolReplicas:          2,
+		Render:                    false,
+		InfrastructureJSON:        "",
+		Region:                    "us-east-1",
+		InfraID:                   "",
+		InstanceType:              "m4.large",
+		Annotations:               []string{},
+		NetworkType:               string(hyperv1.OpenShiftSDN),
+		FIPS:                      false,
+		AutoRepair:                false,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
+	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "Override the default image used to deploy the control plane operator")
 	cmd.Flags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Path to a pull secret (required)")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Path to an SSH key file")
@@ -136,6 +139,10 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		}
 		k, v := pair[0], pair[1]
 		annotations[k] = v
+	}
+
+	if len(opts.ControlPlaneOperatorImage) > 0 {
+		annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = opts.ControlPlaneOperatorImage
 	}
 
 	pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
@@ -227,7 +234,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		BaseDomain:       infra.BaseDomain,
 		PublicZoneID:     infra.PublicZoneID,
 		PrivateZoneID:    infra.PrivateZoneID,
-		NetworkType:      v1alpha1.NetworkType(opts.NetworkType),
+		NetworkType:      hyperv1.NetworkType(opts.NetworkType),
 		FIPS:             opts.FIPS,
 		AutoRepair:       opts.AutoRepair,
 		AWS: apifixtures.ExampleAWSOptions{

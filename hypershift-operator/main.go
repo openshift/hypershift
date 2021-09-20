@@ -66,7 +66,6 @@ type StartOptions struct {
 	DeploymentName        string
 	MetricsAddr           string
 	EnableLeaderElection  bool
-	OperatorImage         string
 	IgnitionServerImage   string
 	OpenTelemetryEndpoint string
 }
@@ -84,7 +83,6 @@ func NewStartCommand() *cobra.Command {
 		DeploymentName:        "operator",
 		MetricsAddr:           "0",
 		EnableLeaderElection:  false,
-		OperatorImage:         "",
 		IgnitionServerImage:   "",
 		OpenTelemetryEndpoint: "",
 	}
@@ -95,7 +93,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableLeaderElection, "enable-leader-election", opts.EnableLeaderElection,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	cmd.Flags().StringVar(&opts.OperatorImage, "operator-image", opts.OperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 
@@ -157,7 +154,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 		return "", fmt.Errorf("couldn't locate operator container on deployment")
 	}
-	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.OperatorImage)
+	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, "")
 	if err != nil {
 		return fmt.Errorf("failed to find operator image: %w", err)
 	}
@@ -170,9 +167,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("using ignition server image", "image", ignitionServerImage)
 
 	if err = (&hostedcluster.HostedClusterReconciler{
-		Client:                          mgr.GetClient(),
-		HostedControlPlaneOperatorImage: operatorImage,
-		IgnitionServerImage:             ignitionServerImage,
+		Client:                  mgr.GetClient(),
+		HypershiftOperatorImage: operatorImage,
+		IgnitionServerImage:     ignitionServerImage,
 		ReleaseProvider: &releaseinfo.CachedProvider{
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
