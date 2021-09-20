@@ -86,7 +86,9 @@ func NewStartCommand() *cobra.Command {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
 		ctx := ctrl.SetupSignalHandler()
 
-		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		restConfig := ctrl.GetConfigOrDie()
+		restConfig.UserAgent = "hypershift-controlplane-manager"
+		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 			Scheme:             hyperapi.Scheme,
 			MetricsBindAddress: metricsAddr,
 			Port:               9443,

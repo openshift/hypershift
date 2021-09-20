@@ -64,7 +64,9 @@ func (c *HostedClusterConfigOperatorConfig) Scheme() *runtime.Scheme {
 func (c *HostedClusterConfigOperatorConfig) Manager() ctrl.Manager {
 	if c.manager == nil {
 		var err error
-		c.manager, err = ctrl.NewManager(c.TargetConfig(), ctrl.Options{
+		restConfig := c.TargetConfig()
+		restConfig.UserAgent = "hosted-cluster-config-operator-manager"
+		c.manager, err = ctrl.NewManager(restConfig, ctrl.Options{
 			Scheme:                  c.Scheme(),
 			LeaderElection:          true,
 			LeaderElectionNamespace: c.TargetNamespace(),
@@ -160,7 +162,9 @@ func (c *HostedClusterConfigOperatorConfig) TargetKubeInformersForNamespace(name
 func (c *HostedClusterConfigOperatorConfig) KubeClient() kubeclient.Interface {
 	if c.kubeClient == nil {
 		var err error
-		c.kubeClient, err = kubeclient.NewForConfig(c.Config())
+		config := c.Config()
+		config.UserAgent = "hosted-cluster-config-operator-kubeclient"
+		c.kubeClient, err = kubeclient.NewForConfig(config)
 		if err != nil {
 			c.Fatal(err, "cannot get management kube client")
 		}

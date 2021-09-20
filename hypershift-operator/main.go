@@ -109,7 +109,9 @@ func NewStartCommand() *cobra.Command {
 }
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restConfig := ctrl.GetConfigOrDie()
+	restConfig.UserAgent = "hypershift-operator-manager"
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:             hyperapi.Scheme,
 		MetricsBindAddress: opts.MetricsAddr,
 		Port:               9443,
