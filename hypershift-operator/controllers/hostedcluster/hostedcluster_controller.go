@@ -77,12 +77,11 @@ const (
 
 	// TODO (alberto): Eventually these images will be mirrored and pulled from an internal registry.
 	imageClusterAutoscaler = "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0"
-	imageCAPI              = "k8s.gcr.io/cluster-api/cluster-api-controller:v0.4.0-beta.0"
-	// TODO (alberto): update when v1alpha4 / v.0.7 release is cut.
-	// This comes from the post submit job https://github.com/kubernetes/test-infra/pull/22532/files
-	// built from https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2500
-	// prow.k8s.io/view/gs/kubernetes-jenkins/logs/post-cluster-api-provider-aws-push-images/1404673030067589120.
-	imageCAPA = "gcr.io/k8s-staging-cluster-api-aws/cluster-api-aws-controller@sha256:56f8925ad141a545f9db1e8c2d4bb2f33d99145abe80e6950a134b490c82ae4b"
+	// This comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
+	// To pick https://github.com/kubernetes-sigs/cluster-api/pull/5110
+	imageCAPI = "gcr.io/k8s-staging-cluster-api/cluster-api-controller@sha256:9288d085f9fa52bb7186e0de2971945cd192d3a1e849135f7381e4f08fe28442"
+	// This comes from https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
+	imageCAPA = "us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v0.7.0"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -2022,6 +2021,7 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
+							"--feature-gates=EKS=false",
 						},
 						Ports: []corev1.ContainerPort{
 							{
