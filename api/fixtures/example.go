@@ -53,6 +53,7 @@ type ExampleOptions struct {
 	PrivateZoneID    string
 	Annotations      map[string]string
 	FIPS             bool
+	AutoRepair       bool
 	AWS              ExampleAWSOptions
 	NetworkType      hyperv1.NetworkType
 }
@@ -240,6 +241,7 @@ aws_secret_access_key = %s
 			},
 			Spec: hyperv1.NodePoolSpec{
 				Management: hyperv1.NodePoolManagement{
+					AutoRepair:  o.AutoRepair,
 					UpgradeType: hyperv1.UpgradeTypeReplace,
 				},
 				NodeCount:   &o.NodePoolReplicas,

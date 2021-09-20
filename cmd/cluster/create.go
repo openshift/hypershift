@@ -44,6 +44,7 @@ type Options struct {
 	Annotations        []string
 	NetworkType        string
 	FIPS               bool
+	AutoRepair         bool
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -79,6 +80,7 @@ func NewCreateCommand() *cobra.Command {
 		Annotations:        []string{},
 		NetworkType:        string(v1alpha1.OpenShiftSDN),
 		FIPS:               false,
+		AutoRepair:         false,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -98,6 +100,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
 	cmd.Flags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico or OpenshiftSDN.")
 	cmd.Flags().BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster")
+	cmd.Flags().BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine autorepair with machine health checks")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -226,6 +229,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		PrivateZoneID:    infra.PrivateZoneID,
 		NetworkType:      v1alpha1.NetworkType(opts.NetworkType),
 		FIPS:             opts.FIPS,
+		AutoRepair:       opts.AutoRepair,
 		AWS: apifixtures.ExampleAWSOptions{
 			Region:                                 infra.Region,
 			Zone:                                   infra.Zone,
