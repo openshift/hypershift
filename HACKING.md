@@ -32,6 +32,14 @@
 
         $ bin/hypershift install --hypershift-image quay.io/my/hypershift:latest
 
+3. (Optional) If your repository is private, create a secret:
+
+        oc create secret generic hypershift-operator-pull-secret  -n hypershift --from-file=.dockerconfig=/my/pull-secret --type=kubernetes.io/dockerconfig
+
+Then update the operator ServiceAccount in the hypershift namespace:
+
+       oc patch serviceaccount operator -n hypershift -p '{"imagePullSecrets": [{"name": "hypershift-operator-pull-secret"}]}'
+
 ### How to run the e2e tests
 
 1. Install HyperShift.
