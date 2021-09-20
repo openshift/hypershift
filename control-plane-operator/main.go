@@ -140,6 +140,9 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using operator image", "operator-image", hostedClusterConfigOperatorImage)
 
+		// Use the control-plane-operator's image for the socks5 proxy image as well
+		socks5ProxyImage := hostedClusterConfigOperatorImage
+
 		releaseProvider := &releaseinfo.StaticProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.RegistryClientProvider{},
@@ -150,6 +153,7 @@ func NewStartCommand() *cobra.Command {
 				"etcd-operator":                  etcdOperatorImage,
 				"konnectivity-server":            konnectivityServerImage,
 				"konnectivity-agent":             konnectivityAgentImage,
+				"socks5-proxy":                   socks5ProxyImage,
 			},
 		}
 

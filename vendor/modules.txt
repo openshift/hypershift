@@ -2,6 +2,9 @@
 cloud.google.com/go/compute/metadata
 # github.com/BurntSushi/toml v0.3.1
 github.com/BurntSushi/toml
+# github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
+## explicit
+github.com/armon/go-socks5
 # github.com/aws/aws-sdk-go v1.40.22
 ## explicit
 github.com/aws/aws-sdk-go/aws
@@ -976,6 +979,9 @@ k8s.io/utils/buffer
 k8s.io/utils/integer
 k8s.io/utils/pointer
 k8s.io/utils/trace
+# sigs.k8s.io/apiserver-network-proxy v0.0.24
+## explicit
+sigs.k8s.io/apiserver-network-proxy/pkg/util
 # sigs.k8s.io/cluster-api v0.4.2 => sigs.k8s.io/cluster-api v0.4.2
 ## explicit
 sigs.k8s.io/cluster-api/api/v1alpha4
@@ -1062,6 +1068,7 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.2.0
 ## explicit
 sigs.k8s.io/yaml
+# sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.24
 # k8s.io/utils => k8s.io/utils v0.0.0-20210111153108-fddb29f9d009
 # sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v0.4.2
 # sigs.k8s.io/controller-tools => sigs.k8s.io/controller-tools v0.5.0

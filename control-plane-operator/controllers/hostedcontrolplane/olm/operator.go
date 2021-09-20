@@ -31,10 +31,17 @@ func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config
 	return nil
 }
 
-func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig) error {
+func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = catalogOperatorDeployment.DeepCopy().Spec
-	deployment.Spec.Template.Spec.Containers[0].Image = olmImage
+	for i, container := range deployment.Spec.Template.Spec.Containers {
+		switch container.Name {
+		case "catalog-operator":
+			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
+		case "socks5-proxy":
+			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
+		}
+	}
 	for i, env := range deployment.Spec.Template.Spec.Containers[0].Env {
 		switch env.Name {
 		case "RELEASE_VERSION":
@@ -63,10 +70,17 @@ func ReconcileOLMOperatorMetricsService(svc *corev1.Service, ownerRef config.Own
 	return nil
 }
 
-func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, releaseVersion string, dc config.DeploymentConfig) error {
+func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = olmOperatorDeployment.DeepCopy().Spec
-	deployment.Spec.Template.Spec.Containers[0].Image = olmImage
+	for i, container := range deployment.Spec.Template.Spec.Containers {
+		switch container.Name {
+		case "olm-operator":
+			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
+		case "socks5-proxy":
+			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
+		}
+	}
 	for i, env := range deployment.Spec.Template.Spec.Containers[0].Env {
 		switch env.Name {
 		case "RELEASE_VERSION":

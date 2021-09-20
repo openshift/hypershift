@@ -24,6 +24,9 @@ spec:
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig
+        - name: oas-konnectivity-proxy-cert
+          secret:
+            secretName: konnectivity-client
       containers:
         - name: catalog-operator
           volumeMounts:
@@ -84,3 +87,25 @@ spec:
               value: OLM_OPERATOR_IMAGE
             - name: OPERATOR_REGISTRY_IMAGE
               value: OPERATOR_REGISTRY_IMAGE
+            - name: GRPC_PROXY
+              value: socks5://127.0.0.1:8090
+            - name: NO_PROXY
+              value: kube-apiserver,redhat-operators,certified-operators,community-operators,redhat-marketplace
+        - name: socks5-proxy
+          command:
+            - "/usr/bin/konnectivity-socks5-proxy"
+          args:
+            - run
+          image: SOCKS5_PROXY_IMAGE
+          env:
+            - name: KUBECONFIG
+              value: /etc/openshift/kubeconfig/kubeconfig
+          ports:
+            - containerPort: 8090
+          volumeMounts:
+            - mountPath: /etc/konnectivity-proxy-tls
+              name: oas-konnectivity-proxy-cert
+              readOnly: true
+            - mountPath: /etc/openshift/kubeconfig
+              name: kubeconfig
+              readOnly: true
