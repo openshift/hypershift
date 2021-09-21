@@ -23,6 +23,7 @@ type TestUpgradeControlPlaneOptions struct {
 	ToReleaseImage     string
 	ArtifactDir        string
 	Enabled            bool
+	CPOImage           string
 }
 
 func TestUpgradeControlPlane(ctx context.Context, o TestUpgradeControlPlaneOptions) func(t *testing.T) {
@@ -68,13 +69,14 @@ func TestUpgradeControlPlane(ctx context.Context, o TestUpgradeControlPlaneOptio
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			Region:             o.AWSRegion,
 			// TODO: generate a key on the fly
-			SSHKeyFile:       "",
-			NodePoolReplicas: 2,
-			InstanceType:     "m4.large",
-			BaseDomain:       o.BaseDomain,
-			NetworkType:      string(hyperv1.OpenShiftSDN),
-			RootVolumeSize:   64,
-			RootVolumeType:   "gp2",
+			SSHKeyFile:                "",
+			NodePoolReplicas:          2,
+			InstanceType:              "m4.large",
+			BaseDomain:                o.BaseDomain,
+			NetworkType:               string(hyperv1.OpenShiftSDN),
+			RootVolumeSize:            64,
+			RootVolumeType:            "gp2",
+			ControlPlaneOperatorImage: o.CPOImage,
 		}
 		err := cmdcluster.CreateCluster(ctx, createClusterOpts)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
