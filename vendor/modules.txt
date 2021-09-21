@@ -659,6 +659,8 @@ k8s.io/apiserver/pkg/apis/apiserver
 k8s.io/apiserver/pkg/apis/apiserver/v1beta1
 k8s.io/apiserver/pkg/apis/audit
 k8s.io/apiserver/pkg/apis/audit/v1beta1
+k8s.io/apiserver/pkg/apis/config
+k8s.io/apiserver/pkg/apis/config/v1
 # k8s.io/client-go v0.21.4
 ## explicit
 k8s.io/client-go/applyconfigurations/admissionregistration/v1

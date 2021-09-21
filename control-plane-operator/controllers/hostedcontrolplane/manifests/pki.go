@@ -229,3 +229,31 @@ func OLMPackageServerCertSecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func KASSecretEncryptionConfigFile(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kas-secret-encryption-config",
+			Namespace: ns,
+		},
+	}
+}
+
+func IBMCloudKASKMSWDEKSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kp-wdek-secret",
+			Namespace: ns,
+		},
+	}
+}
+
+// IBMCloudKASKMSKPCustomerAuthSecret ...
+func IBMCloudKASKMSKPCustomerAuthSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kp-customer-auth",
+			Namespace: ns,
+		},
+	}
+}

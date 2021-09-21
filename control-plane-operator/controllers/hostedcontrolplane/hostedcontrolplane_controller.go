@@ -1446,6 +1446,61 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile oauth metadata: %w", err)
 	}
 
+	var aesCBCActiveKey, aesCBCBackupKey []byte
+
+	if hcp.Spec.SecretEncryption != nil {
+		r.Log.Info("Reconciling kube-apiserver secret encryption configuration")
+		encryptionConfigFile := manifests.KASSecretEncryptionConfigFile(hcp.Namespace)
+		switch hcp.Spec.SecretEncryption.Type {
+		case hyperv1.AESCBC:
+			if hcp.Spec.SecretEncryption.AESCBC == nil || len(hcp.Spec.SecretEncryption.AESCBC.ActiveKey.Name) == 0 {
+				return fmt.Errorf("aescbc metadata not specified")
+			}
+			activeKeySecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcp.Spec.SecretEncryption.AESCBC.ActiveKey.Name,
+					Namespace: hcp.Namespace,
+				},
+			}
+			if err := r.Get(ctx, client.ObjectKeyFromObject(activeKeySecret), activeKeySecret); err != nil {
+				return fmt.Errorf("failed to get aescbc active secret: %w", err)
+			}
+			if _, ok := activeKeySecret.Data[hyperv1.AESCBCKeySecretKey]; !ok {
+				return fmt.Errorf("aescbc key field %s in active key secret not specified", hyperv1.AESCBCKeySecretKey)
+			}
+			aesCBCActiveKey = activeKeySecret.Data[hyperv1.AESCBCKeySecretKey]
+			if hcp.Spec.SecretEncryption.AESCBC.BackupKey != nil && len(hcp.Spec.SecretEncryption.AESCBC.BackupKey.Name) > 0 {
+				backupKeySecret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      hcp.Spec.SecretEncryption.AESCBC.BackupKey.Name,
+						Namespace: hcp.Namespace,
+					},
+				}
+				if err := r.Get(ctx, client.ObjectKeyFromObject(backupKeySecret), backupKeySecret); err != nil {
+					return fmt.Errorf("failed to get aescbc backup key secret: %w", err)
+				}
+				if _, ok := backupKeySecret.Data[hyperv1.AESCBCKeySecretKey]; !ok {
+					return fmt.Errorf("aescbc key field %s in backup key secret not specified", hyperv1.AESCBCKeySecretKey)
+				}
+				aesCBCBackupKey = backupKeySecret.Data[hyperv1.AESCBCKeySecretKey]
+			}
+			if _, err := controllerutil.CreateOrUpdate(ctx, r, encryptionConfigFile, func() error {
+				return kas.ReconcileAESCBCEncryptionConfig(encryptionConfigFile, p.OwnerRef, aesCBCActiveKey, aesCBCBackupKey)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile aes encryption config secret: %w", err)
+			}
+		case hyperv1.KMS:
+			if hcp.Spec.SecretEncryption.KMS == nil {
+				return fmt.Errorf("kms metadata not specified")
+			}
+			if _, err := controllerutil.CreateOrUpdate(ctx, r, encryptionConfigFile, func() error {
+				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile kms encryption config secret: %w", err)
+			}
+		}
+	}
+
 	kubeAPIServerDeployment := manifests.KASDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
 		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
@@ -1456,6 +1511,9 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.Images,
 			kubeAPIServerConfig,
 			p.AuditWebhookRef,
+			hcp.Spec.SecretEncryption,
+			aesCBCActiveKey,
+			aesCBCBackupKey,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
