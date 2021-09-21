@@ -14,5 +14,5 @@ spec:
         {{ if .SSHKey }}
         sshAuthorizedKeys:
         - |-
-          {{ .SSHKey }}
+{{ indent 10 .SSHKey }}
         {{ end }}
