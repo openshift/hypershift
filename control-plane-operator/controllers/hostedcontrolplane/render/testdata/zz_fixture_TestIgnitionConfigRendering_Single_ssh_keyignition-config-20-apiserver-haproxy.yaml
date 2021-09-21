@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ignition-config-20-apiserver-haproxy
+  labels:
+    hypershift.openshift.io/core-ignition-config: "true"
+data:
+  config: |-
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfig
+    metadata:
+      name: 20-apiserver-haproxy
+      labels:
+        machineconfiguration.openshift.io/role: worker
+    spec:
+      config:
+        ignition:
+          version: 2.2.0
+        storage:
+          files:
+          - filesystem: root
+            path: "/usr/local/bin/setup-apiserver-ip.sh"
+            contents:
+              source: "data:text/plain;charset=utf-8;base64,IyEvdXNyL2Jpbi9lbnYgYmFzaApzZXQgLXgKaXAgYWRkciBhZGQgLzMyIGJyZCAgc2NvcGUgaG9zdCBkZXYgbG8KaXAgcm91dGUgYWRkIC8zMiBkZXYgbG8gc2NvcGUgbGluayBzcmMgCg=="
+              verification: {}
+            mode: 0755
+          - filesystem: root
+            path: "/usr/local/bin/teardown-apiserver-ip.sh"
+            contents:
+              source: "data:text/plain;charset=utf-8;base64,IyEvdXNyL2Jpbi9lbnYgYmFzaApzZXQgLXgKaXAgYWRkciBkZWxldGUgLzMyIGRldiBsbwppcCByb3V0ZSBkZWwgLzMyIGRldiBsbyBzY29wZSBsaW5rIHNyYyAK"
+              verification: {}
+            mode: 0755
+          - filesystem: root
+            path: "/etc/kubernetes/apiserver-proxy-config/haproxy.cfg"
+            contents:
+              source: "data:text/plain;charset=utf-8;base64,Z2xvYmFsCiAgbWF4Y29ubiA3MDAwCiAgbG9nIHN0ZG91dCBsb2NhbDAKICBsb2cgc3Rkb3V0IGxvY2FsMSBub3RpY2UKCmRlZmF1bHRzCiAgbW9kZSB0Y3AKICB0aW1lb3V0IGNsaWVudCAxMG0KICB0aW1lb3V0IHNlcnZlciAxMG0KICB0aW1lb3V0IGNvbm5lY3QgMTBzCiAgdGltZW91dCBjbGllbnQtZmluIDVzCiAgdGltZW91dCBzZXJ2ZXItZmluIDVzCiAgdGltZW91dCBxdWV1ZSA1cwogIHJldHJpZXMgMwoKZnJvbnRlbmQgbG9jYWxfYXBpc2VydmVyCiAgYmluZCA6MAogIGxvZyBnbG9iYWwKICBtb2RlIHRjcAogIG9wdGlvbiB0Y3Bsb2cKICBkZWZhdWx0X2JhY2tlbmQgcmVtb3RlX2FwaXNlcnZlcgoKYmFja2VuZCByZW1vdGVfYXBpc2VydmVyCiAgbW9kZSB0Y3AKICBsb2cgZ2xvYmFsCiAgb3B0aW9uIGh0dHBjaGsgR0VUIC92ZXJzaW9uCiAgb3B0aW9uIGxvZy1oZWFsdGgtY2hlY2tzCiAgZGVmYXVsdC1zZXJ2ZXIgaW50ZXIgMTBzIGZhbGwgMyByaXNlIDMKICBzZXJ2ZXIgY29udHJvbHBsYW5lIDowCg=="
+              verification: {}
+            mode: 0644
+          - filesystem: root
+            path: "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml"
+            contents:
+              source: "data:text/plain;charset=utf-8;base64,YXBpVmVyc2lvbjogdjEKa2luZDogUG9kCm1ldGFkYXRhOgogIG5hbWU6IGt1YmUtYXBpc2VydmVyLXByb3h5CiAgbmFtZXNwYWNlOiBrdWJlLXN5c3RlbQogIGxhYmVsczoKICAgIGs4cy1hcHA6IGt1YmUtYXBpc2VydmVyLXByb3h5CnNwZWM6CiAgaG9zdE5ldHdvcms6IHRydWUKICBjb250YWluZXJzOgogIC0gbmFtZTogaGFwcm94eQogICAgaW1hZ2U6IAogICAgcHJpb3JpdHlDbGFzc05hbWU6IHN5c3RlbS1ub2RlLWNyaXRpY2FsCiAgICBzZWN1cml0eUNvbnRleHQ6CiAgICAgIHJ1bkFzVXNlcjogMTAwMQogICAgcmVzb3VyY2VzOgogICAgICBsaW1pdHM6CiAgICAgICAgY3B1OiAzMDBtCiAgICAgICAgbWVtb3J5OiA1MTJNCiAgICAgIHJlcXVlc3RzOgogICAgICAgIGNwdTogMTNtCiAgICAgICAgbWVtb3J5OiAxNk0KICAgIGxpdmVuZXNzUHJvYmU6CiAgICAgIGZhaWx1cmVUaHJlc2hvbGQ6IDMKICAgICAgaW5pdGlhbERlbGF5U2Vjb25kczogMTIwCiAgICAgIHBlcmlvZFNlY29uZHM6IDEyMAogICAgICBzdWNjZXNzVGhyZXNob2xkOiAxCiAgICAgIGh0dHBHZXQ6CiAgICAgICAgcGF0aDogL3ZlcnNpb24KICAgICAgICBzY2hlbWU6IEhUVFBTCiAgICAgICAgaG9zdDogCiAgICAgICAgcG9ydDogMAogICAgICB0aW1lb3V0U2Vjb25kczogNjAKICAgIHBvcnRzOgogICAgLSBjb250YWluZXJQb3J0OiAwCiAgICAgIGhvc3RQb3J0OiAwCiAgICAgIHByb3RvY29sOiBUQ1AKICAgICAgbmFtZTogYXBpc2VydmVyCiAgICBjb21tYW5kOgogICAgLSBoYXByb3h5CiAgICAtIC1mCiAgICAtIC91c3IvbG9jYWwvZXRjL2hhcHJveHkKICAgIHZvbHVtZU1vdW50czoKICAgIC0gbmFtZTogY29uZmlnCiAgICAgIG1vdW50UGF0aDogL3Vzci9sb2NhbC9ldGMvaGFwcm94eQogIHZvbHVtZXM6CiAgLSBuYW1lOiBjb25maWcKICAgIGhvc3RQYXRoOgogICAgICBwYXRoOiAvZXRjL2t1YmVybmV0ZXMvYXBpc2VydmVyLXByb3h5LWNvbmZpZwo="
+              verification: {}
+            mode: 0644
+        systemd:
+          units:
+          - contents: |-
+              [Unit]
+              Description=Sets up local IP to proxy API server requests
+              Wants=network-online.target
+              After=network-online.target
+              
+              [Service]
+              Type=oneshot
+              ExecStart=/usr/local/bin/setup-apiserver-ip.sh
+              ExecStop=/usr/local/bin/teardown-apiserver-ip.sh
+              RemainAfterExit=yes
+              
+              [Install]
+              WantedBy=multi-user.target
+    
+            enabled: true
+            name: "apiserver-ip.service"
+    

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ignition-config-30-fips
+  labels:
+    hypershift.openshift.io/core-ignition-config: "true"
+data:
+  config: |-
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfig
+    metadata:
+      name: 30-fips
+      labels:
+        machineconfiguration.openshift.io/role: worker
+    spec:
+      fips: false
+    
