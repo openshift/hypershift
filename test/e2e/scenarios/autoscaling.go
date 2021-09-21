@@ -26,6 +26,7 @@ type TestAutoscalingOptions struct {
 	ReleaseImage       string
 	ArtifactDir        string
 	BaseDomain         string
+	CPOImage           string
 }
 
 func TestAutoscaling(ctx context.Context, o TestAutoscalingOptions) func(t *testing.T) {
@@ -65,13 +66,14 @@ func TestAutoscaling(ctx context.Context, o TestAutoscalingOptions) func(t *test
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			Region:             o.AWSRegion,
 			// TODO: generate a key on the fly
-			SSHKeyFile:       "",
-			NodePoolReplicas: 2,
-			InstanceType:     "m4.large",
-			BaseDomain:       o.BaseDomain,
-			NetworkType:      string(hyperv1.OpenShiftSDN),
-			RootVolumeSize:   64,
-			RootVolumeType:   "gp2",
+			SSHKeyFile:                "",
+			NodePoolReplicas:          2,
+			InstanceType:              "m4.large",
+			BaseDomain:                o.BaseDomain,
+			NetworkType:               string(hyperv1.OpenShiftSDN),
+			RootVolumeSize:            64,
+			RootVolumeType:            "gp2",
+			ControlPlaneOperatorImage: o.CPOImage,
 		}
 		t.Logf("Creating a new cluster. Options: %v", createClusterOpts)
 		err := cmdcluster.CreateCluster(ctx, createClusterOpts)

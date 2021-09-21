@@ -89,6 +89,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&opts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
 	flag.StringVar(&opts.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
 	flag.BoolVar(&opts.UpgradeTestsEnabled, "e2e.upgrade-tests-enabled", false, "Enables upgrade tests")
+	flag.StringVar(&opts.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
+
 	flag.Parse()
 
 	// Set defaults for the test options
@@ -121,15 +123,16 @@ func TestMain(m *testing.M) {
 
 // options are global test options applicable to all scenarios.
 type options struct {
-	AWSCredentialsFile   string
-	Region               string
-	PullSecretFile       string
-	LatestReleaseImage   string
-	PreviousReleaseImage string
-	IsRunningInCI        bool
-	UpgradeTestsEnabled  bool
-	ArtifactDir          string
-	BaseDomain           string
+	AWSCredentialsFile        string
+	Region                    string
+	PullSecretFile            string
+	LatestReleaseImage        string
+	PreviousReleaseImage      string
+	IsRunningInCI             bool
+	UpgradeTestsEnabled       bool
+	ArtifactDir               string
+	BaseDomain                string
+	ControlPlaneOperatorImage string
 }
 
 // Complete is intended to be called after flags have been bound and sets

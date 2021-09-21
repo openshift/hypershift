@@ -27,6 +27,7 @@ type TestAutoRepairOptions struct {
 	ReleaseImage       string
 	ArtifactDir        string
 	BaseDomain         string
+	CPOImage           string
 }
 
 func TestAutoRepair(ctx context.Context, o TestAutoRepairOptions) func(t *testing.T) {
@@ -66,14 +67,15 @@ func TestAutoRepair(ctx context.Context, o TestAutoRepairOptions) func(t *testin
 			AWSCredentialsFile: o.AWSCredentialsFile,
 			Region:             o.AWSRegion,
 			// TODO: generate a key on the fly
-			SSHKeyFile:       "",
-			NodePoolReplicas: 3,
-			InstanceType:     "m4.large",
-			BaseDomain:       o.BaseDomain,
-			NetworkType:      string(hyperv1.OpenShiftSDN),
-			AutoRepair:       true,
-			RootVolumeSize:   64,
-			RootVolumeType:   "gp2",
+			SSHKeyFile:                "",
+			NodePoolReplicas:          3,
+			InstanceType:              "m4.large",
+			BaseDomain:                o.BaseDomain,
+			NetworkType:               string(hyperv1.OpenShiftSDN),
+			AutoRepair:                true,
+			RootVolumeSize:            64,
+			RootVolumeType:            "gp2",
+			ControlPlaneOperatorImage: o.CPOImage,
 		}
 		t.Logf("Creating a new cluster. Options: %v", createClusterOpts)
 		err := cmdcluster.CreateCluster(ctx, createClusterOpts)
