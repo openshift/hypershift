@@ -12,6 +12,11 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	EC2VolumeDefaultSize int64  = 16
+	EC2VolumeDefaultType string = "gp2"
+)
+
 func machineDeployment(nodePool *hyperv1.NodePool, clusterName string, controlPlaneNamespace string) *capiv1.MachineDeployment {
 	resourcesName := generateName(clusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	return &capiv1.MachineDeployment{
@@ -43,6 +48,22 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 				Values: nodePool.Spec.Platform.AWS.Subnet.Filters[k].Values,
 			}
 			subnet.Filters = append(subnet.Filters, filter)
+		}
+	}
+	rootVolume := &capiaws.Volume{}
+	if nodePool.Spec.Platform.AWS.RootVolume != nil {
+		if nodePool.Spec.Platform.AWS.RootVolume.Type != "" {
+			rootVolume.Type = capiaws.VolumeType(nodePool.Spec.Platform.AWS.RootVolume.Type)
+		} else {
+			rootVolume.Type = capiaws.VolumeType(EC2VolumeDefaultType)
+		}
+		if nodePool.Spec.Platform.AWS.RootVolume.Size > 0 {
+			rootVolume.Size = int64(nodePool.Spec.Platform.AWS.RootVolume.Size)
+		} else {
+			rootVolume.Size = EC2VolumeDefaultSize
+		}
+		if nodePool.Spec.Platform.AWS.RootVolume.IOPS > 0 {
+			rootVolume.IOPS = int64(nodePool.Spec.Platform.AWS.RootVolume.IOPS)
 		}
 	}
 
@@ -92,6 +113,7 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 					},
 					AdditionalSecurityGroups: securityGroups,
 					Subnet:                   subnet,
+					RootVolume:               rootVolume,
 				},
 			},
 		},

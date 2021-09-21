@@ -183,6 +183,7 @@ const (
         "ec2:DescribeAccountAttributes",
         "ec2:DescribeAddresses",
         "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeImages",
         "ec2:DescribeInstances",
         "ec2:DescribeInternetGateways",
         "ec2:DescribeNatGateways",

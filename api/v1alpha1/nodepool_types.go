@@ -182,6 +182,9 @@ type AWSNodePoolPlatform struct {
 	// SecurityGroups is the set of security groups to associate with nodepool machines
 	// +optional
 	SecurityGroups []AWSResourceReference `json:"securityGroups,omitempty"`
+	// RootVolume specifies the root volume of the platform.
+	// +optional
+	RootVolume *Volume `json:"rootVolume,omitempty"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
@@ -210,4 +213,20 @@ type Filter struct {
 
 	// Values includes one or more filter values. Filter values are case-sensitive.
 	Values []string `json:"values"`
+}
+
+// Volume encapsulates the configuration options for the storage device
+type Volume struct {
+	// Size specifies size (in Gi) of the storage device.
+	// Must be greater than the image snapshot size or 8 (whichever is greater).
+	// +kubebuilder:validation:Minimum=8
+	Size int64 `json:"size"`
+
+	// Type is the type of the volume.
+	Type string `json:"type"`
+
+	// IOPS is the number of IOPS requested for the disk. This is only valid
+	// for type io1.
+	// +optional
+	IOPS int64 `json:"iops,omitempty"`
 }

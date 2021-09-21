@@ -72,6 +72,8 @@ func TestAutoRepair(ctx context.Context, o TestAutoRepairOptions) func(t *testin
 			BaseDomain:       o.BaseDomain,
 			NetworkType:      string(hyperv1.OpenShiftSDN),
 			AutoRepair:       true,
+			RootVolumeSize:   64,
+			RootVolumeType:   "gp2",
 		}
 		t.Logf("Creating a new cluster. Options: %v", createClusterOpts)
 		err := cmdcluster.CreateCluster(ctx, createClusterOpts)

@@ -27,8 +27,8 @@ type Options struct {
 	Namespace                 string
 	Name                      string
 	ReleaseImage              string
-	ControlPlaneOperatorImage string
 	PullSecretFile            string
+	ControlPlaneOperatorImage string
 	AWSCredentialsFile        string
 	SSHKeyFile                string
 	NodePoolReplicas          int32
@@ -46,6 +46,9 @@ type Options struct {
 	NetworkType               string
 	FIPS                      bool
 	AutoRepair                bool
+	RootVolumeType            string
+	RootVolumeIOPS            int64
+	RootVolumeSize            int64
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -83,6 +86,8 @@ func NewCreateCommand() *cobra.Command {
 		NetworkType:               string(hyperv1.OpenShiftSDN),
 		FIPS:                      false,
 		AutoRepair:                false,
+		RootVolumeType:            "gp2",
+		RootVolumeSize:            16,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -104,6 +109,9 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico or OpenshiftSDN.")
 	cmd.Flags().BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster")
 	cmd.Flags().BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine autorepair with machine health checks")
+	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
+	cmd.Flags().Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
+	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -250,6 +258,9 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			KubeCloudControllerUserAccessKeySecret: iamInfo.KubeCloudControllerUserAccessKeySecret,
 			NodePoolManagementUserAccessKeyID:      iamInfo.NodePoolManagementUserAccessKeyID,
 			NodePoolManagementUserAccessKeySecret:  iamInfo.NodePoolManagementUserAccessKeySecret,
+			RootVolumeSize:                         opts.RootVolumeSize,
+			RootVolumeType:                         opts.RootVolumeType,
+			RootVolumeIOPS:                         opts.RootVolumeIOPS,
 		},
 	}.Resources().AsObjects()
 

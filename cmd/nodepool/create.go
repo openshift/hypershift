@@ -29,6 +29,9 @@ type CreateNodePoolOptions struct {
 	SecurityGroupID string
 	InstanceProfile string
 	Render          bool
+	RootVolumeType  string
+	RootVolumeIOPS  int64
+	RootVolumeSize  int64
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -39,12 +42,15 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateNodePoolOptions{
-		Name:         "example",
-		Namespace:    "clusters",
-		ClusterName:  "example",
-		NodeCount:    2,
-		ReleaseImage: "",
-		InstanceType: "m4.large",
+		Name:           "example",
+		Namespace:      "clusters",
+		ClusterName:    "example",
+		NodeCount:      2,
+		ReleaseImage:   "",
+		InstanceType:   "m4.large",
+		RootVolumeType: "gp2",
+		RootVolumeSize: 16,
+		RootVolumeIOPS: 0,
 	}
 
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the NodePool")
@@ -58,6 +64,10 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InstanceProfile, "instance-profile", opts.InstanceProfile, "The AWS instance profile for the NodePool")
 
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
+
+	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
+	cmd.Flags().Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
+	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -152,6 +162,11 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 				{
 					ID: &o.SecurityGroupID,
 				},
+			},
+			RootVolume: &hyperv1.Volume{
+				Type: o.RootVolumeType,
+				Size: o.RootVolumeSize,
+				IOPS: o.RootVolumeIOPS,
 			},
 		}
 	}
