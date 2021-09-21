@@ -4,16 +4,12 @@ metadata:
   creationTimestamp: null
   name: cluster
 spec:
-  cloudConfig:
-    name: ""
 {{- if eq .PlatformType "AWS" }}
   platformSpec:
     aws: {}
 {{- end }}
 status:
-  apiServerInternalURI: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
   apiServerURL: https://{{ .ExternalAPIDNSName }}:{{ .ExternalAPIPort }}
-  etcdDiscoveryDomain: {{ .BaseDomain }}
   infrastructureName: "{{ .InfraID }}"
   platform: {{ .PlatformType }}
   controlPlaneTopology: HighlyAvailable
