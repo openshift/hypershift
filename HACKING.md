@@ -14,7 +14,7 @@
 
 3. Install HyperShift in development mode which causes the operator deployment
    to be deployment scaled to zero so that it doesn't conflict with your local
-   operator process. 
+   operator process.
 
         $ bin/hypershift install --development
 
@@ -49,7 +49,8 @@ Then update the operator ServiceAccount in the hypershift namespace:
         $ make e2e
         $ bin/test-e2e -test.v -test.timeout 0 \
           --e2e.aws-credentials-file /my/aws-credentials \
-          --e2e.pull-secret-file /my/pull-secret
+          --e2e.pull-secret-file /my/pull-secret \
+          --e2e.base-domain my-basedomain
    ```
 
 ### How to visualize the Go dependency graph
