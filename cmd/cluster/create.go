@@ -24,31 +24,33 @@ import (
 )
 
 type Options struct {
-	Namespace                 string
-	Name                      string
-	ReleaseImage              string
-	PullSecretFile            string
-	ControlPlaneOperatorImage string
-	AWSCredentialsFile        string
-	SSHKeyFile                string
-	NodePoolReplicas          int32
-	Render                    bool
-	InfraID                   string
-	InfrastructureJSON        string
-	IAMJSON                   string
-	InstanceType              string
-	Region                    string
-	BaseDomain                string
-	IssuerURL                 string
-	PublicZoneID              string
-	PrivateZoneID             string
-	Annotations               []string
-	NetworkType               string
-	FIPS                      bool
-	AutoRepair                bool
-	RootVolumeType            string
-	RootVolumeIOPS            int64
-	RootVolumeSize            int64
+	Namespace                        string
+	Name                             string
+	ReleaseImage                     string
+	PullSecretFile                   string
+	ControlPlaneOperatorImage        string
+	AWSCredentialsFile               string
+	SSHKeyFile                       string
+	NodePoolReplicas                 int32
+	Render                           bool
+	InfraID                          string
+	InfrastructureJSON               string
+	IAMJSON                          string
+	InstanceType                     string
+	Region                           string
+	BaseDomain                       string
+	IssuerURL                        string
+	PublicZoneID                     string
+	PrivateZoneID                    string
+	Annotations                      []string
+	NetworkType                      string
+	FIPS                             bool
+	AutoRepair                       bool
+	RootVolumeType                   string
+	RootVolumeIOPS                   int64
+	RootVolumeSize                   int64
+	ControlPlaneAvailabilityPolicy   string
+	InfrastructureAvailabilityPolicy string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -69,25 +71,28 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Namespace:                 "clusters",
-		Name:                      "example",
-		ReleaseImage:              releaseImage,
-		ControlPlaneOperatorImage: "",
-		PullSecretFile:            "",
-		AWSCredentialsFile:        "",
-		SSHKeyFile:                "",
-		NodePoolReplicas:          2,
-		Render:                    false,
-		InfrastructureJSON:        "",
-		Region:                    "us-east-1",
-		InfraID:                   "",
-		InstanceType:              "m4.large",
-		Annotations:               []string{},
-		NetworkType:               string(hyperv1.OpenShiftSDN),
-		FIPS:                      false,
-		AutoRepair:                false,
-		RootVolumeType:            "gp2",
-		RootVolumeSize:            16,
+		Namespace:                        "clusters",
+		Name:                             "example",
+		ReleaseImage:                     releaseImage,
+		ControlPlaneOperatorImage:        "",
+		PullSecretFile:                   "",
+		AWSCredentialsFile:               "",
+		SSHKeyFile:                       "",
+		NodePoolReplicas:                 2,
+		Render:                           false,
+		InfrastructureJSON:               "",
+		Region:                           "us-east-1",
+		InfraID:                          "",
+		InstanceType:                     "m4.large",
+		Annotations:                      []string{},
+		NetworkType:                      string(hyperv1.OpenShiftSDN),
+		FIPS:                             false,
+		AutoRepair:                       false,
+		RootVolumeType:                   "gp2",
+		RootVolumeSize:                   16,
+		RootVolumeIOPS:                   0,
+		ControlPlaneAvailabilityPolicy:   "SingleReplica",
+		InfrastructureAvailabilityPolicy: "HighlyAvailable",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
@@ -112,6 +117,8 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
+	cmd.Flags().StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
+	cmd.Flags().StringVar(&opts.InfrastructureAvailabilityPolicy, "infra-availability-policy", opts.InfrastructureAvailabilityPolicy, "Availability policy for infrastructure services in guest cluster. Supported options: SingleReplica, HighlyAvailable")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -229,22 +236,24 @@ func CreateCluster(ctx context.Context, opts Options) error {
 	}
 
 	exampleObjects := apifixtures.ExampleOptions{
-		Namespace:        opts.Namespace,
-		Name:             infra.Name,
-		Annotations:      annotations,
-		ReleaseImage:     opts.ReleaseImage,
-		PullSecret:       pullSecret,
-		IssuerURL:        iamInfo.IssuerURL,
-		SSHKey:           sshKey,
-		NodePoolReplicas: opts.NodePoolReplicas,
-		InfraID:          infra.InfraID,
-		ComputeCIDR:      infra.ComputeCIDR,
-		BaseDomain:       infra.BaseDomain,
-		PublicZoneID:     infra.PublicZoneID,
-		PrivateZoneID:    infra.PrivateZoneID,
-		NetworkType:      hyperv1.NetworkType(opts.NetworkType),
-		FIPS:             opts.FIPS,
-		AutoRepair:       opts.AutoRepair,
+		Namespace:                        opts.Namespace,
+		Name:                             infra.Name,
+		Annotations:                      annotations,
+		ReleaseImage:                     opts.ReleaseImage,
+		PullSecret:                       pullSecret,
+		IssuerURL:                        iamInfo.IssuerURL,
+		SSHKey:                           sshKey,
+		NodePoolReplicas:                 opts.NodePoolReplicas,
+		InfraID:                          infra.InfraID,
+		ComputeCIDR:                      infra.ComputeCIDR,
+		BaseDomain:                       infra.BaseDomain,
+		PublicZoneID:                     infra.PublicZoneID,
+		PrivateZoneID:                    infra.PrivateZoneID,
+		NetworkType:                      hyperv1.NetworkType(opts.NetworkType),
+		FIPS:                             opts.FIPS,
+		AutoRepair:                       opts.AutoRepair,
+		ControlPlaneAvailabilityPolicy:   hyperv1.AvailabilityPolicy(opts.ControlPlaneAvailabilityPolicy),
+		InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(opts.InfrastructureAvailabilityPolicy),
 		AWS: apifixtures.ExampleAWSOptions{
 			Region:                                 infra.Region,
 			Zone:                                   infra.Zone,
