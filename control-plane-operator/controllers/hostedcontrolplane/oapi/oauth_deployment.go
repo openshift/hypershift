@@ -91,6 +91,7 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container)
 			fmt.Sprintf("--authentication-kubeconfig=%s", cpath(oauthVolumeKubeconfig().Name, kas.KubeconfigKey)),
 			fmt.Sprintf("--kubeconfig=%s", cpath(oauthVolumeKubeconfig().Name, kas.KubeconfigKey)),
 			fmt.Sprintf("--secure-port=%d", OpenShiftOAuthAPIServerPort),
+			fmt.Sprintf("--api-audiences=%s", p.ServiceAccountIssuerURL),
 			fmt.Sprintf("--audit-log-path=%s", cpath(oauthVolumeWorkLogs().Name, "audit.log")),
 			"--audit-log-format=json",
 			"--audit-log-maxsize=100",

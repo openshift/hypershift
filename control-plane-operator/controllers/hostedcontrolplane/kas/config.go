@@ -108,6 +108,8 @@ func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServer
 	args.Set("audit-log-maxsize", "100")
 	args.Set("audit-log-path", cpath(kasVolumeWorkLogs().Name, AuditLogFile))
 	args.Set("audit-policy-file", cpath(kasVolumeAuditConfig().Name, AuditPolicyConfigMapKey))
+	args.Set("authentication-token-webhook-config-file", cpath(kasVolumeAuthTokenWebhookConfig().Name, KubeconfigKey))
+	args.Set("authentication-token-webhook-version", "v1")
 	args.Set("authorization-mode", "Scope", "SystemMasters", "RBAC", "Node")
 	args.Set("client-ca-file", cpath(kasVolumeClientCA().Name, pki.CASignerCertMapKey))
 	if p.CloudProviderConfigRef != nil {
