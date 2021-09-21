@@ -39,23 +39,25 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 }
 
 type ExampleOptions struct {
-	Namespace        string
-	Name             string
-	ReleaseImage     string
-	PullSecret       []byte
-	IssuerURL        string
-	SSHKey           []byte
-	NodePoolReplicas int32
-	InfraID          string
-	ComputeCIDR      string
-	BaseDomain       string
-	PublicZoneID     string
-	PrivateZoneID    string
-	Annotations      map[string]string
-	FIPS             bool
-	AutoRepair       bool
-	AWS              ExampleAWSOptions
-	NetworkType      hyperv1.NetworkType
+	Namespace                        string
+	Name                             string
+	ReleaseImage                     string
+	PullSecret                       []byte
+	IssuerURL                        string
+	SSHKey                           []byte
+	NodePoolReplicas                 int32
+	InfraID                          string
+	ComputeCIDR                      string
+	BaseDomain                       string
+	PublicZoneID                     string
+	PrivateZoneID                    string
+	Annotations                      map[string]string
+	FIPS                             bool
+	AutoRepair                       bool
+	AWS                              ExampleAWSOptions
+	NetworkType                      hyperv1.NetworkType
+	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
+	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
 }
 
 type ExampleAWSOptions struct {
@@ -212,6 +214,8 @@ aws_secret_access_key = %s
 				PublicZoneID:  o.PublicZoneID,
 				PrivateZoneID: o.PrivateZoneID,
 			},
+			ControllerAvailabilityPolicy:     o.ControlPlaneAvailabilityPolicy,
+			InfrastructureAvailabilityPolicy: o.InfrastructureAvailabilityPolicy,
 			Platform: hyperv1.PlatformSpec{
 				Type: hyperv1.AWSPlatform,
 				AWS: &hyperv1.AWSPlatformSpec{
