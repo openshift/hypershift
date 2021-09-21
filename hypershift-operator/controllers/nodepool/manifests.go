@@ -50,7 +50,9 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 			subnet.Filters = append(subnet.Filters, filter)
 		}
 	}
-	rootVolume := &capiaws.Volume{}
+	rootVolume := &capiaws.Volume{
+		Size: EC2VolumeDefaultSize,
+	}
 	if nodePool.Spec.Platform.AWS.RootVolume != nil {
 		if nodePool.Spec.Platform.AWS.RootVolume.Type != "" {
 			rootVolume.Type = capiaws.VolumeType(nodePool.Spec.Platform.AWS.RootVolume.Type)
@@ -59,8 +61,6 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 		}
 		if nodePool.Spec.Platform.AWS.RootVolume.Size > 0 {
 			rootVolume.Size = int64(nodePool.Spec.Platform.AWS.RootVolume.Size)
-		} else {
-			rootVolume.Size = EC2VolumeDefaultSize
 		}
 		if nodePool.Spec.Platform.AWS.RootVolume.IOPS > 0 {
 			rootVolume.IOPS = int64(nodePool.Spec.Platform.AWS.RootVolume.IOPS)
