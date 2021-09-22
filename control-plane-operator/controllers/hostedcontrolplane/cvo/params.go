@@ -34,6 +34,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane) *CVOParams {
 			},
 		},
 	}
+	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.DeploymentConfig.SetColocation(hcp)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
