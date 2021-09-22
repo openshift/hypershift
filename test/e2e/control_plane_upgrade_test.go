@@ -107,4 +107,8 @@ func TestUpgradeControlPlane(t *testing.T) {
 	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
 	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	// Wait for all pods of guest cluster are running
+	t.Log("Waiting for guest cluster pods are running or completed.")
+	e2eutil.WaitForPodsRunning(t, testContext, guestClient)
 }

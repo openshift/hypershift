@@ -257,6 +257,33 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	t.Logf("Observed hostedcluster to have successfully rolled out image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 }
 
+// WaitForPodsRunning waits for all pods in cluster of the provided client to be in the Running or Completed state.
+func WaitForPodsRunning(t *testing.T, ctx context.Context, client crclient.Client) {
+	g := NewWithT(t)
+
+	t.Log("Waiting for pods in cluster be in Running or Completed state.")
+	pods := &corev1.PodList{}
+	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
+		err = client.List(ctx, pods)
+		if err != nil {
+			return false, nil
+		}
+		if len(pods.Items) == 0 {
+			return false, nil
+		}
+		for _, p := range pods.Items {
+			if p.Status.Phase != corev1.PodRunning && p.Status.Phase != corev1.PodSucceeded {
+				return false, nil
+			}
+		}
+		t.Log("All pods are running or completed.")
+		return true, nil
+	}, ctx.Done())
+	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for pods to be running or completed")
+
+	t.Log("All pods are running or completed.")
+}
+
 // DumpGuestCluster tries to collect resources from the from the hosted cluster,
 // and logs any failures that occur.
 func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, destDir string) {

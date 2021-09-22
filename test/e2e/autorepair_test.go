@@ -119,6 +119,10 @@ func TestAutoRepair(t *testing.T) {
 		return true, nil
 	}, testContext.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
+
+	// Wait for all pods of guest cluster are running
+	t.Log("Waiting for guest cluster pods are running or completed.")
+	e2eutil.WaitForPodsRunning(t, testContext, guestClient)
 }
 
 func ec2Client(awsCredsFile, region string) *ec2.EC2 {

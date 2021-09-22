@@ -145,6 +145,10 @@ func TestAutoscaling(t *testing.T) {
 
 	// Wait for exactly 1 node.
 	_ = e2eutil.WaitForNReadyNodes(t, testContext, guestClient, min)
+
+	// Wait for all pods of guest cluster are running
+	t.Log("Waiting for guest cluster pods are running or completed.")
+	e2eutil.WaitForPodsRunning(t, testContext, guestClient)
 }
 
 func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, image string) *batchv1.Job {
