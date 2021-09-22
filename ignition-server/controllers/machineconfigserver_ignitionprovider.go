@@ -201,7 +201,7 @@ func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseI
 	bootstrapArgs := fmt.Sprintf(`
 mkdir -p /mcc-manifests/bootstrap/manifests
 mkdir -p /mcc-manifests/manifests
-exec machine-config-operator bootstrap \
+machine-config-operator bootstrap \
 --root-ca=/assets/manifests/root-ca.crt \
 --kube-ca=/assets/manifests/combined-ca.crt \
 --machine-config-operator-image=%s \
