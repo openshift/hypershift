@@ -32,6 +32,8 @@ var (
 // list in order for them to run.
 func TestScenarios(t *testing.T) {
 	tests := map[string]func(t *testing.T){
+		// Not included in presumbit set because it is a subset of UpgradeControlPlane
+		// However, it can be invoked directly with test.run flag
 		"CreateCluster": scenarios.TestCreateCluster(ctx,
 			scenarios.TestCreateClusterOptions{
 				AWSCredentialsFile: opts.AWSCredentialsFile,
@@ -41,7 +43,7 @@ func TestScenarios(t *testing.T) {
 				ArtifactDir:        opts.ArtifactDir,
 				BaseDomain:         opts.BaseDomain,
 			}),
-		"UpgradeControlPlane": scenarios.TestUpgradeControlPlane(ctx,
+		"UpgradeControlPlane [presubmit]": scenarios.TestUpgradeControlPlane(ctx,
 			scenarios.TestUpgradeControlPlaneOptions{
 				AWSCredentialsFile: opts.AWSCredentialsFile,
 				AWSRegion:          opts.Region,
@@ -51,7 +53,7 @@ func TestScenarios(t *testing.T) {
 				ToReleaseImage:     opts.LatestReleaseImage,
 				ArtifactDir:        opts.ArtifactDir,
 			}),
-		"Autoscaling": scenarios.TestAutoscaling(ctx,
+		"Autoscaling [nodepool]": scenarios.TestAutoscaling(ctx,
 			scenarios.TestAutoscalingOptions{
 				AWSCredentialsFile: opts.AWSCredentialsFile,
 				AWSRegion:          opts.Region,
@@ -60,7 +62,7 @@ func TestScenarios(t *testing.T) {
 				ArtifactDir:        opts.ArtifactDir,
 				BaseDomain:         opts.BaseDomain,
 			}),
-		"AutoRepair": scenarios.TestAutoRepair(ctx,
+		"AutoRepair [nodepool]": scenarios.TestAutoRepair(ctx,
 			scenarios.TestAutoRepairOptions{
 				AWSCredentialsFile: opts.AWSCredentialsFile,
 				AWSRegion:          opts.Region,
@@ -71,8 +73,7 @@ func TestScenarios(t *testing.T) {
 			}),
 	}
 
-	for name := range tests {
-		fn := tests[name]
+	for name, fn := range tests {
 		t.Run(name, fn)
 	}
 }
