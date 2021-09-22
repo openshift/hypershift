@@ -1783,7 +1783,12 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 		{
 			APIGroups: []string{"hypershift.openshift.io"},
 			Resources: []string{"*"},
-			Verbs:     []string{"*"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+		{
+			APIGroups: []string{"hypershift.openshift.io"},
+			Resources: []string{"hostedcontrolplanes/status"},
+			Verbs:     []string{"update", "patch"},
 		},
 		{
 			APIGroups: []string{
