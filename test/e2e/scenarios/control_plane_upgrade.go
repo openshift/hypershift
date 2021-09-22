@@ -22,16 +22,11 @@ type TestUpgradeControlPlaneOptions struct {
 	FromReleaseImage   string
 	ToReleaseImage     string
 	ArtifactDir        string
-	Enabled            bool
 	CPOImage           string
 }
 
 func TestUpgradeControlPlane(ctx context.Context, o TestUpgradeControlPlaneOptions) func(t *testing.T) {
 	return func(t *testing.T) {
-		//if !o.Enabled {
-		//	t.Skipf("upgrade test is disabled")
-		//}
-
 		t.Parallel()
 		g := NewWithT(t)
 
