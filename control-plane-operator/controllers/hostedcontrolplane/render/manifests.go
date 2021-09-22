@@ -28,7 +28,7 @@ type clusterManifestContext struct {
 	userManifests     map[string]string
 }
 
-func newClusterManifestContext(images, versions map[string]string, params interface{}, pullSecret []byte, secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) *clusterManifestContext {
+func newClusterManifestContext(images, versions map[string]string, params *ClusterParams, pullSecret []byte, secrets *corev1.SecretList, configMaps *corev1.ConfigMapList) *clusterManifestContext {
 	ctx := &clusterManifestContext{
 		renderContext: newRenderContext(params),
 		userManifests: make(map[string]string),
