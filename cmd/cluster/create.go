@@ -28,6 +28,7 @@ type Options struct {
 	ReleaseImage       string
 	PullSecretFile     string
 	AWSCredentialsFile string
+	AdditionalTags     []string
 	SSHKeyFile         string
 	NodePoolReplicas   int32
 	Render             bool
@@ -114,6 +115,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
+	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -196,6 +198,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
+			AdditionalTags:     opts.AdditionalTags,
 		}
 		infra, err = opt.CreateInfra(ctx)
 		if err != nil {
@@ -219,6 +222,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
 			IssuerURL:          opts.IssuerURL,
+			AdditionalTags:     opts.AdditionalTags,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
