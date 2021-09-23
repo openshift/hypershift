@@ -157,6 +157,9 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 		},
 	}
+	if len(images.Portieris) > 0 {
+		applyPortieriesConfig(&deployment.Spec.Template.Spec, images.Portieris)
+	}
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
 	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec)
 	if auditWebhookRef != nil {
