@@ -1,3 +1,4 @@
+//go:build e2e
 // +build e2e
 
 package e2e
@@ -64,6 +65,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 		RootVolumeSize:            64,
 		RootVolumeType:            "gp2",
 		ControlPlaneOperatorImage: globalOpts.ControlPlaneOperatorImage,
+		AdditionalTags:            globalOpts.AdditionalTags,
 	}
 	err := cmdcluster.CreateCluster(testContext, createClusterOpts)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")

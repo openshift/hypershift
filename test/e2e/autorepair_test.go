@@ -1,3 +1,4 @@
+//go:build e2e
 // +build e2e
 
 package e2e
@@ -65,6 +66,7 @@ func TestAutoRepair(t *testing.T) {
 		RootVolumeSize:            64,
 		RootVolumeType:            "gp2",
 		ControlPlaneOperatorImage: globalOpts.ControlPlaneOperatorImage,
+		AdditionalTags:            globalOpts.AdditionalTags,
 	}
 	t.Logf("Creating a new cluster. Options: %v", createClusterOpts)
 	err := cmdcluster.CreateCluster(testContext, createClusterOpts)

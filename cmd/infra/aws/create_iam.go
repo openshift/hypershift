@@ -30,6 +30,9 @@ type CreateIAMOptions struct {
 	InfraID            string
 	IssuerURL          string
 	OutputFile         string
+	AdditionalTags     []string
+
+	additionalIAMTags []*iam.Tag
 }
 
 type CreateIAMOutput struct {
@@ -62,6 +65,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
+	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("infra-id")
@@ -112,6 +116,9 @@ func (o *CreateIAMOptions) Run(ctx context.Context, client crclient.Client) erro
 
 func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client) (*CreateIAMOutput, error) {
 	var err error
+	if err = o.parseAdditionalTags(); err != nil {
+		return nil, err
+	}
 
 	ingressConfig := &configv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -164,4 +171,18 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 
 	return results, nil
+}
+
+func (o *CreateIAMOptions) parseAdditionalTags() error {
+	parsed, err := parseTags(o.AdditionalTags)
+	if err != nil {
+		return err
+	}
+	for k, v := range parsed {
+		o.additionalIAMTags = append(o.additionalIAMTags, &iam.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+	return nil
 }

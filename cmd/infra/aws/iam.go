@@ -308,7 +308,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		ThumbprintList: []*string{
 			aws.String(thumbprint),
 		},
-		Url: aws.String(o.IssuerURL),
+		Url:  aws.String(o.IssuerURL),
+		Tags: o.additionalIAMTags,
 	})
 	if err != nil {
 		return nil, err
@@ -369,6 +370,7 @@ func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPol
 		output, err := client.CreateRole(&iam.CreateRoleInput{
 			AssumeRolePolicyDocument: aws.String(trustPolicy),
 			RoleName:                 aws.String(roleName),
+			Tags:                     o.additionalIAMTags,
 		})
 		if err != nil {
 			return "", err
@@ -439,6 +441,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 			AssumeRolePolicyDocument: aws.String(assumeRolePolicy),
 			Path:                     aws.String("/"),
 			RoleName:                 aws.String(roleName),
+			Tags:                     o.additionalIAMTags,
 		})
 		if err != nil {
 			return fmt.Errorf("cannot create worker role: %w", err)
@@ -455,6 +458,7 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		result, err := client.CreateInstanceProfile(&iam.CreateInstanceProfileInput{
 			InstanceProfileName: aws.String(profileName),
 			Path:                aws.String("/"),
+			Tags:                o.additionalIAMTags,
 		})
 		if err != nil {
 			return fmt.Errorf("cannot create instance profile: %w", err)
@@ -525,7 +529,7 @@ func (o *CreateIAMOptions) CreateCredentialedUserWithPolicy(ctx context.Context,
 	} else {
 		if output, err := client.CreateUserWithContext(ctx, &iam.CreateUserInput{
 			UserName: aws.String(userName),
-			Tags:     iamTags(o.InfraID, userName),
+			Tags:     iamTags(o.InfraID, userName, o.additionalIAMTags...),
 		}); err != nil {
 			return nil, fmt.Errorf("failed to create user: %w", err)
 		} else {
@@ -637,13 +641,11 @@ func existingUserPolicy(client iamiface.IAMAPI, userName, policyName string) (bo
 	return aws.StringValue(result.PolicyName) == policyName, nil
 }
 
-func iamTags(infraID, name string) []*iam.Tag {
-	tags := []*iam.Tag{
-		{
-			Key:   aws.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)),
-			Value: aws.String("owned"),
-		},
-	}
+func iamTags(infraID, name string, additionalTags ...*iam.Tag) []*iam.Tag {
+	tags := append(additionalTags, &iam.Tag{
+		Key:   aws.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)),
+		Value: aws.String("owned"),
+	})
 	if len(name) > 0 {
 		tags = append(tags, &iam.Tag{
 			Key:   aws.String("Name"),
