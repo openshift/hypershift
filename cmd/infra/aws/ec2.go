@@ -542,19 +542,29 @@ func (o *CreateInfraOptions) ec2TagSpecifications(resourceType, name string) []*
 }
 
 func (o *CreateInfraOptions) parseAdditionalTags() error {
-	var ec2Tags []*ec2.Tag
-	for _, tagStr := range o.AdditionalTags {
-		parts := strings.SplitN(tagStr, "=", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
-		}
-		ec2Tags = append(ec2Tags, &ec2.Tag{
-			Key:   aws.String(parts[0]),
-			Value: aws.String(parts[1]),
+	parsed, err := parseTags(o.AdditionalTags)
+	if err != nil {
+		return err
+	}
+	for k, v := range parsed {
+		o.additionalEC2Tags = append(o.additionalEC2Tags, &ec2.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
 		})
 	}
-	o.additionalEC2Tags = ec2Tags
 	return nil
+}
+
+func parseTags(tags []string) (map[string]string, error) {
+	tagMap := make(map[string]string, len(tags))
+	for _, tagStr := range tags {
+		parts := strings.SplitN(tagStr, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
+		}
+		tagMap[parts[0]] = parts[1]
+	}
+	return tagMap, nil
 }
 
 func (o *CreateInfraOptions) ec2Filters(name string) []*ec2.Filter {

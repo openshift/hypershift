@@ -30,6 +30,7 @@ type Options struct {
 	PullSecretFile                   string
 	ControlPlaneOperatorImage        string
 	AWSCredentialsFile               string
+	AdditionalTags                   []string
 	SSHKeyFile                       string
 	NodePoolReplicas                 int32
 	Render                           bool
@@ -119,6 +120,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
 	cmd.Flags().StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
 	cmd.Flags().StringVar(&opts.InfrastructureAvailabilityPolicy, "infra-availability-policy", opts.InfrastructureAvailabilityPolicy, "Availability policy for infrastructure services in guest cluster. Supported options: SingleReplica, HighlyAvailable")
+	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
@@ -205,6 +207,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
+			AdditionalTags:     opts.AdditionalTags,
 		}
 		infra, err = opt.CreateInfra(ctx)
 		if err != nil {
@@ -228,6 +231,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			AWSCredentialsFile: opts.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
 			IssuerURL:          opts.IssuerURL,
+			AdditionalTags:     opts.AdditionalTags,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {

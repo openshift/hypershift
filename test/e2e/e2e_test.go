@@ -1,3 +1,4 @@
+//go:build e2e
 // +build e2e
 
 package e2e
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -41,6 +43,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
 	flag.BoolVar(&globalOpts.UpgradeTestsEnabled, "e2e.upgrade-tests-enabled", false, "Enables upgrade tests")
 	flag.StringVar(&globalOpts.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
+	flag.Var(&globalOpts.AdditionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
 
 	flag.Parse()
 
@@ -84,6 +87,7 @@ type options struct {
 	ArtifactDir               string
 	BaseDomain                string
 	ControlPlaneOperatorImage string
+	AdditionalTags            stringSliceVar
 }
 
 // Complete is intended to be called after flags have been bound and sets
@@ -135,3 +139,11 @@ func (o *options) Validate() error {
 
 	return errors.NewAggregate(errs)
 }
+
+var _ flag.Value = &stringSliceVar{}
+
+// stringSliceVar mimicks github.com/spf13/pflag.StringSliceVar in a stdlib-compatible way
+type stringSliceVar []string
+
+func (s *stringSliceVar) String() string     { return strings.Join(*s, ",") }
+func (s *stringSliceVar) Set(v string) error { *s = append(*s, strings.Split(v, ",")...); return nil }
