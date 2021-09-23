@@ -91,7 +91,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	params.OpenShiftAPIServerDeploymentConfig.SetControlPlaneIsolation(hcp)
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
+			PriorityClass: config.APICriticalPriorityClass,
 		},
 		LivenessProbes: config.LivenessProbes{
 			oauthContainerMain().Name: {

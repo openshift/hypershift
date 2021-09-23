@@ -33,7 +33,7 @@ spec:
           operator: "Equal"
           value: "true"
           effect: NoSchedule
-      priorityClassName: "system-cluster-critical"
+      priorityClassName: "hypershift-control-plane"
       containers:
       - image: {{ imageFor "hosted-cluster-config-operator" }}
         imagePullPolicy: Always
