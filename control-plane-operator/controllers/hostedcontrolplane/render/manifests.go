@@ -169,6 +169,9 @@ func (c *clusterManifestContext) ignitionConfigs() {
 
 func (c *clusterManifestContext) operatorLifecycleManager() {
 	c.addManifestFiles(
+		"olm/catalog-rollout.serviceaccount.yaml",
+		"olm/catalog-rollout.role.yaml",
+		"olm/catalog-rollout.rolebinding.yaml",
 		"olm/catalog-metrics-service.yaml",
 		"olm/olm-metrics-service.yaml",
 		"olm/olm-client-ca-secret.yaml",
@@ -177,16 +180,16 @@ func (c *clusterManifestContext) operatorLifecycleManager() {
 		"olm/packageserver-secret.yaml",
 		"olm/packageserver-deployment.yaml",
 		"olm/catalog-redhat-operators.deployment.yaml",
-		"olm/catalog-redhat-operators.imagestream.yaml",
+		"olm/catalog-redhat-operators-rollout.cronjob.yaml",
 		"olm/catalog-redhat-operators.service.yaml",
 		"olm/catalog-certified.deployment.yaml",
-		"olm/catalog-certified.imagestream.yaml",
+		"olm/catalog-certified-rollout.cronjob.yaml",
 		"olm/catalog-certified.service.yaml",
 		"olm/catalog-community.deployment.yaml",
-		"olm/catalog-community.imagestream.yaml",
+		"olm/catalog-community-rollout.cronjob.yaml",
 		"olm/catalog-community.service.yaml",
 		"olm/catalog-redhat-marketplace.deployment.yaml",
-		"olm/catalog-redhat-marketplace.imagestream.yaml",
+		"olm/catalog-redhat-marketplace-rollout.cronjob.yaml",
 		"olm/catalog-redhat-marketplace.service.yaml",
 	)
 	c.addUserManifestFiles(
