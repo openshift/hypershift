@@ -44,6 +44,9 @@ const (
 	AWSKMSProviderImage = "hypershift.openshift.io/aws-kms-provider-image"
 	// IBMCloudKMSProviderImage is an annotation that allows the specification of the IBM Cloud kms provider image.
 	IBMCloudKMSProviderImage = "hypershift.openshift.io/ibmcloud-kms-provider-image"
+	// PortierisImageAnnotation is an annotation that allows the specification of the portieries component
+	// (performs container image verification).
+	PortierisImageAnnotation = "hypershift.openshift.io/portieris-image"
 
 	// AESCBCKeySecretKey defines the Kubernetes secret key name that contains the aescbc encryption key
 	// in the AESCBC secret encryption strategy

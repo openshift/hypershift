@@ -22,6 +22,7 @@ type KubeAPIServerImages struct {
 	HyperKube             string `json:"hyperKube"`
 	IBMCloudKMS           string `json:"ibmcloudKMS"`
 	AWSKMS                string `json:"awsKMS"`
+	Portieris             string `json:"portieris"`
 }
 
 type KubeAPIServerParams struct {
@@ -87,6 +88,9 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.APIServerPort = *hcp.Spec.APIPort
 	} else {
 		params.APIServerPort = config.DefaultAPIServerPort
+	}
+	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
+		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
 	}
 
 	switch hcp.Spec.Etcd.ManagementType {
@@ -185,6 +189,20 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			FailureThreshold:    3,
 			SuccessThreshold:    1,
 		},
+		kasContainerPortieries().Name: corev1.Probe{
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTPS,
+					Port:   intstr.FromInt(portierisPort),
+					Path:   "/health/liveness",
+				},
+			},
+			InitialDelaySeconds: 120,
+			PeriodSeconds:       300,
+			TimeoutSeconds:      160,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
 		kasContainerMain().Name: {
@@ -231,6 +249,12 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("10Mi"),
 				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		},
+		kasContainerPortieries().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("20Mi"),
+				corev1.ResourceCPU:    resource.MustParse("5m"),
 			},
 		},
 	}
