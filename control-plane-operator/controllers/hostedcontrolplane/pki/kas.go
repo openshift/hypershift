@@ -41,23 +41,23 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 	} else {
 		dnsNames = append(dnsNames, externalAPIAddress)
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes", "kubernetes", X509DefaultUsage, X509UsageServerAuth, dnsNames, apiServerIPs)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes", []string{"kubernetes"}, X509DefaultUsage, X509UsageServerAuth, dnsNames, apiServerIPs)
 }
 
 func ReconcileKASKubeletClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "system:kube-apiserver", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "system:kube-apiserver", []string{"kubernetes"}, X509DefaultUsage, X509UsageClientAuth)
 }
 
 func ReconcileKASMachineBootstrapClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "system:bootstrapper", "system:bootstrappers", X509DefaultUsage, X509UsageClientAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "system:serviceaccount:openshift-machine-config-operator:node-bootstrapper", []string{"system:serviceaccounts:openshift-machine-config-operator", "system:serviceaccounts"}, X509DefaultUsage, X509UsageClientAuth)
 }
 
 func ReconcileKASAggregatorCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "system:openshift-aggregator", "kubernetes", X509DefaultUsage, X509UsageClientServerAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "system:openshift-aggregator", []string{"kubernetes"}, X509DefaultUsage, X509UsageClientServerAuth)
 }
 
 func ReconcileKASAdminClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "system:admin", "system:masters", X509DefaultUsage, X509UsageClientServerAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "system:admin", []string{"system:masters"}, X509DefaultUsage, X509UsageClientServerAuth)
 }
 
 func nextIP(ip net.IP) net.IP {

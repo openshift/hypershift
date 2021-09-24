@@ -13,7 +13,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/autoapprover"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusteroperator"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
@@ -41,7 +40,6 @@ func main() {
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"controller-manager-ca": cmca.Setup,
 	"cluster-operator":      clusteroperator.Setup,
-	"auto-approver":         autoapprover.Setup,
 	"kubeadmin-password":    kubeadminpwd.Setup,
 	"cluster-version":       clusterversion.Setup,
 	"kubelet-serving-ca":    kubeletservingca.Setup,

@@ -4,8 +4,8 @@ kind: ClusterRoleBinding
 metadata:
   name: create-csrs-for-bootstrapping
 subjects:
-- kind: Group
-  name: system:bootstrappers
+- kind: User 
+  name: system:serviceaccount:openshift-machine-config-operator:node-bootstrapper
   apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
