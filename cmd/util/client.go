@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"k8s.io/client-go/rest"
 	cr "sigs.k8s.io/controller-runtime"
@@ -31,4 +32,17 @@ func GetClientOrDie() crclient.Client {
 		os.Exit(1)
 	}
 	return client
+}
+
+// ParseAWSTags does exactly that
+func ParseAWSTags(tags []string) (map[string]string, error) {
+	tagMap := make(map[string]string, len(tags))
+	for _, tagStr := range tags {
+		parts := strings.SplitN(tagStr, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
+		}
+		tagMap[parts[0]] = parts[1]
+	}
+	return tagMap, nil
 }

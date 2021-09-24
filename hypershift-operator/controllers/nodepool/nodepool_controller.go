@@ -491,7 +491,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	var machineTemplate client.Object
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		machineTemplate, err = r.reconcileAWSMachineTemplate(ctx, nodePool, infraID, ami, controlPlaneNamespace)
+		machineTemplate, err = r.reconcileAWSMachineTemplate(ctx, hcluster, nodePool, infraID, ami, controlPlaneNamespace)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSMachineTemplate: %w", err)
 		}
@@ -550,16 +550,20 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 }
 
 func (r NodePoolReconciler) reconcileAWSMachineTemplate(ctx context.Context,
-	nodePool *hyperv1.NodePool, infraID, ami, controlPlaneNamespace string) (*capiaws.AWSMachineTemplate, error) {
+	hostedCluster *hyperv1.HostedCluster,
+	nodePool *hyperv1.NodePool,
+	infraID string,
+	ami string,
+	controlPlaneNamespace string,
+) (*capiaws.AWSMachineTemplate, error) {
 
 	log := ctrl.LoggerFrom(ctx)
 	// Get target template and hash.
-	targetAWSMachineTemplate, targetTemplateHash := AWSMachineTemplate(infraID, ami, nodePool, controlPlaneNamespace)
+	targetAWSMachineTemplate, targetTemplateHash := AWSMachineTemplate(infraID, ami, hostedCluster, nodePool, controlPlaneNamespace)
 
 	// Get current template and hash.
 	currentTemplateHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentProviderConfig]
 	currentAWSMachineTemplate := &capiaws.AWSMachineTemplate{
-		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s", nodePool.GetName(), currentTemplateHash),
 			Namespace: controlPlaneNamespace,

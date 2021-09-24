@@ -73,6 +73,7 @@ type ExampleAWSOptions struct {
 	RootVolumeSize                         int64
 	RootVolumeType                         string
 	RootVolumeIOPS                         int64
+	ResourceTags                           []hyperv1.AWSResourceTag
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -225,6 +226,7 @@ aws_secret_access_key = %s
 					},
 					KubeCloudControllerCreds: corev1.LocalObjectReference{Name: kubeCloudControllerCredsSecret.Name},
 					NodePoolManagementCreds:  corev1.LocalObjectReference{Name: nodePoolManagementCredsSecret.Name},
+					ResourceTags:             o.AWS.ResourceTags,
 				},
 			},
 		},

@@ -37,7 +37,7 @@ func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string
 	}
 }
 
-func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (*capiaws.AWSMachineTemplate, string) {
+func AWSMachineTemplate(infraName, ami string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (*capiaws.AWSMachineTemplate, string) {
 	subnet := &capiaws.AWSResourceReference{}
 	if nodePool.Spec.Platform.AWS.Subnet != nil {
 		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
@@ -90,6 +90,14 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 
 	instanceType := nodePool.Spec.Platform.AWS.InstanceType
 
+	var tags capiaws.Tags
+	for _, tag := range append(nodePool.Spec.Platform.AWS.ResourceTags, hostedCluster.Spec.Platform.AWS.ResourceTags...) {
+		if tags == nil {
+			tags = capiaws.Tags{}
+		}
+		tags[tag.Key] = tag.Value
+	}
+
 	awsMachineTemplate := &capiaws.AWSMachineTemplate{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -114,6 +122,7 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 					AdditionalSecurityGroups: securityGroups,
 					Subnet:                   subnet,
 					RootVolume:               rootVolume,
+					AdditionalTags:           tags,
 				},
 			},
 		},
