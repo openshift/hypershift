@@ -92,11 +92,11 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
-// payloadStoreReconciler runs a TokenSecretReconciler controller
+// setUpPayloadStoreReconciler sets up manager with a TokenSecretReconciler controller
 // to keep the PayloadStore up to date.
-func payloadStoreReconciler(ctx context.Context) error {
+func setUpPayloadStoreReconciler(ctx context.Context) (ctrl.Manager, error) {
 	if os.Getenv(namespaceEnvVariableName) == "" {
-		return fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
+		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
@@ -109,7 +109,7 @@ func payloadStoreReconciler(ctx context.Context) error {
 		Namespace: os.Getenv(namespaceEnvVariableName),
 	})
 	if err != nil {
-		return fmt.Errorf("unable to start manager: %w", err)
+		return nil, fmt.Errorf("unable to start manager: %w", err)
 	}
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
@@ -123,18 +123,18 @@ func payloadStoreReconciler(ctx context.Context) error {
 			Namespace: os.Getenv(namespaceEnvVariableName),
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
-		return fmt.Errorf("unable to create controller: %w", err)
+		return nil, fmt.Errorf("unable to create controller: %w", err)
 	}
 
-	return mgr.Start(ctx)
+	return mgr, nil
 }
 
 func run(ctx context.Context, opts Options) error {
-	// Run the payloadReconciler to watch token Secrets in a particular Namespace
-	if os.Getenv(namespaceEnvVariableName) == "" {
-		return fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
+	mgr, err := setUpPayloadStoreReconciler(ctx)
+	if err != nil {
+		return fmt.Errorf("error setting up manager: %w", err)
 	}
-	go payloadStoreReconciler(ctx)
+	go mgr.Start(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
