@@ -174,7 +174,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 }
 
 func (o *CreateIAMOptions) parseAdditionalTags() error {
-	parsed, err := parseTags(o.AdditionalTags)
+	parsed, err := util.ParseAWSTags(o.AdditionalTags)
 	if err != nil {
 		return err
 	}

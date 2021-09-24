@@ -1868,8 +1868,16 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 		capiv1.ManagedByAnnotation: "external",
 	}
 
+	awsCluster.Spec.AdditionalTags = nil
 	if hcluster.Spec.Platform.AWS != nil {
 		awsCluster.Spec.Region = hcluster.Spec.Platform.AWS.Region
+
+		if len(hcluster.Spec.Platform.AWS.ResourceTags) > 0 {
+			awsCluster.Spec.AdditionalTags = capiawsv1.Tags{}
+		}
+		for _, entry := range hcluster.Spec.Platform.AWS.ResourceTags {
+			awsCluster.Spec.AdditionalTags[entry.Key] = entry.Value
+		}
 	}
 
 	// Set the values for upper level controller
