@@ -61,20 +61,10 @@ func NewCreateCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	var releaseImage string
-	defaultVersion, err := version.LookupDefaultOCPVersion()
-	if err != nil {
-		fmt.Println("WARN: Unable to lookup default OCP version with error:", err)
-		fmt.Println("WARN: The 'release-image' flag is required in this case.")
-		releaseImage = ""
-	} else {
-		releaseImage = defaultVersion.PullSpec
-	}
-
 	opts := Options{
 		Namespace:                        "clusters",
 		Name:                             "example",
-		ReleaseImage:                     releaseImage,
+		ReleaseImage:                     "",
 		ControlPlaneOperatorImage:        "",
 		PullSecretFile:                   "",
 		AWSCredentialsFile:               "",
@@ -145,7 +135,11 @@ func NewCreateCommand() *cobra.Command {
 
 func CreateCluster(ctx context.Context, opts Options) error {
 	if len(opts.ReleaseImage) == 0 {
-		return fmt.Errorf("release image is required")
+		defaultVersion, err := version.LookupDefaultOCPVersion()
+		if err != nil {
+			return fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
+		}
+		opts.ReleaseImage = defaultVersion.PullSpec
 	}
 
 	annotations := map[string]string{}
