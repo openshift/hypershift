@@ -143,7 +143,7 @@ type NodePoolManagement struct {
 	UpgradeType UpgradeType `json:"upgradeType"`
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={strategy: "RollingUpdate", rollingUpdate: {maxSurge: 1, maxUnavailable: 0 }}
-	Replace *ReplaceUpgrade `json:"recreate,omitempty"`
+	Replace *ReplaceUpgrade `json:"replace,omitempty"`
 	// +kubebuilder:validation:Optional
 	InPlace *InPlaceUpgrade `json:"inPlace,omitempty"`
 

@@ -111,7 +111,7 @@ spec:
                     type: boolean
                   inPlace:
                     type: object
-                  recreate:
+                  replace:
                     default:
                       rollingUpdate:
                         maxSurge: 1

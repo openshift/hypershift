@@ -130,10 +130,6 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
-	// Fixme (alberto): using nodePool.Status.Version here gives a race: if a NodePool is deleted
-	// before the targeted version is the one in the status then the tokenSecret and userDataSecret would be leaked.
-	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
-	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
 	md := machineDeployment(nodePool, hcluster.Spec.InfraID, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 
@@ -149,16 +145,19 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 		}
 
-		if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+		// Delete any secret belonging to this NodePool i.e token Secret and userdata Secret.
+		secrets, err := r.listSecrets(nodePool)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to list secrets: %w", err)
+		}
+		for k := range secrets {
+			if err := r.Delete(ctx, &secrets[k]); err != nil && !apierrors.IsNotFound(err) {
+				return reconcile.Result{}, fmt.Errorf("failed to delete secret: %w", err)
+			}
 		}
 
 		if err := r.Delete(ctx, md); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete MachineDeployment: %w", err)
-		}
-
-		if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete ignition userdata Secret: %w", err)
 		}
 
 		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
@@ -1134,6 +1133,23 @@ func enqueueParentNodePool(obj client.Object) []reconcile.Request {
 	return []reconcile.Request{
 		{NamespacedName: hyperutil.ParseNamespacedName(nodePoolName)},
 	}
+}
+
+func (r *NodePoolReconciler) listSecrets(nodePool *hyperv1.NodePool) ([]corev1.Secret, error) {
+	secretList := &corev1.SecretList{}
+	if err := r.List(context.Background(), secretList); err != nil {
+		return nil, fmt.Errorf("failed to list secrets: %w", err)
+	}
+	filtered := []corev1.Secret{}
+	for i, secret := range secretList.Items {
+		if secret.GetAnnotations() != nil {
+			if annotation, ok := secret.GetAnnotations()[nodePoolAnnotation]; ok &&
+				annotation == client.ObjectKeyFromObject(nodePool).String() {
+				filtered = append(filtered, secretList.Items[i])
+			}
+		}
+	}
+	return filtered, nil
 }
 
 func (r *NodePoolReconciler) listAWSMachineTemplates(nodePool *hyperv1.NodePool) ([]capiaws.AWSMachineTemplate, error) {
