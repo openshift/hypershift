@@ -1,0 +1,18 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: catalog-rollout
+rules:
+- apiGroups:
+  - apps
+  - extensions
+  resources:
+  - deployments
+  resourceNames:
+  - certified-operators-catalog
+  - community-operators-catalog
+  - redhat-marketplace-catalog
+  - redhat-operators-catalog
+  verbs:
+  - get
+  - patch

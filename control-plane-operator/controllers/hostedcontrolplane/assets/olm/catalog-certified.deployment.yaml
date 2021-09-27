@@ -4,8 +4,6 @@ metadata:
   name: certified-operators-catalog
   annotations:
     target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
-    image.openshift.io/triggers: |-
-      [{"from":{"kind":"ImageStreamTag","name":"olm-certified-catalogs:v4.8"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]
 spec:
   selector:
     matchLabels:

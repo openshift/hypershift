@@ -1913,6 +1913,10 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	params.OauthAPIServerCABundle = params.OpenshiftAPIServerCABundle
 	params.PackageServerCABundle = params.OpenshiftAPIServerCABundle
 
+	// Calculate a pseudo-random daily schedule default catalog rollouts
+	// to avoid large pod bursts across guest cluster namespaces.
+	params.CatalogRolloutCronSchedule = generateModularDailyCronSchedule([]byte(params.Namespace))
+
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return nil, fmt.Errorf("failed to get pull secret %s: %w", hcp.Spec.PullSecret.Name, err)
@@ -2219,4 +2223,15 @@ func cloudProvider(hcp *hyperv1.HostedControlPlane) string {
 	default:
 		return ""
 	}
+}
+
+// generateModularDailyCronSchedule returns a daily crontab schedule
+// where, given a is input's integer representation, the minute is a % 60
+// and hour is a % 24.
+func generateModularDailyCronSchedule(input []byte) string {
+	a := big.NewInt(0).SetBytes(input)
+	var hi, mi big.Int
+	m := mi.Mod(a, big.NewInt(60))
+	h := hi.Mod(a, big.NewInt(24))
+	return fmt.Sprintf("%d %d * * *", m.Int64(), h.Int64())
 }
