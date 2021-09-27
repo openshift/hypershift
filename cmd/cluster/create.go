@@ -233,6 +233,15 @@ func CreateCluster(ctx context.Context, opts Options) error {
 		}
 	}
 
+	tagMap, err := util.ParseAWSTags(opts.AdditionalTags)
+	if err != nil {
+		return fmt.Errorf("failed to parse additional tags: %w", err)
+	}
+	var tags []hyperv1.AWSResourceTag
+	for k, v := range tagMap {
+		tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
+	}
+
 	exampleObjects := apifixtures.ExampleOptions{
 		Namespace:                        opts.Namespace,
 		Name:                             infra.Name,
@@ -268,6 +277,7 @@ func CreateCluster(ctx context.Context, opts Options) error {
 			RootVolumeSize:                         opts.RootVolumeSize,
 			RootVolumeType:                         opts.RootVolumeType,
 			RootVolumeIOPS:                         opts.RootVolumeIOPS,
+			ResourceTags:                           tags,
 		},
 	}.Resources().AsObjects()
 

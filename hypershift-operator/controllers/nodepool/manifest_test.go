@@ -1,12 +1,13 @@
 package nodepool
 
 import (
+	"testing"
+
 	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
-	"testing"
 )
 
 const amiName = "ami"
@@ -20,6 +21,7 @@ var volume = hyperv1.Volume{
 func TestAWSMachineTemplate(t *testing.T) {
 	testCases := []struct {
 		name     string
+		cluster  hyperv1.HostedClusterSpec
 		nodePool hyperv1.NodePoolSpec
 		expected *capiaws.AWSMachineTemplate
 	}{
@@ -39,12 +41,66 @@ func TestAWSMachineTemplate(t *testing.T) {
 				},
 				Release: hyperv1.Release{},
 			},
-			expected: withRootVolume(&volume),
+
+			expected: defaultAWSMachineTemplate(withRootVolume(&volume)),
+		},
+		{
+			name: "Tags from nodepool get copied",
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				ResourceTags: []hyperv1.AWSResourceTag{
+					{Key: "key", Value: "value"},
+				},
+			}}},
+
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AdditionalTags = capiaws.Tags{"key": "value"}
+			}),
+		},
+		{
+			name: "Tags from cluster get copied",
+			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
+				ResourceTags: []hyperv1.AWSResourceTag{
+					{Key: "key", Value: "value"},
+				},
+			}}},
+
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AdditionalTags = capiaws.Tags{"key": "value"}
+			}),
+		},
+		{
+			name: "Cluster tags take precedence over nodepool tags",
+			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
+				ResourceTags: []hyperv1.AWSResourceTag{
+					{Key: "cluster-only", Value: "value"},
+					{Key: "cluster-and-nodepool", Value: "cluster"},
+				},
+			}}},
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				ResourceTags: []hyperv1.AWSResourceTag{
+					{Key: "nodepool-only", Value: "value"},
+					{Key: "cluster-and-nodepool", Value: "nodepool"},
+				},
+			}}},
+
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AdditionalTags = capiaws.Tags{
+					"cluster-only":         "value",
+					"cluster-and-nodepool": "cluster",
+					"nodepool-only":        "value",
+				}
+			}),
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, _ := AWSMachineTemplate("testi", amiName, &hyperv1.NodePool{Spec: tc.nodePool}, "test")
+			if tc.cluster.Platform.AWS == nil {
+				tc.cluster.Platform.AWS = &hyperv1.AWSPlatformSpec{}
+			}
+			if tc.nodePool.Platform.AWS == nil {
+				tc.nodePool.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+			}
+			result, _ := AWSMachineTemplate("testi", amiName, &hyperv1.HostedCluster{Spec: tc.cluster}, &hyperv1.NodePool{Spec: tc.nodePool}, "test")
 			if !equality.Semantic.DeepEqual(tc.expected.Spec, result.Spec) {
 				t.Errorf(cmp.Diff(tc.expected.Spec, result.Spec))
 			}
@@ -52,18 +108,18 @@ func TestAWSMachineTemplate(t *testing.T) {
 	}
 }
 
-func withRootVolume(v *hyperv1.Volume) *capiaws.AWSMachineTemplate {
-	template := defaultAWSMachineTemplate()
-	template.Spec.Template.Spec.RootVolume = &capiaws.Volume{
-		Size: v.Size,
-		Type: capiaws.VolumeType(v.Type),
-		IOPS: v.IOPS,
+func withRootVolume(v *hyperv1.Volume) func(*capiaws.AWSMachineTemplate) {
+	return func(template *capiaws.AWSMachineTemplate) {
+		template.Spec.Template.Spec.RootVolume = &capiaws.Volume{
+			Size: v.Size,
+			Type: capiaws.VolumeType(v.Type),
+			IOPS: v.IOPS,
+		}
 	}
-	return template
 }
 
-func defaultAWSMachineTemplate() *capiaws.AWSMachineTemplate {
-	return &capiaws.AWSMachineTemplate{
+func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *capiaws.AWSMachineTemplate {
+	template := &capiaws.AWSMachineTemplate{
 		Spec: capiaws.AWSMachineTemplateSpec{
 			Template: capiaws.AWSMachineTemplateResource{
 				Spec: capiaws.AWSMachineSpec{
@@ -78,8 +134,15 @@ func defaultAWSMachineTemplate() *capiaws.AWSMachineTemplate {
 						InsecureSkipSecretsManager: true,
 						SecureSecretsBackend:       "secrets-manager",
 					},
+					RootVolume: &capiaws.Volume{Size: 16},
 				},
 			},
 		},
 	}
+
+	for _, m := range modify {
+		m(template)
+	}
+
+	return template
 }

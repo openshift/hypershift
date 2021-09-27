@@ -185,6 +185,15 @@ type AWSNodePoolPlatform struct {
 	// RootVolume specifies the root volume of the platform.
 	// +optional
 	RootVolume *Volume `json:"rootVolume,omitempty"`
+
+	// resourceTags is a list of additional tags to apply to AWS nodes.
+	// These will be merged with Cluster-level tags and Cluster-level tags take precedence in case of conflicts.
+	// See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for information on tagging AWS resources.
+	// AWS supports a maximum of 50 tags per resource. OpenShift reserves 25 tags for its use, leaving 25 tags
+	// available for the user.
+	// +kubebuilder:validation:MaxItems=25
+	// +optional
+	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
