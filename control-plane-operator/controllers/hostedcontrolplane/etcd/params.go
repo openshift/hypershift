@@ -36,6 +36,7 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
+	p.OperatorDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.OperatorDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.OperatorDeploymentConfig.SetControlPlaneIsolation(hcp)
 	p.EtcdDeploymentConfig.Resources = config.ResourcesSpec{
@@ -46,9 +47,9 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
+	p.EtcdDeploymentConfig.Scheduling.PriorityClass = config.EtcdPriorityClass
 	p.EtcdDeploymentConfig.SetColocationAnchor(hcp)
 	p.EtcdDeploymentConfig.SetControlPlaneIsolation(hcp)
-	p.EtcdDeploymentConfig.Scheduling.PriorityClass = config.EtcdPriorityClass
 	p.OperatorDeploymentConfig.Replicas = 1
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:

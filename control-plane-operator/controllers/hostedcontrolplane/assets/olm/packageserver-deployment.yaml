@@ -84,7 +84,7 @@ spec:
       nodeSelector:
         kubernetes.io/os: linux
         node-role.kubernetes.io/master: ""
-      priorityClassName: system-cluster-critical
+      priorityClassName: hypershift-control-plane
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
