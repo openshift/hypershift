@@ -55,19 +55,7 @@ all parts of the system interact, but as a community we can lean on each other
 to build the right design and approach before getting too deep into an
 implementation.
 
-## When to Comment on an Enhancement Issue
-
-Please comment on the enhancement issue to:
-- request a review or clarification on the process
-- update status of the enhancement effort
-- link to relevant issues in other repos
-
-Please do not comment on the enhancement issue to:
-- discuss a detail of the design, code or docs. Use a linked-to-issue or design PR
-  for that
-
 ## Life-cycle
-
 
 Pull requests to this repository should be short-lived and merged as
 soon as there is consensus.
