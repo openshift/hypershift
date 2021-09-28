@@ -64,3 +64,27 @@ Ideally pull requests with enhancement proposals will be merged before
 significant coding work begins, since this avoids having to rework the
 implementation if the design changes as well as arguing in favor of
 accepting a design simply because it is already implemented.
+
+## General constraints
+
+HyperShift has some general constraints which are outlined here in order to help
+inform proposals. Every proposal should take these constraints into
+consideration.
+
+1. Webhooks are generally avoided for performance and reliability
+   considerations.
+
+2. There are general resource (memory/cpu) constraints on control planes. It
+   should be possible to fit 4 control planes in a 64GB 16vcpu node. This
+   constraint will continue to be clarified going forward.
+
+3. There is a (poorly defined) constraint on how long it should take for a
+   control plane to come up: it can't be slow (~6min). This constraint will
+   continue to be clarified going forward.
+
+4. Generally, cluster-scoped resources per control plane (CRDs, cluster roles,
+   cluster role bindings, etc.) are avoided. Although ingress-operators per
+   cluster may need to be an exception (for private clusters).
+
+5. In general, do not expose any part of control plane resources (pods,
+   services, etc) to a guest cluster.
