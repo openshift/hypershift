@@ -1,12 +1,10 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: redhat-operators-catalog-rollout
-  annotations:
-    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+  name: redhat-marketplace-catalog-rollout
 spec:
   concurrencyPolicy: Forbid
-  schedule: {{ .CatalogRolloutCronSchedule }}
+  schedule: CRON_SCHEDULE
   startingDeadlineSeconds: 120
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
@@ -20,10 +18,10 @@ spec:
           restartPolicy: Never
           containers:
           - name: rollout
-            image: {{ imageFor "cli" }}
+            image: CLI_IMAGE
             imagePullPolicy: IfNotPresent
             command:
             - oc
             - rollout
             - restart
-            - deployment/redhat-operators-catalog
+            - deployment/redhat-marketplace-catalog

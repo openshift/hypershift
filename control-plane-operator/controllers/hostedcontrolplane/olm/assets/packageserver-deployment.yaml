@@ -16,11 +16,6 @@ spec:
     type: RollingUpdate
   template:
     metadata:
-      annotations:
-        include.release.openshift.io/self-managed-high-availability: "true"
-{{ if .RestartDate }}
-        openshift.io/restartedAt: "{{ .RestartDate }}"
-{{ end }}
       labels:
         app: packageserver
     spec:
@@ -41,7 +36,7 @@ spec:
         env:
         - name: OPERATOR_CONDITION_NAME
           value: packageserver
-        image: {{ imageFor "operator-lifecycle-manager" }}
+        image: OLM_OPERATOR_IMAGE
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3
@@ -81,26 +76,9 @@ spec:
         - mountPath: /etc/openshift/kubeconfig
           name: kubeconfig
           readOnly: true
-      nodeSelector:
-        kubernetes.io/os: linux
-        node-role.kubernetes.io/master: ""
-      priorityClassName: hypershift-control-plane
       restartPolicy: Always
-      schedulerName: default-scheduler
       securityContext: {}
       terminationGracePeriodSeconds: 30
-      tolerations:
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/master
-        operator: Exists
-      - effect: NoExecute
-        key: node.kubernetes.io/unreachable
-        operator: Exists
-        tolerationSeconds: 120
-      - effect: NoExecute
-        key: node.kubernetes.io/not-ready
-        operator: Exists
-        tolerationSeconds: 120
       volumes:
       - emptyDir: {}
         name: tmpfs
@@ -108,20 +86,15 @@ spec:
         secret:
           defaultMode: 420
           items:
-          - key: server.crt
+          - key: tls.crt
             path: apiserver.crt
-          - key: server.key
+          - key: tls.key
             path: apiserver.key
-          secretName: packageserver
+          secretName: packageserver-cert
       - name: webhook-cert
         secret:
           defaultMode: 420
-          items:
-          - key: server.crt
-            path: tls.crt
-          - key: server.key
-            path: tls.key
-          secretName: packageserver
+          secretName: packageserver-cert
       - name: kubeconfig
         secret:
           secretName: service-network-admin-kubeconfig

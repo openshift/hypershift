@@ -51,14 +51,3 @@ func ReconcileClusterPolicyControllerCertSecret(secret, ca *corev1.Secret, owner
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "cluster-policy-controller", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
-
-func ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	dnsNames := []string{
-		"packageserver",
-		fmt.Sprintf("packageserver.%s.svc", secret.Namespace),
-		fmt.Sprintf("packageserver.%s.svc.cluster.local", secret.Namespace),
-		"packageserver.default.svc",
-		"packageserver.default.svc.cluster.local",
-	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "packageserver", "openshift", X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
-}

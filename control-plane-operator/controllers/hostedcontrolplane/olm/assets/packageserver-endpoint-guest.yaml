@@ -4,8 +4,7 @@ metadata:
   name: packageserver
   namespace: default
 subsets:
-- addresses:
-  - ip: {{ .PackageServerAPIClusterIP }}
+- addresses: []
   ports:
   - name: https
     port: 443

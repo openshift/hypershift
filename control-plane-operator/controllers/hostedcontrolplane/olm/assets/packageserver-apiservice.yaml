@@ -3,7 +3,7 @@ kind: APIService
 metadata:
   name: v1.packages.operators.coreos.com
 spec:
-  caBundle: {{ .PackageServerCABundle }}
+  caBundle: ""
   group: packages.operators.coreos.com
   groupPriorityMinimum: 2000
   service:
