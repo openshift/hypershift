@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ignition-config-99-worker-ssh
+  labels:
+    hypershift.openshift.io/core-ignition-config: "true"
+data:
+  config: |-
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfig
+    metadata:
+      name: 99-worker-ssh
+      labels:
+        machineconfiguration.openshift.io/role: worker
+    spec:
+      config:
+        ignition:
+          version: 2.2.0
+        passwd:
+          users:
+          - name: core
+            
+    

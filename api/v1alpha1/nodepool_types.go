@@ -182,6 +182,18 @@ type AWSNodePoolPlatform struct {
 	// SecurityGroups is the set of security groups to associate with nodepool machines
 	// +optional
 	SecurityGroups []AWSResourceReference `json:"securityGroups,omitempty"`
+	// RootVolume specifies the root volume of the platform.
+	// +optional
+	RootVolume *Volume `json:"rootVolume,omitempty"`
+
+	// resourceTags is a list of additional tags to apply to AWS nodes.
+	// These will be merged with Cluster-level tags and Cluster-level tags take precedence in case of conflicts.
+	// See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for information on tagging AWS resources.
+	// AWS supports a maximum of 50 tags per resource. OpenShift reserves 25 tags for its use, leaving 25 tags
+	// available for the user.
+	// +kubebuilder:validation:MaxItems=25
+	// +optional
+	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
@@ -210,4 +222,20 @@ type Filter struct {
 
 	// Values includes one or more filter values. Filter values are case-sensitive.
 	Values []string `json:"values"`
+}
+
+// Volume encapsulates the configuration options for the storage device
+type Volume struct {
+	// Size specifies size (in Gi) of the storage device.
+	// Must be greater than the image snapshot size or 8 (whichever is greater).
+	// +kubebuilder:validation:Minimum=8
+	Size int64 `json:"size"`
+
+	// Type is the type of the volume.
+	Type string `json:"type"`
+
+	// IOPS is the number of IOPS requested for the disk. This is only valid
+	// for type io1.
+	// +optional
+	IOPS int64 `json:"iops,omitempty"`
 }

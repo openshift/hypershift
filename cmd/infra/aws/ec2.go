@@ -2,13 +2,13 @@ package aws
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -542,18 +542,16 @@ func (o *CreateInfraOptions) ec2TagSpecifications(resourceType, name string) []*
 }
 
 func (o *CreateInfraOptions) parseAdditionalTags() error {
-	var ec2Tags []*ec2.Tag
-	for _, tagStr := range o.AdditionalTags {
-		parts := strings.SplitN(tagStr, "=", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
-		}
-		ec2Tags = append(ec2Tags, &ec2.Tag{
-			Key:   aws.String(parts[0]),
-			Value: aws.String(parts[1]),
+	parsed, err := util.ParseAWSTags(o.AdditionalTags)
+	if err != nil {
+		return err
+	}
+	for k, v := range parsed {
+		o.additionalEC2Tags = append(o.additionalEC2Tags, &ec2.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
 		})
 	}
-	o.additionalEC2Tags = ec2Tags
 	return nil
 }
 

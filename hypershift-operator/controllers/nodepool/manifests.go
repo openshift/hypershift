@@ -12,6 +12,11 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	EC2VolumeDefaultSize int64  = 16
+	EC2VolumeDefaultType string = "gp2"
+)
+
 func machineDeployment(nodePool *hyperv1.NodePool, clusterName string, controlPlaneNamespace string) *capiv1.MachineDeployment {
 	resourcesName := generateName(clusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	return &capiv1.MachineDeployment{
@@ -32,7 +37,7 @@ func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string
 	}
 }
 
-func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (*capiaws.AWSMachineTemplate, string) {
+func AWSMachineTemplate(infraName, ami string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (*capiaws.AWSMachineTemplate, string) {
 	subnet := &capiaws.AWSResourceReference{}
 	if nodePool.Spec.Platform.AWS.Subnet != nil {
 		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
@@ -43,6 +48,22 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 				Values: nodePool.Spec.Platform.AWS.Subnet.Filters[k].Values,
 			}
 			subnet.Filters = append(subnet.Filters, filter)
+		}
+	}
+	rootVolume := &capiaws.Volume{
+		Size: EC2VolumeDefaultSize,
+	}
+	if nodePool.Spec.Platform.AWS.RootVolume != nil {
+		if nodePool.Spec.Platform.AWS.RootVolume.Type != "" {
+			rootVolume.Type = capiaws.VolumeType(nodePool.Spec.Platform.AWS.RootVolume.Type)
+		} else {
+			rootVolume.Type = capiaws.VolumeType(EC2VolumeDefaultType)
+		}
+		if nodePool.Spec.Platform.AWS.RootVolume.Size > 0 {
+			rootVolume.Size = int64(nodePool.Spec.Platform.AWS.RootVolume.Size)
+		}
+		if nodePool.Spec.Platform.AWS.RootVolume.IOPS > 0 {
+			rootVolume.IOPS = int64(nodePool.Spec.Platform.AWS.RootVolume.IOPS)
 		}
 	}
 
@@ -69,6 +90,14 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 
 	instanceType := nodePool.Spec.Platform.AWS.InstanceType
 
+	var tags capiaws.Tags
+	for _, tag := range append(nodePool.Spec.Platform.AWS.ResourceTags, hostedCluster.Spec.Platform.AWS.ResourceTags...) {
+		if tags == nil {
+			tags = capiaws.Tags{}
+		}
+		tags[tag.Key] = tag.Value
+	}
+
 	awsMachineTemplate := &capiaws.AWSMachineTemplate{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -92,6 +121,8 @@ func AWSMachineTemplate(infraName, ami string, nodePool *hyperv1.NodePool, contr
 					},
 					AdditionalSecurityGroups: securityGroups,
 					Subnet:                   subnet,
+					RootVolume:               rootVolume,
+					AdditionalTags:           tags,
 				},
 			},
 		},

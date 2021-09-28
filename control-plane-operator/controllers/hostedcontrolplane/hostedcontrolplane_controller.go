@@ -1883,6 +1883,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		params.AWSRegion = hcp.Spec.Platform.AWS.Region
+		params.AWSResourceTags = hcp.Spec.Platform.AWS.ResourceTags
 	}
 
 	if hcp.Spec.APIPort != nil {
