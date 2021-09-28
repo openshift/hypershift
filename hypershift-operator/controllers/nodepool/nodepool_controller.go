@@ -601,7 +601,12 @@ func (r NodePoolReconciler) reconcileAWSMachineTemplate(ctx context.Context,
 }
 
 func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string) error {
-	userDataSecret.Immutable = k8sutilspointer.BoolPtr(true)
+	// The token secret controller deletes expired token Secrets.
+	// When that happens the NodePool controller reconciles and create a new one.
+	// Then it reconciles the userData Secret with the new generated token.
+	// Therefore this secret is mutable.
+	userDataSecret.Immutable = k8sutilspointer.BoolPtr(false)
+
 	if userDataSecret.Annotations == nil {
 		userDataSecret.Annotations = make(map[string]string)
 	}
