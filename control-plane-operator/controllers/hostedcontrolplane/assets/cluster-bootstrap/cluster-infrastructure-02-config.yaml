@@ -23,4 +23,11 @@ status:
 {{- if eq .PlatformType "AWS" }}
     aws:
       region: {{ .AWSRegion }}
+{{- if .AWSResourceTags }}
+      resourceTags:
+{{- range $tag := .AWSResourceTags }}
+      - key: {{ $tag.Key }}
+        value: {{ $tag.Value }}
+{{- end }}
+{{- end }}
 {{- end }}

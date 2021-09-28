@@ -114,7 +114,8 @@ type ClusterParams struct {
 	DefaultFeatureGates []string
 
 	// AWS params
-	AWSRegion string `json:"awsRegion"`
+	AWSRegion       string                   `json:"awsRegion"`
+	AWSResourceTags []hyperv1.AWSResourceTag `json:"aws_resource_tags,omitempty"`
 
 	// Fields below are are taken from the ROKs type
 	EndpointPublishingStrategyScope string                 `json:"endpointPublishingStrategyScope"`
