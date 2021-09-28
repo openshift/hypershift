@@ -191,11 +191,8 @@ What are the guarantees? Make sure this is in the test plan.
 Consider the following in developing a version skew strategy for this
 enhancement:
 - During an upgrade, we will always have skew among components, how will this impact your work?
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI, CRI
-  or CNI may require updating that component before the kubelet.
+- The HyperShift operator manages multiple concurrent major OpenShift control plane
+  plane versions. How will this impact your work?
 
 ## Implementation History
 
