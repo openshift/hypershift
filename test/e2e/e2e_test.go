@@ -7,17 +7,26 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/cmd/version"
-	"k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/bombsimon/logrusr"
+	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/util/errors"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 var (
@@ -59,9 +68,19 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	os.Exit(main(m))
+}
+
+// main is used to allow us to use `defer` to defer cleanup task
+// to after the tests are run. We can't do this in `TestMain` because
+// it does an os.Exit (We could avoid that but then the deferred
+// calls do not get executed after the tests, just at the end of
+// TestMain()).
+func main(m *testing.M) int {
 	// Set up a root context for all tests and set up signal handling
 	var cancel context.CancelFunc
 	testContext, cancel = context.WithCancel(context.Background())
+	defer cancel()
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -70,9 +89,71 @@ func TestMain(m *testing.M) {
 		cancel()
 	}()
 
+	if globalOpts.ArtifactDir != "" {
+		go setupMetricsEndpoint(testContext, log)
+		go e2eObserverControllers(testContext, log, globalOpts.ArtifactDir)
+		defer dumpTestMetrics(log, globalOpts.ArtifactDir)
+	}
+
 	// Everything's okay to run tests
 	log.Info("executing e2e tests", "options", globalOpts)
-	os.Exit(m.Run())
+	return m.Run()
+}
+
+func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir string) {
+	mgr, err := ctrl.NewManager(e2eutil.GetConfigOrDie(), manager.Options{MetricsBindAddress: "0"})
+	if err != nil {
+		log.Error(err, "failed to construct manager for observers")
+		return
+	}
+	if err := podtimingcontroller.SetupWithManager(mgr, log, artifactDir); err != nil {
+		log.Error(err, "failed to set up podtimingcontroller")
+		return
+	}
+
+	if err := mgr.Start(ctx); err != nil {
+		log.Error(err, "Mgr ended")
+	}
+}
+
+const metricsServerAddr = "127.0.0.1:8080"
+
+func setupMetricsEndpoint(ctx context.Context, log logr.Logger) {
+	log.Info("Setting up metrics endpoint")
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	server := &http.Server{Addr: metricsServerAddr, Handler: mux}
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Error(err, "metrics server ended unexpectedly")
+	}
+}
+
+func dumpTestMetrics(log logr.Logger, artifactDir string) {
+	log.Info("Fetching test metrics")
+	response, err := http.Get("http://" + metricsServerAddr + "/metrics")
+	if err != nil {
+		log.Error(err, "error fetching test metrics")
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 200 {
+		log.Error(fmt.Errorf("status code %d", response.StatusCode), "Got unexpected status code from metrics endpoint")
+		return
+	}
+
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Error(err, "failed to read response body from metrics endpoint")
+		return
+	}
+
+	path := filepath.Join(artifactDir, "e2e-metrics-raw.prometheus")
+	log = log.WithValues("path", path)
+	if err := os.WriteFile(path, body, 0644); err != nil {
+		log.Error(err, "failed to write e2e metrics to artifacts")
+	}
+	log.Info("Successfully wrote metrics to artifacts")
 }
 
 // options are global test options applicable to all scenarios.
