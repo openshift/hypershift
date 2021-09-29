@@ -71,8 +71,8 @@ HyperShift has some general constraints which are outlined here in order to help
 inform proposals. Every proposal should take these constraints into
 consideration.
 
-1. Webhooks are generally avoided for performance and reliability
-   considerations.
+1. Webhooks on the management cluster are generally avoided for performance and
+   reliability considerations.
 
 2. There are general resource (memory/cpu) constraints on control planes. It
    should be possible to fit 4 control planes in a 64GB 16vcpu node. This
