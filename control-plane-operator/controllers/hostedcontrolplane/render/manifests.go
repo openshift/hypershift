@@ -57,23 +57,12 @@ func newClusterManifestContext(images, versions map[string]string, params *Clust
 }
 
 func (c *clusterManifestContext) setupManifests() {
-	c.hostedClusterConfigOperator()
 	c.clusterBootstrap()
 	c.registry()
 	c.operatorLifecycleManager()
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
 	c.ignitionConfigs()
-}
-
-func (c *clusterManifestContext) hostedClusterConfigOperator() {
-	c.addManifestFiles(
-		"hosted-cluster-config-operator/cp-operator-serviceaccount.yaml",
-		"hosted-cluster-config-operator/cp-operator-role.yaml",
-		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
-		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
-		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
-	)
 }
 
 func (c *clusterManifestContext) registry() {

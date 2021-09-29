@@ -4,12 +4,10 @@ import "embed"
 
 //go:embed apiserver-haproxy/*
 //go:embed cluster-bootstrap/*
-//go:embed hosted-cluster-config-operator/*
 //go:embed ignition-configs/*
 //go:embed install-config/*
 //go:embed machine-config-server/*
 //go:embed registry/*
-//go:embed roks-metrics/*
 //go:embed user-manifests-bootstrapper/*
 //go:embed olm/*
 var content embed.FS
