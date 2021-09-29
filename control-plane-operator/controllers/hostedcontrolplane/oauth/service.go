@@ -52,11 +52,11 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *h
 func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
 	switch strategy.Type {
 	case hyperv1.Route:
-		if route.Spec.Host == "" {
+		if len(route.Status.Ingress) == 0 {
 			return
 		}
 		port = RouteExternalPort
-		host = route.Spec.Host
+		host = route.Status.Ingress[0].RouterCanonicalHostname
 	case hyperv1.NodePort:
 		if strategy.NodePort == nil {
 			err = fmt.Errorf("strategy details not specified for OAuth nodeport type service")

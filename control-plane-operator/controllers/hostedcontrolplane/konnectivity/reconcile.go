@@ -231,11 +231,11 @@ func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, str
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
 	case hyperv1.Route:
-		if route.Spec.Host == "" {
+		if len(route.Status.Ingress) == 0 {
 			return
 		}
 		port = 443
-		host = route.Spec.Host
+		host = route.Status.Ingress[0].RouterCanonicalHostname
 	}
 	return
 }

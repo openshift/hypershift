@@ -309,8 +309,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
 				}
 			}
-			if err == nil && ignitionServerRoute.Spec.Host != "" {
-				hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
+			if err == nil && len(ignitionServerRoute.Status.Ingress) != 0 {
+				hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Status.Ingress[0].RouterCanonicalHostname
 			}
 		case hyperv1.NodePort:
 			if serviceStrategy.NodePort == nil {
