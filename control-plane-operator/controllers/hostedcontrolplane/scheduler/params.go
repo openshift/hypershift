@@ -9,6 +9,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 type KubeSchedulerParams struct {
@@ -16,14 +17,16 @@ type KubeSchedulerParams struct {
 	Scheduler               *configv1.Scheduler   `json:"scheduler"`
 	OwnerRef                config.OwnerRef       `json:"ownerRef"`
 	HyperkubeImage          string                `json:"hyperkubeImage"`
+	AvailabilityProberImage string                `json:"availabilityProberImage"`
 	config.DeploymentConfig `json:",inline"`
 }
 
 func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig config.GlobalConfig) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
-		FeatureGate:    globalConfig.FeatureGate,
-		Scheduler:      globalConfig.Scheduler,
-		HyperkubeImage: images["hyperkube"],
+		FeatureGate:             globalConfig.FeatureGate,
+		Scheduler:               globalConfig.Scheduler,
+		HyperkubeImage:          images["hyperkube"],
+		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 	}
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,

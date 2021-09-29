@@ -7,6 +7,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -149,6 +150,7 @@ func NewStartCommand() *cobra.Command {
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 			ComponentImages: map[string]string{
+				util.AvailabilityProberImageName: hostedClusterConfigOperatorImage,
 				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
 				"etcd-operator":                  etcdOperatorImage,
 				"konnectivity-server":            konnectivityServerImage,

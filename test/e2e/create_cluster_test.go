@@ -42,6 +42,7 @@ func TestCreateCluster(t *testing.T) {
 	// Ensure we clean up after the test
 	defer func() {
 		e2eutil.SaveMachineConsoleLogs(t, context.Background(), hostedCluster, globalOpts.AWSCredentialsFile, globalOpts.ArtifactDir)
+		e2eutil.EnsureNoCrashingPods(t, context.Background(), client, hostedCluster)
 		// TODO: Figure out why this is slow
 		//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
 		e2eutil.DumpAndDestroyHostedCluster(t, context.Background(), hostedCluster, globalOpts.AWSCredentialsFile, globalOpts.Region, globalOpts.BaseDomain, globalOpts.ArtifactDir)

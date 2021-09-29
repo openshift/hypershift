@@ -5,6 +5,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
@@ -16,7 +17,7 @@ var (
 	packageServerEndpoints  = MustEndpoints("assets/packageserver-endpoint-guest.yaml")
 )
 
-func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, releaseVersion string, dc config.DeploymentConfig) error {
+func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = packageServerDeployment.DeepCopy().Spec
 	deployment.Spec.Template.Spec.Containers[0].Image = olmImage
@@ -27,6 +28,7 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 		}
 	}
 	dc.ApplyTo(deployment)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 
