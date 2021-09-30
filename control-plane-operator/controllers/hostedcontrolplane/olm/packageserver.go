@@ -16,10 +16,16 @@ var (
 	packageServerEndpoints  = MustEndpoints("assets/packageserver-endpoint-guest.yaml")
 )
 
-func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage string, dc config.DeploymentConfig) error {
+func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, releaseVersion string, dc config.DeploymentConfig) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = packageServerDeployment.DeepCopy().Spec
 	deployment.Spec.Template.Spec.Containers[0].Image = olmImage
+	for i, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+		switch env.Name {
+		case "RELEASE_VERSION":
+			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = releaseVersion
+		}
+	}
 	dc.ApplyTo(deployment)
 	return nil
 }

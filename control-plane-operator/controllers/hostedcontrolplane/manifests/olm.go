@@ -13,7 +13,7 @@ import (
 func CertifiedOperatorsCatalogSourceWorkerManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-data-olm-certified-operators-catalog-source",
+			Name:      "user-manifest-olm-certified-operators-catalog-source",
 			Namespace: ns,
 		},
 	}
@@ -51,7 +51,7 @@ func CertifiedOperatorsCronJob(ns string) *batchv1.CronJob {
 func CommunityOperatorsCatalogSourceWorkerManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-data-olm-community-operators-catalog-source",
+			Name:      "user-manifest-olm-community-operators-catalog-source",
 			Namespace: ns,
 		},
 	}
@@ -89,7 +89,7 @@ func CommunityOperatorsCronJob(ns string) *batchv1.CronJob {
 func RedHatMarketplaceOperatorsCatalogSourceWorkerManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-data-olm-redhat-marketplace-operators-catalog-source",
+			Name:      "user-manifest-olm-redhat-marketplace-operators-catalog-source",
 			Namespace: ns,
 		},
 	}
@@ -127,7 +127,7 @@ func RedHatMarketplaceOperatorsCronJob(ns string) *batchv1.CronJob {
 func RedHatOperatorsCatalogSourceWorkerManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-data-olm-redhat-operators-catalog-source",
+			Name:      "user-manifest-olm-redhat-operators-catalog-source",
 			Namespace: ns,
 		},
 	}
@@ -243,7 +243,7 @@ func OLMPackageServerDeployment(ns string) *appsv1.Deployment {
 func OLMPackageServerWorkerAPIServiceManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-data-olm-packageserver-apiservice",
+			Name:      "user-manifest-olm-packageserver-apiservice",
 			Namespace: ns,
 		},
 	}
@@ -252,7 +252,7 @@ func OLMPackageServerWorkerAPIServiceManifest(ns string) *corev1.ConfigMap {
 func OLMPackageServerWorkerServiceManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-data-olm-packageserver-service",
+			Name:      "user-manifest-olm-packageserver-service",
 			Namespace: ns,
 		},
 	}
@@ -261,7 +261,7 @@ func OLMPackageServerWorkerServiceManifest(ns string) *corev1.ConfigMap {
 func OLMPackageServerWorkerEndpointsManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-data-olm-packageserver-endpoints",
+			Name:      "user-manifest-olm-packageserver-endpoints",
 			Namespace: ns,
 		},
 	}
@@ -270,7 +270,7 @@ func OLMPackageServerWorkerEndpointsManifest(ns string) *corev1.ConfigMap {
 func OLMAlertRulesWorkerManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-data-olm-alert-rules",
+			Name:      "user-manifest-olm-alert-rules",
 			Namespace: ns,
 		},
 	}
