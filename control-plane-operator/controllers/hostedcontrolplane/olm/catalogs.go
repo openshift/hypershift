@@ -67,7 +67,14 @@ func ReconcileRedHatOperatorsService(svc *corev1.Service, ownerRef config.OwnerR
 
 func reconcileCatalogService(svc *corev1.Service, ownerRef config.OwnerRef, sourceService *corev1.Service) error {
 	ownerRef.ApplyTo(svc)
-	svc.Spec = sourceService.DeepCopy().Spec
+	// The service is assigned a cluster IP when it is created.
+	// This field is immutable as shown here: https://github.com/kubernetes/api/blob/62998e98c313b2ca15b1da278aa702bdd7b84cb0/core/v1/types.go#L4114-L4130
+	// As such, to avoid an error when updating the object, only update the fields OLM specifies.
+	sourceServiceDeepCopy := sourceService.DeepCopy()
+	svc.Spec.Ports = sourceServiceDeepCopy.Spec.Ports
+	svc.Spec.Type = sourceServiceDeepCopy.Spec.Type
+	svc.Spec.Selector = sourceServiceDeepCopy.Spec.Selector
+
 	return nil
 }
 

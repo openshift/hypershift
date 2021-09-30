@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	packageServerDeployment = MustDeployment("assets/olm-operator-deployment.yaml")
+	packageServerDeployment = MustDeployment("assets/packageserver-deployment.yaml")
 	packageServerAPIService = MustAPIService("assets/packageserver-apiservice.yaml")
 	packageServerService    = MustService("assets/packageserver-service-guest.yaml")
 	packageServerEndpoints  = MustEndpoints("assets/packageserver-endpoint-guest.yaml")
@@ -51,5 +51,5 @@ func ReconcilePackageServerWorkerEndpointsManifest(cm *corev1.ConfigMap, ownerRe
 			IP: serviceIP,
 		},
 	}
-	return nil
+	return util.ReconcileWorkerManifest(cm, ep)
 }
