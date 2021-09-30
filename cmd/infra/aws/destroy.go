@@ -75,10 +75,13 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context) error {
-	return wait.PollUntil(5*time.Second, func() (bool, error) {
+	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		err := o.DestroyInfra(ctx)
 		if err != nil {
-			log.Info("WARNING: error during destroy, will retry", "error", err.Error())
+			if !isErrorRetryable(err) {
+				return false, err
+			}
+			log.Info("WARNING: error during destroy, will retry", "error", err.Error(), "type", fmt.Sprintf("%T,%+v", err, err))
 			return false, nil
 		}
 		return true, nil

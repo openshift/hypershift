@@ -227,7 +227,10 @@ func retryRoute53WithBackoff(ctx context.Context, fn func() error) error {
 		Steps:    10,
 		Factor:   1.5,
 	}
-	retriable := func(error) bool {
+	retriable := func(e error) bool {
+		if !isErrorRetryable(e) {
+			return false
+		}
 		select {
 		case <-ctx.Done():
 			return false
