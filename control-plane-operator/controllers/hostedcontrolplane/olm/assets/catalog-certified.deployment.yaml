@@ -1,28 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: community-operators-catalog
-  annotations:
-    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+  name: certified-operators-catalog
 spec:
   selector:
     matchLabels:
-      olm.catalogSource: community-operators
+      olm.catalogSource: certified-operators
   replicas: 1
   template:
     metadata:
       labels:
-        olm.catalogSource: community-operators
-{{ if .RestartDate }}
-      annotations:
-        openshift.io/restartedAt: "{{ .RestartDate }}"
-{{ end }}
+        olm.catalogSource: certified-operators
     spec:
       nodeSelector:
         kubernetes.io/os: linux
       containers:
         - name: registry
-          image: registry.redhat.io/redhat/community-operator-index:v4.8
+          image: registry.redhat.io/redhat/certified-operator-index:v4.8
           imagePullPolicy: Always
           ports:
             - containerPort: 50051
@@ -52,4 +46,4 @@ spec:
           resources:
             requests:
               cpu: 10m
-              memory: 160Mi
+              memory: 60Mi

@@ -9,7 +9,6 @@ import "embed"
 //go:embed machine-config-server/*
 //go:embed registry/*
 //go:embed user-manifests-bootstrapper/*
-//go:embed olm/*
 var content embed.FS
 
 func AssetDir(name string) ([]string, error) {

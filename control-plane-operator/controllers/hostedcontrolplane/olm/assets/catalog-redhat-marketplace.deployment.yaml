@@ -2,8 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redhat-marketplace-catalog
-  annotations:
-    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   selector:
     matchLabels:
@@ -13,10 +11,6 @@ spec:
     metadata:
       labels:
         olm.catalogSource: redhat-marketplace
-{{ if .RestartDate }}
-      annotations:
-        openshift.io/restartedAt: "{{ .RestartDate }}"
-{{ end }}
     spec:
       nodeSelector:
         kubernetes.io/os: linux
