@@ -326,6 +326,15 @@ spec:
                         required:
                         - vpc
                         type: object
+                      endpointAccess:
+                        default: Public
+                        description: EndpointAccess determines if cluster endpoints
+                          are public and/or private
+                        enum:
+                        - Public
+                        - PublicAndPrivate
+                        - Private
+                        type: string
                       kubeCloudControllerCreds:
                         description: KubeCloudControllerCreds is a reference to a
                           secret containing cloud credentials with permissions matching

@@ -22,9 +22,11 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
@@ -36,6 +38,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/semconv"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -44,6 +47,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -236,6 +240,42 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{}))
+
+	// If it exsists, block default ingress controller from admitting HCP private routes
+	ic := &operatorv1.IngressController{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "openshift-ingress-operator",
+		},
+	}
+	if err := mgr.GetClient().Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
+		if _, err := controllerutil.CreateOrUpdate(ctx, mgr.GetClient(), ic, func() error {
+			if ic.Spec.Replicas == nil {
+				return fmt.Errorf("default ingress controller not found")
+			}
+			if ic.Spec.RouteSelector == nil {
+				ic.Spec.RouteSelector = &metav1.LabelSelector{}
+			}
+			if ic.Spec.RouteSelector.MatchExpressions == nil {
+				ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
+			}
+			for _, requirement := range ic.Spec.RouteSelector.MatchExpressions {
+				if requirement.Key != hyperutil.HypershiftRouteLabel {
+					continue
+				}
+				requirement.Operator = metav1.LabelSelectorOpDoesNotExist
+				return nil
+			}
+			ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
+				Key:      hyperutil.HypershiftRouteLabel,
+				Operator: metav1.LabelSelectorOpDoesNotExist,
+			})
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
+		}
+		log.Info("reconciled default ingress controller")
+	}
 
 	// Start the controllers
 	log.Info("starting manager")

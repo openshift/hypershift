@@ -330,6 +330,19 @@ type AWSCloudProviderConfig struct {
 	VPC string `json:"vpc"`
 }
 
+type AWSEndpointAccessType string
+
+const (
+	// Public endpoint access allows public kube-apiserver access and public node communication with the control plane
+	Public AWSEndpointAccessType = "Public"
+
+	// PublicAndPrivate endpoint access allows public kube-apiserver access and private node communication with the control plane
+	PublicAndPrivate AWSEndpointAccessType = "PublicAndPrivate"
+
+	// Private endpoint access allows only private kube-apiserver access and private node communication with the control plane
+	Private AWSEndpointAccessType = "Private"
+)
+
 type AWSPlatformSpec struct {
 	// Region is the AWS region for the cluster.
 	// This is used by CRs that are consumed by OCP Operators.
@@ -375,6 +388,12 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
+
+	// EndpointAccess determines if cluster endpoints are public and/or private
+	// +kubebuilder:validation:Enum=Public;PublicAndPrivate;Private
+	// +kubebuilder:default=Public
+	// +optional
+	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
 }
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.

@@ -1373,6 +1373,14 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 			if ignitionServerRoute.Annotations == nil {
 				ignitionServerRoute.Annotations = map[string]string{}
 			}
+			if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform &&
+				(hcluster.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate ||
+					hcluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private) {
+				if ignitionServerRoute.Labels == nil {
+					ignitionServerRoute.Labels = map[string]string{}
+				}
+				ignitionServerRoute.Labels[hyperutil.HypershiftRouteLabel] = controlPlaneNamespace.Name
+			}
 			ignitionServerRoute.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
 				Termination: routev1.TLSTerminationPassthrough,
