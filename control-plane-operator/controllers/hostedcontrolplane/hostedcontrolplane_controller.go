@@ -2048,7 +2048,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 	packageServerDeployment := manifests.OLMPackageServerDeployment(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, packageServerDeployment, func() error {
-		return olm.ReconcilePackageServerDeployment(packageServerDeployment, p.OwnerRef, p.OLMImage, p.PackageServerConfig)
+		return olm.ReconcilePackageServerDeployment(packageServerDeployment, p.OwnerRef, p.OLMImage, p.ReleaseVersion, p.PackageServerConfig)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile packageserver deployment: %w", err)
 	}
