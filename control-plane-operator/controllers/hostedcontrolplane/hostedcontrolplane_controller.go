@@ -2142,7 +2142,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if hcp.Spec.APIPort != nil {
 		params.InternalAPIPort = uint(*hcp.Spec.APIPort)
 	} else {
-		params.InternalAPIPort = defaultAPIServerPort
+		params.InternalAPIPort = config.DefaultAPIServerPort
 	}
 	params.IssuerURL = hcp.Spec.IssuerURL
 	params.NetworkType = hcp.Spec.NetworkType
