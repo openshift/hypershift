@@ -41,8 +41,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	// Ensure we clean up after the test
 	defer func() {
-		// TODO: Figure out why this is slow
-		//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
+		e2eutil.DumpGuestCluster(t, context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
 		e2eutil.DumpAndDestroyHostedCluster(t, context.Background(), hostedCluster, globalOpts.AWSCredentialsFile, globalOpts.Region, globalOpts.BaseDomain, globalOpts.ArtifactDir)
 		e2eutil.DeleteNamespace(t, context.Background(), client, namespace.Name)
 	}()

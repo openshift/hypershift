@@ -62,8 +62,9 @@ func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1
 // DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,
 // logging any failures along the way.
 func DumpAndDestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, awsCreds string, awsRegion string, baseDomain string, artifactDir string) {
-	// TODO: Figure out why this is slow
-	//DumpHostedCluster(ctx, hostedCluster, artifactDir)
+	startTime := time.Now()
+	DumpHostedCluster(t, ctx, hostedCluster, artifactDir)
+	t.Logf("********* HostedCluster dump duration: %v", time.Since(startTime))
 
 	opts := &cmdcluster.DestroyOptions{
 		Namespace:          hostedCluster.Namespace,
@@ -260,6 +261,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 // DumpGuestCluster tries to collect resources from the from the hosted cluster,
 // and logs any failures that occur.
 func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, destDir string) {
+	startTime := time.Now()
 	if len(destDir) == 0 {
 		t.Logf("Skipping guest cluster dump because no dest dir was provided")
 		return
@@ -298,5 +300,5 @@ func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client,
 		t.Errorf("Failed to dump guest cluster: %v", err)
 		return
 	}
-	t.Logf("Dumped guest cluster data. Dir: %s", dumpDir)
+	t.Logf("Dumped guest cluster data. Dir: %s, Took %v", dumpDir, time.Since(startTime))
 }
