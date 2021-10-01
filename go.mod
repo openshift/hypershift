@@ -17,7 +17,7 @@ require (
 	github.com/onsi/gomega v1.15.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
-	github.com/openshift/api v0.0.0-20210713130143-be21c6cb1bea
+	github.com/openshift/api v0.0.0-20210901140736-d8ed1449662d
 	github.com/openshift/client-go v0.0.0-20200929181438-91d71ef2122c
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0

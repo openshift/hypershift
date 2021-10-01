@@ -1074,7 +1074,9 @@ spec:
                         verified:
                           description: verified indicates whether the provided update
                             was properly verified before it was installed. If this
-                            is false the cluster may not be trusted.
+                            is false the cluster may not be trusted. Verified does
+                            not cover upgradeable checks that depend on the cluster
+                            state at the time when the update target was accepted.
                           type: boolean
                         version:
                           description: version is a semantic versioning identifying
