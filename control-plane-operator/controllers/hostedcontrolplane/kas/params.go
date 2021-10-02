@@ -301,7 +301,7 @@ func (p *KubeAPIServerParams) AuditPolicyProfile() configv1.AuditProfileType {
 	if p.APIServer != nil {
 		return p.APIServer.Spec.Audit.Profile
 	} else {
-		return configv1.AuditProfileDefaultType
+		return configv1.DefaultAuditProfileType
 	}
 }
 

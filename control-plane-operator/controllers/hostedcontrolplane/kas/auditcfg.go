@@ -261,7 +261,7 @@ const (
 
 var (
 	auditPolicies = map[configv1.AuditProfileType]*auditv1.Policy{
-		configv1.AuditProfileDefaultType:            defaultAuditPolicy(),
+		configv1.DefaultAuditProfileType:            defaultAuditPolicy(),
 		configv1.WriteRequestBodiesAuditProfileType: writeRequestBodiesAuditPolicy(),
 		configv1.AllRequestBodiesAuditProfileType:   allRequestBodiesAuditPolicy(),
 	}
@@ -273,7 +273,7 @@ func ReconcileAuditConfig(auditCfgMap *corev1.ConfigMap, ownerRef config.OwnerRe
 		auditCfgMap.Data = map[string]string{}
 	}
 	if auditProfile == "" {
-		auditProfile = configv1.AuditProfileDefaultType
+		auditProfile = configv1.DefaultAuditProfileType
 	}
 	policy, ok := auditPolicies[auditProfile]
 	if !ok {
