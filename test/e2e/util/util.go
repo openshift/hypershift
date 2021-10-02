@@ -62,8 +62,7 @@ func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1
 // DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,
 // logging any failures along the way.
 func DumpAndDestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, awsCreds string, awsRegion string, baseDomain string, artifactDir string) {
-	// TODO: Figure out why this is slow
-	//DumpHostedCluster(ctx, hostedCluster, artifactDir)
+	DumpHostedCluster(t, ctx, hostedCluster, artifactDir)
 
 	opts := &cmdcluster.DestroyOptions{
 		Namespace:          hostedCluster.Namespace,
