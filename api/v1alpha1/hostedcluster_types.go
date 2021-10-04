@@ -279,17 +279,25 @@ type PlatformSpec struct {
 	// +optional
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
 
+	// IBMCloud defines IBMCloud specific settings for components
 	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
 }
 
+// IBMCloudIAASProvider is a specific supported infrastructure provider within IBM Cloud.
+// +kubebuilder:validation:Enum=upi;g2
 type IBMCloudIAASProvider string
 
 const (
-	UPI     IBMCloudIAASProvider = "upi"
+	// UPI is user provided infrastructure. This is used with the IBMCloud Satellite offering. Users add hosts and then
+	// use apis to assign their hosts to a given cluster in this mode.
+	UPI IBMCloudIAASProvider = "upi"
+	// VPCGEN2 is VPC Gen 2 within IBM Cloud https://cloud.ibm.com/docs/vpc.
 	VPCGEN2 IBMCloudIAASProvider = "g2"
 )
 
+// IBMCloudPlatformSpec defines IBMCloud specific settings for components
 type IBMCloudPlatformSpec struct {
+	// IAASProvider is a specific supported infrastructure provider within IBM Cloud.
 	IAASProvider IBMCloudIAASProvider `json:"iaasProvider,omitempty"`
 }
 

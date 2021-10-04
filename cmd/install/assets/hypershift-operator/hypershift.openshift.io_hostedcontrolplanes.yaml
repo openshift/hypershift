@@ -559,8 +559,14 @@ spec:
                     - region
                     type: object
                   ibmcloud:
+                    description: IBMCloud defines IBMCloud specific settings for components
                     properties:
                       iaasProvider:
+                        description: IAASProvider is a specific supported infrastructure
+                          provider within IBM Cloud.
+                        enum:
+                        - upi
+                        - g2
                         type: string
                     type: object
                   type:

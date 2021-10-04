@@ -497,6 +497,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		span.AddEvent("reconciled awsmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
 	}
 
+	// user provided infrastructure should not have any machine level cluster-api components (user provides infrastructure)
 	if !(nodePool.Spec.Platform.Type == hyperv1.IBMCloudPlatform && nodePool.Spec.Platform.IBMCloud != nil && nodePool.Spec.Platform.IBMCloud.IAASProvider == hyperv1.UPI) {
 		md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
