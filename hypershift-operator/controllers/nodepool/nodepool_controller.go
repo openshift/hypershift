@@ -497,24 +497,24 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		span.AddEvent("reconciled awsmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
 	}
 
-	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
-	if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
-		return r.reconcileMachineDeployment(
-			log,
-			md, nodePool,
-			userDataSecret,
-			machineTemplate,
-			infraID,
-			targetVersion, targetConfigHash, targetConfigVersionHash)
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
-			client.ObjectKeyFromObject(md).String(), err)
-	} else {
-		log.Info("Reconciled MachineDeployment", "result", result)
-		span.AddEvent("reconciled machinedeployment", trace.WithAttributes(attribute.String("result", string(result))))
-	}
-
 	if !(nodePool.Spec.Platform.Type == hyperv1.IBMCloudPlatform && nodePool.Spec.Platform.IBMCloud != nil && nodePool.Spec.Platform.IBMCloud.IAASProvider == hyperv1.UPI) {
+		md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
+		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
+			return r.reconcileMachineDeployment(
+				log,
+				md, nodePool,
+				userDataSecret,
+				machineTemplate,
+				infraID,
+				targetVersion, targetConfigHash, targetConfigVersionHash)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
+				client.ObjectKeyFromObject(md).String(), err)
+		} else {
+			log.Info("Reconciled MachineDeployment", "result", result)
+			span.AddEvent("reconciled machinedeployment", trace.WithAttributes(attribute.String("result", string(result))))
+		}
+
 		mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 		if nodePool.Spec.Management.AutoRepair {
 			if result, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
