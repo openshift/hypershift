@@ -622,6 +622,11 @@ spec:
                     - nodePoolManagementCreds
                     - region
                     type: object
+                  ibmcloud:
+                    properties:
+                      iaasProvider:
+                        type: string
+                    type: object
                   type:
                     description: Type is the underlying infrastructure provider for
                       the cluster.

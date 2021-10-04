@@ -278,6 +278,19 @@ type PlatformSpec struct {
 	// AWS contains AWS-specific settings for the HostedCluster
 	// +optional
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
+
+	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
+}
+
+type IBMCloudIAASProvider string
+
+const (
+	UPI     IBMCloudIAASProvider = "upi"
+	VPCGEN2 IBMCloudIAASProvider = "g2"
+)
+
+type IBMCloudPlatformSpec struct {
+	IAASProvider IBMCloudIAASProvider `json:"iaasProvider,omitempty"`
 }
 
 type AWSCloudProviderConfig struct {

@@ -293,6 +293,11 @@ spec:
                     required:
                     - instanceType
                     type: object
+                  ibmcloud:
+                    properties:
+                      iaasProvider:
+                        type: string
+                    type: object
                   type:
                     description: PlatformType is a specific supported infrastructure
                       provider.

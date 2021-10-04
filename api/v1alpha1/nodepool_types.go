@@ -164,6 +164,8 @@ type NodePoolPlatform struct {
 	Type PlatformType `json:"type"`
 	// AWS is the configuration used when installing on AWS.
 	AWS *AWSNodePoolPlatform `json:"aws,omitempty"`
+
+	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
 }
 
 // AWSNodePoolPlatform stores the configuration for a node pool

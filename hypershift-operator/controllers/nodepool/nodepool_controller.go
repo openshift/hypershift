@@ -514,37 +514,38 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		span.AddEvent("reconciled machinedeployment", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
-	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
-	if nodePool.Spec.Management.AutoRepair {
-		if result, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
-			return r.reconcileMachineHealthCheck(mhc, nodePool, infraID)
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineHealthCheck %q: %w",
-				client.ObjectKeyFromObject(mhc).String(), err)
+	if !(nodePool.Spec.Platform.Type == hyperv1.IBMCloudPlatform && nodePool.Spec.Platform.IBMCloud != nil && nodePool.Spec.Platform.IBMCloud.IAASProvider == hyperv1.UPI) {
+		mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
+		if nodePool.Spec.Management.AutoRepair {
+			if result, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
+				return r.reconcileMachineHealthCheck(mhc, nodePool, infraID)
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineHealthCheck %q: %w",
+					client.ObjectKeyFromObject(mhc).String(), err)
+			} else {
+				log.Info("Reconciled MachineHealthCheck", "result", result)
+				span.AddEvent("reconciled machinehealthchecks", trace.WithAttributes(attribute.String("result", string(result))))
+			}
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+				ObservedGeneration: nodePool.Generation,
+			})
 		} else {
-			log.Info("Reconciled MachineHealthCheck", "result", result)
-			span.AddEvent("reconciled machinehealthchecks", trace.WithAttributes(attribute.String("result", string(result))))
+			if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, err
+			} else {
+				span.AddEvent("deleted machinehealthcheck", trace.WithAttributes(attribute.String("name", mhc.Name)))
+			}
+			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+				Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+				ObservedGeneration: nodePool.Generation,
+			})
 		}
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
-			Status:             metav1.ConditionTrue,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-			ObservedGeneration: nodePool.Generation,
-		})
-	} else {
-		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, err
-		} else {
-			span.AddEvent("deleted machinehealthcheck", trace.WithAttributes(attribute.String("name", mhc.Name)))
-		}
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
-			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
-			Status:             metav1.ConditionFalse,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-			ObservedGeneration: nodePool.Generation,
-		})
 	}
-
 	return ctrl.Result{}, nil
 }
 
