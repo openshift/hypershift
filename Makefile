@@ -29,7 +29,7 @@ endif
 
 all: build e2e
 
-build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator hypershift
+build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator konnectivity-socks5-proxy hypershift
 
 .PHONY: verify
 verify: staticcheck deps api fmt vet
@@ -56,6 +56,11 @@ control-plane-operator:
 .PHONY: hosted-cluster-config-operator
 hosted-cluster-config-operator:
 	$(GO_BUILD_RECIPE) -o bin/hosted-cluster-config-operator ./hosted-cluster-config-operator
+
+# Build konnectivity-socks5-proxy binary
+.PHONY: konnectivity-socks5-proxy
+konnectivity-socks5-proxy:
+	$(GO_BUILD_RECIPE) -o bin/konnectivity-socks5-proxy ./konnectivity-socks5-proxy
 
 .PHONY: hypershift
 hypershift:

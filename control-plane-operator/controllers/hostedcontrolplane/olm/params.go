@@ -10,6 +10,7 @@ var packageServerLabels = map[string]string{"app": "packageserver"}
 type OperatorLifecycleManagerParams struct {
 	CLIImage              string
 	OLMImage              string
+	ProxyImage            string
 	OperatorRegistryImage string
 	ReleaseVersion        string
 	DeploymentConfig      config.DeploymentConfig
@@ -21,6 +22,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 	params := &OperatorLifecycleManagerParams{
 		CLIImage:              images["cli"],
 		OLMImage:              images["operator-lifecycle-manager"],
+		ProxyImage:            images["socks5-proxy"],
 		OperatorRegistryImage: images["operator-registry"],
 		ReleaseVersion:        releaseVersion,
 		OwnerRef:              config.OwnerRefFrom(hcp),

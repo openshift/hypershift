@@ -2,7 +2,10 @@ module github.com/openshift/hypershift
 
 go 1.16
 
+replace sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.24
+
 require (
+	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go v1.40.22
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bombsimon/logrusr v1.0.0
@@ -44,6 +47,7 @@ require (
 	k8s.io/kube-aggregator v0.20.2
 	k8s.io/kube-scheduler v0.21.4
 	k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a
+	sigs.k8s.io/apiserver-network-proxy v0.0.24
 	sigs.k8s.io/cluster-api v0.4.2
 	sigs.k8s.io/cluster-api-provider-aws v0.7.0
 	sigs.k8s.io/controller-runtime v0.10.1
