@@ -44,7 +44,8 @@ type ExampleOptions struct {
 	ReleaseImage                     string
 	PullSecret                       []byte
 	IssuerURL                        string
-	SSHKey                           []byte
+	SSHPublicKey                     []byte
+	SSHPrivateKey                    []byte
 	NodePoolReplicas                 int32
 	InfraID                          string
 	ComputeCIDR                      string
@@ -133,7 +134,7 @@ aws_secret_access_key = %s
 
 	var sshKeySecret *corev1.Secret
 	var sshKeyReference corev1.LocalObjectReference
-	if len(o.SSHKey) > 0 {
+	if len(o.SSHPublicKey) > 0 {
 		sshKeySecret = &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Secret",
@@ -144,8 +145,11 @@ aws_secret_access_key = %s
 				Name:      o.Name + "-ssh-key",
 			},
 			Data: map[string][]byte{
-				"id_rsa.pub": o.SSHKey,
+				"id_rsa.pub": o.SSHPublicKey,
 			},
+		}
+		if len(o.SSHPrivateKey) > 0 {
+			sshKeySecret.Data["id_rsa"] = o.SSHPrivateKey
 		}
 		sshKeyReference = corev1.LocalObjectReference{Name: sshKeySecret.Name}
 	}

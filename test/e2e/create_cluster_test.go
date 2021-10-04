@@ -49,15 +49,14 @@ func TestCreateCluster(t *testing.T) {
 
 	// Create the cluster
 	createClusterOpts := cmdcluster.Options{
-		Namespace:          hostedCluster.Namespace,
-		Name:               hostedCluster.Name,
-		InfraID:            hostedCluster.Name,
-		ReleaseImage:       globalOpts.LatestReleaseImage,
-		PullSecretFile:     globalOpts.PullSecretFile,
-		AWSCredentialsFile: globalOpts.AWSCredentialsFile,
-		Region:             globalOpts.Region,
-		// TODO: generate a key on the fly
-		SSHKeyFile:                "",
+		Namespace:                 hostedCluster.Namespace,
+		Name:                      hostedCluster.Name,
+		InfraID:                   hostedCluster.Name,
+		ReleaseImage:              globalOpts.LatestReleaseImage,
+		PullSecretFile:            globalOpts.PullSecretFile,
+		AWSCredentialsFile:        globalOpts.AWSCredentialsFile,
+		Region:                    globalOpts.Region,
+		GenerateSSH:               true,
 		NodePoolReplicas:          2,
 		InstanceType:              "m4.large",
 		BaseDomain:                globalOpts.BaseDomain,
