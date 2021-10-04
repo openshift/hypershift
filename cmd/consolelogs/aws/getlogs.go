@@ -78,7 +78,7 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	}
 	infraID := hostedCluster.Spec.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
-	awsSession := awsutil.NewSession("cli-create-infra")
+	awsSession := awsutil.NewSession("cli-console-logs")
 	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, region)
 	ec2Client := ec2.New(awsSession, awsConfig)
 

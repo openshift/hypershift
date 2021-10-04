@@ -68,7 +68,7 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		err := o.DestroyIAM(ctx)
 		if err != nil {
-			if !isErrorRetryable(err) {
+			if !awsutil.IsErrorRetryable(err) {
 				return false, err
 			}
 			log.Info("WARNING: error during destroy, will retry", "error", err.Error())
