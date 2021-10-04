@@ -50,14 +50,14 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	// Create the cluster
 	createClusterOpts := cmdcluster.Options{
-		Namespace:          hostedCluster.Namespace,
-		Name:               hostedCluster.Name,
-		InfraID:            hostedCluster.Name,
-		ReleaseImage:       globalOpts.PreviousReleaseImage,
-		PullSecretFile:     globalOpts.PullSecretFile,
-		AWSCredentialsFile: globalOpts.AWSCredentialsFile,
-		Region:             globalOpts.Region,
-		// TODO: generate a key on the fly
+		Namespace:                 hostedCluster.Namespace,
+		Name:                      hostedCluster.Name,
+		InfraID:                   hostedCluster.Name,
+		ReleaseImage:              globalOpts.PreviousReleaseImage,
+		PullSecretFile:            globalOpts.PullSecretFile,
+		AWSCredentialsFile:        globalOpts.AWSCredentialsFile,
+		Region:                    globalOpts.Region,
+		GenerateSSH:               true,
 		SSHKeyFile:                "",
 		NodePoolReplicas:          2,
 		InstanceType:              "m4.large",
