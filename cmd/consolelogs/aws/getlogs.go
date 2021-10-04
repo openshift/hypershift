@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -21,7 +22,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 )
 
-type consoleLogOpts struct {
+type ConsoleLogOpts struct {
 	Name               string
 	Namespace          string
 	AWSCredentialsFile string
@@ -30,8 +31,7 @@ type consoleLogOpts struct {
 
 func NewCommand() *cobra.Command {
 
-	opts := &consoleLogOpts{
-		Name:      "example",
+	opts := &ConsoleLogOpts{
 		Namespace: "clusters",
 	}
 
@@ -46,6 +46,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", opts.OutputDir, "Directory where to place console logs (required)")
 
+	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("output-dir")
 
@@ -68,7 +69,7 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *consoleLogOpts) Run(ctx context.Context) error {
+func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	c := util.GetClientOrDie()
 
 	var hostedCluster hyperv1.HostedCluster
@@ -131,7 +132,7 @@ func getInstanceConsoleOutput(ctx context.Context, ec2Client *ec2.EC2, instances
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
 	}
-	errs := []error{}
+	var errs []error
 	for name, instanceID := range instances {
 		ctxWithTimeout, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
@@ -142,7 +143,14 @@ func getInstanceConsoleOutput(ctx context.Context, ec2Client *ec2.EC2, instances
 			errs = append(errs, err)
 			continue
 		}
-		ioutil.WriteFile(filepath.Join(outputDir, name+".log"), []byte(aws.StringValue(output.Output)), 0644)
+		logOutput, err := base64.StdEncoding.DecodeString(aws.StringValue(output.Output))
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := ioutil.WriteFile(filepath.Join(outputDir, name+".log"), logOutput, 0644); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if len(errs) > 0 {
 		return utilerrors.NewAggregate(errs)

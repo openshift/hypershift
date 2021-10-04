@@ -23,6 +23,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
+	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
 )
 
 func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client, prefix string) *corev1.Namespace {
@@ -196,6 +197,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
+	readyNodeCount := 0
 	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
 		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
@@ -214,12 +216,13 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 			}
 		}
 		if len(readyNodes) != int(n) {
+			readyNodeCount = len(readyNodes)
 			return false, nil
 		}
 		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
 		return true, nil
 	}, ctx.Done())
-	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest nodes became ready")
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
 	t.Logf("All nodes for nodepool appear to be ready. Count: %v", n)
 	return nodes.Items
@@ -298,4 +301,18 @@ func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client,
 		return
 	}
 	t.Logf("Dumped guest cluster data. Dir: %s", dumpDir)
+}
+
+func SaveMachineConsoleLogs(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, awsCredsFile, artifactDir string) {
+	consoleLogs := consolelogsaws.ConsoleLogOpts{
+		Name:               hc.Name,
+		Namespace:          hc.Namespace,
+		AWSCredentialsFile: awsCredsFile,
+		OutputDir:          filepath.Join(artifactDir, "machine-console-logs"),
+	}
+	if logsErr := consoleLogs.Run(ctx); logsErr != nil {
+		t.Logf("Failed to get machine console logs: %v", logsErr)
+	} else {
+		t.Logf("Saved machine console logs.")
+	}
 }
