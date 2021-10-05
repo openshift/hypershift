@@ -10,6 +10,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 func OperatorDeployment(controlPlaneOperatorNamespace string) *appsv1.Deployment {
@@ -120,6 +122,15 @@ func SSHKey(controlPlaneNamespace string) *corev1.Secret {
 
 func IBMCloudCluster(controlPlaneNamespace string, hostedClusterName string) *capiibmv1.IBMVPCCluster {
 	return &capiibmv1.IBMVPCCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      hostedClusterName,
+		},
+	}
+}
+
+func PodMonitor(controlPlaneNamespace string, hostedClusterName string) *prometheusoperatorv1.PodMonitor {
+	return &prometheusoperatorv1.PodMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hostedClusterName,

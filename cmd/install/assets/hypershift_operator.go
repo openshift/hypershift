@@ -241,6 +241,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"*"},
 				Verbs:     []string{"*"},
 			},
+			{
+				APIGroups: []string{"monitoring.coreos.com"},
+				Resources: []string{"podmonitors"},
+				Verbs:     []string{"get", "list", "watch", "create", "update"},
+			},
 		},
 	}
 	return role
