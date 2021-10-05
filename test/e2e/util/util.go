@@ -338,6 +338,12 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			if strings.HasPrefix(pod.Name, "capa-controller-manager") {
 				continue
 			}
+
+			// TODO: Remove after https://issues.redhat.com/browse/HOSTEDCP-238 is done
+			if strings.HasPrefix(pod.Name, "packageserver") {
+				continue
+			}
+
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > 0 {
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
