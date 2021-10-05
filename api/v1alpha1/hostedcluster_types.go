@@ -66,10 +66,12 @@ type HostedClusterSpec struct {
 	Release Release `json:"release"`
 
 	// +optional
+	// +immutable
 	FIPS bool `json:"fips"`
 
 	// PullSecret is a pull secret injected into the container runtime of guest
 	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
+	// +immutable
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
 
 	// AuditWebhook contains metadata for configuring an audit webhook
@@ -79,29 +81,36 @@ type HostedClusterSpec struct {
 	// keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored
 	// in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.
 	// +optional
+	// +immutable
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 
 	// +kubebuilder:default:="https://kubernetes.default.svc"
+	// +immutable
 	IssuerURL string `json:"issuerURL"`
 
 	// SSHKey is a reference to a Secret containing a single key "id_rsa.pub",
 	// whose value is the public part of an SSH key that can be used to access
 	// Nodes.
+	// +immutable
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 
 	// Networking contains network-specific settings for this cluster
+	// +immutable
 	Networking ClusterNetworking `json:"networking"`
 
 	// Autoscaling for compute nodes only, does not cover control plane
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
+	// +immutable
 	Platform PlatformSpec `json:"platform"`
 
 	// InfraID is used to identify the cluster in cloud platforms
+	// +immutable
 	InfraID string `json:"infraID,omitempty"`
 
 	// DNS configuration for the cluster
+	// +immutable
 	DNS DNSSpec `json:"dns,omitempty"`
 
 	// Services defines metadata about how control plane services are published
@@ -118,12 +127,14 @@ type HostedClusterSpec struct {
 	// run on the guest cluster nodes in HA mode
 	// Defaults to HighlyAvailable when not set
 	// +optional
+	// +immutable
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 	// use to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed"}
+	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 
 	// Configuration embeds resources that correspond to the openshift configuration API:
@@ -134,6 +145,7 @@ type HostedClusterSpec struct {
 
 	// ImageContentSources lists sources/repositories for the release-image content.
 	// +optional
+	// +immutable
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
@@ -145,10 +157,12 @@ type HostedClusterSpec struct {
 // ImageContentSource defines a list of sources/repositories that can be used to pull content.
 type ImageContentSource struct {
 	// Source is the repository that users refer to, e.g. in image pull specifications.
+	// +immutable
 	Source string `json:"source"`
 
 	// Mirrors is one or more repositories that may also contain the same images.
 	// +optional
+	// +immutable
 	Mirrors []string `json:"mirrors,omitempty"`
 }
 
@@ -156,6 +170,7 @@ type ImageContentSource struct {
 type ServicePublishingStrategyMapping struct {
 	// Service identifies the type of service being published
 	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition
+	// +immutable
 	Service                   ServiceType `json:"service"`
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
@@ -164,6 +179,7 @@ type ServicePublishingStrategyMapping struct {
 type ServicePublishingStrategy struct {
 	// Type defines the publishing strategy used for the service.
 	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None
+	// +immutable
 	Type PublishingStrategyType `json:"type"`
 	// NodePort is used to define extra metadata for the NodePort publishing strategy.
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
@@ -205,29 +221,37 @@ type NodePortPublishingStrategy struct {
 // DNSSpec specifies the DNS configuration in the cluster
 type DNSSpec struct {
 	// BaseDomain is the base domain of the cluster.
+	// +immutable
 	BaseDomain string `json:"baseDomain"`
 
 	// PublicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to
 	// the internet exist.
 	// +optional
+	// +immutable
 	PublicZoneID string `json:"publicZoneID,omitempty"`
 
 	// PrivateZoneID is the Hosted Zone ID where all the DNS records that are only available internally
 	// to the cluster exist.
 	// +optional
+	// +immutable
 	PrivateZoneID string `json:"privateZoneID,omitempty"`
 }
 
 type ClusterNetworking struct {
+	// +immutable
 	ServiceCIDR string `json:"serviceCIDR"`
-	PodCIDR     string `json:"podCIDR"`
+	// +immutable
+	PodCIDR string `json:"podCIDR"`
+	// +immutable
 	MachineCIDR string `json:"machineCIDR"`
 	// NetworkType specifies the SDN provider used for cluster networking.
 	// +kubebuilder:default:="OpenShiftSDN"
+	// +immutable
 	NetworkType NetworkType `json:"networkType"`
 
 	// APIServer contains advanced network settings for the API server that affect
 	// how the APIServer is exposed inside a worker node.
+	// +immutable
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
 
@@ -273,10 +297,12 @@ type PlatformSpec struct {
 	// Type is the underlying infrastructure provider for the cluster.
 	//
 	// +unionDiscriminator
+	// +immutable
 	Type PlatformType `json:"type"`
 
 	// AWS contains AWS-specific settings for the HostedCluster
 	// +optional
+	// +immutable
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
 }
 
@@ -298,31 +324,37 @@ type AWSPlatformSpec struct {
 	// This is used by CRs that are consumed by OCP Operators.
 	// E.g cluster-infrastructure-02-config.yaml and install-config.yaml
 	// This is also used by nodePools to fetch the default boot AMI in a given payload.
+	// +immutable
 	Region string `json:"region"`
 
 	// CloudProviderConfig is used to generate the ConfigMap with the cloud config consumed
 	// by the Control Plane components.
 	// +optional
+	// +immutable
 	CloudProviderConfig *AWSCloudProviderConfig `json:"cloudProviderConfig,omitempty"`
 
 	// ServiceEndpoints list contains custom endpoints which will override default
 	// service endpoint of AWS Services.
 	// There must be only one ServiceEndpoint for a service.
 	// +optional
+	// +immutable
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
+	// +immutable
 	Roles []AWSRoleCredentials `json:"roles,omitempty"`
 
 	// KubeCloudControllerCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the Kube cloud controller policy.
 	// The secret should have exactly one key, `credentials`, whose value is
 	// an AWS credentials file.
+	// +immutable
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
 
 	// NodePoolManagementCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the noe pool management policy.
 	// The secret should have exactly one key, `credentials`, whose value is
 	// an AWS credentials file.
+	// +immutable
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
 	// resourceTags is a list of additional tags to apply to AWS resources created for the cluster.
@@ -421,14 +453,17 @@ type EtcdSpec struct {
 	// Managed means the hypershift controllers manage the provisioning of the etcd cluster
 	// and the operations around it
 	// +unionDiscriminator
+	// +immutable
 	ManagementType EtcdManagementType `json:"managementType"`
 
 	// Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
 	// +optional
+	// +immutable
 	Managed *ManagedEtcdSpec `json:"managed,omitempty"`
 
 	// Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
 	// +optional
+	// +immutable
 	Unmanaged *UnmanagedEtcdSpec `json:"unmanaged,omitempty"`
 }
 
