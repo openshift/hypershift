@@ -90,7 +90,6 @@ func NewStartCommand() *cobra.Command {
 			MetricsBindAddress: metricsAddr,
 			Port:               9443,
 			LeaderElection:     enableLeaderElection,
-			LeaderElectionID:   "b2ed43cb.hypershift.openshift.io",
 			Namespace:          namespace,
 			// Use a non-caching client everywhere. The default split client does not
 			// promise to invalidate the cache during writes (nor does it promise

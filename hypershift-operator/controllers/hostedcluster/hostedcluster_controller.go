@@ -1684,18 +1684,15 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 }
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount) error {
+	labels := map[string]string{"name": "control-plane-operator"}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"name": "control-plane-operator",
-			},
+			MatchLabels: labels,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"name": "control-plane-operator",
-				},
+				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName: sa.Name,
@@ -1719,16 +1716,36 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							RunAsUser: k8sutilspointer.Int64Ptr(1000),
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
-						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator"},
+						Args: []string{
+							"run",
+							"--namespace", "$(MY_NAMESPACE)",
+							"--deployment-name", "control-plane-operator",
+							"--enable-leader-election=true",
+						},
 					},
 				},
 			},
 		},
 	}
+
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
+	switch hc.Spec.ControllerAvailabilityPolicy {
+	case hyperv1.HighlyAvailable:
+		maxSurge := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(1)
+		deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
+		deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
+			MaxSurge:       &maxSurge,
+			MaxUnavailable: &maxUnavailable,
+		}
+		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+		hyperutil.SetMultizoneSpread(labels, deployment)
+	default:
+		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+	}
 	return nil
 }
 
@@ -1838,6 +1855,13 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			APIGroups: []string{"batch"},
 			Resources: []string{"cronjobs"},
 			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
+			},
+			Verbs: []string{"*"},
 		},
 	}
 	return nil
