@@ -29,7 +29,7 @@ endif
 
 all: build e2e
 
-build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator konnectivity-socks5-proxy hypershift
+build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator konnectivity-socks5-proxy hypershift availability-prober
 
 .PHONY: verify
 verify: staticcheck deps api fmt vet
@@ -65,6 +65,10 @@ konnectivity-socks5-proxy:
 .PHONY: hypershift
 hypershift:
 	$(GO_BUILD_RECIPE) -o bin/hypershift .
+
+.PHONY: availability-prober
+availability-prober:
+	$(GO_BUILD_RECIPE) -o bin/availability-prober ./availability-prober
 
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.

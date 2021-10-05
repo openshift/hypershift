@@ -104,6 +104,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 	}
 	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig)
 	applyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds)
+
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 

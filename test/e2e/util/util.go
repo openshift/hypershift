@@ -24,6 +24,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
 func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client, prefix string) *corev1.Namespace {
@@ -315,4 +316,26 @@ func SaveMachineConsoleLogs(t *testing.T, ctx context.Context, hc *hyperv1.Hoste
 	} else {
 		t.Logf("Saved machine console logs.")
 	}
+}
+
+func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("No controlplane pods crash", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+		}
+		for _, pod := range podList.Items {
+			// It needs some specific apis, we currently don't have checking for this
+			if pod.Name == "manifests-bootstrapper" {
+				continue
+			}
+			for _, containerStatus := range pod.Status.ContainerStatuses {
+				if containerStatus.RestartCount > 0 {
+					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
+				}
+			}
+		}
+	})
 }

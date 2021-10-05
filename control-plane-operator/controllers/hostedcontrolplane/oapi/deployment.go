@@ -2,7 +2,6 @@ package oapi
 
 import (
 	"fmt"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"net/url"
 	"path"
 	"strings"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
@@ -43,7 +43,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, haproxyImage string, etcdURL string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, haproxyImage string, etcdURL string, availabilityProberImage string) error {
 	ownerRef.ApplyTo(deployment)
 
 	maxUnavailable := intstr.FromInt(1)
@@ -83,6 +83,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
 		},
 	}
+
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	config.ApplyTo(deployment)
 

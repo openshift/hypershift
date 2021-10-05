@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 type KubeControllerManagerParams struct {
@@ -26,7 +27,8 @@ type KubeControllerManagerParams struct {
 
 	config.DeploymentConfig
 	config.OwnerRef
-	HyperkubeImage string `json:"hyperkubeImage"`
+	HyperkubeImage          string `json:"hyperkubeImage"`
+	AvailabilityProberImage string `json:"availabilityProberImage"`
 }
 
 const (
@@ -38,10 +40,11 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		FeatureGate: globalConfig.FeatureGate,
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
-		HyperkubeImage: images["hyperkube"],
-		Port:           DefaultPort,
-		ServiceCIDR:    hcp.Spec.ServiceCIDR,
-		PodCIDR:        hcp.Spec.PodCIDR,
+		HyperkubeImage:          images["hyperkube"],
+		Port:                    DefaultPort,
+		ServiceCIDR:             hcp.Spec.ServiceCIDR,
+		PodCIDR:                 hcp.Spec.PodCIDR,
+		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 	}
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,

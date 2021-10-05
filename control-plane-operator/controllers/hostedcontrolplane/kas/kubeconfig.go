@@ -17,15 +17,23 @@ const (
 )
 
 func ReconcileServiceKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
-	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, apiServerPort)
+	svcURL := InClusterKASURL(secret.Namespace, apiServerPort)
 	return reconcileKubeconfig(secret, cert, ca, svcURL, "", "service", ownerRef)
 }
 
 func ReconcileServiceCAPIKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
-	svcURL := fmt.Sprintf("https://%s:%d", manifests.KASService(secret.Namespace).Name, apiServerPort)
+	svcURL := InClusterKASURL(secret.Namespace, apiServerPort)
 	// The client used by CAPI machine controller expects the kubeconfig to have this key
 	// https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
 	return reconcileKubeconfig(secret, cert, ca, svcURL, "value", "capi", ownerRef)
+}
+
+func InClusterKASURL(namespace string, apiServerPort int32) string {
+	return fmt.Sprintf("https://%s:%d", manifests.KASService(namespace).Name, apiServerPort)
+}
+
+func InClusterKASReadyURL(namespace string) string {
+	return InClusterKASURL(namespace, kubeAPIServerPort()) + "/readyz"
 }
 
 func ReconcileLocalhostKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {

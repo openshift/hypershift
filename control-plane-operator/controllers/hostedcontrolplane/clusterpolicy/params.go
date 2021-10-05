@@ -7,11 +7,13 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 type ClusterPolicyControllerParams struct {
-	Image     string              `json:"image"`
-	APIServer *configv1.APIServer `json:"apiServer"`
+	Image                   string              `json:"image"`
+	APIServer               *configv1.APIServer `json:"apiServer"`
+	AvailabilityProberImage string              `json:"availabilityProberImage"`
 
 	DeploymentConfig config.DeploymentConfig `json:"deploymentConfig"`
 	config.OwnerRef  `json:",inline"`
@@ -19,8 +21,9 @@ type ClusterPolicyControllerParams struct {
 
 func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
-		Image:     images["cluster-policy-controller"],
-		APIServer: globalConfig.APIServer,
+		Image:                   images["cluster-policy-controller"],
+		APIServer:               globalConfig.APIServer,
+		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{

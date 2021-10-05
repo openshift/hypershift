@@ -68,6 +68,7 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 			util.BuildVolume(oauthVolumeEtcdClientCert(), buildOAuthVolumeEtcdClientCert),
 		},
 	}
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	p.DeploymentConfig.ApplyTo(deployment)
 	return nil
 }

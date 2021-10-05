@@ -61,6 +61,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
@@ -1649,7 +1651,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 		}
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.HypershiftOperatorImage)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -2302,7 +2304,7 @@ func reconcileCAPIAWSProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -2412,6 +2414,8 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 			},
 		},
 	}
+
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)

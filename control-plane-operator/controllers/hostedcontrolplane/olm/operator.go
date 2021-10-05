@@ -5,6 +5,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
@@ -31,7 +32,7 @@ func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config
 	return nil
 }
 
-func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig) error {
+func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, operatorRegistryImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = catalogOperatorDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
@@ -53,6 +54,7 @@ func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef 
 		}
 	}
 	dc.ApplyTo(deployment)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 
@@ -70,7 +72,7 @@ func ReconcileOLMOperatorMetricsService(svc *corev1.Service, ownerRef config.Own
 	return nil
 }
 
-func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig) error {
+func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = olmOperatorDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
@@ -88,6 +90,7 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 		}
 	}
 	dc.ApplyTo(deployment)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 
