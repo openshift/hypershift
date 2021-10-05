@@ -47,6 +47,10 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 			},
 		},
 	}
+	if p.EtcdDeploymentConfig.AdditionalLabels == nil {
+		p.EtcdDeploymentConfig.AdditionalLabels = make(map[string]string)
+	}
+	p.EtcdDeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponent] = "etcd"
 	p.EtcdDeploymentConfig.Scheduling.PriorityClass = config.EtcdPriorityClass
 	p.EtcdDeploymentConfig.SetColocationAnchor(hcp)
 	p.EtcdDeploymentConfig.SetControlPlaneIsolation(hcp)

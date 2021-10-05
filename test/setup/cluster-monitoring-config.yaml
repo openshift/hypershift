@@ -1,0 +1,25 @@
+enableUserWorkload: true
+prometheusk8s:
+{{- if .RemoteWriteURL }}
+  remoteWrite:
+  - url: {{.RemoteWriteURL}}
+    basicAuth:
+      username:
+        name: remote-write-creds
+        key: username
+      password:
+        name: remote-write-creds
+        key: password
+    writeRelabelConfigs:
+    - sourceLabels: [__name__]
+      regex: hypershift.*
+      action: keep
+    - action: labelmap
+      regex: prometheus
+      replacement: cluster
+    - action: labelmap
+      regex: prometheus_replica
+      replacement: __replica__
+    - action: labeldrop
+      regex: (prometheus|prometheus_replica)
+{{end -}}

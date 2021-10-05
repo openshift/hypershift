@@ -18,6 +18,7 @@ spec:
     metadata:
       labels:
         app: packageserver
+        hypershift.openshift.io/control-plane-component: packageserver
     spec:
       containers:
       - command:

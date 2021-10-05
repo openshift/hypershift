@@ -3,6 +3,7 @@ package clusterpolicy
 import (
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,7 +24,8 @@ var (
 		},
 	}
 	clusterPolicyControllerLabels = map[string]string{
-		"app": "cluster-policy-controller",
+		"app":                         "cluster-policy-controller",
+		hyperv1.ControlPlaneComponent: "cluster-policy-controller",
 	}
 )
 
