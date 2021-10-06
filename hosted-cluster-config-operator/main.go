@@ -19,7 +19,6 @@ import (
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeadminpwd"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/node"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
@@ -48,7 +47,6 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
 	// TODO: non-essential, can't statically link to operator
 	//"openshift-controller-manager": openshiftcontrollermanager.Setup,
-	"node":                   node.Setup,
 	resources.ControllerName: resources.Setup,
 }
 
