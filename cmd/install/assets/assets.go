@@ -19,7 +19,7 @@ import (
 //go:embed etcd/*
 var crds embed.FS
 
-const capiLabel = "cluster.x-k8s.io/v1alpha4"
+const capiLabel = "cluster.x-k8s.io/v1beta1"
 
 // capiResources specifies which CRDs should get labelled with capiLabel
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
@@ -30,7 +30,6 @@ var capiResources = map[string]string{
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml": "v1alpha4",
 	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml": "v1alpha4",
 	"hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml":              "v1alpha1",
-	"hypershift-operator/hypershift.openshift.io_externalinfraclusters.yaml":            "v1alpha1",
 }
 
 func getContents(fs embed.FS, file string) []byte {

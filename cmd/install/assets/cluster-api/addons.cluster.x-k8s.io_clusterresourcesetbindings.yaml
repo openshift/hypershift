@@ -18,7 +18,12 @@ spec:
     singular: clusterresourcesetbinding
   scope: Namespaced
   versions:
-  - name: v1alpha4
+  - additionalPrinterColumns:
+    - description: Time duration since creation of ClusterResourceSetBinding
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: ClusterResourceSetBinding lists all matching ClusterResourceSets

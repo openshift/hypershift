@@ -21,6 +21,10 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - description: Cluster
+      jsonPath: .spec.clusterName
+      name: Cluster
+      type: string
     - description: MachinePool replicas count
       jsonPath: .status.replicas
       name: Replicas
@@ -30,11 +34,15 @@ spec:
       jsonPath: .status.phase
       name: Phase
       type: string
+    - description: Time duration since creation of MachinePool
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     - description: Kubernetes version associated with this MachinePool
       jsonPath: .spec.template.spec.version
       name: Version
       type: string
-    name: v1alpha4
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: MachinePool is the Schema for the machinepools API.
@@ -303,6 +311,7 @@ spec:
                         important.
                       type: string
                   required:
+                  - lastTransitionTime
                   - status
                   - type
                   type: object

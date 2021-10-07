@@ -84,9 +84,9 @@ hypershift-api:
 .PHONY: cluster-api
 cluster-api:
 	rm -rf cmd/install/assets/cluster-api/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/addons/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/addons/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
 
 .PHONY: cluster-api-provider-aws
 cluster-api-provider-aws:
