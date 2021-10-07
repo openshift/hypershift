@@ -18,7 +18,12 @@ spec:
     singular: clusterresourceset
   scope: Namespaced
   versions:
-  - name: v1alpha4
+  - additionalPrinterColumns:
+    - description: Time duration since creation of ClusterResourceSet
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: ClusterResourceSet is the Schema for the clusterresourcesets
@@ -161,6 +166,7 @@ spec:
                         important.
                       type: string
                   required:
+                  - lastTransitionTime
                   - status
                   - type
                   type: object
