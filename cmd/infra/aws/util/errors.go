@@ -1,4 +1,4 @@
-package aws
+package util
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 )
 
-func isErrorRetryable(err error) bool {
+func IsErrorRetryable(err error) bool {
 	if aggregate, isAggregate := err.(utilerrors.Aggregate); isAggregate {
 		if len(aggregate.Errors()) == 1 {
 			err = aggregate.Errors()[0]

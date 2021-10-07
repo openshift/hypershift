@@ -44,8 +44,8 @@ func NewDumpCommand() *cobra.Command {
 		ArtifactDir: "",
 	}
 
-	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
-	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 
 	cmd.MarkFlagRequired("artifact-dir")
