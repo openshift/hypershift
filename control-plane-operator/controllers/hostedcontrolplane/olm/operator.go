@@ -41,6 +41,7 @@ func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef 
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
+			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullAlways
 		}
 	}
 	for i, env := range deployment.Spec.Template.Spec.Containers[0].Env {
@@ -81,6 +82,7 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
+			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullAlways
 		}
 	}
 	for i, env := range deployment.Spec.Template.Spec.Containers[0].Env {
