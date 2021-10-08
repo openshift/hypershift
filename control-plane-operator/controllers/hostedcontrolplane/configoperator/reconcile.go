@@ -19,11 +19,7 @@ import (
 
 func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sa)
-	sa.ImagePullSecrets = []corev1.LocalObjectReference{
-		{
-			Name: common.PullSecret("").Name,
-		},
-	}
+	util.EnsurePullSecret(sa, common.PullSecret("").Name)
 	return nil
 }
 

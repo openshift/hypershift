@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/yaml"
 )
 
 func ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
@@ -44,6 +45,8 @@ func ReconcileKonnectivityAgentSecret(secret, ca *corev1.Secret, ownerRef config
 func ReconcileKonnectivityWorkerAgentSecret(cm *corev1.ConfigMap, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(cm)
 	secret := manifests.KonnectivityAgentSecret("kube-system")
+	// Ignore errors here, the configmap might be empty initially
+	yaml.Unmarshal([]byte(cm.Data[util.UserDataKey]), secret)
 	if err := ReconcileKonnectivityAgentSecret(secret, ca, config.OwnerRef{}); err != nil {
 		return err
 	}
