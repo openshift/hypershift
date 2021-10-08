@@ -17,8 +17,9 @@ const AvailabilityProberImageName = "availability-prober"
 
 func AvailabilityProber(target string, image string, spec *corev1.PodSpec) {
 	availabilityProberContainer := corev1.Container{
-		Name:  "availability-prober",
-		Image: image,
+		Name:            "availability-prober",
+		Image:           image,
+		ImagePullPolicy: corev1.PullAlways,
 		Command: []string{
 			"/usr/bin/availability-prober",
 			"--target",
