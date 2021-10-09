@@ -5,6 +5,7 @@ metadata:
   namespace: kube-system
   labels:
     k8s-app: kube-apiserver-proxy
+    hypershift.openshift.io/control-plane-component: kube-apiserver-proxy
 spec:
   hostNetwork: true
   containers:

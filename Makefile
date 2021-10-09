@@ -112,6 +112,7 @@ test: build
 .PHONY: e2e
 e2e:
 	$(GO) test -tags e2e -c -o bin/test-e2e ./test/e2e
+	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
 
 # Run go fmt against code
 .PHONY: fmt

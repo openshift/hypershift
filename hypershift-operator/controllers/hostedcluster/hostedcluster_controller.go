@@ -404,7 +404,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the hosted cluster namespace
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneNamespace, NoopReconcile)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
+		if controlPlaneNamespace.Labels == nil {
+			controlPlaneNamespace.Labels = make(map[string]string)
+		}
+		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = ""
+		return nil
+	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
 	}
@@ -1488,7 +1494,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
-		ignitionServerLabels := map[string]string{"app": ignitionserver.ResourceName}
+		ignitionServerLabels := map[string]string{
+			"app":                         ignitionserver.ResourceName,
+			hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+		}
 		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Replicas: k8sutilspointer.Int32Ptr(1),
@@ -1716,7 +1725,9 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					"name": "control-plane-operator",
+					"name":                        "control-plane-operator",
+					"app":                         "control-plane-operator",
+					hyperv1.ControlPlaneComponent: "control-plane-operator",
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -1961,7 +1972,11 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, capiManagerImage string) error {
 	defaultMode := int32(420)
-	capiManagerLabels := map[string]string{"name": "cluster-api"}
+	capiManagerLabels := map[string]string{
+		"name":                        "cluster-api",
+		"app":                         "cluster-api",
+		hyperv1.ControlPlaneComponent: "cluster-api",
+	}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -2140,7 +2155,11 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 
 func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount) error {
 	defaultMode := int32(420)
-	capaLabels := map[string]string{"control-plane": "capa-controller-manager"}
+	capaLabels := map[string]string{
+		"control-plane":               "capa-controller-manager",
+		"app":                         "capa-controller-manager",
+		hyperv1.ControlPlaneComponent: "capa-controller-manager",
+	}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -2372,7 +2391,8 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					"app": "cluster-autoscaler",
+					"app":                         "cluster-autoscaler",
+					hyperv1.ControlPlaneComponent: "cluster-autoscaler",
 				},
 			},
 			Spec: corev1.PodSpec{

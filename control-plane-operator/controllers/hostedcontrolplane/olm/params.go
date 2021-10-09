@@ -6,7 +6,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
-var packageServerLabels = map[string]string{"app": "packageserver"}
+var packageServerLabels = map[string]string{
+	"app":                         "packageserver",
+	hyperv1.ControlPlaneComponent: "packageserver",
+}
 
 type OperatorLifecycleManagerParams struct {
 	CLIImage                string

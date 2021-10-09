@@ -13,6 +13,7 @@ spec:
     metadata:
       labels:
         app: catalog-operator
+        hypershift.openshift.io/control-plane-component: catalog-operator
     spec:
       volumes:
         - name: srv-cert

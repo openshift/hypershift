@@ -13,6 +13,7 @@ spec:
     metadata:
       labels:
         app: olm-operator
+        hypershift.openshift.io/control-plane-component: olm-operator
     spec:
       volumes:
         - name: srv-cert

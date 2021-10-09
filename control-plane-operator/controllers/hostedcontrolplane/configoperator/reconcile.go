@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -82,7 +83,8 @@ var (
 		},
 	}
 	hccLabels = map[string]string{
-		"app": "hosted-cluster-config-operator",
+		"app":                         "hosted-cluster-config-operator",
+		hyperv1.ControlPlaneComponent: "hosted-cluster-config-operator",
 	}
 )
 

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
@@ -243,7 +244,8 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			Namespace: namespace,
 			Name:      podName,
 			Labels: map[string]string{
-				"app": "machine-config-server",
+				"app":                         "machine-config-server",
+				hyperv1.ControlPlaneComponent: "machine-config-server",
 			},
 		},
 		Spec: corev1.PodSpec{

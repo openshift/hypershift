@@ -11,6 +11,8 @@ spec:
     metadata:
       labels:
         olm.catalogSource: community-operators
+        app: community-operators-catalog
+        hypershift.openshift.io/control-plane-component: community-operators-catalog
     spec:
       nodeSelector:
         kubernetes.io/os: linux

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,7 +52,8 @@ var (
 		},
 	}
 	kcmLabels = map[string]string{
-		"app": "kube-controller-manager",
+		"app":                         "kube-controller-manager",
+		hyperv1.ControlPlaneComponent: "kube-controller-manager",
 	}
 )
 
