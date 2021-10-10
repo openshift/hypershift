@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
-	"reflect"
 	"strings"
 
 	certsv1 "k8s.io/api/certificates/v1"
@@ -98,7 +97,9 @@ func extractNodeNameFromCSR(csrData *x509.CertificateRequest) string {
 func validateAddressData(nodeData *v1.Node, csrData *x509.CertificateRequest) bool {
 	nodeAddressMap := map[string]bool{}
 	for _, nodeAddress := range nodeData.Status.Addresses {
-		nodeAddressMap[nodeAddress.Address] = true
+		if len(nodeAddress.Address) > 0 {
+			nodeAddressMap[nodeAddress.Address] = true
+		}
 	}
 	csrAddressMap := map[string]bool{}
 	for _, csrAddress := range csrData.IPAddresses {
@@ -107,7 +108,14 @@ func validateAddressData(nodeData *v1.Node, csrData *x509.CertificateRequest) bo
 	for _, csrAddress := range csrData.DNSNames {
 		csrAddressMap[csrAddress] = true
 	}
-	return reflect.DeepEqual(csrAddressMap, nodeAddressMap)
+	// key observation: any address reported by the csr MUST be contained in the node address map.
+	// if it isn't it cannot be approved
+	for csrAddressValue := range csrAddressMap {
+		if _, ok := nodeAddressMap[csrAddressValue]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // parseCSR extracts the CSR from the API object and decodes it.
