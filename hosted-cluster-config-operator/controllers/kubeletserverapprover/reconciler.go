@@ -60,6 +60,10 @@ func (a *KubeletServerApprover) Reconcile(_ context.Context, req ctrl.Request) (
 		logger.Error(fmt.Errorf("csr address data does not match kube node data"), "")
 		return ctrl.Result{}, nil
 	}
+	if !isCreatedByNodeClient(csr, nodeData) {
+		logger.Error(fmt.Errorf("csr wasn't created by a node client"), "")
+		return ctrl.Result{}, nil
+	}
 	err = a.approveCSR(csr)
 	return ctrl.Result{}, err
 }
@@ -68,8 +72,9 @@ func (a *KubeletServerApprover) approveCSR(csr *certsv1.CertificateSigningReques
 	csr.Status.Conditions = append(csr.Status.Conditions, certsv1.CertificateSigningRequestCondition{
 		Type:           certsv1.CertificateApproved,
 		Reason:         "KubectlApprove",
-		Message:        "This CSR was automatically approved.",
+		Message:        "This CSR was approved by the kubelet serving csr approver.",
 		LastUpdateTime: metav1.Now(),
+		Status:         v1.ConditionTrue,
 	})
 	var _, err = a.KubeClient.CertificatesV1().CertificateSigningRequests().UpdateApproval(context.TODO(), csr.Name, csr, metav1.UpdateOptions{})
 	return err
@@ -86,6 +91,10 @@ func isApproved(csr *certsv1.CertificateSigningRequest) bool {
 
 func isKubeletServingCert(csr *certsv1.CertificateSigningRequest) bool {
 	return csr.Spec.SignerName == certsv1.KubeletServingSignerName
+}
+
+func isCreatedByNodeClient(csr *certsv1.CertificateSigningRequest, nodeData *v1.Node) bool {
+	return csr.Spec.Username == fmt.Sprintf("system:node:%s", nodeData.Name)
 }
 
 func extractNodeNameFromCSR(csrData *x509.CertificateRequest) string {
