@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,8 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
+	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
 func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client, prefix string) *corev1.Namespace {
@@ -196,6 +199,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
+	readyNodeCount := 0
 	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
 		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
@@ -214,12 +218,13 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 			}
 		}
 		if len(readyNodes) != int(n) {
+			readyNodeCount = len(readyNodes)
 			return false, nil
 		}
 		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
 		return true, nil
 	}, ctx.Done())
-	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest nodes became ready")
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
 	t.Logf("All nodes for nodepool appear to be ready. Count: %v", n)
 	return nodes.Items
@@ -298,4 +303,52 @@ func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client,
 		return
 	}
 	t.Logf("Dumped guest cluster data. Dir: %s", dumpDir)
+}
+
+func SaveMachineConsoleLogs(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, awsCredsFile, artifactDir string) {
+	consoleLogs := consolelogsaws.ConsoleLogOpts{
+		Name:               hc.Name,
+		Namespace:          hc.Namespace,
+		AWSCredentialsFile: awsCredsFile,
+		OutputDir:          filepath.Join(artifactDir, "machine-console-logs"),
+	}
+	if logsErr := consoleLogs.Run(ctx); logsErr != nil {
+		t.Logf("Failed to get machine console logs: %v", logsErr)
+	} else {
+		t.Logf("Saved machine console logs.")
+	}
+}
+
+func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("No controlplane pods crash", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+		}
+		for _, pod := range podList.Items {
+			// It needs some specific apis, we currently don't have checking for this
+			if pod.Name == "manifests-bootstrapper" {
+				continue
+			}
+
+			// TODO: This is needed because of an upstream NPD, see e.G. here: https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/486/pull-ci-openshift-hypershift-main-e2e-aws-pooled/1445408206435127296/artifacts/e2e-aws-pooled/test-e2e/artifacts/namespaces/e2e-clusters-slgzn-example-f748r/core/pods/logs/capa-controller-manager-f66fd8977-knt6h-manager-previous.log
+			// remove this exception once upstream is fixed and we have the fix
+			if strings.HasPrefix(pod.Name, "capa-controller-manager") {
+				continue
+			}
+
+			// TODO: Remove after https://issues.redhat.com/browse/HOSTEDCP-238 is done
+			if strings.HasPrefix(pod.Name, "packageserver") {
+				continue
+			}
+
+			for _, containerStatus := range pod.Status.ContainerStatuses {
+				if containerStatus.RestartCount > 0 {
+					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
+				}
+			}
+		}
+	})
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -19,11 +20,7 @@ import (
 
 func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sa)
-	sa.ImagePullSecrets = []corev1.LocalObjectReference{
-		{
-			Name: common.PullSecret("").Name,
-		},
-	}
+	util.EnsurePullSecret(sa, common.PullSecret("").Name)
 	return nil
 }
 
@@ -86,11 +83,12 @@ var (
 		},
 	}
 	hccLabels = map[string]string{
-		"app": "hosted-cluster-config-operator",
+		"app":                         "hosted-cluster-config-operator",
+		hyperv1.ControlPlaneComponent: "hosted-cluster-config-operator",
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -116,6 +114,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion,
 		},
 	}
 	config.ApplyTo(deployment)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 

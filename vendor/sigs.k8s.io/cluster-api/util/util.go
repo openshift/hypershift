@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package util implements utilities.
 package util
 
 import (
@@ -36,9 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8sversion "k8s.io/apimachinery/pkg/version"
-	"k8s.io/client-go/metadata"
-	"k8s.io/client-go/rest"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -176,7 +175,7 @@ func GetClusterByName(ctx context.Context, c client.Client, namespace, name stri
 	}
 
 	if err := c.Get(ctx, key, cluster); err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get Cluster/%s", name)
 	}
 
 	return cluster, nil
@@ -416,6 +415,19 @@ func HasOwner(refList []metav1.OwnerReference, apiVersion string, kinds []string
 	return false
 }
 
+// GetGVKMetadata retrieves a CustomResourceDefinition metadata from the API server using partial object metadata.
+//
+// This function is greatly more efficient than GetCRDWithContract and should be preferred in most cases.
+func GetGVKMetadata(ctx context.Context, c client.Client, gvk schema.GroupVersionKind) (*metav1.PartialObjectMetadata, error) {
+	meta := &metav1.PartialObjectMetadata{}
+	meta.SetName(fmt.Sprintf("%s.%s", flect.Pluralize(strings.ToLower(gvk.Kind)), gvk.Group))
+	meta.SetGroupVersionKind(apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+	if err := c.Get(ctx, client.ObjectKeyFromObject(meta), meta); err != nil {
+		return meta, errors.Wrap(err, "failed to retrieve metadata from GVK resource")
+	}
+	return meta, nil
+}
+
 // GetCRDWithContract retrieves a list of CustomResourceDefinitions from using controller-runtime Client,
 // filtering with the `contract` label passed in.
 // Returns the first CRD in the list that matches the GroupVersionKind, otherwise returns an error.
@@ -440,29 +452,6 @@ func GetCRDWithContract(ctx context.Context, c client.Client, gvk schema.GroupVe
 	}
 
 	return nil, errors.Errorf("failed to find a CustomResourceDefinition for %v with contract %q", gvk, contract)
-}
-
-// GetCRDMetadataFromGVK retrieves a CustomResourceDefinition metadata from the API server using client-go's metadata only client.
-//
-// This function is greatly more efficient than GetCRDWithContract and should be preferred in most cases.
-func GetCRDMetadataFromGVK(ctx context.Context, restConfig *rest.Config, gvk schema.GroupVersionKind) (*metav1.PartialObjectMetadata, error) {
-	// Make sure a rest config is available.
-	if restConfig == nil {
-		return nil, errors.Errorf("cannot create a metadata client without a rest config")
-	}
-
-	// Create a metadata-only client.
-	metadataClient, err := metadata.NewForConfig(restConfig)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create metadata only client")
-	}
-
-	// Get the partial metadata CRD.
-	generatedName := fmt.Sprintf("%s.%s", flect.Pluralize(strings.ToLower(gvk.Kind)), gvk.Group)
-
-	return metadataClient.Resource(
-		apiextensionsv1.SchemeGroupVersion.WithResource("customresourcedefinitions"),
-	).Get(ctx, generatedName, metav1.GetOptions{})
 }
 
 // KubeAwareAPIVersions is a sortable slice of kube-like version strings.
@@ -494,11 +483,7 @@ func (o MachinesByCreationTimestamp) Less(i, j int) bool {
 // ClusterToObjectsMapper returns a mapper function that gets a cluster and lists all objects for the object passed in
 // and returns a list of requests.
 // NB: The objects are required to have `clusterv1.ClusterLabelName` applied.
-func ClusterToObjectsMapper(c client.Client, ro runtime.Object, scheme *runtime.Scheme) (handler.MapFunc, error) {
-	if _, ok := ro.(metav1.ListInterface); !ok {
-		return nil, errors.Errorf("expected a metav1.ListInterface, got %T instead", ro)
-	}
-
+func ClusterToObjectsMapper(c client.Client, ro client.ObjectList, scheme *runtime.Scheme) (handler.MapFunc, error) {
 	gvk, err := apiutil.GVKForObject(ro, scheme)
 	if err != nil {
 		return nil, err

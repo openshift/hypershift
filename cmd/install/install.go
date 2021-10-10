@@ -172,6 +172,9 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	serviceMonitor := assets.HyperShiftServiceMonitor{
 		Namespace: operatorNamespace,
 	}.Build()
+	recordingRule := assets.HypershiftRecordingRule{
+		Namespace: operatorNamespace,
+	}.Build()
 
 	var objects []crclient.Object
 
@@ -196,6 +199,7 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	objects = append(objects, prometheusRole)
 	objects = append(objects, prometheusRoleBinding)
 	objects = append(objects, serviceMonitor)
+	objects = append(objects, recordingRule)
 
 	return objects
 }

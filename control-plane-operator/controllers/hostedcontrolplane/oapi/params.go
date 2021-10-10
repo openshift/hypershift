@@ -8,6 +8,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 type OpenShiftAPIServerParams struct {
@@ -22,6 +23,7 @@ type OpenShiftAPIServerParams struct {
 	OpenShiftAPIServerImage                 string `json:"openshiftAPIServerImage"`
 	OAuthAPIServerImage                     string `json:"oauthAPIServerImage"`
 	HaproxyImage                            string `json:"haproxyImage"`
+	AvailabilityProberImage                 string `json:"availabilityProberImage"`
 }
 
 type OAuthDeploymentParams struct {
@@ -31,6 +33,7 @@ type OAuthDeploymentParams struct {
 	CipherSuites            []string
 	ServiceAccountIssuerURL string
 	DeploymentConfig        config.DeploymentConfig
+	AvailabilityProberImage string
 }
 
 func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *OpenShiftAPIServerParams {
@@ -41,6 +44,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		APIServer:               globalConfig.APIServer,
 		ServiceAccountIssuerURL: hcp.Spec.IssuerURL,
 		IngressSubDomain:        config.IngressSubdomain(hcp),
+		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 	}
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
@@ -184,6 +188,7 @@ func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams() *OAuthDeploy
 		DeploymentConfig:        p.OpenShiftOAuthAPIServerDeploymentConfig,
 		MinTLSVersion:           p.MinTLSVersion(),
 		CipherSuites:            p.CipherSuites(),
+		AvailabilityProberImage: p.AvailabilityProberImage,
 	}
 }
 

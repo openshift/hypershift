@@ -1,6 +1,7 @@
 package etcd
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -94,7 +95,9 @@ func ReconcileOperatorRoleBinding(roleBinding *rbacv1.RoleBinding, ownerRef conf
 }
 
 var etcdOperatorDeploymentLabels = map[string]string{
-	"name": "etcd-operator",
+	"name":                        "etcd-operator",
+	"app":                         "etcd-operator",
+	hyperv1.ControlPlaneComponent: "etcd-operator",
 }
 
 func etcdOperatorContainer() *corev1.Container {

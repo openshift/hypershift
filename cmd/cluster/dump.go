@@ -10,21 +10,19 @@ import (
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
+	hyperapi "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/spf13/cobra"
-
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	hyperapi "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type DumpOptions struct {
@@ -46,8 +44,8 @@ func NewDumpCommand() *cobra.Command {
 		ArtifactDir: "",
 	}
 
-	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
-	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 
 	cmd.MarkFlagRequired("artifact-dir")

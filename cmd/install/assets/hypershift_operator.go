@@ -1,13 +1,12 @@
 package assets
 
 import (
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 )
@@ -24,6 +23,9 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: o.Name,
+			Labels: map[string]string{
+				"openshift.io/cluster-monitoring": "true",
+			},
 		},
 	}
 	return namespace
@@ -241,6 +243,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"*"},
 				Verbs:     []string{"*"},
 			},
+			{
+				APIGroups: []string{"monitoring.coreos.com"},
+				Resources: []string{"podmonitors"},
+				Verbs:     []string{"get", "list", "watch", "create", "update"},
+			},
 		},
 	}
 	return role
@@ -449,35 +456,69 @@ type HyperShiftServiceMonitor struct {
 	Namespace *corev1.Namespace
 }
 
-func (o HyperShiftServiceMonitor) Build() *unstructured.Unstructured {
-	serviceMonitorJSON := `
-{
-   "apiVersion": "monitoring.coreos.com/v1",
-   "kind": "ServiceMonitor",
-   "metadata": {
-      "name": "operator"
-   },
-   "spec": {
-      "endpoints": [
-         {
-            "interval": "30s",
-            "port": "metrics"
-         }
-      ],
-      "jobLabel": "component",
-      "selector": {
-         "matchLabels": {
-            "name": "operator"
-         }
-      }
-   }
-}
-`
-	obj, err := runtime.Decode(unstructured.UnstructuredJSONScheme, []byte(serviceMonitorJSON))
-	if err != nil {
-		panic(err)
+func (o HyperShiftServiceMonitor) Build() *prometheusoperatorv1.ServiceMonitor {
+	return &prometheusoperatorv1.ServiceMonitor{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceMonitor",
+			APIVersion: prometheusoperatorv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "operator",
+		},
+		Spec: prometheusoperatorv1.ServiceMonitorSpec{
+			JobLabel: "component",
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "operator",
+				},
+			},
+			Endpoints: []prometheusoperatorv1.Endpoint{
+				{
+					Interval: "30s",
+					Port:     "metrics",
+				},
+			},
+		},
 	}
-	sm := obj.(*unstructured.Unstructured)
-	sm.SetNamespace(o.Namespace.Name)
-	return sm
+}
+
+type HypershiftRecordingRule struct {
+	Namespace *corev1.Namespace
+}
+
+func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
+	rule := &prometheusoperatorv1.PrometheusRule{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PrometheusRule",
+			APIVersion: prometheusoperatorv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: r.Namespace.Name,
+			Name:      "metrics",
+		},
+	}
+
+	componentMemoryUsageMetric := "hypershift:controlplane:component_memory_usage"
+	componentMemoryUsageQuery := `
+sum by (app, namespace) (
+	sum(container_memory_usage_bytes{container!="POD",container!=""}) by (pod, namespace)
+* on (pod) group_left(app)
+	label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
+)
+`
+	rule.Spec.Groups = []prometheusoperatorv1.RuleGroup{
+		{
+			Name:     "control-plane.rules",
+			Interval: "30s",
+			Rules: []prometheusoperatorv1.Rule{
+				{
+					Record: componentMemoryUsageMetric,
+					Expr:   intstr.FromString(componentMemoryUsageQuery),
+				},
+			},
+		},
+	}
+
+	return rule
 }

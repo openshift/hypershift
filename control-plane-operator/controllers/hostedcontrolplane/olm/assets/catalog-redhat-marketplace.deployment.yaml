@@ -11,6 +11,8 @@ spec:
     metadata:
       labels:
         olm.catalogSource: redhat-marketplace
+        app: redhat-marketplace-catalog
+        hypershift.openshift.io/control-plane-component: redhat-marketplace-catalog
     spec:
       nodeSelector:
         kubernetes.io/os: linux

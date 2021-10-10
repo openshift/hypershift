@@ -24,50 +24,51 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/types"
-
 	"github.com/blang/semver"
+	"github.com/go-logr/logr"
 	capiibmv1 "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-
-	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
-	routev1 "github.com/openshift/api/route/v1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiv1alpha4 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
 )
 
 const (
@@ -78,8 +79,7 @@ const (
 	// TODO (alberto): Eventually these images will be mirrored and pulled from an internal registry.
 	imageClusterAutoscaler = "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0"
 	// This comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
-	// To pick https://github.com/kubernetes-sigs/cluster-api/pull/5110
-	imageCAPI = "gcr.io/k8s-staging-cluster-api/cluster-api-controller@sha256:9288d085f9fa52bb7186e0de2971945cd192d3a1e849135f7381e4f08fe28442"
+	imageCAPI = "us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0"
 	// This comes from https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
 	imageCAPA = "us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v0.7.0"
 )
@@ -131,6 +131,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &capiv1.Cluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &appsv1.Deployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
+		Watches(&source.Kind{Type: &prometheusoperatorv1.PodMonitor{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
@@ -403,7 +404,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the hosted cluster namespace
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneNamespace, NoopReconcile)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
+		if controlPlaneNamespace.Labels == nil {
+			controlPlaneNamespace.Labels = make(map[string]string)
+		}
+		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = ""
+		return nil
+	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
 	}
@@ -896,7 +903,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, hcluster)
+	err = r.reconcileControlPlaneOperator(ctx, hcluster, hcp)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -1157,7 +1164,7 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -1226,6 +1233,27 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
+	}
+
+	// Reconcile operator PodMonitor
+	podMonitor := controlplaneoperator.PodMonitor(controlPlaneNamespace.Name, hcluster.Name)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, podMonitor, func() error {
+		podMonitor.Spec.Selector = *controlPlaneOperatorDeployment.Spec.Selector
+		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{Port: "metrics"}}
+		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace.Name}}
+		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
+			APIVersion: hyperv1.GroupVersion.String(),
+			Kind:       "HostedControlPlane",
+			Name:       hostedControlPlane.Name,
+			UID:        hostedControlPlane.UID,
+		}})
+		if podMonitor.Annotations == nil {
+			podMonitor.Annotations = map[string]string{}
+		}
+		podMonitor.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator pod monitor: %w", err)
 	}
 
 	return nil
@@ -1466,7 +1494,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
-		ignitionServerLabels := map[string]string{"app": ignitionserver.ResourceName}
+		ignitionServerLabels := map[string]string{
+			"app":                         ignitionserver.ResourceName,
+			hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+		}
 		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Replicas: k8sutilspointer.Int32Ptr(1),
@@ -1649,7 +1680,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 		}
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = controllerutil.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.HypershiftOperatorImage)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -1694,7 +1725,9 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					"name": "control-plane-operator",
+					"name":                        "control-plane-operator",
+					"app":                         "control-plane-operator",
+					hyperv1.ControlPlaneComponent: "control-plane-operator",
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -1719,7 +1752,8 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							RunAsUser: k8sutilspointer.Int64Ptr(1000),
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
-						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator"},
+						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator", "--metrics-addr", "0.0.0.0:8080"},
+						Ports:   []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
 					},
 				},
 			},
@@ -1882,7 +1916,7 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 
 	// Set the values for upper level controller
 	awsCluster.Status.Ready = true
-	awsCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+	awsCluster.Spec.ControlPlaneEndpoint = capiv1alpha4.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
@@ -1897,7 +1931,7 @@ func reconcileIBMCloudCluster(ibmCluster *capiibmv1.IBMVPCCluster, hcluster *hyp
 
 	// Set the values for upper level controller
 	ibmCluster.Status.Ready = true
-	ibmCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+	ibmCluster.Spec.ControlPlaneEndpoint = capiv1alpha4.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
@@ -1938,7 +1972,11 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, capiManagerImage string) error {
 	defaultMode := int32(420)
-	capiManagerLabels := map[string]string{"name": "cluster-api"}
+	capiManagerLabels := map[string]string{
+		"name":                        "cluster-api",
+		"app":                         "cluster-api",
+		hyperv1.ControlPlaneComponent: "cluster-api",
+	}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -2117,7 +2155,11 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 
 func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount) error {
 	defaultMode := int32(420)
-	capaLabels := map[string]string{"control-plane": "capa-controller-manager"}
+	capaLabels := map[string]string{
+		"control-plane":               "capa-controller-manager",
+		"app":                         "capa-controller-manager",
+		hyperv1.ControlPlaneComponent: "capa-controller-manager",
+	}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -2302,7 +2344,7 @@ func reconcileCAPIAWSProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -2349,7 +2391,8 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					"app": "cluster-autoscaler",
+					"app":                         "cluster-autoscaler",
+					hyperv1.ControlPlaneComponent: "cluster-autoscaler",
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -2412,6 +2455,8 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 			},
 		},
 	}
+
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)

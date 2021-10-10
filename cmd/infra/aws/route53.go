@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
@@ -228,7 +229,7 @@ func retryRoute53WithBackoff(ctx context.Context, fn func() error) error {
 		Factor:   1.5,
 	}
 	retriable := func(e error) bool {
-		if !isErrorRetryable(e) {
+		if !awsutil.IsErrorRetryable(e) {
 			return false
 		}
 		select {

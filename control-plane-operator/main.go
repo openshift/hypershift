@@ -7,6 +7,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -140,16 +141,21 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using operator image", "operator-image", hostedClusterConfigOperatorImage)
 
+		// Use the control-plane-operator's image for the socks5 proxy image as well
+		socks5ProxyImage := hostedClusterConfigOperatorImage
+
 		releaseProvider := &releaseinfo.StaticProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.RegistryClientProvider{},
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 			ComponentImages: map[string]string{
+				util.AvailabilityProberImageName: hostedClusterConfigOperatorImage,
 				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
 				"etcd-operator":                  etcdOperatorImage,
 				"konnectivity-server":            konnectivityServerImage,
 				"konnectivity-agent":             konnectivityAgentImage,
+				"socks5-proxy":                   socks5ProxyImage,
 			},
 		}
 

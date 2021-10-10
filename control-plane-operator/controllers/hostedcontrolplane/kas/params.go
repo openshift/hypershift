@@ -57,6 +57,10 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
+func kubeAPIServerPort() int32 {
+	return config.DefaultAPIServerPort
+}
+
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
@@ -68,7 +72,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ExternalPort:         hcp.Status.ControlPlaneEndpoint.Port,
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
-		APIServerPort:        config.DefaultAPIServerPort,
+		APIServerPort:        kubeAPIServerPort(),
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
 		ServiceCIDR:          hcp.Spec.ServiceCIDR,
 		PodCIDR:              hcp.Spec.PodCIDR,

@@ -3,27 +3,35 @@ package olm
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
-var packageServerLabels = map[string]string{"app": "packageserver"}
+var packageServerLabels = map[string]string{
+	"app":                         "packageserver",
+	hyperv1.ControlPlaneComponent: "packageserver",
+}
 
 type OperatorLifecycleManagerParams struct {
-	CLIImage              string
-	OLMImage              string
-	OperatorRegistryImage string
-	ReleaseVersion        string
-	DeploymentConfig      config.DeploymentConfig
-	PackageServerConfig   config.DeploymentConfig
+	CLIImage                string
+	OLMImage                string
+	ProxyImage              string
+	OperatorRegistryImage   string
+	ReleaseVersion          string
+	DeploymentConfig        config.DeploymentConfig
+	PackageServerConfig     config.DeploymentConfig
+	AvailabilityProberImage string
 	config.OwnerRef
 }
 
 func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, releaseVersion string) *OperatorLifecycleManagerParams {
 	params := &OperatorLifecycleManagerParams{
-		CLIImage:              images["cli"],
-		OLMImage:              images["operator-lifecycle-manager"],
-		OperatorRegistryImage: images["operator-registry"],
-		ReleaseVersion:        releaseVersion,
-		OwnerRef:              config.OwnerRefFrom(hcp),
+		CLIImage:                images["cli"],
+		OLMImage:                images["operator-lifecycle-manager"],
+		ProxyImage:              images["socks5-proxy"],
+		OperatorRegistryImage:   images["operator-registry"],
+		ReleaseVersion:          releaseVersion,
+		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		OwnerRef:                config.OwnerRefFrom(hcp),
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		Replicas: 1,

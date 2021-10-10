@@ -33,10 +33,12 @@ var (
 		},
 	}
 	konnectivityServerLabels = map[string]string{
-		"app": "konnectivity-server",
+		"app":                         "konnectivity-server",
+		hyperv1.ControlPlaneComponent: "konnectivity-server",
 	}
 	konnectivityAgentLabels = map[string]string{
-		"app": "konnectivity-agent",
+		"app":                         "konnectivity-agent",
+		hyperv1.ControlPlaneComponent: "konnectivity-agent",
 	}
 )
 

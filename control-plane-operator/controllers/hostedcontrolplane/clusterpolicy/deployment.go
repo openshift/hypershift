@@ -3,6 +3,7 @@ package clusterpolicy
 import (
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,11 +24,12 @@ var (
 		},
 	}
 	clusterPolicyControllerLabels = map[string]string{
-		"app": "cluster-policy-controller",
+		"app":                         "cluster-policy-controller",
+		hyperv1.ControlPlaneComponent: "cluster-policy-controller",
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string) error {
 	maxSurge := intstr.FromInt(1)
 	maxUnavailable := intstr.FromInt(0)
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
@@ -48,6 +50,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		util.BuildVolume(cpcVolumeKubeconfig(), buildCPCVolumeKubeconfig),
 	}
 	deploymentConfig.ApplyTo(deployment)
+
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 

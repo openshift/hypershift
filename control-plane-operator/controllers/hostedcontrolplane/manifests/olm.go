@@ -107,7 +107,7 @@ func RedHatMarketplaceOperatorsDeployment(ns string) *appsv1.Deployment {
 func RedHatMarketplaceOperatorsService(ns string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "redhat-marketplace-operators",
+			Name:      "redhat-marketplace",
 			Namespace: ns,
 		},
 	}
