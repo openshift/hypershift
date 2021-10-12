@@ -109,6 +109,8 @@ type HostedClusterReconciler struct {
 	Clock clock.Clock
 
 	tracer trace.Tracer
+
+	EnableOCPClusterMonitoring bool
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -409,6 +411,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			controlPlaneNamespace.Labels = make(map[string]string)
 		}
 		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = ""
+		if r.EnableOCPClusterMonitoring {
+			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
+		}
 		return nil
 	})
 	if err != nil {
@@ -832,6 +837,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// TODO(alberto): for platform None implement back a "pass through" infra CR similar to externalInfraCluster.
 	}
 
+	// Reconcile cluster prometheus RBAC resources if enabled
+	if r.EnableOCPClusterMonitoring {
+		if err := reconcileClusterPrometheusRBAC(ctx, r.Client, hcp.Namespace); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile RBAC for OCP cluster prometheus: %w", err)
+		}
+	}
+
 	// Reconcile the CAPI Cluster resource
 	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, capiCluster, func() error {
@@ -1239,7 +1251,10 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	podMonitor := controlplaneoperator.PodMonitor(controlPlaneNamespace.Name, hcluster.Name)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, podMonitor, func() error {
 		podMonitor.Spec.Selector = *controlPlaneOperatorDeployment.Spec.Selector
-		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{Port: "metrics"}}
+		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
+			Interval: "15s",
+			Port:     "metrics",
+		}}
 		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace.Name}}
 		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
 			APIVersion: hyperv1.GroupVersion.String(),
@@ -2783,5 +2798,44 @@ func reconcileMachineConfigServerService(svc *corev1.Service) error {
 	svc.Spec.Ports[0] = portSpec
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.ClusterIP = corev1.ClusterIPNone
+	return nil
+}
+
+func reconcileClusterPrometheusRBAC(ctx context.Context, c client.Client, namespace string) error {
+	role := &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "openshift-prometheus"}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, role, func() error {
+		role.Rules = []rbacv1.PolicyRule{{
+			APIGroups: []string{""},
+			Resources: []string{
+				"services",
+				"endpoints",
+				"pods",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		}}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to ensure the %s role: %w", role.Name, err)
+	}
+
+	binding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "openshift-prometheus"}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, binding, func() error {
+		binding.RoleRef.APIGroup = "rbac.authorization.k8s.io"
+		binding.RoleRef.Kind = "Role"
+		binding.RoleRef.Name = role.Name
+		binding.Subjects = []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      "prometheus-k8s",
+			Namespace: "openshift-monitoring",
+		}}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to ensure the %s rolebinding: %w", binding.Name, err)
+	}
+
 	return nil
 }

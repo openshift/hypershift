@@ -62,12 +62,13 @@ func main() {
 }
 
 type StartOptions struct {
-	Namespace             string
-	DeploymentName        string
-	MetricsAddr           string
-	EnableLeaderElection  bool
-	IgnitionServerImage   string
-	OpenTelemetryEndpoint string
+	Namespace                  string
+	DeploymentName             string
+	MetricsAddr                string
+	EnableLeaderElection       bool
+	IgnitionServerImage        string
+	OpenTelemetryEndpoint      string
+	EnableOCPClusterMonitoring bool
 }
 
 func NewStartCommand() *cobra.Command {
@@ -95,6 +96,7 @@ func NewStartCommand() *cobra.Command {
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
+	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -176,6 +178,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},
+		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}

@@ -43,6 +43,7 @@ type Options struct {
 	Development                bool
 	Render                     bool
 	ExcludeEtcdManifests       bool
+	EnableOCPClusterMonitoring bool
 }
 
 func NewCommand() *cobra.Command {
@@ -53,12 +54,16 @@ func NewCommand() *cobra.Command {
 	}
 
 	var opts Options
+	if os.Getenv("CI") == "true" {
+		opts.EnableOCPClusterMonitoring = true
+	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.Flags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 	cmd.Flags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
+	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -136,7 +141,8 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	etcdPriorityClass := assets.HyperShiftEtcdPriorityClass{}.Build()
 	apiCriticalPriorityClass := assets.HyperShiftAPICriticalPriorityClass{}.Build()
 	operatorNamespace := assets.HyperShiftNamespace{
-		Name: opts.Namespace,
+		Name:                       opts.Namespace,
+		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 	}.Build()
 	operatorServiceAccount := assets.HyperShiftOperatorServiceAccount{
 		Namespace: operatorNamespace,
@@ -154,10 +160,11 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		Role:           operatorRole,
 	}.Build()
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
-		Namespace:      operatorNamespace,
-		OperatorImage:  opts.HyperShiftImage,
-		ServiceAccount: operatorServiceAccount,
-		Replicas:       opts.HyperShiftOperatorReplicas,
+		Namespace:                  operatorNamespace,
+		OperatorImage:              opts.HyperShiftImage,
+		ServiceAccount:             operatorServiceAccount,
+		Replicas:                   opts.HyperShiftOperatorReplicas,
+		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
@@ -166,8 +173,9 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		Namespace: operatorNamespace,
 	}.Build()
 	prometheusRoleBinding := assets.HyperShiftOperatorPrometheusRoleBinding{
-		Namespace: operatorNamespace,
-		Role:      prometheusRole,
+		Namespace:                  operatorNamespace,
+		Role:                       prometheusRole,
+		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 	}.Build()
 	serviceMonitor := assets.HyperShiftServiceMonitor{
 		Namespace: operatorNamespace,
