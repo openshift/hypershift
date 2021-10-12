@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openshift/api/operator/v1alpha1"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/cluster-api/util/annotations"
 
 	"github.com/go-logr/logr"
@@ -2202,7 +2203,7 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	route := manifests.OIDCRoute(hcp.GetNamespace())
 	r.Log.Info("Updating OIDC route")
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
 		rootCASecret := manifests.RootCASecret(hcp.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
 			return err
@@ -2211,23 +2212,26 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 		if err != nil {
 			return fmt.Errorf("unable to parse issuer URL: %s", hcp.Spec.IssuerURL)
 		}
+
+		if route.CreationTimestamp.IsZero() {
+			route.Spec.Host = u.Host
+		}
 		route.OwnerReferences = ensureHCPOwnerRef(hcp, route.OwnerReferences)
-		route.Spec = routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: manifests.KubeAPIServerServiceName,
-			},
-			Host: u.Host,
-			TLS: &routev1.TLSConfig{
-				// Reencrypt is used here because we need to probe for the
-				// CA thumbprint before the KAS on the HCP is running
-				Termination:                   routev1.TLSTerminationReencrypt,
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
-				DestinationCACertificate:      string(rootCASecret.Data["ca.crt"]),
-			},
+		route.Spec.To = routev1.RouteTargetReference{
+			Kind:   "Service",
+			Name:   manifests.KubeAPIServerServiceName,
+			Weight: pointer.Int32Ptr(100),
+		}
+		route.Spec.TLS = &routev1.TLSConfig{
+			// Reencrypt is used here because we need to probe for the
+			// CA thumbprint before the KAS on the HCP is running
+			Termination:                   routev1.TLSTerminationReencrypt,
+			InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
+			DestinationCACertificate:      string(rootCASecret.Data["ca.crt"]),
 		}
 		return nil
 	})
+	r.Log.Info("reconciled oidc route", "result", result)
 	return err
 }
 
