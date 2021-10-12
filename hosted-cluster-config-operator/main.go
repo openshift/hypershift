@@ -31,7 +31,7 @@ const (
 )
 
 func main() {
-	log.SetLogger(zap.New(zap.UseDevMode(true)))
+	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
 	setupLog := ctrl.Log.WithName("setup")
 	if err := newHostedClusterConfigOperatorCommand().Execute(); err != nil {
 		setupLog.Error(err, "Operator failed")
