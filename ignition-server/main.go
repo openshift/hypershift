@@ -99,7 +99,7 @@ func setUpPayloadStoreReconciler(ctx context.Context) (ctrl.Manager, error) {
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: hyperapi.Scheme,
 		Port:   9443,

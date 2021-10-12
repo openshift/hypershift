@@ -71,7 +71,7 @@ type StartOptions struct {
 }
 
 func NewStartCommand() *cobra.Command {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
 
 	cmd := &cobra.Command{
 		Use:   "run",
