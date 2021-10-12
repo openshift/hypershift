@@ -19,6 +19,14 @@ import (
 //go:embed etcd/*
 var crds embed.FS
 
+//go:embed recordingrules/*.promql
+var recordingRules embed.FS
+
+var recordingRulesByName = map[string]string{
+	"hypershift:controlplane:component_memory_usage":      "recordingrules/controlplane_memory_usage.promql",
+	"hypershift:controlplane:component_cpu_usage_seconds": "recordingrules/controlplane_cpu_usage.promql",
+}
+
 const capiLabel = "cluster.x-k8s.io/v1beta1"
 
 // capiResources specifies which CRDs should get labelled with capiLabel

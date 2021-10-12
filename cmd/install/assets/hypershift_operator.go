@@ -499,25 +499,19 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 		},
 	}
 
-	componentMemoryUsageMetric := "hypershift:controlplane:component_memory_usage"
-	componentMemoryUsageQuery := `
-sum by (app, namespace) (
-	sum(container_memory_usage_bytes{container!="POD",container!=""}) by (pod, namespace)
-* on (pod) group_left(app)
-	label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
-)
-`
 	rule.Spec.Groups = []prometheusoperatorv1.RuleGroup{
 		{
 			Name:     "control-plane.rules",
 			Interval: "30s",
-			Rules: []prometheusoperatorv1.Rule{
-				{
-					Record: componentMemoryUsageMetric,
-					Expr:   intstr.FromString(componentMemoryUsageQuery),
-				},
-			},
+			Rules:    []prometheusoperatorv1.Rule{},
 		},
+	}
+	for name, file := range recordingRulesByName {
+		promql := getContents(recordingRules, file)
+		rule.Spec.Groups[0].Rules = append(rule.Spec.Groups[0].Rules, prometheusoperatorv1.Rule{
+			Record: name,
+			Expr:   intstr.FromString(string(promql)),
+		})
 	}
 
 	return rule
