@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+
+if ! command -v go &>/dev/null; then
+    echo "Ensure go command is installed"
+    exit 1
+fi
+
+# Create fake GOPATH
+export GO111MODULE="on"
+GOROOT="$(go env GOROOT)"
+export GOROOT
+GOBIN="${GOPATH}/bin"
+export GOBIN
+go install github.com/ahmetb/gen-crd-api-reference-docs@v0.2.0
+
+genversion() {
+	outputdir="$1"
+	echo "+++ Generating reference docs..."
+	"${GOBIN}/gen-crd-api-reference-docs" \
+		-config "${REPO_ROOT}/hack/gen-docs/config.json" \
+		-template-dir "${REPO_ROOT}/hack/gen-docs/templates" \
+		-api-dir "./api/v1alpha1" \
+		-out-file "${REPO_ROOT}/${outputdir}/api-docs.md" \
+		"$@"
+	rm -rf ${GOBIN}/gen-crd-api-reference-docs
+}
+
+genversion "docs"
+echo "+++ Generated reference documentation!"

@@ -157,3 +157,7 @@ docker-push:
 .PHONY: run-local
 run-local:
 	bin/hypershift-operator run
+
+.PHONY: gen-api-docs
+gen-api-docs:
+	@./hack/gen-docs/generate
