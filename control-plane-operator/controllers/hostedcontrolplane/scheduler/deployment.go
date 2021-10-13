@@ -34,34 +34,20 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	ownerRef.ApplyTo(deployment)
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: schedulerLabels,
-		},
-		Strategy: appsv1.DeploymentStrategy{
-			Type: appsv1.RollingUpdateDeploymentStrategyType,
-			RollingUpdate: &appsv1.RollingUpdateDeployment{
-				MaxSurge:       &maxSurge,
-				MaxUnavailable: &maxUnavailable,
-			},
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: schedulerLabels,
-			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				Containers: []corev1.Container{
-					util.BuildContainer(schedulerContainerMain(), buildSchedulerContainerMain(image, deployment.Namespace, featureGates, policy)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(schedulerVolumeConfig(), buildSchedulerVolumeConfig),
-					util.BuildVolume(schedulerVolumeCertWorkDir(), buildSchedulerVolumeCertWorkDir),
-					util.BuildVolume(schedulerVolumeKubeconfig(), buildSchedulerVolumeKubeconfig),
-				},
-			},
-		},
+	deployment.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: schedulerLabels,
 	}
+	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
+	deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
+		MaxSurge:       &maxSurge,
+		MaxUnavailable: &maxUnavailable,
+	}
+	deployment.Spec.Template.ObjectMeta.Labels = schedulerLabels
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, schedulerContainerMain(), buildSchedulerContainerMain(image, deployment.Namespace, featureGates, policy))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, schedulerVolumeConfig(), buildSchedulerVolumeConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, schedulerVolumeCertWorkDir(), buildSchedulerVolumeCertWorkDir)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, schedulerVolumeKubeconfig(), buildSchedulerVolumeKubeconfig)
 	config.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
@@ -98,7 +84,7 @@ func buildSchedulerContainerMain(image, namespace string, featureGates []string,
 			c.Args = append(c.Args, fmt.Sprintf("--policy-config-map=%s", policy.Name))
 			c.Args = append(c.Args, fmt.Sprintf("--policy-config-namespace=%s", namespace))
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -109,7 +95,9 @@ func schedulerVolumeConfig() *corev1.Volume {
 }
 
 func buildSchedulerVolumeConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
 	v.ConfigMap.Name = manifests.SchedulerConfig("").Name
 }
 
@@ -130,7 +118,8 @@ func schedulerVolumeKubeconfig() *corev1.Volume {
 }
 
 func buildSchedulerVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }

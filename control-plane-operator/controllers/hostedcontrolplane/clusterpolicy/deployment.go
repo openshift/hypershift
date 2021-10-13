@@ -41,14 +41,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MatchLabels: clusterPolicyControllerLabels,
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = clusterPolicyControllerLabels
-	deployment.Spec.Template.Spec.Containers = []corev1.Container{
-		util.BuildContainer(cpcContainerMain(), buildOCMContainerMain(image)),
-	}
-	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
-		util.BuildVolume(cpcVolumeConfig(), buildCPCVolumeConfig),
-		util.BuildVolume(cpcVolumeServingCert(), buildCPCVolumeServingCert),
-		util.BuildVolume(cpcVolumeKubeconfig(), buildCPCVolumeKubeconfig),
-	}
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, cpcContainerMain(), buildOCMContainerMain(image))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, cpcVolumeConfig(), buildCPCVolumeConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, cpcVolumeServingCert(), buildCPCVolumeServingCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, cpcVolumeKubeconfig(), buildCPCVolumeKubeconfig)
+
 	deploymentConfig.ApplyTo(deployment)
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
@@ -73,7 +70,7 @@ func buildOCMContainerMain(image string) func(*corev1.Container) {
 			path.Join(volumeMounts.Path(c.Name, cpcVolumeKubeconfig().Name), kas.KubeconfigKey),
 			"--namespace=openshift-kube-controller-manager",
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -84,7 +81,9 @@ func cpcVolumeConfig() *corev1.Volume {
 }
 
 func buildCPCVolumeConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
 	v.ConfigMap.Name = manifests.ClusterPolicyControllerConfig("").Name
 }
 
@@ -95,7 +94,9 @@ func cpcVolumeKubeconfig() *corev1.Volume {
 }
 
 func buildCPCVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 
@@ -106,6 +107,8 @@ func cpcVolumeServingCert() *corev1.Volume {
 }
 
 func buildCPCVolumeServingCert(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.ClusterPolicyControllerCertSecret("").Name
 }

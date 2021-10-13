@@ -48,26 +48,15 @@ const (
 
 func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
 	ownerRef.ApplyTo(deployment)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityServerLabels,
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityServerLabels,
-			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(image)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts),
-					util.BuildVolume(konnectivityVolumeClusterCerts(), buildKonnectivityVolumeClusterCerts),
-				},
-			},
-		},
+	deployment.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: konnectivityServerLabels,
 	}
+	deployment.Spec.Template.ObjectMeta.Labels = konnectivityServerLabels
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, konnectivityServerContainer(), buildKonnectivityServerContainer(image))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, konnectivityVolumeClusterCerts(), buildKonnectivityVolumeClusterCerts)
+
 	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
@@ -111,7 +100,7 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			"--mode=http-connect",
 			"--proxy-strategies=destHost,defaultRoute",
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -122,9 +111,10 @@ func konnectivityVolumeServerCerts() *corev1.Volume {
 }
 
 func buildKonnectivityVolumeServerCerts(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KonnectivityServerSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KonnectivityServerSecret("").Name
 }
 
 func konnectivityVolumeClusterCerts() *corev1.Volume {
@@ -134,9 +124,10 @@ func konnectivityVolumeClusterCerts() *corev1.Volume {
 }
 
 func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KonnectivityClusterSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KonnectivityClusterSecret("").Name
 }
 
 const (
@@ -252,29 +243,17 @@ func ReconcileWorkerAgentDaemonSet(cm *corev1.ConfigMap, ownerRef config.OwnerRe
 }
 
 func reconcileWorkerAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32) error {
-	daemonset.Spec = appsv1.DaemonSetSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels,
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels,
-			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				SecurityContext: &corev1.PodSecurityContext{
-					RunAsUser: pointer.Int64Ptr(1000),
-				},
-				HostNetwork: true,
-				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
-				},
-			},
-		},
+	daemonset.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: konnectivityAgentLabels,
 	}
+	daemonset.Spec.Template.Labels = konnectivityAgentLabels
+	daemonset.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	daemonset.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+		RunAsUser: pointer.Int64Ptr(1000),
+	}
+	daemonset.Spec.Template.Spec.HostNetwork = true
+	daemonset.Spec.Template.Spec.Containers = util.ApplyContainer(daemonset.Spec.Template.Spec.Containers, konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port))
+	daemonset.Spec.Template.Spec.Volumes = util.ApplyVolume(daemonset.Spec.Template.Spec.Volumes, konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts)
 	deploymentConfig.ApplyToDaemonSet(daemonset)
 	return nil
 }
@@ -292,9 +271,10 @@ func konnectivityVolumeAgentCerts() *corev1.Volume {
 }
 
 func buildKonnectivityVolumeWorkerAgentCerts(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KonnectivityAgentSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KonnectivityAgentSecret("").Name
 }
 
 func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(c *corev1.Container) {
@@ -323,31 +303,20 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(
 			fmt.Sprint(healthPort),
 			"--agent-identifiers=default-route=true",
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
 func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, ips []string) error {
 	ownerRef.ApplyTo(deployment)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels,
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels,
-			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
-				},
-			},
-		},
+	deployment.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: konnectivityAgentLabels,
 	}
+	deployment.Spec.Template.Labels = konnectivityAgentLabels
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts)
+
 	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
@@ -387,6 +356,6 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 			"--agent-identifiers",
 			agentIDs.String(),
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }

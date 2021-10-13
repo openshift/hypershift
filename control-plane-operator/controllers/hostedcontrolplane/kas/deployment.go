@@ -119,49 +119,33 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			MaxUnavailable: &maxUnavailable,
 		},
 	}
-	deployment.Spec.Template = corev1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: kasLabels,
-			Annotations: map[string]string{
-				configHashAnnotation: configHash,
-			},
-		},
-		Spec: corev1.PodSpec{
-			DNSPolicy:                     corev1.DNSClusterFirst,
-			RestartPolicy:                 corev1.RestartPolicyAlways,
-			SecurityContext:               &corev1.PodSecurityContext{},
-			TerminationGracePeriodSeconds: pointer.Int64Ptr(30),
-			SchedulerName:                 corev1.DefaultSchedulerName,
-			AutomountServiceAccountToken:  pointer.BoolPtr(false),
-			InitContainers: []corev1.Container{
-				util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator)),
-			},
-			Containers: []corev1.Container{
-				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
-				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube)),
-			},
-			Volumes: []corev1.Volume{
-				util.BuildVolume(kasVolumeBootstrapManifests(), buildKASVolumeBootstrapManifests),
-				util.BuildVolume(kasVolumeLocalhostKubeconfig(), buildKASVolumeLocalhostKubeconfig),
-				util.BuildVolume(kasVolumeWorkLogs(), buildKASVolumeWorkLogs),
-				util.BuildVolume(kasVolumeConfig(), buildKASVolumeConfig),
-				util.BuildVolume(kasVolumeAuditConfig(), buildKASVolumeAuditConfig),
-				util.BuildVolume(kasVolumeRootCA(), buildKASVolumeRootCA),
-				util.BuildVolume(kasVolumeServerCert(), buildKASVolumeServerCert),
-				util.BuildVolume(kasVolumeAggregatorCert(), buildKASVolumeAggregatorCert),
-				util.BuildVolume(kasVolumeAggregatorCA(), buildKASVolumeAggregatorCA),
-				util.BuildVolume(kasVolumeServiceAccountKey(), buildKASVolumeServiceAccountKey),
-				util.BuildVolume(kasVolumeEtcdClientCert(), buildKASVolumeEtcdClientCert),
-				util.BuildVolume(kasVolumeOauthMetadata(), buildKASVolumeOauthMetadata),
-				util.BuildVolume(kasVolumeAuthTokenWebhookConfig(), buildKASVolumeAuthTokenWebhookConfig),
-				util.BuildVolume(kasVolumeClientCA(), buildKASVolumeClientCA),
-				util.BuildVolume(kasVolumeKubeletClientCert(), buildKASVolumeKubeletClientCert),
-				util.BuildVolume(kasVolumeKubeletClientCA(), buildKASVolumeKubeletClientCA),
-				util.BuildVolume(kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert),
-				util.BuildVolume(kasVolumeEgressSelectorConfig(), buildKASVolumeEgressSelectorConfig),
-			},
-		},
+	deployment.Spec.Template.Labels = kasLabels
+	deployment.Spec.Template.Annotations = map[string]string{
+		configHashAnnotation: configHash,
 	}
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.InitContainers = util.ApplyContainer(deployment.Spec.Template.Spec.InitContainers, kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator))
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI))
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, kasContainerMain(), buildKASContainerMain(images.HyperKube))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeBootstrapManifests(), buildKASVolumeBootstrapManifests)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeLocalhostKubeconfig(), buildKASVolumeLocalhostKubeconfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeWorkLogs(), buildKASVolumeWorkLogs)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeConfig(), buildKASVolumeConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeAuditConfig(), buildKASVolumeAuditConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeRootCA(), buildKASVolumeRootCA)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeServerCert(), buildKASVolumeServerCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeAggregatorCert(), buildKASVolumeAggregatorCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeAggregatorCA(), buildKASVolumeAggregatorCA)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeServiceAccountKey(), buildKASVolumeServiceAccountKey)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeEtcdClientCert(), buildKASVolumeEtcdClientCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeOauthMetadata(), buildKASVolumeOauthMetadata)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeAuthTokenWebhookConfig(), buildKASVolumeAuthTokenWebhookConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeClientCA(), buildKASVolumeClientCA)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeKubeletClientCert(), buildKASVolumeKubeletClientCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeKubeletClientCA(), buildKASVolumeKubeletClientCA)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kasVolumeEgressSelectorConfig(), buildKASVolumeEgressSelectorConfig)
+
 	if len(images.Portieris) > 0 {
 		applyPortieriesConfig(&deployment.Spec.Template.Spec, images.Portieris)
 	}
@@ -223,7 +207,7 @@ func buildKASContainerBootstrap(image string) func(c *corev1.Container) {
 			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeBootstrapManifests().Name)),
 		}
 		c.Image = image
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -252,7 +236,7 @@ func buildKASContainerApplyBootstrap(image string) func(c *corev1.Container) {
 				Value: path.Join(volumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
 			},
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -265,8 +249,6 @@ func kasContainerMain() *corev1.Container {
 func buildKASContainerMain(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"hyperkube",
@@ -277,7 +259,7 @@ func buildKASContainerMain(image string) func(c *corev1.Container) {
 			"-v5",
 		}
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -300,7 +282,6 @@ func buildKASVolumeLocalhostKubeconfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.KASLocalhostKubeconfigSecret("").Name
 }
 
@@ -321,7 +302,6 @@ func buildKASVolumeConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.KASConfig("").Name
 }
 func kasVolumeAuditConfig() *corev1.Volume {
@@ -333,7 +313,6 @@ func buildKASVolumeAuditConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.KASAuditConfig("").Name
 }
 func kasVolumeRootCA() *corev1.Volume {
@@ -345,7 +324,6 @@ func buildKASVolumeRootCA(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
@@ -359,7 +337,6 @@ func buildKASVolumeClientCA(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
 }
 
@@ -372,7 +349,6 @@ func buildKASVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.KASServerCertSecret("").Name
 }
 
@@ -385,7 +361,6 @@ func buildKASVolumeKubeletClientCA(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
 }
 
@@ -398,7 +373,6 @@ func buildKASVolumeKonnectivityClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
 }
 
@@ -411,7 +385,6 @@ func buildKASVolumeAggregatorCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.KASAggregatorCertSecret("").Name
 }
 
@@ -424,7 +397,6 @@ func buildKASVolumeAggregatorCA(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
 }
 
@@ -437,7 +409,6 @@ func buildKASVolumeEgressSelectorConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.KASEgressSelectorConfig("").Name
 }
 
@@ -450,7 +421,6 @@ func buildKASVolumeServiceAccountKey(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.ServiceAccountSigningKeySecret("").Name
 }
 
@@ -464,7 +434,6 @@ func buildKASVolumeKubeletClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.KASKubeletClientCertSecret("").Name
 }
 
@@ -477,7 +446,6 @@ func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
 }
 
@@ -490,7 +458,6 @@ func buildKASVolumeOauthMetadata(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.KASOAuthMetadata("").Name
 }
 
@@ -503,7 +470,6 @@ func buildKASVolumeAuthTokenWebhookConfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.KASAuthenticationTokenWebhookConfigSecret("").Name
 }
 
@@ -518,14 +484,13 @@ func buildKASVolumeCloudConfig(configMapName string) func(v *corev1.Volume) {
 		if v.ConfigMap == nil {
 			v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 		}
-		v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 		v.ConfigMap.Name = configMapName
 	}
 }
 
 func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec *corev1.PodSpec) {
 	if configRef != nil && configRef.Name != "" {
-		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeCloudConfig(), buildKASVolumeCloudConfig(configRef.Name)))
+		podSpec.Volumes = util.ApplyVolume(podSpec.Volumes, kasVolumeCloudConfig(), buildKASVolumeCloudConfig(configRef.Name))
 		var container *corev1.Container
 		for i, c := range podSpec.Containers {
 			if c.Name == kasContainerMain().Name {
@@ -536,7 +501,7 @@ func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec
 		if container == nil {
 			panic("main kube apiserver container not found in spec")
 		}
-		container.VolumeMounts = append(container.VolumeMounts,
+		container.VolumeMounts = util.ApplyVolumeMount(container.VolumeMounts,
 			cloudProviderConfigVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 	}
 }
@@ -583,15 +548,13 @@ func applyNamedCertificateMounts(certs []configv1.APIServerNamedServingCert, spe
 	}
 	for i, namedCert := range certs {
 		volumeName := fmt.Sprintf("named-cert-%d", i+1)
-		spec.Volumes = append(spec.Volumes, corev1.Volume{
-			Name: volumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: namedCert.ServingCertificate.Name,
-				},
-			},
+		spec.Volumes = util.ApplyVolume(spec.Volumes, &corev1.Volume{Name: volumeName}, func(volume *corev1.Volume) {
+			if volume.Secret == nil {
+				volume.Secret = &corev1.SecretVolumeSource{}
+			}
+			volume.Secret.SecretName = namedCert.ServingCertificate.Name
 		})
-		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+		container.VolumeMounts = util.ApplyVolumeMount(container.VolumeMounts, corev1.VolumeMount{
 			Name:      volumeName,
 			MountPath: fmt.Sprintf("%s-%d", kasNamedCertificateMountPathPrefix, i+1),
 		})
@@ -606,13 +569,15 @@ func kasAuditWebhookConfigFileVolume() *corev1.Volume {
 
 func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
-		v.Secret = &corev1.SecretVolumeSource{}
+		if v.Secret == nil {
+			v.Secret = &corev1.SecretVolumeSource{}
+		}
 		v.Secret.SecretName = auditWebhookRef.Name
 	}
 }
 
 func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasAuditWebhookConfigFileVolume(), buildKASAuditWebhookConfigFileVolume(auditWebhookRef)))
+	podSpec.Volumes = util.ApplyVolume(podSpec.Volumes, kasAuditWebhookConfigFileVolume(), buildKASAuditWebhookConfigFileVolume(auditWebhookRef))
 	var container *corev1.Container
 	for i, c := range podSpec.Containers {
 		if c.Name == kasContainerMain().Name {
@@ -623,7 +588,7 @@ func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookR
 	if container == nil {
 		panic("main kube apiserver container not found in spec")
 	}
-	container.VolumeMounts = append(container.VolumeMounts,
+	container.VolumeMounts = util.ApplyVolumeMount(container.VolumeMounts,
 		kasAuditWebhookConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 }
 
@@ -658,7 +623,7 @@ func applyGenericSecretEncryptionConfig(podSpec *corev1.PodSpec) {
 		panic("main kube apiserver container not found in spec")
 	}
 	container.Args = append(container.Args, fmt.Sprintf("--encryption-provider-config=%s/%s", genericSecretEncryptionConfigFileVolumeMount.Path(kasContainerMain().Name, kasVolumeSecretEncryptionConfigFile().Name), secretEncryptionConfigurationKey))
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeSecretEncryptionConfigFile(), buildVolumeSecretEncryptionConfigFile))
-	container.VolumeMounts = append(container.VolumeMounts,
+	podSpec.Volumes = util.ApplyVolume(podSpec.Volumes, kasVolumeSecretEncryptionConfigFile(), buildVolumeSecretEncryptionConfigFile)
+	container.VolumeMounts = util.ApplyVolumeMount(container.VolumeMounts,
 		genericSecretEncryptionConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
 }

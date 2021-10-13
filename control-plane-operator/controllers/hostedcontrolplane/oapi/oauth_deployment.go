@@ -112,7 +112,7 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container)
 			"--v=2",
 			fmt.Sprintf("--tls-min-version=%s", p.MinTLSVersion),
 		}
-		c.VolumeMounts = oauthVolumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, oauthVolumeMounts.ContainerMounts(c.Name)...)
 		c.WorkingDir = oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name)
 	}
 }

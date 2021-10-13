@@ -63,30 +63,18 @@ var (
 
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
 	ownerRef.ApplyTo(deployment)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
+	deployment.Spec.Selector =
+		&metav1.LabelSelector{
 			MatchLabels: cvoLabels,
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: cvoLabels,
-			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image)),
-				},
-				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(image)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
-					util.BuildVolume(cvoVolumeKubeconfig(), buildCVOVolumeKubeconfig),
-					util.BuildVolume(cvoVolumeUpdatePayloads(), buildCVOVolumeUpdatePayloads),
-				},
-			},
-		},
-	}
+		}
+	deployment.Spec.Template.Labels = cvoLabels
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.InitContainers = util.ApplyContainer(deployment.Spec.Template.Spec.InitContainers, cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image))
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, cvoContainerMain(), buildCVOContainerMain(image))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, cvoVolumePayload(), buildCVOVolumePayload)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, cvoVolumeKubeconfig(), buildCVOVolumeKubeconfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, cvoVolumeUpdatePayloads(), buildCVOVolumeUpdatePayloads)
+
 	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
@@ -111,7 +99,7 @@ func buildCVOContainerPrepPayload(image string) func(c *corev1.Container) {
 			"-c",
 			preparePayloadScript(),
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -161,7 +149,7 @@ func buildCVOContainerMain(image string) func(c *corev1.Container) {
 				},
 			},
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -188,7 +176,9 @@ func buildCVOVolumeUpdatePayloads(v *corev1.Volume) {
 }
 
 func buildCVOVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 

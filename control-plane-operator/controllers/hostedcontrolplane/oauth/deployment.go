@@ -69,30 +69,27 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 		return fmt.Errorf("oauth server: configuration not found in configmap")
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
-	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.BoolPtr(false),
-		Containers: []corev1.Container{
-			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image)),
-		},
-		Volumes: []corev1.Volume{
-			util.BuildVolume(oauthVolumeConfig(), buildOAuthVolumeConfig),
-			util.BuildVolume(oauthVolumeKubeconfig(), buildOAuthVolumeKubeconfig),
-			util.BuildVolume(oauthVolumeServingCert(), buildOAuthVolumeServingCert),
-			util.BuildVolume(oauthVolumeSessionSecret(), buildOAuthVolumeSessionSecret),
-			util.BuildVolume(oauthVolumeErrorTemplate(), buildOAuthVolumeErrorTemplate),
-			util.BuildVolume(oauthVolumeLoginTemplate(), buildOAuthVolumeLoginTemplate),
-			util.BuildVolume(oauthVolumeProvidersTemplate(), buildOAuthVolumeProvidersTemplate),
-			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
-		},
-	}
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, oauthContainerMain(), buildOAuthContainerMain(image))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oauthVolumeConfig(), buildOAuthVolumeConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oauthVolumeKubeconfig(), buildOAuthVolumeKubeconfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oauthVolumeServingCert(), buildOAuthVolumeServingCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oauthVolumeSessionSecret(), buildOAuthVolumeSessionSecret)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oauthVolumeErrorTemplate(), buildOAuthVolumeErrorTemplate)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oauthVolumeLoginTemplate(), buildOAuthVolumeLoginTemplate)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oauthVolumeProvidersTemplate(), buildOAuthVolumeProvidersTemplate)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs)
+
 	deploymentConfig.ApplyTo(deployment)
 	if len(identityProviders) > 0 {
 		_, volumeMountInfo, err := convertIdentityProviders(ctx, identityProviders, providerOverrides, client, deployment.Namespace)
 		if err != nil {
 			return err
 		}
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volumeMountInfo.Volumes...)
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMountInfo.VolumeMounts.ContainerMounts(oauthContainerMain().Name)...)
+		for _, v := range volumeMountInfo.Volumes {
+			deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, &v, func(volume *corev1.Volume) {})
+		}
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = util.ApplyVolumeMount(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMountInfo.VolumeMounts.ContainerMounts(oauthContainerMain().Name)...)
 	}
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
@@ -112,7 +109,7 @@ func buildOAuthContainerMain(image string) func(c *corev1.Container) {
 			"osinserver",
 			fmt.Sprintf("--config=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeConfig().Name), OAuthServerConfigKey)),
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 		c.WorkingDir = volumeMounts.Path(c.Name, oauthVolumeWorkLogs().Name)
 	}
 }
@@ -124,10 +121,11 @@ func oauthVolumeConfig() *corev1.Volume {
 }
 
 func buildOAuthVolumeConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{
-		LocalObjectReference: corev1.LocalObjectReference{
-			Name: manifests.OAuthServerConfig("").Name,
-		},
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
+	v.ConfigMap.LocalObjectReference = corev1.LocalObjectReference{
+		Name: manifests.OAuthServerConfig("").Name,
 	}
 }
 
@@ -148,9 +146,10 @@ func oauthVolumeKubeconfig() *corev1.Volume {
 }
 
 func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 func oauthVolumeServingCert() *corev1.Volume {
 	return &corev1.Volume{
@@ -159,9 +158,10 @@ func oauthVolumeServingCert() *corev1.Volume {
 }
 
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.OpenShiftOAuthServerCert("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.OpenShiftOAuthServerCert("").Name
 }
 func oauthVolumeSessionSecret() *corev1.Volume {
 	return &corev1.Volume{
@@ -169,9 +169,10 @@ func oauthVolumeSessionSecret() *corev1.Volume {
 	}
 }
 func buildOAuthVolumeSessionSecret(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.OAuthServerServiceSessionSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.OAuthServerServiceSessionSecret("").Name
 }
 func oauthVolumeErrorTemplate() *corev1.Volume {
 	return &corev1.Volume{
@@ -180,9 +181,10 @@ func oauthVolumeErrorTemplate() *corev1.Volume {
 }
 
 func buildOAuthVolumeErrorTemplate(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.OAuthServerDefaultErrorTemplateSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.OAuthServerDefaultErrorTemplateSecret("").Name
 }
 
 func oauthVolumeLoginTemplate() *corev1.Volume {
@@ -192,9 +194,10 @@ func oauthVolumeLoginTemplate() *corev1.Volume {
 }
 
 func buildOAuthVolumeLoginTemplate(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.OAuthServerDefaultLoginTemplateSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.OAuthServerDefaultLoginTemplateSecret("").Name
 }
 
 func oauthVolumeProvidersTemplate() *corev1.Volume {
@@ -204,7 +207,8 @@ func oauthVolumeProvidersTemplate() *corev1.Volume {
 }
 
 func buildOAuthVolumeProvidersTemplate(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name
 }

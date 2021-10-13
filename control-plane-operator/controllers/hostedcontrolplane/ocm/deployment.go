@@ -40,14 +40,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftControllerManagerLabels
 	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
-	deployment.Spec.Template.Spec.Containers = []corev1.Container{
-		util.BuildContainer(ocmContainerMain(), buildOCMContainerMain(image)),
-	}
-	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
-		util.BuildVolume(ocmVolumeConfig(), buildOCMVolumeConfig),
-		util.BuildVolume(ocmVolumeServingCert(), buildOCMVolumeServingCert),
-		util.BuildVolume(ocmVolumeKubeconfig(), buildOCMVolumeKubeconfig),
-	}
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, ocmContainerMain(), buildOCMContainerMain(image))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, ocmVolumeConfig(), buildOCMVolumeConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, ocmVolumeServingCert(), buildOCMVolumeServingCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, ocmVolumeKubeconfig(), buildOCMVolumeKubeconfig)
 	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
@@ -67,7 +63,7 @@ func buildOCMContainerMain(image string) func(*corev1.Container) {
 			"--config",
 			path.Join(volumeMounts.Path(c.Name, ocmVolumeConfig().Name), configKey),
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -78,7 +74,9 @@ func ocmVolumeConfig() *corev1.Volume {
 }
 
 func buildOCMVolumeConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
 	v.ConfigMap.Name = manifests.OpenShiftControllerManagerConfig("").Name
 }
 
@@ -89,7 +87,9 @@ func ocmVolumeKubeconfig() *corev1.Volume {
 }
 
 func buildOCMVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 
@@ -100,6 +100,8 @@ func ocmVolumeServingCert() *corev1.Volume {
 }
 
 func buildOCMVolumeServingCert(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.OpenShiftControllerManagerCertSecret("").Name
 }

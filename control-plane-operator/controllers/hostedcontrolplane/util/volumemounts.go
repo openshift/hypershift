@@ -42,3 +42,24 @@ func (m PodVolumeMounts) ContainerMounts(container string) []corev1.VolumeMount 
 	}
 	return result
 }
+
+// ApplyVolumeMount merges mounts with updates and returns the result.
+// TODO: passing updates by value is probably not great and should be pointers
+// because VolumeMount has pointer fields, but in practice nobody is setting
+// MountPropagation anywhere yet.
+func ApplyVolumeMount(mounts []corev1.VolumeMount, updates ...corev1.VolumeMount) []corev1.VolumeMount {
+	for i, update := range updates {
+		found := false
+		for k, existing := range mounts {
+			if existing.Name == update.Name {
+				mounts[k] = updates[i]
+				found = true
+				break
+			}
+		}
+		if !found {
+			mounts = append(mounts, update)
+		}
+	}
+	return mounts
+}

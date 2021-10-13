@@ -66,26 +66,19 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	if err != nil {
 		return fmt.Errorf("failed to parse etcd url: %w", err)
 	}
-	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.BoolPtr(false),
-		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0])),
-			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(haproxyImage)),
-		},
-		Volumes: []corev1.Volume{
-			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
-			util.BuildVolume(oasVolumeConfig(), buildOASVolumeConfig),
-			util.BuildVolume(oasVolumeAuditConfig(), buildOASVolumeAuditConfig),
-			util.BuildVolume(oasVolumeAggregatorClientCA(), buildOASVolumeAggregatorClientCA),
-			util.BuildVolume(oasVolumeEtcdClientCA(), buildOASVolumeEtcdClientCA),
-			util.BuildVolume(oasVolumeServingCA(), buildOASVolumeServingCA),
-			util.BuildVolume(oasVolumeKubeconfig(), buildOASVolumeKubeconfig),
-			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
-			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
-			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
-		},
-	}
-
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0]))
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(haproxyImage))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeWorkLogs(), buildOASVolumeWorkLogs)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeConfig(), buildOASVolumeConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeAuditConfig(), buildOASVolumeAuditConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeAggregatorClientCA(), buildOASVolumeAggregatorClientCA)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeServingCA(), buildOASVolumeServingCA)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeEtcdClientCA(), buildOASVolumeEtcdClientCA)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeKubeconfig(), buildOASVolumeKubeconfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeServingCert(), buildOASVolumeServingCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	config.ApplyTo(deployment)
@@ -118,7 +111,7 @@ func buildOASKonnectivityProxyContainer(routerImage string) func(c *corev1.Conta
 		c.Args = []string{
 			fmt.Sprintf("cat %s %s > %s; haproxy -f %s", cpath(oasVolumeKonnectivityProxyCert().Name, "tls.crt"), cpath(oasVolumeKonnectivityProxyCert().Name, "tls.key"), haproxyCombinedPemLocation, cpath(oasVolumeConfig().Name, oasKonnectivityProxyConfigKey)),
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -155,7 +148,7 @@ func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Con
 				Value: fmt.Sprintf("%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname),
 			},
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 		c.WorkingDir = volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name)
 	}
 }
@@ -177,7 +170,9 @@ func oasVolumeConfig() *corev1.Volume {
 }
 
 func buildOASVolumeConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
 	v.ConfigMap.Name = manifests.OpenShiftAPIServerConfig("").Name
 }
 
@@ -188,7 +183,9 @@ func oasVolumeAuditConfig() *corev1.Volume {
 }
 
 func buildOASVolumeAuditConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
 	v.ConfigMap.Name = manifests.OpenShiftAPIServerAuditConfig("").Name
 }
 
@@ -199,7 +196,9 @@ func oasVolumeKubeconfig() *corev1.Volume {
 }
 
 func buildOASVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 
@@ -210,7 +209,9 @@ func oasVolumeAggregatorClientCA() *corev1.Volume {
 }
 
 func buildOASVolumeAggregatorClientCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
@@ -221,7 +222,9 @@ func oasVolumeEtcdClientCA() *corev1.Volume {
 }
 
 func buildOASVolumeEtcdClientCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
@@ -232,7 +235,9 @@ func oasVolumeServingCA() *corev1.Volume {
 }
 
 func buildOASVolumeServingCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
@@ -243,7 +248,9 @@ func oasVolumeServingCert() *corev1.Volume {
 }
 
 func buildOASVolumeServingCert(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.OpenShiftAPIServerCertSecret("").Name
 }
 
@@ -254,7 +261,9 @@ func oasVolumeEtcdClientCert() *corev1.Volume {
 }
 
 func buildOASVolumeEtcdClientCert(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
 }
 
@@ -265,6 +274,8 @@ func oasVolumeKonnectivityProxyCert() *corev1.Volume {
 }
 
 func buildOASVolumeKonnectivityProxyCert(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
 }

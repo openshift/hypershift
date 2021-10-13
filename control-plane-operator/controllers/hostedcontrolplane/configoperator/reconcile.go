@@ -90,29 +90,18 @@ var (
 
 func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string) error {
 	ownerRef.ApplyTo(deployment)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: hccLabels,
-		},
-		Strategy: appsv1.DeploymentStrategy{
-			Type: appsv1.RecreateDeploymentStrategyType,
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: hccLabels,
-			},
-			Spec: corev1.PodSpec{
-				Containers: []corev1.Container{
-					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, openShiftVersion, kubeVersion)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
-					util.BuildVolume(hccVolumeRootCA(), buildHCCVolumeRootCA),
-				},
-				ServiceAccountName: manifests.ConfigOperatorServiceAccount("").Name,
-			},
-		},
+	deployment.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: hccLabels,
 	}
+	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
+		Type: appsv1.RecreateDeploymentStrategyType,
+	}
+	deployment.Spec.Template.Labels = hccLabels
+	deployment.Spec.Template.Spec.ServiceAccountName = manifests.ConfigOperatorServiceAccount("").Name
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, hccContainerMain(), buildHCCContainerMain(image, openShiftVersion, kubeVersion))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, hccVolumeKubeconfig(), buildHCCVolumeKubeconfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, hccVolumeRootCA(), buildHCCVolumeRootCA)
+
 	config.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
@@ -164,18 +153,20 @@ func buildHCCContainerMain(image, openShiftVersion, kubeVersion string) func(c *
 				Value: kubeVersion,
 			},
 		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
 func buildHCCVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 
 func buildHCCVolumeRootCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.RootCASecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.RootCASecret("").Name
 }

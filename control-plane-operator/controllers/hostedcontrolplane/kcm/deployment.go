@@ -85,21 +85,16 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
 
-	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.BoolPtr(false),
-		Containers: []corev1.Container{
-			util.BuildContainer(kcmContainerMain(), buildKCMContainerMain(p.HyperkubeImage, args)),
-		},
-		Volumes: []corev1.Volume{
-			util.BuildVolume(kcmVolumeConfig(), buildKCMVolumeConfig),
-			util.BuildVolume(kcmVolumeRootCA(), buildKCMVolumeRootCA),
-			util.BuildVolume(kcmVolumeWorkLogs(), buildKCMVolumeWorkLogs),
-			util.BuildVolume(kcmVolumeKubeconfig(), buildKCMVolumeKubeconfig),
-			util.BuildVolume(kcmVolumeClusterSigner(), buildKCMVolumeClusterSigner),
-			util.BuildVolume(kcmVolumeCertDir(), buildKCMVolumeCertDir),
-			util.BuildVolume(kcmVolumeServiceSigner(), buildKCMVolumeServiceSigner),
-		},
-	}
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, kcmContainerMain(), buildKCMContainerMain(p.HyperkubeImage, args))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kcmVolumeConfig(), buildKCMVolumeConfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kcmVolumeRootCA(), buildKCMVolumeRootCA)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kcmVolumeWorkLogs(), buildKCMVolumeWorkLogs)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kcmVolumeKubeconfig(), buildKCMVolumeKubeconfig)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kcmVolumeClusterSigner(), buildKCMVolumeClusterSigner)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kcmVolumeCertDir(), buildKCMVolumeCertDir)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, kcmVolumeServiceSigner(), buildKCMVolumeServiceSigner)
+
 	p.DeploymentConfig.ApplyTo(deployment)
 	if servingCA != nil {
 		applyServingCAVolume(&deployment.Spec.Template.Spec, servingCA)
@@ -120,12 +115,13 @@ func kcmContainerMain() *corev1.Container {
 func buildKCMContainerMain(image string, args []string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"hyperkube",
 			"kube-controller-manager",
 		}
 		c.Args = args
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = util.ApplyVolumeMount(c.VolumeMounts, volumeMounts.ContainerMounts(c.Name)...)
 	}
 }
 
@@ -136,10 +132,11 @@ func kcmVolumeConfig() *corev1.Volume {
 }
 
 func buildKCMVolumeConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{
-		LocalObjectReference: corev1.LocalObjectReference{
-			Name: manifests.KCMConfig("").Name,
-		},
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
+	v.ConfigMap.LocalObjectReference = corev1.LocalObjectReference{
+		Name: manifests.KCMConfig("").Name,
 	}
 }
 
@@ -150,9 +147,10 @@ func kcmVolumeRootCA() *corev1.Volume {
 }
 
 func buildKCMVolumeRootCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.RootCASecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
 func kcmVolumeWorkLogs() *corev1.Volume {
@@ -172,9 +170,10 @@ func kcmVolumeServiceSigner() *corev1.Volume {
 }
 
 func buildKCMVolumeServiceSigner(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.ServiceAccountSigningKeySecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.ServiceAccountSigningKeySecret("").Name
 }
 
 func kcmVolumeCertDir() *corev1.Volume {
@@ -194,9 +193,10 @@ func kcmVolumeClusterSigner() *corev1.Volume {
 }
 
 func buildKCMVolumeClusterSigner(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.ClusterSignerCASecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.ClusterSignerCASecret("").Name
 }
 
 func kcmVolumeKubeconfig() *corev1.Volume {
@@ -206,9 +206,10 @@ func kcmVolumeKubeconfig() *corev1.Volume {
 }
 
 func buildKCMVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 
 func kcmVolumeServiceServingCA() *corev1.Volume {
@@ -225,7 +226,9 @@ func kcmVolumeCloudConfig() *corev1.Volume {
 
 func buildKCMVolumeCloudConfig(cloudProviderConfigName string) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
-		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+		if v.ConfigMap == nil {
+			v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+		}
 		v.ConfigMap.Name = cloudProviderConfigName
 	}
 }
@@ -238,7 +241,9 @@ func kcmVolumeCloudProviderCreds() *corev1.Volume {
 
 func buildKCMVolumeCloudProviderCreds(cloudProviderCredsName string) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
-		v.Secret = &corev1.SecretVolumeSource{}
+		if v.Secret == nil {
+			v.Secret = &corev1.SecretVolumeSource{}
+		}
 		v.Secret.SecretName = cloudProviderCredsName
 	}
 }
@@ -246,13 +251,15 @@ func buildKCMVolumeCloudProviderCreds(cloudProviderCredsName string) func(v *cor
 type serviceCAVolumeBuilder string
 
 func (name serviceCAVolumeBuilder) buildKCMVolumeServiceServingCA(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
 	v.ConfigMap.Name = string(name)
 }
 
 func applyServingCAVolume(ps *corev1.PodSpec, cm *corev1.ConfigMap) {
 	builder := serviceCAVolumeBuilder(cm.Name)
-	ps.Volumes = append(ps.Volumes, util.BuildVolume(kcmVolumeServiceServingCA(), builder.buildKCMVolumeServiceServingCA))
+	ps.Volumes = util.ApplyVolume(ps.Volumes, kcmVolumeServiceServingCA(), builder.buildKCMVolumeServiceServingCA)
 	var container *corev1.Container
 	for i, c := range ps.Containers {
 		if c.Name == kcmContainerMain().Name {
@@ -263,7 +270,7 @@ func applyServingCAVolume(ps *corev1.PodSpec, cm *corev1.ConfigMap) {
 	if container == nil {
 		panic("did not find the main kcm container in pod spec")
 	}
-	container.VolumeMounts = append(container.VolumeMounts, serviceServingCAMount.ContainerMounts(kcmContainerMain().Name)...)
+	container.VolumeMounts = util.ApplyVolumeMount(container.VolumeMounts, serviceServingCAMount.ContainerMounts(kcmContainerMain().Name)...)
 }
 
 func kcmArgs(p *KubeControllerManagerParams) []string {
@@ -327,9 +334,9 @@ func applyCloudConfigVolumeMount(podSpec *corev1.PodSpec, cloudProviderConfigRef
 	if cloudProviderConfigRef == nil || cloudProviderConfigRef.Name == "" {
 		return
 	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudConfig(), buildKCMVolumeCloudConfig(cloudProviderConfigRef.Name)))
+	podSpec.Volumes = util.ApplyVolume(podSpec.Volumes, kcmVolumeCloudConfig(), buildKCMVolumeCloudConfig(cloudProviderConfigRef.Name))
 	container := mustContainer(podSpec, kcmContainerMain().Name)
-	container.VolumeMounts = append(container.VolumeMounts,
+	container.VolumeMounts = util.ApplyVolumeMount(container.VolumeMounts,
 		cloudProviderConfigVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
 }
 
@@ -337,23 +344,24 @@ func applyCloudProviderCreds(podSpec *corev1.PodSpec, cloudProvider string, clou
 	if cloudProviderCreds == nil || cloudProviderCreds.Name == "" {
 		return
 	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudProviderCreds(), buildKCMVolumeCloudProviderCreds(cloudProviderCreds.Name)))
+	podSpec.Volumes = util.ApplyVolume(podSpec.Volumes, kcmVolumeCloudProviderCreds(), buildKCMVolumeCloudProviderCreds(cloudProviderCreds.Name))
 	container := mustContainer(podSpec, kcmContainerMain().Name)
-	container.VolumeMounts = append(container.VolumeMounts,
+	container.VolumeMounts = util.ApplyVolumeMount(container.VolumeMounts,
 		cloudProviderCredsVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
 
 	switch cloudProvider {
 	case aws.Provider:
 		credsPath := path.Join(cloudProviderCredsVolumeMount.Path(kcmContainerMain().Name, kcmVolumeCloudProviderCreds().Name), AWSCloudProviderCredsKey)
-		container.Env = append(container.Env,
-			corev1.EnvVar{
+		container.Env = []corev1.EnvVar{
+			{
 				Name:  "AWS_SHARED_CREDENTIALS_FILE",
 				Value: credsPath,
 			},
-			corev1.EnvVar{
+			{
 				Name:  "AWS_EC2_METADATA_DISABLED",
 				Value: "true",
-			})
+			},
+		}
 	}
 }
 
