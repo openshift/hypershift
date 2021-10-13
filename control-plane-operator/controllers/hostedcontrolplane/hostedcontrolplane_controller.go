@@ -1602,10 +1602,12 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	}
 
 	kcmDeployment := manifests.KCMDeployment(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, kcmDeployment, func() error {
+	if result, err := controllerutil.CreateOrUpdate(ctx, r, kcmDeployment, func() error {
 		return kcm.ReconcileDeployment(kcmDeployment, kcmConfig, serviceServingCA, p)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm deployment: %w", err)
+	} else {
+		r.Log.Info("reconciled kcm deployment", "result", result)
 	}
 
 	return nil

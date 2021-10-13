@@ -86,7 +86,12 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.BoolPtr(false),
+		DNSPolicy:                     corev1.DNSClusterFirst,
+		RestartPolicy:                 corev1.RestartPolicyAlways,
+		SecurityContext:               &corev1.PodSecurityContext{},
+		TerminationGracePeriodSeconds: pointer.Int64Ptr(30),
+		SchedulerName:                 corev1.DefaultSchedulerName,
+		AutomountServiceAccountToken:  pointer.BoolPtr(false),
 		Containers: []corev1.Container{
 			util.BuildContainer(kcmContainerMain(), buildKCMContainerMain(p.HyperkubeImage, args)),
 		},
@@ -120,6 +125,9 @@ func kcmContainerMain() *corev1.Container {
 func buildKCMContainerMain(image string, args []string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"hyperkube",
 			"kube-controller-manager",
@@ -136,10 +144,12 @@ func kcmVolumeConfig() *corev1.Volume {
 }
 
 func buildKCMVolumeConfig(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{
-		LocalObjectReference: corev1.LocalObjectReference{
-			Name: manifests.KCMConfig("").Name,
-		},
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
+	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
+	v.ConfigMap.LocalObjectReference = corev1.LocalObjectReference{
+		Name: manifests.KCMConfig("").Name,
 	}
 }
 
@@ -150,9 +160,11 @@ func kcmVolumeRootCA() *corev1.Volume {
 }
 
 func buildKCMVolumeRootCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.RootCASecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
 func kcmVolumeWorkLogs() *corev1.Volume {
@@ -172,9 +184,11 @@ func kcmVolumeServiceSigner() *corev1.Volume {
 }
 
 func buildKCMVolumeServiceSigner(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.ServiceAccountSigningKeySecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.SecretName = manifests.ServiceAccountSigningKeySecret("").Name
 }
 
 func kcmVolumeCertDir() *corev1.Volume {
@@ -194,9 +208,11 @@ func kcmVolumeClusterSigner() *corev1.Volume {
 }
 
 func buildKCMVolumeClusterSigner(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.ClusterSignerCASecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.SecretName = manifests.ClusterSignerCASecret("").Name
 }
 
 func kcmVolumeKubeconfig() *corev1.Volume {
@@ -206,9 +222,11 @@ func kcmVolumeKubeconfig() *corev1.Volume {
 }
 
 func buildKCMVolumeKubeconfig(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 
 func kcmVolumeServiceServingCA() *corev1.Volume {
@@ -225,7 +243,10 @@ func kcmVolumeCloudConfig() *corev1.Volume {
 
 func buildKCMVolumeCloudConfig(cloudProviderConfigName string) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
-		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+		if v.ConfigMap == nil {
+			v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+		}
+		v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 		v.ConfigMap.Name = cloudProviderConfigName
 	}
 }
@@ -238,7 +259,10 @@ func kcmVolumeCloudProviderCreds() *corev1.Volume {
 
 func buildKCMVolumeCloudProviderCreds(cloudProviderCredsName string) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
-		v.Secret = &corev1.SecretVolumeSource{}
+		if v.Secret == nil {
+			v.Secret = &corev1.SecretVolumeSource{}
+		}
+		v.Secret.DefaultMode = pointer.Int32Ptr(420)
 		v.Secret.SecretName = cloudProviderCredsName
 	}
 }
@@ -246,7 +270,10 @@ func buildKCMVolumeCloudProviderCreds(cloudProviderCredsName string) func(v *cor
 type serviceCAVolumeBuilder string
 
 func (name serviceCAVolumeBuilder) buildKCMVolumeServiceServingCA(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
+	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = string(name)
 }
 
