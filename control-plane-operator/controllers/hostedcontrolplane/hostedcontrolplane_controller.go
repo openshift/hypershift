@@ -1377,10 +1377,12 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	r.Log.Info("Reconciling Konnectivity")
 	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), infraStatus.KonnectivityHost, infraStatus.KonnectivityPort)
 	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
-	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
+	if result, err := controllerutil.CreateOrUpdate(ctx, r, serverDeployment, func() error {
 		return konnectivity.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.ServerDeploymentConfig, p.KonnectivityServerImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server deployment: %w", err)
+	} else {
+		r.Log.Info("reconciled konnectivity server deployment", "result", result)
 	}
 	serverLocalService := manifests.KonnectivityServerLocalService(hcp.Namespace)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r, serverLocalService, func() error {

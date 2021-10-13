@@ -11,6 +11,19 @@ func BuildContainer(container *corev1.Container, buildFn func(*corev1.Container)
 	return *container
 }
 
+// ApplyContainer will add or update container within containers and return an
+// array of containers with the mutated container.
+func ApplyContainer(containers []corev1.Container, container *corev1.Container, buildFn func(*corev1.Container)) []corev1.Container {
+	for _, existing := range containers {
+		if existing.Name == container.Name {
+			buildFn(&existing)
+			return containers
+		}
+	}
+	buildFn(container)
+	return append(containers, *container)
+}
+
 // AvailabilityProberImageName is the name under which components can find the availability prober
 // image in the release image.
 const AvailabilityProberImageName = "availability-prober"

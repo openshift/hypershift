@@ -48,26 +48,15 @@ const (
 
 func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
 	ownerRef.ApplyTo(deployment)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityServerLabels,
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityServerLabels,
-			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(image)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts),
-					util.BuildVolume(konnectivityVolumeClusterCerts(), buildKonnectivityVolumeClusterCerts),
-				},
-			},
-		},
+	deployment.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: konnectivityServerLabels,
 	}
+	deployment.Spec.Template.ObjectMeta.Labels = konnectivityServerLabels
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.Containers = util.ApplyContainer(deployment.Spec.Template.Spec.Containers, konnectivityServerContainer(), buildKonnectivityServerContainer(image))
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts)
+	deployment.Spec.Template.Spec.Volumes = util.ApplyVolume(deployment.Spec.Template.Spec.Volumes, konnectivityVolumeClusterCerts(), buildKonnectivityVolumeClusterCerts)
+
 	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
@@ -122,9 +111,10 @@ func konnectivityVolumeServerCerts() *corev1.Volume {
 }
 
 func buildKonnectivityVolumeServerCerts(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KonnectivityServerSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KonnectivityServerSecret("").Name
 }
 
 func konnectivityVolumeClusterCerts() *corev1.Volume {
@@ -134,9 +124,10 @@ func konnectivityVolumeClusterCerts() *corev1.Volume {
 }
 
 func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KonnectivityClusterSecret("").Name,
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
 	}
+	v.Secret.SecretName = manifests.KonnectivityClusterSecret("").Name
 }
 
 const (
