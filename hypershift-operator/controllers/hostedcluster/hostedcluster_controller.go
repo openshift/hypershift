@@ -1921,6 +1921,10 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 	if hcluster.Spec.Platform.AWS != nil {
 		awsCluster.Spec.Region = hcluster.Spec.Platform.AWS.Region
 
+		if hcluster.Spec.Platform.AWS.CloudProviderConfig != nil {
+			awsCluster.Spec.NetworkSpec.VPC.ID = hcluster.Spec.Platform.AWS.CloudProviderConfig.VPC
+		}
+
 		if len(hcluster.Spec.Platform.AWS.ResourceTags) > 0 {
 			awsCluster.Spec.AdditionalTags = capiawsv1.Tags{}
 		}
