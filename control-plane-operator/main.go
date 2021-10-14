@@ -21,6 +21,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/upsert"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -68,6 +69,7 @@ func NewStartCommand() *cobra.Command {
 	var enableLeaderElection bool
 	var hostedClusterConfigOperatorImage string
 	var inCluster bool
+	var enableCIDebugOutput bool
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "", "The name of the deployment of this operator")
@@ -79,6 +81,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&inCluster, "in-cluster", true, "If false, the operator will be assumed to be running outside a kube "+
 		"cluster and will make some internal decisions to ease local development (e.g. using external endpoints where possible"+
 		"to avoid assuming access to the service network)")
+	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 
 	cmd.MarkFlagRequired("namespace")
 
@@ -174,9 +177,10 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
-			Client:          mgr.GetClient(),
-			ReleaseProvider: releaseProvider,
-			HostedAPICache:  apiCacheController.GetCache(),
+			Client:                 mgr.GetClient(),
+			ReleaseProvider:        releaseProvider,
+			HostedAPICache:         apiCacheController.GetCache(),
+			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

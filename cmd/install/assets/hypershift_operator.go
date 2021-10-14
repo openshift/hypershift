@@ -43,6 +43,7 @@ type HyperShiftOperatorDeployment struct {
 	ServiceAccount             *corev1.ServiceAccount
 	Replicas                   int32
 	EnableOCPClusterMonitoring bool
+	EnableCIDebugOutput        bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -92,7 +93,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								},
 							},
 							Command: []string{"/usr/bin/hypershift-operator"},
-							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000", fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring)},
+							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000", fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring), fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput)},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "metrics",
