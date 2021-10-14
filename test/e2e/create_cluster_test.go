@@ -96,4 +96,5 @@ func TestCreateCluster(t *testing.T) {
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
 	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
 
+	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, crclient.ObjectKeyFromObject(nodepool))
 }
