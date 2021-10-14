@@ -60,6 +60,9 @@ const (
 
 	// ControlPlaneComponent identifies a resource as belonging to a hosted control plane.
 	ControlPlaneComponent = "hypershift.openshift.io/control-plane-component"
+
+	// OperatorComponent identifies a component as belonging to the operator.
+	OperatorComponent = "hypershift.openshift.io/operator-component"
 )
 
 // HostedClusterSpec defines the desired state of HostedCluster

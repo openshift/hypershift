@@ -23,8 +23,10 @@ var crds embed.FS
 var recordingRules embed.FS
 
 var recordingRulesByName = map[string]string{
-	"hypershift:controlplane:component_memory_usage":      "recordingrules/controlplane_memory_usage.promql",
-	"hypershift:controlplane:component_cpu_usage_seconds": "recordingrules/controlplane_cpu_usage.promql",
+	"hypershift:controlplane:component_memory_usage":       "recordingrules/controlplane_memory_usage.promql",
+	"hypershift:controlplane:component_cpu_usage_seconds":  "recordingrules/controlplane_cpu_usage.promql",
+	"hypershift:controlplane:component_api_requests_total": "recordingrules/controlplane_api_requests.promql",
+	"hypershift:operator:component_api_requests_total":     "recordingrules/operator_api_requests.promql",
 }
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"

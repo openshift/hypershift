@@ -62,6 +62,8 @@ type MonitoringOptions struct {
 
 	RemoteWriteUsernameFile string
 	RemoteWritePasswordFile string
+
+	ProwJobID string
 }
 
 func monitoringCommand() *cobra.Command {
@@ -70,13 +72,14 @@ func monitoringCommand() *cobra.Command {
 		Short: "Configures a management cluster for e2e monitoring integration",
 	}
 
-	opts := &MonitoringOptions{}
+	opts := &MonitoringOptions{ProwJobID: os.Getenv("PROW_JOB_ID")}
 
 	cmd.Flags().StringVar(&opts.RemoteWriteURL, "remote-write-url", opts.RemoteWriteURL, "Remote write URL. If specified, configures monitoring for remote write.")
 	cmd.Flags().StringVar(&opts.RemoteWriteUsername, "remote-write-username", opts.RemoteWriteUsername, "Remote write username")
 	cmd.Flags().StringVar(&opts.RemoteWritePassword, "remote-write-password", opts.RemoteWritePassword, "Remote write password")
 	cmd.Flags().StringVar(&opts.RemoteWriteUsernameFile, "remote-write-username-file", opts.RemoteWriteUsernameFile, "Remote write username file")
 	cmd.Flags().StringVar(&opts.RemoteWritePasswordFile, "remote-write-password-file", opts.RemoteWritePasswordFile, "Remote write password file")
+	cmd.Flags().StringVar(&opts.ProwJobID, "prow-job-id", opts.ProwJobID, "The ProwJobID. If set, it will be added as a static label to the remote_write config.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))

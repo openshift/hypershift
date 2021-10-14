@@ -1,0 +1,5 @@
+sum by (app, namespace, code, method) (
+  sum(rest_client_requests_total) by (pod, namespace, code, method)
+* on (pod) group_left(app)
+  label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""}, "app", "$1", "label_app", "(.*)")
+)
