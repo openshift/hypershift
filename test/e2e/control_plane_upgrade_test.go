@@ -111,4 +111,6 @@ func TestUpgradeControlPlane(t *testing.T) {
 	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
 	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, crclient.ObjectKeyFromObject(nodepool))
 }

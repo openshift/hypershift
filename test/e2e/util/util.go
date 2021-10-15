@@ -360,3 +360,26 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 		}
 	})
 }
+
+func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolName crclient.ObjectKey) {
+	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
+		var nodepool hyperv1.NodePool
+		if err := hostClient.Get(ctx, nodePoolName, &nodepool); err != nil {
+			t.Fatalf("failed to get nodepool: %v", err)
+		}
+
+		var nodes corev1.NodeList
+		if err := guestClient.List(ctx, &nodes); err != nil {
+			t.Fatalf("failed to list nodes in guest cluster: %v", err)
+		}
+
+		var nodeCount int
+		if nodepool.Spec.NodeCount != nil {
+			nodeCount = int(*nodepool.Spec.NodeCount)
+		}
+
+		if nodeCount != len(nodes.Items) {
+			t.Errorf("nodepool replicas %d does not match number of nodes in cluster %d", nodeCount, len(nodes.Items))
+		}
+	})
+}
