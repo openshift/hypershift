@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
+	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/version"
 
 	"github.com/bombsimon/logrusr"
@@ -51,14 +51,14 @@ func init() {
 // TestMain deals with global options and setting up a signal-bound context
 // for all tests to use.
 func TestMain(m *testing.M) {
-	flag.StringVar(&globalOpts.defaultClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
-	flag.StringVar(&globalOpts.defaultClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
-	flag.StringVar(&globalOpts.defaultClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
+	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
 	flag.StringVar(&globalOpts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
-	flag.StringVar(&globalOpts.defaultClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
-	flag.StringVar(&globalOpts.defaultClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
+	flag.StringVar(&globalOpts.configurableClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
+	flag.StringVar(&globalOpts.configurableClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
 	flag.Var(&globalOpts.additionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
 
 	flag.Parse()
@@ -170,12 +170,39 @@ type options struct {
 	IsRunningInCI        bool
 	ArtifactDir          string
 
-	defaultClusterOptions cmdcluster.Options
-	additionalTags        stringSliceVar
+	configurableClusterOptions configurableClusterOptions
+	additionalTags             stringSliceVar
 }
 
-func (o *options) DefaultClusterOptions() cmdcluster.Options {
-	return o.defaultClusterOptions
+type configurableClusterOptions struct {
+	AWSCredentialsFile        string
+	Region                    string
+	PullSecretFile            string
+	BaseDomain                string
+	ControlPlaneOperatorImage string
+}
+
+func (o *options) DefaultClusterOptions() core.CreateOptions {
+	createOption := core.CreateOptions{
+		ReleaseImage:              o.PreviousReleaseImage,
+		GenerateSSH:               true,
+		SSHKeyFile:                "",
+		NodePoolReplicas:          2,
+		NetworkType:               string(hyperv1.OpenShiftSDN),
+		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
+		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
+		AWSPlatform: core.AWSPlatformOptions{
+			InstanceType:       "m4.large",
+			RootVolumeSize:     64,
+			RootVolumeType:     "gp2",
+			BaseDomain:         o.configurableClusterOptions.BaseDomain,
+			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
+			Region:             o.configurableClusterOptions.Region,
+		},
+	}
+	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
+
+	return createOption
 }
 
 // Complete is intended to be called after flags have been bound and sets
@@ -203,21 +230,11 @@ func (o *options) Complete() error {
 		if len(o.ArtifactDir) == 0 {
 			o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
 		}
-		if len(o.defaultClusterOptions.BaseDomain) == 0 {
+		if len(o.configurableClusterOptions.BaseDomain) == 0 {
 			// TODO: make this an envvar with change to openshift/release, then change here
-			o.defaultClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
+			o.configurableClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}
 	}
-
-	o.defaultClusterOptions.ReleaseImage = o.PreviousReleaseImage
-	o.defaultClusterOptions.GenerateSSH = true
-	o.defaultClusterOptions.SSHKeyFile = ""
-	o.defaultClusterOptions.NodePoolReplicas = 2
-	o.defaultClusterOptions.InstanceType = "m4.large"
-	o.defaultClusterOptions.NetworkType = string(hyperv1.OpenShiftSDN)
-	o.defaultClusterOptions.RootVolumeSize = 64
-	o.defaultClusterOptions.RootVolumeType = "gp2"
-	o.defaultClusterOptions.AdditionalTags = o.additionalTags
 
 	return nil
 }
@@ -231,7 +248,7 @@ func (o *options) Validate() error {
 		errs = append(errs, fmt.Errorf("latest release image is required"))
 	}
 
-	if len(o.defaultClusterOptions.BaseDomain) == 0 {
+	if len(o.configurableClusterOptions.BaseDomain) == 0 {
 		errs = append(errs, fmt.Errorf("base domain is required"))
 	}
 

@@ -61,7 +61,7 @@ func TestAutoRepair(t *testing.T) {
 	g.Expect(len(awsSpec)).NotTo(BeZero())
 	instanceID := awsSpec[strings.LastIndex(awsSpec, "/")+1:]
 	t.Logf("Terminating AWS instance: %s", instanceID)
-	ec2client := ec2Client(clusterOpts.AWSCredentialsFile, clusterOpts.Region)
+	ec2client := ec2Client(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
 	_, err = ec2client.TerminateInstances(&ec2.TerminateInstancesInput{
 		InstanceIds: []*string{aws.String(instanceID)},
 	})

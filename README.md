@@ -59,7 +59,7 @@ Run the `hypershift` command to create a cluster named `example` in the `cluster
 namespace, including the cloud infrastructure to support it.
 
 ```shell
-hypershift create cluster \
+hypershift create cluster aws \
   --pull-secret /my/pull-secret \
   --aws-creds ~/.aws/credentials \
   --name example \
@@ -111,7 +111,7 @@ hypershift create kubeconfig
 To delete the cluster and the infrastructure created earlier, run:
 
 ```shell
-hypershift destroy cluster \
+hypershift destroy cluster aws \
   --aws-creds ~/.aws/credentials \
   --namespace clusters \
   --name example
@@ -199,11 +199,11 @@ clean up the `clusters/secrets` - so if that was malformed or not accurate, you 
 that secret before you rerun the `hypershift create cluster ...` command.
 
 ```shell
-$ hypershift destroy cluster   --aws-creds ~/.aws/credentials   --namespace clusters   --name example
+$ hypershift destroy cluster aws  --aws-creds ~/.aws/credentials   --namespace clusters   --name example
 
 $ oc delete secret example-pull-secret -n clusters
 
-$ hypershift create cluster --pull-secret ~/pull-secret \
+$ hypershift create cluster aws --pull-secret ~/pull-secret \
       --aws-creds ~/.aws/credentials \
       --name example \
       --base-domain yourroute53domain
