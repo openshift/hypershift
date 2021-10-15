@@ -22,7 +22,7 @@ prometheus:
     - action: labeldrop
       regex: (prometheus|prometheus_replica)
 {{- if .ProwJobID }}
-    - target_label: prowjob_id
+    - targetLabel: prowjob_id
       replacement: "{{ .ProwJobID }}"
 {{end -}}
 {{end -}}
