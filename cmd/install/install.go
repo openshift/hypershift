@@ -37,14 +37,15 @@ import (
 )
 
 type Options struct {
-	Namespace                  string
-	HyperShiftImage            string
-	HyperShiftOperatorReplicas int32
-	Development                bool
-	Render                     bool
-	ExcludeEtcdManifests       bool
-	EnableOCPClusterMonitoring bool
-	EnableCIDebugOutput        bool
+	Namespace                            string
+	HyperShiftImage                      string
+	HyperShiftOperatorReplicas           int32
+	Development                          bool
+	Render                               bool
+	ExcludeEtcdManifests                 bool
+	EnableOCPClusterMonitoring           bool
+	EnableCIDebugOutput                  bool
+	DisablePrometheusOperatorIntegration bool
 }
 
 func NewCommand() *cobra.Command {
@@ -66,6 +67,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 	cmd.Flags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
+	cmd.Flags().BoolVar(&opts.DisablePrometheusOperatorIntegration, "disable-prometheus-operator-integration", opts.DisablePrometheusOperatorIntegration, "Disable the prometheus-operator integration on the cluster")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -208,10 +210,12 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	objects = append(objects, operatorRoleBinding)
 	objects = append(objects, operatorDeployment)
 	objects = append(objects, operatorService)
-	objects = append(objects, prometheusRole)
-	objects = append(objects, prometheusRoleBinding)
-	objects = append(objects, serviceMonitor)
-	objects = append(objects, recordingRule)
+	if !opts.DisablePrometheusOperatorIntegration {
+		objects = append(objects, prometheusRole)
+		objects = append(objects, prometheusRoleBinding)
+		objects = append(objects, serviceMonitor)
+		objects = append(objects, recordingRule)
+	}
 
 	return objects
 }
