@@ -2857,7 +2857,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 
 	// Reconcile machine-approver role
 	role := machineapprover.Role(controlPlaneNamespaceName)
-	if _, err := r.CreateOrUpdate(ctx, r.Client, role, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
 		return reconcileMachineApproverRole(role)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver role: %w", err)
@@ -2865,19 +2865,19 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 
 	// Reconcile machine-approver service account
 	sa := machineapprover.ServiceAccount(controlPlaneNamespaceName)
-	if _, err := r.CreateOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
 	}
 
 	// Reconcile machine-approver role binding
 	rolebinding := machineapprover.RoleBinding(controlPlaneNamespaceName)
-	if _, err := r.CreateOrUpdate(ctx, r.Client, rolebinding, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, rolebinding, func() error {
 		return reconcileMachineApproverRoleBinding(rolebinding, role, sa)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver role binding: %w", err)
 	}
 	config := machineapprover.ConfigMap(controlPlaneNamespaceName)
-	if _, err := r.CreateOrUpdate(ctx, r.Client, config, func() error {
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, config, func() error {
 		return reconcileMachineApproverConfig(config)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver config: %w", err)
@@ -2894,7 +2894,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 			image = hcluster.Annotations[hyperv1.MachineApproverImage]
 		}
 		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
-		if _, err := r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.HypershiftOperatorImage)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
