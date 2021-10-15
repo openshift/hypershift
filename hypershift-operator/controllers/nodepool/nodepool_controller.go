@@ -21,7 +21,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/upsert"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
@@ -75,8 +74,6 @@ type NodePoolReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 
 	tracer trace.Tracer
-
-	upsert.CreateOrUpdateProvider
 }
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -465,7 +462,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
-	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
 		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
@@ -481,7 +478,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetConfigVersionHash)
-	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
+	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
 		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint)
 	}); err != nil {
 		return ctrl.Result{}, err

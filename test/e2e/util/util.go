@@ -1,7 +1,6 @@
 package util
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -27,7 +26,6 @@ import (
 	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/support/upsert"
 )
 
 func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client, prefix string) *corev1.Namespace {
@@ -54,16 +52,10 @@ func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1
 		t.Logf("Skipping cluster dump because no artifact dir was provided")
 		return
 	}
-	findKubeObjectUpdateLoops := func(filename string, content []byte) {
-		if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
-			t.Errorf("Found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename)
-		}
-	}
 	err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
 		Namespace:   hostedCluster.Namespace,
 		Name:        hostedCluster.Name,
 		ArtifactDir: artifactDir,
-		LogCheckers: []cmdcluster.LogChecker{findKubeObjectUpdateLoops},
 	})
 	if err != nil {
 		t.Errorf("Failed to dump cluster: %v", err)

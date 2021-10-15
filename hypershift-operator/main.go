@@ -26,7 +26,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp"
@@ -70,7 +69,6 @@ type StartOptions struct {
 	IgnitionServerImage        string
 	OpenTelemetryEndpoint      string
 	EnableOCPClusterMonitoring bool
-	EnableCIDebugOutput        bool
 }
 
 func NewStartCommand() *cobra.Command {
@@ -99,7 +97,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
-	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -173,8 +170,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	log.Info("using ignition server image", "image", ignitionServerImage)
 
-	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
-
 	if err = (&hostedcluster.HostedClusterReconciler{
 		Client:                  mgr.GetClient(),
 		HypershiftOperatorImage: operatorImage,
@@ -184,8 +179,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
-		CreateOrUpdateProvider:     createOrUpdate,
-		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -196,7 +189,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},
-		CreateOrUpdateProvider: createOrUpdate,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}

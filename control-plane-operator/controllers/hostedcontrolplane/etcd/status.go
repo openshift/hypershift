@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	etcdv1beta2 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
+	etcdv1 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 	EtcdReasonScaling = "EtcdScalingUp"
 )
 
-func etcdClusterConditionByType(conditions []etcdv1beta2.ClusterCondition, t etcdv1beta2.ClusterConditionType) *etcdv1beta2.ClusterCondition {
+func etcdClusterConditionByType(conditions []etcdv1.ClusterCondition, t etcdv1.ClusterConditionType) *etcdv1.ClusterCondition {
 	for i, cond := range conditions {
 		if cond.Type == t {
 			return &conditions[i]
@@ -31,8 +31,8 @@ func etcdClusterConditionByType(conditions []etcdv1beta2.ClusterCondition, t etc
 	return nil
 }
 
-func ComputeEtcdClusterStatus(ctx context.Context, c client.Client, cluster *etcdv1beta2.EtcdCluster) (metav1.Condition, error) {
-	availableCondition := etcdClusterConditionByType(cluster.Status.Conditions, etcdv1beta2.ClusterConditionAvailable)
+func ComputeEtcdClusterStatus(ctx context.Context, c client.Client, cluster *etcdv1.EtcdCluster) (metav1.Condition, error) {
+	availableCondition := etcdClusterConditionByType(cluster.Status.Conditions, etcdv1.ClusterConditionAvailable)
 
 	var cond metav1.Condition
 	switch {
@@ -83,7 +83,7 @@ func ComputeEtcdClusterStatus(ctx context.Context, c client.Client, cluster *etc
 	return cond, nil
 }
 
-func etcdClusterHasTerminatedPods(ctx context.Context, c client.Client, cluster *etcdv1beta2.EtcdCluster) (bool, error) {
+func etcdClusterHasTerminatedPods(ctx context.Context, c client.Client, cluster *etcdv1.EtcdCluster) (bool, error) {
 	// If only one member ready and waiting for another to come up, check pod status
 	etcdPods := &corev1.PodList{}
 	err := c.List(ctx, etcdPods, client.MatchingLabels{etcdClusterLabel: cluster.Name})
