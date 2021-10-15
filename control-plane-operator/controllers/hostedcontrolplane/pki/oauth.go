@@ -7,5 +7,5 @@ import (
 
 func (p *PKIParams) ReconcileOAuthServerCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalOAuthAddress string) error {
 	oauthHostNames := []string{externalOAuthAddress}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth", "openshift", X509DefaultUsage, X509UsageClientServerAuth, oauthHostNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth", []string{"openshift"}, X509DefaultUsage, X509UsageClientServerAuth, oauthHostNames, nil)
 }

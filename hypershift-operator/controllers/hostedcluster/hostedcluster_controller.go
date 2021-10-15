@@ -38,6 +38,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/machineapprover"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -70,6 +71,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -83,6 +85,8 @@ const (
 	imageCAPI = "us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0"
 	// This comes from https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
 	imageCAPA = "us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v0.7.0"
+	// This image is built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
+	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -933,6 +937,10 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the machine config server
 	if err = r.reconcileMachineConfigServer(ctx, hcluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine config server: %w", err)
+	}
+
+	if err = r.reconcileMachineApprover(ctx, hcluster, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 	}
 
 	r.Log.Info("successfully reconciled")
@@ -2846,5 +2854,204 @@ func reconcileClusterPrometheusRBAC(ctx context.Context, c client.Client, namesp
 		return fmt.Errorf("failed to ensure the %s rolebinding: %w", binding.Name, err)
 	}
 
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+
+	// Reconcile machine-approver role
+	role := machineapprover.Role(controlPlaneNamespaceName)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, role, func() error {
+		return reconcileMachineApproverRole(role)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver role: %w", err)
+	}
+
+	// Reconcile machine-approver service account
+	sa := machineapprover.ServiceAccount(controlPlaneNamespaceName)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
+	}
+
+	// Reconcile machine-approver role binding
+	rolebinding := machineapprover.RoleBinding(controlPlaneNamespaceName)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, rolebinding, func() error {
+		return reconcileMachineApproverRoleBinding(rolebinding, role, sa)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver role binding: %w", err)
+	}
+	config := machineapprover.ConfigMap(controlPlaneNamespaceName)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, config, func() error {
+		return reconcileMachineApproverConfig(config)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver config: %w", err)
+	}
+
+	// The deployment depends on the kubeconfig being reported.
+	if hcp.Status.KubeConfig != nil {
+		// Resolve the kubeconfig secret for machine-approver
+		kubeconfigSecretName := machineapprover.KASServiceKubeconfigSecret(controlPlaneNamespaceName).Name
+
+		// Reconcile machine-approver deployment
+		image := imageMachineApprover
+		if _, ok := hcluster.Annotations[hyperv1.MachineApproverImage]; ok {
+			image = hcluster.Annotations[hyperv1.MachineApproverImage]
+		}
+		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
+		if _, err := r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.HypershiftOperatorImage)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
+		}
+	}
+
+	return nil
+}
+
+type ClusterMachineApproverConfig struct {
+	NodeClientCert NodeClientCert `json:"nodeClientCert,omitempty"`
+}
+type NodeClientCert struct {
+	Disabled bool `json:"disabled,omitempty"`
+}
+
+func reconcileMachineApproverConfig(cm *corev1.ConfigMap) error {
+	// Enable the client cert csr approval
+	cfg := ClusterMachineApproverConfig{
+		NodeClientCert: NodeClientCert{
+			Disabled: false,
+		},
+	}
+	if b, err := yaml.Marshal(cfg); err != nil {
+		return err
+	} else {
+		if cm.Data == nil {
+			cm.Data = make(map[string]string)
+		}
+		cm.Data["config.yaml"] = string(b)
+	}
+
+	return nil
+}
+
+func reconcileMachineApproverRole(role *rbacv1.Role) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"cluster.x-k8s.io"},
+			Resources: []string{"machines", "machines/status"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+	}
+	return nil
+}
+
+func reconcileMachineApproverRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "Role",
+		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+	return nil
+}
+
+func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeconfigSecretName string, config *corev1.ConfigMap, machineApproverImage, availabilityProberImage string) error {
+	// TODO: enable leader election when the flag is added in machine-approver
+	args := []string{
+		"--config=/var/run/configmaps/config/config.yaml",
+		"-v=3",
+		"--logtostderr",
+		"--apigroup=cluster.x-k8s.io",
+		"--workload-cluster-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig",
+		"--machine-namespace=" + deployment.Namespace,
+		"--disable-status-controller",
+	}
+
+	deployment.Spec = appsv1.DeploymentSpec{
+		Replicas: k8sutilspointer.Int32Ptr(1),
+		Selector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"app": "machine-approver",
+			},
+		},
+		Template: corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					"app": "machine-approver",
+				},
+				Name: "machine-approver",
+			},
+			Spec: corev1.PodSpec{
+				ServiceAccountName: sa.Name,
+				Tolerations: []corev1.Toleration{
+					{
+						Key:    "node-role.kubernetes.io/master",
+						Effect: corev1.TaintEffectNoSchedule,
+					},
+				},
+				Volumes: []corev1.Volume{
+					{
+						Name: "kubeconfig",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName: kubeconfigSecretName,
+							},
+						},
+					},
+					{
+						Name: "config",
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: config.Name,
+								},
+								Optional:    k8sutilspointer.BoolPtr(true),
+								DefaultMode: k8sutilspointer.Int32Ptr(440),
+							},
+						},
+					},
+				},
+				Containers: []corev1.Container{
+					{
+						Name:            "machine-approver-controller",
+						Image:           machineApproverImage,
+						ImagePullPolicy: corev1.PullAlways,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "kubeconfig",
+								MountPath: "/etc/kubernetes/kubeconfig",
+							},
+							{
+								Name:      "config",
+								MountPath: "/var/run/configmaps/config",
+							},
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("50Mi"),
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+							},
+						},
+						Command: []string{"/usr/bin/machine-approver"},
+						Args:    args,
+					},
+				},
+			},
+		},
+	}
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
+
+	hyperutil.SetColocation(hc, deployment)
+	hyperutil.SetRestartAnnotation(hc, deployment)
+	hyperutil.SetControlPlaneIsolation(hc, deployment)
+	hyperutil.SetDefaultPriorityClass(deployment)
 	return nil
 }

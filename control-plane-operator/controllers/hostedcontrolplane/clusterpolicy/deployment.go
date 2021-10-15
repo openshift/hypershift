@@ -74,6 +74,13 @@ func buildOCMContainerMain(image string) func(*corev1.Container) {
 			"--namespace=openshift-kube-controller-manager",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Env = []corev1.EnvVar{
+			{
+				// let policy-controller create events in the openshift-kube-controller-manager namespace instead of the default namespace.
+				Name:  "POD_NAMESPACE",
+				Value: "openshift-kube-controller-manager",
+			},
+		}
 	}
 }
 
