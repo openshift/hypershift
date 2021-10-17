@@ -55,6 +55,7 @@ const (
 	// TODO: Include konnectivity image in release payload
 	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+	imageRoksMetricsImage   = "registry.ng.bluemix.net/armada-master/ocp-roks-metrics-server:v4.7.0-20210917"
 )
 
 func NewStartCommand() *cobra.Command {
@@ -161,6 +162,7 @@ func NewStartCommand() *cobra.Command {
 				"konnectivity-server":            konnectivityServerImage,
 				"konnectivity-agent":             konnectivityAgentImage,
 				"socks5-proxy":                   socks5ProxyImage,
+				"roks-metrics":                   imageRoksMetricsImage,
 			},
 		}
 

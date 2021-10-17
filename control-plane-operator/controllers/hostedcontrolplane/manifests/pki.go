@@ -293,3 +293,21 @@ func IBMCloudKASKMSKPCustomerAuthSecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func RoksMetricsCert(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "roks-metrics",
+			Namespace: ns,
+		},
+	}
+}
+
+func RoksMetricsWorkerAgentSecret(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-manifest-roks-metrics",
+			Namespace: ns,
+		},
+	}
+}

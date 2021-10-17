@@ -17,3 +17,15 @@ func ParseNamespacedName(name string) types.NamespacedName {
 	}
 	return types.NamespacedName{Name: parts[0]}
 }
+
+// True - Returns bool pointer type - *true
+func True() *bool {
+	a := true
+	return &a
+}
+
+// False - Returns bool pointer type - *false
+func False() *bool {
+	a := false
+	return &a
+}
