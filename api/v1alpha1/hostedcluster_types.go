@@ -67,6 +67,11 @@ const (
 	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
 	// no images can be pulled from registries outside of IBM Cloud's official regional registries
 	MachineApproverImage = "hypershift.openshift.io/machine-approver-image"
+
+	// RoksMetricsImage is an annotation that allows the specification of the roks metrics image.
+	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
+	//no images can be pulled from registries outside of IBM Cloud's official regional registries
+	RoksMetricsImage = "registry.ng.bluemix.net/armada-master/ocp-roks-metrics-server:v4.7.0-20210917"
 )
 
 // HostedClusterSpec defines the desired state of HostedCluster

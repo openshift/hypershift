@@ -57,6 +57,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/metrics"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
@@ -664,6 +665,12 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile olm: %w", err)
 	}
 
+	// Reconcile the Roks Metrics
+	r.Log.Info("Reconciling Roks Metrics")
+	if err = r.reconcileRoksMetrics(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile rocks metrics: %w", err)
+	}
+
 	// Install the control plane into the infrastructure
 	r.Log.Info("Reconciling hosted control plane")
 	if err := r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage); err != nil {
@@ -1258,6 +1265,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileOLMOperatorServingCertSecret(olmOperatorServingCert, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
+	}
+
+	//ROKS metrics Cert
+	roksmetricsServingCert := manifests.RoksMetricsWorkerAgentSecret(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, olmOperatorServingCert, func() error {
+		return pki.ReconcileRoksMetricsSecret(roksmetricsServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics serving cert: %w", err)
 	}
 
 	return nil
@@ -2528,4 +2543,102 @@ func generateModularDailyCronSchedule(input []byte) string {
 	m := mi.Mod(a, big.NewInt(60))
 	h := hi.Mod(a, big.NewInt(24))
 	return fmt.Sprintf("%d %d * * *", m.Int64(), h.Int64())
+}
+
+func (r *HostedControlPlaneReconciler) reconcileRoksMetrics(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := metrics.NewROKSMetricsParams(hcp, releaseImage.ComponentImages())
+
+	//Reconcile NameSpace
+	roksMetricNameSpace := manifests.RoksMetricsNameSpaceWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricNameSpace, func() error {
+		return metrics.ReconcileRoksMetricsNameSpace(roksMetricNameSpace, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics namespace: %w", err)
+	}
+
+	// Reconcile service
+	roksMetricService := manifests.RoksMetricsServiceWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricService, func() error {
+		return metrics.ReconcileRocksMetricsService(roksMetricService, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics service: %w", err)
+	}
+
+	//reconcile Cluster role
+	rm := manifests.RoksMetricsClusterRole()
+	roksMetricRole := manifests.RoksMetricsClusterRoleWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricRole, func() error {
+		return metrics.ReconcileRoksMetricsClusterRole(roksMetricRole, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics cluster role: %w", err)
+	}
+
+	//reconcile serviceaccount
+	roksMetricserviceAccountCM := manifests.RoksMetricsServiceAccountWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r, roksMetricserviceAccountCM, func() error {
+		return metrics.ReconcileRocksMetricsServiceAccount(roksMetricserviceAccountCM, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics service account: %w", err)
+	}
+
+	//reconcile roks metrics rolebinding
+	roksMetricserviceAccount := manifests.RoksMetricsServiceAccount()
+	roksMetricsRoleBinding := manifests.RoksMetricsRoleBindingWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricsRoleBinding, func() error {
+		return metrics.ReconcileRoksMetricsRoleBinding(roksMetricsRoleBinding, p.OwnerRef, rm, roksMetricserviceAccount)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics rolebinding: %w", err)
+	}
+
+	//reconcile prometheus rolbinding
+	prometheusRoleBinding := manifests.PrometheusK8sRoleBindingWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, prometheusRoleBinding, func() error {
+		return metrics.ReconcilePrometheusRoleBinding(prometheusRoleBinding, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile prometheus-k8s rolebinding: %w", err)
+	}
+
+	//reconcile deployment
+	roksMetricsImage := p.Image
+	if _, ok := hcp.Annotations[hyperv1.RoksMetricsImage]; ok {
+		roksMetricsImage = hcp.Annotations[hyperv1.RoksMetricsImage]
+	}
+	roksMetricsDeployment := manifests.RoksMetricsDeploymentWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricsDeployment, func() error {
+		return metrics.ReconcileRoksMetricsDeployment(roksMetricsDeployment, p.OwnerRef, roksMetricserviceAccount, roksMetricsImage)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics deployment: %w", err)
+	}
+
+	//reconcile Service Monitor
+	roksMetricServiceMonitor := manifests.RoksMetricsServiceMonitorWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricServiceMonitor, func() error {
+		return metrics.ReconcileRocksMetricsServiceMonitor(roksMetricServiceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics service monitor: %w", err)
+	}
+
+	// Reconcile service
+	roksMetricPusherService := manifests.MetricPusherServiceWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricPusherService, func() error {
+		return metrics.ReconcileRocksMetricsPusherService(roksMetricPusherService, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics pusher service: %w", err)
+	}
+
+	//reconcile deployment
+	roksMetricsDeployment = manifests.MetricPusherDeploymentWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricsDeployment, func() error {
+		return metrics.ReconcileRoksMetricsPusherDeployment(roksMetricsDeployment, p.OwnerRef, roksMetricserviceAccount, roksMetricsImage)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics pusher deployment: %w", err)
+	}
+	//reconcile Service Monitor
+	roksMetricPusherServiceMonitor := manifests.MetricPusherServiceMonitorWorkerManifest(hcp.Namespace)
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roksMetricPusherServiceMonitor, func() error {
+		return metrics.ReconcileRocksMetricsPusherServiceMonitor(roksMetricPusherServiceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile roks metrics pusher service monitor: %w", err)
+	}
+	return nil
 }
