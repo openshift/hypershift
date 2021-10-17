@@ -95,6 +95,8 @@ type ClusterParams struct {
 	RestartDate                            string                 `json:"restartDate"`
 	HostedClusterConfigOperatorControllers []string               `json:"hostedClusterConfigOperatorControllers"`
 	ROKSMetricsImage                       string                 `json:"roksMetricsImage"`
+	ROKSMetricsSecurityContextMaster       *SecurityContext       `json:"roksMetricsSecurityContextMaster"`
+	ROKSMetricsSecurityContextWorker       *SecurityContext       `json:"roksMetricsSecurityContextWorker"`
 	ExtraFeatureGates                      []string               `json:"extraFeatureGates"`
 	HostedClusterConfigOperatorSecurity    string                 `json:"hostedClusterConfigOperatorSecurity"`
 	ApiserverLivenessPath                  string                 `json:"apiserverLivenessPath"`
@@ -155,3 +157,10 @@ const (
 	HighlyAvailable AvailabilityPolicy = "HighlyAvailable"
 	SingleReplica   AvailabilityPolicy = "SingleReplica"
 )
+
+type SecurityContext struct {
+	RunAsUser    uint `json:"runAsUser"`
+	RunAsGroup   uint `json:"runAsGroup"`
+	RunAsNonRoot bool `json:"runAsNonRoot"`
+	Privileged   bool `json:"privileged"`
+}
