@@ -515,7 +515,7 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 
 	rule.Spec.Groups = []prometheusoperatorv1.RuleGroup{
 		{
-			Name:     "control-plane.rules",
+			Name:     "hypershift.rules",
 			Interval: "30s",
 			Rules:    []prometheusoperatorv1.Rule{},
 		},
