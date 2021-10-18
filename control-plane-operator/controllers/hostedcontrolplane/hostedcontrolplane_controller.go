@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/support/capabilities"
@@ -26,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -118,7 +120,8 @@ type HostedControlPlaneReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
-	EnableCIDebugOutput bool
+	EnableCIDebugOutput       bool
+	manifestClientObjectCache map[string]client.Object
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -1066,7 +1069,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return err
 	}
 
-	if err := applyManifests(ctx, r, r.Log, targetNamespace, manifests); err != nil {
+	if err := r.applyManifests(ctx, r.Log, targetNamespace, manifests); err != nil {
 		return err
 	}
 	r.Log.Info("successfully applied all manifests")
@@ -2502,29 +2505,71 @@ func generateTargetCredentialsSecret(scheme *runtime.Scheme, creds hyperv1.AWSRo
 	return configMap, nil
 }
 
-func applyManifests(ctx context.Context, c client.Client, log logr.Logger, namespace string, manifests map[string][]byte) error {
+func (r *HostedControlPlaneReconciler) applyManifests(ctx context.Context, log logr.Logger, namespace string, manifests map[string][]byte) error {
 	// Use server side apply for manifestss
 	applyErrors := []error{}
 	for manifestName, manifestBytes := range manifests {
 		if excludeManifests.Has(manifestName) {
 			continue
 		}
-		obj := &unstructured.Unstructured{}
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(obj); err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err))
-		}
-		obj.SetNamespace(namespace)
-		err := c.Patch(ctx, obj, client.RawPatch(types.ApplyPatchType, manifestBytes), client.ForceOwnership, client.FieldOwner("control-plane-operator"))
+
+		obj, err := r.clientObjectForManifestName(manifestName, manifestBytes)
 		if err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to apply manifest %s: %w", manifestName, err))
-		} else {
-			log.Info("applied manifest", "manifest", manifestName)
+			applyErrors = append(applyErrors, fmt.Errorf("failed to get object for manifest %s: %w", manifestName, err))
+			continue
+		}
+
+		obj.SetNamespace(namespace)
+
+		if _, err := r.CreateOrUpdate(ctx, r.Client, obj, func() error {
+			if err := yaml.Unmarshal(manifestBytes, obj); err != nil {
+				return fmt.Errorf("failed to decode %s manifest into %T: %w", manifestName, obj, err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 	if errs := errors.NewAggregate(applyErrors); errs != nil {
 		return fmt.Errorf("failed to apply some manifests: %w", errs)
 	}
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) clientObjectForManifestName(manifestName string, manifestBytes []byte) (client.Object, error) {
+	if obj, exists := r.manifestClientObjectCache[manifestName]; exists {
+		return obj.DeepCopyObject().(client.Object), nil
+	}
+
+	objRaw := &unstructured.Unstructured{}
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(objRaw); err != nil {
+		return nil, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err)
+	}
+	apiVersion := objRaw.GetAPIVersion()
+	gvk := schema.GroupVersionKind{Kind: objRaw.GetKind()}
+	if split := strings.Split(apiVersion, "/"); len(split) == 2 {
+		gvk.Group = split[0]
+		gvk.Version = split[1]
+	} else {
+		// core group
+		gvk.Version = apiVersion
+	}
+	runtimeObj, err := r.Client.Scheme().New(gvk)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get type for gvk %s for manifest %s from scheme: %w", manifestName, gvk.String(), err)
+	}
+	obj, ok := runtimeObj.(client.Object)
+	if !ok {
+		return nil, fmt.Errorf("%T is not a client.Object", runtimeObj)
+	}
+	obj.SetName(objRaw.GetName())
+
+	if r.manifestClientObjectCache == nil {
+		r.manifestClientObjectCache = map[string]client.Object{}
+	}
+	r.manifestClientObjectCache[manifestName] = obj
+
+	return obj.DeepCopyObject().(client.Object), nil
 }
 
 func generateKubeadminPassword() (string, error) {
