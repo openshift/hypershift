@@ -38,7 +38,7 @@ SGID="$(cat "${INSTANCEFILE}" | jq -r '.Reservations[].Instances[] | select(.Sta
 aws ec2 authorize-security-group-ingress \
    --group-id "${SGID}" \
    --protocol tcp \
-   --port 32000-32767 \
+   --port 30000-32767 \
    --cidr "0.0.0.0/0"
 
 # Find the master machines security group
@@ -48,7 +48,7 @@ MASTERSGID="$(aws ec2 describe-security-groups --filters "Name=tag:Name,Values=$
 aws ec2 authorize-security-group-ingress \
    --group-id "${MASTERSGID}" \
    --protocol tcp \
-   --port 32000-32767 \
+   --port 30000-32767 \
    --source-group "${SGID}"
 
 # Find IP of a master machine
@@ -65,7 +65,7 @@ ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "ec2-user@${PUBL
 # Configure HA Proxy on bastion machine
 ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "ec2-user@${PUBLICIP}" \
   "sudo cat << EOF | sudo tee /etc/haproxy/haproxy.cfg
-listen  router *:32000-32767
+listen  router *:30000-32767
     timeout connect         10s
     timeout client          1m
     timeout server          1m
