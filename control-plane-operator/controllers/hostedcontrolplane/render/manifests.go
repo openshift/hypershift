@@ -83,7 +83,7 @@ func (c *clusterManifestContext) machineConfigServer() {
 func (c *clusterManifestContext) userManifestsBootstrapper() {
 	c.addManifestFiles(
 		"user-manifests-bootstrapper/user-manifests-bootstrapper-rolebinding.yaml",
-		"user-manifests-bootstrapper/user-manifests-bootstrapper-pod.yaml",
+		"user-manifests-bootstrapper/user-manifests-bootstrapper-job.yaml",
 	)
 	for _, file := range c.userManifestFiles {
 		data, err := c.substituteParams(c.params, file)

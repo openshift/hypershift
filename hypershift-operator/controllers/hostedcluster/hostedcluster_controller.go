@@ -1927,7 +1927,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 		},
 		{
 			APIGroups: []string{"batch"},
-			Resources: []string{"cronjobs"},
+			Resources: []string{"cronjobs", "jobs"},
 			Verbs:     []string{"*"},
 		},
 	}
