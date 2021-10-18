@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -1349,7 +1350,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 	} else {
 		span.AddEvent("reconciled ignition server service", trace.WithAttributes(attribute.String("result", string(result))))
 	}
-	var ignitionServerDNSName string
+	var ignitionServerAddress string
 	switch serviceStrategy.Type {
 	case hyperv1.Route:
 		// Reconcile route
@@ -1379,12 +1380,12 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 			r.Log.Info("ignition server reconciliation waiting for ignition server route to be assigned a host value")
 			return nil
 		}
-		ignitionServerDNSName = ignitionServerRoute.Status.Ingress[0].Host
+		ignitionServerAddress = ignitionServerRoute.Status.Ingress[0].Host
 	case hyperv1.NodePort:
 		if serviceStrategy.NodePort == nil {
 			return fmt.Errorf("nodeport metadata not specified for ignition service")
 		}
-		ignitionServerDNSName = serviceStrategy.NodePort.Address
+		ignitionServerAddress = serviceStrategy.NodePort.Address
 	default:
 		return fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type)
 	}
@@ -1435,7 +1436,12 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 				Subject:   pkix.Name{CommonName: "ignition-server", Organization: []string{"openshift"}},
 				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 				Validity:  certs.ValidityOneYear,
-				DNSNames:  []string{ignitionServerDNSName},
+			}
+			numericIP := net.ParseIP(ignitionServerAddress)
+			if numericIP == nil {
+				cfg.DNSNames = []string{ignitionServerAddress}
+			} else {
+				cfg.IPAddresses = []net.IP{numericIP}
 			}
 			key, crt, err := certs.GenerateSignedCertificate(caKey, caCert, cfg)
 			if err != nil {

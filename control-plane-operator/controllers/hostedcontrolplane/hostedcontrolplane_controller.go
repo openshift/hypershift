@@ -1215,7 +1215,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// OAuth server Cert
 	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, oauthServerCert, func() error {
-		return p.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
+		return pki.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
 	}
