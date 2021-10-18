@@ -71,6 +71,7 @@ type StartOptions struct {
 	OpenTelemetryEndpoint      string
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
+	ControlPlaneOperatorImage  string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -82,12 +83,13 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := StartOptions{
-		Namespace:             "hypershift",
-		DeploymentName:        "operator",
-		MetricsAddr:           "0",
-		EnableLeaderElection:  false,
-		IgnitionServerImage:   "",
-		OpenTelemetryEndpoint: "",
+		Namespace:                 "hypershift",
+		DeploymentName:            "operator",
+		MetricsAddr:               "0",
+		EnableLeaderElection:      false,
+		ControlPlaneOperatorImage: "",
+		IgnitionServerImage:       "",
+		OpenTelemetryEndpoint:     "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -96,6 +98,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableLeaderElection, "enable-leader-election", opts.EnableLeaderElection,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
@@ -161,7 +164,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 		return "", fmt.Errorf("couldn't locate operator container on deployment")
 	}
-	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, "")
+	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.ControlPlaneOperatorImage)
 	if err != nil {
 		return fmt.Errorf("failed to find operator image: %w", err)
 	}
