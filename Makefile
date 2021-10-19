@@ -9,7 +9,19 @@ CRD_OPTIONS ?= "crd:trivialVersions=true"
 # Runtime CLI to use for building and pushing images
 RUNTIME ?= docker
 
-CONTROLLER_GEN=GO111MODULE=on GOFLAGS=-mod=vendor go run ./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen
+TOOLS_DIR=./hack/tools
+BIN_DIR=bin
+TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
+CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
+STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
+
+$(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
+
+$(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
+
+PROMTOOL=GO111MODULE=on GOFLAGS=-mod=vendor go run github.com/prometheus/prometheus/cmd/promtool
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOFLAGS=-mod=vendor go
@@ -34,7 +46,7 @@ all: build e2e
 build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator konnectivity-socks5-proxy hypershift availability-prober
 
 .PHONY: verify
-verify: staticcheck deps api fmt vet
+verify: staticcheck deps api fmt vet promtool
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	$(eval STATUS = $(shell git status -s))
@@ -78,31 +90,31 @@ availability-prober:
 api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud etcd-api
 
 .PHONY: hypershift-api
-hypershift-api:
+hypershift-api: $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	rm -rf cmd/install/assets/hypershift-operator/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
 .PHONY: cluster-api
-cluster-api:
+cluster-api: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api/exp/addons/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api
 
 .PHONY: cluster-api-provider-aws
-cluster-api-provider-aws:
+cluster-api-provider-aws: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-aws/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/exp/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 
 .PHONY: cluster-api-provider-ibmcloud
-cluster-api-provider-ibmcloud:
+cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-ibmcloud/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
 
 .PHONY: etcd-api
-etcd-api:
+etcd-api: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/etcd/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./thirdparty/etcd/..." output:crd:artifacts:config=cmd/install/assets/etcd
 
@@ -126,6 +138,10 @@ fmt:
 vet:
 	$(GO) vet ./...
 
+.PHONY: promtool
+promtool:
+	cd $(TOOLS_DIR); $(PROMTOOL) check rules ../../cmd/install/assets/recordingrules/*.yaml
+
 # Updates Go modules
 .PHONY: deps
 deps:
@@ -136,8 +152,15 @@ deps:
 # Run staticcheck
 # How to ignore failures https://staticcheck.io/docs/configuration#line-based-linter-directives
 .PHONY: staticcheck
-staticcheck:
-	HOME=$(HOME) $(GO) run honnef.co/go/tools/cmd/staticcheck ./control-plane-operator/controllers/... ./hypershift-operator/controllers/... ./ignition-server/... ./hosted-cluster-config-operator/... ./cmd/... ./support/certs/... ./support/releaseinfo/...
+staticcheck: $(STATICCHECK)
+	$(STATICCHECK) \
+		./control-plane-operator/controllers/... \
+		./hypershift-operator/controllers/... \
+		./ignition-server/... \
+		./hosted-cluster-config-operator/... \
+		./cmd/... \
+		./support/certs/... \
+		./support/releaseinfo/...
 
 # Build the docker image with official golang image
 .PHONY: docker-build
