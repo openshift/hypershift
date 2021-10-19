@@ -1,0 +1,982 @@
+// Copyright 2015 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"math"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/go-kit/log"
+	"github.com/google/pprof/profile"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
+	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
+	"github.com/prometheus/exporter-toolkit/web"
+	"gopkg.in/alecthomas/kingpin.v2"
+	yaml "gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/file"
+	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
+	"github.com/prometheus/prometheus/discovery/kubernetes"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/promql"
+)
+
+func main() {
+	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
+	app.Version(version.Print("promtool"))
+	app.HelpFlag.Short('h')
+
+	checkCmd := app.Command("check", "Check the resources for validity.")
+
+	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
+	configFiles := checkConfigCmd.Arg(
+		"config-files",
+		"The config files to check.",
+	).Required().ExistingFiles()
+
+	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
+	webConfigFiles := checkWebConfigCmd.Arg(
+		"web-config-files",
+		"The config files to check.",
+	).Required().ExistingFiles()
+
+	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
+	ruleFiles := checkRulesCmd.Arg(
+		"rule-files",
+		"The rule files to check.",
+	).Required().ExistingFiles()
+
+	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+
+	queryCmd := app.Command("query", "Run query against a Prometheus server.")
+	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
+
+	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
+	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
+
+	queryRangeCmd := queryCmd.Command("range", "Run range query.")
+	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
+	queryRangeHeaders := queryRangeCmd.Flag("header", "Extra headers to send to server.").StringMap()
+	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
+	queryRangeEnd := queryRangeCmd.Flag("end", "Query range end time (RFC3339 or Unix timestamp).").String()
+	queryRangeStep := queryRangeCmd.Flag("step", "Query step size (duration).").Duration()
+
+	querySeriesCmd := queryCmd.Command("series", "Run series query.")
+	querySeriesServer := querySeriesCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	querySeriesMatch := querySeriesCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().Strings()
+	querySeriesBegin := querySeriesCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
+	querySeriesEnd := querySeriesCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
+
+	debugCmd := app.Command("debug", "Fetch debug information.")
+	debugPprofCmd := debugCmd.Command("pprof", "Fetch profiling debug information.")
+	debugPprofServer := debugPprofCmd.Arg("server", "Prometheus server to get pprof files from.").Required().String()
+	debugMetricsCmd := debugCmd.Command("metrics", "Fetch metrics debug information.")
+	debugMetricsServer := debugMetricsCmd.Arg("server", "Prometheus server to get metrics from.").Required().String()
+	debugAllCmd := debugCmd.Command("all", "Fetch all debug information.")
+	debugAllServer := debugAllCmd.Arg("server", "Prometheus server to get all debug information from.").Required().String()
+
+	queryLabelsCmd := queryCmd.Command("labels", "Run labels query.")
+	queryLabelsServer := queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
+	queryLabelsBegin := queryLabelsCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
+	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
+
+	testCmd := app.Command("test", "Unit testing.")
+	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
+	testRulesFiles := testRulesCmd.Arg(
+		"test-rule-file",
+		"The unit test file.",
+	).Required().ExistingFiles()
+
+	defaultDBPath := "data/"
+	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
+
+	tsdbBenchCmd := tsdbCmd.Command("bench", "Run benchmarks.")
+	tsdbBenchWriteCmd := tsdbBenchCmd.Command("write", "Run a write performance benchmark.")
+	benchWriteOutPath := tsdbBenchWriteCmd.Flag("out", "Set the output path.").Default("benchout").String()
+	benchWriteNumMetrics := tsdbBenchWriteCmd.Flag("metrics", "Number of metrics to read.").Default("10000").Int()
+	benchWriteNumScrapes := tsdbBenchWriteCmd.Flag("scrapes", "Number of scrapes to simulate.").Default("3000").Int()
+	benchSamplesFile := tsdbBenchWriteCmd.Arg("file", "Input file with samples data, default is ("+filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")+").").Default(filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")).String()
+
+	tsdbAnalyzeCmd := tsdbCmd.Command("analyze", "Analyze churn, label pair cardinality and compaction efficiency.")
+	analyzePath := tsdbAnalyzeCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	analyzeBlockID := tsdbAnalyzeCmd.Arg("block id", "Block to analyze (default is the last block).").String()
+	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
+	analyzeRunExtended := tsdbAnalyzeCmd.Flag("extended", "Run extended analysis.").Bool()
+
+	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
+	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
+	listPath := tsdbListCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+
+	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
+	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
+	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+
+	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
+	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
+	maxBlockDuration := importCmd.Flag("max-block-duration", "Maximum duration created blocks may span. Anything less than 2h is ignored.").Hidden().PlaceHolder("<duration>").Duration()
+	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
+	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
+	importRulesCmd := importCmd.Command("rules", "Create blocks of data for new recording rules.")
+	importRulesURL := importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").URL()
+	importRulesStart := importRulesCmd.Flag("start", "The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required.").
+		Required().String()
+	importRulesEnd := importRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hours ago. Must be a RFC3339 formatted date or Unix timestamp.").String()
+	importRulesOutputDir := importRulesCmd.Flag("output-dir", "Output directory for generated blocks.").Default("data/").String()
+	importRulesEvalInterval := importRulesCmd.Flag("eval-interval", "How frequently to evaluate rules when backfilling if a value is not set in the recording rule files.").
+		Default("60s").Duration()
+	importRulesFiles := importRulesCmd.Arg(
+		"rule-files",
+		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
+	).Required().ExistingFiles()
+
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
+
+	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	var p printer
+	switch *queryCmdFmt {
+	case "json":
+		p = &jsonPrinter{}
+	case "promql":
+		p = &promqlPrinter{}
+	}
+
+	var queryOpts promql.LazyLoaderOpts
+	for _, f := range *featureList {
+		opts := strings.Split(f, ",")
+		for _, o := range opts {
+			switch o {
+			case "promql-at-modifier":
+				queryOpts.EnableAtModifier = true
+			case "promql-negative-offset":
+				queryOpts.EnableNegativeOffset = true
+			case "":
+				continue
+			default:
+				fmt.Printf("  WARNING: Unknown option for --enable-feature: %q\n", o)
+			}
+		}
+	}
+
+	switch parsedCmd {
+	case checkConfigCmd.FullCommand():
+		os.Exit(CheckConfig(*configFiles...))
+
+	case checkWebConfigCmd.FullCommand():
+		os.Exit(CheckWebConfig(*webConfigFiles...))
+
+	case checkRulesCmd.FullCommand():
+		os.Exit(CheckRules(*ruleFiles...))
+
+	case checkMetricsCmd.FullCommand():
+		os.Exit(CheckMetrics())
+
+	case queryInstantCmd.FullCommand():
+		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
+
+	case queryRangeCmd.FullCommand():
+		os.Exit(QueryRange(*queryRangeServer, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
+
+	case querySeriesCmd.FullCommand():
+		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
+
+	case debugPprofCmd.FullCommand():
+		os.Exit(debugPprof(*debugPprofServer))
+
+	case debugMetricsCmd.FullCommand():
+		os.Exit(debugMetrics(*debugMetricsServer))
+
+	case debugAllCmd.FullCommand():
+		os.Exit(debugAll(*debugAllServer))
+
+	case queryLabelsCmd.FullCommand():
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
+
+	case testRulesCmd.FullCommand():
+		os.Exit(RulesUnitTest(queryOpts, *testRulesFiles...))
+
+	case tsdbBenchWriteCmd.FullCommand():
+		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
+
+	case tsdbAnalyzeCmd.FullCommand():
+		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended)))
+
+	case tsdbListCmd.FullCommand():
+		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
+
+	case tsdbDumpCmd.FullCommand():
+		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
+	//TODO(aSquare14): Work on adding support for custom block size.
+	case openMetricsImportCmd.FullCommand():
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
+
+	case importRulesCmd.FullCommand():
+		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *importRulesFiles...)))
+	}
+}
+
+// CheckConfig validates configuration files.
+func CheckConfig(files ...string) int {
+	failed := false
+
+	for _, f := range files {
+		ruleFiles, err := checkConfig(f)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			failed = true
+		} else {
+			fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
+		}
+		fmt.Println()
+
+		for _, rf := range ruleFiles {
+			if n, errs := checkRules(rf); len(errs) > 0 {
+				fmt.Fprintln(os.Stderr, "  FAILED:")
+				for _, err := range errs {
+					fmt.Fprintln(os.Stderr, "    ", err)
+				}
+				failed = true
+			} else {
+				fmt.Printf("  SUCCESS: %d rules found\n", n)
+			}
+			fmt.Println()
+		}
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+// CheckWebConfig validates web configuration files.
+func CheckWebConfig(files ...string) int {
+	failed := false
+
+	for _, f := range files {
+		if err := web.Validate(f); err != nil {
+			fmt.Fprintln(os.Stderr, f, "FAILED:", err)
+			failed = true
+			continue
+		}
+		fmt.Fprintln(os.Stderr, f, "SUCCESS")
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+func checkFileExists(fn string) error {
+	// Nothing set, nothing to error on.
+	if fn == "" {
+		return nil
+	}
+	_, err := os.Stat(fn)
+	return err
+}
+
+func checkConfig(filename string) ([]string, error) {
+	fmt.Println("Checking", filename)
+
+	cfg, err := config.LoadFile(filename, false, log.NewNopLogger())
+	if err != nil {
+		return nil, err
+	}
+
+	var ruleFiles []string
+	for _, rf := range cfg.RuleFiles {
+		rfs, err := filepath.Glob(rf)
+		if err != nil {
+			return nil, err
+		}
+		// If an explicit file was given, error if it is not accessible.
+		if !strings.Contains(rf, "*") {
+			if len(rfs) == 0 {
+				return nil, errors.Errorf("%q does not point to an existing file", rf)
+			}
+			if err := checkFileExists(rfs[0]); err != nil {
+				return nil, errors.Wrapf(err, "error checking rule file %q", rfs[0])
+			}
+		}
+		ruleFiles = append(ruleFiles, rfs...)
+	}
+
+	for _, scfg := range cfg.ScrapeConfigs {
+		if err := checkFileExists(scfg.HTTPClientConfig.BearerTokenFile); err != nil {
+			return nil, errors.Wrapf(err, "error checking bearer token file %q", scfg.HTTPClientConfig.BearerTokenFile)
+		}
+
+		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig); err != nil {
+			return nil, err
+		}
+
+		for _, c := range scfg.ServiceDiscoveryConfigs {
+			switch c := c.(type) {
+			case *kubernetes.SDConfig:
+				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig); err != nil {
+					return nil, err
+				}
+			case *file.SDConfig:
+				for _, file := range c.Files {
+					files, err := filepath.Glob(file)
+					if err != nil {
+						return nil, err
+					}
+					if len(files) != 0 {
+						for _, f := range files {
+							err = checkSDFile(f)
+							if err != nil {
+								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+							}
+						}
+						continue
+					}
+					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
+				}
+			}
+		}
+	}
+
+	return ruleFiles, nil
+}
+
+func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
+	if err := checkFileExists(tlsConfig.CertFile); err != nil {
+		return errors.Wrapf(err, "error checking client cert file %q", tlsConfig.CertFile)
+	}
+	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
+		return errors.Wrapf(err, "error checking client key file %q", tlsConfig.KeyFile)
+	}
+
+	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
+		return errors.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
+	}
+	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
+		return errors.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
+	}
+
+	return nil
+}
+
+func checkSDFile(filename string) error {
+	fd, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+
+	content, err := ioutil.ReadAll(fd)
+	if err != nil {
+		return err
+	}
+
+	var targetGroups []*targetgroup.Group
+
+	switch ext := filepath.Ext(filename); strings.ToLower(ext) {
+	case ".json":
+		if err := json.Unmarshal(content, &targetGroups); err != nil {
+			return err
+		}
+	case ".yml", ".yaml":
+		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+			return err
+		}
+	default:
+		return errors.Errorf("invalid file extension: %q", ext)
+	}
+
+	for i, tg := range targetGroups {
+		if tg == nil {
+			return errors.Errorf("nil target group item found (index %d)", i)
+		}
+	}
+
+	return nil
+}
+
+// CheckRules validates rule files.
+func CheckRules(files ...string) int {
+	failed := false
+
+	for _, f := range files {
+		if n, errs := checkRules(f); errs != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+			}
+			failed = true
+		} else {
+			fmt.Printf("  SUCCESS: %d rules found\n", n)
+		}
+		fmt.Println()
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+func checkRules(filename string) (int, []error) {
+	fmt.Println("Checking", filename)
+
+	rgs, errs := rulefmt.ParseFile(filename)
+	if errs != nil {
+		return 0, errs
+	}
+
+	numRules := 0
+	for _, rg := range rgs.Groups {
+		numRules += len(rg.Rules)
+	}
+
+	dRules := checkDuplicates(rgs.Groups)
+	if len(dRules) != 0 {
+		fmt.Printf("%d duplicate rule(s) found.\n", len(dRules))
+		for _, n := range dRules {
+			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
+			for _, l := range n.label {
+				fmt.Printf("\t%s: %s\n", l.Name, l.Value)
+			}
+		}
+		fmt.Println("Might cause inconsistency while recording expressions.")
+	}
+
+	return numRules, nil
+}
+
+type compareRuleType struct {
+	metric string
+	label  labels.Labels
+}
+
+type compareRuleTypes []compareRuleType
+
+func (c compareRuleTypes) Len() int           { return len(c) }
+func (c compareRuleTypes) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c compareRuleTypes) Less(i, j int) bool { return compare(c[i], c[j]) < 0 }
+
+func compare(a, b compareRuleType) int {
+	if res := strings.Compare(a.metric, b.metric); res != 0 {
+		return res
+	}
+
+	return labels.Compare(a.label, b.label)
+}
+
+func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
+	var duplicates []compareRuleType
+	var rules compareRuleTypes
+
+	for _, group := range groups {
+
+		for _, rule := range group.Rules {
+			rules = append(rules, compareRuleType{
+				metric: ruleMetric(rule),
+				label:  labels.FromMap(rule.Labels),
+			})
+		}
+	}
+	if len(rules) < 2 {
+		return duplicates
+	}
+	sort.Sort(rules)
+
+	last := rules[0]
+	for i := 1; i < len(rules); i++ {
+		if compare(last, rules[i]) == 0 {
+			// Don't add a duplicated rule multiple times.
+			if len(duplicates) == 0 || compare(last, duplicates[len(duplicates)-1]) != 0 {
+				duplicates = append(duplicates, rules[i])
+			}
+		}
+		last = rules[i]
+	}
+
+	return duplicates
+}
+
+func ruleMetric(rule rulefmt.RuleNode) string {
+	if rule.Alert.Value != "" {
+		return rule.Alert.Value
+	}
+	return rule.Record.Value
+}
+
+var checkMetricsUsage = strings.TrimSpace(`
+Pass Prometheus metrics over stdin to lint them for consistency and correctness.
+
+examples:
+
+$ cat metrics.prom | promtool check metrics
+
+$ curl -s http://localhost:9090/metrics | promtool check metrics
+`)
+
+// CheckMetrics performs a linting pass on input metrics.
+func CheckMetrics() int {
+	l := promlint.New(os.Stdin)
+	problems, err := l.Lint()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error while linting:", err)
+		return 1
+	}
+
+	for _, p := range problems {
+		fmt.Fprintln(os.Stderr, p.Metric, p.Text)
+	}
+
+	if len(problems) > 0 {
+		return 3
+	}
+
+	return 0
+}
+
+// QueryInstant performs an instant query against a Prometheus server.
+func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	eTime := time.Now()
+	if evalTime != "" {
+		eTime, err = parseTime(evalTime)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
+			return 1
+		}
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
+	cancel()
+	if err != nil {
+		return handleAPIError(err)
+	}
+
+	p.printValue(val)
+
+	return 0
+}
+
+// QueryRange performs a range query against a Prometheus server.
+func QueryRange(url *url.URL, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	if len(headers) > 0 {
+		config.RoundTripper = promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			for key, value := range headers {
+				req.Header.Add(key, value)
+			}
+			return http.DefaultTransport.RoundTrip(req)
+		})
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	var stime, etime time.Time
+
+	if end == "" {
+		etime = time.Now()
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
+			return 1
+		}
+	}
+
+	if start == "" {
+		stime = etime.Add(-5 * time.Minute)
+	} else {
+		stime, err = parseTime(start)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+			return 1
+		}
+	}
+
+	if !stime.Before(etime) {
+		fmt.Fprintln(os.Stderr, "start time is not before end time")
+		return 1
+	}
+
+	if step == 0 {
+		resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
+		// Convert seconds to nanoseconds such that time.Duration parses correctly.
+		step = time.Duration(resolution) * time.Second
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	r := v1.Range{Start: stime, End: etime, Step: step}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings for now.
+	cancel()
+
+	if err != nil {
+		return handleAPIError(err)
+	}
+
+	p.printValue(val)
+	return 0
+}
+
+// QuerySeries queries for a series against a Prometheus server.
+func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings for now.
+	cancel()
+
+	if err != nil {
+		return handleAPIError(err)
+	}
+
+	p.printSeries(val)
+	return 0
+}
+
+// QueryLabels queries for label values against a Prometheus server.
+func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
+	config := api.Config{
+		Address: url.String(),
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
+		return 1
+	}
+
+	stime, etime, err := parseStartTimeAndEndTime(start, end)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+
+	// Run query against client.
+	api := v1.NewAPI(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	val, warn, err := api.LabelValues(ctx, name, []string{}, stime, etime)
+	cancel()
+
+	for _, v := range warn {
+		fmt.Fprintln(os.Stderr, "query warning:", v)
+	}
+	if err != nil {
+		return handleAPIError(err)
+	}
+
+	p.printLabelValues(val)
+	return 0
+}
+
+func handleAPIError(err error) int {
+	var apiErr *v1.Error
+	if errors.As(err, &apiErr) && apiErr.Detail != "" {
+		fmt.Fprintf(os.Stderr, "query error: %v (detail: %s)\n", apiErr, strings.TrimSpace(apiErr.Detail))
+	} else {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+	}
+
+	return 1
+}
+
+func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
+	var (
+		minTime = time.Now().Add(-9999 * time.Hour)
+		maxTime = time.Now().Add(9999 * time.Hour)
+		err     error
+	)
+
+	stime := minTime
+	etime := maxTime
+
+	if start != "" {
+		stime, err = parseTime(start)
+		if err != nil {
+			return stime, etime, errors.Wrap(err, "error parsing start time")
+		}
+	}
+
+	if end != "" {
+		etime, err = parseTime(end)
+		if err != nil {
+			return stime, etime, errors.Wrap(err, "error parsing end time")
+		}
+	}
+	return stime, etime, nil
+}
+
+func parseTime(s string) (time.Time, error) {
+	if t, err := strconv.ParseFloat(s, 64); err == nil {
+		s, ns := math.Modf(t)
+		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, errors.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+type endpointsGroup struct {
+	urlToFilename map[string]string
+	postProcess   func(b []byte) ([]byte, error)
+}
+
+var (
+	pprofEndpoints = []endpointsGroup{
+		{
+			urlToFilename: map[string]string{
+				"/debug/pprof/profile?seconds=30": "cpu.pb",
+				"/debug/pprof/block":              "block.pb",
+				"/debug/pprof/goroutine":          "goroutine.pb",
+				"/debug/pprof/heap":               "heap.pb",
+				"/debug/pprof/mutex":              "mutex.pb",
+				"/debug/pprof/threadcreate":       "threadcreate.pb",
+			},
+			postProcess: func(b []byte) ([]byte, error) {
+				p, err := profile.Parse(bytes.NewReader(b))
+				if err != nil {
+					return nil, err
+				}
+				var buf bytes.Buffer
+				if err := p.WriteUncompressed(&buf); err != nil {
+					return nil, errors.Wrap(err, "writing the profile to the buffer")
+				}
+
+				return buf.Bytes(), nil
+			},
+		},
+		{
+			urlToFilename: map[string]string{
+				"/debug/pprof/trace?seconds=30": "trace.pb",
+			},
+		},
+	}
+	metricsEndpoints = []endpointsGroup{
+		{
+			urlToFilename: map[string]string{
+				"/metrics": "metrics.txt",
+			},
+		},
+	}
+	allEndpoints = append(pprofEndpoints, metricsEndpoints...)
+)
+
+func debugPprof(url string) int {
+	if err := debugWrite(debugWriterConfig{
+		serverURL:      url,
+		tarballName:    "debug.tar.gz",
+		endPointGroups: pprofEndpoints,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
+		return 1
+	}
+	return 0
+}
+
+func debugMetrics(url string) int {
+	if err := debugWrite(debugWriterConfig{
+		serverURL:      url,
+		tarballName:    "debug.tar.gz",
+		endPointGroups: metricsEndpoints,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
+		return 1
+	}
+	return 0
+}
+
+func debugAll(url string) int {
+	if err := debugWrite(debugWriterConfig{
+		serverURL:      url,
+		tarballName:    "debug.tar.gz",
+		endPointGroups: allEndpoints,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
+		return 1
+	}
+	return 0
+}
+
+type printer interface {
+	printValue(v model.Value)
+	printSeries(v []model.LabelSet)
+	printLabelValues(v model.LabelValues)
+}
+
+type promqlPrinter struct{}
+
+func (p *promqlPrinter) printValue(v model.Value) {
+	fmt.Println(v)
+}
+func (p *promqlPrinter) printSeries(val []model.LabelSet) {
+	for _, v := range val {
+		fmt.Println(v)
+	}
+}
+func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
+	for _, v := range val {
+		fmt.Println(v)
+	}
+}
+
+type jsonPrinter struct{}
+
+func (j *jsonPrinter) printValue(v model.Value) {
+	//nolint:errcheck
+	json.NewEncoder(os.Stdout).Encode(v)
+}
+func (j *jsonPrinter) printSeries(v []model.LabelSet) {
+	//nolint:errcheck
+	json.NewEncoder(os.Stdout).Encode(v)
+}
+func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
+	//nolint:errcheck
+	json.NewEncoder(os.Stdout).Encode(v)
+}
+
+// importRules backfills recording rules from the files provided. The output are blocks of data
+// at the outputDir location.
+func importRules(url *url.URL, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+	ctx := context.Background()
+	var stime, etime time.Time
+	var err error
+	if end == "" {
+		etime = time.Now().UTC().Add(-3 * time.Hour)
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			return fmt.Errorf("error parsing end time: %v", err)
+		}
+	}
+
+	stime, err = parseTime(start)
+	if err != nil {
+		return fmt.Errorf("error parsing start time: %v", err)
+	}
+
+	if !stime.Before(etime) {
+		return errors.New("start time is not before end time")
+	}
+
+	cfg := ruleImporterConfig{
+		outputDir:    outputDir,
+		start:        stime,
+		end:          etime,
+		evalInterval: evalInterval,
+	}
+	client, err := api.NewClient(api.Config{
+		Address: url.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("new api client error: %v", err)
+	}
+
+	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
+	errs := ruleImporter.loadGroups(ctx, files)
+	for _, err := range errs {
+		if err != nil {
+			return fmt.Errorf("rule importer parse error: %v", err)
+		}
+	}
+
+	errs = ruleImporter.importAll(ctx)
+	for _, err := range errs {
+		fmt.Fprintln(os.Stderr, "rule importer error:", err)
+	}
+	if len(errs) > 0 {
+		return errors.New("error importing rules")
+	}
+
+	return nil
+}
