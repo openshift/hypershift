@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -13,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusteroperator"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
@@ -21,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeletservingca"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/node"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
 )
 
@@ -48,8 +51,9 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
 	// TODO: non-essential, can't statically link to operator
 	//"openshift-controller-manager": openshiftcontrollermanager.Setup,
-	"infrastatus": infrastatus.Setup,
-	"node":        node.Setup,
+	"infrastatus":            infrastatus.Setup,
+	"node":                   node.Setup,
+	resources.ControllerName: resources.Setup,
 }
 
 type HostedClusterConfigOperator struct {
@@ -72,6 +76,10 @@ type HostedClusterConfigOperator struct {
 	KubernetesVersion string
 
 	initialCA []byte
+
+	platformType string
+
+	enableCIDebugOutput bool
 }
 
 func newHostedClusterConfigOperatorCommand() *cobra.Command {
@@ -95,6 +103,8 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringVar(&cpo.TargetKubeconfig, "target-kubeconfig", cpo.TargetKubeconfig, "Kubeconfig for target cluster")
 	flags.StringVar(&cpo.InitialCAFile, "initial-ca-file", cpo.InitialCAFile, "Path to controller manager initial CA file")
 	flags.StringSliceVar(&cpo.Controllers, "controllers", cpo.Controllers, "Controllers to run with this operator")
+	flags.StringVar(&cpo.platformType, "platform-type", "", "The platform of the cluster")
+	flags.BoolVar(&cpo.enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	return cmd
 }
 
@@ -138,6 +148,9 @@ func (o *HostedClusterConfigOperator) Complete() error {
 	if o.KubernetesVersion == "" {
 		o.KubernetesVersion = defaultKubernetesVersion
 	}
+	if o.platformType == "" {
+		return errors.New("--platform-type is required")
+	}
 	return nil
 }
 
@@ -153,6 +166,8 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		versions,
 		o.Controllers,
 		controllerFuncs,
+		o.enableCIDebugOutput,
+		hyperv1.PlatformType(o.platformType),
 	)
 	return cfg.Start(ctx)
 }

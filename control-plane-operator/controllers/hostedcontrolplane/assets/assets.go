@@ -7,7 +7,6 @@ import "embed"
 //go:embed ignition-configs/*
 //go:embed install-config/*
 //go:embed machine-config-server/*
-//go:embed registry/*
 //go:embed user-manifests-bootstrapper/*
 var content embed.FS
 
