@@ -25,7 +25,7 @@ if [[ ! -z "$SGID" ]]; then
   aws ec2 revoke-security-group-ingress \
     --group-id "${MASTERSGID}" \
     --protocol tcp \
-    --port 32000-32767 \
+    --port 30000-32767 \
     --source-group "${SGID}"
 fi
 
