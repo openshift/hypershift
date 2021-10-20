@@ -528,6 +528,12 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return nil
 	}
 
+	// Reconcile default service account
+	r.Log.Info("Reconciling default service account")
+	if err := r.reconcileDefaultServiceAccount(ctx, hostedControlPlane); err != nil {
+		return fmt.Errorf("failed to reconcile default service account: %w", err)
+	}
+
 	// Reconcile PKI
 	if _, exists := hostedControlPlane.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
 		r.Log.Info("Reconciling PKI")
@@ -692,6 +698,17 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedControlPlane, svcType hy
 		if mapping.Service == svcType {
 			return &mapping.ServicePublishingStrategy
 		}
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileDefaultServiceAccount(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	defaultSA := common.DefaultServiceAccount(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, defaultSA, func() error {
+		cpoutil.EnsurePullSecret(defaultSA, common.PullSecret(hcp.Namespace).Name)
+		return nil
+	}); err != nil {
+		return err
 	}
 	return nil
 }
