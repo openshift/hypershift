@@ -13,3 +13,12 @@ func PullSecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func DefaultServiceAccount(ns string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: ns,
+		},
+	}
+}
