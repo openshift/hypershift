@@ -25,7 +25,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 )
 
-type createBastionOpts struct {
+type CreateBastionOpts struct {
 	Namespace          string
 	Name               string
 	InfraID            string
@@ -36,7 +36,7 @@ type createBastionOpts struct {
 }
 
 func NewCreateCommand() *cobra.Command {
-	opts := &createBastionOpts{
+	opts := &CreateBastionOpts{
 		Namespace: "clusters",
 		Wait:      true,
 	}
@@ -83,7 +83,7 @@ func NewCreateCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *createBastionOpts) Validate() error {
+func (o *CreateBastionOpts) Validate() error {
 	if len(o.Name) > 0 {
 		if len(o.Namespace) == 0 {
 			return fmt.Errorf("a namespace must be specified if specifying a hosted cluster name")
@@ -102,7 +102,7 @@ func (o *createBastionOpts) Validate() error {
 	return nil
 }
 
-func (o *createBastionOpts) Run(ctx context.Context) (string, string, error) {
+func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 
 	var infraID, region string
 	var sshPublicKey []byte
