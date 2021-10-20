@@ -513,20 +513,6 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 		},
 	}
 
-	rule.Spec.Groups = []prometheusoperatorv1.RuleGroup{
-		{
-			Name:     "hypershift.rules",
-			Interval: "30s",
-			Rules:    []prometheusoperatorv1.Rule{},
-		},
-	}
-	for name, file := range recordingRulesByName {
-		promql := getContents(recordingRules, file)
-		rule.Spec.Groups[0].Rules = append(rule.Spec.Groups[0].Rules, prometheusoperatorv1.Rule{
-			Record: name,
-			Expr:   intstr.FromString(string(promql)),
-		})
-	}
-
+	rule.Spec = recordingRuleSpec()
 	return rule
 }

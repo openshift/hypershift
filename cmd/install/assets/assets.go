@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"path/filepath"
 
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,15 +20,8 @@ import (
 //go:embed etcd/*
 var crds embed.FS
 
-//go:embed recordingrules/*.promql
+//go:embed recordingrules/*
 var recordingRules embed.FS
-
-var recordingRulesByName = map[string]string{
-	"hypershift:controlplane:component_memory_usage":       "recordingrules/controlplane_memory_usage.promql",
-	"hypershift:controlplane:component_cpu_usage_seconds":  "recordingrules/controlplane_cpu_usage.promql",
-	"hypershift:controlplane:component_api_requests_total": "recordingrules/controlplane_api_requests.promql",
-	"hypershift:operator:component_api_requests_total":     "recordingrules/operator_api_requests.promql",
-}
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"
 
@@ -97,4 +91,35 @@ func getCustomResourceDefinition(files embed.FS, file string) *apiextensionsv1.C
 		crd.Labels[capiLabel] = label
 	}
 	return &crd
+}
+
+// recordingRuleSpec is meant to return all prometheus rule groups in a PrometheusRuleSpec.
+// At the moment we have only one.
+func recordingRuleSpec() prometheusoperatorv1.PrometheusRuleSpec {
+	var spec prometheusoperatorv1.PrometheusRuleSpec
+	err := fs.WalkDir(recordingRules, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			panic(err)
+		}
+		if filepath.Ext(path) != ".yaml" {
+			return nil
+		}
+		spec = getRecordingRuleSpec(recordingRules, path)
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return spec
+}
+
+// getRecordingRuleSpec unmarshals a prometheusoperatorv1.PrometheusRuleSpec from file.
+func getRecordingRuleSpec(files embed.FS, file string) prometheusoperatorv1.PrometheusRuleSpec {
+	var recordingRuleSpec prometheusoperatorv1.PrometheusRuleSpec
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(getContents(files, file)), 100).Decode(&recordingRuleSpec); err != nil {
+		panic(err)
+	}
+
+	return recordingRuleSpec
 }
