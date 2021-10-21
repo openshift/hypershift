@@ -56,9 +56,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
@@ -96,6 +98,8 @@ var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
+
+	DiscoveryClient *discovery.DiscoveryClient
 
 	// HypershiftOperatorImage is the image used to deploy the control plane operator if
 	// 1) There is no hypershift.openshift.io/control-plane-operator-image annotation on the HostedCluster and
@@ -136,18 +140,28 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// ignitionserver manifests packages. Since we're receiving watch events across
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		Watches(&source.Kind{Type: &capiawsv1.AWSCluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &hyperv1.HostedControlPlane{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &capiv1.Cluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &appsv1.Deployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &prometheusoperatorv1.PodMonitor{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
-		}).
-		Complete(r)
+		})
+
+	if routesEnabled, err := r.routesEnabled(); routesEnabled {
+		builder.Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
+	} else if err != nil {
+		return fmt.Errorf("unable to determine if routes are registered on the cluster: %v", err)
+	}
+
+	return builder.Complete(r)
+}
+
+func (r *HostedClusterReconciler) routesEnabled() (bool, error) {
+	return isGroupVersionRegistered(r.DiscoveryClient, routev1.GroupVersion)
 }
 
 // serviceFirstNodePortAvailable checks if the first port in a service has a node port available. Utilized to
@@ -3060,4 +3074,30 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
 	return nil
+}
+
+// isGroupVersionRegistered determines if a specified groupVersion is registered on the cluster
+func isGroupVersionRegistered(client discovery.ServerResourcesInterface, groupVersion schema.GroupVersion) (bool, error) {
+	_, apis, err := client.ServerGroupsAndResources()
+	if err != nil {
+		if discovery.IsGroupDiscoveryFailedError(err) {
+			// If the group we are looking for can't be fully discovered,
+			// that does still mean that it exists.
+			// Continue with the search in the discovered groups if not present here.
+			e := err.(*discovery.ErrGroupDiscoveryFailed)
+			if _, exists := e.Groups[groupVersion]; exists {
+				return true, nil
+			}
+		} else {
+			return false, err
+		}
+	}
+
+	for _, api := range apis {
+		if api.GroupVersion == groupVersion.String() {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
