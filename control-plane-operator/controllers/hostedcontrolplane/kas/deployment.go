@@ -71,9 +71,11 @@ var (
 	}
 )
 
-var kasLabels = map[string]string{
-	"app":                         "kube-apiserver",
-	hyperv1.ControlPlaneComponent: "kube-apiserver",
+func kasLabels() map[string]string {
+	return map[string]string{
+		"app":                         "kube-apiserver",
+		hyperv1.ControlPlaneComponent: "kube-apiserver",
+	}
 }
 
 func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
@@ -110,7 +112,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	}
 
 	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: kasLabels,
+		MatchLabels: kasLabels(),
 	}
 	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
 		Type: appsv1.RollingUpdateDeploymentStrategyType,
@@ -121,7 +123,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	}
 	deployment.Spec.Template = corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: kasLabels,
+			Labels: kasLabels(),
 			Annotations: map[string]string{
 				configHashAnnotation: configHash,
 			},

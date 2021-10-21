@@ -284,7 +284,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(kasLabels)
+		params.DeploymentConfig.SetMultizoneSpread(kasLabels())
 	default:
 		params.Replicas = 1
 	}
