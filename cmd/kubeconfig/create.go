@@ -44,16 +44,6 @@ type Options struct {
 	Name      string
 }
 
-func (o Options) Validate() error {
-	if len(o.Namespace) > 0 && len(o.Name) == 0 {
-		return fmt.Errorf("name is required")
-	}
-	if len(o.Name) > 0 && len(o.Namespace) == 0 {
-		return fmt.Errorf("namespace is required")
-	}
-	return nil
-}
-
 // NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
 // resources.
 func NewCreateCommand() *cobra.Command {
@@ -64,10 +54,12 @@ func NewCreateCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts := Options{}
+	opts := Options{Namespace: "clusters"}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A hostedcluster name")
+
+	cmd.MarkFlagRequired("name")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -77,11 +69,6 @@ func NewCreateCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-
-		if err := opts.Validate(); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(1)
-		}
 
 		if err := render(ctx, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)

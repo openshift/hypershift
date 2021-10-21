@@ -1,5 +1,0 @@
-sum by (app, namespace) (
-	sum(container_memory_usage_bytes{container!="POD",container!=""}) by (pod, namespace)
-* on (pod) group_left(app)
-	label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
-)

@@ -31,7 +31,7 @@ const LoopDetectorWarningMessage = "WARNING: Object got updated more than one ti
 // in the future.
 // Once we did a no-op update, we will ignore the object because we assume that if we have
 // a bug in the defaulting, we will end up always updating.
-const updateLoopThreshold = 1
+const updateLoopThreshold = 2
 
 type updateLoopDetector struct {
 	hasNoOpUpdate    sets.String
