@@ -87,7 +87,6 @@ func (c *clusterManifestContext) machineConfigServer() {
 
 func (c *clusterManifestContext) userManifestsBootstrapper() {
 	c.addManifestFiles(
-		"user-manifests-bootstrapper/user-manifests-bootstrapper-serviceaccount.yaml",
 		"user-manifests-bootstrapper/user-manifests-bootstrapper-rolebinding.yaml",
 		"user-manifests-bootstrapper/user-manifests-bootstrapper-pod.yaml",
 	)

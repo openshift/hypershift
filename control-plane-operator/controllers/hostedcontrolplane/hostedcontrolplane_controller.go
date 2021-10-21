@@ -1002,6 +1002,14 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		}
 	}
 
+	userManifestBoostrapperServiceAccount := manifests.ManifestBootstrapperServiceAccount(targetNamespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, userManifestBoostrapperServiceAccount, func() error {
+		cpoutil.EnsurePullSecret(userManifestBoostrapperServiceAccount, common.PullSecret(targetNamespace).Name)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to apply userManifestBoostrapperServiceAccount: %w", err)
+	}
+
 	manifests, err := r.generateControlPlaneManifests(ctx, hcp, infraStatus, releaseImage)
 	if err != nil {
 		return err
