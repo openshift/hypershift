@@ -59,8 +59,6 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A hostedcluster name")
 
-	cmd.MarkFlagRequired("name")
-
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
