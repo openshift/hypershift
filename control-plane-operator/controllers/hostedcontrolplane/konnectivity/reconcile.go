@@ -32,15 +32,21 @@ var (
 			konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
 		},
 	}
-	konnectivityServerLabels = map[string]string{
+)
+
+func konnectivityServerLabels() map[string]string {
+	return map[string]string{
 		"app":                         "konnectivity-server",
 		hyperv1.ControlPlaneComponent: "konnectivity-server",
 	}
-	konnectivityAgentLabels = map[string]string{
+}
+
+func konnectivityAgentLabels() map[string]string {
+	return map[string]string{
 		"app":                         "konnectivity-agent",
 		hyperv1.ControlPlaneComponent: "konnectivity-agent",
 	}
-)
+}
 
 const (
 	KubeconfigKey = "kubeconfig"
@@ -50,11 +56,11 @@ func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityServerLabels,
+			MatchLabels: konnectivityServerLabels(),
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityServerLabels,
+				Labels: konnectivityServerLabels(),
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
@@ -146,7 +152,7 @@ const (
 
 func ReconcileServerLocalService(svc *corev1.Service, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(svc)
-	svc.Spec.Selector = konnectivityServerLabels
+	svc.Spec.Selector = konnectivityServerLabels()
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]
@@ -163,7 +169,7 @@ func ReconcileServerLocalService(svc *corev1.Service, ownerRef config.OwnerRef) 
 
 func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy) error {
 	ownerRef.ApplyTo(svc)
-	svc.Spec.Selector = konnectivityServerLabels
+	svc.Spec.Selector = konnectivityServerLabels()
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]
@@ -254,11 +260,11 @@ func ReconcileWorkerAgentDaemonSet(cm *corev1.ConfigMap, ownerRef config.OwnerRe
 func reconcileWorkerAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32) error {
 	daemonset.Spec = appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels,
+			MatchLabels: konnectivityAgentLabels(),
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels,
+				Labels: konnectivityAgentLabels(),
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
@@ -331,11 +337,11 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels,
+			MatchLabels: konnectivityAgentLabels(),
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels,
+				Labels: konnectivityAgentLabels(),
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
