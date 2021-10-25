@@ -36,6 +36,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/semconv"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -146,6 +147,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if err != nil {
 		return fmt.Errorf("unable to create kube client: %w", err)
 	}
+
+	kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+	if err != nil {
+		return fmt.Errorf("unable to create discovery client: %w", err)
+	}
+
 	lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string, userSpecifiedImage string) (string, error) {
 		if len(userSpecifiedImage) > 0 {
 			log.Info("using image from arguments", "image", userSpecifiedImage)
@@ -180,6 +187,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err = (&hostedcluster.HostedClusterReconciler{
 		Client:                  mgr.GetClient(),
+		DiscoveryClient:         kubeDiscoveryClient,
 		HypershiftOperatorImage: operatorImage,
 		IgnitionServerImage:     ignitionServerImage,
 		ReleaseProvider: &releaseinfo.CachedProvider{
