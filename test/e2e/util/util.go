@@ -47,6 +47,69 @@ func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client
 	return namespace
 }
 
+// CreateCluster creates a new namespace and a HostedCluster in that namespace using
+// the provided options.
+//
+// This function calls t.Cleanup() with a function which tears down the cluster
+// and *blocks until teardown completes*, so no explicit cleanup from the caller
+// is required.
+func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, opts cmdcluster.Options, artifactDir string) *hyperv1.HostedCluster {
+	g := NewWithT(t)
+	start := time.Now()
+
+	// Set up a namespace to contain the hostedcluster
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: SimpleNameGenerator.GenerateName("e2e-clusters-"),
+			Labels: map[string]string{
+				"hypershift-e2e-component": "hostedclusters-namespace",
+			},
+		},
+	}
+	err := client.Create(ctx, namespace)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to create namespace")
+
+	// Define the hostedcluster and adjust options to match it
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace.Name,
+			Name:      SimpleNameGenerator.GenerateName("example-"),
+		},
+	}
+	opts.Namespace = namespace.Name
+	opts.Name = hc.Name
+	opts.InfraID = hc.Name
+
+	// Define a standard teardown function
+	teardown := func(ctx context.Context) {
+		SaveMachineConsoleLogs(t, ctx, hc, opts.AWSCredentialsFile, artifactDir)
+		// TODO: Make this configurable somehow as chaos tests expect crashing
+		//EnsureNoCrashingPods(t, ctx, client, hc)
+		// TODO: Figure out why this is slow
+		//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
+		DumpAndDestroyHostedCluster(t, ctx, hc, opts.AWSCredentialsFile, opts.Region, opts.BaseDomain, artifactDir)
+		DeleteNamespace(t, ctx, client, namespace.Name)
+	}
+
+	// Try and create the cluster
+	t.Logf("Creating a new cluster. Options: %v", opts)
+	if err := cmdcluster.CreateCluster(ctx, opts); err != nil {
+		teardown(context.Background())
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
+	}
+
+	// Assert we can retrieve the cluster that was created
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(hc), hc); err != nil {
+		teardown(context.Background())
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+	}
+
+	t.Logf("Successfully created hostedcluster %s/%s in %s", hc.Namespace, hc.Name, time.Since(start).Round(time.Second))
+	t.Cleanup(func() { teardown(context.Background()) })
+
+	return hc
+}
+
 // DumpHostedCluster tries to dump important resources related to the HostedCluster, and
 // logs any failures along the way.
 func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir string) {
@@ -143,6 +206,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 }
 
 func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
+	start := time.Now()
 	t.Logf("Waiting for hostedcluster kubeconfig to be published. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 	var guestKubeConfigSecret corev1.Secret
 	err := wait.PollUntil(1*time.Second, func() (done bool, err error) {
@@ -165,7 +229,7 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 	if err != nil {
 		return nil, fmt.Errorf("kubeconfig didn't become available: %w", err)
 	}
-	t.Logf("Found kubeconfig for cluster. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
+	t.Logf("Found kubeconfig for cluster in %s. Namespace: %s, name: %s", time.Since(start).Round(time.Second), hostedCluster.Namespace, hostedCluster.Name)
 
 	// TODO: this key should probably be published or an API constant
 	data, hasData := guestKubeConfigSecret.Data["kubeconfig"]
@@ -177,6 +241,7 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 
 func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
 	g := NewWithT(t)
+	start := time.Now()
 
 	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
@@ -198,7 +263,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	}, waitForGuestClientCtx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to establish a connection to the guest apiserver")
 
-	t.Logf("successfully connected to the guest apiserver")
+	t.Logf("Successfully connected to the guest apiserver in %s", time.Since(start).Round(time.Second))
 	return guestClient
 }
 

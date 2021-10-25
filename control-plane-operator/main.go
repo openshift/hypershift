@@ -50,8 +50,6 @@ func main() {
 }
 
 const (
-	// FIXME: Set to upstream image when DNS resolution is fixed for etcd service
-	etcdOperatorImage = "quay.io/hypershift/etcd-operator:v0.9.4-patched"
 	// TODO: Include konnectivity image in release payload
 	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
@@ -157,7 +155,6 @@ func NewStartCommand() *cobra.Command {
 			ComponentImages: map[string]string{
 				util.AvailabilityProberImageName: hostedClusterConfigOperatorImage,
 				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
-				"etcd-operator":                  etcdOperatorImage,
 				"konnectivity-server":            konnectivityServerImage,
 				"konnectivity-agent":             konnectivityAgentImage,
 				"socks5-proxy":                   socks5ProxyImage,

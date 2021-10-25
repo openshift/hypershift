@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,8 +16,11 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
 	"github.com/openshift/hypershift/cmd/version"
 
 	"github.com/bombsimon/logrusr"
@@ -39,6 +43,10 @@ var (
 
 	log = logrusr.NewLogger(logrus.New())
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 // TestMain deals with global options and setting up a signal-bound context
 // for all tests to use.
@@ -169,6 +177,12 @@ type options struct {
 	BaseDomain                string
 	ControlPlaneOperatorImage string
 	AdditionalTags            stringSliceVar
+
+	defaultClusterOptions cmdcluster.Options
+}
+
+func (o options) DefaultClusterOptions() cmdcluster.Options {
+	return o.defaultClusterOptions
 }
 
 // Complete is intended to be called after flags have been bound and sets
@@ -200,6 +214,24 @@ func (o *options) Complete() error {
 			// TODO: make this an envvar with change to openshift/release, then change here
 			o.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}
+	}
+
+	// TODO: Remove duplicate fields from options struct if the general approach is desirable
+	o.defaultClusterOptions = cmdcluster.Options{
+		ReleaseImage:              o.PreviousReleaseImage,
+		PullSecretFile:            o.PullSecretFile,
+		AWSCredentialsFile:        o.AWSCredentialsFile,
+		Region:                    o.Region,
+		GenerateSSH:               true,
+		SSHKeyFile:                "",
+		NodePoolReplicas:          2,
+		InstanceType:              "m4.large",
+		BaseDomain:                o.BaseDomain,
+		NetworkType:               string(hyperv1.OpenShiftSDN),
+		RootVolumeSize:            64,
+		RootVolumeType:            "gp2",
+		ControlPlaneOperatorImage: o.ControlPlaneOperatorImage,
+		AdditionalTags:            o.AdditionalTags,
 	}
 
 	return nil

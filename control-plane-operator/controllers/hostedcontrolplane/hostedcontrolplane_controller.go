@@ -65,7 +65,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	cpoutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
-	etcdv1 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 )
@@ -122,9 +121,9 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
-		Watches(&source.Kind{Type: &etcdv1.EtcdCluster{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &appsv1.StatefulSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ServiceAccount{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
@@ -202,31 +201,38 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		switch hostedControlPlane.Spec.Etcd.ManagementType {
 		case hyperv1.Managed:
 			r.Log.Info("Reconciling etcd cluster status for managed strategy")
-			etcdCluster := manifests.EtcdCluster(hostedControlPlane.Namespace)
-			if err := r.Get(ctx, types.NamespacedName{Namespace: etcdCluster.Namespace, Name: etcdCluster.Name}, etcdCluster); err != nil {
+			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err != nil {
 				if apierrors.IsNotFound(err) {
 					newCondition = metav1.Condition{
 						Type:   string(hyperv1.EtcdAvailable),
 						Status: metav1.ConditionFalse,
-						Reason: "EtcdClusterNotFound",
+						Reason: "StatefulSetNotFound",
 					}
 				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to fetch etcd cluster %s/%s: %w", etcdCluster.Namespace, etcdCluster.Name, err)
+					return ctrl.Result{}, fmt.Errorf("failed to fetch etcd statefulset %s/%s: %w", sts.Namespace, sts.Name, err)
 				}
 			} else {
-				r.Log.Info("Computing proper etcd cluster status based on current state of etcd cluster")
-				cond, err := etcd.ComputeEtcdClusterStatus(ctx, r.Client, etcdCluster)
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to compute etcd cluster status: %w", err)
+				if sts.Status.ReadyReplicas >= *sts.Spec.Replicas/2+1 {
+					newCondition = metav1.Condition{
+						Type:   string(hyperv1.EtcdAvailable),
+						Status: metav1.ConditionTrue,
+						Reason: "QuorumAvailable",
+					}
+				} else {
+					newCondition = metav1.Condition{
+						Type:   string(hyperv1.EtcdAvailable),
+						Status: metav1.ConditionFalse,
+						Reason: "QuorumUnavailable",
+					}
 				}
-				newCondition = cond
 			}
 		case hyperv1.Unmanaged:
 			r.Log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
 			newCondition = metav1.Condition{
 				Type:    string(hyperv1.EtcdAvailable),
 				Status:  metav1.ConditionTrue,
-				Reason:  etcd.EtcdReasonRunning,
+				Reason:  "EtcdRunning",
 				Message: "Etcd cluster is assumed to be running in unmanaged state",
 			}
 		}
@@ -1305,65 +1311,42 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
 
-	// Etcd Operator ServiceAccount
-	operatorServiceAccount := manifests.EtcdOperatorServiceAccount(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, operatorServiceAccount, func() error {
-		return etcd.ReconcileOperatorServiceAccount(operatorServiceAccount, p.OwnerRef)
+	discoveryService := manifests.EtcdDiscoveryService(hcp.Namespace)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r, discoveryService, func() error {
+		return etcd.ReconcileDiscoveryService(discoveryService, p.OwnerRef)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd operator service account: %w", err)
+		return fmt.Errorf("failed to reconcile etcd discovery service: %w", err)
+	} else {
+		r.Log.Info("reconciled etcd discovery service", "result", result)
 	}
 
-	// Etcd operator role
-	operatorRole := manifests.EtcdOperatorRole(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, operatorRole, func() error {
-		return etcd.ReconcileOperatorRole(operatorRole, p.OwnerRef)
+	clientService := manifests.EtcdClientService(hcp.Namespace)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r, clientService, func() error {
+		return etcd.ReconcileClientService(clientService, p.OwnerRef)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd operator role: %w", err)
+		return fmt.Errorf("failed to reconcile etcd client service: %w", err)
+	} else {
+		r.Log.Info("reconciled etcd client service", "result", result)
 	}
 
-	// Etcd operator rolebinding
-	operatorRoleBinding := manifests.EtcdOperatorRoleBinding(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, operatorRoleBinding, func() error {
-		return etcd.ReconcileOperatorRoleBinding(operatorRoleBinding, p.OwnerRef)
+	serviceMonitor := manifests.EtcdServiceMonitor(hcp.Namespace)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return etcd.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd operator role binding: %w", err)
+		return fmt.Errorf("failed to reconcile etcd servicemonitor: %w", err)
+	} else {
+		r.Log.Info("reconciled etcd servicemonitor", "result", result)
 	}
 
-	// Etcd operator deployment
-	operatorDeployment := manifests.EtcdOperatorDeployment(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, operatorDeployment, func() error {
-		return etcd.ReconcileOperatorDeployment(operatorDeployment, p.OwnerRef, p.OperatorDeploymentConfig, p.EtcdOperatorImage)
+	statefulSet := manifests.EtcdStatefulSet(hcp.Namespace)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r, statefulSet, func() error {
+		return etcd.ReconcileStatefulSet(statefulSet, p)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd operator deployment: %w", err)
+		return fmt.Errorf("failed to reconcile etcd statefulset: %w", err)
+	} else {
+		r.Log.Info("reconciled etcd statefulset", "result", result)
 	}
 
-	// Etcd cluster
-	etcdCluster := manifests.EtcdCluster(hcp.Namespace)
-
-	// The EtcdCluster can currently enter a permanently failed state, so when
-	// that's detected, delete the EtcdCluster and start over.
-	// TODO(dmace): Fix this in the etcd operator and delete this code
-	shouldDeleteFailedEtcd := false
-	for _, cond := range hcp.Status.Conditions {
-		if cond.Type == string(hyperv1.EtcdAvailable) && cond.Status == metav1.ConditionFalse && cond.Reason == etcd.EtcdReasonFailed {
-			shouldDeleteFailedEtcd = true
-			break
-		}
-	}
-	if shouldDeleteFailedEtcd {
-		if err := r.Delete(ctx, etcdCluster); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to delete etcd cluster: %w", err)
-			}
-		}
-	}
-
-	if _, err := r.CreateOrUpdate(ctx, r, etcdCluster, func() error {
-		etcdCluster.OwnerReferences = ensureHCPOwnerRef(hcp, etcdCluster.OwnerReferences)
-		return etcd.ReconcileCluster(etcdCluster, p.OwnerRef, p.EtcdDeploymentConfig, p.ClusterVersion, p.PersistentVolumeClaimSpec)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd cluster: %w", err)
-	}
 	return nil
 }
 

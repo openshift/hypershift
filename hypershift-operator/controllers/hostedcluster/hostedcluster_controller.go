@@ -1864,6 +1864,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"addons.cluster.x-k8s.io",
 				"exp.cluster.x-k8s.io",
 				"cluster.x-k8s.io",
+				"monitoring.coreos.com",
 			},
 			Resources: []string{"*"},
 			Verbs:     []string{"*"},
@@ -1889,7 +1890,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 		},
 		{
 			APIGroups: []string{"apps"},
-			Resources: []string{"deployments"},
+			Resources: []string{"deployments", "statefulsets"},
 			Verbs:     []string{"*"},
 		},
 		{

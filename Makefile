@@ -87,7 +87,7 @@ availability-prober:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud etcd-api
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
@@ -112,11 +112,6 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-ibmcloud/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
-
-.PHONY: etcd-api
-etcd-api: $(CONTROLLER_GEN)
-	rm -rf cmd/install/assets/etcd/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./thirdparty/etcd/..." output:crd:artifacts:config=cmd/install/assets/etcd
 
 # Run tests
 .PHONY: test
