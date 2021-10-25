@@ -30,23 +30,6 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 )
 
-func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client, prefix string) *corev1.Namespace {
-	g := NewWithT(t)
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: prefix,
-			Labels: map[string]string{
-				"hypershift-e2e-component": "hostedclusters-namespace",
-			},
-		},
-	}
-	err := client.Create(ctx, namespace)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to create test namespace")
-	g.Expect(namespace.Name).ToNot(BeEmpty(), "generated namespace has no name")
-	t.Logf("Created test namespace: %s", namespace.Name)
-	return namespace
-}
-
 // CreateCluster creates a new namespace and a HostedCluster in that namespace using
 // the provided options.
 //
@@ -83,8 +66,6 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	// Define a standard teardown function
 	teardown := func(ctx context.Context) {
 		SaveMachineConsoleLogs(t, ctx, hc, opts.AWSCredentialsFile, artifactDir)
-		// TODO: Make this configurable somehow as chaos tests expect crashing
-		//EnsureNoCrashingPods(t, ctx, client, hc)
 		// TODO: Figure out why this is slow
 		//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
 		DumpAndDestroyHostedCluster(t, ctx, hc, opts.AWSCredentialsFile, opts.Region, opts.BaseDomain, artifactDir)

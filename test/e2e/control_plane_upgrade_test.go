@@ -9,7 +9,6 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,59 +18,16 @@ func TestUpgradeControlPlane(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
 	client := e2eutil.GetClientOrDie()
 
 	t.Logf("Starting control plane upgrade test. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
-	// Create a namespace in which to place hostedclusters
-	namespace := e2eutil.GenerateNamespace(t, testContext, client, "e2e-clusters-")
-	name := e2eutil.SimpleNameGenerator.GenerateName("example-")
+	clusterOpts := globalOpts.DefaultClusterOptions()
 
-	// Define the cluster we'll be testing
-	hostedCluster := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace.Name,
-			Name:      name,
-		},
-	}
-
-	// Ensure we clean up after the test
-	defer func() {
-		e2eutil.SaveMachineConsoleLogs(t, context.Background(), hostedCluster, globalOpts.AWSCredentialsFile, globalOpts.ArtifactDir)
-		e2eutil.EnsureNoCrashingPods(t, context.Background(), client, hostedCluster)
-		// TODO: Figure out why this is slow
-		//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
-		e2eutil.DumpAndDestroyHostedCluster(t, context.Background(), hostedCluster, globalOpts.AWSCredentialsFile, globalOpts.Region, globalOpts.BaseDomain, globalOpts.ArtifactDir)
-		e2eutil.DeleteNamespace(t, context.Background(), client, namespace.Name)
-	}()
-
-	// Create the cluster
-	createClusterOpts := cmdcluster.Options{
-		Namespace:                 hostedCluster.Namespace,
-		Name:                      hostedCluster.Name,
-		InfraID:                   hostedCluster.Name,
-		ReleaseImage:              globalOpts.PreviousReleaseImage,
-		PullSecretFile:            globalOpts.PullSecretFile,
-		AWSCredentialsFile:        globalOpts.AWSCredentialsFile,
-		Region:                    globalOpts.Region,
-		GenerateSSH:               true,
-		SSHKeyFile:                "",
-		NodePoolReplicas:          2,
-		InstanceType:              "m4.large",
-		BaseDomain:                globalOpts.BaseDomain,
-		NetworkType:               string(hyperv1.OpenShiftSDN),
-		RootVolumeSize:            64,
-		RootVolumeType:            "gp2",
-		ControlPlaneOperatorImage: globalOpts.ControlPlaneOperatorImage,
-		AdditionalTags:            globalOpts.AdditionalTags,
-	}
-	err := cmdcluster.CreateCluster(testContext, createClusterOpts)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
-
-	// Get the newly created cluster
-	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-	t.Logf("Created hostedcluster. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
 
 	// Get the newly created nodepool
 	nodepool := &hyperv1.NodePool{
@@ -80,7 +36,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 			Name:      hostedCluster.Name,
 		},
 	}
-	err = client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
+	err := client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 
 	// Sanity check the cluster by waiting for the nodes to report ready
@@ -109,4 +65,5 @@ func TestUpgradeControlPlane(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, crclient.ObjectKeyFromObject(nodepool))
+	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }
