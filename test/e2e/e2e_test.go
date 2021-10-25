@@ -51,16 +51,15 @@ func init() {
 // TestMain deals with global options and setting up a signal-bound context
 // for all tests to use.
 func TestMain(m *testing.M) {
-	flag.StringVar(&globalOpts.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
-	flag.StringVar(&globalOpts.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
-	flag.StringVar(&globalOpts.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
+	flag.StringVar(&globalOpts.defaultClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
+	flag.StringVar(&globalOpts.defaultClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
+	flag.StringVar(&globalOpts.defaultClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
 	flag.StringVar(&globalOpts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
-	flag.StringVar(&globalOpts.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
-	flag.BoolVar(&globalOpts.UpgradeTestsEnabled, "e2e.upgrade-tests-enabled", false, "Enables upgrade tests")
-	flag.StringVar(&globalOpts.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
-	flag.Var(&globalOpts.AdditionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
+	flag.StringVar(&globalOpts.defaultClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
+	flag.StringVar(&globalOpts.defaultClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
+	flag.Var(&globalOpts.additionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
 
 	flag.Parse()
 
@@ -166,22 +165,16 @@ func dumpTestMetrics(log logr.Logger, artifactDir string) {
 
 // options are global test options applicable to all scenarios.
 type options struct {
-	AWSCredentialsFile        string
-	Region                    string
-	PullSecretFile            string
-	LatestReleaseImage        string
-	PreviousReleaseImage      string
-	IsRunningInCI             bool
-	UpgradeTestsEnabled       bool
-	ArtifactDir               string
-	BaseDomain                string
-	ControlPlaneOperatorImage string
-	AdditionalTags            stringSliceVar
+	LatestReleaseImage   string
+	PreviousReleaseImage string
+	IsRunningInCI        bool
+	ArtifactDir          string
 
 	defaultClusterOptions cmdcluster.Options
+	additionalTags        stringSliceVar
 }
 
-func (o options) DefaultClusterOptions() cmdcluster.Options {
+func (o *options) DefaultClusterOptions() cmdcluster.Options {
 	return o.defaultClusterOptions
 }
 
@@ -210,29 +203,21 @@ func (o *options) Complete() error {
 		if len(o.ArtifactDir) == 0 {
 			o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
 		}
-		if len(o.BaseDomain) == 0 {
+		if len(o.defaultClusterOptions.BaseDomain) == 0 {
 			// TODO: make this an envvar with change to openshift/release, then change here
-			o.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
+			o.defaultClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}
 	}
 
-	// TODO: Remove duplicate fields from options struct if the general approach is desirable
-	o.defaultClusterOptions = cmdcluster.Options{
-		ReleaseImage:              o.PreviousReleaseImage,
-		PullSecretFile:            o.PullSecretFile,
-		AWSCredentialsFile:        o.AWSCredentialsFile,
-		Region:                    o.Region,
-		GenerateSSH:               true,
-		SSHKeyFile:                "",
-		NodePoolReplicas:          2,
-		InstanceType:              "m4.large",
-		BaseDomain:                o.BaseDomain,
-		NetworkType:               string(hyperv1.OpenShiftSDN),
-		RootVolumeSize:            64,
-		RootVolumeType:            "gp2",
-		ControlPlaneOperatorImage: o.ControlPlaneOperatorImage,
-		AdditionalTags:            o.AdditionalTags,
-	}
+	o.defaultClusterOptions.ReleaseImage = o.PreviousReleaseImage
+	o.defaultClusterOptions.GenerateSSH = true
+	o.defaultClusterOptions.SSHKeyFile = ""
+	o.defaultClusterOptions.NodePoolReplicas = 2
+	o.defaultClusterOptions.InstanceType = "m4.large"
+	o.defaultClusterOptions.NetworkType = string(hyperv1.OpenShiftSDN)
+	o.defaultClusterOptions.RootVolumeSize = 64
+	o.defaultClusterOptions.RootVolumeType = "gp2"
+	o.defaultClusterOptions.AdditionalTags = o.additionalTags
 
 	return nil
 }
@@ -246,7 +231,7 @@ func (o *options) Validate() error {
 		errs = append(errs, fmt.Errorf("latest release image is required"))
 	}
 
-	if len(o.BaseDomain) == 0 {
+	if len(o.defaultClusterOptions.BaseDomain) == 0 {
 		errs = append(errs, fmt.Errorf("base domain is required"))
 	}
 
