@@ -5,10 +5,8 @@ import (
 	"context"
 	crand "crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"math/big"
-	"math/rand"
 	"net/url"
 	"time"
 
@@ -113,6 +111,7 @@ type HostedControlPlaneReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
+	EnableCIDebugOutput bool
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -2157,7 +2156,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 	params.IssuerURL = hcp.Spec.IssuerURL
 	params.NetworkType = hcp.Spec.NetworkType
-	params.ImageRegistryHTTPSecret = generateImageRegistrySecret()
 	params.APIAvailabilityPolicy = render.SingleReplica
 	params.InfrastructureAvailabilityPolicy = render.HighlyAvailable
 	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.SingleReplica {
@@ -2319,7 +2317,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage)
+		return configoperator.ReconcileDeployment(deployment, p.Image, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}
@@ -2497,12 +2495,6 @@ func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret 
 	secret.Name = "kubeadmin-password"
 	secret.Data = map[string][]byte{"password": []byte(password)}
 	return secret
-}
-
-func generateImageRegistrySecret() string {
-	num := make([]byte, 64)
-	rand.Read(num)
-	return hex.EncodeToString(num)
 }
 
 func platformType(hcp *hyperv1.HostedControlPlane) string {

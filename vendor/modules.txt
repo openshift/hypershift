@@ -207,6 +207,7 @@ github.com/openshift/api/config/v1
 github.com/openshift/api/image/docker10
 github.com/openshift/api/image/dockerpre012
 github.com/openshift/api/image/v1
+github.com/openshift/api/imageregistry/v1
 github.com/openshift/api/kubecontrolplane/v1
 github.com/openshift/api/oauth/v1
 github.com/openshift/api/openshiftcontrolplane/v1

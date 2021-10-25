@@ -58,14 +58,9 @@ func newClusterManifestContext(images, versions map[string]string, params *Clust
 
 func (c *clusterManifestContext) setupManifests() {
 	c.clusterBootstrap()
-	c.registry()
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
 	c.ignitionConfigs()
-}
-
-func (c *clusterManifestContext) registry() {
-	c.addUserManifestFiles("registry/cluster-imageregistry-config.yaml")
 }
 
 func (c *clusterManifestContext) clusterBootstrap() {
