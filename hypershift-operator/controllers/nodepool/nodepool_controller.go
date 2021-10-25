@@ -498,6 +498,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSMachineTemplate: %w", err)
 		}
 		span.AddEvent("reconciled awsmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
+	case hyperv1.NonePlatform:
+		// TODO: When fleshing out platform None design revisit the right semantic to signal this as conditions in a NodePool.
+		return ctrl.Result{}, nil
 	}
 
 	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
