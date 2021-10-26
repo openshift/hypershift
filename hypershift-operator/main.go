@@ -77,6 +77,7 @@ type StartOptions struct {
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
 	ControlPlaneOperatorImage  string
+	ManagementClusterMode      string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -108,6 +109,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	cmd.Flags().StringVar(&opts.ManagementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -194,6 +196,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		DiscoveryClient:         kubeDiscoveryClient,
 		HypershiftOperatorImage: operatorImage,
 		IgnitionServerImage:     ignitionServerImage,
+		ManagementClusterMode:   opts.ManagementClusterMode,
 		ReleaseProvider: &releaseinfo.CachedProvider{
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
@@ -206,7 +209,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
-		Client: mgr.GetClient(),
+		Client:                mgr.GetClient(),
+		ManagementClusterMode: opts.ManagementClusterMode,
 		ReleaseProvider: &releaseinfo.CachedProvider{
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
