@@ -39,7 +39,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 			},
 		},
 	}
-	if explicitNonRootSecurityContext{
+	if explicitNonRootSecurityContext {
 		params.DeploymentConfig.SecurityContexts = config.SecurityContextSpec{
 			cpcContainerMain().Name: {
 				RunAsUser: k8sutilspointer.Int64Ptr(1001),
