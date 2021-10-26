@@ -89,7 +89,7 @@ func CommunityOperatorsCronJob(ns string) *batchv1.CronJob {
 func RedHatMarketplaceOperatorsCatalogSourceWorkerManifest(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-manifest-olm-redhat-marketplace-operators-catalog-source",
+			Name:      "user-manifest-olm-redhat-marketplace-catalog-source",
 			Namespace: ns,
 		},
 	}
@@ -98,7 +98,7 @@ func RedHatMarketplaceOperatorsCatalogSourceWorkerManifest(ns string) *corev1.Co
 func RedHatMarketplaceOperatorsDeployment(ns string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "redhat-marketplace-operators-catalog",
+			Name:      "redhat-marketplace-catalog",
 			Namespace: ns,
 		},
 	}
@@ -116,7 +116,7 @@ func RedHatMarketplaceOperatorsService(ns string) *corev1.Service {
 func RedHatMarketplaceOperatorsCronJob(ns string) *batchv1.CronJob {
 	return &batchv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "redhat-marketplace-operators-catalog-rollout",
+			Name:      "redhat-marketplace-catalog-rollout",
 			Namespace: ns,
 		},
 	}
