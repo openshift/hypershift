@@ -93,7 +93,7 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 
 // DumpHostedCluster tries to dump important resources related to the HostedCluster, and
 // logs any failures along the way.
-func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir string) {
+func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir, awsCredsFile string) {
 	if len(artifactDir) == 0 {
 		t.Logf("Skipping cluster dump because no artifact dir was provided")
 		return
@@ -112,12 +112,15 @@ func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1
 	if err != nil {
 		t.Errorf("Failed to dump cluster: %v", err)
 	}
+	if err := dumpJournals(t, ctx, hostedCluster, artifactDir, awsCredsFile); err != nil {
+		t.Logf("Failed to dump machine journals: %v", err)
+	}
 }
 
 // DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,
 // logging any failures along the way.
 func DumpAndDestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, awsCreds string, awsRegion string, baseDomain string, artifactDir string) {
-	DumpHostedCluster(t, ctx, hostedCluster, artifactDir)
+	DumpHostedCluster(t, ctx, hostedCluster, artifactDir, awsCreds)
 
 	opts := &cmdcluster.DestroyOptions{
 		Namespace:          hostedCluster.Namespace,
