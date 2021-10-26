@@ -6,6 +6,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const HypershiftRouteLabel = "hypershift.openshift.io/hosted-control-plane"
+
 // ParseNamespacedName expects a string with the format "namespace/name"
 // and returns the proper types.NamespacedName.
 // This is useful when watching a CR annotated with the format above to requeue the CR

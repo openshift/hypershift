@@ -3,6 +3,7 @@ package api
 import (
 	capiibm "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -39,6 +40,7 @@ func init() {
 	hyperv1.AddToScheme(Scheme)
 	capiv1.AddToScheme(Scheme)
 	configv1.AddToScheme(Scheme)
+	operatorv1.AddToScheme(Scheme)
 	securityv1.AddToScheme(Scheme)
 	routev1.AddToScheme(Scheme)
 	rbacv1.AddToScheme(Scheme)

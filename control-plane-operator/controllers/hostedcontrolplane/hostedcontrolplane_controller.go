@@ -172,7 +172,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	// Reconcile global configurationn validation status
+	// Reconcile global configuration validation status
 	{
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidConfiguration),
@@ -566,6 +566,8 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 			}
 		case hyperv1.None:
 			r.Log.Info("OIDC Route is disabled")
+		default:
+			return fmt.Errorf("invalid publishing strategy for OIDC service: %s", service.Type)
 		}
 	}
 
@@ -663,6 +665,14 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		}
 	}
 
+	// Reconcile private IngressController
+	if cpoutil.IsPrivateHCP(hostedControlPlane) {
+		r.Log.Info("Reconciling private IngressController")
+		if err = r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
+			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
+		}
+	}
+
 	// Reconcile hosted cluster config operator
 	r.Log.Info("Reconciling Hosted Cluster Config Operator")
 	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImage); err != nil {
@@ -684,6 +694,12 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 }
 
 func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if cpoutil.IsPrivateHCP(hcp) {
+		ic := manifests.IngressPrivateIngressController(hcp.Namespace)
+		if err := r.Delete(ctx, ic); err != nil {
+			return fmt.Errorf("unable to delete private ingress controller: %w", err)
+		}
+	}
 	releaseImage, err := r.LookupReleaseImage(ctx, hcp)
 	if err != nil {
 		return fmt.Errorf("failed to look up release info: %w", err)
@@ -726,10 +742,20 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort)
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, cpoutil.IsPublicHCP(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
+
+	if cpoutil.IsPrivateHCP(hcp) {
+		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
+			return kas.ReconcilePrivateService(apiServerPrivateService, p.OwnerReference)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile API server private service: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -751,9 +777,9 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	}
 	kasRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, kasRoute, func() error {
-		return konnectivity.ReconcileRoute(kasRoute, p.OwnerRef)
+		return konnectivity.ReconcileRoute(kasRoute, p.OwnerRef, cpoutil.IsPrivateHCP(hcp))
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile API server route: %w", err)
+		return fmt.Errorf("failed to reconcile Konnectivity server route: %w", err)
 	}
 	return nil
 }
@@ -775,7 +801,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	}
 	oauthRoute := manifests.OauthServerRoute(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, oauthRoute, func() error {
-		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef)
+		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, cpoutil.IsPrivateHCP(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth route: %w", err)
 	}
@@ -873,7 +899,20 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		err = fmt.Errorf("APIServer service strategy not specified")
 		return
 	}
+
 	svc := manifests.KubeAPIServerService(hcp.Namespace)
+
+	if cpoutil.IsPrivateHCP(hcp) {
+		// If private: true, assume nodes will be connecting over the private connection
+		// This DNS record is created out-of-band and points to the Endpoint within the guest VPC
+		dnsConfig := manifests.DNSConfig()
+		err = r.Get(ctx, client.ObjectKeyFromObject(dnsConfig), dnsConfig)
+		if err != nil {
+			return
+		}
+		return kas.ReconcilePrivateServiceStatus(svc, dnsConfig.Spec.BaseDomain)
+	}
+
 	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 		if apierrors.IsNotFound(err) {
 			err = nil
@@ -2235,6 +2274,21 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 		return nil
 	})
 	return err
+}
+
+func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	dnsConfig := manifests.DNSConfig()
+	if err := r.Get(ctx, client.ObjectKeyFromObject(dnsConfig), dnsConfig); err != nil {
+		return err
+	}
+	ic := manifests.IngressPrivateIngressController(hcp.Namespace)
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, ic, func() error {
+		return ingress.ReconcilePrivateIngressController(ic, hcp.Namespace, fmt.Sprintf("%s.%s", hcp.Namespace, dnsConfig.Spec.BaseDomain), hcp.Spec.Platform.Type)
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileImageContentSourcePolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

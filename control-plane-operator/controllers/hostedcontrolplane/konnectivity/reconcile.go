@@ -17,6 +17,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
@@ -196,8 +197,14 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	return nil
 }
 
-func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
+func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool) error {
 	ownerRef.ApplyTo(route)
+	if private {
+		if route.Labels == nil {
+			route.Labels = map[string]string{}
+		}
+		route.Labels[ingress.HypershiftRouteLabel] = route.GetNamespace()
+	}
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
 		Name: manifests.KonnectivityServerRoute(route.Namespace).Name,
