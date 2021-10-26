@@ -1613,7 +1613,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
 		return fmt.Errorf("failed to fetch combined ca configmap: %w", err)
 	}
-	serviceServingCA := manifests.KCMServiceServingCA(hcp.Namespace)
+	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, serviceServingCA, func() error {
 		return kcm.ReconcileKCMServiceServingCA(serviceServingCA, combinedCA, p.OwnerRef)
 	}); err != nil {

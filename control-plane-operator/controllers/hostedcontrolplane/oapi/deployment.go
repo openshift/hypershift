@@ -23,6 +23,10 @@ import (
 
 var (
 	volumeMounts = util.PodVolumeMounts{
+		oasTrustAnchorGenerator().Name: {
+			oasTrustAnchorVolume().Name:  "/run/ca-trust-generated",
+			serviceCASignerVolume().Name: "/run/service-ca-signer",
+		},
 		oasContainerMain().Name: {
 			oasVolumeWorkLogs().Name:           "/var/log/openshift-apiserver",
 			oasVolumeConfig().Name:             "/etc/kubernetes/config",
@@ -33,6 +37,7 @@ var (
 			oasVolumeKubeconfig().Name:         "/etc/kubernetes/secrets/svc-kubeconfig",
 			oasVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
 			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
+			oasTrustAnchorVolume().Name:        "/etc/pki/ca-trust/extracted/pem",
 		},
 		oasKonnectivityProxyContainer().Name: {
 			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
@@ -68,6 +73,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	}
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
+		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
 		Containers: []corev1.Container{
 			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0])),
 			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(socks5ProxyImage)),
@@ -83,6 +89,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
 			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
 			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
+			util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
+			util.BuildVolume(serviceCASignerVolume(), func(v *corev1.Volume) {
+				v.ConfigMap = &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.ServiceServingCA(deployment.Namespace).Name}}
+			}),
 		},
 	}
 
@@ -91,6 +101,12 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	config.ApplyTo(deployment)
 
 	return nil
+}
+
+func oasTrustAnchorGenerator() *corev1.Container {
+	return &corev1.Container{
+		Name: "oas-trust-anchor-generator",
+	}
 }
 
 func oasContainerMain() *corev1.Container {
@@ -102,6 +118,23 @@ func oasContainerMain() *corev1.Container {
 func oasKonnectivityProxyContainer() *corev1.Container {
 	return &corev1.Container{
 		Name: "oas-konnectivity-proxy",
+	}
+}
+
+func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = oasImage
+		c.Command = []string{
+			"/bin/bash",
+			"-c",
+			"cp /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/ && " +
+				"if ! [[ -f /run/service-ca-signer/service-ca.crt ]]; then exit 0; fi && " +
+				"chmod 0666 /run/ca-trust-generated/tls-ca-bundle.pem && " +
+				"echo '#service signer ca' >> /run/ca-trust-generated/tls-ca-bundle.pem && " +
+				"cat /run/service-ca-signer/service-ca.crt >>/run/ca-trust-generated/tls-ca-bundle.pem && " +
+				"chmod 0444 /run/ca-trust-generated/tls-ca-bundle.pem",
+		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
 
@@ -257,6 +290,18 @@ func buildOASVolumeEtcdClientCert(v *corev1.Volume) {
 func oasVolumeKonnectivityProxyCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "oas-konnectivity-proxy-cert",
+	}
+}
+
+func oasTrustAnchorVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oas-trust-anchor",
+	}
+}
+
+func serviceCASignerVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "kube-controller-manager",
 	}
 }
 
