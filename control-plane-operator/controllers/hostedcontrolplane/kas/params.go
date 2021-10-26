@@ -3,11 +3,11 @@ package kas
 import (
 	"context"
 	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -61,7 +61,7 @@ func kubeAPIServerPort() int32 {
 	return config.DefaultAPIServerPort
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, explicitNonRootSecurityContext bool) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
 		FeatureGate:          globalConfig.FeatureGate,
@@ -261,6 +261,28 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 				corev1.ResourceCPU:    resource.MustParse("5m"),
 			},
 		},
+	}
+	if explicitNonRootSecurityContext {
+		params.DeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			kasContainerBootstrap().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			kasContainerMain().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			kasContainerAWSKMSActive().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			kasContainerAWSKMSBackup().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			kasContainerIBMCloudKMS().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			kasContainerPortieries().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
 	}
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)

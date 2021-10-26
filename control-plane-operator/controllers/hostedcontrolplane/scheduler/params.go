@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -21,7 +22,7 @@ type KubeSchedulerParams struct {
 	config.DeploymentConfig `json:",inline"`
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig config.GlobalConfig) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig config.GlobalConfig, explicitNonRootSecurityContext bool) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		FeatureGate:             globalConfig.FeatureGate,
 		Scheduler:               globalConfig.Scheduler,
@@ -48,6 +49,13 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.DeploymentConfig.SetMultizoneSpread(schedulerLabels)
 	default:
 		params.Replicas = 1
+	}
+	if explicitNonRootSecurityContext {
+		params.DeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			schedulerContainerMain().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params

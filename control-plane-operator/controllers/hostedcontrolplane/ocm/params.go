@@ -3,6 +3,7 @@ package ocm
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -19,7 +20,7 @@ type OpenShiftControllerManagerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *OpenShiftControllerManagerParams {
+func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *OpenShiftControllerManagerParams {
 	params := &OpenShiftControllerManagerParams{
 		OpenShiftControllerManagerImage: images["openshift-controller-manager"],
 		DockerBuilderImage:              images["docker-builder"],
@@ -48,6 +49,13 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 		params.DeploymentConfig.SetMultizoneSpread(openShiftControllerManagerLabels)
 	default:
 		params.DeploymentConfig.Replicas = 1
+	}
+	if explicitNonRootSecurityContext {
+		params.DeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			ocmContainerMain().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params

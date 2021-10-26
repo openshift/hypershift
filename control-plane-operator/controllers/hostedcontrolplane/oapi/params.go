@@ -4,6 +4,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -36,7 +37,7 @@ type OAuthDeploymentParams struct {
 	AvailabilityProberImage string
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
@@ -136,6 +137,21 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 				},
 			},
 		},
+	}
+	if explicitNonRootSecurityContext {
+		params.OpenShiftAPIServerDeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			oasContainerMain().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			oasKonnectivityProxyContainer().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
+		params.OpenShiftOAuthAPIServerDeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			oauthContainerMain().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
 	}
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetColocation(hcp)
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
