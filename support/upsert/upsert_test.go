@@ -13,13 +13,13 @@ import (
 var _ CreateOrUpdateProvider = &createOrUpdateProvider{}
 
 func TestCreateOrUpdate(t *testing.T) {
-	client := fake.NewFakeClient(&appsv1.Deployment{
+	client := fake.NewClientBuilder().WithRuntimeObjects(&appsv1.Deployment{
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{ServiceAccountName: "service-account"},
 			},
 		},
-	})
+	}).Build()
 
 	deployment := &appsv1.Deployment{}
 	result, err := (&createOrUpdateProvider{}).CreateOrUpdate(context.Background(), client, deployment, func() error { return nil })
