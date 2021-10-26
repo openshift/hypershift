@@ -35,7 +35,7 @@ var (
 			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
 		},
 		oasKonnectivityProxyContainer().Name: {
-			oasVolumeConfig().Name:                "/etc/kubernetes/config",
+			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
 			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
 		},
 	}
@@ -45,7 +45,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, haproxyImage string, etcdURL string, availabilityProberImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string) error {
 	ownerRef.ApplyTo(deployment)
 
 	maxUnavailable := intstr.FromInt(1)
@@ -70,7 +70,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
 			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0])),
-			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(haproxyImage)),
+			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(socks5ProxyImage)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
@@ -105,19 +105,15 @@ func oasKonnectivityProxyContainer() *corev1.Container {
 	}
 }
 
-func buildOASKonnectivityProxyContainer(routerImage string) func(c *corev1.Container) {
+func buildOASKonnectivityProxyContainer(socks5ProxyImage string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		cpath := func(volume, file string) string {
-			return path.Join(volumeMounts.Path(c.Name, volume), file)
-		}
-		c.Image = routerImage
-		c.Command = []string{
-			"/bin/bash",
-			"-c",
-		}
-		c.Args = []string{
-			fmt.Sprintf("cat %s %s > %s; haproxy -f %s", cpath(oasVolumeKonnectivityProxyCert().Name, "tls.crt"), cpath(oasVolumeKonnectivityProxyCert().Name, "tls.key"), haproxyCombinedPemLocation, cpath(oasVolumeConfig().Name, oasKonnectivityProxyConfigKey)),
-		}
+		c.Image = socks5ProxyImage
+		c.Command = []string{"/usr/bin/konnectivity-socks5-proxy"}
+		c.Args = []string{"run"}
+		c.Env = []corev1.EnvVar{{
+			Name:  "KUBECONFIG",
+			Value: "/etc/kubernetes/secrets/kubeconfig/kubeconfig",
+		}}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
@@ -144,11 +140,11 @@ func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Con
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "HTTP_PROXY",
-				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "NO_PROXY",
