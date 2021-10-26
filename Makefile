@@ -155,7 +155,10 @@ staticcheck: $(STATICCHECK)
 		./hosted-cluster-config-operator/... \
 		./cmd/... \
 		./support/certs/... \
-		./support/releaseinfo/...
+		./support/releaseinfo/... \
+		./support/upsert/... \
+		./konnectivity-socks5-proxy/... \
+		./availability-prober/...
 
 # Build the docker image with official golang image
 .PHONY: docker-build
