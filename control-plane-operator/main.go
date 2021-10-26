@@ -68,6 +68,7 @@ func NewStartCommand() *cobra.Command {
 	var hostedClusterConfigOperatorImage string
 	var inCluster bool
 	var enableCIDebugOutput bool
+	var managementClusterMode string
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "", "The name of the deployment of this operator")
@@ -80,6 +81,7 @@ func NewStartCommand() *cobra.Command {
 		"cluster and will make some internal decisions to ease local development (e.g. using external endpoints where possible"+
 		"to avoid assuming access to the service network)")
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	cmd.Flags().StringVar(&managementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
 
 	cmd.MarkFlagRequired("namespace")
 
@@ -177,6 +179,7 @@ func NewStartCommand() *cobra.Command {
 			Client:                 mgr.GetClient(),
 			ReleaseProvider:        releaseProvider,
 			HostedAPICache:         apiCacheController.GetCache(),
+			ManagementClusterMode:  managementClusterMode,
 			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")

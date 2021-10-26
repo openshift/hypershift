@@ -3,6 +3,7 @@ package clusterpolicy
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -19,7 +20,7 @@ type ClusterPolicyControllerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *ClusterPolicyControllerParams {
+func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
 		Image:                   images["cluster-policy-controller"],
 		APIServer:               globalConfig.APIServer,
@@ -37,6 +38,13 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 				},
 			},
 		},
+	}
+	if explicitNonRootSecurityContext{
+		params.DeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			cpcContainerMain().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
 	}
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
