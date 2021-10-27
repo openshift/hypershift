@@ -30,10 +30,6 @@ func ReconcileOpenShiftOAuthAPIServerCertSecret(secret, ca *corev1.Secret, owner
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-oauth-apiserver", []string{"openshift"}, X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
 
-func ReconcileOpenShiftAuthenticatorCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "system:serviceaccount:openshift-oauth-apiserver:openshift-authenticator", []string{"openshift"}, X509SignerUsage, X509UsageClientAuth, nil, nil)
-}
-
 func ReconcileOpenShiftControllerManagerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"openshift-controller-manager",

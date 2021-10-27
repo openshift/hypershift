@@ -131,15 +131,6 @@ func OpenShiftOAuthAPIServerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
-func OpenshiftAuthenticatorCertSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openshift-authenticator-cert",
-			Namespace: ns,
-		},
-	}
-}
-
 func OpenShiftControllerManagerCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
