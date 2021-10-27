@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/hypershift-operator/capabilities"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
@@ -157,6 +158,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to create discovery client: %w", err)
 	}
 
+	mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(kubeDiscoveryClient)
+	if err != nil {
+		return fmt.Errorf("unable to detect cluster capabilities: %w", err)
+	}
+
 	lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string, userSpecifiedImage string) (string, error) {
 		if len(userSpecifiedImage) > 0 {
 			log.Info("using image from arguments", "image", userSpecifiedImage)
@@ -190,10 +196,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
 
 	if err = (&hostedcluster.HostedClusterReconciler{
-		Client:                  mgr.GetClient(),
-		DiscoveryClient:         kubeDiscoveryClient,
-		HypershiftOperatorImage: operatorImage,
-		IgnitionServerImage:     ignitionServerImage,
+		Client:                        mgr.GetClient(),
+		ManagementClusterCapabilities: mgmtClusterCaps,
+		HypershiftOperatorImage:       operatorImage,
+		IgnitionServerImage:           ignitionServerImage,
 		ReleaseProvider: &releaseinfo.CachedProvider{
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
