@@ -1297,14 +1297,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile packageserver cert: %w", err)
 	}
 
-	// OLM Profile collector Cert
-	profileCollectorCert := manifests.OLMProfileCollectorCertSecret(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, profileCollectorCert, func() error {
-		return pki.ReconcileOLMProfileCollectorCertSecret(profileCollectorCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm profile collector cert: %w", err)
-	}
-
 	// OLM Catalog Operator Serving Cert
 	catalogOperatorServingCert := manifests.OLMCatalogOperatorServingCertSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, catalogOperatorServingCert, func() error {

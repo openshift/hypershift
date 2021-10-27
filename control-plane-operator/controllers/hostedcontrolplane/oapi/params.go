@@ -12,9 +12,9 @@ import (
 )
 
 type OpenShiftAPIServerParams struct {
-	APIServer               *configv1.APIServer `json:"apiServer"`
-	IngressSubDomain        string
-	EtcdURL                 string `json:"etcdURL"`
+	APIServer        *configv1.APIServer `json:"apiServer"`
+	IngressSubDomain string
+	EtcdURL          string `json:"etcdURL"`
 
 	OpenShiftAPIServerDeploymentConfig      config.DeploymentConfig `json:"openshiftAPIServerDeploymentConfig,inline"`
 	OpenShiftOAuthAPIServerDeploymentConfig config.DeploymentConfig `json:"openshiftOAuthAPIServerDeploymentConfig,inline"`
