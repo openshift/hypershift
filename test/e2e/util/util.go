@@ -386,7 +386,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 		}
 		for _, pod := range podList.Items {
 			// It needs some specific apis, we currently don't have checking for this
-			if pod.Name == "manifests-bootstrapper" {
+			if strings.HasPrefix(pod.Name, "manifests-bootstrapper") {
 				continue
 			}
 
