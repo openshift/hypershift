@@ -1,4 +1,4 @@
-# HyperShift API Reference
+# API Reference
 
 A HyperShift cluster is represented by a `HostedCluster` and zero to many related `NodePool` resources.
 
