@@ -14,6 +14,7 @@ BIN_DIR=bin
 TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
 CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
 STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
+GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 
 PROMTOOL=GO111MODULE=on GOFLAGS=-mod=vendor go run github.com/prometheus/prometheus/cmd/promtool
 
@@ -52,6 +53,9 @@ $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
 $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
 
+$(GENAPIDOCS): $(TOOLS_DIR)/go.mod
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
+
 # Build ignition-server binary
 .PHONY: ignition-server
 ignition-server:
@@ -87,7 +91,7 @@ availability-prober:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud api-docs
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
@@ -112,6 +116,10 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-ibmcloud/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
+
+.PHONY: api-docs
+api-docs: $(GENAPIDOCS)
+	$(GENAPIDOCS) --config $(DIR)/docs/api-doc-gen/config.json --template-dir $(DIR)/docs/api-doc-gen/templates --api-dir ./api/v1alpha1 --out-file $(DIR)/docs/content/reference/api.md
 
 # Run tests
 .PHONY: test
