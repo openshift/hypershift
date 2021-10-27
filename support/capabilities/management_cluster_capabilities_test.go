@@ -98,6 +98,58 @@ func TestIsGroupVersionRegistered(t *testing.T) {
 	}
 }
 
+func TestDetectManagementCapabilities(t *testing.T) {
+
+	testCases := []struct {
+		name         string
+		client       discovery.ServerResourcesInterface
+		groupVersion schema.GroupVersion
+		resultErr    error
+		isRegistered bool
+		shouldError  bool
+	}{
+		{
+			name:         "should return false if routes are not registered",
+			client:       newFailableFakeDiscoveryClient(nil, hyperv1.GroupVersion, imagev1.GroupVersion),
+			groupVersion: routev1.GroupVersion,
+			resultErr:    nil,
+			isRegistered: false,
+			shouldError:  false,
+		},
+		{
+			name:         "should return true if are not registered",
+			client:       newFailableFakeDiscoveryClient(nil, hyperv1.GroupVersion, routev1.GroupVersion),
+			groupVersion: routev1.GroupVersion,
+			resultErr:    nil,
+			isRegistered: true,
+			shouldError:  false,
+		},
+		{
+			name: "should fail on arbitrary errors",
+			client: newFailableFakeDiscoveryClient(
+				fmt.Errorf("ups"),
+				routev1.GroupVersion,
+			),
+			groupVersion: routev1.GroupVersion,
+			resultErr:    fmt.Errorf("ups"),
+			isRegistered: false,
+			shouldError:  true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := DetectManagementClusterCapabilities(tc.client)
+			g := NewGomegaWithT(t)
+			if tc.shouldError {
+				g.Expect(err).To(Equal(tc.resultErr))
+			} else {
+				g.Expect(got.Has(CapabilityRoute)).To(Equal(tc.isRegistered))
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
 func newFailableFakeDiscoveryClient(err error, discovered ...schema.GroupVersion) fakeFailableDiscoveryClient {
 	discoveryClient := fakeFailableDiscoveryClient{
 		Resources: []*metav1.APIResourceList{},
