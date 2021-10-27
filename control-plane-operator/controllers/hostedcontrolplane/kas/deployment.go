@@ -2,6 +2,7 @@ package kas
 
 import (
 	"fmt"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
