@@ -16,7 +16,7 @@ status:
   etcdDiscoveryDomain: {{ .BaseDomain }}
   infrastructureName: "{{ .InfraID }}"
   platform: {{ .PlatformType }}
-  controlPlaneTopology: HighlyAvailable
+  controlPlaneTopology: External
   infrastructureTopology: {{ .InfrastructureAvailabilityPolicy }}
   platformStatus:
     type: {{ .PlatformType }}
