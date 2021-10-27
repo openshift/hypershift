@@ -65,6 +65,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/prometheus"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	cpoutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
@@ -700,6 +701,12 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reconciling machine config server config")
 	if err = r.reconcileMachineConfigServerConfig(ctx, hostedControlPlane, infraStatus, globalConfig); err != nil {
 		return fmt.Errorf("failed to reconcile mcs config: %w", err)
+	}
+
+	// Reconcile Prometheus
+	r.Log.Info("Reconciling Prometheus")
+	if err = r.reconcilePrometheus(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile prometheus: %w", err)
 	}
 
 	// Install the control plane into the infrastructure
@@ -2214,6 +2221,25 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		return mcs.ReconcileMachineConfigServerConfig(cm, p)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine config server config: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcilePrometheus(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := prometheus.NewPrometheusParams(hcp, releaseImage.ComponentImages())
+
+	cm := manifests.PrometheusConfiguration(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
+		return prometheus.ReconcileConfiguration(cm, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile prometheus configuration: %w", err)
+	}
+
+	deployment := manifests.PrometheusDeployment(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
+		return prometheus.ReconcileDeployment(deployment, p.OwnerRef, p.Image, p.AvailabilityProberImage, p.DeploymentConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile prometheus deployment: %w", err)
 	}
 	return nil
 }
