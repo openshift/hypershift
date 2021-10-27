@@ -38,9 +38,10 @@ const (
 // MachineConfigServer pods to build ignition payload contents
 // out of a given releaseImage and a config string containing 0..N MachineConfig yaml definitions.
 type MCSIgnitionProvider struct {
-	Client          client.Client
-	ReleaseProvider releaseinfo.Provider
-	Namespace       string
+	Client                client.Client
+	ReleaseProvider       releaseinfo.Provider
+	Namespace             string
+	ManagementClusterMode string
 }
 
 func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
@@ -77,6 +78,11 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
 	mcsPod := machineConfigServerPod(p.Namespace, img,
 		mcsServiceAccount, mcsConfigConfigMap)
+	if p.ManagementClusterMode == "base-kube" {
+		mcsPod.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: k8sutilspointer.Int64Ptr(1001),
+		}
+	}
 
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {

@@ -52,9 +52,10 @@ func main() {
 }
 
 type Options struct {
-	Addr     string
-	CertFile string
-	KeyFile  string
+	Addr                  string
+	CertFile              string
+	KeyFile               string
+	ManagementClusterMode string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -72,6 +73,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Addr, "addr", opts.Addr, "Listen address")
 	cmd.Flags().StringVar(&opts.CertFile, "cert-file", opts.CertFile, "Path to the serving cert")
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", opts.KeyFile, "Path to the serving key")
+	cmd.Flags().StringVar(&opts.ManagementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
