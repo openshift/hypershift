@@ -23,6 +23,10 @@ import (
 
 var (
 	volumeMounts = util.PodVolumeMounts{
+		oasTrustAnchorGenerator().Name: {
+			oasTrustAnchorVolume().Name:  "/run/ca-trust-generated",
+			serviceCASignerVolume().Name: "/run/service-ca-signer",
+		},
 		oasContainerMain().Name: {
 			oasVolumeWorkLogs().Name:           "/var/log/openshift-apiserver",
 			oasVolumeConfig().Name:             "/etc/kubernetes/config",
@@ -33,9 +37,10 @@ var (
 			oasVolumeKubeconfig().Name:         "/etc/kubernetes/secrets/svc-kubeconfig",
 			oasVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
 			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
+			oasTrustAnchorVolume().Name:        "/etc/pki/ca-trust/extracted/pem",
 		},
 		oasKonnectivityProxyContainer().Name: {
-			oasVolumeConfig().Name:                "/etc/kubernetes/config",
+			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
 			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
 		},
 	}
@@ -45,7 +50,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, haproxyImage string, etcdURL string, availabilityProberImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string) error {
 	ownerRef.ApplyTo(deployment)
 
 	maxUnavailable := intstr.FromInt(1)
@@ -68,9 +73,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	}
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
+		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
 		Containers: []corev1.Container{
 			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0])),
-			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(haproxyImage)),
+			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(socks5ProxyImage)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
@@ -83,6 +89,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
 			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
 			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
+			util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
+			util.BuildVolume(serviceCASignerVolume(), func(v *corev1.Volume) {
+				v.ConfigMap = &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.ServiceServingCA(deployment.Namespace).Name}}
+			}),
 		},
 	}
 
@@ -91,6 +101,12 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	config.ApplyTo(deployment)
 
 	return nil
+}
+
+func oasTrustAnchorGenerator() *corev1.Container {
+	return &corev1.Container{
+		Name: "oas-trust-anchor-generator",
+	}
 }
 
 func oasContainerMain() *corev1.Container {
@@ -105,19 +121,32 @@ func oasKonnectivityProxyContainer() *corev1.Container {
 	}
 }
 
-func buildOASKonnectivityProxyContainer(routerImage string) func(c *corev1.Container) {
+func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
-		cpath := func(volume, file string) string {
-			return path.Join(volumeMounts.Path(c.Name, volume), file)
-		}
-		c.Image = routerImage
+		c.Image = oasImage
 		c.Command = []string{
 			"/bin/bash",
 			"-c",
+			"cp /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/ && " +
+				"if ! [[ -f /run/service-ca-signer/service-ca.crt ]]; then exit 0; fi && " +
+				"chmod 0666 /run/ca-trust-generated/tls-ca-bundle.pem && " +
+				"echo '#service signer ca' >> /run/ca-trust-generated/tls-ca-bundle.pem && " +
+				"cat /run/service-ca-signer/service-ca.crt >>/run/ca-trust-generated/tls-ca-bundle.pem && " +
+				"chmod 0444 /run/ca-trust-generated/tls-ca-bundle.pem",
 		}
-		c.Args = []string{
-			fmt.Sprintf("cat %s %s > %s; haproxy -f %s", cpath(oasVolumeKonnectivityProxyCert().Name, "tls.crt"), cpath(oasVolumeKonnectivityProxyCert().Name, "tls.key"), haproxyCombinedPemLocation, cpath(oasVolumeConfig().Name, oasKonnectivityProxyConfigKey)),
-		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+	}
+}
+
+func buildOASKonnectivityProxyContainer(socks5ProxyImage string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = socks5ProxyImage
+		c.Command = []string{"/usr/bin/konnectivity-socks5-proxy"}
+		c.Args = []string{"run"}
+		c.Env = []corev1.EnvVar{{
+			Name:  "KUBECONFIG",
+			Value: "/etc/kubernetes/secrets/kubeconfig/kubeconfig",
+		}}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
@@ -144,11 +173,11 @@ func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Con
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "HTTP_PROXY",
-				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: fmt.Sprintf("http://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "NO_PROXY",
@@ -261,6 +290,18 @@ func buildOASVolumeEtcdClientCert(v *corev1.Volume) {
 func oasVolumeKonnectivityProxyCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "oas-konnectivity-proxy-cert",
+	}
+}
+
+func oasTrustAnchorVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oas-trust-anchor",
+	}
+}
+
+func serviceCASignerVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "kube-controller-manager",
 	}
 }
 

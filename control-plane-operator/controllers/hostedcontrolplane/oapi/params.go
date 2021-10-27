@@ -22,7 +22,7 @@ type OpenShiftAPIServerParams struct {
 	config.OwnerRef                         `json:",inline"`
 	OpenShiftAPIServerImage                 string `json:"openshiftAPIServerImage"`
 	OAuthAPIServerImage                     string `json:"oauthAPIServerImage"`
-	HaproxyImage                            string `json:"haproxyImage"`
+	ProxyImage                              string `json:"haproxyImage"`
 	AvailabilityProberImage                 string `json:"availabilityProberImage"`
 }
 
@@ -40,7 +40,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
-		HaproxyImage:            images["haproxy-router"],
+		ProxyImage:              images["socks5-proxy"],
 		APIServer:               globalConfig.APIServer,
 		ServiceAccountIssuerURL: hcp.Spec.IssuerURL,
 		IngressSubDomain:        config.IngressSubdomain(hcp),
