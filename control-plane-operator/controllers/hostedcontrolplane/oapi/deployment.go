@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
@@ -38,6 +39,7 @@ var (
 			oasVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
 			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
 			oasTrustAnchorVolume().Name:        "/etc/pki/ca-trust/extracted/pem",
+			pullSecretVolume().Name:            "/var/lib/kubelet",
 		},
 		oasKonnectivityProxyContainer().Name: {
 			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
@@ -50,7 +52,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
 	maxUnavailable := intstr.FromInt(1)
@@ -93,10 +95,16 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(serviceCASignerVolume(), func(v *corev1.Volume) {
 				v.ConfigMap = &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.ServiceServingCA(deployment.Namespace).Name}}
 			}),
+			util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
+				v.Secret = &corev1.SecretVolumeSource{
+					SecretName: common.PullSecret(deployment.Namespace).Name,
+					Items:      []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
+				}
+			}),
 		},
 	}
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	config.ApplyTo(deployment)
 
@@ -302,6 +310,12 @@ func oasTrustAnchorVolume() *corev1.Volume {
 func serviceCASignerVolume() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "kube-controller-manager",
+	}
+}
+
+func pullSecretVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "pull-secret",
 	}
 }
 
