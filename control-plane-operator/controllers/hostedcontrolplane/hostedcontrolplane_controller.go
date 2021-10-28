@@ -2235,9 +2235,23 @@ func (r *HostedControlPlaneReconciler) reconcilePrometheus(ctx context.Context, 
 		return fmt.Errorf("failed to reconcile prometheus configuration: %w", err)
 	}
 
+	sa := manifests.PrometheusServiceAccount(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, sa, func() error {
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile prometheus service account: %w", err)
+	}
+
+	rb := manifests.PrometheusRoleBinding(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, rb, func() error {
+		return prometheus.ReconcileRoleBinding(rb, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile prometheus configuration: %w", err)
+	}
+
 	deployment := manifests.PrometheusDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return prometheus.ReconcileDeployment(deployment, p.OwnerRef, p.Image, p.AvailabilityProberImage, p.DeploymentConfig)
+		return prometheus.ReconcileDeployment(deployment, p.OwnerRef, p.Image, p.TokenMinterImage, p.AvailabilityProberImage, p.TokenAudience, p.DeploymentConfig)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile prometheus deployment: %w", err)
 	}

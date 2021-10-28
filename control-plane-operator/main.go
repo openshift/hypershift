@@ -75,6 +75,7 @@ func NewStartCommand() *cobra.Command {
 		inCluster                        bool
 		enableCIDebugOutput              bool
 		registryOverrides                map[string]string
+		tokenMinterImage                 string
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
@@ -91,6 +92,8 @@ func NewStartCommand() *cobra.Command {
 		"to avoid assuming access to the service network)")
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringVar(&tokenMinterImage, "token-minter-image", "", "image for token minter (defaults to match this operator's image if running in a deployment)")
+
 	cmd.MarkFlagRequired("namespace")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -166,6 +169,12 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 		setupLog.Info("using operator image", "image", hostedClusterConfigOperatorImage)
+		tokenMinterImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, tokenMinterImage)
+		if err != nil {
+			setupLog.Error(err, fmt.Sprintf("failed to find operator image: %s", err), "controller", "hosted-control-plane")
+			os.Exit(1)
+		}
+		setupLog.Info("token-minter: using operator image from deployment")
 
 		socks5ProxyImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, socks5ProxyImage)
 		if err != nil {
@@ -193,6 +202,7 @@ func NewStartCommand() *cobra.Command {
 					"konnectivity-server":            konnectivityServerImage,
 					"konnectivity-agent":             konnectivityAgentImage,
 					"socks5-proxy":                   socks5ProxyImage,
+					"token-minter":                   tokenMinterImage,
 				},
 			},
 			RegistryOverrides: registryOverrides,

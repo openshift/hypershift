@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -21,6 +20,8 @@ var (
 		prometheusContainerMain().Name: {
 			prometheusVolumeWork().Name:   "/var/run/prometheus",
 			prometheusVolumeConfig().Name: "/etc/prometheus",
+			prometheusVolumeRootCA().Name: "/etc/kubernetes/root-ca",
+			util.TokenMinterTokenVolume:   "/etc/kubernetes/service",
 		},
 	}
 	prometheusLabels = map[string]string{
@@ -29,7 +30,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image, availabilityProberImage string, deploymentConfig config.DeploymentConfig) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image, tokenMinterImage, availabilityProberImage, tokenAudience string, deploymentConfig config.DeploymentConfig) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: prometheusLabels,
@@ -51,17 +52,20 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 	}
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
 			util.BuildContainer(prometheusContainerMain(), buildPrometheusContainerMain(image)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(prometheusVolumeWork(), buildPrometheusVolumeWork),
 			util.BuildVolume(prometheusVolumeConfig(), buildPrometheusVolumeConfig),
+			util.BuildVolume(prometheusVolumeKubeconfig(), buildPrometheusVolumeKubeconfig),
+			util.BuildVolume(prometheusVolumeRootCA(), buildPrometheusVolumeRootCA),
 		},
+		ServiceAccountName: manifests.PrometheusServiceAccount(deployment.Namespace).Name,
 	}
 	deploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, nil), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.TokenMinterInit(tokenMinterImage, "default", "metrics-collector", tokenAudience, prometheusVolumeKubeconfig().Name, kas.KubeconfigKey, &deployment.Spec.Template.Spec)
 	return nil
 }
 
@@ -76,8 +80,11 @@ func buildPrometheusContainerMain(image string) func(*corev1.Container) {
 		c.Image = image
 		c.Args = []string{
 			"--config.file",
-			path.Join(volumeMounts.Path(prometheusContainerMain().Name, prometheusVolumeConfig().Name), prometheusConfigFileName),
+			path.Join(volumeMounts.Path(c.Name, prometheusVolumeConfig().Name), prometheusConfigFileName),
+			"--log.level=debug",
+			"--storage.tsdb.retention.time=20m",
 		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
 
@@ -91,6 +98,18 @@ func buildPrometheusVolumeWork(v *corev1.Volume) {
 	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
 }
 
+func prometheusVolumeKubeconfig() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "kubeconfig",
+	}
+}
+
+func buildPrometheusVolumeKubeconfig(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{
+		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+	}
+}
+
 func prometheusVolumeConfig() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "config",
@@ -100,4 +119,15 @@ func prometheusVolumeConfig() *corev1.Volume {
 func buildPrometheusVolumeConfig(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.PrometheusConfiguration("").Name
+}
+
+func prometheusVolumeRootCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "root-ca",
+	}
+}
+
+func buildPrometheusVolumeRootCA(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{}
+	v.Secret.SecretName = manifests.RootCASecret("").Name
 }

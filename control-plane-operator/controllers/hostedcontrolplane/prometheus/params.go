@@ -9,15 +9,19 @@ import (
 type PrometheusParams struct {
 	Image                   string
 	AvailabilityProberImage string
+	TokenMinterImage        string
 	DeploymentConfig        config.DeploymentConfig
 	OwnerRef                config.OwnerRef
+	TokenAudience           string
 }
 
 func NewPrometheusParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *PrometheusParams {
 	params := &PrometheusParams{
 		Image:                   images["prometheus"],
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		TokenMinterImage:        images[util.TokenMinterImageName],
 		OwnerRef:                config.OwnerRefFrom(hcp),
+		TokenAudience:           hcp.Spec.IssuerURL,
 	}
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
