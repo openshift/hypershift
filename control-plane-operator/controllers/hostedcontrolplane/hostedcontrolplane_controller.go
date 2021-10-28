@@ -1146,9 +1146,13 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	}
 
 	// KAS server secret
+	oidcISSuerURL, err := url.Parse(hcp.Spec.IssuerURL)
+	if err != nil {
+		return fmt.Errorf("unable to parse issuer URL: %s", hcp.Spec.IssuerURL)
+	}
 	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kasServerSecret, func() error {
-		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.ServiceCIDR)
+		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.ServiceCIDR, oidcISSuerURL.Hostname())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
@@ -2248,10 +2252,6 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 	route := manifests.OIDCRoute(hcp.GetNamespace())
 	r.Log.Info("Updating OIDC route")
 	_, err := r.CreateOrUpdate(ctx, r.Client, route, func() error {
-		rootCASecret := manifests.RootCASecret(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
-			return err
-		}
 		u, err := url.Parse(hcp.Spec.IssuerURL)
 		if err != nil {
 			return fmt.Errorf("unable to parse issuer URL: %s", hcp.Spec.IssuerURL)
@@ -2264,11 +2264,8 @@ func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.C
 			},
 			Host: u.Host,
 			TLS: &routev1.TLSConfig{
-				// Reencrypt is used here because we need to probe for the
-				// CA thumbprint before the KAS on the HCP is running
-				Termination:                   routev1.TLSTerminationReencrypt,
+				Termination:                   routev1.TLSTerminationPassthrough,
 				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
-				DestinationCACertificate:      string(rootCASecret.Data["ca.crt"]),
 			},
 		}
 		return nil

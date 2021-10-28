@@ -16,7 +16,7 @@ const (
 	ServiceSignerPublicKey  = "service-account.pub"
 )
 
-func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, serviceCIDR string) error {
+func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, serviceCIDR, oidcISSuerURL string) error {
 	svc := manifests.KubeAPIServerService(secret.Namespace)
 	_, serviceIPNet, err := net.ParseCIDR(serviceCIDR)
 	if err != nil {
@@ -32,6 +32,7 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 		svc.Name,
 		fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace),
 		fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace),
+		oidcISSuerURL,
 	}
 	apiServerIPs := []string{
 		"127.0.0.1",
