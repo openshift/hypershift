@@ -32,8 +32,13 @@ func InClusterKASURL(namespace string, apiServerPort int32) string {
 	return fmt.Sprintf("https://%s:%d", manifests.KASService(namespace).Name, apiServerPort)
 }
 
-func InClusterKASReadyURL(namespace string) string {
-	return InClusterKASURL(namespace, kubeAPIServerPort()) + "/readyz"
+func InClusterKASReadyURL(namespace string, securePort *int32) string {
+	var apiPort int32
+	apiPort = config.DefaultAPIServerPort
+	if securePort != nil {
+		apiPort = *securePort
+	}
+	return InClusterKASURL(namespace, apiPort) + "/readyz"
 }
 
 func ReconcileLocalhostKubeconfigSecret(secret, cert, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {

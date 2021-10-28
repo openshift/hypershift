@@ -2516,8 +2516,11 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 			},
 		},
 	}
-
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
+	var port *int32
+	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
+		port = hc.Spec.Networking.APIServer.Port
+	}
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
@@ -3076,7 +3079,11 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 			},
 		},
 	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
+	var port *int32
+	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
+		port = hc.Spec.Networking.APIServer.Port
+	}
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
