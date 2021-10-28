@@ -19,7 +19,7 @@ groups:
   - record: hypershift:controlplane:component_cpu_usage_seconds
     expr: avg by (app, namespace) (
             sum(
-              rate(
+              sum(
                 container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
               )
             ) by (pod, namespace)
@@ -29,7 +29,7 @@ groups:
           /
           count by (app, namespace) (
             sum(
-              rate(
+              sum(
                 container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
               )
             ) by (pod, namespace)
