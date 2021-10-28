@@ -99,8 +99,10 @@ func setUpPayloadStoreReconciler(ctx context.Context) (ctrl.Manager, error) {
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
+	restConfig := ctrl.GetConfigOrDie()
+	restConfig.UserAgent = "ignition-server-manager"
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme: hyperapi.Scheme,
 		Port:   9443,
 		// TODO (alberto): expose this flags?

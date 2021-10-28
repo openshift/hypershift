@@ -88,7 +88,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -103,7 +103,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion,
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, openShiftVersion, kubeVersion)),
+					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, openShiftVersion, kubeVersion, enableCIDebugOutput, platformType)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
@@ -136,7 +136,7 @@ func hccVolumeRootCA() *corev1.Volume {
 	}
 }
 
-func buildHCCContainerMain(image, openShiftVersion, kubeVersion string) func(c *corev1.Container) {
+func buildHCCContainerMain(image, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
@@ -145,6 +145,8 @@ func buildHCCContainerMain(image, openShiftVersion, kubeVersion string) func(c *
 			fmt.Sprintf("--initial-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeRootCA().Name), pki.CASignerCertMapKey)),
 			fmt.Sprintf("--target-kubeconfig=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeKubeconfig().Name), kas.KubeconfigKey)),
 			"--namespace", "$(POD_NAMESPACE)",
+			"--platform-type", string(platformType),
+			fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
 		}
 		c.Env = []corev1.EnvVar{
 			{

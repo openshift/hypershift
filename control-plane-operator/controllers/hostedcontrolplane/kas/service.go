@@ -11,9 +11,9 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
-func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int) error {
+func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, isPublic bool) error {
 	util.EnsureOwnerRef(svc, owner)
-	svc.Spec.Selector = kasLabels
+	svc.Spec.Selector = kasLabels()
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]
@@ -25,7 +25,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	portSpec.TargetPort = intstr.FromInt(apiServerPort)
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
-		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+		if isPublic {
+			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+		} else {
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
 		if portSpec.NodePort == 0 && strategy.NodePort != nil {
@@ -67,4 +71,30 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 		host = strategy.NodePort.Address
 	}
 	return
+}
+
+func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) error {
+	apiServerPort := 6443
+	util.EnsureOwnerRef(svc, owner)
+	svc.Spec.Selector = kasLabels()
+	var portSpec corev1.ServicePort
+	if len(svc.Spec.Ports) > 0 {
+		portSpec = svc.Spec.Ports[0]
+	} else {
+		svc.Spec.Ports = []corev1.ServicePort{portSpec}
+	}
+	portSpec.Port = int32(apiServerPort)
+	portSpec.Protocol = corev1.ProtocolTCP
+	portSpec.TargetPort = intstr.FromInt(apiServerPort)
+	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	svc.ObjectMeta.Annotations = map[string]string{
+		"service.beta.kubernetes.io/aws-load-balancer-internal": "true",
+		"service.beta.kubernetes.io/aws-load-balancer-type":     "nlb",
+	}
+	svc.Spec.Ports[0] = portSpec
+	return nil
+}
+
+func ReconcilePrivateServiceStatus(svc *corev1.Service, mgmtBaseDomain string) (host string, port int32, err error) {
+	return fmt.Sprintf("api-%s.%s", svc.GetNamespace(), mgmtBaseDomain), 6443, nil
 }

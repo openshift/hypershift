@@ -19,7 +19,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 )
 
-type destroyBastionOpts struct {
+type DestroyBastionOpts struct {
 	Namespace          string
 	Name               string
 	InfraID            string
@@ -28,7 +28,7 @@ type destroyBastionOpts struct {
 }
 
 func NewDestroyCommand() *cobra.Command {
-	opts := destroyBastionOpts{
+	opts := DestroyBastionOpts{
 		Namespace: "clusters",
 	}
 	cmd := &cobra.Command{
@@ -71,7 +71,7 @@ func NewDestroyCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *destroyBastionOpts) Validate() error {
+func (o *DestroyBastionOpts) Validate() error {
 	if len(o.Name) > 0 {
 		if len(o.Namespace) == 0 {
 			return fmt.Errorf("a namespace must be specified if specifying a hosted cluster name")
@@ -87,7 +87,7 @@ func (o *destroyBastionOpts) Validate() error {
 	return nil
 }
 
-func (o *destroyBastionOpts) Run(ctx context.Context) error {
+func (o *DestroyBastionOpts) Run(ctx context.Context) error {
 
 	var infraID, region string
 

@@ -22,10 +22,13 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp"
@@ -35,6 +38,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/semconv"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -42,6 +47,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -62,16 +68,19 @@ func main() {
 }
 
 type StartOptions struct {
-	Namespace             string
-	DeploymentName        string
-	MetricsAddr           string
-	EnableLeaderElection  bool
-	IgnitionServerImage   string
-	OpenTelemetryEndpoint string
+	Namespace                  string
+	DeploymentName             string
+	MetricsAddr                string
+	EnableLeaderElection       bool
+	IgnitionServerImage        string
+	OpenTelemetryEndpoint      string
+	EnableOCPClusterMonitoring bool
+	EnableCIDebugOutput        bool
+	ControlPlaneOperatorImage  string
 }
 
 func NewStartCommand() *cobra.Command {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -79,12 +88,13 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := StartOptions{
-		Namespace:             "hypershift",
-		DeploymentName:        "operator",
-		MetricsAddr:           "0",
-		EnableLeaderElection:  false,
-		IgnitionServerImage:   "",
-		OpenTelemetryEndpoint: "",
+		Namespace:                 "hypershift",
+		DeploymentName:            "operator",
+		MetricsAddr:               "0",
+		EnableLeaderElection:      false,
+		ControlPlaneOperatorImage: "",
+		IgnitionServerImage:       "",
+		OpenTelemetryEndpoint:     "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -93,8 +103,11 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableLeaderElection, "enable-leader-election", opts.EnableLeaderElection,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
+	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
+	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -109,7 +122,9 @@ func NewStartCommand() *cobra.Command {
 }
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restConfig := ctrl.GetConfigOrDie()
+	restConfig.UserAgent = "hypershift-operator-manager"
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:             hyperapi.Scheme,
 		MetricsBindAddress: opts.MetricsAddr,
 		Port:               9443,
@@ -136,6 +151,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if err != nil {
 		return fmt.Errorf("unable to create kube client: %w", err)
 	}
+
+	kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+	if err != nil {
+		return fmt.Errorf("unable to create discovery client: %w", err)
+	}
+
 	lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string, userSpecifiedImage string) (string, error) {
 		if len(userSpecifiedImage) > 0 {
 			log.Info("using image from arguments", "image", userSpecifiedImage)
@@ -154,7 +175,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 		return "", fmt.Errorf("couldn't locate operator container on deployment")
 	}
-	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, "")
+	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.ControlPlaneOperatorImage)
 	if err != nil {
 		return fmt.Errorf("failed to find operator image: %w", err)
 	}
@@ -166,14 +187,20 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	log.Info("using ignition server image", "image", ignitionServerImage)
 
+	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
+
 	if err = (&hostedcluster.HostedClusterReconciler{
 		Client:                  mgr.GetClient(),
+		DiscoveryClient:         kubeDiscoveryClient,
 		HypershiftOperatorImage: operatorImage,
 		IgnitionServerImage:     ignitionServerImage,
 		ReleaseProvider: &releaseinfo.CachedProvider{
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},
+		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
+		CreateOrUpdateProvider:     createOrUpdate,
+		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -184,6 +211,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},
+		CreateOrUpdateProvider: createOrUpdate,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -212,6 +240,42 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{}))
+
+	// If it exsists, block default ingress controller from admitting HCP private routes
+	ic := &operatorv1.IngressController{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "openshift-ingress-operator",
+		},
+	}
+	if err := mgr.GetClient().Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
+		if _, err := controllerutil.CreateOrUpdate(ctx, mgr.GetClient(), ic, func() error {
+			if ic.Spec.Replicas == nil {
+				return fmt.Errorf("default ingress controller not found")
+			}
+			if ic.Spec.RouteSelector == nil {
+				ic.Spec.RouteSelector = &metav1.LabelSelector{}
+			}
+			if ic.Spec.RouteSelector.MatchExpressions == nil {
+				ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
+			}
+			for _, requirement := range ic.Spec.RouteSelector.MatchExpressions {
+				if requirement.Key != hyperutil.HypershiftRouteLabel {
+					continue
+				}
+				requirement.Operator = metav1.LabelSelectorOpDoesNotExist
+				return nil
+			}
+			ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
+				Key:      hyperutil.HypershiftRouteLabel,
+				Operator: metav1.LabelSelectorOpDoesNotExist,
+			})
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
+		}
+		log.Info("reconciled default ingress controller")
+	}
 
 	// Start the controllers
 	log.Info("starting manager")

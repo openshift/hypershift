@@ -106,18 +106,6 @@ type Options struct {
 
 type Option func(*Options)
 
-func WithPrefix(prefix string) Option {
-	return func(o *Options) {
-		o.Prefix = prefix
-	}
-}
-
-func WithSuffix(suffix string) Option {
-	return func(o *Options) {
-		o.Suffix = suffix
-	}
-}
-
 func WithExtension(extension string) Option {
 	return func(o *Options) {
 		o.Extension = extension

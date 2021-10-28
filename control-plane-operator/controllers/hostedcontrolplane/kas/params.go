@@ -101,7 +101,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	case hyperv1.Unmanaged:
 		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
 	case hyperv1.Managed:
-		params.EtcdURL = config.DefaultEtcdURL
+		params.EtcdURL = fmt.Sprintf("https://etcd-client.%s.svc:2379", hcp.Namespace)
 	default:
 		params.EtcdURL = config.DefaultEtcdURL
 	}
@@ -284,7 +284,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(kasLabels)
+		params.DeploymentConfig.SetMultizoneSpread(kasLabels())
 	default:
 		params.Replicas = 1
 	}

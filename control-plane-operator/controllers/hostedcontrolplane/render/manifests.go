@@ -58,14 +58,9 @@ func newClusterManifestContext(images, versions map[string]string, params *Clust
 
 func (c *clusterManifestContext) setupManifests() {
 	c.clusterBootstrap()
-	c.registry()
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
 	c.ignitionConfigs()
-}
-
-func (c *clusterManifestContext) registry() {
-	c.addUserManifestFiles("registry/cluster-imageregistry-config.yaml")
 }
 
 func (c *clusterManifestContext) clusterBootstrap() {
@@ -87,9 +82,8 @@ func (c *clusterManifestContext) machineConfigServer() {
 
 func (c *clusterManifestContext) userManifestsBootstrapper() {
 	c.addManifestFiles(
-		"user-manifests-bootstrapper/user-manifests-bootstrapper-serviceaccount.yaml",
 		"user-manifests-bootstrapper/user-manifests-bootstrapper-rolebinding.yaml",
-		"user-manifests-bootstrapper/user-manifests-bootstrapper-pod.yaml",
+		"user-manifests-bootstrapper/user-manifests-bootstrapper-job.yaml",
 	)
 	for _, file := range c.userManifestFiles {
 		data, err := c.substituteParams(c.params, file)

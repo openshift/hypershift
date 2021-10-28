@@ -21,6 +21,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/upsert"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -49,8 +50,6 @@ func main() {
 }
 
 const (
-	// FIXME: Set to upstream image when DNS resolution is fixed for etcd service
-	etcdOperatorImage = "quay.io/hypershift/etcd-operator:v0.9.4-patched"
 	// TODO: Include konnectivity image in release payload
 	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
@@ -68,6 +67,7 @@ func NewStartCommand() *cobra.Command {
 	var enableLeaderElection bool
 	var hostedClusterConfigOperatorImage string
 	var inCluster bool
+	var enableCIDebugOutput bool
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "", "The name of the deployment of this operator")
@@ -79,14 +79,17 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&inCluster, "in-cluster", true, "If false, the operator will be assumed to be running outside a kube "+
 		"cluster and will make some internal decisions to ease local development (e.g. using external endpoints where possible"+
 		"to avoid assuming access to the service network)")
+	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 
 	cmd.MarkFlagRequired("namespace")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
 		ctx := ctrl.SetupSignalHandler()
 
-		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		restConfig := ctrl.GetConfigOrDie()
+		restConfig.UserAgent = "hypershift-controlplane-manager"
+		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 			Scheme:             hyperapi.Scheme,
 			MetricsBindAddress: metricsAddr,
 			Port:               9443,
@@ -152,7 +155,6 @@ func NewStartCommand() *cobra.Command {
 			ComponentImages: map[string]string{
 				util.AvailabilityProberImageName: hostedClusterConfigOperatorImage,
 				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
-				"etcd-operator":                  etcdOperatorImage,
 				"konnectivity-server":            konnectivityServerImage,
 				"konnectivity-agent":             konnectivityAgentImage,
 				"socks5-proxy":                   socks5ProxyImage,
@@ -172,9 +174,10 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
-			Client:          mgr.GetClient(),
-			ReleaseProvider: releaseProvider,
-			HostedAPICache:  apiCacheController.GetCache(),
+			Client:                 mgr.GetClient(),
+			ReleaseProvider:        releaseProvider,
+			HostedAPICache:         apiCacheController.GetCache(),
+			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

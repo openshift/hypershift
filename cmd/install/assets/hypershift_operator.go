@@ -1,6 +1,9 @@
 package assets
 
 import (
+	"fmt"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,7 +15,8 @@ import (
 )
 
 type HyperShiftNamespace struct {
-	Name string
+	Name                       string
+	EnableOCPClusterMonitoring bool
 }
 
 func (o HyperShiftNamespace) Build() *corev1.Namespace {
@@ -23,19 +27,23 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: o.Name,
-			Labels: map[string]string{
-				"openshift.io/cluster-monitoring": "true",
-			},
 		},
+	}
+	if o.EnableOCPClusterMonitoring {
+		namespace.Labels = map[string]string{
+			"openshift.io/cluster-monitoring": "true",
+		}
 	}
 	return namespace
 }
 
 type HyperShiftOperatorDeployment struct {
-	Namespace      *corev1.Namespace
-	OperatorImage  string
-	ServiceAccount *corev1.ServiceAccount
-	Replicas       int32
+	Namespace                  *corev1.Namespace
+	OperatorImage              string
+	ServiceAccount             *corev1.ServiceAccount
+	Replicas                   int32
+	EnableOCPClusterMonitoring bool
+	EnableCIDebugOutput        bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -58,7 +66,9 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"name": "operator",
+						"name":                    "operator",
+						hyperv1.OperatorComponent: "operator",
+						"app":                     "operator",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -83,7 +93,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								},
 							},
 							Command: []string{"/usr/bin/hypershift-operator"},
-							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000"},
+							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000", fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring), fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput)},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "metrics",
@@ -422,11 +432,21 @@ func (o HyperShiftPrometheusRole) Build() *rbacv1.Role {
 }
 
 type HyperShiftOperatorPrometheusRoleBinding struct {
-	Namespace *corev1.Namespace
-	Role      *rbacv1.Role
+	Namespace                  *corev1.Namespace
+	Role                       *rbacv1.Role
+	EnableOCPClusterMonitoring bool
 }
 
 func (o HyperShiftOperatorPrometheusRoleBinding) Build() *rbacv1.RoleBinding {
+	subject := rbacv1.Subject{
+		Kind:      "ServiceAccount",
+		Name:      "prometheus-user-workload",
+		Namespace: "openshift-user-workload-monitoring",
+	}
+	if o.EnableOCPClusterMonitoring {
+		subject.Name = "prometheus-k8s"
+		subject.Namespace = "openshift-monitoring"
+	}
 	binding := &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RoleBinding",
@@ -441,13 +461,7 @@ func (o HyperShiftOperatorPrometheusRoleBinding) Build() *rbacv1.RoleBinding {
 			Kind:     "Role",
 			Name:     o.Role.Name,
 		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "prometheus-user-workload",
-				Namespace: "openshift-user-workload-monitoring",
-			},
-		},
+		Subjects: []rbacv1.Subject{subject},
 	}
 	return binding
 }
@@ -499,26 +513,6 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 		},
 	}
 
-	componentMemoryUsageMetric := "hypershift:controlplane:component_memory_usage"
-	componentMemoryUsageQuery := `
-sum by (app, namespace) (
-	sum(container_memory_usage_bytes{container!="POD",container!=""}) by (pod, namespace)
-* on (pod) group_left(app)
-	label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
-)
-`
-	rule.Spec.Groups = []prometheusoperatorv1.RuleGroup{
-		{
-			Name:     "control-plane.rules",
-			Interval: "30s",
-			Rules: []prometheusoperatorv1.Rule{
-				{
-					Record: componentMemoryUsageMetric,
-					Expr:   intstr.FromString(componentMemoryUsageQuery),
-				},
-			},
-		},
-	}
-
+	rule.Spec = recordingRuleSpec()
 	return rule
 }

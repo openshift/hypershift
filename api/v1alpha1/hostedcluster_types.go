@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
@@ -60,6 +61,13 @@ const (
 
 	// ControlPlaneComponent identifies a resource as belonging to a hosted control plane.
 	ControlPlaneComponent = "hypershift.openshift.io/control-plane-component"
+
+	// OperatorComponent identifies a component as belonging to the operator.
+	OperatorComponent = "hypershift.openshift.io/operator-component"
+	// MachineApproverImage is an annotation that allows the specification of the machine approver image.
+	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
+	// no images can be pulled from registries outside of IBM Cloud's official regional registries
+	MachineApproverImage = "hypershift.openshift.io/machine-approver-image"
 )
 
 // HostedClusterSpec defines the desired state of HostedCluster
@@ -343,6 +351,19 @@ type AWSCloudProviderConfig struct {
 	VPC string `json:"vpc"`
 }
 
+type AWSEndpointAccessType string
+
+const (
+	// Public endpoint access allows public kube-apiserver access and public node communication with the control plane
+	Public AWSEndpointAccessType = "Public"
+
+	// PublicAndPrivate endpoint access allows public kube-apiserver access and private node communication with the control plane
+	PublicAndPrivate AWSEndpointAccessType = "PublicAndPrivate"
+
+	// Private endpoint access allows only private kube-apiserver access and private node communication with the control plane
+	Private AWSEndpointAccessType = "Private"
+)
+
 type AWSPlatformSpec struct {
 	// Region is the AWS region for the cluster.
 	// This is used by CRs that are consumed by OCP Operators.
@@ -388,6 +409,12 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
+
+	// EndpointAccess determines if cluster endpoints are public and/or private
+	// +kubebuilder:validation:Enum=Public;PublicAndPrivate;Private
+	// +kubebuilder:default=Public
+	// +optional
+	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
 }
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.
@@ -492,12 +519,56 @@ type EtcdSpec struct {
 }
 
 type ManagedEtcdSpec struct {
+	// Storage configures how etcd data is persisted.
+	Storage ManagedEtcdStorageSpec `json:"storage"`
+}
 
-	//TODO: Ultimately backup policies, etc can be defined here.
+// +kubebuilder:validation:Enum=PersistentVolume
+type ManagedEtcdStorageType string
 
-	// PersistentVolumeClaimSpec provides a PersistentVolumeClaimSpec that allows the managed etcd to use persistent storage
+const (
+	// PersistentVolumeEtcdStorage uses PersistentVolumes for etcd storage.
+	PersistentVolumeEtcdStorage ManagedEtcdStorageType = "PersistentVolume"
+)
+
+var (
+	DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("4Gi")
+)
+
+// ManagedEtcdStorageSpec describes the storage configuration for etcd data.
+type ManagedEtcdStorageSpec struct {
+	// Type is the kind of persistent storage implementation to use for etcd.
+	//
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +unionDiscriminator
+	Type ManagedEtcdStorageType `json:"type"`
+
+	// PersistentVolume is the configuration for PersistentVolume etcd storage.
+	// With this implementation, a PersistentVolume will be allocated for every
+	// etcd member (either 1 or 3 depending on the HostedCluster control plane
+	// availability configuration).
+	//
 	// +optional
-	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
+	PersistentVolume *PersistentVolumeEtcdStorageSpec `json:"persistentVolume,omitempty"`
+}
+
+// PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
+// etcd storage.
+type PersistentVolumeEtcdStorageSpec struct {
+	// StorageClassName is the StorageClass of the data volume for each etcd member.
+	//
+	// See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1.
+	//
+	// +optional
+	// +immutable
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// Size is the minimum size of the data volume for each etcd member.
+	//
+	// +optional
+	// +kubebuilder:default="4Gi"
+	Size *resource.Quantity `json:"size,omitempty"`
 }
 
 // UnmanagedEtcdSpec defines metadata that enables the Openshift controllers to connect to the external etcd cluster

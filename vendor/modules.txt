@@ -1,7 +1,5 @@
 # cloud.google.com/go v0.93.3
 cloud.google.com/go/compute/metadata
-# github.com/BurntSushi/toml v0.3.1
-github.com/BurntSushi/toml
 # github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 ## explicit
 github.com/armon/go-socks5
@@ -118,8 +116,6 @@ github.com/docker/go-metrics
 github.com/docker/libtrust
 # github.com/evanphx/json-patch v4.11.0+incompatible
 github.com/evanphx/json-patch
-# github.com/fatih/color v1.13.0
-github.com/fatih/color
 # github.com/fsnotify/fsnotify v1.5.1
 github.com/fsnotify/fsnotify
 # github.com/go-logr/logr v0.4.0
@@ -180,10 +176,6 @@ github.com/json-iterator/go
 # github.com/kubernetes-sigs/cluster-api-provider-ibmcloud v0.0.2-0.20210820075925-77979fb340c7
 ## explicit
 github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4
-# github.com/mattn/go-colorable v0.1.9
-github.com/mattn/go-colorable
-# github.com/mattn/go-isatty v0.0.14
-github.com/mattn/go-isatty
 # github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
@@ -215,6 +207,7 @@ github.com/openshift/api/config/v1
 github.com/openshift/api/image/docker10
 github.com/openshift/api/image/dockerpre012
 github.com/openshift/api/image/v1
+github.com/openshift/api/imageregistry/v1
 github.com/openshift/api/kubecontrolplane/v1
 github.com/openshift/api/oauth/v1
 github.com/openshift/api/openshiftcontrolplane/v1
@@ -353,8 +346,6 @@ golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/poly1305
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/mod v0.4.2
-golang.org/x/mod/semver
 # golang.org/x/net v0.0.0-20210813160813-60bc85c4be6d
 ## explicit
 golang.org/x/net/context
@@ -378,7 +369,6 @@ golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
 # golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf
 golang.org/x/sys/cpu
-golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
@@ -409,33 +399,6 @@ golang.org/x/text/unicode/norm
 # golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 ## explicit
 golang.org/x/time/rate
-# golang.org/x/tools v0.1.5
-golang.org/x/tools/go/analysis
-golang.org/x/tools/go/analysis/passes/inspect
-golang.org/x/tools/go/ast/astutil
-golang.org/x/tools/go/ast/inspector
-golang.org/x/tools/go/buildutil
-golang.org/x/tools/go/gcexportdata
-golang.org/x/tools/go/internal/cgo
-golang.org/x/tools/go/internal/gcimporter
-golang.org/x/tools/go/internal/packagesdriver
-golang.org/x/tools/go/loader
-golang.org/x/tools/go/packages
-golang.org/x/tools/go/types/objectpath
-golang.org/x/tools/go/types/typeutil
-golang.org/x/tools/internal/analysisinternal
-golang.org/x/tools/internal/event
-golang.org/x/tools/internal/event/core
-golang.org/x/tools/internal/event/keys
-golang.org/x/tools/internal/event/label
-golang.org/x/tools/internal/gocommand
-golang.org/x/tools/internal/lsp/fuzzy
-golang.org/x/tools/internal/packagesinternal
-golang.org/x/tools/internal/typeparams
-golang.org/x/tools/internal/typesinternal
-# golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
-golang.org/x/xerrors
-golang.org/x/xerrors/internal
 # gomodules.xyz/jsonpatch/v2 v2.2.0
 gomodules.xyz/jsonpatch/v2
 # google.golang.org/appengine v1.6.7
@@ -548,42 +511,6 @@ gopkg.in/square/go-jose.v2/json
 gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 gopkg.in/yaml.v3
-# honnef.co/go/tools v0.2.1
-## explicit
-honnef.co/go/tools/analysis/code
-honnef.co/go/tools/analysis/edit
-honnef.co/go/tools/analysis/facts
-honnef.co/go/tools/analysis/facts/nilness
-honnef.co/go/tools/analysis/facts/typedness
-honnef.co/go/tools/analysis/lint
-honnef.co/go/tools/analysis/report
-honnef.co/go/tools/cmd/staticcheck
-honnef.co/go/tools/config
-honnef.co/go/tools/go/ast/astutil
-honnef.co/go/tools/go/ir
-honnef.co/go/tools/go/ir/irutil
-honnef.co/go/tools/go/loader
-honnef.co/go/tools/go/types/typeutil
-honnef.co/go/tools/internal/cache
-honnef.co/go/tools/internal/go/gcimporter
-honnef.co/go/tools/internal/passes/buildir
-honnef.co/go/tools/internal/renameio
-honnef.co/go/tools/internal/robustio
-honnef.co/go/tools/internal/sharedcheck
-honnef.co/go/tools/internal/sync
-honnef.co/go/tools/knowledge
-honnef.co/go/tools/lintcmd
-honnef.co/go/tools/lintcmd/runner
-honnef.co/go/tools/lintcmd/version
-honnef.co/go/tools/pattern
-honnef.co/go/tools/printf
-honnef.co/go/tools/quickfix
-honnef.co/go/tools/sarif
-honnef.co/go/tools/simple
-honnef.co/go/tools/staticcheck
-honnef.co/go/tools/stylecheck
-honnef.co/go/tools/unused
-honnef.co/go/tools/unused/typemap
 # k8s.io/api v0.22.2
 ## explicit
 k8s.io/api/admission/v1
@@ -1056,22 +983,6 @@ sigs.k8s.io/controller-runtime/pkg/webhook
 sigs.k8s.io/controller-runtime/pkg/webhook/admission
 sigs.k8s.io/controller-runtime/pkg/webhook/conversion
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
-# sigs.k8s.io/controller-tools v0.5.0 => sigs.k8s.io/controller-tools v0.5.0
-## explicit
-sigs.k8s.io/controller-tools/cmd/controller-gen
-sigs.k8s.io/controller-tools/pkg/crd
-sigs.k8s.io/controller-tools/pkg/crd/markers
-sigs.k8s.io/controller-tools/pkg/deepcopy
-sigs.k8s.io/controller-tools/pkg/genall
-sigs.k8s.io/controller-tools/pkg/genall/help
-sigs.k8s.io/controller-tools/pkg/genall/help/pretty
-sigs.k8s.io/controller-tools/pkg/loader
-sigs.k8s.io/controller-tools/pkg/markers
-sigs.k8s.io/controller-tools/pkg/rbac
-sigs.k8s.io/controller-tools/pkg/schemapatcher
-sigs.k8s.io/controller-tools/pkg/schemapatcher/internal/yaml
-sigs.k8s.io/controller-tools/pkg/version
-sigs.k8s.io/controller-tools/pkg/webhook
 # sigs.k8s.io/structured-merge-diff/v4 v4.1.2
 sigs.k8s.io/structured-merge-diff/v4/fieldpath
 sigs.k8s.io/structured-merge-diff/v4/schema
