@@ -250,9 +250,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	if err := mgr.GetClient().Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
 		if _, err := controllerutil.CreateOrUpdate(ctx, mgr.GetClient(), ic, func() error {
-			if ic.Spec.Replicas == nil {
-				return fmt.Errorf("default ingress controller not found")
-			}
 			if ic.Spec.RouteSelector == nil {
 				ic.Spec.RouteSelector = &metav1.LabelSelector{}
 			}
