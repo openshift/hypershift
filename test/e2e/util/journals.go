@@ -122,6 +122,11 @@ func dumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		}
 	}
 
+	if len(machineIPs) == 0 {
+		t.Logf("No machines associated with infra id %s were found. Skipping journal dump.", hc.Spec.InfraID)
+		return nil
+	}
+
 	// Invoke script
 	outputDir := filepath.Join(artifactDir, "machine-journals")
 	scriptCmd := exec.Command(copyJournalFile.Name(), outputDir)
