@@ -5,12 +5,14 @@ import (
 	"strconv"
 	"strings"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -290,6 +292,28 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			},
 		},
 	}
+
+	return nil
+}
+
+func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *EtcdParams) error {
+	if pdb.CreationTimestamp.IsZero() {
+		pdb.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: etcdPodSelector(),
+		}
+	}
+
+	p.OwnerRef.ApplyTo(pdb)
+
+	var minAvailable int
+	switch p.Availability {
+	case hyperv1.SingleReplica:
+		minAvailable = 0
+	case hyperv1.HighlyAvailable:
+		// For HA clusters, only tolerate disruption of a minority of members
+		minAvailable = p.DeploymentConfig.Replicas/2 + 1
+	}
+	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
 
 	return nil
 }

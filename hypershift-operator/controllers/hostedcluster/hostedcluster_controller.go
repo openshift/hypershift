@@ -1930,6 +1930,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Resources: []string{"cronjobs", "jobs"},
 			Verbs:     []string{"*"},
 		},
+		{
+			APIGroups: []string{"policy"},
+			Resources: []string{"poddisruptionbudgets"},
+			Verbs:     []string{"*"},
+		},
 	}
 	return nil
 }

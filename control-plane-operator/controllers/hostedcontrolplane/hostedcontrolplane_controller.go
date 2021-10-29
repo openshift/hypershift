@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openshift/api/operator/v1alpha1"
+	policyv1 "k8s.io/api/policy/v1"
 	"sigs.k8s.io/cluster-api/util/annotations"
 
 	"github.com/go-logr/logr"
@@ -126,6 +127,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ServiceAccount{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &policyv1.PodDisruptionBudget{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Channel{Source: r.HostedAPICache.Events()}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Build(r)
 	if err != nil {
@@ -1374,6 +1376,15 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 		return fmt.Errorf("failed to reconcile etcd servicemonitor: %w", err)
 	} else {
 		r.Log.Info("reconciled etcd servicemonitor", "result", result)
+	}
+
+	pdb := manifests.EtcdPodDisruptionBudget(hcp.Namespace)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r, pdb, func() error {
+		return etcd.ReconcilePodDisruptionBudget(pdb, p)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
+	} else {
+		r.Log.Info("reconciled etcd pdb", "result", result)
 	}
 
 	statefulSet := manifests.EtcdStatefulSet(hcp.Namespace)
