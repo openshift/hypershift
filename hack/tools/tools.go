@@ -6,6 +6,7 @@
 package tools
 
 import (
+	_ "github.com/ahmetb/gen-crd-api-reference-docs"
 	_ "github.com/prometheus/prometheus/cmd/promtool"
 	_ "honnef.co/go/tools/cmd/staticcheck"
 	_ "sigs.k8s.io/controller-tools/cmd/controller-gen"
