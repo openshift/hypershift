@@ -24,6 +24,7 @@ type OpenShiftAPIServerParams struct {
 	OAuthAPIServerImage                     string `json:"oauthAPIServerImage"`
 	ProxyImage                              string `json:"haproxyImage"`
 	AvailabilityProberImage                 string `json:"availabilityProberImage"`
+	Availability                            hyperv1.AvailabilityPolicy
 }
 
 type OAuthDeploymentParams struct {
@@ -45,6 +46,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		ServiceAccountIssuerURL: hcp.Spec.IssuerURL,
 		IngressSubDomain:        config.IngressSubdomain(hcp),
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 	}
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
@@ -153,7 +155,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 3
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 3
 		params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels)
-		params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels)
+		params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels())
 	default:
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 1
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 1
