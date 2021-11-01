@@ -46,11 +46,14 @@ var (
 			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
 		},
 	}
-	openShiftAPIServerLabels = map[string]string{
+)
+
+func openShiftAPIServerLabels() map[string]string {
+	return map[string]string{
 		"app":                         "openshift-apiserver",
 		hyperv1.ControlPlaneComponent: "openshift-apiserver",
 	}
-)
+}
 
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
@@ -66,9 +69,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		},
 	}
 	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: openShiftAPIServerLabels,
+		MatchLabels: openShiftAPIServerLabels(),
 	}
-	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels
+	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels()
 	etcdUrlData, err := url.Parse(etcdURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse etcd url: %w", err)

@@ -1705,6 +1705,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		return fmt.Errorf("failed to reconcile openshift apiserver audit config: %w", err)
 	}
 
+	pdb := manifests.OpenShiftAPIServerPodDisruptionBudget(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+		return oapi.ReconcilePodDisruptionBudget(pdb, p)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift apiserver pdb: %w", err)
+	} else {
+		r.Log.Info("Reconciled openshift apiserver pdb", "result", result)
+	}
+
 	deployment := manifests.OpenShiftAPIServerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
 		return oapi.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, hcp.Spec.APIPort)
