@@ -30,7 +30,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image, tokenMinterImage, availabilityProberImage, tokenAudience string, deploymentConfig config.DeploymentConfig) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image, tokenMinterImage, availabilityProberImage, tokenAudience string, apiPort *int32, deploymentConfig config.DeploymentConfig) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: prometheusLabels,
@@ -64,7 +64,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		ServiceAccountName: manifests.PrometheusServiceAccount(deployment.Namespace).Name,
 	}
 	deploymentConfig.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, nil), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
 	util.TokenMinterInit(tokenMinterImage, "default", "metrics-collector", tokenAudience, prometheusVolumeKubeconfig().Name, kas.KubeconfigKey, &deployment.Spec.Template.Spec)
 	return nil
 }

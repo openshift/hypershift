@@ -2,7 +2,6 @@ package prometheus
 
 import (
 	"path"
-	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -39,12 +38,19 @@ func buildPrometheusConfig(ns string) *promcfg.Config {
 }
 
 func kubeAPIServerScrapeConfig(ns string) *promcfg.ScrapeConfig {
-	metricsToKeep := []string{
-		"apiserver_request_total",
-		"apiserver_request_duration_seconds",
-		"etcd_object_counts",
+	dropMetrics := []string{
+		"etcd_(debugging|disk|server).*",
+		"apiserver_admission_controller_admission_latencies_seconds_.*",
+		"apiserver_admission_step_admission_latencies_seconds_.*",
+		"scheduler_(e2e_scheduling_latency_microseconds|scheduling_algorithm_predicate_evaluation|scheduling_algorithm_priority_evaluation|scheduling_algorithm_preemption_evaluation|scheduling_algorithm_latency_microseconds|binding_latency_microseconds|scheduling_latency_seconds)",
+		"apiserver_(request_count|request_latencies|request_latencies_summary|dropped_requests|storage_data_key_generation_latencies_microseconds|storage_transformation_failures_total|storage_transformation_latencies_microseconds|proxy_tunnel_sync_latency_secs)",
+		"docker_(operations|operations_latency_microseconds|operations_errors|operations_timeout)",
+		"reflector_(items_per_list|items_per_watch|list_duration_seconds|lists_total|short_watches_total|watch_duration_seconds|watches_total)",
+		"etcd_(helper_cache_hit_count|helper_cache_miss_count|helper_cache_entry_count|request_cache_get_latencies_summary|request_cache_add_latencies_summary|request_latencies_summary)",
+		"transformation_(transformation_latencies_microseconds|failures_total)",
+		"network_plugin_operations_latency_microseconds|sync_proxy_rules_latency_microseconds|rest_client_request_latency_seconds",
 	}
-	return &promcfg.ScrapeConfig{
+	cfg := &promcfg.ScrapeConfig{
 		JobName:        "kube-apiserver",
 		ScrapeInterval: model.Duration(15 * time.Second),
 		HonorLabels:    false,
@@ -154,12 +160,28 @@ func kubeAPIServerScrapeConfig(ns string) *promcfg.ScrapeConfig {
 		},
 		MetricRelabelConfigs: []*promcfg.RelabelConfig{
 			{
+				Action: promcfg.RelabelDrop,
+				Regex:  promcfg.MustNewRegexp("apiserver_request_duration_seconds_bucket;(0.15|0.25|0.3|0.35|0.4|0.45|0.6|0.7|0.8|0.9|1.25|1.5|1.75|2.5|3|3.5|4.5|6|7|8|9|15|25|30|50)"),
 				SourceLabels: model.LabelNames{
 					"__name__",
+					"le",
 				},
-				Regex:  promcfg.MustNewRegexp("(" + strings.Join(metricsToKeep, "|") + ")"),
-				Action: promcfg.RelabelKeep,
 			},
 		},
 	}
+
+	var dropMetricCfgs []*promcfg.RelabelConfig
+	for _, re := range dropMetrics {
+		dropMetricCfgs = append(dropMetricCfgs, &promcfg.RelabelConfig{
+			Action: promcfg.RelabelDrop,
+			Regex:  promcfg.MustNewRegexp(re),
+			SourceLabels: model.LabelNames{
+				"__name__",
+			},
+		})
+	}
+	cfg.MetricRelabelConfigs = append(dropMetricCfgs, cfg.MetricRelabelConfigs...)
+
+	return cfg
+
 }

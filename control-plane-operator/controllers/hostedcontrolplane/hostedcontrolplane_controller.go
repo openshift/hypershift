@@ -2251,7 +2251,7 @@ func (r *HostedControlPlaneReconciler) reconcilePrometheus(ctx context.Context, 
 
 	deployment := manifests.PrometheusDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return prometheus.ReconcileDeployment(deployment, p.OwnerRef, p.Image, p.TokenMinterImage, p.AvailabilityProberImage, p.TokenAudience, p.DeploymentConfig)
+		return prometheus.ReconcileDeployment(deployment, p.OwnerRef, p.Image, p.TokenMinterImage, p.AvailabilityProberImage, p.TokenAudience, p.APIServerPort, p.DeploymentConfig)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile prometheus deployment: %w", err)
 	}

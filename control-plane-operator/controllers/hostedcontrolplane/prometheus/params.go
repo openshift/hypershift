@@ -13,6 +13,7 @@ type PrometheusParams struct {
 	DeploymentConfig        config.DeploymentConfig
 	OwnerRef                config.OwnerRef
 	TokenAudience           string
+	APIServerPort           *int32
 }
 
 func NewPrometheusParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *PrometheusParams {
@@ -22,7 +23,9 @@ func NewPrometheusParams(hcp *hyperv1.HostedControlPlane, images map[string]stri
 		TokenMinterImage:        images[util.TokenMinterImageName],
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		TokenAudience:           hcp.Spec.IssuerURL,
+		APIServerPort:           hcp.Spec.APIPort,
 	}
+
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
