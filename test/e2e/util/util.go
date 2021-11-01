@@ -98,23 +98,25 @@ func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1
 		t.Logf("Skipping cluster dump because no artifact dir was provided")
 		return
 	}
-	findKubeObjectUpdateLoops := func(filename string, content []byte) {
-		if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
-			t.Errorf("Found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename)
+	t.Run("DumpHostedCluster", func(t *testing.T) {
+		findKubeObjectUpdateLoops := func(filename string, content []byte) {
+			if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
+				t.Errorf("Found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename)
+			}
 		}
-	}
-	err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
-		Namespace:   hostedCluster.Namespace,
-		Name:        hostedCluster.Name,
-		ArtifactDir: artifactDir,
-		LogCheckers: []cmdcluster.LogChecker{findKubeObjectUpdateLoops},
+		err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
+			Namespace:   hostedCluster.Namespace,
+			Name:        hostedCluster.Name,
+			ArtifactDir: artifactDir,
+			LogCheckers: []cmdcluster.LogChecker{findKubeObjectUpdateLoops},
+		})
+		if err != nil {
+			t.Errorf("Failed to dump cluster: %v", err)
+		}
+		if err := dumpJournals(t, ctx, hostedCluster, artifactDir, awsCredsFile); err != nil {
+			t.Logf("Failed to dump machine journals: %v", err)
+		}
 	})
-	if err != nil {
-		t.Errorf("Failed to dump cluster: %v", err)
-	}
-	if err := dumpJournals(t, ctx, hostedCluster, artifactDir, awsCredsFile); err != nil {
-		t.Logf("Failed to dump machine journals: %v", err)
-	}
 }
 
 // DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,

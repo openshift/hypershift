@@ -751,7 +751,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 
 	if cpoutil.IsPrivateHCP(hcp) {
 		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
+		if _, err := r.CreateOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
 			return kas.ReconcilePrivateService(apiServerPrivateService, p.OwnerReference)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile API server private service: %w", err)
@@ -1352,7 +1352,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
 
 	discoveryService := manifests.EtcdDiscoveryService(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, discoveryService, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, discoveryService, func() error {
 		return etcd.ReconcileDiscoveryService(discoveryService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd discovery service: %w", err)
@@ -1361,7 +1361,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	clientService := manifests.EtcdClientService(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, clientService, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, clientService, func() error {
 		return etcd.ReconcileClientService(clientService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd client service: %w", err)
@@ -1370,7 +1370,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	serviceMonitor := manifests.EtcdServiceMonitor(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
 		return etcd.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd servicemonitor: %w", err)
@@ -1379,7 +1379,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	pdb := manifests.EtcdPodDisruptionBudget(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, pdb, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
 		return etcd.ReconcilePodDisruptionBudget(pdb, p)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
@@ -1388,7 +1388,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	statefulSet := manifests.EtcdStatefulSet(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, statefulSet, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, statefulSet, func() error {
 		return etcd.ReconcileStatefulSet(statefulSet, p)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd statefulset: %w", err)
@@ -2311,7 +2311,7 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx con
 		return err
 	}
 	ic := manifests.IngressPrivateIngressController(hcp.Namespace)
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, ic, func() error {
+	_, err := r.CreateOrUpdate(ctx, r.Client, ic, func() error {
 		return ingress.ReconcilePrivateIngressController(ic, hcp.Namespace, fmt.Sprintf("%s.%s", hcp.Namespace, dnsConfig.Spec.BaseDomain), hcp.Spec.Platform.Type)
 	})
 	if err != nil {
