@@ -50,6 +50,8 @@ type KubeAPIServerParams struct {
 	config.OwnerRef
 
 	Images KubeAPIServerImages `json:"images"`
+
+	Availability hyperv1.AvailabilityPolicy
 }
 
 type KubeAPIServerServiceParams struct {
@@ -71,6 +73,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
 		ServiceCIDR:          hcp.Spec.ServiceCIDR,
 		PodCIDR:              hcp.Spec.PodCIDR,
+		Availability:         hcp.Spec.ControllerAvailabilityPolicy,
 
 		Images: KubeAPIServerImages{
 			HyperKube:             images["hyperkube"],
