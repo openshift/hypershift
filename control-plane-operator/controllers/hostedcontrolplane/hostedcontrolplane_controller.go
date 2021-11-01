@@ -1209,6 +1209,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver cert: %w", err)
 	}
 
+	// OpenShift Authenticator
+	openshiftAuthenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, openshiftAuthenticatorCertSecret, func() error {
+		return pki.ReconcileOpenShiftAuthenticatorCertSecret(openshiftAuthenticatorCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift authenticator cert: %w", err)
+	}
+
 	// OpenShift ControllerManager Cert
 	openshiftControllerManagerCertSecret := manifests.OpenShiftControllerManagerCertSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, openshiftControllerManagerCertSecret, func() error {
