@@ -113,6 +113,9 @@ type HostedClusterReconciler struct {
 	// 2) The OCP version being deployed is the latest version supported by Hypershift
 	HypershiftOperatorImage string
 
+	// AvailabilityProberImage is the image used to probe for kube apiserver availability
+	AvailabilityProberImage string
+
 	// releaseProvider looks up the OCP version for the release images in HostedClusters
 	ReleaseProvider releaseinfo.Provider
 
@@ -1764,7 +1767,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 		}
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = r.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.HypershiftOperatorImage)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.AvailabilityProberImage)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -2970,7 +2973,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		}
 		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
 		if _, err := r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.HypershiftOperatorImage)
+			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.AvailabilityProberImage)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}

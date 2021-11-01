@@ -79,6 +79,7 @@ type StartOptions struct {
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
 	ControlPlaneOperatorImage  string
+	AvailabilityProberImage    string
 	Region                     string
 }
 
@@ -108,6 +109,7 @@ func NewStartCommand() *cobra.Command {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&opts.AvailabilityProberImage, "availability-prober-operator-image", opts.AvailabilityProberImage, "Image for kube apiserver prober utility (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
@@ -197,6 +199,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	log.Info("using ignition server image", "image", ignitionServerImage)
 
+	availabilityProberImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.AvailabilityProberImage)
+	if err != nil {
+		return fmt.Errorf("failed to find operator image: %w", err)
+	}
+	log.Info("using availability prober image", "image", availabilityProberImage)
+
 	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
 
 	if err = (&hostedcluster.HostedClusterReconciler{
@@ -204,6 +212,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
 		IgnitionServerImage:           ignitionServerImage,
+		AvailabilityProberImage:       availabilityProberImage,
 		ReleaseProvider: &releaseinfo.CachedProvider{
 			Inner: &releaseinfo.RegistryClientProvider{},
 			Cache: map[string]*releaseinfo.ReleaseImage{},
