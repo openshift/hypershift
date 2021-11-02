@@ -12,9 +12,10 @@ import (
 )
 
 type OpenShiftAPIServerParams struct {
-	APIServer        *configv1.APIServer `json:"apiServer"`
-	IngressSubDomain string
-	EtcdURL          string `json:"etcdURL"`
+	APIServer               *configv1.APIServer `json:"apiServer"`
+	IngressSubDomain        string
+	EtcdURL                 string `json:"etcdURL"`
+	ServiceAccountIssuerURL string `json:"serviceAccountIssuerURL"`
 
 	OpenShiftAPIServerDeploymentConfig      config.DeploymentConfig `json:"openshiftAPIServerDeploymentConfig,inline"`
 	OpenShiftOAuthAPIServerDeploymentConfig config.DeploymentConfig `json:"openshiftOAuthAPIServerDeploymentConfig,inline"`
@@ -30,6 +31,7 @@ type OAuthDeploymentParams struct {
 	EtcdURL                 string
 	MinTLSVersion           string
 	CipherSuites            []string
+	ServiceAccountIssuerURL string
 	DeploymentConfig        config.DeploymentConfig
 	AvailabilityProberImage string
 }
@@ -40,6 +42,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		OAuthAPIServerImage:     images["oauth-apiserver"],
 		ProxyImage:              images["socks5-proxy"],
 		APIServer:               globalConfig.APIServer,
+		ServiceAccountIssuerURL: hcp.Spec.IssuerURL,
 		IngressSubDomain:        config.IngressSubdomain(hcp),
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 	}
@@ -181,6 +184,7 @@ func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams() *OAuthDeploy
 	return &OAuthDeploymentParams{
 		Image:                   p.OAuthAPIServerImage,
 		EtcdURL:                 p.EtcdURL,
+		ServiceAccountIssuerURL: p.ServiceAccountIssuerURL,
 		DeploymentConfig:        p.OpenShiftOAuthAPIServerDeploymentConfig,
 		MinTLSVersion:           p.MinTLSVersion(),
 		CipherSuites:            p.CipherSuites(),
