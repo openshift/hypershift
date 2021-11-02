@@ -34,7 +34,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
-	"github.com/openshift/hypershift/hypershift-operator/capabilities"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
@@ -42,6 +41,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/machineapprover"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -286,6 +286,24 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set ValidConfiguration condition
 	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidHostedClusterConfiguration),
+			ObservedGeneration: hcluster.Generation,
+		}
+		if err := r.validateConfigAndClusterCapabilities(hcluster); err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.InvalidConfigurationReason
+		} else {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "Configuration passes validation"
+			condition.Reason = hyperv1.HostedClusterAsExpectedReason
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
+	// Set ValidHostedControlPlaneConfiguration condition
+	{
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
@@ -297,12 +315,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 		condition := metav1.Condition{
-			Type:   string(hyperv1.ValidHostedClusterConfiguration),
+			Type:   string(hyperv1.ValidHostedControlPlaneConfiguration),
 			Status: metav1.ConditionUnknown,
 			Reason: "StatusUnknown",
 		}
 		if hcp != nil {
-			validConfigHCPCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidConfiguration))
+			validConfigHCPCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 			if validConfigHCPCondition != nil {
 				condition.Status = validConfigHCPCondition.Status
 				condition.Message = validConfigHCPCondition.Message
@@ -419,6 +437,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{Requeue: true}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
+		}
+	}
+
+	// Block here if the cluster configuration does not pass validation
+	{
+		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
+		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
+			r.Log.Info("Configuration is invalid, reconciliation is blocked")
+			return ctrl.Result{}, nil
 		}
 	}
 
@@ -2942,6 +2969,15 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		}
 	}
 
+	return nil
+}
+
+func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedCluster) error {
+	for _, svc := range hc.Spec.Services {
+		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+		}
+	}
 	return nil
 }
 

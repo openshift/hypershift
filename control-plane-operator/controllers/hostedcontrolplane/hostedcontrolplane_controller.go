@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openshift/api/operator/v1alpha1"
+	"github.com/openshift/hypershift/support/capabilities"
 	policyv1 "k8s.io/api/policy/v1"
 	"sigs.k8s.io/cluster-api/util/annotations"
 
@@ -108,6 +109,9 @@ func (s InfrastructureStatus) IsReady() bool {
 type HostedControlPlaneReconciler struct {
 	client.Client
 
+	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
+	ManagementClusterCapabilities *capabilities.ManagementClusterCapabilities
+
 	Log             logr.Logger
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
@@ -177,13 +181,17 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Reconcile global configuration validation status
 	{
 		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidConfiguration),
+			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
-		if err := config.ValidateGlobalConfig(ctx, hostedControlPlane); err != nil {
+		if err := r.validateConfigAndClusterCapabilities(hostedControlPlane); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
-			condition.Reason = "InvalidConfiguration"
+			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
+		} else if err := config.ValidateGlobalConfig(ctx, hostedControlPlane); err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.InvalidConfigurationReason
 		} else {
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "Configuration passes validation"
@@ -449,6 +457,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{}, nil
 }
 
+func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedControlPlane) error {
+	for _, svc := range hc.Spec.Services {
+		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+		}
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
 	pullSecret := common.PullSecret(hcp.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
@@ -463,7 +480,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Block here if the cluster configuration does not pass validation
 	{
-		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidConfiguration))
+		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
 			r.Log.Info("Configuration is invalid, reconciliation is blocked")
 			return nil

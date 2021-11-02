@@ -112,12 +112,12 @@ type KubeconfigSecretRef struct {
 type ConditionType string
 
 const (
-	HostedControlPlaneAvailable ConditionType = "Available"
-	EtcdAvailable               ConditionType = "EtcdAvailable"
-	KubeAPIServerAvailable      ConditionType = "KubeAPIServerAvailable"
-	InfrastructureReady         ConditionType = "InfrastructureReady"
-	ValidConfiguration          ConditionType = "ValidConfiguration"
-	ClusterVersionFailing       ConditionType = "ClusterVersionFailing"
+	HostedControlPlaneAvailable          ConditionType = "Available"
+	EtcdAvailable                        ConditionType = "EtcdAvailable"
+	KubeAPIServerAvailable               ConditionType = "KubeAPIServerAvailable"
+	InfrastructureReady                  ConditionType = "InfrastructureReady"
+	ValidHostedControlPlaneConfiguration ConditionType = "ValidHostedControlPlaneConfiguration"
+	ClusterVersionFailing                ConditionType = "ClusterVersionFailing"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane
