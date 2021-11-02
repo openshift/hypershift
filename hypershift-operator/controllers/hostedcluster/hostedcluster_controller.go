@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	agentv1 "github.com/eranco74/cluster-api-provider-agent/api/v1alpha1"
 	"github.com/go-logr/logr"
 	capiibmv1 "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	configv1 "github.com/openshift/api/config/v1"
@@ -857,6 +858,19 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile IBMCluster: %w", err)
 		}
 		infraCR = ibmCluster
+	case hyperv1.AgentPlatform:
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+			r.Log.Error(err, "failed to get control plane ref")
+			return reconcile.Result{}, err
+		}
+		agentCluster := controlplaneoperator.AgentCluster(controlPlaneNamespace.Name, hcluster.Name)
+		_, err = r.CreateOrUpdate(ctx, r.Client, agentCluster, func() error {
+			return reconcileAgentCluster(agentCluster, hcluster, hcp)
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile AgentCluster: %w", err)
+		}
+		infraCR = agentCluster
 	default:
 		// TODO(alberto): for platform None implement back a "pass through" infra CR similar to externalInfraCluster.
 	}
@@ -2006,6 +2020,15 @@ func reconcileIBMCloudCluster(ibmCluster *capiibmv1.IBMVPCCluster, hcluster *hyp
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
+	return nil
+}
+
+func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+	agentCluster.Spec.ReleaseImage = hcp.Spec.ReleaseImage
+	agentCluster.Spec.ClusterName = hcluster.Name
+	agentCluster.Spec.BaseDomain = hcluster.Spec.DNS.BaseDomain
+	agentCluster.Spec.PullSecretRef = hcp.Spec.PullSecret
+	agentCluster.Spec.IgnitionEndpointUrl = hcluster.Status.IgnitionEndpoint
 	return nil
 }
 

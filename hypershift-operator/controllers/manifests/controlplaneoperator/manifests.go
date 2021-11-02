@@ -1,6 +1,7 @@
 package controlplaneoperator
 
 import (
+	agentv1 "github.com/eranco74/cluster-api-provider-agent/api/v1alpha1"
 	capiibmv1 "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -129,6 +130,15 @@ func IBMCloudCluster(controlPlaneNamespace string, hostedClusterName string) *ca
 
 func PodMonitor(controlPlaneNamespace string, hostedClusterName string) *prometheusoperatorv1.PodMonitor {
 	return &prometheusoperatorv1.PodMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      hostedClusterName,
+		},
+	}
+}
+
+func AgentCluster(controlPlaneNamespace string, hostedClusterName string) *agentv1.AgentCluster {
+	return &agentv1.AgentCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hostedClusterName,

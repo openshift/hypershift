@@ -302,6 +302,8 @@ const (
 	NonePlatform PlatformType = "None"
 
 	IBMCloudPlatform PlatformType = "IBMCloud"
+
+	AgentPlatform PlatformType = "Agent"
 )
 
 type PlatformSpec struct {
