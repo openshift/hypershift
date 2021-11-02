@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openshift/api/operator/v1alpha1"
+	policyv1 "k8s.io/api/policy/v1"
 	"sigs.k8s.io/cluster-api/util/annotations"
 
 	"github.com/go-logr/logr"
@@ -126,6 +127,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ServiceAccount{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &policyv1.PodDisruptionBudget{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Channel{Source: r.HostedAPICache.Events()}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Build(r)
 	if err != nil {
@@ -1376,6 +1378,15 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 		r.Log.Info("reconciled etcd servicemonitor", "result", result)
 	}
 
+	pdb := manifests.EtcdPodDisruptionBudget(hcp.Namespace)
+	if result, err := controllerutil.CreateOrUpdate(ctx, r, pdb, func() error {
+		return etcd.ReconcilePodDisruptionBudget(pdb, p)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
+	} else {
+		r.Log.Info("reconciled etcd pdb", "result", result)
+	}
+
 	statefulSet := manifests.EtcdStatefulSet(hcp.Namespace)
 	if result, err := controllerutil.CreateOrUpdate(ctx, r, statefulSet, func() error {
 		return etcd.ReconcileStatefulSet(statefulSet, p)
@@ -1607,6 +1618,15 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile authentication token webhook config: %w", err)
 	}
 
+	pdb := manifests.KASPodDisruptionBudget(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+		return kas.ReconcilePodDisruptionBudget(pdb, p)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server pdb: %w", err)
+	} else {
+		r.Log.Info("Reconciled api server pdb", "result", result)
+	}
+
 	kubeAPIServerDeployment := manifests.KASDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
 		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
@@ -1694,6 +1714,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		return fmt.Errorf("failed to reconcile openshift apiserver audit config: %w", err)
 	}
 
+	pdb := manifests.OpenShiftAPIServerPodDisruptionBudget(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+		return oapi.ReconcilePodDisruptionBudget(pdb, p)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift apiserver pdb: %w", err)
+	} else {
+		r.Log.Info("Reconciled openshift apiserver pdb", "result", result)
+	}
+
 	deployment := manifests.OpenShiftAPIServerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
 		return oapi.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, hcp.Spec.APIPort)
@@ -1738,6 +1767,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 		return oapi.ReconcileAuditConfig(auditCfg, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver audit config: %w", err)
+	}
+
+	pdb := manifests.OpenShiftOAuthAPIServerDisruptionBudget(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+		return oapi.ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb, p.OAuthAPIServerDeploymentParams())
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift oauth apiserver pdb: %w", err)
+	} else {
+		r.Log.Info("Reconciled openshift oauth apiserver pdb", "result", result)
 	}
 
 	deployment := manifests.OpenShiftOAuthAPIServerDeployment(hcp.Namespace)

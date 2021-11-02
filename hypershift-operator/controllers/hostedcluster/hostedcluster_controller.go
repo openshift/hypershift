@@ -1849,6 +1849,11 @@ func reconcileControlPlaneOperatorClusterRole(role *rbacv1.ClusterRole) error {
 			Resources: []string{"*"},
 			Verbs:     []string{"*"},
 		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"services"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
 	}
 	return nil
 }
@@ -1928,6 +1933,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 		{
 			APIGroups: []string{"batch"},
 			Resources: []string{"cronjobs", "jobs"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"policy"},
+			Resources: []string{"poddisruptionbudgets"},
 			Verbs:     []string{"*"},
 		},
 	}
