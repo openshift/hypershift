@@ -1,12 +1,10 @@
 package oauth
 
 import (
-	"context"
-
-	"k8s.io/apimachinery/pkg/util/intstr"
-
 	"encoding/json"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,6 +38,7 @@ type OAuthServerParams struct {
 	// for this is IBMCloud Red Hat Openshift
 	LoginURLOverride        string
 	AvailabilityProberImage string `json:"availabilityProberImage"`
+	Availability            hyperv1.AvailabilityPolicy
 }
 
 type OAuthConfigParams struct {
@@ -70,7 +69,7 @@ type ConfigOverride struct {
 	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
-func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,
@@ -81,6 +80,7 @@ func NewOAuthServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, 
 		OAuth:                   globalConfig.OAuth,
 		APIServer:               globalConfig.APIServer,
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 	}
 	p.Scheduling = config.Scheduling{
 		PriorityClass: config.APICriticalPriorityClass,
