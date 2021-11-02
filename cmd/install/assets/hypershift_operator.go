@@ -37,6 +37,28 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 	return namespace
 }
 
+type HyperShiftOperatorAWSCredentialsSecret struct {
+	Namespace     *corev1.Namespace
+	AWSCredsBytes []byte
+}
+
+func (o HyperShiftOperatorAWSCredentialsSecret) Build() *corev1.Secret {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hypershift-operator-creds",
+			Namespace: o.Namespace.Name,
+		},
+		Data: map[string][]byte{
+			"credentials": o.AWSCredsBytes,
+		},
+	}
+	return secret
+}
+
 type HyperShiftOperatorDeployment struct {
 	Namespace                  *corev1.Namespace
 	OperatorImage              string
@@ -91,6 +113,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 										},
 									},
 								},
+								{
+									Name:  "AWS_SHARED_CREDENTIALS_FILE",
+									Value: "/etc/aws/credentials",
+								},
 							},
 							Command: []string{"/usr/bin/hypershift-operator"},
 							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000", fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring), fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput)},
@@ -99,6 +125,22 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									Name:          "metrics",
 									ContainerPort: 9000,
 									Protocol:      corev1.ProtocolTCP,
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "credentials",
+									MountPath: "/etc/aws",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "credentials",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: "hypershift-operator-creds",
 								},
 							},
 						},

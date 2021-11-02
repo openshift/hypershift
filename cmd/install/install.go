@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"strings"
@@ -45,6 +46,7 @@ type Options struct {
 	ExcludeEtcdManifests       bool
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
+	AWSCreds                   string
 }
 
 func NewCommand() *cobra.Command {
@@ -67,6 +69,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
+	cmd.Flags().StringVar(&opts.AWSCreds, "aws-creds", opts.AWSCreds, "Path to an AWS credentials file (AWS only)")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -162,6 +165,18 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		ServiceAccount: operatorServiceAccount,
 		Role:           operatorRole,
 	}.Build()
+	var awsCredBytes []byte
+	if len(opts.AWSCreds) != 0 {
+		var err error
+		awsCredBytes, err = ioutil.ReadFile(opts.AWSCreds)
+		if err != nil {
+			panic(err)
+		}
+	}
+	operatorAWSCredentialsSecret := assets.HyperShiftOperatorAWSCredentialsSecret{
+		Namespace:     operatorNamespace,
+		AWSCredsBytes: awsCredBytes,
+	}.Build()
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		Namespace:                  operatorNamespace,
 		OperatorImage:              opts.HyperShiftImage,
@@ -206,6 +221,7 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	objects = append(objects, operatorClusterRoleBinding)
 	objects = append(objects, operatorRole)
 	objects = append(objects, operatorRoleBinding)
+	objects = append(objects, operatorAWSCredentialsSecret)
 	objects = append(objects, operatorDeployment)
 	objects = append(objects, operatorService)
 	objects = append(objects, prometheusRole)
