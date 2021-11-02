@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/awsendpointservice"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
@@ -78,6 +79,7 @@ type StartOptions struct {
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
 	ControlPlaneOperatorImage  string
+	Region                     string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -96,6 +98,7 @@ func NewStartCommand() *cobra.Command {
 		ControlPlaneOperatorImage: "",
 		IgnitionServerImage:       "",
 		OpenTelemetryEndpoint:     "",
+		Region:                    "us-east-1",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -109,6 +112,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	cmd.Flags().StringVar(&opts.Region, "aws-region", opts.Region, "AWS region in which the operator will create resources")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -218,6 +222,14 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Cache: map[string]*releaseinfo.ReleaseImage{},
 		},
 		CreateOrUpdateProvider: createOrUpdate,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller: %w", err)
+	}
+
+	if err := (&awsendpointservice.AWSEndpointServiceReconciler{
+		Client:                 mgr.GetClient(),
+		CreateOrUpdateProvider: createOrUpdate,
+		Region:                 opts.Region,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
