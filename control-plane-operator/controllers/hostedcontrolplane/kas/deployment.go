@@ -43,6 +43,7 @@ var (
 			kasVolumeEtcdClientCert().Name:         "/etc/kubernetes/certs/etcd",
 			kasVolumeServiceAccountKey().Name:      "/etc/kubernetes/secrets/svcacct-key",
 			kasVolumeOauthMetadata().Name:          "/etc/kubernetes/oauth",
+			kasVolumeAuthTokenWebhookConfig().Name: "/etc/kubernetes/auth-token-webhook",
 			kasVolumeKubeletClientCert().Name:      "/etc/kubernetes/certs/kubelet",
 			kasVolumeKubeletClientCA().Name:        "/etc/kubernetes/certs/kubelet-ca",
 			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
@@ -153,6 +154,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeServiceAccountKey(), buildKASVolumeServiceAccountKey),
 				util.BuildVolume(kasVolumeEtcdClientCert(), buildKASVolumeEtcdClientCert),
 				util.BuildVolume(kasVolumeOauthMetadata(), buildKASVolumeOauthMetadata),
+				util.BuildVolume(kasVolumeAuthTokenWebhookConfig(), buildKASVolumeAuthTokenWebhookConfig),
 				util.BuildVolume(kasVolumeClientCA(), buildKASVolumeClientCA),
 				util.BuildVolume(kasVolumeKubeletClientCert(), buildKASVolumeKubeletClientCert),
 				util.BuildVolume(kasVolumeKubeletClientCA(), buildKASVolumeKubeletClientCA),
@@ -491,6 +493,19 @@ func buildKASVolumeOauthMetadata(v *corev1.Volume) {
 	}
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.KASOAuthMetadata("").Name
+}
+
+func kasVolumeAuthTokenWebhookConfig() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "auth-token-webhook-config",
+	}
+}
+func buildKASVolumeAuthTokenWebhookConfig(v *corev1.Volume) {
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
+	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.SecretName = manifests.KASAuthenticationTokenWebhookConfigSecret("").Name
 }
 
 func kasVolumeCloudConfig() *corev1.Volume {

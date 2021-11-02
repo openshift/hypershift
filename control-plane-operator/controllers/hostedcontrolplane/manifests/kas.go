@@ -135,3 +135,12 @@ func KASOAuthMetadata(controlPlaneNamespace string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func KASAuthenticationTokenWebhookConfigSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kas-authentication-token-webhook-config",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
