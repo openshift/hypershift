@@ -49,18 +49,22 @@ spec:
           image: OLM_OPERATOR_IMAGE
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8443
+            - containerPort: 8080
+              name: server
+              protocol: TCP
+            - containerPort: 8081
               name: metrics
+              protocol: TCP
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 8443
-              scheme: HTTPS
+              port: 8080
+              scheme: HTTP
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8443
-              scheme: HTTPS
+              port: 8080
+              scheme: HTTP
           terminationMessagePolicy: FallbackToLogsOnError
           env:
             - name: OPERATOR_NAMESPACE
