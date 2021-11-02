@@ -1759,12 +1759,9 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		return "", err
 	}
 	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
-	pullSpec := "registry.ci.openshift.org/hypershift/hypershift"
 	switch versionMajMin {
-	case "4.9", "4.10":
+	case "4.8", "4.9", "4.10":
 		return hypershiftOperatorImage, nil
-	case "4.8":
-		return fmt.Sprintf("%s:%s", pullSpec, versionMajMin), nil
 	default:
 		return "", fmt.Errorf("unsupported release image with version %s", versionMajMin)
 	}
