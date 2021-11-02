@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
@@ -180,6 +181,32 @@ func NewStartCommand() *cobra.Command {
 			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
+			os.Exit(1)
+		}
+
+		controllerName := "PrivateKubeAPIServerServiceObserver"
+		if err := (&awsprivatelink.PrivateServiceObserver{
+			ControllerName:         controllerName,
+			ServiceNamespace:       namespace,
+			ServiceName:            manifests.KubeAPIServerPrivateServiceName,
+			HCPNamespace:           namespace,
+			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+		}).SetupWithManager(ctx, mgr); err != nil {
+			controllerName := awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
+			setupLog.Error(err, "unable to create controller", "controller", controllerName)
+			os.Exit(1)
+		}
+
+		controllerName = "PrivateIngressServiceObserver"
+		if err := (&awsprivatelink.PrivateServiceObserver{
+			ControllerName:         controllerName,
+			ServiceNamespace:       "openshift-ingress",
+			ServiceName:            fmt.Sprintf("router-%s", namespace),
+			HCPNamespace:           namespace,
+			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+		}).SetupWithManager(ctx, mgr); err != nil {
+			controllerName := awsprivatelink.ControllerName(fmt.Sprintf("router-%s", namespace))
+			setupLog.Error(err, "unable to create controller", "controller", controllerName)
 			os.Exit(1)
 		}
 

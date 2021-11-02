@@ -119,7 +119,7 @@ cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
-	$(GENAPIDOCS) --config $(DIR)/docs/api-doc-gen/config.json --template-dir $(DIR)/docs/api-doc-gen/templates --api-dir ./api/v1alpha1 --out-file $(DIR)/docs/content/reference/api.md
+	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
 
 # Run tests
 .PHONY: test
