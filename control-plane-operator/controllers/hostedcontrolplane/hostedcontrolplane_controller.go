@@ -2230,7 +2230,7 @@ func (r *HostedControlPlaneReconciler) reconcilePrometheus(ctx context.Context, 
 
 	cm := manifests.PrometheusConfiguration(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
-		return prometheus.ReconcileConfiguration(cm, p.OwnerRef)
+		return prometheus.ReconcileConfiguration(cm, p.OwnerRef, p.APIServerPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile prometheus configuration: %w", err)
 	}

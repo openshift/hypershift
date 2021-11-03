@@ -1,6 +1,8 @@
 package prometheus
 
 import (
+	"fmt"
+	"net/url"
 	"path"
 	"time"
 
@@ -9,14 +11,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const prometheusConfigFileName = "prometheus.yml"
 
-func ReconcileConfiguration(cm *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	cfg := buildPrometheusConfig(cm.Namespace)
+func ReconcileConfiguration(cm *corev1.ConfigMap, ownerRef config.OwnerRef, apiServerPort *int32) error {
+	cfg, err := buildPrometheusConfig(cm.Namespace, apiServerPort)
+	if err != nil {
+		return err
+	}
 
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
@@ -26,7 +32,11 @@ func ReconcileConfiguration(cm *corev1.ConfigMap, ownerRef config.OwnerRef) erro
 	return nil
 }
 
-func buildPrometheusConfig(ns string) *promcfg.Config {
+func buildPrometheusConfig(ns string, apiServerPort *int32) (*promcfg.Config, error) {
+	guestRemoteWriteCfg, err := guestClusterPrometheusWriteConfig(apiServerPort)
+	if err != nil {
+		return nil, err
+	}
 	return &promcfg.Config{
 		GlobalConfig: promcfg.GlobalConfig{
 			ScrapeInterval: model.Duration(15 * time.Second),
@@ -34,7 +44,10 @@ func buildPrometheusConfig(ns string) *promcfg.Config {
 		ScrapeConfigs: []*promcfg.ScrapeConfig{
 			kubeAPIServerScrapeConfig(ns),
 		},
-	}
+		RemoteWriteConfigs: []*promcfg.RemoteWriteConfig{
+			guestRemoteWriteCfg,
+		},
+	}, nil
 }
 
 func kubeAPIServerScrapeConfig(ns string) *promcfg.ScrapeConfig {
@@ -184,4 +197,27 @@ func kubeAPIServerScrapeConfig(ns string) *promcfg.ScrapeConfig {
 
 	return cfg
 
+}
+
+func guestClusterPrometheusWriteConfig(apiServerPort *int32) (*promcfg.RemoteWriteConfig, error) {
+	apiPort := int32(config.DefaultAPIServerPort)
+	if apiServerPort != nil {
+		apiPort = *apiServerPort
+	}
+	remoteWriteURLStr := fmt.Sprintf("https://%s:%d/api/v1/namespaces/openshift-monitoring/services/https:prometheus-k8s:web/proxy/api/v1/write", manifests.KASService("").Name, apiPort)
+	remoteWriteURL, err := url.Parse(remoteWriteURLStr)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &promcfg.RemoteWriteConfig{
+		URL: &promcfg.URL{URL: remoteWriteURL},
+		HTTPClientConfig: promcfg.HTTPClientConfig{
+			BearerTokenFile: path.Join(volumeMounts.Path(prometheusContainerMain().Name, util.TokenMinterTokenVolume), util.TokenMinterTokenName),
+			TLSConfig: promcfg.TLSConfig{
+				CAFile:     path.Join(volumeMounts.Path(prometheusContainerMain().Name, prometheusVolumeServiceCA().Name), "service-ca.crt"),
+				ServerName: manifests.KASService("").Name,
+			},
+		},
+	}
+	return cfg, nil
 }

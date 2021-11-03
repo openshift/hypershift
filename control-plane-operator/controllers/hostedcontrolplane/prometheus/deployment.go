@@ -18,10 +18,11 @@ import (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		prometheusContainerMain().Name: {
-			prometheusVolumeWork().Name:   "/var/run/prometheus",
-			prometheusVolumeConfig().Name: "/etc/prometheus",
-			prometheusVolumeRootCA().Name: "/etc/kubernetes/root-ca",
-			util.TokenMinterTokenVolume:   "/etc/kubernetes/service",
+			prometheusVolumeWork().Name:      "/var/run/prometheus",
+			prometheusVolumeConfig().Name:    "/etc/prometheus",
+			prometheusVolumeRootCA().Name:    "/etc/kubernetes/root-ca",
+			prometheusVolumeServiceCA().Name: "/etc/kubernetes/service-ca",
+			util.TokenMinterTokenVolume:      "/etc/kubernetes/service",
 		},
 	}
 	prometheusLabels = map[string]string{
@@ -60,6 +61,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(prometheusVolumeConfig(), buildPrometheusVolumeConfig),
 			util.BuildVolume(prometheusVolumeKubeconfig(), buildPrometheusVolumeKubeconfig),
 			util.BuildVolume(prometheusVolumeRootCA(), buildPrometheusVolumeRootCA),
+			util.BuildVolume(prometheusVolumeServiceCA(), buildPrometheusVolumeServiceCA),
 		},
 		ServiceAccountName: manifests.PrometheusServiceAccount(deployment.Namespace).Name,
 	}
@@ -130,4 +132,15 @@ func prometheusVolumeRootCA() *corev1.Volume {
 func buildPrometheusVolumeRootCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
+}
+
+func prometheusVolumeServiceCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "service-ca",
+	}
+}
+
+func buildPrometheusVolumeServiceCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.ServiceServingCA("").Name
 }
