@@ -202,7 +202,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			{
 				Service: hyperv1.OIDC,
 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type: hyperv1.Route,
+					Type: hyperv1.S3,
 				},
 			},
 			{

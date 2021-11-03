@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
@@ -71,18 +73,21 @@ func main() {
 }
 
 type StartOptions struct {
-	Namespace                  string
-	DeploymentName             string
-	MetricsAddr                string
-	EnableLeaderElection       bool
-	IgnitionServerImage        string
-	OpenTelemetryEndpoint      string
-	EnableOCPClusterMonitoring bool
-	EnableCIDebugOutput        bool
-	ControlPlaneOperatorImage  string
-	AvailabilityProberImage    string
-	RegistryOverrides          map[string]string
-	PrivatePlatform            string
+	Namespace                        string
+	DeploymentName                   string
+	MetricsAddr                      string
+	EnableLeaderElection             bool
+	IgnitionServerImage              string
+	OpenTelemetryEndpoint            string
+	EnableOCPClusterMonitoring       bool
+	EnableCIDebugOutput              bool
+	ControlPlaneOperatorImage        string
+	AvailabilityProberImage          string
+	RegistryOverrides                map[string]string
+	PrivatePlatform                  string
+	OIDCStorageProviderS3BucketName  string
+	OIDCStorageProviderS3Region      string
+	OIDCStorageProviderS3Credentials string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -94,15 +99,16 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := StartOptions{
-		Namespace:                 "hypershift",
-		DeploymentName:            "operator",
-		MetricsAddr:               "0",
-		EnableLeaderElection:      false,
-		ControlPlaneOperatorImage: "",
-		IgnitionServerImage:       "",
-		OpenTelemetryEndpoint:     "",
-		RegistryOverrides:         map[string]string{},
-		PrivatePlatform:           string(hyperv1.NonePlatform),
+		Namespace:                   "hypershift",
+		DeploymentName:              "operator",
+		MetricsAddr:                 "0",
+		EnableLeaderElection:        false,
+		ControlPlaneOperatorImage:   "",
+		IgnitionServerImage:         "",
+		OpenTelemetryEndpoint:       "",
+		RegistryOverrides:           map[string]string{},
+		PrivatePlatform:             string(hyperv1.NonePlatform),
+		OIDCStorageProviderS3Region: "us-east-1",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -119,6 +125,9 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", "", "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -211,7 +220,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
 
-	if err = (&hostedcluster.HostedClusterReconciler{
+	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
@@ -228,7 +237,15 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		CreateOrUpdateProvider:     createOrUpdate,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
-	}).SetupWithManager(mgr); err != nil {
+	}
+	if opts.OIDCStorageProviderS3Credentials != "" {
+		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket")
+		awsConfig := awsutil.NewConfig(opts.OIDCStorageProviderS3Credentials, opts.OIDCStorageProviderS3Region)
+		s3Client := s3.New(awsSession, awsConfig)
+		hostedClusterReconciler.S3Client = s3Client
+		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
+	}
+	if err := hostedClusterReconciler.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 

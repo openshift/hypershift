@@ -28,12 +28,13 @@ HyperShift is deployed into an existing OpenShift cluster which will host the ma
 * Admin access to an OpenShift cluster (version 4.7+) specified by the `KUBECONFIG` environment variable
 * The OpenShift `oc` CLI tool
 * The `hypershift` CLI tool
-- An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster
+* An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster
+* An AWS S3 bucket into which the above credentials can write. The bucket must allow public objects.
 
 Install HyperShift into the management cluster:
 
 ```shell
-hypershift install
+hypershift install --oidc-storage-provider-s3-bucket-name="$name-of-bucket" --oidc-storage-provider-s3-region="$region-of-bucket" --oidc-storage-provider-s3-credentials="$path-to-aws-credentials-file"
 ```
 
 To uninstall HyperShift, run:
