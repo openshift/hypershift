@@ -1278,7 +1278,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Ingress Cert
 	ingressCert := manifests.IngressCert(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, ingressCert, func() error {
-		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
+		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress, p.IngressSubdomain)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
 	}
@@ -1286,7 +1286,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// OAuth server Cert
 	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, oauthServerCert, func() error {
-		return pki.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
+		return pki.ReconcileOAuthServerCert(oauthServerCert, ingressCert, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
 	}
