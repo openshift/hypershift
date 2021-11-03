@@ -145,7 +145,7 @@ func DestroyCluster(ctx context.Context, o *DestroyOptions) error {
 		// which should indicate the cluster was successfully torn down.
 		clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
 		defer clusterDeleteCtxCancel()
-		err := wait.PollUntil(1*time.Second, func() (bool, error) {
+		err := wait.PollImmediateUntil(1*time.Second, func() (bool, error) {
 			if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 				if apierrors.IsNotFound(err) {
 					return true, nil

@@ -16,10 +16,10 @@ func ReconcileIngressCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef, e
 		ingressHostNames = append(ingressHostNames, externalOAuthAddress)
 	}
 	ingressHostNames = append(ingressHostNames, fmt.Sprintf("*.%s", ingressSubdomain))
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-ingress", "openshift", X509DefaultUsage, X509UsageClientServerAuth, ingressHostNames, ingressNumericIPs)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-ingress", []string{"openshift"}, X509DefaultUsage, X509UsageClientServerAuth, ingressHostNames, ingressNumericIPs)
 }
 
-func (p *PKIParams) ReconcileOAuthServerCert(secret, sourceSecret, ca *corev1.Secret) error {
+func ReconcileOAuthServerCert(secret, sourceSecret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	secret.Data = sourceSecret.Data
 	AnnotateWithCA(secret, ca)
 	return nil

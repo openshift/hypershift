@@ -16,6 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
@@ -25,16 +26,18 @@ const (
 	TokenSecretConfigKey  = "config"
 	TokenSecretTokenKey   = "token"
 	TokenSecretAnnotation = "hypershift.openshift.io/ignition-config"
+	finalizer             = "hypershift.openshift.io/finalizer"
+	// Set the ttl 1h above the reconcile resync period so every existing
+	// token Secret has the chance to renew their expiry time on the PayloadStore.Get(token) operation
+	// while the non existing ones get eventually garbageCollected.
+	// https://github.com/kubernetes-sigs/controller-runtime/blob/1e4d87c9f9e15e4a58bb81909dd787f30ede7693/pkg/cache/cache.go#L118
+	ttl = time.Hour * 11
 )
 
 func NewPayloadStore() *ExpiringCache {
 	return &ExpiringCache{
-		cache: make(map[string]*entry),
-		// Set the ttl 1h above the reconcile resync period so every existing
-		// token Secret has the chance to renew their expiry time on the PayloadStore.Get(token) operation
-		// while the non exiting ones get eventually garbageCollected.
-		// https://github.com/kubernetes-sigs/controller-runtime/blob/1e4d87c9f9e15e4a58bb81909dd787f30ede7693/pkg/cache/cache.go#L118
-		ttl:     time.Hour * 11,
+		cache:   make(map[string]*entry),
+		ttl:     ttl,
 		RWMutex: sync.RWMutex{},
 	}
 }
@@ -82,7 +85,7 @@ func tokenSecretAnnotationPredicate(ctx context.Context) predicate.Predicate {
 	}
 }
 func (r *TokenSecretReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	log := ctrl.Log.WithName("Setting up token controller")
+	log := ctrl.Log.WithName("secret-token-controller")
 	log.Info("SetupWithManager", "ns", os.Getenv("MY_NAMESPACE"))
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Secret{}).WithEventFilter(tokenSecretAnnotationPredicate(ctx)).
@@ -109,27 +112,50 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	tokenSecret := &corev1.Secret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, tokenSecret); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("not found", "request", req.String())
+			log.Info("Token Secret not found", "request", req.String())
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "error token Secret")
 		return ctrl.Result{}, err
 	}
 
+	// If the tokenSecret is not being deleted then ensure the finalizer.
+	if tokenSecret.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(tokenSecret, finalizer) {
+			controllerutil.AddFinalizer(tokenSecret, finalizer)
+			if err := r.Update(ctx, tokenSecret); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to add finalizer: %w", err)
+			}
+		}
+	}
+
+	// If the tokenSecret is being deleted then delete from cache and remove finalizer.
 	if !tokenSecret.DeletionTimestamp.IsZero() {
-		// When this reconciler watch the deletion event
-		// and tries to get the Resource it might already be gone
-		// therefore this is unlikely to be reached.
-		// This is just a best effort to synchronous cleanup.
-		// The PayloadStore expiring mechanism takes care of consistently delete expired entries.
+		log.Info("Removing token from cache", "tokenSecret", client.ObjectKeyFromObject(tokenSecret))
 		r.PayloadStore.Delete(string(tokenSecret.Data[TokenSecretTokenKey]))
+		if controllerutil.ContainsFinalizer(tokenSecret, finalizer) {
+			controllerutil.RemoveFinalizer(tokenSecret, finalizer)
+			if err := r.Update(ctx, tokenSecret); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+			}
+		}
 		return ctrl.Result{}, nil
 	}
 
+	// If the tokenSecret is older than ttl then delete it.
+	timeLived := time.Since(tokenSecret.CreationTimestamp.Time)
+	if timeLived >= ttl {
+		log.Info("Deleting expired token", "tokenSecret", client.ObjectKeyFromObject(tokenSecret))
+		if err := r.Delete(ctx, tokenSecret); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete tokenSecret: %w", err)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Otherwise proceed to generate the payload and cache the content.
 	token := string(tokenSecret.Data[TokenSecretTokenKey])
 	if _, ok := r.PayloadStore.Get(token); ok {
 		log.Info("Payload found in cache")
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: ttl - timeLived}, nil
 	}
 
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
@@ -146,8 +172,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	log.Info("IgnitionProvider generated payload")
 	r.PayloadStore.Set(token, payload)
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: ttl - timeLived}, nil
 }
 
 func decompress(content []byte) ([]byte, error) {

@@ -30,7 +30,10 @@ func TestSetRestartAnnotation(t *testing.T) {
 }
 
 func TestSetMultizoneSpread(t *testing.T) {
-	labels := map[string]string{"app": "etcd"}
+	labels := map[string]string{
+		"app":                         "etcd",
+		hyperv1.ControlPlaneComponent: "etcd",
+	}
 	cfg := &DeploymentConfig{}
 	cfg.SetMultizoneSpread(labels)
 	if cfg.Scheduling.Affinity == nil {

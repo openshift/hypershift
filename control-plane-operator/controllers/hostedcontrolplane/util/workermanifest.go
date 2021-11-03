@@ -17,6 +17,14 @@ const (
 )
 
 func ReconcileWorkerManifest(cm *corev1.ConfigMap, resource client.Object) error {
+	content, err := serializeResource(resource, hyperapi.Scheme)
+	if err != nil {
+		return fmt.Errorf("failed to serialize resource of type %T: %w", resource, err)
+	}
+	return ReconcileWorkerManifestString(cm, content)
+}
+
+func ReconcileWorkerManifestString(cm *corev1.ConfigMap, content string) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -24,11 +32,7 @@ func ReconcileWorkerManifest(cm *corev1.ConfigMap, resource client.Object) error
 		cm.Labels = map[string]string{}
 	}
 	cm.Labels["worker-manifest"] = "true"
-	serialized, err := serializeResource(resource, hyperapi.Scheme)
-	if err != nil {
-		return fmt.Errorf("failed to serialize resource of type %T: %w", resource, err)
-	}
-	cm.Data[UserDataKey] = serialized
+	cm.Data[UserDataKey] = content
 	return nil
 }
 

@@ -14,7 +14,7 @@
 
 3. Install HyperShift in development mode which causes the operator deployment
    to be deployment scaled to zero so that it doesn't conflict with your local
-   operator process. 
+   operator process.
 
         $ bin/hypershift install --development
 
@@ -32,6 +32,14 @@
 
         $ bin/hypershift install --hypershift-image quay.io/my/hypershift:latest
 
+3. (Optional) If your repository is private, create a secret:
+
+        oc create secret generic hypershift-operator-pull-secret  -n hypershift --from-file=.dockerconfig=/my/pull-secret --type=kubernetes.io/dockerconfig
+
+Then update the operator ServiceAccount in the hypershift namespace:
+
+       oc patch serviceaccount operator -n hypershift -p '{"imagePullSecrets": [{"name": "hypershift-operator-pull-secret"}]}'
+
 ### How to run the e2e tests
 
 1. Install HyperShift.
@@ -41,7 +49,8 @@
         $ make e2e
         $ bin/test-e2e -test.v -test.timeout 0 \
           --e2e.aws-credentials-file /my/aws-credentials \
-          --e2e.pull-secret-file /my/pull-secret
+          --e2e.pull-secret-file /my/pull-secret \
+          --e2e.base-domain my-basedomain
    ```
 
 ### How to visualize the Go dependency graph

@@ -7,20 +7,30 @@ import (
 )
 
 const (
-	KubeAPIServerServiceName      = "kube-apiserver"
-	OauthServiceName              = "oauth-openshift"
-	oauthRouteName                = "oauth"
-	oidcRouteName                 = "oidc"
-	konnectivityServerServiceName = "konnectivity-server"
-	openshiftAPIServerServiceName = "openshift-apiserver"
-	oauthAPIServerName            = "openshift-oauth-apiserver"
-	packageServerServiceName      = "packageserver"
+	KubeAPIServerServiceName        = "kube-apiserver"
+	KubeAPIServerPrivateServiceName = "kube-apiserver-private"
+	OauthServiceName                = "oauth-openshift"
+	oauthRouteName                  = "oauth"
+	oidcRouteName                   = "oidc"
+	konnectivityServerServiceName   = "konnectivity-server"
+	openshiftAPIServerServiceName   = "openshift-apiserver"
+	oauthAPIServerName              = "openshift-oauth-apiserver"
+	packageServerServiceName        = "packageserver"
 )
 
 func KubeAPIServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      KubeAPIServerServiceName,
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
+func KubeAPIServerPrivateService(hostedClusterNamespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      KubeAPIServerPrivateServiceName,
 			Namespace: hostedClusterNamespace,
 		},
 	}

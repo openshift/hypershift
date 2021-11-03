@@ -1,7 +1,6 @@
 package render
 
 import (
-	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
@@ -14,7 +13,6 @@ func NewClusterParams() *ClusterParams {
 		"RotateKubeletServerCertificate=true",
 		"LegacyNodeRoleBehavior=false",
 	}
-	p.ImageRegistryHTTPSecret = uuid.New().String()
 	return p
 }
 
@@ -60,7 +58,6 @@ type ClusterParams struct {
 	OpenShiftAPIClusterIP     string              `json:"openshiftAPIClusterIP"`
 	OauthAPIClusterIP         string              `json:"oauthAPIClusterIP"`
 	PackageServerAPIClusterIP string              `json:"packageServerAPIClusterIP"`
-	ImageRegistryHTTPSecret   string              `json:"imageRegistryHTTPSecret"`
 	RouterNodePortHTTP        string              `json:"routerNodePortHTTP"`
 	RouterNodePortHTTPS       string              `json:"routerNodePortHTTPS"`
 	BaseDomain                string              `json:"baseDomain"`

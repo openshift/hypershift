@@ -1,125 +1,156 @@
 package etcd
 
 import (
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"fmt"
+	"strconv"
+	"strings"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
-	etcdv1 "github.com/openshift/hypershift/control-plane-operator/thirdparty/etcd/v1beta2"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
 )
 
-func ReconcileOperatorServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(sa)
-	return nil
-}
-
-func ReconcileOperatorRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(role)
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{
-				etcdv1.SchemeGroupVersion.Group,
-			},
-			Resources: []string{
-				"etcdclusters",
-				"etcdbackups",
-				"etcdrestores",
-			},
-			Verbs: []string{
-				"*",
-			},
-		},
-		{
-			APIGroups: []string{
-				corev1.SchemeGroupVersion.Group,
-			},
-			Resources: []string{
-				"pods",
-				"services",
-				"endpoints",
-				"persistentvolumeclaims",
-				"events",
-			},
-			Verbs: []string{
-				"*",
-			},
-		},
-		{
-			APIGroups: []string{
-				appsv1.SchemeGroupVersion.Group,
-			},
-			Resources: []string{
-				"deployments",
-			},
-			Verbs: []string{
-				"*",
-			},
-		},
-		{
-			APIGroups: []string{
-				corev1.SchemeGroupVersion.Group,
-			},
-			Resources: []string{
-				"secrets",
-			},
-			Verbs: []string{
-				"get",
-			},
-		},
-	}
-	return nil
-}
-
-func ReconcileOperatorRoleBinding(roleBinding *rbacv1.RoleBinding, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(roleBinding)
-	serviceAccount := manifests.EtcdOperatorServiceAccount(roleBinding.Namespace)
-	roleBinding.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.SchemeGroupVersion.Group,
-		Kind:     "Role",
-		Name:     "etcd-operator",
-	}
-	roleBinding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			APIGroup:  corev1.SchemeGroupVersion.Group,
-			Namespace: serviceAccount.Namespace,
-			Name:      serviceAccount.Name,
-		},
-	}
-	return nil
-}
-
-var etcdOperatorDeploymentLabels = map[string]string{
-	"name": "etcd-operator",
-}
-
-func etcdOperatorContainer() *corev1.Container {
-	return &corev1.Container{
-		Name: "etcd-operator",
-	}
-}
-
-// etcdContainer is not a container that we build directly but is used
-// to assign scheduling/resources to it
 func etcdContainer() *corev1.Container {
 	return &corev1.Container{
 		Name: "etcd",
 	}
 }
 
-func buildEtcdOperatorContainer(image string) func(c *corev1.Container) {
+func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
+	p.OwnerRef.ApplyTo(ss)
+
+	ss.Spec.ServiceName = manifests.EtcdDiscoveryService(ss.Namespace).Name
+	ss.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: etcdPodSelector(),
+	}
+	ss.Spec.Replicas = pointer.Int32Ptr(int32(p.DeploymentConfig.Replicas))
+	ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
+	ss.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "data",
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: p.StorageSpec.PersistentVolume.StorageClassName,
+				AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: *p.StorageSpec.PersistentVolume.Size,
+					},
+				},
+			},
+		},
+	}
+	ss.Spec.Template.Labels = etcdPodSelector()
+
+	ss.Spec.Template.Spec.Containers = []corev1.Container{
+		util.BuildContainer(etcdContainer(), buildEtcdContainer(p, ss.Namespace)),
+	}
+
+	ss.Spec.Template.Spec.Volumes = []corev1.Volume{
+		{
+			Name: "peer-tls",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: manifests.EtcdPeerSecret(ss.Namespace).Name,
+				},
+			},
+		},
+		{
+			Name: "server-tls",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: manifests.EtcdServerSecret(ss.Namespace).Name,
+				},
+			},
+		},
+		{
+			Name: "client-tls",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: manifests.EtcdClientSecret(ss.Namespace).Name,
+				},
+			},
+		},
+	}
+
+	p.DeploymentConfig.ApplyToStatefulSet(ss)
+
+	return nil
+}
+
+func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		c.Image = image
-		c.Command = []string{"etcd-operator"}
-		c.Args = []string{"-create-crd=false"}
+		script := `
+/usr/bin/etcd \
+--data-dir=/var/lib/data \
+--name=${HOSTNAME} \
+--initial-advertise-peer-urls=https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380 \
+--listen-peer-urls=https://${POD_IP}:2380 \
+--listen-client-urls=https://${POD_IP}:2379,https://localhost:2379 \
+--advertise-client-urls=https://${HOSTNAME}.etcd-client.${NAMESPACE}.svc:2379 \
+--listen-metrics-urls=https://${POD_IP}:2381,https://localhost:2381 \
+--initial-cluster-token=etcd-cluster \
+--initial-cluster=${INITIAL_CLUSTER} \
+--initial-cluster-state=new \
+--quota-backend-bytes=${QUOTA_BACKEND_BYTES} \
+--peer-client-cert-auth=true \
+--peer-cert-file=/etc/etcd/tls/peer/peer.crt \
+--peer-key-file=/etc/etcd/tls/peer/peer.key \
+--peer-trusted-ca-file=/etc/etcd/tls/peer/peer-ca.crt \
+--client-cert-auth=true \
+--cert-file=/etc/etcd/tls/server/server.crt \
+--key-file=/etc/etcd/tls/server/server.key \
+--trusted-ca-file=/etc/etcd/tls/server/server-ca.crt
+`
+
+		var members []string
+		for i := 0; i < p.DeploymentConfig.Replicas; i++ {
+			name := fmt.Sprintf("etcd-%d", i)
+			members = append(members, fmt.Sprintf("%s=https://%s.etcd-discovery.%s.svc:2380", name, name, namespace))
+		}
+		initialCluster := strings.Join(members, ",")
+
+		c.Image = p.EtcdImage
 		c.ImagePullPolicy = corev1.PullAlways
+		c.Command = []string{"/bin/sh", "-c", script}
+		c.VolumeMounts = []corev1.VolumeMount{
+			{
+				Name:      "data",
+				MountPath: "/var/lib",
+			},
+			{
+				Name:      "peer-tls",
+				MountPath: "/etc/etcd/tls/peer",
+			},
+			{
+				Name:      "server-tls",
+				MountPath: "/etc/etcd/tls/server",
+			},
+			{
+				Name:      "client-tls",
+				MountPath: "/etc/etcd/tls/client",
+			},
+		}
 		c.Env = []corev1.EnvVar{
 			{
-				Name: "MY_POD_NAMESPACE",
+				Name: "POD_IP",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "status.podIP",
+					},
+				},
+			},
+			{
+				Name: "NAMESPACE",
 				ValueFrom: &corev1.EnvVarSource{
 					FieldRef: &corev1.ObjectFieldSelector{
 						FieldPath: "metadata.namespace",
@@ -127,80 +158,162 @@ func buildEtcdOperatorContainer(image string) func(c *corev1.Container) {
 				},
 			},
 			{
-				Name: "MY_POD_NAME",
-				ValueFrom: &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{
-						FieldPath: "metadata.name",
-					},
+				Name:  "INITIAL_CLUSTER",
+				Value: initialCluster,
+			},
+			{
+				Name:  "QUOTA_BACKEND_BYTES",
+				Value: strconv.FormatInt(p.StorageSpec.PersistentVolume.Size.Value(), 10),
+			},
+		}
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "client",
+				ContainerPort: 2379,
+				Protocol:      corev1.ProtocolTCP,
+			},
+			{
+				Name:          "peer",
+				ContainerPort: 2380,
+				Protocol:      corev1.ProtocolTCP,
+			},
+			{
+				Name:          "metrics",
+				ContainerPort: 2381,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		}
+		c.ReadinessProbe = &corev1.Probe{
+			Handler: corev1.Handler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"/bin/sh", "-c",
+						"/usr/bin/etcdctl --cacert /etc/etcd/tls/client/etcd-client-ca.crt --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 endpoint health"},
 				},
 			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       5,
+			FailureThreshold:    6,
 		}
 	}
 }
 
-func ReconcileOperatorDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, operatorImage string) error {
-	ownerRef.ApplyTo(deployment)
-	serviceAccount := manifests.EtcdOperatorServiceAccount(deployment.Namespace)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: etcdOperatorDeploymentLabels,
+func ReconcileDiscoveryService(service *corev1.Service, ownerRef config.OwnerRef) error {
+	if service.CreationTimestamp.IsZero() {
+		service.Spec.Type = corev1.ServiceTypeClusterIP
+		service.Spec.ClusterIP = corev1.ClusterIPNone
+	}
+	ownerRef.ApplyTo(service)
+
+	service.Spec.PublishNotReadyAddresses = true
+	service.Spec.Selector = etcdPodSelector()
+	service.Spec.Ports = []corev1.ServicePort{
+		{
+			Name:       "peer",
+			Protocol:   corev1.ProtocolTCP,
+			Port:       2380,
+			TargetPort: intstr.Parse("peer"),
 		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: etcdOperatorDeploymentLabels,
-			},
-			Spec: corev1.PodSpec{
-				ServiceAccountName: serviceAccount.Name,
-				Containers: []corev1.Container{
-					util.BuildContainer(etcdOperatorContainer(), buildEtcdOperatorContainer(operatorImage)),
-				},
-			},
+		{
+			Name:       "etcd-client",
+			Protocol:   corev1.ProtocolTCP,
+			Port:       2379,
+			TargetPort: intstr.Parse("client"),
 		},
 	}
-	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
 
-func ReconcileCluster(cluster *etcdv1.EtcdCluster, ownerRef config.OwnerRef, etcdDeploymentConfig config.DeploymentConfig, etcdVersion string, pvcClaim *corev1.PersistentVolumeClaimSpec) error {
-	ownerRef.ApplyTo(cluster)
-	peerSecret := manifests.EtcdPeerSecret(cluster.Namespace)
-	serverSecret := manifests.EtcdServerSecret(cluster.Namespace)
-	clientSecret := manifests.EtcdClientSecret(cluster.Namespace)
-
-	podPolicy := &etcdv1.PodPolicy{}
-
-	if resources, ok := etcdDeploymentConfig.Resources[etcdContainer().Name]; ok {
-		podPolicy.Resources = resources
+func ReconcileClientService(service *corev1.Service, ownerRef config.OwnerRef) error {
+	if service.CreationTimestamp.IsZero() {
+		service.Spec.Type = corev1.ServiceTypeClusterIP
+		service.Spec.ClusterIP = corev1.ClusterIPNone
 	}
-	podPolicy.Affinity = etcdDeploymentConfig.Scheduling.Affinity
-	podPolicy.Tolerations = etcdDeploymentConfig.Scheduling.Tolerations
-	podPolicy.PriorityClassName = etcdDeploymentConfig.Scheduling.PriorityClass
-	if sc, ok := etcdDeploymentConfig.SecurityContexts[etcdContainer().Name]; ok {
-		podPolicy.SecurityContext = &corev1.PodSecurityContext{
-			SELinuxOptions: sc.SELinuxOptions,
-			WindowsOptions: sc.WindowsOptions,
-			RunAsUser:      sc.RunAsUser,
-			RunAsGroup:     sc.RunAsGroup,
-			RunAsNonRoot:   sc.RunAsNonRoot,
-			SeccompProfile: sc.SeccompProfile,
-		}
+	ownerRef.ApplyTo(service)
+	service.Labels = etcdPodSelector()
+	service.Spec.Selector = etcdPodSelector()
+	service.Spec.Ports = []corev1.ServicePort{
+		{
+			Name:       "etcd-client",
+			Protocol:   corev1.ProtocolTCP,
+			Port:       2379,
+			TargetPort: intstr.Parse("client"),
+		},
+		{
+			Name:       "metrics",
+			Protocol:   corev1.ProtocolTCP,
+			Port:       2381,
+			TargetPort: intstr.Parse("metrics"),
+		},
 	}
-	podPolicy.PersistentVolumeClaimSpec = pvcClaim
-	podPolicy.Labels = etcdDeploymentConfig.AdditionalLabels
+	return nil
+}
 
-	cluster.Spec = etcdv1.ClusterSpec{
-		Size:    etcdDeploymentConfig.Replicas,
-		Version: etcdVersion,
-		TLS: &etcdv1.TLSPolicy{
-			Static: &etcdv1.StaticTLS{
-				Member: &etcdv1.MemberSecret{
-					PeerSecret:   peerSecret.Name,
-					ServerSecret: serverSecret.Name,
+// ReconcileServiceMonitor
+// TODO: Exposing the client cert to monitoring isn't great, but metrics
+// TLS can't yet be independently configured. See: https://github.com/etcd-io/etcd/pull/10504
+func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(sm)
+
+	sm.Spec.Selector.MatchLabels = etcdPodSelector()
+	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
+		MatchNames: []string{sm.Namespace},
+	}
+	sm.Spec.Endpoints = []prometheusoperatorv1.Endpoint{
+		{
+			Interval: "15s",
+			Port:     "metrics",
+			Scheme:   "https",
+			TLSConfig: &prometheusoperatorv1.TLSConfig{
+				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+					ServerName: "etcd-client",
+					Cert: prometheusoperatorv1.SecretOrConfigMap{
+						Secret: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: manifests.EtcdClientSecret(sm.Namespace).Name,
+							},
+							Key: "etcd-client.crt",
+						},
+					},
+					KeySecret: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: manifests.EtcdClientSecret(sm.Namespace).Name,
+						},
+						Key: "etcd-client.key",
+					},
+					CA: prometheusoperatorv1.SecretOrConfigMap{
+						Secret: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: manifests.EtcdClientSecret(sm.Namespace).Name,
+							},
+							Key: "etcd-client-ca.crt",
+						},
+					},
 				},
-				OperatorSecret: clientSecret.Name,
 			},
 		},
-		Pod: podPolicy,
 	}
+
+	return nil
+}
+
+func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *EtcdParams) error {
+	if pdb.CreationTimestamp.IsZero() {
+		pdb.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: etcdPodSelector(),
+		}
+	}
+
+	p.OwnerRef.ApplyTo(pdb)
+
+	var minAvailable int
+	switch p.Availability {
+	case hyperv1.SingleReplica:
+		minAvailable = 0
+	case hyperv1.HighlyAvailable:
+		// For HA clusters, only tolerate disruption of a minority of members
+		minAvailable = p.DeploymentConfig.Replicas/2 + 1
+	}
+	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
+
 	return nil
 }

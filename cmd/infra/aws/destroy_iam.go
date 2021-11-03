@@ -65,9 +65,12 @@ func NewDestroyIAMCommand() *cobra.Command {
 }
 
 func (o *DestroyIAMOptions) Run(ctx context.Context) error {
-	return wait.PollUntil(5*time.Second, func() (bool, error) {
+	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		err := o.DestroyIAM(ctx)
 		if err != nil {
+			if !awsutil.IsErrorRetryable(err) {
+				return false, err
+			}
 			log.Info("WARNING: error during destroy, will retry", "error", err.Error())
 			return false, nil
 		}

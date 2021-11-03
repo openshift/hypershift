@@ -3,11 +3,11 @@ package clusterpolicy
 import (
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -24,11 +24,12 @@ var (
 		},
 	}
 	clusterPolicyControllerLabels = map[string]string{
-		"app": "cluster-policy-controller",
+		"app":                         "cluster-policy-controller",
+		hyperv1.ControlPlaneComponent: "cluster-policy-controller",
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string, apiServerPort *int32) error {
 	maxSurge := intstr.FromInt(1)
 	maxUnavailable := intstr.FromInt(0)
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
@@ -40,7 +41,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MatchLabels: clusterPolicyControllerLabels,
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = clusterPolicyControllerLabels
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(cpcContainerMain(), buildOCMContainerMain(image)),
 	}
@@ -50,6 +50,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		util.BuildVolume(cpcVolumeKubeconfig(), buildCPCVolumeKubeconfig),
 	}
 	deploymentConfig.ApplyTo(deployment)
+
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiServerPort), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 
@@ -71,6 +73,13 @@ func buildOCMContainerMain(image string) func(*corev1.Container) {
 			path.Join(volumeMounts.Path(c.Name, cpcVolumeKubeconfig().Name), kas.KubeconfigKey),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Env = []corev1.EnvVar{
+			{
+				// let policy-controller create events in the openshift-kube-controller-manager namespace instead of the default namespace.
+				Name:  "POD_NAMESPACE",
+				Value: "openshift-kube-controller-manager",
+			},
+		}
 	}
 }
 

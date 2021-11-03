@@ -19,36 +19,42 @@ import (
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	common "github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
+	"github.com/openshift/hypershift/support/upsert"
 )
 
 type ControllerSetupFunc func(*HostedClusterConfigOperatorConfig) error
 
-func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc) *HostedClusterConfigOperatorConfig {
+func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc, enableCIDebugOutput bool, platformType hyperv1.PlatformType) *HostedClusterConfigOperatorConfig {
 	return &HostedClusterConfigOperatorConfig{
-		targetKubeconfig: targetKubeconfig,
-		namespace:        namespace,
-		initialCA:        initialCA,
-		controllers:      controllers,
-		controllerFuncs:  controllerFuncs,
-		versions:         versions,
+		targetKubeconfig:             targetKubeconfig,
+		TargetCreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+		namespace:                    namespace,
+		initialCA:                    initialCA,
+		controllers:                  controllers,
+		controllerFuncs:              controllerFuncs,
+		versions:                     versions,
+		PlatformType:                 platformType,
 	}
 }
 
 type HostedClusterConfigOperatorConfig struct {
-	manager          ctrl.Manager
-	config           *rest.Config
-	targetConfig     *rest.Config
-	targetKubeClient kubeclient.Interface
-	kubeClient       kubeclient.Interface
-	logger           logr.Logger
-	scheme           *runtime.Scheme
+	manager                      ctrl.Manager
+	config                       *rest.Config
+	targetConfig                 *rest.Config
+	targetKubeClient             kubeclient.Interface
+	TargetCreateOrUpdateProvider upsert.CreateOrUpdateProvider
+	kubeClient                   kubeclient.Interface
+	logger                       logr.Logger
+	scheme                       *runtime.Scheme
 
 	versions            map[string]string
 	targetKubeconfig    string
 	namespace           string
 	initialCA           []byte
 	controllers         []string
+	PlatformType        hyperv1.PlatformType
 	controllerFuncs     map[string]ControllerSetupFunc
 	namespacedInformers map[string]informers.SharedInformerFactory
 }
@@ -64,7 +70,9 @@ func (c *HostedClusterConfigOperatorConfig) Scheme() *runtime.Scheme {
 func (c *HostedClusterConfigOperatorConfig) Manager() ctrl.Manager {
 	if c.manager == nil {
 		var err error
-		c.manager, err = ctrl.NewManager(c.TargetConfig(), ctrl.Options{
+		restConfig := c.TargetConfig()
+		restConfig.UserAgent = "hosted-cluster-config-operator-manager"
+		c.manager, err = ctrl.NewManager(restConfig, ctrl.Options{
 			Scheme:                  c.Scheme(),
 			LeaderElection:          true,
 			LeaderElectionNamespace: c.TargetNamespace(),
@@ -160,7 +168,9 @@ func (c *HostedClusterConfigOperatorConfig) TargetKubeInformersForNamespace(name
 func (c *HostedClusterConfigOperatorConfig) KubeClient() kubeclient.Interface {
 	if c.kubeClient == nil {
 		var err error
-		c.kubeClient, err = kubeclient.NewForConfig(c.Config())
+		config := c.Config()
+		config.UserAgent = "hosted-cluster-config-operator-kubeclient"
+		c.kubeClient, err = kubeclient.NewForConfig(config)
 		if err != nil {
 			c.Fatal(err, "cannot get management kube client")
 		}

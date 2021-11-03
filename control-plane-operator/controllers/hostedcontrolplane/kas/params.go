@@ -50,6 +50,8 @@ type KubeAPIServerParams struct {
 	config.OwnerRef
 
 	Images KubeAPIServerImages `json:"images"`
+
+	Availability hyperv1.AvailabilityPolicy
 }
 
 type KubeAPIServerServiceParams struct {
@@ -68,10 +70,10 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ExternalPort:         hcp.Status.ControlPlaneEndpoint.Port,
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
-		APIServerPort:        config.DefaultAPIServerPort,
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
 		ServiceCIDR:          hcp.Spec.ServiceCIDR,
 		PodCIDR:              hcp.Spec.PodCIDR,
+		Availability:         hcp.Spec.ControllerAvailabilityPolicy,
 
 		Images: KubeAPIServerImages{
 			HyperKube:             images["hyperkube"],
@@ -97,7 +99,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	case hyperv1.Unmanaged:
 		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
 	case hyperv1.Managed:
-		params.EtcdURL = config.DefaultEtcdURL
+		params.EtcdURL = fmt.Sprintf("https://etcd-client.%s.svc:2379", hcp.Namespace)
 	default:
 		params.EtcdURL = config.DefaultEtcdURL
 	}
@@ -280,7 +282,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(kasLabels)
+		params.DeploymentConfig.SetMultizoneSpread(kasLabels())
 	default:
 		params.Replicas = 1
 	}
@@ -301,7 +303,7 @@ func (p *KubeAPIServerParams) AuditPolicyProfile() configv1.AuditProfileType {
 	if p.APIServer != nil {
 		return p.APIServer.Spec.Audit.Profile
 	} else {
-		return configv1.AuditProfileDefaultType
+		return configv1.DefaultAuditProfileType
 	}
 }
 

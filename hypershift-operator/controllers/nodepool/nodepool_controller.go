@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/upsert"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
@@ -40,7 +41,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -74,6 +75,8 @@ type NodePoolReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 
 	tracer trace.Tracer
+
+	upsert.CreateOrUpdateProvider
 }
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -130,10 +133,6 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
-	// Fixme (alberto): using nodePool.Status.Version here gives a race: if a NodePool is deleted
-	// before the targeted version is the one in the status then the tokenSecret and userDataSecret would be leaked.
-	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
-	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
 	md := machineDeployment(nodePool, hcluster.Spec.InfraID, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 
@@ -149,16 +148,19 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 		}
 
-		if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+		// Delete any secret belonging to this NodePool i.e token Secret and userdata Secret.
+		secrets, err := r.listSecrets(nodePool)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to list secrets: %w", err)
+		}
+		for k := range secrets {
+			if err := r.Delete(ctx, &secrets[k]); err != nil && !apierrors.IsNotFound(err) {
+				return reconcile.Result{}, fmt.Errorf("failed to delete secret: %w", err)
+			}
 		}
 
 		if err := r.Delete(ctx, md); err != nil && !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, fmt.Errorf("failed to delete MachineDeployment: %w", err)
-		}
-
-		if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete ignition userdata Secret: %w", err)
 		}
 
 		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
@@ -463,7 +465,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
 		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
@@ -479,7 +481,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetConfigVersionHash)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
 		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint)
 	}); err != nil {
 		return ctrl.Result{}, err
@@ -496,6 +498,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSMachineTemplate: %w", err)
 		}
 		span.AddEvent("reconciled awsmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
+	case hyperv1.NonePlatform:
+		// TODO: When fleshing out platform None design revisit the right semantic to signal this as conditions in a NodePool.
+		return ctrl.Result{}, nil
 	}
 
 	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
@@ -602,7 +607,12 @@ func (r NodePoolReconciler) reconcileAWSMachineTemplate(ctx context.Context,
 }
 
 func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string) error {
-	userDataSecret.Immutable = k8sutilspointer.BoolPtr(true)
+	// The token secret controller deletes expired token Secrets.
+	// When that happens the NodePool controller reconciles and create a new one.
+	// Then it reconciles the userData Secret with the new generated token.
+	// Therefore this secret is mutable.
+	userDataSecret.Immutable = k8sutilspointer.BoolPtr(false)
+
 	if userDataSecret.Annotations == nil {
 		userDataSecret.Annotations = make(map[string]string)
 	}
@@ -1138,6 +1148,23 @@ func enqueueParentNodePool(obj client.Object) []reconcile.Request {
 	return []reconcile.Request{
 		{NamespacedName: hyperutil.ParseNamespacedName(nodePoolName)},
 	}
+}
+
+func (r *NodePoolReconciler) listSecrets(nodePool *hyperv1.NodePool) ([]corev1.Secret, error) {
+	secretList := &corev1.SecretList{}
+	if err := r.List(context.Background(), secretList); err != nil {
+		return nil, fmt.Errorf("failed to list secrets: %w", err)
+	}
+	filtered := []corev1.Secret{}
+	for i, secret := range secretList.Items {
+		if secret.GetAnnotations() != nil {
+			if annotation, ok := secret.GetAnnotations()[nodePoolAnnotation]; ok &&
+				annotation == client.ObjectKeyFromObject(nodePool).String() {
+				filtered = append(filtered, secretList.Items[i])
+			}
+		}
+	}
+	return filtered, nil
 }
 
 func (r *NodePoolReconciler) listAWSMachineTemplates(nodePool *hyperv1.NodePool) ([]capiaws.AWSMachineTemplate, error) {

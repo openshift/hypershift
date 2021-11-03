@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/yaml"
 )
 
 func ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
@@ -15,7 +16,7 @@ func ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret, ownerRef confi
 		fmt.Sprintf("konnectivity-server-local.%s.svc", secret.Namespace),
 		fmt.Sprintf("konnectivity-server-local.%s.svc.cluster.local", secret.Namespace),
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server-local", "kubernetes", X509DefaultUsage, X509UsageServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server-local", []string{"kubernetes"}, X509DefaultUsage, X509UsageServerAuth, dnsNames, nil)
 }
 
 func ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalKconnectivityAddress string) error {
@@ -30,20 +31,22 @@ func ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret, ownerRef conf
 	} else {
 		dnsNames = append(dnsNames, externalKconnectivityAddress)
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server", "kubernetes", X509DefaultUsage, X509UsageServerAuth, dnsNames, ips)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server", []string{"kubernetes"}, X509DefaultUsage, X509UsageServerAuth, dnsNames, ips)
 }
 
 func ReconcileKonnectivityClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-client", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-client", []string{"kubernetes"}, X509DefaultUsage, X509UsageClientAuth)
 }
 
 func ReconcileKonnectivityAgentSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-agent", "kubernetes", X509DefaultUsage, X509UsageClientAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-agent", []string{"kubernetes"}, X509DefaultUsage, X509UsageClientAuth)
 }
 
 func ReconcileKonnectivityWorkerAgentSecret(cm *corev1.ConfigMap, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(cm)
 	secret := manifests.KonnectivityAgentSecret("kube-system")
+	// Ignore errors here, the configmap might be empty initially
+	yaml.Unmarshal([]byte(cm.Data[util.UserDataKey]), secret)
 	if err := ReconcileKonnectivityAgentSecret(secret, ca, config.OwnerRef{}); err != nil {
 		return err
 	}

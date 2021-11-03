@@ -1,7 +1,6 @@
 package oauth
 
 import (
-	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -10,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"sigs.k8s.io/yaml"
 )
 
 func ReconcileBrowserClientWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef, externalHost string, externalPort int32) error {
@@ -17,7 +17,7 @@ func ReconcileBrowserClientWorkerManifest(cm *corev1.ConfigMap, ownerRef config.
 	browserClient := manifests.OAuthServerBrowserClient()
 	if data, exists := cm.Data[util.UserDataKey]; exists {
 		// Ignore a decoding error. If not decoded, content will be overwritten
-		json.Unmarshal([]byte(data), browserClient)
+		yaml.Unmarshal([]byte(data), browserClient)
 	}
 	redirectURIs := []string{
 		fmt.Sprintf("https://%s:%d/oauth/token/display", externalHost, externalPort),

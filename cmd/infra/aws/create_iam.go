@@ -126,7 +126,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		},
 	}
 
-	err = wait.PollUntil(5*time.Second, func() (bool, error) {
+	err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		if err = client.Get(ctx, crclient.ObjectKeyFromObject(ingressConfig), ingressConfig); err != nil {
 			log.Error(err, "failed to get ingress config")
 			return false, nil

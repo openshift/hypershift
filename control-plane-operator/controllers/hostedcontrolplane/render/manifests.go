@@ -57,27 +57,10 @@ func newClusterManifestContext(images, versions map[string]string, params *Clust
 }
 
 func (c *clusterManifestContext) setupManifests() {
-	c.hostedClusterConfigOperator()
 	c.clusterBootstrap()
-	c.registry()
-	c.operatorLifecycleManager()
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
 	c.ignitionConfigs()
-}
-
-func (c *clusterManifestContext) hostedClusterConfigOperator() {
-	c.addManifestFiles(
-		"hosted-cluster-config-operator/cp-operator-serviceaccount.yaml",
-		"hosted-cluster-config-operator/cp-operator-role.yaml",
-		"hosted-cluster-config-operator/cp-operator-rolebinding.yaml",
-		"hosted-cluster-config-operator/cp-operator-deployment.yaml",
-		"hosted-cluster-config-operator/cp-operator-configmap.yaml",
-	)
-}
-
-func (c *clusterManifestContext) registry() {
-	c.addUserManifestFiles("registry/cluster-imageregistry-config.yaml")
 }
 
 func (c *clusterManifestContext) clusterBootstrap() {
@@ -99,9 +82,8 @@ func (c *clusterManifestContext) machineConfigServer() {
 
 func (c *clusterManifestContext) userManifestsBootstrapper() {
 	c.addManifestFiles(
-		"user-manifests-bootstrapper/user-manifests-bootstrapper-serviceaccount.yaml",
 		"user-manifests-bootstrapper/user-manifests-bootstrapper-rolebinding.yaml",
-		"user-manifests-bootstrapper/user-manifests-bootstrapper-pod.yaml",
+		"user-manifests-bootstrapper/user-manifests-bootstrapper-job.yaml",
 	)
 	for _, file := range c.userManifestFiles {
 		data, err := c.substituteParams(c.params, file)
@@ -167,55 +149,8 @@ func (c *clusterManifestContext) ignitionConfigs() {
 	}
 }
 
-func (c *clusterManifestContext) operatorLifecycleManager() {
-	c.addManifestFiles(
-		"olm/catalog-rollout.serviceaccount.yaml",
-		"olm/catalog-rollout.role.yaml",
-		"olm/catalog-rollout.rolebinding.yaml",
-		"olm/catalog-metrics-service.yaml",
-		"olm/olm-metrics-service.yaml",
-		"olm/olm-operator-deployment.yaml",
-		"olm/catalog-operator-deployment.yaml",
-		"olm/packageserver-secret.yaml",
-		"olm/packageserver-deployment.yaml",
-		"olm/catalog-redhat-operators.deployment.yaml",
-		"olm/catalog-redhat-operators-rollout.cronjob.yaml",
-		"olm/catalog-redhat-operators.service.yaml",
-		"olm/catalog-certified.deployment.yaml",
-		"olm/catalog-certified-rollout.cronjob.yaml",
-		"olm/catalog-certified.service.yaml",
-		"olm/catalog-community.deployment.yaml",
-		"olm/catalog-community-rollout.cronjob.yaml",
-		"olm/catalog-community.service.yaml",
-		"olm/catalog-redhat-marketplace.deployment.yaml",
-		"olm/catalog-redhat-marketplace-rollout.cronjob.yaml",
-		"olm/catalog-redhat-marketplace.service.yaml",
-	)
-	c.addUserManifestFiles(
-		"olm/packageserver-service-guest.yaml",
-		"olm/packageserver-endpoint-guest.yaml",
-		"olm/catalog-certified-operators-catalogsource-guest.yaml",
-		"olm/catalog-community-operators-catalogsource-guest.yaml",
-		"olm/catalog-redhat-marketplace-catalogsource-guest.yaml",
-		"olm/catalog-redhat-operators-catalogsource-guest.yaml",
-	)
-
-	params := map[string]string{
-		"PackageServerCABundle": c.params.(*ClusterParams).PackageServerCABundle,
-	}
-	entry, err := c.substituteParams(params, "olm/packageserver-apiservice-template.yaml")
-	if err != nil {
-		panic(err.Error())
-	}
-	c.addUserManifest("packageserver-apiservice.yaml", string(entry))
-}
-
 func (c *clusterManifestContext) addUserManifestFiles(name ...string) {
 	c.userManifestFiles = append(c.userManifestFiles, name...)
-}
-
-func (c *clusterManifestContext) addUserManifest(name, content string) {
-	c.userManifests[name] = content
 }
 
 func userConfigMapName(file string) string {

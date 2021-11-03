@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,11 +52,12 @@ var (
 		},
 	}
 	kcmLabels = map[string]string{
-		"app": "kube-controller-manager",
+		"app":                         "kube-controller-manager",
+		hyperv1.ControlPlaneComponent: "kube-controller-manager",
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev1.ConfigMap, p *KubeControllerManagerParams) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev1.ConfigMap, p *KubeControllerManagerParams, apiPort *int32) error {
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: kcmLabels,
 	}
@@ -104,6 +106,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 	}
 	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig)
 	applyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds)
+
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 

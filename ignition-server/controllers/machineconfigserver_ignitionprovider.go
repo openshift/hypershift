@@ -11,8 +11,10 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"text/template"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
@@ -195,23 +197,22 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	return
 }
 
-func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, sa *corev1.ServiceAccount,
-	config *corev1.ConfigMap) *corev1.Pod {
-	images := releaseImage.ComponentImages()
-	bootstrapArgs := fmt.Sprintf(`
+const mcoBootstrapScript = `#!/bin/bash
 mkdir -p /mcc-manifests/bootstrap/manifests
 mkdir -p /mcc-manifests/manifests
 machine-config-operator bootstrap \
 --root-ca=/assets/manifests/root-ca.crt \
 --kube-ca=/assets/manifests/combined-ca.crt \
---machine-config-operator-image=%s \
---machine-config-oscontent-image=%s \
---infra-image=%s \
---keepalived-image=%s \
---coredns-image=%s \
---mdns-publisher-image=%s \
---haproxy-image=%s \
---baremetal-runtimecfg-image=%s \
+--machine-config-operator-image={{ .mcoImage }} \
+--machine-config-oscontent-image={{ .osContentImage }} \
+--infra-image={{ .podImage }} \
+--keepalived-image={{ .keepAlivedImage }} \
+--coredns-image={{ .coreDNSImage }} \
+{{ if .mdnsImage -}}
+--mdns-publisher-image={{ .mdnsImage }} \
+{{ end -}}
+--haproxy-image={{ .haproxyImage }} \
+--baremetal-runtimecfg-image={{ .baremetalRuntimeCfgImage }} \
 --infra-config-file=/assets/manifests/cluster-infrastructure-02-config.yaml \
 --network-config-file=/assets/manifests/cluster-network-02-config.yaml \
 --proxy-config-file=/assets/manifests/cluster-proxy-01-config.yaml \
@@ -223,17 +224,27 @@ machine-config-operator bootstrap \
 mv /mcc-manifests/bootstrap/manifests /mcc-manifests/bootstrap/manifests.tmp
 mkdir /mcc-manifests/bootstrap/manifests
 cp /mcc-manifests/bootstrap/manifests.tmp/* /mcc-manifests/bootstrap/manifests/
-cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests/`,
-		images["machine-config-operator"],
-		images["machine-os-content"],
-		images["pod"],
-		images["keepalived-ipfailover"],
-		images["coredns"],
-		images["mdns-publisher"],
-		images["haproxy-router"],
-		images["baremetal-runtimecfg"],
-	)
+cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests/`
 
+var mcoBootstrapScriptTemplate = template.Must(template.New("mcoBootstrap").Parse(mcoBootstrapScript))
+
+func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, sa *corev1.ServiceAccount,
+	config *corev1.ConfigMap) *corev1.Pod {
+	images := releaseImage.ComponentImages()
+	scriptArgs := map[string]string{
+		"mcoImage":                 images["machine-config-operator"],
+		"osContentImage":           images["machine-os-content"],
+		"podImage":                 images["pod"],
+		"keepAlivedImage":          images["keepalived-ipfailover"],
+		"coreDNSImage":             images["coredns"],
+		"mdnsImage":                images["mdns-publisher"],
+		"haproxyImage":             images["haproxy-router"],
+		"baremetalRuntimeCfgImage": images["baremetal-runtimecfg"],
+	}
+	bootstrapScriptBytes := &bytes.Buffer{}
+	if err := mcoBootstrapScriptTemplate.Execute(bootstrapScriptBytes, scriptArgs); err != nil {
+		panic(fmt.Sprintf("unexpected error executing bootstrap script: %v", err))
+	}
 	customMachineConfigArg := `
 cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
 
@@ -243,7 +254,8 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			Namespace: namespace,
 			Name:      podName,
 			Labels: map[string]string{
-				"app": "machine-config-server",
+				"app":                         "machine-config-server",
+				hyperv1.ControlPlaneComponent: "machine-config-server",
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -267,7 +279,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					},
 					Args: []string{
 						"-c",
-						bootstrapArgs,
+						bootstrapScriptBytes.String(),
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{

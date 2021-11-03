@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/spf13/cobra"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -75,10 +76,13 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context) error {
-	return wait.PollUntil(5*time.Second, func() (bool, error) {
+	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		err := o.DestroyInfra(ctx)
 		if err != nil {
-			log.Info("WARNING: error during destroy, will retry", "error", err.Error())
+			if !awsutil.IsErrorRetryable(err) {
+				return false, err
+			}
+			log.Info("WARNING: error during destroy, will retry", "error", err.Error(), "type", fmt.Sprintf("%T,%+v", err, err))
 			return false, nil
 		}
 		return true, nil
@@ -113,6 +117,10 @@ func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3ifa
 	}
 	for _, bucket := range result.Buckets {
 		if strings.HasPrefix(*bucket.Name, fmt.Sprintf("%s-image-registry-", o.InfraID)) {
+			if err := emptyBucket(ctx, client, *bucket.Name); err != nil {
+				errs = append(errs, fmt.Errorf("failed to empty bucket %s: %w", *bucket.Name, err))
+				continue
+			}
 			_, err := client.DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
 				Bucket: bucket.Name,
 			})
@@ -124,6 +132,13 @@ func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3ifa
 		}
 	}
 	return errs
+}
+
+func emptyBucket(ctx context.Context, client s3iface.S3API, name string) error {
+	iter := s3manager.NewDeleteListIterator(client, &s3.ListObjectsInput{
+		Bucket: aws.String(name),
+	})
+	return s3manager.NewBatchDeleteWithClient(client).Delete(ctx, iter)
 }
 
 func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {

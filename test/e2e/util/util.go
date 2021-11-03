@@ -1,11 +1,13 @@
 package util
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,47 +25,102 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
+	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/upsert"
 )
 
-func GenerateNamespace(t *testing.T, ctx context.Context, client crclient.Client, prefix string) *corev1.Namespace {
+// CreateCluster creates a new namespace and a HostedCluster in that namespace using
+// the provided options.
+//
+// This function calls t.Cleanup() with a function which tears down the cluster
+// and *blocks until teardown completes*, so no explicit cleanup from the caller
+// is required.
+func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, opts cmdcluster.Options, artifactDir string) *hyperv1.HostedCluster {
 	g := NewWithT(t)
+	start := time.Now()
+
+	// Set up a namespace to contain the hostedcluster
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: prefix,
+			Name: SimpleNameGenerator.GenerateName("e2e-clusters-"),
 			Labels: map[string]string{
 				"hypershift-e2e-component": "hostedclusters-namespace",
 			},
 		},
 	}
 	err := client.Create(ctx, namespace)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to create test namespace")
-	g.Expect(namespace.Name).ToNot(BeEmpty(), "generated namespace has no name")
-	t.Logf("Created test namespace: %s", namespace.Name)
-	return namespace
+	g.Expect(err).NotTo(HaveOccurred(), "failed to create namespace")
+
+	// Define the hostedcluster and adjust options to match it
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace.Name,
+			Name:      SimpleNameGenerator.GenerateName("example-"),
+		},
+	}
+	opts.Namespace = namespace.Name
+	opts.Name = hc.Name
+	opts.InfraID = hc.Name
+
+	// Define a standard teardown function
+	teardown := func(ctx context.Context) {
+		SaveMachineConsoleLogs(t, ctx, hc, opts.AWSCredentialsFile, artifactDir)
+		// TODO: Figure out why this is slow
+		//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
+		DumpAndDestroyHostedCluster(t, ctx, hc, opts.AWSCredentialsFile, opts.Region, opts.BaseDomain, artifactDir)
+		DeleteNamespace(t, ctx, client, namespace.Name)
+	}
+
+	// Try and create the cluster
+	t.Logf("Creating a new cluster. Options: %v", opts)
+	if err := cmdcluster.CreateCluster(ctx, opts); err != nil {
+		teardown(context.Background())
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
+	}
+
+	// Assert we can retrieve the cluster that was created
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(hc), hc); err != nil {
+		teardown(context.Background())
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+	}
+
+	t.Logf("Successfully created hostedcluster %s/%s in %s", hc.Namespace, hc.Name, time.Since(start).Round(time.Second))
+	t.Cleanup(func() { teardown(context.Background()) })
+
+	return hc
 }
 
 // DumpHostedCluster tries to dump important resources related to the HostedCluster, and
 // logs any failures along the way.
-func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir string) {
+func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir, awsCredsFile string) {
 	if len(artifactDir) == 0 {
 		t.Logf("Skipping cluster dump because no artifact dir was provided")
 		return
+	}
+	findKubeObjectUpdateLoops := func(filename string, content []byte) {
+		if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
+			t.Errorf("Found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename)
+		}
 	}
 	err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
 		Namespace:   hostedCluster.Namespace,
 		Name:        hostedCluster.Name,
 		ArtifactDir: artifactDir,
+		LogCheckers: []cmdcluster.LogChecker{findKubeObjectUpdateLoops},
 	})
 	if err != nil {
 		t.Errorf("Failed to dump cluster: %v", err)
+	}
+	if err := dumpJournals(t, ctx, hostedCluster, artifactDir, awsCredsFile); err != nil {
+		t.Logf("Failed to dump machine journals: %v", err)
 	}
 }
 
 // DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,
 // logging any failures along the way.
 func DumpAndDestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, awsCreds string, awsRegion string, baseDomain string, artifactDir string) {
-	// TODO: Figure out why this is slow
-	//DumpHostedCluster(ctx, hostedCluster, artifactDir)
+	DumpHostedCluster(t, ctx, hostedCluster, artifactDir, awsCreds)
 
 	opts := &cmdcluster.DestroyOptions{
 		Namespace:          hostedCluster.Namespace,
@@ -133,6 +190,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 }
 
 func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
+	start := time.Now()
 	t.Logf("Waiting for hostedcluster kubeconfig to be published. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 	var guestKubeConfigSecret corev1.Secret
 	err := wait.PollUntil(1*time.Second, func() (done bool, err error) {
@@ -155,7 +213,7 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 	if err != nil {
 		return nil, fmt.Errorf("kubeconfig didn't become available: %w", err)
 	}
-	t.Logf("Found kubeconfig for cluster. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
+	t.Logf("Found kubeconfig for cluster in %s. Namespace: %s, name: %s", time.Since(start).Round(time.Second), hostedCluster.Namespace, hostedCluster.Name)
 
 	// TODO: this key should probably be published or an API constant
 	data, hasData := guestKubeConfigSecret.Data["kubeconfig"]
@@ -167,6 +225,7 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 
 func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
 	g := NewWithT(t)
+	start := time.Now()
 
 	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
@@ -188,7 +247,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	}, waitForGuestClientCtx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to establish a connection to the guest apiserver")
 
-	t.Logf("successfully connected to the guest apiserver")
+	t.Logf("Successfully connected to the guest apiserver in %s", time.Since(start).Round(time.Second))
 	return guestClient
 }
 
@@ -197,6 +256,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
+	readyNodeCount := 0
 	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
 		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
@@ -215,12 +275,13 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 			}
 		}
 		if len(readyNodes) != int(n) {
+			readyNodeCount = len(readyNodes)
 			return false, nil
 		}
 		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
 		return true, nil
 	}, ctx.Done())
-	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure guest nodes became ready")
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
 	t.Logf("All nodes for nodepool appear to be ready. Count: %v", n)
 	return nodes.Items
@@ -299,4 +360,75 @@ func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client,
 		return
 	}
 	t.Logf("Dumped guest cluster data. Dir: %s", dumpDir)
+}
+
+func SaveMachineConsoleLogs(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, awsCredsFile, artifactDir string) {
+	consoleLogs := consolelogsaws.ConsoleLogOpts{
+		Name:               hc.Name,
+		Namespace:          hc.Namespace,
+		AWSCredentialsFile: awsCredsFile,
+		OutputDir:          filepath.Join(artifactDir, "machine-console-logs"),
+	}
+	if logsErr := consoleLogs.Run(ctx); logsErr != nil {
+		t.Logf("Failed to get machine console logs: %v", logsErr)
+	} else {
+		t.Logf("Saved machine console logs.")
+	}
+}
+
+func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("No controlplane pods crash", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+		}
+		for _, pod := range podList.Items {
+			// It needs some specific apis, we currently don't have checking for this
+			if strings.HasPrefix(pod.Name, "manifests-bootstrapper") {
+				continue
+			}
+
+			// TODO: This is needed because of an upstream NPD, see e.G. here: https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/486/pull-ci-openshift-hypershift-main-e2e-aws-pooled/1445408206435127296/artifacts/e2e-aws-pooled/test-e2e/artifacts/namespaces/e2e-clusters-slgzn-example-f748r/core/pods/logs/capa-controller-manager-f66fd8977-knt6h-manager-previous.log
+			// remove this exception once upstream is fixed and we have the fix
+			if strings.HasPrefix(pod.Name, "capa-controller-manager") {
+				continue
+			}
+
+			// TODO: Remove after https://issues.redhat.com/browse/HOSTEDCP-238 is done
+			if strings.HasPrefix(pod.Name, "packageserver") {
+				continue
+			}
+
+			for _, containerStatus := range pod.Status.ContainerStatuses {
+				if containerStatus.RestartCount > 0 {
+					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
+				}
+			}
+		}
+	})
+}
+
+func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolName crclient.ObjectKey) {
+	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
+		var nodepool hyperv1.NodePool
+		if err := hostClient.Get(ctx, nodePoolName, &nodepool); err != nil {
+			t.Fatalf("failed to get nodepool: %v", err)
+		}
+
+		var nodes corev1.NodeList
+		if err := guestClient.List(ctx, &nodes); err != nil {
+			t.Fatalf("failed to list nodes in guest cluster: %v", err)
+		}
+
+		var nodeCount int
+		if nodepool.Spec.NodeCount != nil {
+			nodeCount = int(*nodepool.Spec.NodeCount)
+		}
+
+		if nodeCount != len(nodes.Items) {
+			t.Errorf("nodepool replicas %d does not match number of nodes in cluster %d", nodeCount, len(nodes.Items))
+		}
+	})
 }

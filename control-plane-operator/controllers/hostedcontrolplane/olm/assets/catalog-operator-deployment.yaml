@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-operator
+spec:
+  strategy:
+    type: RollingUpdate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-operator
+  template:
+    metadata:
+      labels:
+        app: catalog-operator
+        hypershift.openshift.io/control-plane-component: catalog-operator
+    spec:
+      volumes:
+        - name: srv-cert
+          secret:
+            secretName: catalog-operator-serving-cert
+        - name: kubeconfig
+          secret:
+            secretName: service-network-admin-kubeconfig
+        - name: oas-konnectivity-proxy-cert
+          secret:
+            secretName: konnectivity-client
+      containers:
+        - name: catalog-operator
+          volumeMounts:
+            - name: srv-cert
+              mountPath: "/srv-cert"
+              readOnly: true
+            - mountPath: /etc/openshift/kubeconfig
+              name: kubeconfig
+              readOnly: true
+          command:
+            - /bin/catalog
+          args:
+            - '-namespace'
+            - openshift-marketplace
+            - -configmapServerImage=$(OPERATOR_REGISTRY_IMAGE)
+            - -util-image
+            - $(OLM_OPERATOR_IMAGE)
+            - -writeStatusName
+            - operator-lifecycle-manager-catalog
+            - --tls-cert
+            - /srv-cert/tls.crt
+            - --tls-key
+            - /srv-cert/tls.key
+            - -kubeconfig
+            - /etc/openshift/kubeconfig/kubeconfig
+          image: OLM_OPERATOR_IMAGE
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: server
+              protocol: TCP
+            - containerPort: 8081
+              name: metrics
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+          terminationMessagePolicy: FallbackToLogsOnError
+          resources:
+            requests:
+              cpu: 10m
+              memory: 80Mi
+          env:
+            - name: RELEASE_VERSION
+              value: RELEASE_VERSION
+            - name: KUBECONFIG
+              value: /etc/openshift/kubeconfig/kubeconfig
+            - name: OLM_OPERATOR_IMAGE
+              value: OLM_OPERATOR_IMAGE
+            - name: OPERATOR_REGISTRY_IMAGE
+              value: OPERATOR_REGISTRY_IMAGE
+            - name: GRPC_PROXY
+              value: socks5://127.0.0.1:8090
+            - name: NO_PROXY
+              value: kube-apiserver,redhat-operators,certified-operators,community-operators,redhat-marketplace
+        - name: socks5-proxy
+          command:
+            - "/usr/bin/konnectivity-socks5-proxy"
+          args:
+            - run
+          image: SOCKS5_PROXY_IMAGE
+          env:
+            - name: KUBECONFIG
+              value: /etc/openshift/kubeconfig/kubeconfig
+          ports:
+            - containerPort: 8090
+          volumeMounts:
+            - mountPath: /etc/konnectivity-proxy-tls
+              name: oas-konnectivity-proxy-cert
+              readOnly: true
+            - mountPath: /etc/openshift/kubeconfig
+              name: kubeconfig
+              readOnly: true

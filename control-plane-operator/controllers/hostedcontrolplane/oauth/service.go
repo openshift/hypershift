@@ -9,6 +9,8 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 )
 
 const (
@@ -17,7 +19,10 @@ const (
 )
 
 var (
-	oauthServerLabels = map[string]string{"app": "oauth-openshift"}
+	oauthServerLabels = map[string]string{
+		"app":                         "oauth-openshift",
+		hyperv1.ControlPlaneComponent: "oauth-openshift",
+	}
 )
 
 func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy) error {
@@ -70,4 +75,25 @@ func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy 
 		host = strategy.NodePort.Address
 	}
 	return
+}
+
+func ReconcileOAuthServerCertWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef, oauthServerCert *corev1.Secret) error {
+	ownerRef.ApplyTo(cm)
+	certConfigMap := manifests.OAuthServerCert()
+	if err := reconcileOAuthServerCertConfigMap(certConfigMap, oauthServerCert); err != nil {
+		return err
+	}
+	return util.ReconcileWorkerManifest(cm, certConfigMap)
+}
+
+func reconcileOAuthServerCertConfigMap(certConfigMap *corev1.ConfigMap, sourceSecret *corev1.Secret) error {
+	if _, hasCertKey := sourceSecret.Data[corev1.TLSCertKey]; !hasCertKey {
+		return fmt.Errorf("source secret %s/%s does not have a cert key", sourceSecret.Namespace, sourceSecret.Name)
+	}
+
+	if certConfigMap.Data == nil {
+		certConfigMap.Data = map[string]string{}
+	}
+	certConfigMap.Data["ca-bundle.crt"] = string(sourceSecret.Data[corev1.TLSCertKey])
+	return nil
 }

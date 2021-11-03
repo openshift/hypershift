@@ -21,6 +21,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const (
+	// MachineDeploymentTopologyFinalizer is the finalizer used by the topology MachineDeployment controller to
+	// clean up referenced template resources if necessary when a MachineDeployment is being deleted.
+	MachineDeploymentTopologyFinalizer = "machinedeployment.topology.cluster.x-k8s.io"
+)
+
 // MachineDeploymentStrategyType defines the type of MachineDeployment rollout strategies.
 type MachineDeploymentStrategyType string
 
@@ -47,6 +53,10 @@ const (
 	// is machinedeployment.spec.replicas + maxSurge. Used by the underlying machine sets to estimate their
 	// proportions in case the deployment has surge replicas.
 	MaxReplicasAnnotation = "machinedeployment.clusters.x-k8s.io/max-replicas"
+
+	// MachineDeploymentUniqueLabel is the label applied to Machines
+	// in a MachineDeployment containing the hash of the template.
+	MachineDeploymentUniqueLabel = "machine-template-hash"
 )
 
 // ANCHOR: MachineDeploymentSpec
@@ -261,9 +271,10 @@ func (md *MachineDeploymentStatus) GetTypedPhase() MachineDeploymentPhase {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=machinedeployments,shortName=md,scope=Namespaced,categories=cluster-api
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.selector
+// +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of MachineDeployment"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="MachineDeployment status such as ScalingUp/ScalingDown/Running/Failed/Unknown"
 // +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".status.replicas",description="Total number of non-terminated machines targeted by this MachineDeployment"
 // +kubebuilder:printcolumn:name="Ready",type="integer",JSONPath=".status.readyReplicas",description="Total number of ready machines targeted by this MachineDeployment"

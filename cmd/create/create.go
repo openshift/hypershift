@@ -3,6 +3,7 @@ package create
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/openshift/hypershift/cmd/bastion"
 	"github.com/openshift/hypershift/cmd/cluster"
 	"github.com/openshift/hypershift/cmd/infra"
 	"github.com/openshift/hypershift/cmd/kubeconfig"
@@ -21,6 +22,7 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(infra.NewCreateIAMCommand())
 	cmd.AddCommand(kubeconfig.NewCreateCommand())
 	cmd.AddCommand(nodepool.NewCreateCommand())
+	cmd.AddCommand(bastion.NewCreateCommand())
 
 	return cmd
 }

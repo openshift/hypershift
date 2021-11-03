@@ -24,10 +24,10 @@ func KCMDeployment(ns string) *appsv1.Deployment {
 	}
 }
 
-func KCMServiceServingCA(ns string) *corev1.ConfigMap {
+func ServiceServingCA(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kube-controller-manager",
+			Name:      "service-serving-ca",
 			Namespace: ns,
 		},
 	}

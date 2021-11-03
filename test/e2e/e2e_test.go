@@ -7,102 +7,87 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
-	e2elog "github.com/openshift/hypershift/test/e2e/log"
-	"github.com/openshift/hypershift/test/e2e/scenarios"
+	"github.com/go-logr/logr"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
+	"github.com/openshift/hypershift/cmd/version"
+
+	"github.com/bombsimon/logrusr"
+	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/errors"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 var (
 	// opts are global options for the test suite bound in TestMain.
-	opts = &options{}
+	globalOpts = &options{}
 
-	// ctx should be used as the parent context for any test code, and will
+	// testContext should be used as the parent context for any test code, and will
 	// be cancelled if a SIGINT or SIGTERM is received. It's set up in TestMain.
-	ctx context.Context
+	testContext context.Context
 
-	log = e2elog.Logger
+	log = logrusr.NewLogger(logrus.New())
 )
 
-// TestScenarios runs all the e2e tests. Any new tests need to be added to this
-// list in order for them to run.
-// TODO: For now, the UpgradeControlPlane test is being used for testing all
-// major functionality until we can do parallel tests; otherwise it's just too
-// slow to separate things out
-func TestScenarios(t *testing.T) {
-	tests := map[string]func(t *testing.T){
-		// TODO: Re-enable once tests can be parallelized
-		"CreateCluster": scenarios.TestCreateCluster(ctx,
-			scenarios.TestCreateClusterOptions{
-				AWSCredentialsFile: opts.AWSCredentialsFile,
-				AWSRegion:          opts.Region,
-				PullSecretFile:     opts.PullSecretFile,
-				ReleaseImage:       opts.LatestReleaseImage,
-				ArtifactDir:        opts.ArtifactDir,
-				BaseDomain:         opts.BaseDomain,
-			}),
-		"UpgradeControlPlane": scenarios.TestUpgradeControlPlane(ctx,
-			scenarios.TestUpgradeControlPlaneOptions{
-				AWSCredentialsFile: opts.AWSCredentialsFile,
-				AWSRegion:          opts.Region,
-				BaseDomain:         opts.BaseDomain,
-				PullSecretFile:     opts.PullSecretFile,
-				FromReleaseImage:   opts.PreviousReleaseImage,
-				ToReleaseImage:     opts.LatestReleaseImage,
-				ArtifactDir:        opts.ArtifactDir,
-				Enabled:            opts.UpgradeTestsEnabled,
-			}),
-		// TODO: Re-enable once tests can be parallelized
-		"Autoscaling": scenarios.TestAutoscaling(ctx,
-			scenarios.TestAutoscalingOptions{
-				AWSCredentialsFile: opts.AWSCredentialsFile,
-				AWSRegion:          opts.Region,
-				PullSecretFile:     opts.PullSecretFile,
-				ReleaseImage:       opts.LatestReleaseImage,
-				ArtifactDir:        opts.ArtifactDir,
-				BaseDomain:         opts.BaseDomain,
-			}),
-	}
-
-	for name := range tests {
-		fn := tests[name]
-		t.Run(name, fn)
-	}
+func init() {
+	rand.Seed(time.Now().UnixNano())
 }
 
 // TestMain deals with global options and setting up a signal-bound context
 // for all tests to use.
 func TestMain(m *testing.M) {
-	flag.StringVar(&opts.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
-	flag.StringVar(&opts.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
-	flag.StringVar(&opts.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
-	flag.StringVar(&opts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
-	flag.StringVar(&opts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
-	flag.StringVar(&opts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
-	flag.StringVar(&opts.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
-	flag.BoolVar(&opts.UpgradeTestsEnabled, "e2e.upgrade-tests-enabled", false, "Enables upgrade tests")
-	flag.Var(&opts.AdditionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
+	flag.StringVar(&globalOpts.defaultClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
+	flag.StringVar(&globalOpts.defaultClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
+	flag.StringVar(&globalOpts.defaultClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
+	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
+	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
+	flag.StringVar(&globalOpts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
+	flag.StringVar(&globalOpts.defaultClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
+	flag.StringVar(&globalOpts.defaultClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
+	flag.Var(&globalOpts.additionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
+
 	flag.Parse()
 
 	// Set defaults for the test options
-	if err := opts.Complete(); err != nil {
+	if err := globalOpts.Complete(); err != nil {
 		log.Error(err, "failed to set up global test options")
 		os.Exit(1)
 	}
 
 	// Validate the test options
-	if err := opts.Validate(); err != nil {
+	if err := globalOpts.Validate(); err != nil {
 		log.Error(err, "invalid global test options")
 		os.Exit(1)
 	}
 
+	os.Exit(main(m))
+}
+
+// main is used to allow us to use `defer` to defer cleanup task
+// to after the tests are run. We can't do this in `TestMain` because
+// it does an os.Exit (We could avoid that but then the deferred
+// calls do not get executed after the tests, just at the end of
+// TestMain()).
+func main(m *testing.M) int {
 	// Set up a root context for all tests and set up signal handling
-	rootCtx, cancel := context.WithCancel(context.Background())
+	var cancel context.CancelFunc
+	testContext, cancel = context.WithCancel(context.Background())
+	defer cancel()
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -110,40 +95,98 @@ func TestMain(m *testing.M) {
 		log.Info("tests received shutdown signal and will be cancelled")
 		cancel()
 	}()
-	ctx = rootCtx
+
+	if globalOpts.ArtifactDir != "" {
+		go setupMetricsEndpoint(testContext, log)
+		go e2eObserverControllers(testContext, log, globalOpts.ArtifactDir)
+		defer dumpTestMetrics(log, globalOpts.ArtifactDir)
+	}
 
 	// Everything's okay to run tests
-	log.Info("executing e2e tests", "options", opts)
-	os.Exit(m.Run())
+	log.Info("executing e2e tests", "options", globalOpts)
+	return m.Run()
+}
+
+func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir string) {
+	mgr, err := ctrl.NewManager(e2eutil.GetConfigOrDie(), manager.Options{MetricsBindAddress: "0"})
+	if err != nil {
+		log.Error(err, "failed to construct manager for observers")
+		return
+	}
+	if err := podtimingcontroller.SetupWithManager(mgr, log, artifactDir); err != nil {
+		log.Error(err, "failed to set up podtimingcontroller")
+		return
+	}
+
+	if err := mgr.Start(ctx); err != nil {
+		log.Error(err, "Mgr ended")
+	}
+}
+
+const metricsServerAddr = "127.0.0.1:8080"
+
+func setupMetricsEndpoint(ctx context.Context, log logr.Logger) {
+	log.Info("Setting up metrics endpoint")
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	server := &http.Server{Addr: metricsServerAddr, Handler: mux}
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Error(err, "metrics server ended unexpectedly")
+	}
+}
+
+func dumpTestMetrics(log logr.Logger, artifactDir string) {
+	log.Info("Fetching test metrics")
+	response, err := http.Get("http://" + metricsServerAddr + "/metrics")
+	if err != nil {
+		log.Error(err, "error fetching test metrics")
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 200 {
+		log.Error(fmt.Errorf("status code %d", response.StatusCode), "Got unexpected status code from metrics endpoint")
+		return
+	}
+
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Error(err, "failed to read response body from metrics endpoint")
+		return
+	}
+
+	path := filepath.Join(artifactDir, "e2e-metrics-raw.prometheus")
+	log = log.WithValues("path", path)
+	if err := os.WriteFile(path, body, 0644); err != nil {
+		log.Error(err, "failed to write e2e metrics to artifacts")
+	}
+	log.Info("Successfully wrote metrics to artifacts")
 }
 
 // options are global test options applicable to all scenarios.
 type options struct {
-	AWSCredentialsFile   string
-	Region               string
-	PullSecretFile       string
 	LatestReleaseImage   string
 	PreviousReleaseImage string
 	IsRunningInCI        bool
-	UpgradeTestsEnabled  bool
 	ArtifactDir          string
-	BaseDomain           string
-	AdditionalTags       stringSliceVar
+
+	defaultClusterOptions cmdcluster.Options
+	additionalTags        stringSliceVar
+}
+
+func (o *options) DefaultClusterOptions() cmdcluster.Options {
+	return o.defaultClusterOptions
 }
 
 // Complete is intended to be called after flags have been bound and sets
 // up additional contextual defaulting.
 func (o *options) Complete() error {
 	if len(o.LatestReleaseImage) == 0 {
-		// FIXME: (cewong) Use default OCP version when we are able to
-		/*
-			defaultVersion, err := version.LookupDefaultOCPVersion()
-			if err != nil {
-				return fmt.Errorf("couldn't look up default OCP version: %w", err)
-			}
-			o.LatestReleaseImage = defaultVersion.PullSpec
-		*/
-		o.LatestReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.8.6-x86_64"
+		defaultVersion, err := version.LookupDefaultOCPVersion()
+		if err != nil {
+			return fmt.Errorf("couldn't look up default OCP version: %w", err)
+		}
+		o.LatestReleaseImage = defaultVersion.PullSpec
 	}
 	// TODO: This is actually basically a required field right now. Maybe the input
 	// to tests should be a small API spec that describes the tests and their
@@ -160,11 +203,21 @@ func (o *options) Complete() error {
 		if len(o.ArtifactDir) == 0 {
 			o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
 		}
-		if len(o.BaseDomain) == 0 {
+		if len(o.defaultClusterOptions.BaseDomain) == 0 {
 			// TODO: make this an envvar with change to openshift/release, then change here
-			o.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
+			o.defaultClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}
 	}
+
+	o.defaultClusterOptions.ReleaseImage = o.PreviousReleaseImage
+	o.defaultClusterOptions.GenerateSSH = true
+	o.defaultClusterOptions.SSHKeyFile = ""
+	o.defaultClusterOptions.NodePoolReplicas = 2
+	o.defaultClusterOptions.InstanceType = "m4.large"
+	o.defaultClusterOptions.NetworkType = string(hyperv1.OpenShiftSDN)
+	o.defaultClusterOptions.RootVolumeSize = 64
+	o.defaultClusterOptions.RootVolumeType = "gp2"
+	o.defaultClusterOptions.AdditionalTags = o.additionalTags
 
 	return nil
 }
@@ -178,7 +231,7 @@ func (o *options) Validate() error {
 		errs = append(errs, fmt.Errorf("latest release image is required"))
 	}
 
-	if len(o.BaseDomain) == 0 {
+	if len(o.defaultClusterOptions.BaseDomain) == 0 {
 		errs = append(errs, fmt.Errorf("base domain is required"))
 	}
 

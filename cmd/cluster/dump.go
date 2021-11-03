@@ -10,27 +10,28 @@ import (
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
+	hyperapi "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/spf13/cobra"
-
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	hyperapi "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type DumpOptions struct {
 	Namespace   string
 	Name        string
 	ArtifactDir string
+	// LogCheckers is a list of functions that will
+	// get run over all raw logs if set.
+	LogCheckers []LogChecker
 }
 
 func NewDumpCommand() *cobra.Command {
@@ -46,8 +47,8 @@ func NewDumpCommand() *cobra.Command {
 		ArtifactDir: "",
 	}
 
-	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
-	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 
 	cmd.MarkFlagRequired("artifact-dir")
@@ -123,7 +124,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
 	}
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
-	outputLogs(ctx, kubeClient, opts.ArtifactDir, podList)
+	outputLogs(ctx, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
 	return nil
 }
 
@@ -220,7 +221,9 @@ func typedName(obj client.Object, name string) string {
 	return fmt.Sprintf("%s/%s", objectType(obj), name)
 }
 
-func outputLogs(ctx context.Context, c kubeclient.Interface, artifactDir string, podList *corev1.PodList) {
+type LogChecker func(filename string, content []byte)
+
+func outputLogs(ctx context.Context, c kubeclient.Interface, artifactDir string, podList *corev1.PodList, checker ...LogChecker) {
 	for _, pod := range podList.Items {
 		dir := filepath.Join(artifactDir, "namespaces", pod.Namespace, "core", "pods", "logs")
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -229,26 +232,29 @@ func outputLogs(ctx context.Context, c kubeclient.Interface, artifactDir string,
 		}
 		for _, container := range pod.Spec.InitContainers {
 			outputLog(ctx, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false)
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, checker...)
 			outputLog(ctx, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true)
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, checker...)
 		}
 		for _, container := range pod.Spec.Containers {
 			outputLog(ctx, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false)
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, checker...)
 			outputLog(ctx, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true)
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, checker...)
 		}
 	}
 }
 
-func outputLog(ctx context.Context, fileName string, req *restclient.Request, skipLogErr bool) {
+func outputLog(ctx context.Context, fileName string, req *restclient.Request, skipLogErr bool, checker ...LogChecker) {
 	b, err := req.DoRaw(ctx)
 	if err != nil {
 		if !skipLogErr {
 			log.Error(err, "Failed to get pod log", "req", req.URL().String())
 		}
 		return
+	}
+	for _, c := range checker {
+		c(fileName, b)
 	}
 	if err := ioutil.WriteFile(fileName, b, 0644); err != nil {
 		log.Error(err, "Failed to write file", "file", fileName)

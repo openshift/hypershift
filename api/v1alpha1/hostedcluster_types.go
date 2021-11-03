@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
@@ -18,12 +19,15 @@ const (
 	DisablePKIReconciliationAnnotation        = "hypershift.openshift.io/disable-pki-reconciliation"
 	IdentityProviderOverridesAnnotationPrefix = "idpoverrides.hypershift.openshift.io/"
 	OauthLoginURLOverrideAnnotation           = "oauth.hypershift.openshift.io/login-url-override"
-	//KonnectivityServerImageAnnotation is a temporary annotation that allows the specification of the konnectivity server image.
-	//This will be removed when Konnectivity is added to the Openshift release payload
+	// KonnectivityServerImageAnnotation is a temporary annotation that allows the specification of the konnectivity server image.
+	// This will be removed when Konnectivity is added to the Openshift release payload
 	KonnectivityServerImageAnnotation = "hypershift.openshift.io/konnectivity-server-image"
-	//KonnectivityAgentImageAnnotation is a temporary annotation that allows the specification of the konnectivity agent image.
-	//This will be removed when Konnectivity is added to the Openshift release payload
+	// KonnectivityAgentImageAnnotation is a temporary annotation that allows the specification of the konnectivity agent image.
+	// This will be removed when Konnectivity is added to the Openshift release payload
 	KonnectivityAgentImageAnnotation = "hypershift.openshift.io/konnectivity-agent-image"
+	// ControlPlaneOperatorImageAnnotation is a annotation that allows the specification of the control plane operator image.
+	// This is used for development and e2e workflows
+	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"
 	// RestartDateAnnotation is a annotation that can be used to trigger a rolling restart of all components managed by hypershift.
 	// it is important in some situations like CA rotation where components need to be fully restarted to pick up new CAs. It's also
 	// important in some recovery situations where a fresh start of the component helps fix symptoms a user might be experiencing.
@@ -54,6 +58,16 @@ const (
 	// AWSCredentialsFileSecretKey defines the Kubernetes secret key name that contains
 	// the customer AWS credentials in the unmanaged authentication strategy for AWS KMS secret encryption
 	AWSCredentialsFileSecretKey = "credentials"
+
+	// ControlPlaneComponent identifies a resource as belonging to a hosted control plane.
+	ControlPlaneComponent = "hypershift.openshift.io/control-plane-component"
+
+	// OperatorComponent identifies a component as belonging to the operator.
+	OperatorComponent = "hypershift.openshift.io/operator-component"
+	// MachineApproverImage is an annotation that allows the specification of the machine approver image.
+	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
+	// no images can be pulled from registries outside of IBM Cloud's official regional registries
+	MachineApproverImage = "hypershift.openshift.io/machine-approver-image"
 )
 
 // HostedClusterSpec defines the desired state of HostedCluster
@@ -63,10 +77,12 @@ type HostedClusterSpec struct {
 	Release Release `json:"release"`
 
 	// +optional
+	// +immutable
 	FIPS bool `json:"fips"`
 
 	// PullSecret is a pull secret injected into the container runtime of guest
 	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
+	// +immutable
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
 
 	// AuditWebhook contains metadata for configuring an audit webhook
@@ -76,29 +92,36 @@ type HostedClusterSpec struct {
 	// keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored
 	// in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.
 	// +optional
+	// +immutable
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 
 	// +kubebuilder:default:="https://kubernetes.default.svc"
+	// +immutable
 	IssuerURL string `json:"issuerURL"`
 
 	// SSHKey is a reference to a Secret containing a single key "id_rsa.pub",
 	// whose value is the public part of an SSH key that can be used to access
 	// Nodes.
+	// +immutable
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 
 	// Networking contains network-specific settings for this cluster
+	// +immutable
 	Networking ClusterNetworking `json:"networking"`
 
 	// Autoscaling for compute nodes only, does not cover control plane
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
+	// +immutable
 	Platform PlatformSpec `json:"platform"`
 
 	// InfraID is used to identify the cluster in cloud platforms
+	// +immutable
 	InfraID string `json:"infraID,omitempty"`
 
 	// DNS configuration for the cluster
+	// +immutable
 	DNS DNSSpec `json:"dns,omitempty"`
 
 	// Services defines metadata about how control plane services are published
@@ -115,12 +138,14 @@ type HostedClusterSpec struct {
 	// run on the guest cluster nodes in HA mode
 	// Defaults to HighlyAvailable when not set
 	// +optional
+	// +immutable
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
 	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 	// use to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed"}
+	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 
 	// Configuration embeds resources that correspond to the openshift configuration API:
@@ -131,6 +156,7 @@ type HostedClusterSpec struct {
 
 	// ImageContentSources lists sources/repositories for the release-image content.
 	// +optional
+	// +immutable
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
@@ -142,10 +168,12 @@ type HostedClusterSpec struct {
 // ImageContentSource defines a list of sources/repositories that can be used to pull content.
 type ImageContentSource struct {
 	// Source is the repository that users refer to, e.g. in image pull specifications.
+	// +immutable
 	Source string `json:"source"`
 
 	// Mirrors is one or more repositories that may also contain the same images.
 	// +optional
+	// +immutable
 	Mirrors []string `json:"mirrors,omitempty"`
 }
 
@@ -153,6 +181,7 @@ type ImageContentSource struct {
 type ServicePublishingStrategyMapping struct {
 	// Service identifies the type of service being published
 	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition
+	// +immutable
 	Service                   ServiceType `json:"service"`
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
@@ -161,6 +190,7 @@ type ServicePublishingStrategyMapping struct {
 type ServicePublishingStrategy struct {
 	// Type defines the publishing strategy used for the service.
 	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None
+	// +immutable
 	Type PublishingStrategyType `json:"type"`
 	// NodePort is used to define extra metadata for the NodePort publishing strategy.
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
@@ -202,29 +232,37 @@ type NodePortPublishingStrategy struct {
 // DNSSpec specifies the DNS configuration in the cluster
 type DNSSpec struct {
 	// BaseDomain is the base domain of the cluster.
+	// +immutable
 	BaseDomain string `json:"baseDomain"`
 
 	// PublicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to
 	// the internet exist.
 	// +optional
+	// +immutable
 	PublicZoneID string `json:"publicZoneID,omitempty"`
 
 	// PrivateZoneID is the Hosted Zone ID where all the DNS records that are only available internally
 	// to the cluster exist.
 	// +optional
+	// +immutable
 	PrivateZoneID string `json:"privateZoneID,omitempty"`
 }
 
 type ClusterNetworking struct {
+	// +immutable
 	ServiceCIDR string `json:"serviceCIDR"`
-	PodCIDR     string `json:"podCIDR"`
+	// +immutable
+	PodCIDR string `json:"podCIDR"`
+	// +immutable
 	MachineCIDR string `json:"machineCIDR"`
 	// NetworkType specifies the SDN provider used for cluster networking.
 	// +kubebuilder:default:="OpenShiftSDN"
+	// +immutable
 	NetworkType NetworkType `json:"networkType"`
 
 	// APIServer contains advanced network settings for the API server that affect
 	// how the APIServer is exposed inside a worker node.
+	// +immutable
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
 
@@ -270,10 +308,12 @@ type PlatformSpec struct {
 	// Type is the underlying infrastructure provider for the cluster.
 	//
 	// +unionDiscriminator
+	// +immutable
 	Type PlatformType `json:"type"`
 
 	// AWS contains AWS-specific settings for the HostedCluster
 	// +optional
+	// +immutable
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
 }
 
@@ -290,36 +330,55 @@ type AWSCloudProviderConfig struct {
 	VPC string `json:"vpc"`
 }
 
+type AWSEndpointAccessType string
+
+const (
+	// Public endpoint access allows public kube-apiserver access and public node communication with the control plane
+	Public AWSEndpointAccessType = "Public"
+
+	// PublicAndPrivate endpoint access allows public kube-apiserver access and private node communication with the control plane
+	PublicAndPrivate AWSEndpointAccessType = "PublicAndPrivate"
+
+	// Private endpoint access allows only private kube-apiserver access and private node communication with the control plane
+	Private AWSEndpointAccessType = "Private"
+)
+
 type AWSPlatformSpec struct {
 	// Region is the AWS region for the cluster.
 	// This is used by CRs that are consumed by OCP Operators.
 	// E.g cluster-infrastructure-02-config.yaml and install-config.yaml
 	// This is also used by nodePools to fetch the default boot AMI in a given payload.
+	// +immutable
 	Region string `json:"region"`
 
 	// CloudProviderConfig is used to generate the ConfigMap with the cloud config consumed
 	// by the Control Plane components.
 	// +optional
+	// +immutable
 	CloudProviderConfig *AWSCloudProviderConfig `json:"cloudProviderConfig,omitempty"`
 
 	// ServiceEndpoints list contains custom endpoints which will override default
 	// service endpoint of AWS Services.
 	// There must be only one ServiceEndpoint for a service.
 	// +optional
+	// +immutable
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
+	// +immutable
 	Roles []AWSRoleCredentials `json:"roles,omitempty"`
 
 	// KubeCloudControllerCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the Kube cloud controller policy.
 	// The secret should have exactly one key, `credentials`, whose value is
 	// an AWS credentials file.
+	// +immutable
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
 
 	// NodePoolManagementCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the noe pool management policy.
 	// The secret should have exactly one key, `credentials`, whose value is
 	// an AWS credentials file.
+	// +immutable
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
 	// resourceTags is a list of additional tags to apply to AWS resources created for the cluster.
@@ -329,6 +388,12 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
+
+	// EndpointAccess determines if cluster endpoints are public and/or private
+	// +kubebuilder:validation:Enum=Public;PublicAndPrivate;Private
+	// +kubebuilder:default=Public
+	// +optional
+	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
 }
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.
@@ -418,24 +483,71 @@ type EtcdSpec struct {
 	// Managed means the hypershift controllers manage the provisioning of the etcd cluster
 	// and the operations around it
 	// +unionDiscriminator
+	// +immutable
 	ManagementType EtcdManagementType `json:"managementType"`
 
 	// Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
 	// +optional
+	// +immutable
 	Managed *ManagedEtcdSpec `json:"managed,omitempty"`
 
 	// Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
 	// +optional
+	// +immutable
 	Unmanaged *UnmanagedEtcdSpec `json:"unmanaged,omitempty"`
 }
 
 type ManagedEtcdSpec struct {
+	// Storage configures how etcd data is persisted.
+	Storage ManagedEtcdStorageSpec `json:"storage"`
+}
 
-	//TODO: Ultimately backup policies, etc can be defined here.
+// +kubebuilder:validation:Enum=PersistentVolume
+type ManagedEtcdStorageType string
 
-	// PersistentVolumeClaimSpec provides a PersistentVolumeClaimSpec that allows the managed etcd to use persistent storage
+const (
+	// PersistentVolumeEtcdStorage uses PersistentVolumes for etcd storage.
+	PersistentVolumeEtcdStorage ManagedEtcdStorageType = "PersistentVolume"
+)
+
+var (
+	DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("4Gi")
+)
+
+// ManagedEtcdStorageSpec describes the storage configuration for etcd data.
+type ManagedEtcdStorageSpec struct {
+	// Type is the kind of persistent storage implementation to use for etcd.
+	//
+	// +kubebuilder:validation:Required
+	// +immutable
+	// +unionDiscriminator
+	Type ManagedEtcdStorageType `json:"type"`
+
+	// PersistentVolume is the configuration for PersistentVolume etcd storage.
+	// With this implementation, a PersistentVolume will be allocated for every
+	// etcd member (either 1 or 3 depending on the HostedCluster control plane
+	// availability configuration).
+	//
 	// +optional
-	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
+	PersistentVolume *PersistentVolumeEtcdStorageSpec `json:"persistentVolume,omitempty"`
+}
+
+// PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
+// etcd storage.
+type PersistentVolumeEtcdStorageSpec struct {
+	// StorageClassName is the StorageClass of the data volume for each etcd member.
+	//
+	// See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1.
+	//
+	// +optional
+	// +immutable
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
+	// Size is the minimum size of the data volume for each etcd member.
+	//
+	// +optional
+	// +kubebuilder:default="4Gi"
+	Size *resource.Quantity `json:"size,omitempty"`
 }
 
 // UnmanagedEtcdSpec defines metadata that enables the Openshift controllers to connect to the external etcd cluster

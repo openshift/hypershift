@@ -230,6 +230,33 @@ func OLMPackageServerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
+func OLMOperatorServingCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "olm-operator-serving-cert",
+			Namespace: ns,
+		},
+	}
+}
+
+func OpenshiftAuthenticatorCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openshift-authenticator-cert",
+			Namespace: ns,
+		},
+	}
+}
+
+func OLMCatalogOperatorServingCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "catalog-operator-serving-cert",
+			Namespace: ns,
+		},
+	}
+}
+
 func KASSecretEncryptionConfigFile(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

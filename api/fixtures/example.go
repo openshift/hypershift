@@ -5,6 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
@@ -39,22 +40,27 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 }
 
 type ExampleOptions struct {
-	Namespace        string
-	Name             string
-	ReleaseImage     string
-	PullSecret       []byte
-	IssuerURL        string
-	SSHKey           []byte
-	NodePoolReplicas int32
-	InfraID          string
-	ComputeCIDR      string
-	BaseDomain       string
-	PublicZoneID     string
-	PrivateZoneID    string
-	Annotations      map[string]string
-	FIPS             bool
-	AWS              ExampleAWSOptions
-	NetworkType      hyperv1.NetworkType
+	Namespace                        string
+	Name                             string
+	ReleaseImage                     string
+	PullSecret                       []byte
+	IssuerURL                        string
+	SSHPublicKey                     []byte
+	SSHPrivateKey                    []byte
+	NodePoolReplicas                 int32
+	InfraID                          string
+	ComputeCIDR                      string
+	BaseDomain                       string
+	PublicZoneID                     string
+	PrivateZoneID                    string
+	Annotations                      map[string]string
+	FIPS                             bool
+	AutoRepair                       bool
+	EtcdStorageClass                 string
+	AWS                              ExampleAWSOptions
+	NetworkType                      hyperv1.NetworkType
+	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
+	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
 }
 
 type ExampleAWSOptions struct {
@@ -130,7 +136,7 @@ aws_secret_access_key = %s
 
 	var sshKeySecret *corev1.Secret
 	var sshKeyReference corev1.LocalObjectReference
-	if len(o.SSHKey) > 0 {
+	if len(o.SSHPublicKey) > 0 {
 		sshKeySecret = &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Secret",
@@ -141,12 +147,19 @@ aws_secret_access_key = %s
 				Name:      o.Name + "-ssh-key",
 			},
 			Data: map[string][]byte{
-				"id_rsa.pub": o.SSHKey,
+				"id_rsa.pub": o.SSHPublicKey,
 			},
+		}
+		if len(o.SSHPrivateKey) > 0 {
+			sshKeySecret.Data["id_rsa"] = o.SSHPrivateKey
 		}
 		sshKeyReference = corev1.LocalObjectReference{Name: sshKeySecret.Name}
 	}
 
+	var etcdStorgageClass *string = nil
+	if len(o.EtcdStorageClass) > 0 {
+		etcdStorgageClass = pointer.StringPtr(o.EtcdStorageClass)
+	}
 	cluster := &hyperv1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "HostedCluster",
@@ -163,6 +176,15 @@ aws_secret_access_key = %s
 			},
 			Etcd: hyperv1.EtcdSpec{
 				ManagementType: hyperv1.Managed,
+				Managed: &hyperv1.ManagedEtcdSpec{
+					Storage: hyperv1.ManagedEtcdStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdStorage,
+						PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{
+							StorageClassName: etcdStorgageClass,
+							Size:             &hyperv1.DefaultPersistentVolumeEtcdStorageSize,
+						},
+					},
+				},
 			},
 			Networking: hyperv1.ClusterNetworking{
 				ServiceCIDR: "172.31.0.0/16",
@@ -212,6 +234,8 @@ aws_secret_access_key = %s
 				PublicZoneID:  o.PublicZoneID,
 				PrivateZoneID: o.PrivateZoneID,
 			},
+			ControllerAvailabilityPolicy:     o.ControlPlaneAvailabilityPolicy,
+			InfrastructureAvailabilityPolicy: o.InfrastructureAvailabilityPolicy,
 			Platform: hyperv1.PlatformSpec{
 				Type: hyperv1.AWSPlatform,
 				AWS: &hyperv1.AWSPlatformSpec{
@@ -245,6 +269,7 @@ aws_secret_access_key = %s
 			},
 			Spec: hyperv1.NodePoolSpec{
 				Management: hyperv1.NodePoolManagement{
+					AutoRepair:  o.AutoRepair,
 					UpgradeType: hyperv1.UpgradeTypeReplace,
 				},
 				NodeCount:   &o.NodePoolReplicas,

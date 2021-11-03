@@ -54,6 +54,7 @@ type NodePool struct {
 // NodePoolSpec defines the desired state of NodePool
 type NodePoolSpec struct {
 	// ClusterName is the name of the Cluster this object belongs to.
+	// +immutable
 	ClusterName string `json:"clusterName"`
 	// +optional
 	NodeCount *int32 `json:"nodeCount"`
@@ -143,7 +144,7 @@ type NodePoolManagement struct {
 	UpgradeType UpgradeType `json:"upgradeType"`
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={strategy: "RollingUpdate", rollingUpdate: {maxSurge: 1, maxUnavailable: 0 }}
-	Replace *ReplaceUpgrade `json:"recreate,omitempty"`
+	Replace *ReplaceUpgrade `json:"replace,omitempty"`
 	// +kubebuilder:validation:Optional
 	InPlace *InPlaceUpgrade `json:"inPlace,omitempty"`
 
@@ -161,6 +162,7 @@ type NodePoolAutoScaling struct {
 // NodePoolPlatform is the platform-specific configuration for a node
 // pool. Only one of the platforms should be set.
 type NodePoolPlatform struct {
+	// +immutable
 	Type PlatformType `json:"type"`
 	// AWS is the configuration used when installing on AWS.
 	AWS *AWSNodePoolPlatform `json:"aws,omitempty"`

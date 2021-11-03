@@ -195,3 +195,15 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 	c.Resources.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&daemonset.Spec.Template.ObjectMeta)
 }
+
+func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
+	sts.Spec.Replicas = pointer.Int32Ptr(int32(c.Replicas))
+	c.Scheduling.ApplyTo(&sts.Spec.Template.Spec)
+	c.AdditionalLabels.ApplyTo(&sts.Spec.Template.ObjectMeta)
+	c.SecurityContexts.ApplyTo(&sts.Spec.Template.Spec)
+	c.Resources.ApplyTo(&sts.Spec.Template.Spec)
+	c.LivenessProbes.ApplyTo(&sts.Spec.Template.Spec)
+	c.ReadinessProbes.ApplyTo(&sts.Spec.Template.Spec)
+	c.Resources.ApplyTo(&sts.Spec.Template.Spec)
+	c.AdditionalAnnotations.ApplyTo(&sts.Spec.Template.ObjectMeta)
+}

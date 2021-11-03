@@ -1,6 +1,7 @@
 package oapi
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -16,9 +17,9 @@ const (
 )
 
 var (
-	openshiftAPIServerLabels = map[string]string{"app": "openshift-apiserver"}
-	oauthAPIServerLabels     = map[string]string{"app": "openshift-oauth-apiserver"}
-	olmPackageServerLabels   = map[string]string{"app": "packageserver"}
+	openshiftAPIServerLabels = map[string]string{"app": "openshift-apiserver", hyperv1.ControlPlaneComponent: "openshift-apiserver"}
+	oauthAPIServerLabels     = map[string]string{"app": "openshift-oauth-apiserver", hyperv1.ControlPlaneComponent: "openshift-oauth-apiserver"}
+	olmPackageServerLabels   = map[string]string{"app": "packageserver", hyperv1.ControlPlaneComponent: "packageserver"}
 )
 
 func ReconcileOpenShiftAPIService(svc *corev1.Service, ownerRef config.OwnerRef) error {
