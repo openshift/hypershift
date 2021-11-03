@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
@@ -240,7 +239,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	err = wait.PollUntil(5*time.Second, func() (done bool, err error) {
-		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: hyperapi.Scheme})
+		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 		if err != nil {
 			return false, nil
 		}
