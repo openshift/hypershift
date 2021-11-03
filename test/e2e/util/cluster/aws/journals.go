@@ -1,4 +1,4 @@
-package util
+package aws
 
 import (
 	"context"

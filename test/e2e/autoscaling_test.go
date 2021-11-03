@@ -30,7 +30,7 @@ func TestAutoscaling(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateAWSCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
 
 	// Get the newly created nodepool
 	nodepool := &hyperv1.NodePool{

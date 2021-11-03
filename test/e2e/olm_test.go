@@ -44,7 +44,7 @@ func TestOLM(t *testing.T) {
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.NodePoolReplicas = 1
-	cluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateAWSCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
 
 	// Get guest client
 	t.Logf("Waiting for guest client to become available")
