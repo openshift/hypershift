@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openshift/api/operator/v1alpha1"
+	"github.com/openshift/hypershift/support/capabilities"
 	policyv1 "k8s.io/api/policy/v1"
 	"sigs.k8s.io/cluster-api/util/annotations"
 
@@ -108,6 +109,9 @@ func (s InfrastructureStatus) IsReady() bool {
 type HostedControlPlaneReconciler struct {
 	client.Client
 
+	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
+	ManagementClusterCapabilities *capabilities.ManagementClusterCapabilities
+
 	Log             logr.Logger
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
@@ -177,13 +181,17 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Reconcile global configuration validation status
 	{
 		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidConfiguration),
+			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
-		if err := config.ValidateGlobalConfig(ctx, hostedControlPlane); err != nil {
+		if err := r.validateConfigAndClusterCapabilities(hostedControlPlane); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
-			condition.Reason = "InvalidConfiguration"
+			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
+		} else if err := config.ValidateGlobalConfig(ctx, hostedControlPlane); err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.InvalidConfigurationReason
 		} else {
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "Configuration passes validation"
@@ -449,6 +457,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{}, nil
 }
 
+func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedControlPlane) error {
+	for _, svc := range hc.Spec.Services {
+		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+		}
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
 	pullSecret := common.PullSecret(hcp.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
@@ -463,7 +480,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Block here if the cluster configuration does not pass validation
 	{
-		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidConfiguration))
+		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
 			r.Log.Info("Configuration is invalid, reconciliation is blocked")
 			return nil
@@ -751,7 +768,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 
 	if cpoutil.IsPrivateHCP(hcp) {
 		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
-		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
+		if _, err := r.CreateOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
 			return kas.ReconcilePrivateService(apiServerPrivateService, p.OwnerReference)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile API server private service: %w", err)
@@ -1352,7 +1369,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	p := etcd.NewEtcdParams(hcp, releaseImage.ComponentImages())
 
 	discoveryService := manifests.EtcdDiscoveryService(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, discoveryService, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, discoveryService, func() error {
 		return etcd.ReconcileDiscoveryService(discoveryService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd discovery service: %w", err)
@@ -1361,7 +1378,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	clientService := manifests.EtcdClientService(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, clientService, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, clientService, func() error {
 		return etcd.ReconcileClientService(clientService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd client service: %w", err)
@@ -1370,7 +1387,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	serviceMonitor := manifests.EtcdServiceMonitor(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
 		return etcd.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd servicemonitor: %w", err)
@@ -1379,7 +1396,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	pdb := manifests.EtcdPodDisruptionBudget(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, pdb, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
 		return etcd.ReconcilePodDisruptionBudget(pdb, p)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
@@ -1388,7 +1405,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 	}
 
 	statefulSet := manifests.EtcdStatefulSet(hcp.Namespace)
-	if result, err := controllerutil.CreateOrUpdate(ctx, r, statefulSet, func() error {
+	if result, err := r.CreateOrUpdate(ctx, r, statefulSet, func() error {
 		return etcd.ReconcileStatefulSet(statefulSet, p)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd statefulset: %w", err)
@@ -1840,7 +1857,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultIngressController(ctx con
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthHost string, oauthPort int32) error {
-	p := oauth.NewOAuthServerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), oauthHost, oauthPort)
+	p := oauth.NewOAuthServerParams(hcp, globalConfig, releaseImage.ComponentImages(), oauthHost, oauthPort)
 
 	sessionSecret := manifests.OAuthServerServiceSessionSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, sessionSecret, func() error {
@@ -1886,6 +1903,15 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		return oauth.ReconcileOAuthServerConfig(ctx, oauthConfig, p.OwnerRef, r.Client, p.ConfigParams(oauthServingCert))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth server config: %w", err)
+	}
+
+	pdb := manifests.OAuthServerPodDisruptionBudget(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+		return oauth.ReconcilePodDisruptionBudget(pdb, p)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth pdb: %w", err)
+	} else {
+		r.Log.V(2).Info("Reconciled oauth pdb", "result", result)
 	}
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
@@ -2320,7 +2346,7 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx con
 		return err
 	}
 	ic := manifests.IngressPrivateIngressController(hcp.Namespace)
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, ic, func() error {
+	_, err := r.CreateOrUpdate(ctx, r.Client, ic, func() error {
 		return ingress.ReconcilePrivateIngressController(ic, hcp.Namespace, fmt.Sprintf("%s.%s", hcp.Namespace, dnsConfig.Spec.BaseDomain), hcp.Spec.Platform.Type)
 	})
 	if err != nil {
