@@ -2547,7 +2547,7 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
-						Command: []string{"/cluster-autoscaler"},
+						Command: []string{"/usr/bin/cluster-autoscaler"},
 						Args:    args,
 					},
 				},
