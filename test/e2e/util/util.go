@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	cmdcluster "github.com/openshift/hypershift/cmd/cluster"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
@@ -98,23 +97,25 @@ func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1
 		t.Logf("Skipping cluster dump because no artifact dir was provided")
 		return
 	}
-	findKubeObjectUpdateLoops := func(filename string, content []byte) {
-		if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
-			t.Errorf("Found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename)
+	t.Run("DumpHostedCluster", func(t *testing.T) {
+		findKubeObjectUpdateLoops := func(filename string, content []byte) {
+			if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
+				t.Errorf("Found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename)
+			}
 		}
-	}
-	err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
-		Namespace:   hostedCluster.Namespace,
-		Name:        hostedCluster.Name,
-		ArtifactDir: artifactDir,
-		LogCheckers: []cmdcluster.LogChecker{findKubeObjectUpdateLoops},
+		err := cmdcluster.DumpCluster(ctx, &cmdcluster.DumpOptions{
+			Namespace:   hostedCluster.Namespace,
+			Name:        hostedCluster.Name,
+			ArtifactDir: artifactDir,
+			LogCheckers: []cmdcluster.LogChecker{findKubeObjectUpdateLoops},
+		})
+		if err != nil {
+			t.Errorf("Failed to dump cluster: %v", err)
+		}
+		if err := dumpJournals(t, ctx, hostedCluster, artifactDir, awsCredsFile); err != nil {
+			t.Logf("Failed to dump machine journals: %v", err)
+		}
 	})
-	if err != nil {
-		t.Errorf("Failed to dump cluster: %v", err)
-	}
-	if err := dumpJournals(t, ctx, hostedCluster, artifactDir, awsCredsFile); err != nil {
-		t.Logf("Failed to dump machine journals: %v", err)
-	}
 }
 
 // DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,
@@ -238,7 +239,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	err = wait.PollUntil(5*time.Second, func() (done bool, err error) {
-		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: hyperapi.Scheme})
+		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 		if err != nil {
 			return false, nil
 		}
@@ -386,7 +387,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 		}
 		for _, pod := range podList.Items {
 			// It needs some specific apis, we currently don't have checking for this
-			if pod.Name == "manifests-bootstrapper" {
+			if strings.HasPrefix(pod.Name, "manifests-bootstrapper") {
 				continue
 			}
 

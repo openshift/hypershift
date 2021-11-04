@@ -23,8 +23,9 @@ type OpenShiftAPIServerParams struct {
 	config.OwnerRef                         `json:",inline"`
 	OpenShiftAPIServerImage                 string `json:"openshiftAPIServerImage"`
 	OAuthAPIServerImage                     string `json:"oauthAPIServerImage"`
-	HaproxyImage                            string `json:"haproxyImage"`
+	ProxyImage                              string `json:"haproxyImage"`
 	AvailabilityProberImage                 string `json:"availabilityProberImage"`
+	Availability                            hyperv1.AvailabilityPolicy
 }
 
 type OAuthDeploymentParams struct {
@@ -35,17 +36,20 @@ type OAuthDeploymentParams struct {
 	ServiceAccountIssuerURL string
 	DeploymentConfig        config.DeploymentConfig
 	AvailabilityProberImage string
+	Availability            hyperv1.AvailabilityPolicy
+	OwnerRef                config.OwnerRef
 }
 
 func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
-		HaproxyImage:            images["haproxy-router"],
+		ProxyImage:              images["socks5-proxy"],
 		APIServer:               globalConfig.APIServer,
 		ServiceAccountIssuerURL: hcp.Spec.IssuerURL,
 		IngressSubDomain:        config.IngressSubdomain(hcp),
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 	}
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
@@ -168,8 +172,8 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 	case hyperv1.HighlyAvailable:
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 3
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 3
-		params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels)
-		params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels)
+		params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels())
+		params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels())
 	default:
 		params.OpenShiftAPIServerDeploymentConfig.Replicas = 1
 		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 1
@@ -205,6 +209,8 @@ func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams() *OAuthDeploy
 		MinTLSVersion:           p.MinTLSVersion(),
 		CipherSuites:            p.CipherSuites(),
 		AvailabilityProberImage: p.AvailabilityProberImage,
+		Availability:            p.Availability,
+		OwnerRef:                p.OwnerRef,
 	}
 }
 

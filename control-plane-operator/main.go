@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/capabilities"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -121,6 +124,19 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to create kube client")
 			os.Exit(1)
 		}
+
+		kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to create discovery client")
+			os.Exit(1)
+		}
+
+		mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(kubeDiscoveryClient)
+		if err != nil {
+			setupLog.Error(err, "unable to detect cluster capabilities")
+			os.Exit(1)
+		}
+
 		lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string) (string, error) {
 			if len(hostedClusterConfigOperatorImage) > 0 {
 				setupLog.Info("using operator image from arguments")
@@ -176,13 +192,40 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
-			Client:                 mgr.GetClient(),
-			ReleaseProvider:        releaseProvider,
-			HostedAPICache:         apiCacheController.GetCache(),
-			ManagementClusterMode:  managementClusterMode,
-			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			Client:                        mgr.GetClient(),
+			ManagementClusterCapabilities: mgmtClusterCaps,
+			ReleaseProvider:               releaseProvider,
+			HostedAPICache:                apiCacheController.GetCache(),
+			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
+			ManagementClusterMode:         managementClusterMode,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
+			os.Exit(1)
+		}
+
+		controllerName := "PrivateKubeAPIServerServiceObserver"
+		if err := (&awsprivatelink.PrivateServiceObserver{
+			ControllerName:         controllerName,
+			ServiceNamespace:       namespace,
+			ServiceName:            manifests.KubeAPIServerPrivateServiceName,
+			HCPNamespace:           namespace,
+			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+		}).SetupWithManager(ctx, mgr); err != nil {
+			controllerName := awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
+			setupLog.Error(err, "unable to create controller", "controller", controllerName)
+			os.Exit(1)
+		}
+
+		controllerName = "PrivateIngressServiceObserver"
+		if err := (&awsprivatelink.PrivateServiceObserver{
+			ControllerName:         controllerName,
+			ServiceNamespace:       "openshift-ingress",
+			ServiceName:            fmt.Sprintf("router-%s", namespace),
+			HCPNamespace:           namespace,
+			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+		}).SetupWithManager(ctx, mgr); err != nil {
+			controllerName := awsprivatelink.ControllerName(fmt.Sprintf("router-%s", namespace))
+			setupLog.Error(err, "unable to create controller", "controller", controllerName)
 			os.Exit(1)
 		}
 

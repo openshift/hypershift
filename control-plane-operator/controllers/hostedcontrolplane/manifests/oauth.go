@@ -3,6 +3,7 @@ package manifests
 import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	oauthv1 "github.com/openshift/api/oauth/v1"
@@ -10,6 +11,15 @@ import (
 
 func OAuthServerConfig(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "oauth-openshift",
+			Namespace: ns,
+		},
+	}
+}
+
+func OAuthServerPodDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
+	return &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "oauth-openshift",
 			Namespace: ns,

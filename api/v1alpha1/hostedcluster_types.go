@@ -750,10 +750,13 @@ const (
 
 	HostedClusterAsExpectedReason          = "HostedClusterAsExpected"
 	HostedClusterUnhealthyComponentsReason = "UnhealthyControlPlaneComponents"
+	InvalidConfigurationReason             = "InvalidConfiguration"
 
 	UnmanagedEtcdStatusUnknownReason = "UnmanagedEtcdStatusUnknown"
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
 	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"
+
+	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
 )
 
 // HostedClusterStatus defines the observed state of HostedCluster

@@ -29,7 +29,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string, apiServerPort *int32) error {
 	maxSurge := intstr.FromInt(1)
 	maxUnavailable := intstr.FromInt(0)
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
@@ -51,7 +51,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	}
 	deploymentConfig.ApplyTo(deployment)
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiServerPort), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 

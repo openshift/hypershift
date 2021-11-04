@@ -16,6 +16,8 @@ type EtcdParams struct {
 	DeploymentConfig config.DeploymentConfig
 
 	StorageSpec hyperv1.ManagedEtcdStorageSpec
+
+	Availability hyperv1.AvailabilityPolicy
 }
 
 func etcdPodSelector() map[string]string {
@@ -24,8 +26,9 @@ func etcdPodSelector() map[string]string {
 
 func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *EtcdParams {
 	p := &EtcdParams{
-		EtcdImage: images["etcd"],
-		OwnerRef:  config.OwnerRefFrom(hcp),
+		EtcdImage:    images["etcd"],
+		OwnerRef:     config.OwnerRefFrom(hcp),
+		Availability: hcp.Spec.ControllerAvailabilityPolicy,
 	}
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		etcdContainer().Name: {
@@ -51,6 +54,13 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 		p.DeploymentConfig.Replicas = 1
 	}
 
+	if hcp.Spec.Etcd.Managed == nil {
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Storage: hyperv1.ManagedEtcdStorageSpec{
+				Type: hyperv1.PersistentVolumeEtcdStorage,
+			},
+		}
+	}
 	switch hcp.Spec.Etcd.Managed.Storage.Type {
 	case hyperv1.PersistentVolumeEtcdStorage:
 		p.StorageSpec.PersistentVolume = &hyperv1.PersistentVolumeEtcdStorageSpec{

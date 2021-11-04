@@ -17,7 +17,7 @@ var (
 	packageServerEndpoints  = MustEndpoints("assets/packageserver-endpoint-guest.yaml")
 )
 
-func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string) error {
+func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = packageServerDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
@@ -36,7 +36,7 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 		}
 	}
 	dc.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 

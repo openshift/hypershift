@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -31,13 +32,16 @@ var (
 			oauthVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
 		},
 	}
-	openShiftOAuthAPIServerLabels = map[string]string{
+)
+
+func openShiftOAuthAPIServerLabels() map[string]string {
+	return map[string]string{
 		"app":                         "openshift-oauth-apiserver",
 		hyperv1.ControlPlaneComponent: "openshift-oauth-apiserver",
 	}
-)
+}
 
-func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, p *OAuthDeploymentParams) error {
+func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, p *OAuthDeploymentParams, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
 	maxUnavailable := intstr.FromInt(1)
@@ -51,9 +55,9 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		},
 	}
 	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: openShiftOAuthAPIServerLabels,
+		MatchLabels: openShiftOAuthAPIServerLabels(),
 	}
-	deployment.Spec.Template.ObjectMeta.Labels = openShiftOAuthAPIServerLabels
+	deployment.Spec.Template.ObjectMeta.Labels = openShiftOAuthAPIServerLabels()
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
@@ -70,7 +74,7 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 			util.BuildVolume(oauthVolumeEtcdClientCert(), buildOAuthVolumeEtcdClientCert),
 		},
 	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	p.DeploymentConfig.ApplyTo(deployment)
 	return nil
 }
@@ -202,4 +206,25 @@ func oauthVolumeEtcdClientCert() *corev1.Volume {
 func buildOAuthVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
+}
+
+func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *OAuthDeploymentParams) error {
+	if pdb.CreationTimestamp.IsZero() {
+		pdb.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: openShiftOAuthAPIServerLabels(),
+		}
+	}
+
+	p.OwnerRef.ApplyTo(pdb)
+
+	var minAvailable int
+	switch p.Availability {
+	case hyperv1.SingleReplica:
+		minAvailable = 0
+	case hyperv1.HighlyAvailable:
+		minAvailable = 1
+	}
+	pdb.Spec.MinAvailable = &intstr.IntOrString{Type: intstr.Int, IntVal: int32(minAvailable)}
+
+	return nil
 }

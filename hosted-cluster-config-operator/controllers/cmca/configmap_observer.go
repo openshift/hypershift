@@ -11,13 +11,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 )
 
 const (
-	RouterCAConfigMap               = "router-ca"
-	ServiceCAConfigMap              = "service-ca"
-	destConfigMap                   = "kube-controller-manager"
-	kubeControllerManagerDeployment = "kube-controller-manager"
+	RouterCAConfigMap  = "router-ca"
+	ServiceCAConfigMap = "service-ca"
 )
 
 // ManagedCAObserver watches 2 CA configmaps in the target cluster:
@@ -48,13 +48,13 @@ type ManagedCAObserver struct {
 // Reconcile periodically watches for changes in the CA configmaps and updates
 // the kube-controller-manager-ca configmap in the management cluster with their
 // content.
-func (r *ManagedCAObserver) Reconcile(_ context.Context, req ctrl.Request) (ctrl.Result, error) {
-	controllerLog := r.Log.WithValues("configmap", req.NamespacedName)
-	ctx := context.Background()
+func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	if req.Namespace != ManagedConfigNamespace {
 		return ctrl.Result{}, nil
 	}
+
+	controllerLog := r.Log.WithValues("configmap", req.NamespacedName)
 
 	controllerLog.Info("syncing configmap")
 
@@ -74,7 +74,7 @@ func (r *ManagedCAObserver) Reconcile(_ context.Context, req ctrl.Request) (ctrl
 	hash := calculateHash(ca.Bytes())
 	controllerLog.Info("Calculated controller manager hash", "hash", hash)
 
-	destinationCM, err := r.Client.CoreV1().ConfigMaps(r.Namespace).Get(ctx, destConfigMap, metav1.GetOptions{})
+	destinationCM, err := r.Client.CoreV1().ConfigMaps(r.Namespace).Get(ctx, manifests.ServiceServingCA(r.Namespace).Name, metav1.GetOptions{})
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -86,24 +86,35 @@ func (r *ManagedCAObserver) Reconcile(_ context.Context, req ctrl.Request) (ctrl
 		}
 	}
 
-	cmDeployment, err := r.Client.AppsV1().Deployments(r.Namespace).Get(ctx, kubeControllerManagerDeployment, metav1.GetOptions{})
-	if err != nil {
-		return ctrl.Result{}, err
+	if err := r.ensureAnnotationOnDeployment(ctx, manifests.KCMDeployment(r.Namespace).Name, hash); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to ensure annotation on %s deployment: %w", manifests.KCMDeployment(r.Namespace).Name, err)
 	}
-	if cmDeployment.Spec.Template.ObjectMeta.Annotations != nil &&
-		cmDeployment.Spec.Template.ObjectMeta.Annotations["ca-checksum"] == hash {
-		return ctrl.Result{}, nil
+	if err := r.ensureAnnotationOnDeployment(ctx, manifests.OpenShiftAPIServerDeployment(r.Namespace).Name, hash); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to ensure annotation on %s deployment: %w", manifests.OpenShiftAPIServerDeployment(r.Namespace).Name, err)
 	}
 
-	r.Log.Info("Updating controller manager deployment checksum annotation")
-	if cmDeployment.Spec.Template.ObjectMeta.Annotations == nil {
-		cmDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
-	}
-	cmDeployment.Spec.Template.ObjectMeta.Annotations["ca-checksum"] = hash
-	if _, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, cmDeployment, metav1.UpdateOptions{}); err != nil {
-		return ctrl.Result{}, err
-	}
 	return ctrl.Result{}, nil
+
+}
+
+func (r *ManagedCAObserver) ensureAnnotationOnDeployment(ctx context.Context, deploymentName string, hash string) error {
+	deployment, err := r.Client.AppsV1().Deployments(r.Namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get deployment %s/%s: %w", r.Namespace, deploymentName, err)
+	}
+
+	if deployment.Spec.Template.ObjectMeta.Annotations["ca-checksum"] == hash {
+		return nil
+	}
+
+	r.Log.Info("Updating deployment", "name", deploymentName)
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+	}
+	deployment.Spec.Template.ObjectMeta.Annotations["ca-checksum"] = hash
+
+	_, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+	return err
 }
 
 func (r *ManagedCAObserver) getAdditionalCAs(ctx context.Context, logger logr.Logger) ([][]byte, error) {
