@@ -289,7 +289,7 @@ func buildKASContainerMain(image string) func(c *corev1.Container) {
 		c.Args = []string{
 			"kube-apiserver",
 			fmt.Sprintf("--openshift-config=%s", path.Join(volumeMounts.Path(c.Name, kasVolumeConfig().Name), KubeAPIServerConfigKey)),
-			"-v5",
+			"-v2",
 		}
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
