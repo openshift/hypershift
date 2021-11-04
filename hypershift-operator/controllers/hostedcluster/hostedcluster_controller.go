@@ -81,14 +81,21 @@ const (
 	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
 
-	// TODO (alberto): Eventually these images will be mirrored and pulled from an internal registry.
-	imageClusterAutoscaler = "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0"
-	// This comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
-	imageCAPI = "us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0"
+	// Image built from https://github.com/openshift/kubernetes-autoscaler/tree/release-4.10
+	// Upstream canonical image is k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
+	imageClusterAutoscaler = "quay.io/openshift/origin-cluster-autoscaler:4.10.0"
+
+	// Image built from https://github.com/openshift/cluster-api/tree/release-1.0
+	// Upstream canonical image comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
+	// us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0
+	imageCAPI = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
+
+	// Image built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
+	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
+
+	// TODO (alberto): Eventually this image will be mirrored and pulled from an internal registry.
 	// This comes from https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
 	imageCAPA = "us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v0.7.0"
-	// This image is built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
-	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
