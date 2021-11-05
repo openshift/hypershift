@@ -118,11 +118,17 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	cmd.WithNamespace(controlPlaneNamespace).Run(ctx, resourceList)
 	cmd.WithNamespace(opts.Namespace).Run(ctx, resourceList)
+	cmd.WithNamespace("hypershift").Run(ctx, resourceList)
 
 	podList := &corev1.PodList{}
 	if err = c.List(ctx, podList, client.InNamespace(controlPlaneNamespace)); err != nil {
 		log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
 	}
+	hypershiftNSPodList := &corev1.PodList{}
+	if err := c.List(ctx, hypershiftNSPodList, client.InNamespace("hypershift")); err != nil {
+		log.Error(err, "Failed to list pods in hypershift namespace")
+	}
+	podList.Items = append(podList.Items, hypershiftNSPodList.Items...)
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	outputLogs(ctx, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
 	return nil
