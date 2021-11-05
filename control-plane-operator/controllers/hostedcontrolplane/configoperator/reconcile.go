@@ -78,8 +78,9 @@ func ReconcileRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.OwnerRef) erro
 var (
 	volumeMounts = util.PodVolumeMounts{
 		hccContainerMain().Name: util.ContainerVolumeMounts{
-			hccVolumeKubeconfig().Name: "/etc/kubernetes/kubeconfig",
-			hccVolumeRootCA().Name:     "/etc/kubernetes/root-ca",
+			hccVolumeKubeconfig().Name:      "/etc/kubernetes/kubeconfig",
+			hccVolumeRootCA().Name:          "/etc/kubernetes/root-ca",
+			hccVolumeClusterSignerCA().Name: "/etc/kubernetes/cluster-signer-ca",
 		},
 	}
 	hccLabels = map[string]string{
@@ -108,6 +109,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion,
 				Volumes: []corev1.Volume{
 					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
 					util.BuildVolume(hccVolumeRootCA(), buildHCCVolumeRootCA),
+					util.BuildVolume(hccVolumeClusterSignerCA(), buildHCCClusterSignerCA),
 				},
 				ServiceAccountName: manifests.ConfigOperatorServiceAccount("").Name,
 			},
@@ -136,6 +138,12 @@ func hccVolumeRootCA() *corev1.Volume {
 	}
 }
 
+func hccVolumeClusterSignerCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "cluster-signer-ca",
+	}
+}
+
 func buildHCCContainerMain(image, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
@@ -143,6 +151,7 @@ func buildHCCContainerMain(image, openShiftVersion, kubeVersion string, enableCI
 		c.Command = []string{
 			"/usr/bin/hosted-cluster-config-operator",
 			fmt.Sprintf("--initial-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeRootCA().Name), pki.CASignerCertMapKey)),
+			fmt.Sprintf("--cluster-signer-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeClusterSignerCA().Name), pki.CASignerCertMapKey)),
 			fmt.Sprintf("--target-kubeconfig=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeKubeconfig().Name), kas.KubeconfigKey)),
 			"--namespace", "$(POD_NAMESPACE)",
 			"--platform-type", string(platformType),
@@ -179,5 +188,11 @@ func buildHCCVolumeKubeconfig(v *corev1.Volume) {
 func buildHCCVolumeRootCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName: manifests.RootCASecret("").Name,
+	}
+}
+
+func buildHCCClusterSignerCA(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{
+		SecretName: manifests.ClusterSignerCASecret("").Name,
 	}
 }
