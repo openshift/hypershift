@@ -120,7 +120,7 @@ type HostedControlPlaneReconciler struct {
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	_, err := ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedControlPlane{}).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
@@ -131,14 +131,11 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &corev1.Secret{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ServiceAccount{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
-		Watches(&source.Kind{Type: &policyv1.PodDisruptionBudget{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
-		Watches(&source.Channel{Source: r.HostedAPICache.Events()}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
-		Build(r)
-	if err != nil {
-		return fmt.Errorf("failed setting up with a controller manager %w", err)
+		Watches(&source.Channel{Source: r.HostedAPICache.Events()}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}})
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityPodDisruptionBudget) {
+		builder.Watches(&source.Kind{Type: &policyv1.PodDisruptionBudget{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}})
 	}
-
-	return nil
+	return builder.Complete(r)
 }
 
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -1395,13 +1392,15 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 		r.Log.Info("reconciled etcd servicemonitor", "result", result)
 	}
 
-	pdb := manifests.EtcdPodDisruptionBudget(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
-		return etcd.ReconcilePodDisruptionBudget(pdb, p)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
-	} else {
-		r.Log.Info("reconciled etcd pdb", "result", result)
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityPodDisruptionBudget) {
+		pdb := manifests.EtcdPodDisruptionBudget(hcp.Namespace)
+		if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+			return etcd.ReconcilePodDisruptionBudget(pdb, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
+		} else {
+			r.Log.Info("reconciled etcd pdb", "result", result)
+		}
 	}
 
 	statefulSet := manifests.EtcdStatefulSet(hcp.Namespace)
@@ -1635,13 +1634,15 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile authentication token webhook config: %w", err)
 	}
 
-	pdb := manifests.KASPodDisruptionBudget(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
-		return kas.ReconcilePodDisruptionBudget(pdb, p)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile api server pdb: %w", err)
-	} else {
-		r.Log.Info("Reconciled api server pdb", "result", result)
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityPodDisruptionBudget) {
+		pdb := manifests.KASPodDisruptionBudget(hcp.Namespace)
+		if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+			return kas.ReconcilePodDisruptionBudget(pdb, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile api server pdb: %w", err)
+		} else {
+			r.Log.Info("Reconciled api server pdb", "result", result)
+		}
 	}
 
 	kubeAPIServerDeployment := manifests.KASDeployment(hcp.Namespace)
@@ -1733,13 +1734,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		return fmt.Errorf("failed to reconcile openshift apiserver audit config: %w", err)
 	}
 
-	pdb := manifests.OpenShiftAPIServerPodDisruptionBudget(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
-		return oapi.ReconcilePodDisruptionBudget(pdb, p)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift apiserver pdb: %w", err)
-	} else {
-		r.Log.Info("Reconciled openshift apiserver pdb", "result", result)
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityPodDisruptionBudget) {
+		pdb := manifests.OpenShiftAPIServerPodDisruptionBudget(hcp.Namespace)
+		if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+			return oapi.ReconcilePodDisruptionBudget(pdb, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift apiserver pdb: %w", err)
+		} else {
+			r.Log.Info("Reconciled openshift apiserver pdb", "result", result)
+		}
 	}
 
 	deployment := manifests.OpenShiftAPIServerDeployment(hcp.Namespace)
@@ -1788,13 +1791,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver audit config: %w", err)
 	}
 
-	pdb := manifests.OpenShiftOAuthAPIServerDisruptionBudget(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
-		return oapi.ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb, p.OAuthAPIServerDeploymentParams())
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift oauth apiserver pdb: %w", err)
-	} else {
-		r.Log.Info("Reconciled openshift oauth apiserver pdb", "result", result)
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityPodDisruptionBudget) {
+		pdb := manifests.OpenShiftOAuthAPIServerDisruptionBudget(hcp.Namespace)
+		if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+			return oapi.ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb, p.OAuthAPIServerDeploymentParams())
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift oauth apiserver pdb: %w", err)
+		} else {
+			r.Log.Info("Reconciled openshift oauth apiserver pdb", "result", result)
+		}
 	}
 
 	deployment := manifests.OpenShiftOAuthAPIServerDeployment(hcp.Namespace)
@@ -1907,13 +1912,15 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		return fmt.Errorf("failed to reconcile oauth server config: %w", err)
 	}
 
-	pdb := manifests.OAuthServerPodDisruptionBudget(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
-		return oauth.ReconcilePodDisruptionBudget(pdb, p)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth pdb: %w", err)
-	} else {
-		r.Log.V(2).Info("Reconciled oauth pdb", "result", result)
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityPodDisruptionBudget) {
+		pdb := manifests.OAuthServerPodDisruptionBudget(hcp.Namespace)
+		if result, err := r.CreateOrUpdate(ctx, r, pdb, func() error {
+			return oauth.ReconcilePodDisruptionBudget(pdb, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile oauth pdb: %w", err)
+		} else {
+			r.Log.V(2).Info("Reconciled oauth pdb", "result", result)
+		}
 	}
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)

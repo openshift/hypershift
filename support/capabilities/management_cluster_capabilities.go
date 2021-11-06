@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	routev1 "github.com/openshift/api/route/v1"
+	policyv1 "k8s.io/api/policy/v1"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
@@ -14,6 +15,7 @@ type CapabilityType int
 const (
 	// CapabilityRoute indicates if the management cluster supports routes
 	CapabilityRoute CapabilityType = iota
+	CapabilityPodDisruptionBudget
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -72,6 +74,13 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasRoutesCap {
 		discoveredCapabilities[CapabilityRoute] = struct{}{}
+	}
+	hasPDB, err := isGroupVersionRegistered(client, policyv1.SchemeGroupVersion)
+	if err != nil {
+		return nil, err
+	}
+	if hasPDB {
+		discoveredCapabilities[CapabilityPodDisruptionBudget] = struct{}{}
 	}
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil
 }
