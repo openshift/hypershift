@@ -2,6 +2,7 @@ package capabilities
 
 import (
 	"fmt"
+	batchv1 "k8s.io/api/batch/v1"
 	"testing"
 
 	imagev1 "github.com/openshift/api/image/v1"
@@ -98,6 +99,104 @@ func TestIsGroupVersionRegistered(t *testing.T) {
 	}
 }
 
+func TestIsObjectKindRegistered(t *testing.T) {
+
+	testCases := []struct {
+		name          string
+		client        discovery.ServerResourcesInterface
+		objectToCheck schema.ObjectKind
+		isRegistered  bool
+		resultErr     error
+		shouldError   bool
+	}{
+		{
+			name: "should find cronjob registered",
+			client: addResourcesToFakeDiscoveryClient(fakeFailableDiscoveryClient{
+				Resources: []*metav1.APIResourceList{},
+			}, &batchv1.CronJob{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "CronJob",
+					APIVersion: batchv1.SchemeGroupVersion.String(),
+				},
+			}),
+			objectToCheck: &batchv1.CronJob{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "CronJob",
+					APIVersion: batchv1.SchemeGroupVersion.String(),
+				},
+			},
+			isRegistered: true,
+			shouldError:  false,
+		},
+		{
+			name: "should not find cronjob registered",
+			client: addResourcesToFakeDiscoveryClient(fakeFailableDiscoveryClient{
+				Resources: []*metav1.APIResourceList{},
+			}, &batchv1.Job{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Job",
+					APIVersion: batchv1.SchemeGroupVersion.String(),
+				},
+			}),
+			objectToCheck: &batchv1.CronJob{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "CronJob",
+					APIVersion: batchv1.SchemeGroupVersion.String(),
+				},
+			},
+			isRegistered: false,
+			shouldError:  false,
+		},
+		{
+			name: "should throw error",
+			client: newFailableFakeDiscoveryClient(
+				fmt.Errorf("ups"),
+				batchv1.SchemeGroupVersion,
+			),
+			objectToCheck: &batchv1.CronJob{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "CronJob",
+					APIVersion: batchv1.SchemeGroupVersion.String(),
+				},
+			},
+			isRegistered: false,
+			shouldError:  true,
+			resultErr:    fmt.Errorf("ups"),
+		},
+		{
+			name: "should not error since group was properly discovered",
+			client: newFailableFakeDiscoveryClient(
+				&discovery.ErrGroupDiscoveryFailed{
+					Groups: map[schema.GroupVersion]error{
+						routev1.GroupVersion: fmt.Errorf("blah"),
+					},
+				},
+				routev1.GroupVersion,
+			),
+			objectToCheck: &batchv1.CronJob{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "CronJob",
+					APIVersion: batchv1.SchemeGroupVersion.String(),
+				},
+			},
+			isRegistered: false,
+			shouldError:  false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := isObjectKindRegistered(tc.client, tc.objectToCheck)
+			g := NewGomegaWithT(t)
+			g.Expect(got).To(Equal(tc.isRegistered))
+			if tc.shouldError {
+				g.Expect(err).To(Equal(tc.resultErr))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
 func TestDetectManagementCapabilities(t *testing.T) {
 
 	testCases := []struct {
@@ -161,6 +260,40 @@ func newFailableFakeDiscoveryClient(err error, discovered ...schema.GroupVersion
 		)
 	}
 	discoveryClient.err = err
+	return discoveryClient
+}
+
+func addResourcesToFakeDiscoveryClient(discoveryClient fakeFailableDiscoveryClient, objectsToAdd ...schema.ObjectKind) fakeFailableDiscoveryClient {
+	for _, objectToAdd := range objectsToAdd {
+		resourceListIndex := -1
+		found := false
+		for apiResourceListIndex, apiResourceList := range discoveryClient.Resources {
+			if apiResourceList.GroupVersion == objectToAdd.GroupVersionKind().GroupVersion().String() {
+				resourceListIndex = apiResourceListIndex
+				for _, apiResource := range apiResourceList.APIResources {
+					if apiResource.Kind == objectToAdd.GroupVersionKind().Kind {
+						found = true
+						break
+					}
+				}
+				break
+			}
+		}
+		if !found {
+			if resourceListIndex < 0 {
+				discoveryClient.Resources = append(discoveryClient.Resources, &metav1.APIResourceList{
+					GroupVersion: objectToAdd.GroupVersionKind().GroupVersion().String(),
+					APIResources: []metav1.APIResource{},
+				})
+				resourceListIndex = len(discoveryClient.Resources) - 1
+			}
+			discoveryClient.Resources[resourceListIndex].APIResources = append(discoveryClient.Resources[resourceListIndex].APIResources, metav1.APIResource{
+				Group:   objectToAdd.GroupVersionKind().Group,
+				Kind:    objectToAdd.GroupVersionKind().Kind,
+				Version: objectToAdd.GroupVersionKind().Version,
+			})
+		}
+	}
 	return discoveryClient
 }
 
