@@ -58,6 +58,8 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 	switch existingTyped := existing.(type) {
 	case *appsv1.Deployment:
 		defaultDeploymentSpec(&existingTyped.Spec, &obj.(*appsv1.Deployment).Spec)
+	case *appsv1.StatefulSet:
+		defaultStatefulSetSpec(&existingTyped.Spec, &obj.(*appsv1.StatefulSet).Spec)
 	case *batchv1.CronJob:
 		defaultCronJobSpec(&existingTyped.Spec, &obj.(*batchv1.CronJob).Spec)
 	case *corev1.Service:
@@ -192,6 +194,38 @@ func defaultDeploymentSpec(original, mutated *appsv1.DeploymentSpec) {
 	defaultPodSpec(&original.Template.Spec, &mutated.Template.Spec)
 }
 
+func defaultStatefulSetSpec(original, mutated *appsv1.StatefulSetSpec) {
+	if mutated.Replicas == nil {
+		mutated.Replicas = original.Replicas
+	}
+	if mutated.PodManagementPolicy == "" {
+		mutated.PodManagementPolicy = original.PodManagementPolicy
+	}
+	if mutated.UpdateStrategy.RollingUpdate == nil && original.UpdateStrategy.RollingUpdate != nil {
+		mutated.UpdateStrategy.RollingUpdate = original.UpdateStrategy.RollingUpdate
+	}
+	if mutated.UpdateStrategy.RollingUpdate != nil && original.UpdateStrategy.RollingUpdate != nil {
+		if mutated.UpdateStrategy.RollingUpdate.Partition == nil {
+			mutated.UpdateStrategy.RollingUpdate.Partition = original.UpdateStrategy.RollingUpdate.Partition
+		}
+	}
+	if mutated.RevisionHistoryLimit == nil {
+		mutated.RevisionHistoryLimit = original.RevisionHistoryLimit
+	}
+
+	defaultPodSpec(&original.Template.Spec, &mutated.Template.Spec)
+
+	for i := range original.VolumeClaimTemplates {
+		if i >= len(mutated.VolumeClaimTemplates) {
+			break
+		}
+		defaultVolumeClaim(&original.VolumeClaimTemplates[i].Spec, &mutated.VolumeClaimTemplates[i].Spec)
+		// k8s seems to update status within the volume claim template embedded in
+		// the spec of the statefulset...
+		mutated.VolumeClaimTemplates[i].Status = original.VolumeClaimTemplates[i].Status
+	}
+}
+
 func defaultPodSpec(original, mutated *corev1.PodSpec) {
 	for i := range original.InitContainers {
 		if i >= len(mutated.InitContainers) {
@@ -303,6 +337,15 @@ func defaultVolume(original, mutated *corev1.Volume) {
 	}
 	if mutated.VolumeSource.ConfigMap != nil && original.VolumeSource.ConfigMap != nil && mutated.VolumeSource.ConfigMap.DefaultMode == nil {
 		mutated.VolumeSource.ConfigMap.DefaultMode = original.VolumeSource.ConfigMap.DefaultMode
+	}
+}
+
+func defaultVolumeClaim(original, mutated *corev1.PersistentVolumeClaimSpec) {
+	if original.VolumeMode != nil && mutated.VolumeMode == nil {
+		mutated.VolumeMode = original.VolumeMode
+	}
+	if original.StorageClassName != nil && mutated.StorageClassName == nil {
+		mutated.StorageClassName = original.StorageClassName
 	}
 }
 

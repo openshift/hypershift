@@ -186,3 +186,7 @@ docker-push:
 .PHONY: run-local
 run-local:
 	bin/hypershift-operator run
+
+.PHONY: ci-install-hypershift
+ci-install-hypershift:
+	bin/hypershift install --hypershift-image $(HYPERSHIFT_RELEASE_LATEST)

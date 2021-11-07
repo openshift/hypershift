@@ -33,6 +33,7 @@ type KubeAPIServerParams struct {
 	Scheduler           *configv1.Scheduler          `json:"scheduler"`
 	CloudProvider       string                       `json:"cloudProvider"`
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
+	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 
 	ServiceAccountIssuer string                       `json:"serviceAccountIssuer"`
 	ServiceCIDR          string                       `json:"serviceCIDR"`
@@ -268,6 +269,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AWSProviderConfig("").Name}
+		params.CloudProviderCreds = &corev1.LocalObjectReference{Name: hcp.Spec.Platform.AWS.KubeCloudControllerCreds.Name}
 	}
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
 		params.AuditWebhookRef = hcp.Spec.AuditWebhook

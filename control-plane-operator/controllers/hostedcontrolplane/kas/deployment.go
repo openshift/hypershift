@@ -12,6 +12,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
@@ -20,6 +21,7 @@ import (
 const (
 	kasNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
 	configHashAnnotation               = "kube-apiserver.hypershift.openshift.io/config-hash"
+	awsCloudProviderCredsKey           = "credentials"
 )
 
 var (
@@ -56,6 +58,11 @@ var (
 			kasVolumeCloudConfig().Name: "/etc/kubernetes/cloud",
 		},
 	}
+	cloudProviderCredsVolumeMount = util.PodVolumeMounts{
+		kasContainerMain().Name: {
+			kasVolumeCloudProviderCreds().Name: "/etc/kubernetes/secrets/cloud-provider",
+		},
+	}
 
 	kasAuditWebhookConfigFileVolumeMount = util.PodVolumeMounts{
 		kasContainerMain().Name: {
@@ -81,13 +88,16 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	ownerRef config.OwnerRef,
 	deploymentConfig config.DeploymentConfig,
 	namedCertificates []configv1.APIServerNamedServingCert,
+	cloudProviderName string,
 	cloudProviderConfigRef *corev1.LocalObjectReference,
+	cloudProviderCreds *corev1.LocalObjectReference,
 	images KubeAPIServerImages,
 	config *corev1.ConfigMap,
 	auditWebhookRef *corev1.LocalObjectReference,
 	secretEncryptionData *hyperv1.SecretEncryptionSpec,
 	aesCBCActiveKey []byte,
-	aesCBCBackupKey []byte) error {
+	aesCBCBackupKey []byte,
+) error {
 
 	configBytes, ok := config.Data[KubeAPIServerConfigKey]
 	if !ok {
@@ -168,9 +178,12 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	}
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
 	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec)
+	applyCloudProviderCreds(&deployment.Spec.Template.Spec, cloudProviderName, cloudProviderCreds)
+
 	if auditWebhookRef != nil {
 		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, auditWebhookRef)
 	}
+
 	if secretEncryptionData != nil {
 		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
 		switch secretEncryptionData.Type {
@@ -275,7 +288,7 @@ func buildKASContainerMain(image string) func(c *corev1.Container) {
 		c.Args = []string{
 			"kube-apiserver",
 			fmt.Sprintf("--openshift-config=%s", path.Join(volumeMounts.Path(c.Name, kasVolumeConfig().Name), KubeAPIServerConfigKey)),
-			"-v5",
+			"-v2",
 		}
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
@@ -433,6 +446,13 @@ func kasVolumeEgressSelectorConfig() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "egress-selector-config",
 	}
+}
+
+func kasVolumeCloudProviderCreds() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "cloud-creds",
+	}
+
 }
 func buildKASVolumeEgressSelectorConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
@@ -662,4 +682,48 @@ func applyGenericSecretEncryptionConfig(podSpec *corev1.PodSpec) {
 	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeSecretEncryptionConfigFile(), buildVolumeSecretEncryptionConfigFile))
 	container.VolumeMounts = append(container.VolumeMounts,
 		genericSecretEncryptionConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
+}
+
+func applyCloudProviderCreds(podSpec *corev1.PodSpec, cloudProvider string, cloudProviderCreds *corev1.LocalObjectReference) {
+	if cloudProviderCreds == nil || cloudProviderCreds.Name == "" {
+		return
+	}
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeCloudProviderCreds(), buildKASVolumeCloudProviderCreds(cloudProviderCreds.Name)))
+	container := mustContainer(podSpec, kasContainerMain().Name)
+	container.VolumeMounts = append(container.VolumeMounts, cloudProviderCredsVolumeMount.ContainerMounts(kasContainerMain().Name)...)
+
+	switch cloudProvider {
+	case aws.Provider:
+		credsPath := path.Join(cloudProviderCredsVolumeMount.Path(kasContainerMain().Name, kasVolumeCloudProviderCreds().Name), awsCloudProviderCredsKey)
+		container.Env = append(container.Env,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: credsPath,
+			},
+			corev1.EnvVar{
+				Name:  "AWS_EC2_METADATA_DISABLED",
+				Value: "true",
+			})
+	}
+}
+
+func buildKASVolumeCloudProviderCreds(cloudProviderCredsName string) func(v *corev1.Volume) {
+	return func(v *corev1.Volume) {
+		v.Secret = &corev1.SecretVolumeSource{}
+		v.Secret.SecretName = cloudProviderCredsName
+	}
+}
+
+func mustContainer(podSpec *corev1.PodSpec, name string) *corev1.Container {
+	var container *corev1.Container
+	for i, c := range podSpec.Containers {
+		if c.Name == name {
+			container = &podSpec.Containers[i]
+			break
+		}
+	}
+	if container == nil {
+		panic(fmt.Sprintf("expected container %s not found pod spec", name))
+	}
+	return container
 }
