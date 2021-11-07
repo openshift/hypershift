@@ -26,12 +26,13 @@ import (
 
 type ControllerSetupFunc func(*HostedClusterConfigOperatorConfig) error
 
-func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc, enableCIDebugOutput bool, platformType hyperv1.PlatformType) *HostedClusterConfigOperatorConfig {
+func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc, enableCIDebugOutput bool, platformType hyperv1.PlatformType, clusterSignerCA []byte) *HostedClusterConfigOperatorConfig {
 	return &HostedClusterConfigOperatorConfig{
 		targetKubeconfig:             targetKubeconfig,
 		TargetCreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 		namespace:                    namespace,
 		initialCA:                    initialCA,
+		clusterSignerCA:              clusterSignerCA,
 		controllers:                  controllers,
 		controllerFuncs:              controllerFuncs,
 		versions:                     versions,
@@ -53,6 +54,7 @@ type HostedClusterConfigOperatorConfig struct {
 	targetKubeconfig    string
 	namespace           string
 	initialCA           []byte
+	clusterSignerCA     []byte
 	controllers         []string
 	PlatformType        hyperv1.PlatformType
 	controllerFuncs     map[string]ControllerSetupFunc
@@ -184,6 +186,10 @@ func (c *HostedClusterConfigOperatorConfig) Versions() map[string]string {
 
 func (c *HostedClusterConfigOperatorConfig) InitialCA() string {
 	return string(c.initialCA)
+}
+
+func (c *HostedClusterConfigOperatorConfig) ClusterSignerCA() string {
+	return string(c.clusterSignerCA)
 }
 
 func (c *HostedClusterConfigOperatorConfig) Fatal(err error, msg string) {

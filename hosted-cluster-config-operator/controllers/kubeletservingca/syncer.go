@@ -17,9 +17,9 @@ import (
 var syncInterval = 20 * time.Minute
 
 type KubeletServingCASyncer struct {
-	TargetClient kubeclient.Interface
-	Log          logr.Logger
-	InitialCA    string
+	TargetClient    kubeclient.Interface
+	Log             logr.Logger
+	ClusterSignerCA string
 }
 
 func (s *KubeletServingCASyncer) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -53,7 +53,7 @@ func (s *KubeletServingCASyncer) expectedConfigMap() *corev1.ConfigMap {
 	cm.Name = "kubelet-serving-ca"
 	cm.Namespace = "openshift-config-managed"
 	cm.Data = map[string]string{
-		"ca-bundle.crt": s.InitialCA,
+		"ca-bundle.crt": s.ClusterSignerCA,
 	}
 	return cm
 }
