@@ -15,9 +15,6 @@ spec:
     securityContext:
       runAsUser: 1001
     resources:
-      limits:
-        cpu: 300m
-        memory: 512M
       requests:
         cpu: 13m
         memory: 16M
