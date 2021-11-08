@@ -1,6 +1,7 @@
 package util
 
 import (
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -19,3 +20,6 @@ func ParseNamespacedName(name string) types.NamespacedName {
 	}
 	return types.NamespacedName{Name: parts[0]}
 }
+
+// NoopReconcile is just a default mutation function that does nothing.
+var NoopReconcile controllerutil.MutateFn = func() error { return nil }
