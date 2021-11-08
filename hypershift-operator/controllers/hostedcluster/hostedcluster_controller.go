@@ -41,6 +41,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/machineapprover"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -56,11 +57,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
@@ -82,14 +81,21 @@ const (
 	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
 
-	// TODO (alberto): Eventually these images will be mirrored and pulled from an internal registry.
-	imageClusterAutoscaler = "k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0"
-	// This comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
-	imageCAPI = "us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0"
+	// Image built from https://github.com/openshift/kubernetes-autoscaler/tree/release-4.10
+	// Upstream canonical image is k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
+	imageClusterAutoscaler = "quay.io/openshift/origin-cluster-autoscaler:4.10.0"
+
+	// Image built from https://github.com/openshift/cluster-api/tree/release-1.0
+	// Upstream canonical image comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
+	// us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0
+	imageCAPI = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
+
+	// Image built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
+	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
+
+	// TODO (alberto): Eventually this image will be mirrored and pulled from an internal registry.
 	// This comes from https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
 	imageCAPA = "us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v0.7.0"
-	// This image is built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
-	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -99,7 +105,8 @@ var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 type HostedClusterReconciler struct {
 	client.Client
 
-	DiscoveryClient *discovery.DiscoveryClient
+	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
+	ManagementClusterCapabilities *capabilities.ManagementClusterCapabilities
 
 	// HypershiftOperatorImage is the image used to deploy the control plane operator if
 	// 1) There is no hypershift.openshift.io/control-plane-operator-image annotation on the HostedCluster and
@@ -151,17 +158,11 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
 
-	if routesEnabled, err := r.routesEnabled(); routesEnabled {
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		builder.Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
-	} else if err != nil {
-		return fmt.Errorf("unable to determine if routes are registered on the cluster: %v", err)
 	}
 
 	return builder.Complete(r)
-}
-
-func (r *HostedClusterReconciler) routesEnabled() (bool, error) {
-	return isGroupVersionRegistered(r.DiscoveryClient, routev1.GroupVersion)
 }
 
 // serviceFirstNodePortAvailable checks if the first port in a service has a node port available. Utilized to
@@ -292,6 +293,24 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set ValidConfiguration condition
 	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidHostedClusterConfiguration),
+			ObservedGeneration: hcluster.Generation,
+		}
+		if err := r.validateConfigAndClusterCapabilities(hcluster); err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.InvalidConfigurationReason
+		} else {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "Configuration passes validation"
+			condition.Reason = hyperv1.HostedClusterAsExpectedReason
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
+	// Set ValidHostedControlPlaneConfiguration condition
+	{
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
@@ -303,12 +322,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 		condition := metav1.Condition{
-			Type:   string(hyperv1.ValidHostedClusterConfiguration),
+			Type:   string(hyperv1.ValidHostedControlPlaneConfiguration),
 			Status: metav1.ConditionUnknown,
 			Reason: "StatusUnknown",
 		}
 		if hcp != nil {
-			validConfigHCPCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidConfiguration))
+			validConfigHCPCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 			if validConfigHCPCondition != nil {
 				condition.Status = validConfigHCPCondition.Status
 				condition.Message = validConfigHCPCondition.Message
@@ -425,6 +444,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{Requeue: true}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
+		}
+	}
+
+	// Block here if the cluster configuration does not pass validation
+	{
+		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
+		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
+			r.Log.Info("Configuration is invalid, reconciliation is blocked")
+			return ctrl.Result{}, nil
 		}
 	}
 
@@ -2516,7 +2544,7 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
-						Command: []string{"/cluster-autoscaler"},
+						Command: []string{"/usr/bin/cluster-autoscaler"},
 						Args:    args,
 					},
 				},
@@ -2948,6 +2976,15 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 	return nil
 }
 
+func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedCluster) error {
+	for _, svc := range hc.Spec.Services {
+		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+		}
+	}
+	return nil
+}
+
 type ClusterMachineApproverConfig struct {
 	NodeClientCert NodeClientCert `json:"nodeClientCert,omitempty"`
 }
@@ -3097,30 +3134,4 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
 	return nil
-}
-
-// isGroupVersionRegistered determines if a specified groupVersion is registered on the cluster
-func isGroupVersionRegistered(client discovery.ServerResourcesInterface, groupVersion schema.GroupVersion) (bool, error) {
-	_, apis, err := client.ServerGroupsAndResources()
-	if err != nil {
-		if discovery.IsGroupDiscoveryFailedError(err) {
-			// If the group we are looking for can't be fully discovered,
-			// that does still mean that it exists.
-			// Continue with the search in the discovered groups if not present here.
-			e := err.(*discovery.ErrGroupDiscoveryFailed)
-			if _, exists := e.Groups[groupVersion]; exists {
-				return true, nil
-			}
-		} else {
-			return false, err
-		}
-	}
-
-	for _, api := range apis {
-		if api.GroupVersion == groupVersion.String() {
-			return true, nil
-		}
-	}
-
-	return false, nil
 }

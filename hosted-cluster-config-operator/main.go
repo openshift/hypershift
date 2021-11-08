@@ -69,6 +69,9 @@ type HostedClusterConfigOperator struct {
 	// Controllers is the list of controllers that the operator should start
 	Controllers []string
 
+	// ClusterSignerCAFile is a file containing the cluster signer CA cert
+	ClusterSignerCAFile string
+
 	// ReleaseVersion is the OpenShift version for the release
 	ReleaseVersion string
 
@@ -80,6 +83,8 @@ type HostedClusterConfigOperator struct {
 	platformType string
 
 	enableCIDebugOutput bool
+
+	clusterSignerCA []byte
 }
 
 func newHostedClusterConfigOperatorCommand() *cobra.Command {
@@ -102,6 +107,7 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringVar(&cpo.Namespace, "namespace", cpo.Namespace, "Namespace for control plane components on management cluster")
 	flags.StringVar(&cpo.TargetKubeconfig, "target-kubeconfig", cpo.TargetKubeconfig, "Kubeconfig for target cluster")
 	flags.StringVar(&cpo.InitialCAFile, "initial-ca-file", cpo.InitialCAFile, "Path to controller manager initial CA file")
+	flags.StringVar(&cpo.ClusterSignerCAFile, "cluster-signer-ca-file", cpo.ClusterSignerCAFile, "Path to the cluster signer CA cert")
 	flags.StringSliceVar(&cpo.Controllers, "controllers", cpo.Controllers, "Controllers to run with this operator")
 	flags.StringVar(&cpo.platformType, "platform-type", "", "The platform of the cluster")
 	flags.BoolVar(&cpo.enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
@@ -140,6 +146,12 @@ func (o *HostedClusterConfigOperator) Complete() error {
 			return err
 		}
 	}
+	if o.ClusterSignerCAFile != "" {
+		o.clusterSignerCA, err = ioutil.ReadFile(o.ClusterSignerCAFile)
+		if err != nil {
+			return err
+		}
+	}
 	o.ReleaseVersion = os.Getenv("OPENSHIFT_RELEASE_VERSION")
 	if o.ReleaseVersion == "" {
 		o.ReleaseVersion = defaultReleaseVersion
@@ -168,6 +180,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		controllerFuncs,
 		o.enableCIDebugOutput,
 		hyperv1.PlatformType(o.platformType),
+		o.clusterSignerCA,
 	)
 	return cfg.Start(ctx)
 }

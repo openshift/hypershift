@@ -18,9 +18,9 @@ func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
 	configMaps := informerFactory.Core().V1().ConfigMaps()
 
 	reconciler := &KubeletServingCASyncer{
-		InitialCA:    cfg.InitialCA(),
-		TargetClient: cfg.TargetKubeClient(),
-		Log:          cfg.Logger().WithName("KubeletServingCA"),
+		ClusterSignerCA: cfg.ClusterSignerCA(),
+		TargetClient:    cfg.TargetKubeClient(),
+		Log:             cfg.Logger().WithName("KubeletServingCA"),
 	}
 	c, err := controller.New("kubelet-serving-ca", cfg.Manager(), controller.Options{Reconciler: reconciler})
 	if err != nil {
