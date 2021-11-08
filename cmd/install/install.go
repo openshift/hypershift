@@ -47,6 +47,7 @@ type Options struct {
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
 	AWSCreds                   string
+	AWSRegion                  string
 }
 
 func NewCommand() *cobra.Command {
@@ -61,6 +62,7 @@ func NewCommand() *cobra.Command {
 		opts.EnableOCPClusterMonitoring = true
 		opts.EnableCIDebugOutput = true
 	}
+	opts.AWSRegion = "us-east-1"
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
@@ -69,7 +71,8 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
-	cmd.Flags().StringVar(&opts.AWSCreds, "aws-creds", opts.AWSCreds, "Path to an AWS credentials file (AWS only)")
+	cmd.Flags().StringVar(&opts.AWSCreds, "aws-creds", opts.AWSCreds, "Path to an AWS credentials file")
+	cmd.Flags().StringVar(&opts.AWSRegion, "aws-region", opts.AWSRegion, "AWS region in which the operator will create resources")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -184,6 +187,7 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		Replicas:                   opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
+		AWSRegion:                  opts.AWSRegion,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
