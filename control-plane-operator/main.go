@@ -64,13 +64,17 @@ func NewStartCommand() *cobra.Command {
 		Short: "Runs the HyperShift Control Plane Operator",
 	}
 
-	var namespace string
-	var deploymentName string
-	var metricsAddr string
-	var enableLeaderElection bool
-	var hostedClusterConfigOperatorImage string
-	var inCluster bool
-	var enableCIDebugOutput bool
+	var (
+		namespace                        string
+		deploymentName                   string
+		metricsAddr                      string
+		enableLeaderElection             bool
+		hostedClusterConfigOperatorImage string
+		socks5ProxyImage                 string
+		availabilityProberImage          string
+		inCluster                        bool
+		enableCIDebugOutput              bool
+	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "", "The name of the deployment of this operator")
@@ -79,6 +83,8 @@ func NewStartCommand() *cobra.Command {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image. (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&socks5ProxyImage, "socks5-proxy-image", "", "Image to use for socks5-proxy. (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&availabilityProberImage, "availability-prober-image", "", "Image to use for probing apiserver availability. (defaults to match this operator if running in a deployment)")
 	cmd.Flags().BoolVar(&inCluster, "in-cluster", true, "If false, the operator will be assumed to be running outside a kube "+
 		"cluster and will make some internal decisions to ease local development (e.g. using external endpoints where possible"+
 		"to avoid assuming access to the service network)")
@@ -135,10 +141,10 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string) (string, error) {
-			if len(hostedClusterConfigOperatorImage) > 0 {
-				setupLog.Info("using operator image from arguments")
-				return hostedClusterConfigOperatorImage, nil
+		lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name, userSpecifiedImage string) (string, error) {
+			if len(userSpecifiedImage) > 0 {
+				setupLog.Info("using image from arguments", "image", userSpecifiedImage)
+				return userSpecifiedImage, nil
 			}
 			deployment, err := deployments.Get(context.TODO(), name, metav1.GetOptions{})
 			if err != nil {
@@ -153,15 +159,26 @@ func NewStartCommand() *cobra.Command {
 			}
 			return "", fmt.Errorf("couldn't locate operator container on deployment")
 		}
-		hostedClusterConfigOperatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName)
+		hostedClusterConfigOperatorImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, hostedClusterConfigOperatorImage)
 		if err != nil {
 			setupLog.Error(err, fmt.Sprintf("failed to find operator image: %s", err), "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
-		setupLog.Info("using operator image", "operator-image", hostedClusterConfigOperatorImage)
+		setupLog.Info("using operator image", "image", hostedClusterConfigOperatorImage)
 
-		// Use the control-plane-operator's image for the socks5 proxy image as well
-		socks5ProxyImage := hostedClusterConfigOperatorImage
+		socks5ProxyImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, socks5ProxyImage)
+		if err != nil {
+			setupLog.Error(err, fmt.Sprintf("failed to find socks5 proxy image: %s", err), "controller", "hosted-control-plane")
+			os.Exit(1)
+		}
+		setupLog.Info("using socks5 proxy image", "image", socks5ProxyImage)
+
+		availabilityProberImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, availabilityProberImage)
+		if err != nil {
+			setupLog.Error(err, fmt.Sprintf("failed to find availability prober image: %s", err), "controller", "hosted-control-plane")
+			os.Exit(1)
+		}
+		setupLog.Info("using availability prober image", "image", availabilityProberImage)
 
 		releaseProvider := &releaseinfo.StaticProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
@@ -169,7 +186,7 @@ func NewStartCommand() *cobra.Command {
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 			ComponentImages: map[string]string{
-				util.AvailabilityProberImageName: hostedClusterConfigOperatorImage,
+				util.AvailabilityProberImageName: availabilityProberImage,
 				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
 				"konnectivity-server":            konnectivityServerImage,
 				"konnectivity-agent":             konnectivityAgentImage,
