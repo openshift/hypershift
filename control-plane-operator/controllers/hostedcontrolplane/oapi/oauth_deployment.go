@@ -7,7 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -208,7 +208,7 @@ func buildOAuthVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
 }
 
-func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *OAuthDeploymentParams) error {
+func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1beta1.PodDisruptionBudget, p *OAuthDeploymentParams) error {
 	if pdb.CreationTimestamp.IsZero() {
 		pdb.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: openShiftOAuthAPIServerLabels(),

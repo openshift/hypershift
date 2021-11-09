@@ -2,7 +2,7 @@ package manifests
 
 import (
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
+	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,8 +37,8 @@ func CertifiedOperatorsService(ns string) *corev1.Service {
 	}
 }
 
-func CertifiedOperatorsCronJob(ns string) *batchv1.CronJob {
-	return &batchv1.CronJob{
+func CertifiedOperatorsCronJob(ns string) *batchv1beta1.CronJob {
+	return &batchv1beta1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "certified-operators-catalog-rollout",
 			Namespace: ns,
@@ -75,8 +75,8 @@ func CommunityOperatorsService(ns string) *corev1.Service {
 	}
 }
 
-func CommunityOperatorsCronJob(ns string) *batchv1.CronJob {
-	return &batchv1.CronJob{
+func CommunityOperatorsCronJob(ns string) *batchv1beta1.CronJob {
+	return &batchv1beta1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "community-operators-catalog-rollout",
 			Namespace: ns,
@@ -113,8 +113,8 @@ func RedHatMarketplaceOperatorsService(ns string) *corev1.Service {
 	}
 }
 
-func RedHatMarketplaceOperatorsCronJob(ns string) *batchv1.CronJob {
-	return &batchv1.CronJob{
+func RedHatMarketplaceOperatorsCronJob(ns string) *batchv1beta1.CronJob {
+	return &batchv1beta1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "redhat-marketplace-catalog-rollout",
 			Namespace: ns,
@@ -151,8 +151,8 @@ func RedHatOperatorsService(ns string) *corev1.Service {
 	}
 }
 
-func RedHatOperatorsCronJob(ns string) *batchv1.CronJob {
-	return &batchv1.CronJob{
+func RedHatOperatorsCronJob(ns string) *batchv1beta1.CronJob {
+	return &batchv1beta1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "redhat-operators-catalog-rollout",
 			Namespace: ns,

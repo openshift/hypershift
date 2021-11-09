@@ -5,7 +5,7 @@ import (
 	"math/big"
 
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
+	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 
@@ -115,20 +115,20 @@ var (
 	redHatOperatorsCatalogRolloutCronJob   = MustCronJob("assets/catalog-redhat-operators-rollout.cronjob.yaml")
 )
 
-func ReconcileCertifiedOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
+func ReconcileCertifiedOperatorsCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
 	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, certifiedCatalogRolloutCronJob)
 }
-func ReconcileCommunityOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
+func ReconcileCommunityOperatorsCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
 	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, communityCatalogRolloutCronJob)
 }
-func ReconcileRedHatMarketplaceOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
+func ReconcileRedHatMarketplaceOperatorsCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
 	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, redHatMarketplaceCatalogRolloutCronJob)
 }
-func ReconcileRedHatOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
+func ReconcileRedHatOperatorsCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
 	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, redHatOperatorsCatalogRolloutCronJob)
 }
 
-func reconcileCatalogCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string, sourceCronJob *batchv1.CronJob) error {
+func reconcileCatalogCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string, sourceCronJob *batchv1beta1.CronJob) error {
 	ownerRef.ApplyTo(cronJob)
 	cronJob.Spec = sourceCronJob.DeepCopy().Spec
 	cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image = cliImage

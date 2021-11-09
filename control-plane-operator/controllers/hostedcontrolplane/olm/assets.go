@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
+	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -49,8 +49,8 @@ func MustDeployment(fileName string) *appsv1.Deployment {
 	return deployment
 }
 
-func MustCronJob(fileName string) *batchv1.CronJob {
-	cronJob := &batchv1.CronJob{}
+func MustCronJob(fileName string) *batchv1beta1.CronJob {
+	cronJob := &batchv1beta1.CronJob{}
 	deserializeResource(fileName, cronJob)
 	return cronJob
 }

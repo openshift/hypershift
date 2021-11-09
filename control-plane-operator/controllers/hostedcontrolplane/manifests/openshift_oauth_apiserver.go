@@ -5,7 +5,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 )
@@ -28,8 +28,8 @@ func OpenShiftOAuthAPIServerDeployment(ns string) *appsv1.Deployment {
 	}
 }
 
-func OpenShiftOAuthAPIServerDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
-	return &policyv1.PodDisruptionBudget{
+func OpenShiftOAuthAPIServerDisruptionBudget(ns string) *policyv1beta1.PodDisruptionBudget {
+	return &policyv1beta1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openshift-oauth-apiserver",
 			Namespace: ns,

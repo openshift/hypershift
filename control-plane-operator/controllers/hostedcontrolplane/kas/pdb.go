@@ -2,12 +2,12 @@ package kas
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	policyv1 "k8s.io/api/policy/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *KubeAPIServerParams) error {
+func ReconcilePodDisruptionBudget(pdb *policyv1beta1.PodDisruptionBudget, p *KubeAPIServerParams) error {
 	if pdb.CreationTimestamp.IsZero() {
 		pdb.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: kasLabels(),
