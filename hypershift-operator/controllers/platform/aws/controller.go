@@ -1,10 +1,8 @@
-package awsendpointservice
+package aws
 
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"strings"
 	"time"
 
@@ -38,31 +36,21 @@ const (
 type AWSEndpointServiceReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
-	Region      string
 	ec2Client   ec2iface.EC2API
 	elbv2Client elbv2iface.ELBV2API
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Only add this controller to the manager if we have a non-empty credentials file
-	credsFile := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
-	if len(credsFile) == 0 {
-		return nil
-	}
-	credsBytes, err := ioutil.ReadFile(credsFile)
-	if err != nil || len(credsBytes) == 0 {
-		return nil
-	}
-
-	_, err = ctrl.NewControllerManagedBy(mgr).
+	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
 	}
 
+	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	awsSession := awsutil.NewSession("hypershift-operator")
-	awsConfig := awsutil.NewConfig(credsFile, r.Region)
+	awsConfig := aws.NewConfig()
 	r.ec2Client = ec2.New(awsSession, awsConfig)
 	r.elbv2Client = elbv2.New(awsSession, awsConfig)
 

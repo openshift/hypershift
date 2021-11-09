@@ -37,12 +37,12 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 	return namespace
 }
 
-type HyperShiftOperatorAWSCredentialsSecret struct {
-	Namespace     *corev1.Namespace
-	AWSCredsBytes []byte
+type HyperShiftOperatorCredentialsSecret struct {
+	Namespace  *corev1.Namespace
+	CredsBytes []byte
 }
 
-func (o HyperShiftOperatorAWSCredentialsSecret) Build() *corev1.Secret {
+func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
@@ -53,7 +53,7 @@ func (o HyperShiftOperatorAWSCredentialsSecret) Build() *corev1.Secret {
 			Namespace: o.Namespace.Name,
 		},
 		Data: map[string][]byte{
-			"credentials": o.AWSCredsBytes,
+			"credentials": o.CredsBytes,
 		},
 	}
 	return secret
@@ -66,7 +66,9 @@ type HyperShiftOperatorDeployment struct {
 	Replicas                   int32
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
-	AWSRegion                  string
+	PrivatePlatform            string
+	AWSPrivateCreds            string
+	AWSPrivateRegion           string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -114,13 +116,9 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 										},
 									},
 								},
-								{
-									Name:  "AWS_SHARED_CREDENTIALS_FILE",
-									Value: "/etc/aws/credentials",
-								},
 							},
 							Command: []string{"/usr/bin/hypershift-operator"},
-							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000", fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring), fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput), fmt.Sprintf("--aws-region=%s", o.AWSRegion)},
+							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000", fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring), fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput)},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "metrics",
@@ -128,27 +126,44 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "credentials",
-									MountPath: "/etc/aws",
-								},
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "credentials",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: "hypershift-operator-creds",
-								},
-							},
 						},
 					},
 				},
 			},
 		},
+	}
+
+	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
+	if privatePlatformType == hyperv1.NonePlatform {
+		return deployment
+	}
+
+	// Add generic provider credentials secret volume
+	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: "credentials",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: "hypershift-operator-creds",
+			},
+		},
+	})
+	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+		Name:      "credentials",
+		MountPath: "/etc/provider",
+	})
+
+	// Add platform specific settings
+	switch privatePlatformType {
+	case hyperv1.AWSPlatform:
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: "/etc/provider/credentials",
+			},
+			corev1.EnvVar{
+				Name:  "AWS_REGION",
+				Value: o.AWSPrivateRegion,
+			})
 	}
 	return deployment
 }
