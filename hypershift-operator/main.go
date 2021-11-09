@@ -81,6 +81,7 @@ type StartOptions struct {
 	ControlPlaneOperatorImage  string
 	AvailabilityProberImage    string
 	Region                     string
+	RegistryOverrides          map[string]string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -100,6 +101,7 @@ func NewStartCommand() *cobra.Command {
 		IgnitionServerImage:       "",
 		OpenTelemetryEndpoint:     "",
 		Region:                    "us-east-1",
+		RegistryOverrides:         map[string]string{},
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -115,6 +117,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringVar(&opts.Region, "aws-region", opts.Region, "AWS region in which the operator will create resources")
+	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -213,9 +216,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		HypershiftOperatorImage:       operatorImage,
 		IgnitionServerImage:           ignitionServerImage,
 		AvailabilityProberImage:       availabilityProberImage,
-		ReleaseProvider: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.RegistryClientProvider{},
-			Cache: map[string]*releaseinfo.ReleaseImage{},
+		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: opts.RegistryOverrides,
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		CreateOrUpdateProvider:     createOrUpdate,
@@ -226,9 +232,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err := (&nodepool.NodePoolReconciler{
 		Client: mgr.GetClient(),
-		ReleaseProvider: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.RegistryClientProvider{},
-			Cache: map[string]*releaseinfo.ReleaseImage{},
+		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: opts.RegistryOverrides,
 		},
 		CreateOrUpdateProvider: createOrUpdate,
 	}).SetupWithManager(mgr); err != nil {
