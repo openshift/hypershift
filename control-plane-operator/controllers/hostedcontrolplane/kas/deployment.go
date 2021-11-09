@@ -291,6 +291,16 @@ func buildKASContainerMain(image string) func(c *corev1.Container) {
 			fmt.Sprintf("--openshift-config=%s", path.Join(volumeMounts.Path(c.Name, kasVolumeConfig().Name), KubeAPIServerConfigKey)),
 			"-v2",
 		}
+
+		c.Env = []corev1.EnvVar{{
+			// Needed by the apirequest count controller, it uses this as its nodeName. Without this, all its requests fail validation
+			// as the nodeName is empty. Should be using the hostname, but it appears os.Hostname() doesn't work so it falls back to
+			// the value of this env var.
+			// * Controller instantiation: https://github.com/openshift/kubernetes/blob/1b2affc8e97007139e70badd729981279d4f5f1b/openshift-kube-apiserver/openshiftkubeapiserver/patch.go#L88
+			// * NodeName detection: https://github.com/openshift/kubernetes/blob/1b2affc8e97007139e70badd729981279d4f5f1b/openshift-kube-apiserver/openshiftkubeapiserver/patch.go#L131
+			Name:      "HOST_IP",
+			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"}},
+		}}
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
