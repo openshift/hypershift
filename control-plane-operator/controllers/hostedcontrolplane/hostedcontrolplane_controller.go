@@ -511,7 +511,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("invalid component versions found in release info: %w", err)
 	}
 	r.Log.Info("Found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", len(releaseImage.ComponentImages()), "componentVersions", componentVersions)
-
 	// During an upgrade, if there's an old bootstrapper pod referring to the old
 	// image, delete the pod to make way for the new one to be rendered. This is
 	// a hack to avoid the refactoring of moving this pod into the hosted cluster

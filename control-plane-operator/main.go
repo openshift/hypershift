@@ -74,6 +74,7 @@ func NewStartCommand() *cobra.Command {
 		availabilityProberImage          string
 		inCluster                        bool
 		enableCIDebugOutput              bool
+		registryOverrides                map[string]string
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
@@ -89,7 +90,7 @@ func NewStartCommand() *cobra.Command {
 		"cluster and will make some internal decisions to ease local development (e.g. using external endpoints where possible"+
 		"to avoid assuming access to the service network)")
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
-
+	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.MarkFlagRequired("namespace")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -180,18 +181,21 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using availability prober image", "image", availabilityProberImage)
 
-		releaseProvider := &releaseinfo.StaticProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
+		releaseProvider := &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.StaticProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+				ComponentImages: map[string]string{
+					util.AvailabilityProberImageName: availabilityProberImage,
+					"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
+					"konnectivity-server":            konnectivityServerImage,
+					"konnectivity-agent":             konnectivityAgentImage,
+					"socks5-proxy":                   socks5ProxyImage,
+				},
 			},
-			ComponentImages: map[string]string{
-				util.AvailabilityProberImageName: availabilityProberImage,
-				"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
-				"konnectivity-server":            konnectivityServerImage,
-				"konnectivity-agent":             konnectivityAgentImage,
-				"socks5-proxy":                   socks5ProxyImage,
-			},
+			RegistryOverrides: registryOverrides,
 		}
 
 		var hostedKubeconfigScope manifests.KubeconfigScope
