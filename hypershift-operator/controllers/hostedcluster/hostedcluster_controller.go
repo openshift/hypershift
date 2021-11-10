@@ -22,6 +22,7 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -135,6 +136,8 @@ type HostedClusterReconciler struct {
 	upsert.CreateOrUpdateProvider
 
 	EnableCIDebugOutput bool
+
+	PrivatePlatform hyperv1.PlatformType
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -312,6 +315,24 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
+	// Set SupportedHostedCluster condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.SupportedHostedCluster),
+			ObservedGeneration: hcluster.Generation,
+		}
+		if err := r.validateHostedClusterSupport(hcluster, r.PrivatePlatform); err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.UnsupportedHostedClusterReason
+		} else {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "HostedCluster is support by operator configuration"
+			condition.Reason = hyperv1.HostedClusterAsExpectedReason
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
 	// Set ValidHostedControlPlaneConfiguration condition
 	{
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -455,6 +476,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
 			r.Log.Info("Configuration is invalid, reconciliation is blocked")
+			return ctrl.Result{}, nil
+		}
+		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
+		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
+			r.Log.Info("Hosted Cluster is not supported by operator configuration, reconciliation is blocked")
 			return ctrl.Result{}, nil
 		}
 	}
@@ -2999,6 +3025,30 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyper
 	for _, svc := range hc.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+		}
+	}
+	return nil
+}
+
+func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster, privatePlatform hyperv1.PlatformType) error {
+	switch hc.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if hc.Spec.Platform.AWS == nil {
+			return nil
+		}
+		if hc.Spec.Platform.AWS.EndpointAccess == hyperv1.Public {
+			return nil
+		}
+		region := os.Getenv("AWS_REGION")
+		if region == "" {
+			return fmt.Errorf("AWS_REGION environment variable is not set for the operator")
+		}
+		credFile := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
+		if credFile == "" {
+			return fmt.Errorf("AWS_SHARED_CREDENTIALS_FILE environment variable is not set for the operator")
+		}
+		if hc.Spec.Platform.AWS.Region != region {
+			return fmt.Errorf("operator only supports private clusters in region %s", region)
 		}
 	}
 	return nil

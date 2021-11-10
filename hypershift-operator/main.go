@@ -24,9 +24,10 @@ import (
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/awsendpointservice"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -80,8 +81,8 @@ type StartOptions struct {
 	EnableCIDebugOutput        bool
 	ControlPlaneOperatorImage  string
 	AvailabilityProberImage    string
-	Region                     string
 	RegistryOverrides          map[string]string
+	PrivatePlatform            string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -100,8 +101,8 @@ func NewStartCommand() *cobra.Command {
 		ControlPlaneOperatorImage: "",
 		IgnitionServerImage:       "",
 		OpenTelemetryEndpoint:     "",
-		Region:                    "us-east-1",
 		RegistryOverrides:         map[string]string{},
+		PrivatePlatform:           string(hyperv1.NonePlatform),
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -116,8 +117,8 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
-	cmd.Flags().StringVar(&opts.Region, "aws-region", opts.Region, "AWS region in which the operator will create resources")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -244,12 +245,15 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
-	if err := (&awsendpointservice.AWSEndpointServiceReconciler{
-		Client:                 mgr.GetClient(),
-		CreateOrUpdateProvider: createOrUpdate,
-		Region:                 opts.Region,
-	}).SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create controller: %w", err)
+	// Start platform-specific controllers
+	switch hyperv1.PlatformType(opts.PrivatePlatform) {
+	case hyperv1.AWSPlatform:
+		if err := (&aws.AWSEndpointServiceReconciler{
+			Client:                 mgr.GetClient(),
+			CreateOrUpdateProvider: createOrUpdate,
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller: %w", err)
+		}
 	}
 
 	// Configure OpenTelemetry

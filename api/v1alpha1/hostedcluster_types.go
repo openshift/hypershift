@@ -740,6 +740,13 @@ const (
 	// ValidHostedClusterConfiguration indicates (if status is true) that the
 	// ClusterConfiguration specified for the HostedCluster is valid.
 	ValidHostedClusterConfiguration ConditionType = "ValidConfiguration"
+
+	// SupportedHostedCluster indicates whether a HostedCluster is supported by
+	// the current configuration of the hypershift-operator.
+	// e.g. If HostedCluster requests endpointAcess Private but the hypershift-operator
+	// is running on a management cluster outside AWS or is not configured with AWS
+	// credentials, the HostedCluster is not supported.
+	SupportedHostedCluster ConditionType = "SupportedHostedCluster"
 )
 
 const (
@@ -751,6 +758,8 @@ const (
 	HostedClusterAsExpectedReason          = "HostedClusterAsExpected"
 	HostedClusterUnhealthyComponentsReason = "UnhealthyControlPlaneComponents"
 	InvalidConfigurationReason             = "InvalidConfiguration"
+
+	UnsupportedHostedClusterReason = "UnsupportedHostedCluster"
 
 	UnmanagedEtcdStatusUnknownReason = "UnmanagedEtcdStatusUnknown"
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
