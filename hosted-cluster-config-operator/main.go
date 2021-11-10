@@ -18,7 +18,6 @@ import (
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusteroperator"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/infrastatus"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeadminpwd"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/node"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
@@ -49,7 +48,6 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
 	// TODO: non-essential, can't statically link to operator
 	//"openshift-controller-manager": openshiftcontrollermanager.Setup,
-	"infrastatus":            infrastatus.Setup,
 	"node":                   node.Setup,
 	resources.ControllerName: resources.Setup,
 }
@@ -57,6 +55,9 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 type HostedClusterConfigOperator struct {
 	// Namespace is the namespace on the management cluster where the control plane components run.
 	Namespace string
+
+	// HostedControlPlaneName is the name of the hosted control plane that owns this operator instance.
+	HostedControlPlaneName string
 
 	// TargetKubeconfig is a kubeconfig to access the target cluster.
 	TargetKubeconfig string
@@ -109,6 +110,7 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringSliceVar(&cpo.Controllers, "controllers", cpo.Controllers, "Controllers to run with this operator")
 	flags.StringVar(&cpo.platformType, "platform-type", "", "The platform of the cluster")
 	flags.BoolVar(&cpo.enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	flags.StringVar(&cpo.HostedControlPlaneName, "hosted-control-plane", cpo.HostedControlPlaneName, "Name of the hosted control plane that owns this operator")
 	return cmd
 }
 
@@ -172,6 +174,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	cfg := operator.NewHostedClusterConfigOperatorConfig(
 		o.TargetKubeconfig,
 		o.Namespace,
+		o.HostedControlPlaneName,
 		o.initialCA,
 		versions,
 		o.Controllers,
