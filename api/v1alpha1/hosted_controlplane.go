@@ -97,11 +97,21 @@ type HostedControlPlaneSpec struct {
 	SecretEncryption *SecretEncryptionSpec `json:"secretEncryption,omitempty"`
 }
 
+// AvailabilityPolicy specifies a high level availability policy for components.
 type AvailabilityPolicy string
 
 const (
+	// HighlyAvailable means components should be resilient to problems across fault
+	// boundaries as defined by the component to which the policy is attached. This
+	// usually means running critical workloads with 3 replicas and with little or
+	// no toleration of disruption of the component.
 	HighlyAvailable AvailabilityPolicy = "HighlyAvailable"
-	SingleReplica   AvailabilityPolicy = "SingleReplica"
+
+	// SingleReplica means components are not expected to be resilient to problems
+	// across most fault boundaries associated with high availability. This usually
+	// means running critical workloads with just 1 replica and with toleration of
+	// full disruption of the component.
+	SingleReplica AvailabilityPolicy = "SingleReplica"
 )
 
 type KubeconfigSecretRef struct {

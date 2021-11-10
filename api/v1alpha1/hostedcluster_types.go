@@ -129,7 +129,8 @@ type HostedClusterSpec struct {
 	// TODO (alberto): include Ignition endpoint here.
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
-	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
+	// ControllerAvailabilityPolicy specifies an availability policy to apply
+	// to critical control plane components.
 	// Defaults to SingleReplica when not set.
 	// +optional
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
@@ -841,6 +842,14 @@ type ClusterConfiguration struct {
 	Items []runtime.RawExtension `json:"items,omitempty"`
 }
 
+// +genclient
+
+// HostedCluster is the primary representation of a HyperShift cluster and encapsulates
+// the control plane and common data plane configuration. Creating a HostedCluster
+// results in a fully functional OpenShift control plane with no attached nodes.
+// To support workloads (e.g. pods), a HostedCluster may have one or more associated
+// NodePool resources.
+//
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=hostedclusters,shortName=hc;hcs,scope=Namespaced
 // +kubebuilder:storageversion
@@ -850,12 +859,14 @@ type ClusterConfiguration struct {
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
 // +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
-// HostedCluster is the Schema for the hostedclusters API
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   HostedClusterSpec   `json:"spec,omitempty"`
+	// Spec is the desired behavior of the HostedCluster.
+	Spec HostedClusterSpec `json:"spec,omitempty"`
+
+	// Status is the latest observed status of the HostedCluster.
 	Status HostedClusterStatus `json:"status,omitempty"`
 }
 
