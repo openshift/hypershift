@@ -29,17 +29,6 @@ title: API Reference
         {{ end }}
     {{ end }}
 
-    Resource Types:
-    <ul>
-    {{- range (visibleTypes (sortedTypes .Types)) -}}
-        {{ if isExportedType . -}}
-        <li>
-            <a href="{{ linkForType . }}">{{ typeDisplayName . }}</a>
-        </li>
-        {{- end }}
-    {{- end -}}
-    </ul>
-
     {{ range (visibleTypes (sortedTypes .Types))}}
         {{ template "type" .  }}
     {{ end }}
