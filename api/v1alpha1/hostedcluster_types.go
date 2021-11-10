@@ -118,7 +118,7 @@ type HostedClusterSpec struct {
 
 	// InfraID is used to identify the cluster in cloud platforms
 	// +immutable
-	InfraID string `json:"infraID,omitempty"`
+	InfraID string `json:"infraID"`
 
 	// DNS configuration for the cluster
 	// +immutable
