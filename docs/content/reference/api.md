@@ -2885,6 +2885,15 @@ Current condition types are: &ldquo;Available&rdquo;</p>
 </tr>
 </tbody>
 </table>
+<h3 id="hypershift.openshift.io/v1alpha1.IBMCloudIAASProvider">IBMCloudIAASProvider
+(<code>string</code> alias)</p></h3>
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">IBMCloudPlatformSpec</a>)
+</p>
+<p>
+<p>IBMCloudIAASProvider is a specific supported infrastructure provider within IBM Cloud.</p>
+</p>
 <h3 id="hypershift.openshift.io/v1alpha1.IBMCloudKMSAuthSpec">IBMCloudKMSAuthSpec
 </h3>
 <p>
@@ -3125,6 +3134,39 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>Credentials should reference a secret with a key field of IBMCloudIAMAPIKeySecretKey that contains a apikey to
 call IBM Cloud KMS APIs</p>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">IBMCloudPlatformSpec
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>IBMCloudPlatformSpec defines IBMCloud specific settings for components</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>iaasProvider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudIAASProvider">
+IBMCloudIAASProvider
+</a>
+</em>
+</td>
+<td>
+<p>IAASProvider is a specific supported infrastructure provider within IBM Cloud.</p>
 </td>
 </tr>
 </tbody>
@@ -3684,6 +3726,19 @@ AWSNodePoolPlatform
 <p>AWS is the configuration used when installing on AWS.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="hypershift.openshift.io/v1alpha1.NodePoolSpec">NodePoolSpec
@@ -3987,6 +4042,19 @@ AWSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>AWS contains AWS-specific settings for the HostedCluster</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 </tbody>
