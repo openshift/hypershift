@@ -1,9 +1,8 @@
 package dump
 
 import (
+	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/spf13/cobra"
-
-	"github.com/openshift/hypershift/cmd/cluster"
 )
 
 func NewCommand() *cobra.Command {
@@ -13,7 +12,7 @@ func NewCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	cmd.AddCommand(cluster.NewDumpCommand())
+	cmd.AddCommand(aws.NewDumpCommand())
 
 	return cmd
 }

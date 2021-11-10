@@ -13,22 +13,28 @@ import (
 )
 
 type ExampleResources struct {
-	Namespace                   *corev1.Namespace
-	PullSecret                  *corev1.Secret
+	Namespace    *corev1.Namespace
+	PullSecret   *corev1.Secret
+	AWSResources *ExampleAWSResources
+	SSHKey       *corev1.Secret
+	Cluster      *hyperv1.HostedCluster
+	NodePool     *hyperv1.NodePool
+}
+
+type ExampleAWSResources struct {
 	KubeCloudControllerAWSCreds *corev1.Secret
 	NodePoolManagementAWSCreds  *corev1.Secret
-	SSHKey                      *corev1.Secret
-	Cluster                     *hyperv1.HostedCluster
-	NodePool                    *hyperv1.NodePool
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
 	objects := []crclient.Object{
 		o.Namespace,
 		o.PullSecret,
-		o.KubeCloudControllerAWSCreds,
-		o.NodePoolManagementAWSCreds,
 		o.Cluster,
+	}
+	if o.AWSResources != nil {
+		objects = append(objects, o.AWSResources.KubeCloudControllerAWSCreds)
+		objects = append(objects, o.AWSResources.NodePoolManagementAWSCreds)
 	}
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
@@ -57,10 +63,15 @@ type ExampleOptions struct {
 	FIPS                             bool
 	AutoRepair                       bool
 	EtcdStorageClass                 string
-	AWS                              ExampleAWSOptions
+	AWS                              *ExampleAWSOptions
+	None                             *ExampleNoneOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
+}
+
+type ExampleNoneOptions struct {
+	APIServerAddress string
 }
 
 type ExampleAWSOptions struct {
@@ -107,33 +118,6 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		},
 	}
 
-	buildAWSCreds := func(name, id, key string) *corev1.Secret {
-		return &corev1.Secret{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "Secret",
-				APIVersion: corev1.SchemeGroupVersion.String(),
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace.Name,
-				Name:      name,
-			},
-			Data: map[string][]byte{
-				"credentials": []byte(fmt.Sprintf(`[default]
-aws_access_key_id = %s
-aws_secret_access_key = %s
-`, id, key)),
-			},
-		}
-	}
-	kubeCloudControllerCredsSecret := buildAWSCreds(
-		o.Name+"-cloud-ctrl-creds",
-		o.AWS.KubeCloudControllerUserAccessKeyID,
-		o.AWS.KubeCloudControllerUserAccessKeySecret)
-	nodePoolManagementCredsSecret := buildAWSCreds(
-		o.Name+"-node-mgmt-creds",
-		o.AWS.NodePoolManagementUserAccessKeyID,
-		o.AWS.NodePoolManagementUserAccessKeySecret)
-
 	var sshKeySecret *corev1.Secret
 	var sshKeyReference corev1.LocalObjectReference
 	if len(o.SSHPublicKey) > 0 {
@@ -154,6 +138,134 @@ aws_secret_access_key = %s
 			sshKeySecret.Data["id_rsa"] = o.SSHPrivateKey
 		}
 		sshKeyReference = corev1.LocalObjectReference{Name: sshKeySecret.Name}
+	}
+
+	var platformSpec hyperv1.PlatformSpec
+	var exampleAWSResources *ExampleAWSResources
+	var services []hyperv1.ServicePublishingStrategyMapping
+
+	switch {
+	case o.AWS != nil:
+		buildAWSCreds := func(name, id, key string) *corev1.Secret {
+			return &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Secret",
+					APIVersion: corev1.SchemeGroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace.Name,
+					Name:      name,
+				},
+				Data: map[string][]byte{
+					"credentials": []byte(fmt.Sprintf(`[default]
+aws_access_key_id = %s
+aws_secret_access_key = %s
+`, id, key)),
+				},
+			}
+		}
+		exampleAWSResources = &ExampleAWSResources{}
+		exampleAWSResources.KubeCloudControllerAWSCreds = buildAWSCreds(
+			o.Name+"-cloud-ctrl-creds",
+			o.AWS.KubeCloudControllerUserAccessKeyID,
+			o.AWS.KubeCloudControllerUserAccessKeySecret)
+		exampleAWSResources.NodePoolManagementAWSCreds = buildAWSCreds(
+			o.Name+"-node-mgmt-creds",
+			o.AWS.NodePoolManagementUserAccessKeyID,
+			o.AWS.NodePoolManagementUserAccessKeySecret)
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.AWSPlatform,
+			AWS: &hyperv1.AWSPlatformSpec{
+				Region: o.AWS.Region,
+				Roles:  o.AWS.Roles,
+				CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+					VPC: o.AWS.VPCID,
+					Subnet: &hyperv1.AWSResourceReference{
+						ID: &o.AWS.SubnetID,
+					},
+					Zone: o.AWS.Zone,
+				},
+				KubeCloudControllerCreds: corev1.LocalObjectReference{Name: exampleAWSResources.KubeCloudControllerAWSCreds.Name},
+				NodePoolManagementCreds:  corev1.LocalObjectReference{Name: exampleAWSResources.NodePoolManagementAWSCreds.Name},
+				ResourceTags:             o.AWS.ResourceTags,
+			},
+		}
+		services = []hyperv1.ServicePublishingStrategyMapping{
+			{
+				Service: hyperv1.APIServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.LoadBalancer,
+				},
+			},
+			{
+				Service: hyperv1.OAuthServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.OIDC,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Konnectivity,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+		}
+	case o.None != nil:
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.NonePlatform,
+		}
+		services = []hyperv1.ServicePublishingStrategyMapping{
+			{
+				Service: hyperv1.APIServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type:     hyperv1.NodePort,
+					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
+				},
+			},
+			{
+				Service: hyperv1.OAuthServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type:     hyperv1.NodePort,
+					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
+				},
+			},
+			{
+				Service: hyperv1.OIDC,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type:     hyperv1.None,
+					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
+				},
+			},
+			{
+				Service: hyperv1.Konnectivity,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type:     hyperv1.NodePort,
+					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
+				},
+			},
+			{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type:     hyperv1.NodePort,
+					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
+				},
+			},
+		}
+
+	default:
+		panic("no platform specified")
 	}
 
 	var etcdStorgageClass *string = nil
@@ -192,38 +304,7 @@ aws_secret_access_key = %s
 				MachineCIDR: o.ComputeCIDR,
 				NetworkType: o.NetworkType,
 			},
-			Services: []hyperv1.ServicePublishingStrategyMapping{
-				{
-					Service: hyperv1.APIServer,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.LoadBalancer,
-					},
-				},
-				{
-					Service: hyperv1.OAuthServer,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					},
-				},
-				{
-					Service: hyperv1.OIDC,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					},
-				},
-				{
-					Service: hyperv1.Konnectivity,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					},
-				},
-				{
-					Service: hyperv1.Ignition,
-					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					},
-				},
-			},
+			Services:   services,
 			InfraID:    o.InfraID,
 			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
 			IssuerURL:  o.IssuerURL,
@@ -236,23 +317,7 @@ aws_secret_access_key = %s
 			},
 			ControllerAvailabilityPolicy:     o.ControlPlaneAvailabilityPolicy,
 			InfrastructureAvailabilityPolicy: o.InfrastructureAvailabilityPolicy,
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-				AWS: &hyperv1.AWSPlatformSpec{
-					Region: o.AWS.Region,
-					Roles:  o.AWS.Roles,
-					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
-						VPC: o.AWS.VPCID,
-						Subnet: &hyperv1.AWSResourceReference{
-							ID: &o.AWS.SubnetID,
-						},
-						Zone: o.AWS.Zone,
-					},
-					KubeCloudControllerCreds: corev1.LocalObjectReference{Name: kubeCloudControllerCredsSecret.Name},
-					NodePoolManagementCreds:  corev1.LocalObjectReference{Name: nodePoolManagementCredsSecret.Name},
-					ResourceTags:             o.AWS.ResourceTags,
-				},
-			},
+			Platform:                         platformSpec,
 		},
 	}
 
@@ -306,12 +371,11 @@ aws_secret_access_key = %s
 	}
 
 	return &ExampleResources{
-		Namespace:                   namespace,
-		PullSecret:                  pullSecret,
-		KubeCloudControllerAWSCreds: kubeCloudControllerCredsSecret,
-		NodePoolManagementAWSCreds:  nodePoolManagementCredsSecret,
-		SSHKey:                      sshKeySecret,
-		Cluster:                     cluster,
-		NodePool:                    nodePool,
+		Namespace:    namespace,
+		PullSecret:   pullSecret,
+		AWSResources: exampleAWSResources,
+		SSHKey:       sshKeySecret,
+		Cluster:      cluster,
+		NodePool:     nodePool,
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/awsendpointservice"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
@@ -78,6 +79,9 @@ type StartOptions struct {
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
 	ControlPlaneOperatorImage  string
+	AvailabilityProberImage    string
+	Region                     string
+	RegistryOverrides          map[string]string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -96,6 +100,8 @@ func NewStartCommand() *cobra.Command {
 		ControlPlaneOperatorImage: "",
 		IgnitionServerImage:       "",
 		OpenTelemetryEndpoint:     "",
+		Region:                    "us-east-1",
+		RegistryOverrides:         map[string]string{},
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -105,10 +111,13 @@ func NewStartCommand() *cobra.Command {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&opts.AvailabilityProberImage, "availability-prober-operator-image", opts.AvailabilityProberImage, "Image for kube apiserver prober utility (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	cmd.Flags().StringVar(&opts.Region, "aws-region", opts.Region, "AWS region in which the operator will create resources")
+	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -193,6 +202,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	log.Info("using ignition server image", "image", ignitionServerImage)
 
+	availabilityProberImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.AvailabilityProberImage)
+	if err != nil {
+		return fmt.Errorf("failed to find operator image: %w", err)
+	}
+	log.Info("using availability prober image", "image", availabilityProberImage)
+
 	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
 
 	if err = (&hostedcluster.HostedClusterReconciler{
@@ -200,9 +215,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
 		IgnitionServerImage:           ignitionServerImage,
-		ReleaseProvider: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.RegistryClientProvider{},
-			Cache: map[string]*releaseinfo.ReleaseImage{},
+		AvailabilityProberImage:       availabilityProberImage,
+		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: opts.RegistryOverrides,
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		CreateOrUpdateProvider:     createOrUpdate,
@@ -213,11 +232,22 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err := (&nodepool.NodePoolReconciler{
 		Client: mgr.GetClient(),
-		ReleaseProvider: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.RegistryClientProvider{},
-			Cache: map[string]*releaseinfo.ReleaseImage{},
+		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: opts.RegistryOverrides,
 		},
 		CreateOrUpdateProvider: createOrUpdate,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller: %w", err)
+	}
+
+	if err := (&awsendpointservice.AWSEndpointServiceReconciler{
+		Client:                 mgr.GetClient(),
+		CreateOrUpdateProvider: createOrUpdate,
+		Region:                 opts.Region,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
