@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	kubeclient "k8s.io/client-go/kubernetes"
 )
 
@@ -85,7 +86,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 	infraID := opts.InfraID
 	if len(infraID) == 0 {
-		infraID = opts.Name
+		infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
 	}
 	exampleOptions.InfraID = infraID
 	exampleOptions.BaseDomain = "example.com"

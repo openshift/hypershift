@@ -71,6 +71,7 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
 	client := util.GetClientOrDie()
+	infraID := opts.InfraID
 
 	// Load or create infrastructure for the cluster
 	var infra *awsinfra.CreateInfraOutput
@@ -92,7 +93,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 	if infra == nil {
-		infraID := opts.InfraID
 		if len(infraID) == 0 {
 			infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
 		}
@@ -148,6 +148,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.IssuerURL = iamInfo.IssuerURL
 	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.PublicZoneID = infra.PublicZoneID
+	exampleOptions.InfraID = infraID
 
 	exampleOptions.AWS = &apifixtures.ExampleAWSOptions{
 		Region:                                 infra.Region,
