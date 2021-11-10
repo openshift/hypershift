@@ -803,6 +803,7 @@ spec:
                     type: string
                 type: object
             required:
+            - infraID
             - issuerURL
             - networking
             - platform
