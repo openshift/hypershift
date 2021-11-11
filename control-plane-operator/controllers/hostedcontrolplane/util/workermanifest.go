@@ -17,7 +17,7 @@ const (
 )
 
 func ReconcileWorkerManifest(cm *corev1.ConfigMap, resource client.Object) error {
-	content, err := serializeResource(resource, hyperapi.Scheme)
+	content, err := SerializeResource(resource, hyperapi.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize resource of type %T: %w", resource, err)
 	}
@@ -36,7 +36,7 @@ func ReconcileWorkerManifestString(cm *corev1.ConfigMap, content string) error {
 	return nil
 }
 
-func serializeResource(resource client.Object, objectTyper runtime.ObjectTyper) (string, error) {
+func SerializeResource(resource client.Object, objectTyper runtime.ObjectTyper) (string, error) {
 	out := &bytes.Buffer{}
 	gvks, _, err := objectTyper.ObjectKinds(resource)
 	if err != nil || len(gvks) == 0 {

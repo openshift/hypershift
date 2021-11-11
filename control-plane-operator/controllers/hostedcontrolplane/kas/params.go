@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 type KubeAPIServerImages struct {
@@ -60,7 +61,7 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
 		FeatureGate:          globalConfig.FeatureGate,

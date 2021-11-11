@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 const (
@@ -69,7 +70,7 @@ type ConfigOverride struct {
 	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, host string, port int32) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,

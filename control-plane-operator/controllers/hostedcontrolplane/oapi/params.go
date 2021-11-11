@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 type OpenShiftAPIServerParams struct {
@@ -39,7 +40,7 @@ type OAuthDeploymentParams struct {
 	OwnerRef                config.OwnerRef
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
