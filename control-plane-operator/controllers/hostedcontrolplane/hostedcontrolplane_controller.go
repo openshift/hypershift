@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
-	"net/url"
 	"time"
 
 	"github.com/openshift/api/operator/v1alpha1"
@@ -572,24 +571,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reconciling cloud provider config")
 	if err := r.reconcileCloudProviderConfig(ctx, hostedControlPlane); err != nil {
 		return fmt.Errorf("failed to reconcile cloud provider config: %w", err)
-	}
-
-	// Reconcile OIDC Route
-	for _, service := range hostedControlPlane.Spec.Services {
-		if service.Service != hyperv1.OIDC {
-			continue
-		}
-		switch service.Type {
-		case hyperv1.Route:
-			r.Log.Info("Reconciling OIDC Route servicetype resources")
-			if err := r.reconcileOIDCRouteResources(ctx, hostedControlPlane); err != nil {
-				return fmt.Errorf("failed to reconcile OIDC route: %w", err)
-			}
-		case hyperv1.None:
-			r.Log.Info("OIDC Route is disabled")
-		default:
-			return fmt.Errorf("invalid publishing strategy for OIDC service: %s", service.Type)
-		}
 	}
 
 	globalConfig, err := config.ParseGlobalConfig(ctx, hostedControlPlane.Spec.Configuration)
@@ -2310,38 +2291,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		return nil, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
 	return manifests, nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	route := manifests.OIDCRoute(hcp.GetNamespace())
-	r.Log.Info("Updating OIDC route")
-	_, err := r.CreateOrUpdate(ctx, r.Client, route, func() error {
-		rootCASecret := manifests.RootCASecret(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
-			return err
-		}
-		u, err := url.Parse(hcp.Spec.IssuerURL)
-		if err != nil {
-			return fmt.Errorf("unable to parse issuer URL: %s", hcp.Spec.IssuerURL)
-		}
-		route.OwnerReferences = ensureHCPOwnerRef(hcp, route.OwnerReferences)
-		route.Spec = routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: manifests.KubeAPIServerServiceName,
-			},
-			Host: u.Host,
-			TLS: &routev1.TLSConfig{
-				// Reencrypt is used here because we need to probe for the
-				// CA thumbprint before the KAS on the HCP is running
-				Termination:                   routev1.TLSTerminationReencrypt,
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
-				DestinationCACertificate:      string(rootCASecret.Data["ca.crt"]),
-			},
-		}
-		return nil
-	})
-	return err
 }
 
 func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

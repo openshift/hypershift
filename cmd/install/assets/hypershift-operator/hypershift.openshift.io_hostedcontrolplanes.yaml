@@ -712,6 +712,7 @@ spec:
                           - NodePort
                           - Route
                           - None
+                          - S3
                           type: string
                       required:
                       - type

@@ -2,10 +2,7 @@ package aws
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"crypto/tls"
 	"fmt"
-	"net/url"
 	"strings"
 	"text/template"
 
@@ -261,31 +258,13 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		IssuerURL: o.IssuerURL,
 	}
 
-	// Discover the thumbprint for the CA on the OIDC discovery endpoint
-	url, err := url.Parse(o.IssuerURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse issuer URL: %w", err)
-	}
-	if url.Scheme != "https" {
-		return nil, fmt.Errorf("issuer URL must be https")
-	}
-	providerName := url.Host + url.Path
-	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:443", url.Host), &tls.Config{InsecureSkipVerify: true})
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine CA thumbprint for OIDC discovery endpoint: %w", err)
-	}
-	certs := conn.ConnectionState().PeerCertificates
-	cert := certs[len(certs)-1]
-	thumbprint := fmt.Sprintf("%x", sha1.Sum(cert.Raw))
-	conn.Close()
-	log.Info("OIDC CA thumbprint discovered", "thumbprint", thumbprint)
-
 	// Create the OIDC provider
 	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
 		return nil, err
 	}
 
+	providerName := strings.TrimPrefix(o.IssuerURL, "https://")
 	for _, provider := range oidcProviderList.OpenIDConnectProviderList {
 		if strings.Contains(*provider.Arn, providerName) {
 			_, err := iamClient.DeleteOpenIDConnectProvider(&iam.DeleteOpenIDConnectProviderInput{
@@ -304,8 +283,10 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		ClientIDList: []*string{
 			aws.String("openshift"),
 		},
+		// The AWS console mentions that this will be ignored for S3 buckets but creation fails if we don't
+		// pass a thumbprint.
 		ThumbprintList: []*string{
-			aws.String(thumbprint),
+			aws.String("A9D53002E97E00E043244F3D170D6F4C414104FD"), // root CA thumbprint for s3 (DigiCert)
 		},
 		Url:  aws.String(o.IssuerURL),
 		Tags: o.additionalIAMTags,
