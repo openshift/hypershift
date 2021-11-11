@@ -64,3 +64,8 @@ func ReconcileKCMServiceServingCA(cm, combinedCA *corev1.ConfigMap, ownerRef con
 	}
 	return nil
 }
+
+func ReconcileServiceAccount(sa *corev1.ServiceAccount) error {
+	// nothing to reconcile
+	return nil
+}

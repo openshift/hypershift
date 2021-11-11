@@ -123,6 +123,9 @@ type HostedClusterReconciler struct {
 	// IgnitionServerImage is the image used to deploy the ignition server.
 	IgnitionServerImage string
 
+	// TokenMinterImage is the image used to deploy the token minter init containers.
+	TokenMinterImage string
+
 	// Log is a thread-safe logger.
 	Log logr.Logger
 
@@ -1250,7 +1253,7 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 	_, err = r.CreateOrUpdate(ctx, r.Client, capiAwsProviderDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2453
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, hcluster, capiAwsProviderServiceAccount)
+		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, hcluster, capiAwsProviderServiceAccount, r.TokenMinterImage)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider deployment: %w", err)
@@ -2294,7 +2297,7 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 	return nil
 }
 
-func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount) error {
+func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, tokenMinterImage string) error {
 	defaultMode := int32(420)
 	capaLabels := map[string]string{
 		"control-plane":               "capa-controller-manager",
@@ -2337,6 +2340,48 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 							},
 						},
 					},
+					{
+						Name: "svc-kubeconfig",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: &defaultMode,
+								SecretName:  "service-network-admin-kubeconfig",
+							},
+						},
+					},
+					{
+						Name: "token",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{
+								Medium: corev1.StorageMediumMemory,
+							},
+						},
+					},
+				},
+				InitContainers: []corev1.Container{
+					{
+						Name:            "token-minter",
+						Image:           tokenMinterImage,
+						ImagePullPolicy: corev1.PullAlways,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
+							{
+								Name:      "svc-kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
+						},
+						Command: []string{"/usr/bin/token-minter"},
+						Args: []string{
+							"-service-account-namespace=kube-system",
+							"-service-account-name=capa-controller-manager",
+							"-token-audience=openshift",
+							"-token-file=/var/run/secrets/openshift/serviceaccount/token",
+							"-kubeconfig=/etc/kubernetes/kubeconfig",
+						},
+					},
 				},
 				Containers: []corev1.Container{
 					{
@@ -2353,6 +2398,10 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 								ReadOnly:  true,
 								MountPath: "/tmp/k8s-webhook-server/serving-certs",
 							},
+							{
+								Name:      "token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
 						},
 						Env: []corev1.EnvVar{
 							{
@@ -2366,6 +2415,10 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 							{
 								Name:  "AWS_SHARED_CREDENTIALS_FILE",
 								Value: "/home/.aws/credentials",
+							},
+							{
+								Name:  "AWS_SDK_LOAD_CONFIG",
+								Value: "true",
 							},
 						},
 						Command: []string{"/manager"},

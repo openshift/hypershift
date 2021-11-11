@@ -131,10 +131,10 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	if err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-operator"); err != nil {
 		return err
 	}
-	if err := o.DestroyUser(ctx, iamClient, "cloud-controller"); err != nil {
+	if err = o.DestroyOIDCRole(iamClient, "cloud-controller"); err != nil {
 		return err
 	}
-	if err := o.DestroyUser(ctx, iamClient, "node-pool"); err != nil {
+	if err = o.DestroyOIDCRole(iamClient, "node-pool"); err != nil {
 		return err
 	}
 
@@ -234,71 +234,6 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 			return fmt.Errorf("cannot delete role %s: %w", roleName, err)
 		}
 		log.Info("Deleted role", "role", roleName)
-	}
-	return nil
-}
-
-func (o *DestroyIAMOptions) DestroyUser(ctx context.Context, client iamiface.IAMAPI, name string) error {
-	userName := fmt.Sprintf("%s-%s", o.InfraID, name)
-
-	// Tear down any access keys for the user
-	if output, err := client.ListAccessKeysWithContext(ctx, &iam.ListAccessKeysInput{
-		UserName: aws.String(userName),
-	}); err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
-				return nil
-			}
-		}
-		return fmt.Errorf("failed to list access keys: %w", err)
-	} else {
-		for _, key := range output.AccessKeyMetadata {
-			if _, err := client.DeleteAccessKeyWithContext(ctx, &iam.DeleteAccessKeyInput{
-				AccessKeyId: key.AccessKeyId,
-				UserName:    key.UserName,
-			}); err != nil {
-				if awsErr, ok := err.(awserr.Error); ok {
-					if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
-						continue
-					}
-				}
-				return fmt.Errorf("failed to delete access key: %w", err)
-			} else {
-				log.Info("Deleted access key", "id", key.AccessKeyId, "user", userName)
-			}
-		}
-	}
-
-	// Delete the policy
-	policyName := userName
-	_, err := client.DeleteUserPolicy(&iam.DeleteUserPolicyInput{
-		PolicyName: aws.String(policyName),
-		UserName:   aws.String(userName),
-	})
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != iam.ErrCodeNoSuchEntityException {
-				log.Error(aerr, "Error deleting user policy", "user", userName)
-				return aerr
-			}
-		} else {
-			log.Error(err, "Error deleting user policy", "user", userName)
-			return err
-		}
-	} else {
-		log.Info("Deleted user policy", "user", userName)
-	}
-
-	// Now the user can be deleted
-	if _, err := client.DeleteUserWithContext(ctx, &iam.DeleteUserInput{UserName: aws.String(userName)}); err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
-				return nil
-			}
-		}
-		return fmt.Errorf("failed to delete user: %w", err)
-	} else {
-		log.Info("Deleted user")
 	}
 	return nil
 }

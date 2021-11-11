@@ -12,6 +12,7 @@ import (
 
 	"github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/hypershift/support/capabilities"
+
 	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"sigs.k8s.io/cluster-api/util/annotations"

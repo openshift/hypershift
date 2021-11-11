@@ -2,7 +2,6 @@ package aws
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha1"
 	"crypto/tls"
 	"fmt"
@@ -355,6 +354,20 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		Name:      "ebs-cloud-credentials",
 	})
 
+	kubeCloudControllerTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kube-controller-manager")
+	arn, err = o.CreateOIDCRole(iamClient, "cloud-controller", kubeCloudControllerTrustPolicy, cloudControllerPolicy)
+	if err != nil {
+		return nil, err
+	}
+	output.KubeCloudControllerRoleARN = arn
+
+	nodePoolManagementTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:capa-controller-manager")
+	arn, err = o.CreateOIDCRole(iamClient, "node-pool", nodePoolManagementTrustPolicy, nodePoolPolicy)
+	if err != nil {
+		return nil, err
+	}
+	output.NodePoolManagementRoleARN = arn
+
 	return output, nil
 }
 
@@ -503,71 +516,6 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 	return nil
 }
 
-func (o *CreateIAMOptions) CreateCredentialedUserWithPolicy(ctx context.Context, client iamiface.IAMAPI, userName, policyDocument string) (*iam.AccessKey, error) {
-	var user *iam.User
-	user, err := existingUser(client, userName)
-	if err != nil {
-		return nil, err
-	}
-	if user != nil {
-		log.Info("Found existing user", "user", userName)
-
-		// Clean up any old access keys since we can only have 2 per user by quota
-		// This is best effort and errors are ignored
-		if output, err := client.ListAccessKeysWithContext(ctx, &iam.ListAccessKeysInput{
-			UserName: aws.String(userName),
-		}); err == nil {
-			for _, key := range output.AccessKeyMetadata {
-				if _, err := client.DeleteAccessKeyWithContext(ctx, &iam.DeleteAccessKeyInput{
-					AccessKeyId: key.AccessKeyId,
-					UserName:    key.UserName,
-				}); err == nil {
-					log.Info("Deleted old access key", "id", key.AccessKeyId, "user", userName)
-				}
-			}
-		}
-	} else {
-		if output, err := client.CreateUserWithContext(ctx, &iam.CreateUserInput{
-			UserName: aws.String(userName),
-			Tags:     iamTags(o.InfraID, userName, o.additionalIAMTags...),
-		}); err != nil {
-			return nil, fmt.Errorf("failed to create user: %w", err)
-		} else {
-			user = output.User
-		}
-		log.Info("Created user", "user", userName)
-	}
-
-	policyName := userName
-	hasPolicy, err := existingUserPolicy(client, userName, userName)
-	if err != nil {
-		return nil, err
-	}
-	if hasPolicy {
-		log.Info("Found existing user policy", "user", userName)
-	} else {
-		_, err := client.PutUserPolicyWithContext(ctx, &iam.PutUserPolicyInput{
-			PolicyName:     aws.String(policyName),
-			PolicyDocument: aws.String(policyDocument),
-			UserName:       aws.String(userName),
-		})
-		if err != nil {
-			return nil, err
-		}
-		log.Info("Created user policy", "user", userName)
-	}
-
-	// We create a new access key regardless as there is no way to get access to existing keys
-	if output, err := client.CreateAccessKeyWithContext(ctx, &iam.CreateAccessKeyInput{
-		UserName: user.UserName,
-	}); err != nil {
-		return nil, fmt.Errorf("failed to create access key: %w", err)
-	} else {
-		log.Info("Created access key", "user", aws.StringValue(user.UserName))
-		return output.AccessKey, nil
-	}
-}
-
 func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
 	result, err := client.GetRole(&iam.GetRoleInput{RoleName: aws.String(roleName)})
 	if err != nil {
@@ -579,19 +527,6 @@ func existingRole(client iamiface.IAMAPI, roleName string) (*iam.Role, error) {
 		return nil, fmt.Errorf("cannot get existing role: %w", err)
 	}
 	return result.Role, nil
-}
-
-func existingUser(client iamiface.IAMAPI, userName string) (*iam.User, error) {
-	result, err := client.GetUser(&iam.GetUserInput{UserName: aws.String(userName)})
-	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
-				return nil, nil
-			}
-		}
-		return nil, fmt.Errorf("cannot get existing role: %w", err)
-	}
-	return result.User, nil
 }
 
 func existingInstanceProfile(client iamiface.IAMAPI, profileName string) (*iam.InstanceProfile, error) {
@@ -623,36 +558,6 @@ func existingRolePolicy(client iamiface.IAMAPI, roleName, policyName string) (bo
 		return false, fmt.Errorf("cannot get existing role policy: %w", err)
 	}
 	return aws.StringValue(result.PolicyName) == policyName, nil
-}
-
-func existingUserPolicy(client iamiface.IAMAPI, userName, policyName string) (bool, error) {
-	result, err := client.GetUserPolicy(&iam.GetUserPolicyInput{
-		UserName:   aws.String(userName),
-		PolicyName: aws.String(policyName),
-	})
-	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			if awsErr.Code() == iam.ErrCodeNoSuchEntityException {
-				return false, nil
-			}
-		}
-		return false, fmt.Errorf("cannot get existing user policy: %w", err)
-	}
-	return aws.StringValue(result.PolicyName) == policyName, nil
-}
-
-func iamTags(infraID, name string, additionalTags ...*iam.Tag) []*iam.Tag {
-	tags := append(additionalTags, &iam.Tag{
-		Key:   aws.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)),
-		Value: aws.String("owned"),
-	})
-	if len(name) > 0 {
-		tags = append(tags, &iam.Tag{
-			Key:   aws.String("Name"),
-			Value: aws.String(name),
-		})
-	}
-	return tags
 }
 
 type oidcTrustPolicyParams struct {
