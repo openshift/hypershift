@@ -1,4 +1,4 @@
-// Copyright 2016 CoreOS, Inc.
+// Copyright 2020 Red Hat, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ func validateURL(s string) error {
 	}
 
 	switch u.Scheme {
-	case "http", "https", "tftp":
+	case "http", "https", "tftp", "gs":
 		return nil
 	case "s3":
 		if v, ok := u.Query()["versionId"]; ok {

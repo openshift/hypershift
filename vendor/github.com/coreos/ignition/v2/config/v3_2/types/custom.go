@@ -1,4 +1,4 @@
-// Copyright 2015 CoreOS, Inc.
+// Copyright 2020 Red Hat, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,12 +15,23 @@
 package types
 
 import (
-	"github.com/coreos/go-semver/semver"
+	"github.com/coreos/ignition/v2/config/shared/errors"
+
+	"github.com/coreos/vcontext/path"
+	"github.com/coreos/vcontext/report"
 )
 
-var (
-	MaxVersion = semver.Version{
-		Major: 3,
-		Minor: 1,
+func (cu Custom) Validate(c path.ContextPath) (r report.Report) {
+	if cu.Pin == "" && cu.Config == "" {
+		return
 	}
-)
+	switch cu.Pin {
+	case "tpm2", "tang", "sss":
+	default:
+		r.AddOnError(c.Append("pin"), errors.ErrUnknownClevisPin)
+	}
+	if cu.Config == "" {
+		r.AddOnError(c.Append("config"), errors.ErrClevisConfigRequired)
+	}
+	return
+}

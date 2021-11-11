@@ -1,4 +1,4 @@
-// Copyright 2019 Red Hat, Inc.
+// Copyright 2020 Red Hat, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,11 +15,28 @@
 package types
 
 import (
-	"github.com/coreos/vcontext/path"
-	"github.com/coreos/vcontext/report"
+	"path"
+
+	"github.com/coreos/ignition/v2/config/shared/errors"
+	"github.com/coreos/ignition/v2/config/util"
 )
 
-func (d Device) Validate(c path.ContextPath) (r report.Report) {
-	r.AddOnError(c, validatePath(string(d)))
-	return
+func validatePath(p string) error {
+	if p == "" {
+		return errors.ErrNoPath
+	}
+	if !path.IsAbs(p) {
+		return errors.ErrPathRelative
+	}
+	if path.Clean(p) != p {
+		return errors.ErrDirtyPath
+	}
+	return nil
+}
+
+func validatePathNilOK(p *string) error {
+	if util.NilOrEmpty(p) {
+		return nil
+	}
+	return validatePath(*p)
 }

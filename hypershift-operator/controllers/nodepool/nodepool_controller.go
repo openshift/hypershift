@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_1/types"
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/openshift/api/operator/v1alpha1"

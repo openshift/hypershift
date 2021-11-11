@@ -1,4 +1,4 @@
-// Copyright 2016 CoreOS, Inc.
+// Copyright 2020 Red Hat, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,41 +15,37 @@
 package types
 
 import (
+	"net/url"
+
 	"github.com/coreos/ignition/v2/config/shared/errors"
+	"github.com/coreos/ignition/v2/config/util"
 
 	"github.com/coreos/vcontext/path"
 	"github.com/coreos/vcontext/report"
 )
 
-func (r Raid) Key() string {
-	return r.Name
+func (t Tang) Key() string {
+	return t.URL
 }
 
-func (r Raid) IgnoreDuplicates() map[string]struct{} {
-	return map[string]struct{}{
-		"Options": {},
+func (t Tang) Validate(c path.ContextPath) (r report.Report) {
+	r.AddOnError(c.Append("url"), validateTangURL(t.URL))
+	if util.NilOrEmpty(t.Thumbprint) {
+		r.AddOnError(c.Append("thumbprint"), errors.ErrTangThumbprintRequired)
 	}
-}
-
-func (ra Raid) Validate(c path.ContextPath) (r report.Report) {
-	r.AddOnError(c.Append("level"), ra.validateLevel())
 	return
 }
 
-func (r Raid) validateLevel() error {
-	switch r.Level {
-	case "linear", "raid0", "0", "stripe":
-		if r.Spares != nil && *r.Spares != 0 {
-			return errors.ErrSparesUnsupportedForLevel
-		}
-	case "raid1", "1", "mirror":
-	case "raid4", "4":
-	case "raid5", "5":
-	case "raid6", "6":
-	case "raid10", "10":
-	default:
-		return errors.ErrUnrecognizedRaidLevel
+func validateTangURL(s string) error {
+	u, err := url.Parse(s)
+	if err != nil {
+		return errors.ErrInvalidUrl
 	}
 
-	return nil
+	switch u.Scheme {
+	case "http", "https":
+		return nil
+	default:
+		return errors.ErrInvalidScheme
+	}
 }

@@ -1,4 +1,4 @@
-// Copyright 2017 CoreOS, Inc.
+// Copyright 2020 Red Hat, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,13 +14,10 @@
 
 package types
 
-import (
-	"github.com/coreos/ignition/v2/config/shared/errors"
-)
+func (p PasswdUser) Key() string {
+	return p.Name
+}
 
-func validateMode(m *int) error {
-	if m != nil && (*m < 0 || *m > 07777) {
-		return errors.ErrFileIllegalMode
-	}
-	return nil
+func (g PasswdGroup) Key() string {
+	return g.Name
 }
