@@ -315,6 +315,7 @@ func (in *AWSPlatformSpec) DeepCopyInto(out *AWSPlatformSpec) {
 	}
 	out.KubeCloudControllerCreds = in.KubeCloudControllerCreds
 	out.NodePoolManagementCreds = in.NodePoolManagementCreds
+	out.ControlPlaneOperatorCreds = in.ControlPlaneOperatorCreds
 	if in.ResourceTags != nil {
 		in, out := &in.ResourceTags, &out.ResourceTags
 		*out = make([]AWSResourceTag, len(*in))

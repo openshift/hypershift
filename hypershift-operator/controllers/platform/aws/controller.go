@@ -29,8 +29,9 @@ import (
 )
 
 const (
-	finalizer                              = "hypershift.openshift.io/finalizer"
+	finalizer                              = "hypershift.openshift.io/hypershift-operator-finalizer"
 	endpointServiceDeletionRequeueDuration = time.Duration(5 * time.Second)
+	lbNotActiveRequeueDuration             = time.Duration(20 * time.Second)
 )
 
 type AWSEndpointServiceReconciler struct {
@@ -61,20 +62,23 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	log := logr.FromContext(ctx)
 	log.Info("reconciling")
 
-	// fetch the AWSEndpointService
-	awsEndpointService := &hyperv1.AWSEndpointService{
+	// Fetch the AWSEndpointService
+	obj := &hyperv1.AWSEndpointService{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      req.Name,
 			Namespace: req.Namespace,
 		},
 	}
-	err := r.Get(ctx, client.ObjectKeyFromObject(awsEndpointService), awsEndpointService)
+	err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get resource: %w", err)
 	}
+
+	// Don't change the cached object
+	awsEndpointService := obj.DeepCopy()
 
 	// Return early if deleted
 	if !awsEndpointService.DeletionTimestamp.IsZero() {
@@ -116,7 +120,10 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.Status().Update(ctx, awsEndpointService); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
+		// Most likely cause of error here is the NLB is not yet active.  This can take ~2m so
+		// a longer requeue time is warranted.  The ratelimits AWS calls and updates to the CR.
+		log.Info("reconcilation failed, retrying in 20s", "err", err)
+		return ctrl.Result{RequeueAfter: lbNotActiveRequeueDuration}, nil
 	}
 
 	meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
@@ -158,7 +165,6 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		}
 		log.Info("endpoint service exists", "serviceName", serviceName)
 		return nil
-
 	}
 
 	// determine the LB ARN
@@ -172,9 +178,13 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	if len(output.LoadBalancers) == 0 {
 		return fmt.Errorf("NLB %s not found", lbName)
 	}
-	lbARN := output.LoadBalancers[0].LoadBalancerArn
+	lb := output.LoadBalancers[0]
+	lbARN := lb.LoadBalancerArn
 	if lbARN == nil {
 		return fmt.Errorf("NLB ARN is nil")
+	}
+	if lb.State == nil || *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
+		return fmt.Errorf("load balancer %s is not yet active", *lbARN)
 	}
 
 	// create the Endpoint Service
@@ -192,8 +202,7 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 				var err error
 				serviceName, err = findExistingVpcEndpointService(ctx, ec2Client, *lbARN)
 				if err != nil {
-					log.Error(err, "adoption failed")
-					return err
+					return awsErr
 				}
 			} else {
 				return awsErr
@@ -250,7 +259,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	}); err != nil {
 		return false, err
 	}
-	log.Info("endpoint service deleted", "serviceName", serviceName)
 
+	log.Info("endpoint service deleted", "serviceName", serviceName)
 	return true, nil
 }
