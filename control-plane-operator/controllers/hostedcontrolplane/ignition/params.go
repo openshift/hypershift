@@ -5,25 +5,27 @@ import (
 	"github.com/openshift/hypershift/support/config"
 )
 
-type IgnitionParams struct {
-	OwnerRef                 config.OwnerRef
-	FIPSEnabled              bool
-	SSHKey                   string
-	HAProxyImage             string
-	APIServerExternalAddress string
-	APIServerExternalPort    int32
-	APIServerInternalAddress string
-	APIServerInternalPort    int32
+type IgnitionConfigParams struct {
+	OwnerRef                    config.OwnerRef
+	FIPSEnabled                 bool
+	SSHKey                      string
+	HAProxyImage                string
+	APIServerExternalAddress    string
+	APIServerExternalPort       int32
+	APIServerInternalAddress    string
+	APIServerInternalPort       int32
+	HasImageContentSourcePolicy bool
 }
 
-func NewIgnitionParams(hcp *hyperv1.HostedControlPlane, images map[string]string, apiServerAddress string, apiServerPort int32, sshKey string) *IgnitionParams {
-	params := &IgnitionParams{
-		OwnerRef:                 config.OwnerRefFrom(hcp),
-		FIPSEnabled:              hcp.Spec.FIPS,
-		SSHKey:                   sshKey,
-		HAProxyImage:             images["haproxy-router"],
-		APIServerExternalAddress: apiServerAddress,
-		APIServerExternalPort:    apiServerPort,
+func NewIgnitionConfigParams(hcp *hyperv1.HostedControlPlane, images map[string]string, apiServerAddress string, apiServerPort int32, sshKey string) *IgnitionConfigParams {
+	params := &IgnitionConfigParams{
+		OwnerRef:                    config.OwnerRefFrom(hcp),
+		FIPSEnabled:                 hcp.Spec.FIPS,
+		SSHKey:                      sshKey,
+		HAProxyImage:                images["haproxy-router"],
+		APIServerExternalAddress:    apiServerAddress,
+		APIServerExternalPort:       apiServerPort,
+		HasImageContentSourcePolicy: len(hcp.Spec.ImageContentSources) > 0,
 	}
 
 	if hcp.Spec.APIAdvertiseAddress != nil {
