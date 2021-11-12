@@ -23,6 +23,7 @@ type KubeAPIServerImages struct {
 	IBMCloudKMS           string `json:"ibmcloudKMS"`
 	AWSKMS                string `json:"awsKMS"`
 	Portieris             string `json:"portieris"`
+	TokenMinterImage      string
 }
 
 type KubeAPIServerParams struct {
@@ -80,6 +81,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			HyperKube:             images["hyperkube"],
 			CLI:                   images["cli"],
 			ClusterConfigOperator: images["cluster-config-operator"],
+			TokenMinterImage:      images["hosted-cluster-config-operator"],
 		},
 	}
 	if hcp.Spec.APIAdvertiseAddress != nil {
