@@ -169,6 +169,34 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							},
 							Command: []string{"/usr/bin/hypershift-operator"},
 							Args:    args,
+							LivenessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/metrics",
+										Port:   intstr.FromInt(9090),
+										Scheme: corev1.URISchemeHTTP,
+									},
+								},
+								InitialDelaySeconds: int32(60),
+								PeriodSeconds:       int32(60),
+								SuccessThreshold:    int32(1),
+								FailureThreshold:    int32(5),
+								TimeoutSeconds:      int32(5),
+							},
+							ReadinessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/metrics",
+										Port:   intstr.FromInt(9090),
+										Scheme: corev1.URISchemeHTTP,
+									},
+								},
+								InitialDelaySeconds: int32(15),
+								PeriodSeconds:       int32(60),
+								SuccessThreshold:    int32(1),
+								FailureThreshold:    int32(3),
+								TimeoutSeconds:      int32(5),
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "metrics",
