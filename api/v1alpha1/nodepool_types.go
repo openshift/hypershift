@@ -30,7 +30,12 @@ func init() {
 	SchemeBuilder.Register(&NodePoolList{})
 }
 
-// NodePool defines the desired state of NodePool
+// +genclient
+
+// NodePool is a scalable set of worker nodes attached to a HostedCluster. NodePool
+// machine architectures are uniform within a given pool, and are independent of
+// the control plane’s underlying machine architecture.
+//
 // +kubebuilder:resource:path=nodepools,shortName=np;nps,scope=Namespaced
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
@@ -47,7 +52,10 @@ type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   NodePoolSpec   `json:"spec,omitempty"`
+	// Spec is the desired behavior of the NodePool.
+	Spec NodePoolSpec `json:"spec,omitempty"`
+
+	// Status is the most recently observed status of the NodePool.
 	Status NodePoolStatus `json:"status,omitempty"`
 }
 

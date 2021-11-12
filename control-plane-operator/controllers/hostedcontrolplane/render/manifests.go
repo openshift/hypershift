@@ -1,7 +1,6 @@
 package render
 
 import (
-	"fmt"
 	"path"
 	"strings"
 	"text/template"
@@ -60,7 +59,6 @@ func (c *clusterManifestContext) setupManifests() {
 	c.clusterBootstrap()
 	c.userManifestsBootstrapper()
 	c.machineConfigServer()
-	c.ignitionConfigs()
 }
 
 func (c *clusterManifestContext) clusterBootstrap() {
@@ -112,40 +110,6 @@ func (c *clusterManifestContext) userManifestsBootstrapper() {
 			panic(err.Error())
 		}
 		c.addManifest("user-manifest-"+name, manifest)
-	}
-}
-
-const ignitionConfigTemplate = `apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .name }}
-  labels:
-    hypershift.openshift.io/core-ignition-config: "true"
-data:
-  config: |-
-{{ indent 4 .content }}
-`
-
-func (c *clusterManifestContext) ignitionConfigs() {
-	manifests, err := assets.AssetDir("ignition-configs")
-	if err != nil {
-		panic(err)
-	}
-	for _, m := range manifests {
-		content, err := c.substituteParams(c.params, "ignition-configs/"+m)
-		if err != nil {
-			panic(err)
-		}
-		name := fmt.Sprintf("ignition-config-%s", strings.TrimSuffix(m, ".yaml"))
-		params := map[string]string{
-			"name":    name,
-			"content": string(content),
-		}
-		cm, err := c.substituteParamsInBytes(params, []byte(ignitionConfigTemplate))
-		if err != nil {
-			panic(err)
-		}
-		c.addManifest(name+".yaml", cm)
 	}
 }
 

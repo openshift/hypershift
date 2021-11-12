@@ -44,12 +44,12 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Hosted cluster not found, destroying infrastructure from user input", "namespace", o.Namespace, "name", o.Name, "infraID", o.InfraID)
-		} else {
-			return nil, fmt.Errorf("failed to get hostedcluster: %w", err)
+			return nil, nil
 		}
-	} else {
-		log.Info("Found hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
+		return nil, fmt.Errorf("failed to get hostedcluster: %w", err)
 	}
+
+	log.Info("Found hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
 	return &hostedCluster, nil
 }
 

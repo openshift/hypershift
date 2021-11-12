@@ -43,7 +43,11 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: HostedCluster is the Schema for the hostedclusters API
+        description: HostedCluster is the primary representation of a HyperShift cluster
+          and encapsulates the control plane and common data plane configuration.
+          Creating a HostedCluster results in a fully functional OpenShift control
+          plane with no attached nodes. To support workloads (e.g. pods), a HostedCluster
+          may have one or more associated NodePool resources.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -58,7 +62,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: HostedClusterSpec defines the desired state of HostedCluster
+            description: Spec is the desired behavior of the HostedCluster.
             properties:
               auditWebhook:
                 description: AuditWebhook contains metadata for configuring an audit
@@ -144,9 +148,9 @@ spec:
                     type: array
                 type: object
               controllerAvailabilityPolicy:
-                description: ControllerAvailabilityPolicy specifies whether to run
-                  control plane controllers in HA mode Defaults to SingleReplica when
-                  not set.
+                description: ControllerAvailabilityPolicy specifies an availability
+                  policy to apply to critical control plane components. Defaults to
+                  SingleReplica when not set.
                 type: string
               dns:
                 description: DNS configuration for the cluster
@@ -794,6 +798,7 @@ spec:
                           - NodePort
                           - Route
                           - None
+                          - S3
                           type: string
                       required:
                       - type
@@ -814,6 +819,7 @@ spec:
                     type: string
                 type: object
             required:
+            - infraID
             - issuerURL
             - networking
             - platform
@@ -823,7 +829,7 @@ spec:
             - sshKey
             type: object
           status:
-            description: HostedClusterStatus defines the observed state of HostedCluster
+            description: Status is the latest observed status of the HostedCluster.
             properties:
               conditions:
                 items:
