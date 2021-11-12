@@ -2614,9 +2614,7 @@ Current condition types are: &ldquo;Available&rdquo;</p>
 </tr>
 </tbody>
 </table>
-<<<<<<< HEAD
-<h3 id="hypershift.openshift.io/v1alpha1.IBMCloudIAASProvider">IBMCloudIAASProvider
-(<code>string</code> alias)</p></h3>
+###IBMCloudIAASProvider { #hypershift.openshift.io/v1alpha1.IBMCloudIAASProvider }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">IBMCloudPlatformSpec</a>)
@@ -2624,11 +2622,23 @@ Current condition types are: &ldquo;Available&rdquo;</p>
 <p>
 <p>IBMCloudIAASProvider is a specific supported infrastructure provider within IBM Cloud.</p>
 </p>
-<h3 id="hypershift.openshift.io/v1alpha1.IBMCloudKMSAuthSpec">IBMCloudKMSAuthSpec
-</h3>
-=======
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;upi&#34;</p></td>
+<td><p>UPI is user provided infrastructure. This is used with the IBMCloud Satellite offering. Users add hosts and then
+use apis to assign their hosts to a given cluster in this mode.</p>
+</td>
+</tr><tr><td><p>&#34;g2&#34;</p></td>
+<td><p>VPCGEN2 is VPC Gen 2 within IBM Cloud <a href="https://cloud.ibm.com/docs/vpc">https://cloud.ibm.com/docs/vpc</a>.</p>
+</td>
+</tr></tbody>
+</table>
 ###IBMCloudKMSAuthSpec { #hypershift.openshift.io/v1alpha1.IBMCloudKMSAuthSpec }
->>>>>>> 4c3cdaf7173cb2a2dbaf414f19515601c47c052e
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.IBMCloudKMSSpec">IBMCloudKMSSpec</a>)
@@ -2883,9 +2893,7 @@ call IBM Cloud KMS APIs</p>
 </tr>
 </tbody>
 </table>
-<<<<<<< HEAD
-<h3 id="hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">IBMCloudPlatformSpec
-</h3>
+###IBMCloudPlatformSpec { #hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>, 
@@ -2917,11 +2925,7 @@ IBMCloudIAASProvider
 </tr>
 </tbody>
 </table>
-<h3 id="hypershift.openshift.io/v1alpha1.ImageContentSource">ImageContentSource
-</h3>
-=======
 ###ImageContentSource { #hypershift.openshift.io/v1alpha1.ImageContentSource }
->>>>>>> 4c3cdaf7173cb2a2dbaf414f19515601c47c052e
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>, 
