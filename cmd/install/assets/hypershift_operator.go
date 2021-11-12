@@ -37,39 +37,87 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 	return namespace
 }
 
-type HyperShiftOperatorAWSCredentialsSecret struct {
-	Namespace     *corev1.Namespace
-	AWSCredsBytes []byte
+type HyperShiftOperatorCredentialsSecret struct {
+	Namespace  *corev1.Namespace
+	CredsBytes []byte
 }
 
-func (o HyperShiftOperatorAWSCredentialsSecret) Build() *corev1.Secret {
+const (
+	awsCredsSecretName            = "hypershift-operator-aws-credentials"
+	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
+	awsCredsSecretKey             = "credentials"
+)
+
+func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
 			APIVersion: corev1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "hypershift-operator-creds",
+			Name:      awsCredsSecretName,
 			Namespace: o.Namespace.Name,
 		},
 		Data: map[string][]byte{
-			"credentials": o.AWSCredsBytes,
+			awsCredsSecretKey: o.CredsBytes,
+		},
+	}
+	return secret
+}
+
+type HyperShiftOperatorOIDCProviderS3Secret struct {
+	Namespace                      *corev1.Namespace
+	OIDCStorageProviderS3CredBytes []byte
+}
+
+func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      oidcProviderS3CredsSecretName,
+			Namespace: o.Namespace.Name,
+		},
+		Data: map[string][]byte{
+			awsCredsSecretKey: o.OIDCStorageProviderS3CredBytes,
 		},
 	}
 	return secret
 }
 
 type HyperShiftOperatorDeployment struct {
-	Namespace                  *corev1.Namespace
-	OperatorImage              string
-	ServiceAccount             *corev1.ServiceAccount
-	Replicas                   int32
-	EnableOCPClusterMonitoring bool
-	EnableCIDebugOutput        bool
-	AWSRegion                  string
+	Namespace                       *corev1.Namespace
+	OperatorImage                   string
+	ServiceAccount                  *corev1.ServiceAccount
+	Replicas                        int32
+	EnableOCPClusterMonitoring      bool
+	EnableCIDebugOutput             bool
+	PrivatePlatform                 string
+	AWSPrivateCreds                 string
+	AWSPrivateRegion                string
+	OIDCStorageProviderS3BucketName string
+	OIDCStorageProviderS3Region     string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
+	args := []string{
+		"run",
+		"--namespace=$(MY_NAMESPACE)",
+		"--deployment-name=operator",
+		"--metrics-addr=:9000",
+		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
+		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
+	}
+	if o.OIDCStorageProviderS3BucketName != "" {
+		args = append(args,
+			"--oidc-storage-provider-s3-bucket-name="+o.OIDCStorageProviderS3BucketName,
+			"--oidc-storage-provider-s3-region="+o.OIDCStorageProviderS3Region,
+			"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+awsCredsSecretKey,
+		)
+	}
+
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -116,11 +164,11 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								},
 								{
 									Name:  "AWS_SHARED_CREDENTIALS_FILE",
-									Value: "/etc/aws/credentials",
+									Value: "/etc/aws/" + awsCredsSecretKey,
 								},
 							},
 							Command: []string{"/usr/bin/hypershift-operator"},
-							Args:    []string{"run", "--namespace=$(MY_NAMESPACE)", "--deployment-name=operator", "--metrics-addr=:9000", fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring), fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput), fmt.Sprintf("--aws-region=%s", o.AWSRegion)},
+							Args:    args,
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "metrics",
@@ -133,6 +181,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									Name:      "credentials",
 									MountPath: "/etc/aws",
 								},
+								{
+									Name:      "oidc-storage-provider-s3-creds",
+									MountPath: "/etc/oidc-storage-provider-s3-creds",
+								},
 							},
 						},
 					},
@@ -141,7 +193,15 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							Name: "credentials",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: "hypershift-operator-creds",
+									SecretName: awsCredsSecretName,
+								},
+							},
+						},
+						{
+							Name: "oidc-storage-provider-s3-creds",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: oidcProviderS3CredsSecretName,
 								},
 							},
 						},
@@ -149,6 +209,39 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		},
+	}
+
+	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
+	if privatePlatformType == hyperv1.NonePlatform {
+		return deployment
+	}
+
+	// Add generic provider credentials secret volume
+	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: "credentials",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: "hypershift-operator-creds",
+			},
+		},
+	})
+	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+		Name:      "credentials",
+		MountPath: "/etc/provider",
+	})
+
+	// Add platform specific settings
+	switch privatePlatformType {
+	case hyperv1.AWSPlatform:
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: "/etc/provider/credentials",
+			},
+			corev1.EnvVar{
+				Name:  "AWS_REGION",
+				Value: o.AWSPrivateRegion,
+			})
 	}
 	return deployment
 }
@@ -558,4 +651,21 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 
 	rule.Spec = recordingRuleSpec()
 	return rule
+}
+
+func OIDCStorageProviderS3ConfigMap(bucketName, bucketRegion string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-public",
+			Name:      "oidc-storage-provider-s3-config",
+		},
+		Data: map[string]string{
+			"name":   bucketName,
+			"region": bucketRegion,
+		},
+	}
 }

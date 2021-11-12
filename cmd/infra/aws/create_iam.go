@@ -3,34 +3,34 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/wait"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 )
 
 type CreateIAMOptions struct {
-	Region             string
-	AWSCredentialsFile string
-	InfraID            string
-	IssuerURL          string
-	OutputFile         string
-	AdditionalTags     []string
+	Region                          string
+	AWSCredentialsFile              string
+	OIDCStorageProviderS3BucketName string
+	OIDCStorageProviderS3Region     string
+	InfraID                         string
+	IssuerURL                       string
+	OutputFile                      string
+	AdditionalTags                  []string
 
 	additionalIAMTags []*iam.Tag
 }
@@ -42,10 +42,8 @@ type CreateIAMOutput struct {
 	IssuerURL   string                       `json:"issuerURL"`
 	Roles       []hyperv1.AWSRoleCredentials `json:"roles"`
 
-	KubeCloudControllerUserAccessKeyID     string `json:"kubeCloudControllerUserAccessKeyID"`
-	KubeCloudControllerUserAccessKeySecret string `json:"kubeCloudControllerUserAccessKeySecret"`
-	NodePoolManagementUserAccessKeyID      string `json:"nodePoolManagementUserAccessKeyID"`
-	NodePoolManagementUserAccessKeySecret  string `json:"nodePoolManagementUserAccessKeySecret"`
+	KubeCloudControllerRoleARN string `json:"kubeCloudControllerRoleARN"`
+	NodePoolManagementRoleARN  string `json:"nodePoolManagementRoleARN"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -63,12 +61,16 @@ func NewCreateIAMCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "The name of the bucket in which the OIDC discovery document is stored")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "The region of the bucket in which the OIDC discovery document is stored")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("infra-id")
+	cmd.MarkFlagRequired("oidc-bucket-name")
+	cmd.MarkFlagRequired("oidc-bucket-region")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -119,25 +121,28 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	if err = o.parseAdditionalTags(); err != nil {
 		return nil, err
 	}
-
-	ingressConfig := &configv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
-		},
-	}
-
-	err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-		if err = client.Get(ctx, crclient.ObjectKeyFromObject(ingressConfig), ingressConfig); err != nil {
-			log.Error(err, "failed to get ingress config")
-			return false, nil
+	if o.OIDCStorageProviderS3BucketName == "" || o.OIDCStorageProviderS3Region == "" {
+		cm := assets.OIDCStorageProviderS3ConfigMap("", "")
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cm), cm); err != nil {
+			return nil, fmt.Errorf("failed to discover OIDC bucket configuration: failed to get the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
 		}
-		return true, nil
-	}, ctx.Done())
-	if err != nil {
-		return nil, fmt.Errorf("failed to discover issuer URL: %w", err)
+		// Set both, doesn't make sense to only get one from the configmap
+		o.OIDCStorageProviderS3BucketName = cm.Data["name"]
+		o.OIDCStorageProviderS3Region = cm.Data["region"]
 	}
 
-	o.IssuerURL = fmt.Sprintf("https://oidc-%s.%s", o.InfraID, ingressConfig.Spec.Domain)
+	var errs []error
+	if o.OIDCStorageProviderS3BucketName == "" {
+		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from cluster and wasn't excplicitly passed either"))
+	}
+	if o.OIDCStorageProviderS3Region == "" {
+		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-region could not be discovered from cluster and wasn't explicitly passed either"))
+	}
+	if err := utilerrors.NewAggregate(errs); err != nil {
+		return nil, err
+	}
+
+	o.IssuerURL = oidcDiscoveryURL(o.OIDCStorageProviderS3BucketName, o.OIDCStorageProviderS3Region, o.InfraID)
 	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
 	awsSession := awsutil.NewSession("cli-create-iam")
@@ -156,20 +161,6 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
 
-	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "cloud-controller"), cloudControllerPolicy); err != nil {
-		return nil, err
-	} else {
-		results.KubeCloudControllerUserAccessKeyID = aws.StringValue(key.AccessKeyId)
-		results.KubeCloudControllerUserAccessKeySecret = aws.StringValue(key.SecretAccessKey)
-	}
-
-	if key, err := o.CreateCredentialedUserWithPolicy(ctx, iamClient, fmt.Sprintf("%s-%s", o.InfraID, "node-pool"), nodePoolPolicy); err != nil {
-		return nil, err
-	} else {
-		results.NodePoolManagementUserAccessKeyID = aws.StringValue(key.AccessKeyId)
-		results.NodePoolManagementUserAccessKeySecret = aws.StringValue(key.SecretAccessKey)
-	}
-
 	return results, nil
 }
 
@@ -185,4 +176,11 @@ func (o *CreateIAMOptions) parseAdditionalTags() error {
 		})
 	}
 	return nil
+}
+
+func oidcDiscoveryURL(bucketName, region, infraID string) string {
+	if bucketName == "" || region == "" || infraID == "" {
+		panic(fmt.Sprintf("bucket: %q, region: %q, infraID: %q", bucketName, region, infraID))
+	}
+	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", bucketName, region, infraID)
 }

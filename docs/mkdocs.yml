@@ -9,3 +9,7 @@ plugins:
 docs_dir: content
 repo_url: https://github.com/openshift/hypershift
 repo_name: openshift/hypershift
+markdown_extensions:
+- toc:
+    toc_depth: "2-2"
+- attr_list:

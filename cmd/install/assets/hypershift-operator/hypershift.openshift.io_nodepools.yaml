@@ -51,7 +51,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: NodePool defines the desired state of NodePool
+        description: NodePool is a scalable set of worker nodes attached to a HostedCluster.
+          NodePool machine architectures are uniform within a given pool, and are
+          independent of the control plane’s underlying machine architecture.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -66,7 +68,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: NodePoolSpec defines the desired state of NodePool
+            description: Spec is the desired behavior of the NodePool.
             properties:
               autoScaling:
                 properties:
@@ -325,7 +327,7 @@ spec:
             - release
             type: object
           status:
-            description: NodePoolStatus defines the observed state of NodePool
+            description: Status is the most recently observed status of the NodePool.
             properties:
               conditions:
                 items:

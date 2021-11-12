@@ -17,14 +17,23 @@ limitations under the License.
 package hostedcluster
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
+	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	capiibmv1 "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
@@ -60,6 +69,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
@@ -122,6 +135,9 @@ type HostedClusterReconciler struct {
 	// IgnitionServerImage is the image used to deploy the ignition server.
 	IgnitionServerImage string
 
+	// TokenMinterImage is the image used to deploy the token minter init containers.
+	TokenMinterImage string
+
 	// Log is a thread-safe logger.
 	Log logr.Logger
 
@@ -135,6 +151,11 @@ type HostedClusterReconciler struct {
 	upsert.CreateOrUpdateProvider
 
 	EnableCIDebugOutput bool
+
+	PrivatePlatform hyperv1.PlatformType
+
+	OIDCStorageProviderS3BucketName string
+	S3Client                        s3iface.S3API
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -312,6 +333,24 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
+	// Set SupportedHostedCluster condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.SupportedHostedCluster),
+			ObservedGeneration: hcluster.Generation,
+		}
+		if err := r.validateHostedClusterSupport(hcluster, r.PrivatePlatform); err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = hyperv1.UnsupportedHostedClusterReason
+		} else {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "HostedCluster is support by operator configuration"
+			condition.Reason = hyperv1.HostedClusterAsExpectedReason
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
 	// Set ValidHostedControlPlaneConfiguration condition
 	{
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -455,6 +494,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
 			r.Log.Info("Configuration is invalid, reconciliation is blocked")
+			return ctrl.Result{}, nil
+		}
+		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
+		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
+			r.Log.Info("Hosted Cluster is not supported by operator configuration, reconciliation is blocked")
 			return ctrl.Result{}, nil
 		}
 	}
@@ -989,6 +1033,14 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 	}
 
+	// Reconcile the AWS OIDC discovery
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if err := r.reconcileAWSOIDCDocuments(ctx, hcluster, hcp); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile the AWS OIDC documents: %w", err)
+		}
+	}
+
 	r.Log.Info("successfully reconciled")
 	return ctrl.Result{}, nil
 }
@@ -1224,7 +1276,7 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 	_, err = r.CreateOrUpdate(ctx, r.Client, capiAwsProviderDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2453
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, hcluster, capiAwsProviderServiceAccount)
+		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, hcluster, capiAwsProviderServiceAccount, r.TokenMinterImage)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider deployment: %w", err)
@@ -2265,7 +2317,7 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 	return nil
 }
 
-func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount) error {
+func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, tokenMinterImage string) error {
 	defaultMode := int32(420)
 	capaLabels := map[string]string{
 		"control-plane":               "capa-controller-manager",
@@ -2308,6 +2360,48 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 							},
 						},
 					},
+					{
+						Name: "svc-kubeconfig",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: &defaultMode,
+								SecretName:  "service-network-admin-kubeconfig",
+							},
+						},
+					},
+					{
+						Name: "token",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{
+								Medium: corev1.StorageMediumMemory,
+							},
+						},
+					},
+				},
+				InitContainers: []corev1.Container{
+					{
+						Name:            "token-minter",
+						Image:           tokenMinterImage,
+						ImagePullPolicy: corev1.PullAlways,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
+							{
+								Name:      "svc-kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
+						},
+						Command: []string{"/usr/bin/token-minter"},
+						Args: []string{
+							"-service-account-namespace=kube-system",
+							"-service-account-name=capa-controller-manager",
+							"-token-audience=openshift",
+							"-token-file=/var/run/secrets/openshift/serviceaccount/token",
+							"-kubeconfig=/etc/kubernetes/kubeconfig",
+						},
+					},
 				},
 				Containers: []corev1.Container{
 					{
@@ -2324,6 +2418,10 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 								ReadOnly:  true,
 								MountPath: "/tmp/k8s-webhook-server/serving-certs",
 							},
+							{
+								Name:      "token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
 						},
 						Env: []corev1.EnvVar{
 							{
@@ -2337,6 +2435,10 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 							{
 								Name:  "AWS_SHARED_CREDENTIALS_FILE",
 								Value: "/home/.aws/credentials",
+							},
+							{
+								Name:  "AWS_SDK_LOAD_CONFIG",
+								Value: "true",
 							},
 						},
 						Command: []string{"/manager"},
@@ -2842,6 +2944,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("failed to delete namespace: %w", err)
 	}
+
+	if err := r.cleanupOIDCBucketData(ctx, hc); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -3001,6 +3107,30 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyper
 	return nil
 }
 
+func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster, privatePlatform hyperv1.PlatformType) error {
+	switch hc.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if hc.Spec.Platform.AWS == nil {
+			return nil
+		}
+		if hc.Spec.Platform.AWS.EndpointAccess == hyperv1.Public {
+			return nil
+		}
+		region := os.Getenv("AWS_REGION")
+		if region == "" {
+			return fmt.Errorf("AWS_REGION environment variable is not set for the operator")
+		}
+		credFile := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
+		if credFile == "" {
+			return fmt.Errorf("AWS_SHARED_CREDENTIALS_FILE environment variable is not set for the operator")
+		}
+		if hc.Spec.Platform.AWS.Region != region {
+			return fmt.Errorf("operator only supports private clusters in region %s", region)
+		}
+	}
+	return nil
+}
+
 type ClusterMachineApproverConfig struct {
 	NodeClientCert NodeClientCert `json:"nodeClientCert,omitempty"`
 }
@@ -3149,5 +3279,144 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
+	return nil
+}
+
+const oidcDocumentsFinalizer = "hypershift.io/aws-oidc-discovery"
+
+func oidcPublicDocumentPaths() []string {
+	return []string{"/.well-known/openid-configuration", "/openid/v1/jwks"}
+}
+
+func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Status.KubeConfig == nil {
+		return nil
+	}
+
+	// We use the presence of the finalizer to short-circuit the document upload to avoid
+	// constantly re-uploading it.
+	if controllerutil.ContainsFinalizer(hcluster, oidcDocumentsFinalizer) {
+		return nil
+	}
+
+	if r.OIDCStorageProviderS3BucketName == "" || r.S3Client == nil {
+		return errors.New("hypershift wasn't configured with a S3 bucket or credentials, this makes it unable to set up OIDC for AWS clusters. Please install hypershift with the --aws-oidc-bucket-name, --aws-oidc-bucket-region and --aws-oidc-bucket-creds-file flags set. The bucket must pre-exist and the credentials must be authorized to write into it")
+	}
+
+	if apiAvailableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.KubeAPIServerAvailable)); apiAvailableCondition == nil || apiAvailableCondition.Status != metav1.ConditionTrue {
+		return nil
+	}
+	src := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcp.Namespace,
+			Name:      hcp.Status.KubeConfig.Name,
+		},
+	}
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src); err != nil {
+		return fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
+	}
+	var kubeconfig clientcmdapiv1.Config
+	if err := yaml.Unmarshal(src.Data["kubeconfig"], &kubeconfig); err != nil {
+		return fmt.Errorf("failed to deserialize the kubeconfig: %w", err)
+	}
+
+	// The clientcmd helper that constructs a rest.Config expects a different format so we have to convert...
+	var apiKubeconfig clientcmdapi.Config
+	if err := clientcmdapiv1.Convert_v1_Config_To_api_Config(&kubeconfig, &apiKubeconfig, nil); err != nil {
+		return fmt.Errorf("failed to covert clientcmdapiv1 kubeconfig to clientcmdapi kubeconfig: %w", err)
+	}
+	cfg, err := clientcmd.NewDefaultClientConfig(apiKubeconfig, nil).ClientConfig()
+	if err != nil {
+		return fmt.Errorf("failed to construct rest config for cluster: %w", err)
+	}
+	tlsConfig, err := rest.TLSConfigFor(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to construct tls config for cluster: %w", err)
+	}
+
+	// We put the result of this request into a public location and expect the original
+	// to be public as well so make sure we fail if that is somehow not the case.
+	tlsConfig.GetClientCertificate = nil
+
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}
+
+	for _, path := range oidcPublicDocumentPaths() {
+		requestURL := "https://" + hcp.Status.ControlPlaneEndpoint.Host + ":" + strconv.Itoa(int(hcp.Status.ControlPlaneEndpoint.Port)) + path
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+		if err != nil {
+			return fmt.Errorf("failed to construct request for %s: %w", requestURL, err)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to do request for %s: %w", requestURL, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("request to %s returned with unexpected status code %d", requestURL, resp.StatusCode)
+		}
+
+		// In theory we should be able to pass resp.Body
+		// as the Body argument to PutObject as that takes
+		// an io.Reader. In practice doing so results in
+		// `NotImplemented: A header you provided implies functionality that is not implemented`
+		// which apparently happens when there is no body:
+		// https://github.com/aws/aws-sdk-js/issues/15#issuecomment-11666580
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("faild to read body: %w", err)
+		}
+
+		_, err = r.S3Client.PutObject(&s3.PutObjectInput{
+			ACL:    aws.String("public-read"),
+			Body:   aws.ReadSeekCloser(bytes.NewReader(body)),
+			Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
+			Key:    aws.String(hcluster.Spec.InfraID + path),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to upload %s to the %s s3 bucket: %w", path, r.OIDCStorageProviderS3BucketName, err)
+		}
+	}
+
+	hcluster.Finalizers = append(hcluster.Finalizers, oidcDocumentsFinalizer)
+	if err := r.Client.Update(ctx, hcluster); err != nil {
+		return fmt.Errorf("failed to update the hosted cluster after adding the %s finalizer: %w", oidcDocumentsFinalizer, err)
+	}
+
+	r.Log.Info("Successfully uploaded the OIDC documents to the S3 bucket")
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	if !controllerutil.ContainsFinalizer(hcluster, oidcDocumentsFinalizer) {
+		return nil
+	}
+
+	if r.OIDCStorageProviderS3BucketName == "" || r.S3Client == nil {
+		return fmt.Errorf("hypershift wasn't configured with AWS credentials and a bucket, can not clean up OIDC documents from bucket. Please either set those up or clean up manually and then remove the %s finalizer from the hosted cluster", oidcDocumentsFinalizer)
+	}
+
+	var objectsToDelete []*s3.ObjectIdentifier
+	for _, path := range oidcPublicDocumentPaths() {
+		objectsToDelete = append(objectsToDelete, &s3.ObjectIdentifier{
+			Key: aws.String(hcluster.Spec.InfraID + path),
+		})
+	}
+
+	if _, err := r.S3Client.DeleteObjects(&s3.DeleteObjectsInput{
+		Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
+		Delete: &s3.Delete{Objects: objectsToDelete},
+	}); err != nil {
+		return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
+	}
+
+	controllerutil.RemoveFinalizer(hcluster, oidcDocumentsFinalizer)
+	if err := r.Client.Update(ctx, hcluster); err != nil {
+		return fmt.Errorf("failed to update hostedcluster after removing %s finalizer: %w", oidcDocumentsFinalizer, err)
+	}
+
+	r.Log.Info("Successfully deleted the OIDC documents from the S3 bucket")
 	return nil
 }

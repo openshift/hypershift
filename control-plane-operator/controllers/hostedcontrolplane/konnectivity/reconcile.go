@@ -278,7 +278,6 @@ func reconcileWorkerAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig
 				SecurityContext: &corev1.PodSecurityContext{
 					RunAsUser: pointer.Int64Ptr(1000),
 				},
-				HostNetwork: true,
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port)),
 				},
