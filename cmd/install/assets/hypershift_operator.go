@@ -173,7 +173,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								Handler: corev1.Handler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path:   "/metrics",
-										Port:   intstr.FromInt(9090),
+										Port:   intstr.FromInt(9000),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},
@@ -187,7 +187,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								Handler: corev1.Handler{
 									HTTPGet: &corev1.HTTPGetAction{
 										Path:   "/metrics",
-										Port:   intstr.FromInt(9090),
+										Port:   intstr.FromInt(9000),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},
