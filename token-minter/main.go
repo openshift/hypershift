@@ -26,12 +26,14 @@ func main() {
 	var tokenAudience string
 	var tokenFile string
 	var kubeconfigPath string
+	var sleep bool
 
 	flag.StringVar(&serviceAccountNamespace, "service-account-namespace", "kube-system", "namespace of the service account for which to mint a token")
 	flag.StringVar(&serviceAccountName, "service-account-name", "", "name of the service account for which to mint a token")
 	flag.StringVar(&tokenAudience, "token-audience", "openshift", "audience for the token")
 	flag.StringVar(&tokenFile, "token-file", "/var/run/secrets/openshift/serviceaccount/token", "path to the file where the token will be written")
 	flag.StringVar(&kubeconfigPath, "kubeconfig", "/etc/kubernetes/kubeconfig", "path to the kubeconfig file")
+	flag.BoolVar(&sleep, "sleep", false, "If the binary should sleep after finishing. Required when running as a sidecar, as otherwise the container will be considered crashing.")
 	flag.Parse()
 
 	if serviceAccountNamespace == "" ||
@@ -139,4 +141,8 @@ func main() {
 	f.WriteString(token.Status.Token)
 
 	fmt.Println("Successfully wrote token to", tokenFile)
+	if sleep {
+		fmt.Println("Done, starting to sleep")
+		<-ctx.Done()
+	}
 }
