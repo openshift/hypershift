@@ -4,6 +4,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
@@ -25,7 +26,7 @@ type KonnectivityParams struct {
 	AgentDeamonSetConfig    config.DeploymentConfig
 }
 
-func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32) *KonnectivityParams {
+func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32, explicitNonRootSecurityContext bool) *KonnectivityParams {
 	p := &KonnectivityParams{
 		KonnectivityServerImage: images["konnectivity-server"],
 		KonnectivityAgentImage:  images["konnectivity-agent"],
@@ -123,6 +124,23 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			FailureThreshold:    3,
 			SuccessThreshold:    1,
 		},
+	}
+	if explicitNonRootSecurityContext {
+		p.AgentDeamonSetConfig.SecurityContexts = config.SecurityContextSpec{
+			konnectivityAgentContainer().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
+		p.AgentDeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			konnectivityAgentContainer().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
+		p.ServerDeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			konnectivityServerContainer().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
 	}
 	if hcp.Annotations != nil {
 		if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {

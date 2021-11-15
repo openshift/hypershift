@@ -45,7 +45,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Spec.APIAdvertiseAddress = test.advertiseAddress
 			hcp.Spec.APIPort = test.port
-			p := NewKubeAPIServerParams(context.Background(), hcp, config.GlobalConfig{}, map[string]string{}, "", 0)
+			p := NewKubeAPIServerParams(context.Background(), hcp, config.GlobalConfig{}, map[string]string{}, "", 0, false)
 			g := NewGomegaWithT(t)
 			g.Expect(p.AdvertiseAddress).To(Equal(test.expectedAddress))
 			g.Expect(p.APIServerPort).To(Equal(test.expectedPort))

@@ -74,6 +74,9 @@ type NodePoolReconciler struct {
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
 
+	// ManagementClusterMode ...
+	ManagementClusterMode string
+
 	tracer trace.Tracer
 
 	upsert.CreateOrUpdateProvider

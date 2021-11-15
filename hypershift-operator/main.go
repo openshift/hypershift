@@ -79,9 +79,13 @@ type StartOptions struct {
 	EnableOCPClusterMonitoring bool
 	EnableCIDebugOutput        bool
 	ControlPlaneOperatorImage  string
+<<<<<<< HEAD
 	AvailabilityProberImage    string
 	Region                     string
 	RegistryOverrides          map[string]string
+=======
+	ManagementClusterMode      string
+>>>>>>> 81a097ad2ba997d9ba3364f671333ed6b4a15744
 }
 
 func NewStartCommand() *cobra.Command {
@@ -116,8 +120,12 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+<<<<<<< HEAD
 	cmd.Flags().StringVar(&opts.Region, "aws-region", opts.Region, "AWS region in which the operator will create resources")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+=======
+	cmd.Flags().StringVar(&opts.ManagementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
+>>>>>>> 81a097ad2ba997d9ba3364f671333ed6b4a15744
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -226,11 +234,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		CreateOrUpdateProvider:     createOrUpdate,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
+		ManagementClusterMode:      opts.ManagementClusterMode,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
+<<<<<<< HEAD
 		Client: mgr.GetClient(),
 		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
@@ -238,6 +248,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 			RegistryOverrides: opts.RegistryOverrides,
+=======
+		Client:                mgr.GetClient(),
+		ManagementClusterMode: opts.ManagementClusterMode,
+		ReleaseProvider: &releaseinfo.CachedProvider{
+			Inner: &releaseinfo.RegistryClientProvider{},
+			Cache: map[string]*releaseinfo.ReleaseImage{},
+>>>>>>> 81a097ad2ba997d9ba3364f671333ed6b4a15744
 		},
 		CreateOrUpdateProvider: createOrUpdate,
 	}).SetupWithManager(mgr); err != nil {

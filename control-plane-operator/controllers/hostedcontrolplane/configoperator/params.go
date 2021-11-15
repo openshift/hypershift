@@ -2,6 +2,7 @@ package configoperator
 
 import (
 	"context"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -20,7 +21,7 @@ type HostedClusterConfigOperatorParams struct {
 	AvailabilityProberImage string
 }
 
-func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, openShiftVersion, kubernetesVersion string) *HostedClusterConfigOperatorParams {
+func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, openShiftVersion, kubernetesVersion string, explicitNonRootSecurityContext bool) *HostedClusterConfigOperatorParams {
 	params := &HostedClusterConfigOperatorParams{
 		Image:                   images["hosted-cluster-config-operator"],
 		OwnerRef:                config.OwnerRefFrom(hcp),
@@ -39,6 +40,13 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 				corev1.ResourceCPU:    resource.MustParse("60m"),
 			},
 		},
+	}
+	if explicitNonRootSecurityContext {
+		params.DeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			hccContainerMain().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
 	}
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)

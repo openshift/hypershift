@@ -75,6 +75,7 @@ func NewStartCommand() *cobra.Command {
 		inCluster                        bool
 		enableCIDebugOutput              bool
 		registryOverrides                map[string]string
+		var managementClusterMode string
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
@@ -91,6 +92,7 @@ func NewStartCommand() *cobra.Command {
 		"to avoid assuming access to the service network)")
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringVar(&managementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
 	cmd.MarkFlagRequired("namespace")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -216,6 +218,7 @@ func NewStartCommand() *cobra.Command {
 			ReleaseProvider:               releaseProvider,
 			HostedAPICache:                apiCacheController.GetCache(),
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
+			ManagementClusterMode:         managementClusterMode,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

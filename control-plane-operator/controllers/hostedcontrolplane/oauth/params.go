@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	k8sutilspointer "k8s.io/utils/pointer"
 )
 
 const (
@@ -69,7 +70,7 @@ type ConfigOverride struct {
 	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32, explicitNonRootSecurityContext bool) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,
@@ -149,6 +150,13 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.G
 			}
 		} else if annotationKey == hyperv1.OauthLoginURLOverrideAnnotation {
 			p.LoginURLOverride = annotationValue
+		}
+	}
+	if explicitNonRootSecurityContext {
+		p.SecurityContexts = config.SecurityContextSpec{
+			oauthContainerMain().Name: {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
 		}
 	}
 	return p
