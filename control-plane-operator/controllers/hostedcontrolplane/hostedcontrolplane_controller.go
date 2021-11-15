@@ -59,6 +59,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/mcs"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
@@ -67,6 +68,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	cpoutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 )
@@ -190,7 +192,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
-		} else if err := config.ValidateGlobalConfig(ctx, hostedControlPlane); err != nil {
+		} else if err := globalconfig.ValidateGlobalConfig(ctx, hostedControlPlane); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InvalidConfigurationReason
@@ -574,7 +576,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile cloud provider config: %w", err)
 	}
 
-	globalConfig, err := config.ParseGlobalConfig(ctx, hostedControlPlane.Spec.Configuration)
+	globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hostedControlPlane.Spec.Configuration)
 	if err != nil {
 		return fmt.Errorf("failed to parse global config: %w", err)
 	}
@@ -692,6 +694,12 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reconciling Ignition")
 	if err = r.reconcileIgnition(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort); err != nil {
 		return fmt.Errorf("failed to reconcile ignition: %w", err)
+	}
+
+	// Reconcle machine config server config
+	r.Log.Info("Reconciling machine config server config")
+	if err = r.reconcileMachineConfigServerConfig(ctx, hostedControlPlane, infraStatus, globalConfig); err != nil {
+		return fmt.Errorf("failed to reconcile mcs config: %w", err)
 	}
 
 	// Install the control plane into the infrastructure
@@ -1465,7 +1473,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthAddress string, oauthPort int32) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthAddress string, oauthPort int32) error {
 	p := kas.NewKubeAPIServerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), oauthAddress, oauthPort)
 
 	rootCA := manifests.RootCASecret(hcp.Namespace)
@@ -1648,7 +1656,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
 	p := kcm.NewKubeControllerManagerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages())
 
 	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
@@ -1679,7 +1687,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
 	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImage.ComponentImages(), globalConfig)
 
 	schedulerConfig := manifests.SchedulerConfig(hcp.Namespace)
@@ -1698,7 +1706,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, globalConfig, releaseImage.ComponentImages())
 
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
@@ -1760,7 +1768,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, globalConfig, releaseImage.ComponentImages())
 
 	auditCfg := manifests.OpenShiftOAuthAPIServerAuditConfig(hcp.Namespace)
@@ -1840,7 +1848,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultIngressController(ctx con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthHost string, oauthPort int32) error {
+func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthHost string, oauthPort int32) error {
 	p := oauth.NewOAuthServerParams(hcp, globalConfig, releaseImage.ComponentImages(), oauthHost, oauthPort)
 
 	sessionSecret := manifests.OAuthServerServiceSessionSecret(hcp.Namespace)
@@ -1922,7 +1930,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
 	p := ocm.NewOpenShiftControllerManagerParams(hcp, globalConfig, releaseImage.ComponentImages())
 
 	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
@@ -1956,7 +1964,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
 	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, globalConfig, releaseImage.ComponentImages())
 
 	config := manifests.ClusterPolicyControllerConfig(hcp.Namespace)
@@ -2178,8 +2186,31 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
+func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, globalConfig globalconfig.GlobalConfig) error {
+	rootCA := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return fmt.Errorf("failed to get root ca: %w", err)
+	}
+	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
+		return fmt.Errorf("failed to get combined ca: %w", err)
+	}
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, globalConfig)
 
+	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
+		return mcs.ReconcileMachineConfigServerConfig(cm, p)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine config server config: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
 	sshKey := ""
 	if len(hcp.Spec.SSHKey.Name) > 0 {
 		var sshKeySecret corev1.Secret
