@@ -1,4 +1,4 @@
-package config
+package globalconfig
 
 import (
 	"context"
@@ -22,6 +22,7 @@ type GlobalConfig struct {
 	Network        *configv1.Network
 	OAuth          *configv1.OAuth
 	Scheduler      *configv1.Scheduler
+	Proxy          *configv1.Proxy
 }
 
 func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (GlobalConfig, error) {
@@ -59,6 +60,8 @@ func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (
 			globalConfig.OAuth = obj
 		case *configv1.Scheduler:
 			globalConfig.Scheduler = obj
+		case *configv1.Proxy:
+			globalConfig.Proxy = obj
 		default:
 			log := ctrl.LoggerFrom(ctx)
 			log.Info("WARNING: unrecognized config found", "kind", gvk.Kind)

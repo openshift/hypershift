@@ -1,4 +1,4 @@
-package config
+package globalconfig
 
 import (
 	"context"
