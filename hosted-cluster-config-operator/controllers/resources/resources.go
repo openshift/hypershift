@@ -6,15 +6,18 @@ import (
 
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/kubeapiserverproxy"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/registry"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
 	"github.com/openshift/hypershift/support/upsert"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -25,8 +28,13 @@ const ControllerName = "resources"
 type reconciler struct {
 	client crclient.Client
 	upsert.CreateOrUpdateProvider
-	platformType    hyperv1.PlatformType
-	clusterSignerCA string
+	platformType             hyperv1.PlatformType
+	clusterSignerCA          string
+	haProxyImage             string
+	apiServerExternalAddress string
+	apiServerExternalPort    int
+	apiServerInternalAddress string
+	apiServerInternalPort    int
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -43,10 +51,15 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
 	c, err := controller.New(ControllerName, opts.Manager(), controller.Options{Reconciler: &reconciler{
-		client:                 opts.Manager().GetClient(),
-		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,
-		platformType:           opts.PlatformType,
-		clusterSignerCA:        opts.ClusterSignerCA(),
+		client:                   opts.Manager().GetClient(),
+		CreateOrUpdateProvider:   opts.TargetCreateOrUpdateProvider,
+		platformType:             opts.PlatformType,
+		clusterSignerCA:          opts.ClusterSignerCA(),
+		haProxyImage:             opts.HAProxyImage,
+		apiServerExternalAddress: opts.APIServerExternalAddress,
+		apiServerExternalPort:    opts.APIServerExternalPort,
+		apiServerInternalAddress: opts.APIServerInternalAddress,
+		apiServerInternalPort:    opts.APIServerInternalPort,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -55,11 +68,23 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&imageregistryv1.Config{},
 		&corev1.ConfigMap{},
 		&corev1.Secret{},
+		&appsv1.DaemonSet{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
+	}
+
+	// This is a hack that is needed to get the controller started. When it starts
+	// up, there is no object that matches it's label selector as it creates all
+	// of them so we set up a source.Channel with one event in it.
+	if err := c.Watch(&source.Channel{Source: func() <-chan event.GenericEvent {
+		c := make(chan event.GenericEvent, 1)
+		c <- event.GenericEvent{Object: &corev1.ConfigMap{}}
+		return c
+	}()}, eventHandler()); err != nil {
+		return fmt.Errorf("failed to set up initial channel source: %w", err)
 	}
 
 	return nil
@@ -105,6 +130,26 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile the %s ConfigMap: %w", crclient.ObjectKeyFromObject(kubeletServingCAConfigMap), err)
+	}
+
+	if err := r.reconcileKubeAPIServerProxy(ctx); err != nil {
+		return fmt.Errorf("failed to reconcile the kube-apiserver-proxy: %w", err)
+	}
+
+	return nil
+}
+
+func (r *reconciler) reconcileKubeAPIServerProxy(ctx context.Context) error {
+	config := manifests.KubeAPIServerProxyConfigMap()
+	reconcileCM := kubeapiserverproxy.ReconcileConfigMap(r.apiServerInternalAddress, r.apiServerInternalPort, r.apiServerExternalAddress, r.apiServerExternalPort, config)
+	if _, err := r.CreateOrUpdate(ctx, r.client, config, reconcileCM); err != nil {
+		return fmt.Errorf("failed to reconcile the %s ConfigMap: %w", crclient.ObjectKeyFromObject(config), err)
+	}
+
+	kubeAPIServerProxyDaemonSet := manifests.KubeAPIServerProxyDaemonSet()
+	reconcileDS := kubeapiserverproxy.ReconcileyDaemonset(kubeAPIServerProxyDaemonSet, r.apiServerInternalAddress, r.apiServerInternalPort, r.haProxyImage)
+	if _, err := r.CreateOrUpdate(ctx, r.client, kubeAPIServerProxyDaemonSet, reconcileDS); err != nil {
+		return fmt.Errorf("failed to reconcile the %s DaemonSet: %w", crclient.ObjectKeyFromObject(kubeAPIServerProxyDaemonSet), err)
 	}
 
 	return nil

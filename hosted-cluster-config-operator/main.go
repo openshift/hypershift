@@ -83,6 +83,12 @@ type HostedClusterConfigOperator struct {
 	enableCIDebugOutput bool
 
 	clusterSignerCA []byte
+
+	haProxyImage             string
+	apiServerExternalAddress string
+	apiServerExternalPort    int
+	apiServerInternalAddress string
+	apiServerInternalPort    int
 }
 
 func newHostedClusterConfigOperatorCommand() *cobra.Command {
@@ -109,6 +115,11 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringSliceVar(&cpo.Controllers, "controllers", cpo.Controllers, "Controllers to run with this operator")
 	flags.StringVar(&cpo.platformType, "platform-type", "", "The platform of the cluster")
 	flags.BoolVar(&cpo.enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	flags.StringVar(&cpo.haProxyImage, "haproxy-image", "", "The haproxy image wich will be used to serve the kube-apiserver endpoint on the nodes")
+	flags.StringVar(&cpo.apiServerExternalAddress, "apiserver-external-address", "", "The external address of the apiserver")
+	flags.IntVar(&cpo.apiServerExternalPort, "apiserver-external-port", 0, "The external port of the apiserver")
+	flags.StringVar(&cpo.apiServerInternalAddress, "apiserver-internal-address", "", "The internal address of the apiserver that is used as endpoint on the nodes")
+	flags.IntVar(&cpo.apiServerInternalPort, "apiserver-internal-port", 0, "The port on which the endpoint of the apiserver is served on the nodes")
 	return cmd
 }
 
@@ -179,6 +190,11 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		o.enableCIDebugOutput,
 		hyperv1.PlatformType(o.platformType),
 		o.clusterSignerCA,
+		o.haProxyImage,
+		o.apiServerExternalAddress,
+		o.apiServerExternalPort,
+		o.apiServerInternalAddress,
+		o.apiServerInternalPort,
 	)
 	return cfg.Start(ctx)
 }

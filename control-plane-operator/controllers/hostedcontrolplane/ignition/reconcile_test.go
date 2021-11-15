@@ -26,10 +26,8 @@ func TestWorkerSSHConfig(t *testing.T) {
 }
 
 func TestAPIServerHAProxyConfig(t *testing.T) {
-	image := "ha-proxy-image:latest"
-	externalAddress := "cluster.example.com"
 	internalAddress := "cluster.internal.example.com"
-	config, err := apiServerHAProxyConfig(image, externalAddress, internalAddress, 443, 8443)
+	config, err := apiServerHAProxyConfig(internalAddress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

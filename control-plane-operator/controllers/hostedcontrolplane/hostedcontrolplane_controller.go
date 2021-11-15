@@ -680,7 +680,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile hosted cluster config operator
 	r.Log.Info("Reconciling Hosted Cluster Config Operator")
-	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImage); err != nil {
+	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort); err != nil {
 		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
 	}
 
@@ -692,7 +692,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile Ignition
 	r.Log.Info("Reconciling Ignition")
-	if err = r.reconcileIgnition(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort); err != nil {
+	if err = r.reconcileIgnition(ctx, hostedControlPlane, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile ignition: %w", err)
 	}
 
@@ -2218,7 +2218,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
+func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	sshKey := ""
 	if len(hcp.Spec.SSHKey.Name) > 0 {
 		var sshKeySecret corev1.Secret
@@ -2233,7 +2233,7 @@ func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hc
 		sshKey = string(data)
 	}
 
-	p := ignition.NewIgnitionParams(hcp, releaseImage.ComponentImages(), apiServerAddress, apiServerPort, sshKey)
+	p := ignition.NewIgnitionParams(hcp, releaseImage.ComponentImages(), sshKey)
 
 	fipsConfig := manifests.IgnitionFIPSConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, fipsConfig, func() error {
@@ -2251,13 +2251,7 @@ func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hc
 
 	haProxyConfig := manifests.IgnitionAPIServerHAProxyConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, haProxyConfig, func() error {
-		return ignition.ReconcileAPIServerHAProxyIgnitionConfig(haProxyConfig,
-			p.OwnerRef,
-			p.HAProxyImage,
-			p.APIServerExternalAddress,
-			p.APIServerInternalAddress,
-			p.APIServerExternalPort,
-			p.APIServerInternalPort)
+		return ignition.ReconcileAPIServerHAProxyIgnitionConfig(haProxyConfig, p.OwnerRef, p.APIServerInternalAddress)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server ha proxy ignition config: %w", err)
 	}
@@ -2429,12 +2423,12 @@ func reconcileImageContentSourceIgnitionConfig(ignitionConfig *corev1.ConfigMap,
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage) error {
+func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
 	versions, err := releaseInfo.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)
 	}
-	p := configoperator.NewHostedClusterConfigOperatorParams(ctx, hcp, releaseInfo.ComponentImages(), releaseInfo.Version(), versions["kubernetes"])
+	p := configoperator.NewHostedClusterConfigOperatorParams(ctx, hcp, releaseInfo.ComponentImages(), releaseInfo.Version(), versions["kubernetes"], apiServerAddress, apiServerPort)
 
 	sa := manifests.ConfigOperatorServiceAccount(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, sa, func() error {
@@ -2459,7 +2453,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort)
+		return configoperator.ReconcileDeployment(deployment, p, r.EnableCIDebugOutput, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}

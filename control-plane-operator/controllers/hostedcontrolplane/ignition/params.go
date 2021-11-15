@@ -9,21 +9,14 @@ type IgnitionParams struct {
 	OwnerRef                 config.OwnerRef
 	FIPSEnabled              bool
 	SSHKey                   string
-	HAProxyImage             string
-	APIServerExternalAddress string
-	APIServerExternalPort    int32
 	APIServerInternalAddress string
-	APIServerInternalPort    int32
 }
 
-func NewIgnitionParams(hcp *hyperv1.HostedControlPlane, images map[string]string, apiServerAddress string, apiServerPort int32, sshKey string) *IgnitionParams {
+func NewIgnitionParams(hcp *hyperv1.HostedControlPlane, images map[string]string, sshKey string) *IgnitionParams {
 	params := &IgnitionParams{
-		OwnerRef:                 config.OwnerRefFrom(hcp),
-		FIPSEnabled:              hcp.Spec.FIPS,
-		SSHKey:                   sshKey,
-		HAProxyImage:             images["haproxy-router"],
-		APIServerExternalAddress: apiServerAddress,
-		APIServerExternalPort:    apiServerPort,
+		OwnerRef:    config.OwnerRefFrom(hcp),
+		FIPSEnabled: hcp.Spec.FIPS,
+		SSHKey:      sshKey,
 	}
 
 	if hcp.Spec.APIAdvertiseAddress != nil {
@@ -31,10 +24,6 @@ func NewIgnitionParams(hcp *hyperv1.HostedControlPlane, images map[string]string
 	} else {
 		params.APIServerInternalAddress = config.DefaultAdvertiseAddress
 	}
-	if hcp.Spec.APIPort != nil {
-		params.APIServerInternalPort = *hcp.Spec.APIPort
-	} else {
-		params.APIServerInternalPort = config.DefaultAPIServerPort
-	}
+
 	return params
 }

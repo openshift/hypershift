@@ -3,6 +3,7 @@ package configoperator
 import (
 	"fmt"
 	"path"
+	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -89,8 +90,8 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiPort *int32) error {
-	ownerRef.ApplyTo(deployment)
+func ReconcileDeployment(deployment *appsv1.Deployment, p *HostedClusterConfigOperatorParams, enableCIDebugOutput bool, platformType hyperv1.PlatformType) error {
+	p.OwnerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: hccLabels,
@@ -104,7 +105,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion,
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, openShiftVersion, kubeVersion, enableCIDebugOutput, platformType)),
+					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(p, enableCIDebugOutput, platformType)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
@@ -115,8 +116,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, openShiftVersion,
 			},
 		},
 	}
-	config.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
+	p.DeploymentConfig.ApplyTo(deployment)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, &p.APIServerExternalPort), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 
@@ -144,9 +145,9 @@ func hccVolumeClusterSignerCA() *corev1.Volume {
 	}
 }
 
-func buildHCCContainerMain(image, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType) func(c *corev1.Container) {
+func buildHCCContainerMain(p *HostedClusterConfigOperatorParams, enableCIDebugOutput bool, platformType hyperv1.PlatformType) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		c.Image = image
+		c.Image = p.Image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{
 			"/usr/bin/hosted-cluster-config-operator",
@@ -156,6 +157,11 @@ func buildHCCContainerMain(image, openShiftVersion, kubeVersion string, enableCI
 			"--namespace", "$(POD_NAMESPACE)",
 			"--platform-type", string(platformType),
 			fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
+			"--apiserver-external-address=" + p.APIServerExternalAddress,
+			"--apiserver-external-port=" + strconv.Itoa(int(p.APIServerExternalPort)),
+			"--apiserver-internal-address=" + p.APIServerInternalAddress,
+			"--apiserver-internal-port=" + strconv.Itoa(int(p.APIServerInternalPort)),
+			"--haproxy-image=" + p.HAProxyImage,
 		}
 		c.Env = []corev1.EnvVar{
 			{
@@ -168,11 +174,11 @@ func buildHCCContainerMain(image, openShiftVersion, kubeVersion string, enableCI
 			},
 			{
 				Name:  "OPENSHIFT_RELEASE_VERSION",
-				Value: openShiftVersion,
+				Value: p.OpenShiftVersion,
 			},
 			{
 				Name:  "KUBERNETES_VERSION",
-				Value: kubeVersion,
+				Value: p.KubernetesVersion,
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)

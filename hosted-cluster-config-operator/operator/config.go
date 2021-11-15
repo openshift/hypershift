@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,7 +44,7 @@ func cacheLabelSelector() labels.Selector {
 
 type ControllerSetupFunc func(*HostedClusterConfigOperatorConfig) error
 
-func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc, enableCIDebugOutput bool, platformType hyperv1.PlatformType, clusterSignerCA []byte) *HostedClusterConfigOperatorConfig {
+func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc, enableCIDebugOutput bool, platformType hyperv1.PlatformType, clusterSignerCA []byte, haProxyImage string, apiServerExternalAddress string, apiServerExternalPort int, apiServerInternalAddress string, apiServerInternalPort int) *HostedClusterConfigOperatorConfig {
 	cfg := cfgFromFile(targetKubeconfig)
 	mgr := mgr(cfg)
 	return &HostedClusterConfigOperatorConfig{
@@ -60,6 +61,12 @@ func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, in
 		controllerFuncs: controllerFuncs,
 		versions:        versions,
 		PlatformType:    platformType,
+
+		HAProxyImage:             haProxyImage,
+		APIServerExternalAddress: apiServerExternalAddress,
+		APIServerExternalPort:    apiServerExternalPort,
+		APIServerInternalAddress: apiServerInternalAddress,
+		APIServerInternalPort:    apiServerInternalPort,
 	}
 }
 
@@ -80,6 +87,12 @@ type HostedClusterConfigOperatorConfig struct {
 	PlatformType        hyperv1.PlatformType
 	controllerFuncs     map[string]ControllerSetupFunc
 	namespacedInformers map[string]informers.SharedInformerFactory
+
+	HAProxyImage             string
+	APIServerExternalAddress string
+	APIServerExternalPort    int
+	APIServerInternalAddress string
+	APIServerInternalPort    int
 }
 
 func (c *HostedClusterConfigOperatorConfig) Scheme() *runtime.Scheme {
@@ -113,6 +126,7 @@ func mgr(cfg *rest.Config) ctrl.Manager {
 				// use a default for everything once we have https://github.com/kubernetes-sigs/controller-runtime/pull/1710
 				&corev1.ConfigMap{}: {Label: cacheLabelSelector()},
 				&corev1.Secret{}:    {Label: cacheLabelSelector()},
+				&appsv1.DaemonSet{}: {Label: cacheLabelSelector()},
 			},
 		}),
 	})
