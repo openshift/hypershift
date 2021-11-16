@@ -75,7 +75,7 @@ func NewStartCommand() *cobra.Command {
 		inCluster                        bool
 		enableCIDebugOutput              bool
 		registryOverrides                map[string]string
-		var managementClusterMode string
+		managementClusterMode 			 string
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
