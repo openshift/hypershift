@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	Provider          = "aws"
+	Provider          = util.AWSCloudProviderName
 	ProviderConfigKey = "aws.conf"
 )
 

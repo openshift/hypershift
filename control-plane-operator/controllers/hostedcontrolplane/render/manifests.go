@@ -58,7 +58,6 @@ func newClusterManifestContext(images, versions map[string]string, params *Clust
 func (c *clusterManifestContext) setupManifests() {
 	c.clusterBootstrap()
 	c.userManifestsBootstrapper()
-	c.machineConfigServer()
 }
 
 func (c *clusterManifestContext) clusterBootstrap() {
@@ -69,13 +68,6 @@ func (c *clusterManifestContext) clusterBootstrap() {
 	for _, m := range manifests {
 		c.addUserManifestFiles("cluster-bootstrap/" + m)
 	}
-}
-
-func (c *clusterManifestContext) machineConfigServer() {
-	c.addManifestFiles(
-		"machine-config-server/machine-config-server-configmap.yaml",
-		"machine-config-server/machine-config-server-kubeconfig-secret.yaml",
-	)
 }
 
 func (c *clusterManifestContext) userManifestsBootstrapper() {

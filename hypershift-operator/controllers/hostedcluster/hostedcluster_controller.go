@@ -2381,31 +2381,6 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 						},
 					},
 				},
-				InitContainers: []corev1.Container{
-					{
-						Name:            "token-minter",
-						Image:           tokenMinterImage,
-						ImagePullPolicy: corev1.PullAlways,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "token",
-								MountPath: "/var/run/secrets/openshift/serviceaccount",
-							},
-							{
-								Name:      "svc-kubeconfig",
-								MountPath: "/etc/kubernetes",
-							},
-						},
-						Command: []string{"/usr/bin/token-minter"},
-						Args: []string{
-							"-service-account-namespace=kube-system",
-							"-service-account-name=capa-controller-manager",
-							"-token-audience=openshift",
-							"-token-file=/var/run/secrets/openshift/serviceaccount/token",
-							"-kubeconfig=/etc/kubernetes/kubeconfig",
-						},
-					},
-				},
 				Containers: []corev1.Container{
 					{
 						Name:            "manager",
@@ -2473,6 +2448,30 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 									Port: intstr.FromString("healthz"),
 								},
 							},
+						},
+					},
+					{
+						Name:            "token-minter",
+						Image:           tokenMinterImage,
+						ImagePullPolicy: corev1.PullAlways,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
+							{
+								Name:      "svc-kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
+						},
+						Command: []string{"/usr/bin/token-minter"},
+						Args: []string{
+							"-service-account-namespace=kube-system",
+							"-service-account-name=capa-controller-manager",
+							"-token-audience=openshift",
+							"-token-file=/var/run/secrets/openshift/serviceaccount/token",
+							"-kubeconfig=/etc/kubernetes/kubeconfig",
+							"-sleep=true",
 						},
 					},
 				},
