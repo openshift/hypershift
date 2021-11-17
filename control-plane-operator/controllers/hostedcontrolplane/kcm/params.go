@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 type KubeControllerManagerParams struct {
@@ -30,18 +31,21 @@ type KubeControllerManagerParams struct {
 	config.OwnerRef
 	HyperkubeImage          string `json:"hyperkubeImage"`
 	AvailabilityProberImage string `json:"availabilityProberImage"`
+	TokenMinterImage        string `json:"tokenMinterImage"`
 }
 
 const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string , explicitNonRootSecurityContext bool) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
 		FeatureGate: globalConfig.FeatureGate,
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
-		HyperkubeImage:          images["hyperkube"],
+		HyperkubeImage: images["hyperkube"],
+		// TODO: HCCO is the Hypershift image which contains the token-minter binary.  Messy though.
+		TokenMinterImage:        images["hosted-cluster-config-operator"],
 		Port:                    DefaultPort,
 		ServiceCIDR:             hcp.Spec.ServiceCIDR,
 		PodCIDR:                 hcp.Spec.PodCIDR,

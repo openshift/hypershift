@@ -10,6 +10,10 @@ func init() {
 
 // The following are reasons for the IgnitionEndpointAvailable condition.
 const (
+	// AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
+	// has been created for the specified NLB
+	AWSEndpointServiceAvailable ConditionType = "Available"
+
 	AWSSuccessReason string = "AWSSuccessReason"
 	AWSErrorReason   string = "AWSErrorReason"
 )

@@ -28,12 +28,13 @@ HyperShift is deployed into an existing OpenShift cluster which will host the ma
 * Admin access to an OpenShift cluster (version 4.7+) specified by the `KUBECONFIG` environment variable
 * The OpenShift `oc` CLI tool
 * The `hypershift` CLI tool
-- An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster
+* An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster
+* An AWS S3 bucket into which the above credentials can write. The bucket must allow public objects.
 
 Install HyperShift into the management cluster:
 
 ```shell
-hypershift install
+hypershift install --oidc-storage-provider-s3-bucket-name="$name-of-bucket" --oidc-storage-provider-s3-region="$region-of-bucket" --oidc-storage-provider-s3-credentials="$path-to-aws-credentials-file"
 ```
 
 To uninstall HyperShift, run:
@@ -59,7 +60,7 @@ Run the `hypershift` command to create a cluster named `example` in the `cluster
 namespace, including the cloud infrastructure to support it.
 
 ```shell
-hypershift create cluster \
+hypershift create cluster aws \
   --pull-secret /my/pull-secret \
   --aws-creds ~/.aws/credentials \
   --name example \
@@ -111,7 +112,7 @@ hypershift create kubeconfig
 To delete the cluster and the infrastructure created earlier, run:
 
 ```shell
-hypershift destroy cluster \
+hypershift destroy cluster aws \
   --aws-creds ~/.aws/credentials \
   --namespace clusters \
   --name example
@@ -199,11 +200,11 @@ clean up the `clusters/secrets` - so if that was malformed or not accurate, you 
 that secret before you rerun the `hypershift create cluster ...` command.
 
 ```shell
-$ hypershift destroy cluster   --aws-creds ~/.aws/credentials   --namespace clusters   --name example
+$ hypershift destroy cluster aws  --aws-creds ~/.aws/credentials   --namespace clusters   --name example
 
 $ oc delete secret example-pull-secret -n clusters
 
-$ hypershift create cluster --pull-secret ~/pull-secret \
+$ hypershift create cluster aws --pull-secret ~/pull-secret \
       --aws-creds ~/.aws/credentials \
       --name example \
       --base-domain yourroute53domain

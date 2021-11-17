@@ -33,7 +33,7 @@ with standard OCP and Kubernetes toolchains.
 1. Create a new cluster, replacing `example.com` with the domain of the public
    zone provided in the prerequisites:
 
-        hypershift create cluster \
+        hypershift create cluster aws \
         --pull-secret /my/pull-secret \
         --aws-creds ~/.aws/credentials \
         --name example \
@@ -54,7 +54,7 @@ with standard OCP and Kubernetes toolchains.
 
 1. Delete the example cluster:
 
-        hypershift destroy cluster \
+        hypershift destroy cluster aws \
         --aws-creds ~/.aws/credentials \
         --namespace clusters \
         --name example

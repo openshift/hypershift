@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 // TODO (cewong): Add tests for other params
@@ -45,7 +46,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Spec.APIAdvertiseAddress = test.advertiseAddress
 			hcp.Spec.APIPort = test.port
-			p := NewKubeAPIServerParams(context.Background(), hcp, config.GlobalConfig{}, map[string]string{}, "", 0, false)
+			p := NewKubeAPIServerParams(context.Background(), hcp, globalconfig.GlobalConfig{}, map[string]string{}, "", 0, false)
 			g := NewGomegaWithT(t)
 			g.Expect(p.AdvertiseAddress).To(Equal(test.expectedAddress))
 			g.Expect(p.APIServerPort).To(Equal(test.expectedPort))

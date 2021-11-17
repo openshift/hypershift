@@ -21,11 +21,15 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -69,16 +73,22 @@ func main() {
 }
 
 type StartOptions struct {
-	Namespace                  string
-	DeploymentName             string
-	MetricsAddr                string
-	EnableLeaderElection       bool
-	IgnitionServerImage        string
-	OpenTelemetryEndpoint      string
-	EnableOCPClusterMonitoring bool
-	EnableCIDebugOutput        bool
-	ControlPlaneOperatorImage  string
-	ManagementClusterMode      string
+	Namespace                        string
+	DeploymentName                   string
+	MetricsAddr                      string
+	EnableLeaderElection             bool
+	IgnitionServerImage              string
+	OpenTelemetryEndpoint            string
+	EnableOCPClusterMonitoring       bool
+	EnableCIDebugOutput              bool
+	ControlPlaneOperatorImage        string
+	AvailabilityProberImage          string
+	RegistryOverrides                map[string]string
+	PrivatePlatform                  string
+	OIDCStorageProviderS3BucketName  string
+	OIDCStorageProviderS3Region      string
+	OIDCStorageProviderS3Credentials string
+ManagementClusterMode      string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -90,13 +100,16 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := StartOptions{
-		Namespace:                 "hypershift",
-		DeploymentName:            "operator",
-		MetricsAddr:               "0",
-		EnableLeaderElection:      false,
-		ControlPlaneOperatorImage: "",
-		IgnitionServerImage:       "",
-		OpenTelemetryEndpoint:     "",
+		Namespace:                   "hypershift",
+		DeploymentName:              "operator",
+		MetricsAddr:                 "0",
+		EnableLeaderElection:        false,
+		ControlPlaneOperatorImage:   "",
+		IgnitionServerImage:         "",
+		OpenTelemetryEndpoint:       "",
+		RegistryOverrides:           map[string]string{},
+		PrivatePlatform:             string(hyperv1.NonePlatform),
+		OIDCStorageProviderS3Region: "us-east-1",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -106,10 +119,16 @@ func NewStartCommand() *cobra.Command {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&opts.AvailabilityProberImage, "availability-prober-operator-image", opts.AvailabilityProberImage, "Image for kube apiserver prober utility (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", "", "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
 	cmd.Flags().StringVar(&opts.ManagementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -195,35 +214,68 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	log.Info("using ignition server image", "image", ignitionServerImage)
 
+	availabilityProberImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.AvailabilityProberImage)
+	if err != nil {
+		return fmt.Errorf("failed to find operator image: %w", err)
+	}
+	log.Info("using availability prober image", "image", availabilityProberImage)
+
 	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
 
-	if err = (&hostedcluster.HostedClusterReconciler{
+	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
 		IgnitionServerImage:           ignitionServerImage,
-		ReleaseProvider: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.RegistryClientProvider{},
-			Cache: map[string]*releaseinfo.ReleaseImage{},
+		TokenMinterImage:              operatorImage,
+		AvailabilityProberImage:       availabilityProberImage,
+		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: opts.RegistryOverrides,
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		CreateOrUpdateProvider:     createOrUpdate,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
-		ManagementClusterMode:      opts.ManagementClusterMode,
-	}).SetupWithManager(mgr); err != nil {
+        ManagementClusterMode:      opts.ManagementClusterMode,
+	}
+	if opts.OIDCStorageProviderS3Credentials != "" {
+		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket")
+		awsConfig := awsutil.NewConfig(opts.OIDCStorageProviderS3Credentials, opts.OIDCStorageProviderS3Region)
+		s3Client := s3.New(awsSession, awsConfig)
+		hostedClusterReconciler.S3Client = s3Client
+		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
+	}
+	if err := hostedClusterReconciler.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
-		Client:                mgr.GetClient(),
-		ManagementClusterMode: opts.ManagementClusterMode,
-		ReleaseProvider: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.RegistryClientProvider{},
-			Cache: map[string]*releaseinfo.ReleaseImage{},
+		Client: mgr.GetClient(),
+        ManagementClusterMode: opts.ManagementClusterMode,
+		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: opts.RegistryOverrides,
 		},
 		CreateOrUpdateProvider: createOrUpdate,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
+	}
+
+	// Start platform-specific controllers
+	switch hyperv1.PlatformType(opts.PrivatePlatform) {
+	case hyperv1.AWSPlatform:
+		if err := (&aws.AWSEndpointServiceReconciler{
+			Client:                 mgr.GetClient(),
+			CreateOrUpdateProvider: createOrUpdate,
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller: %w", err)
+		}
 	}
 
 	// Configure OpenTelemetry

@@ -1,9 +1,11 @@
 {{ define "type" }}
 
-<h3 id="{{ anchorIDForType . }}">
-    {{- .Name.Name }}
-    {{ if eq .Kind "Alias" }}(<code>{{.Underlying}}</code> alias)</p>{{ end -}}
-</h3>
+{{ if isExportedType . -}}
+## {{- .Name.Name }} { #{{ anchorIDForType . }} }
+{{ else -}}
+### {{- .Name.Name }} { #{{ anchorIDForType . }} }
+{{ end -}}
+
 {{ with (typeReferences .) }}
     <p>
         (<em>Appears on:</em>
@@ -21,6 +23,30 @@
 <p>
     {{ safe (renderComments .CommentLines) }}
 </p>
+
+{{ with (constantsOfType .) }}
+<table>
+    <thead>
+        <tr>
+            <th>Value</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+      {{- range . -}}
+      <tr>
+        {{- /*
+            renderComments implicitly creates a <p> element, so we
+            add one to the display name as well to make the contents
+            of the two cells align evenly.
+        */ -}}
+        <td><p>{{ typeDisplayName . }}</p></td>
+        <td>{{ safe (renderComments .CommentLines) }}</td>
+      </tr>
+      {{- end -}}
+    </tbody>
+</table>
+{{ end }}
 
 {{ if .Members }}
 <table>

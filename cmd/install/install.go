@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	hyperapi "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
@@ -38,15 +39,33 @@ import (
 )
 
 type Options struct {
-	Namespace                  string
-	HyperShiftImage            string
-	HyperShiftOperatorReplicas int32
-	Development                bool
-	Render                     bool
-	ExcludeEtcdManifests       bool
-	EnableOCPClusterMonitoring bool
-	EnableCIDebugOutput        bool
-	AWSCreds                   string
+	Namespace                        string
+	HyperShiftImage                  string
+	HyperShiftOperatorReplicas       int32
+	Development                      bool
+	Render                           bool
+	ExcludeEtcdManifests             bool
+	EnableOCPClusterMonitoring       bool
+	EnableCIDebugOutput              bool
+	PrivatePlatform                  string
+	AWSPrivateCreds                  string
+	AWSPrivateRegion                 string
+	OIDCStorageProviderS3Credentials string
+	OIDCStorageProviderS3Region      string
+	OIDCStorageProviderS3BucketName  string
+}
+
+func (o *Options) Validate() error {
+	switch hyperv1.PlatformType(o.PrivatePlatform) {
+	case hyperv1.AWSPlatform:
+		if o.AWSPrivateCreds == "" || o.AWSPrivateRegion == "" {
+			return fmt.Errorf("--aws-private-region and --aws-private-creds are required with --private-platform=%s", hyperv1.AWSPlatform)
+		}
+	case hyperv1.NonePlatform:
+	default:
+		return fmt.Errorf("--private-platform must be either %s or %s", hyperv1.AWSPlatform, hyperv1.NonePlatform)
+	}
+	return nil
 }
 
 func NewCommand() *cobra.Command {
@@ -61,6 +80,7 @@ func NewCommand() *cobra.Command {
 		opts.EnableOCPClusterMonitoring = true
 		opts.EnableCIDebugOutput = true
 	}
+	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.Flags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
@@ -69,9 +89,18 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
-	cmd.Flags().StringVar(&opts.AWSCreds, "aws-creds", opts.AWSCreds, "Path to an AWS credentials file (AWS only)")
+	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
+	cmd.Flags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
+	cmd.Flags().StringVar(&opts.AWSPrivateRegion, "aws-private-region", opts.AWSPrivateRegion, "AWS region where private clusters are supported by this operator")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for writing the OIDC documents into the S3 bucket. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "Region of the OIDC bucket. Required for AWS guest clusters")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := opts.Validate(); err != nil {
+			return err
+		}
+
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
@@ -87,7 +116,10 @@ func NewCommand() *cobra.Command {
 			opts.HyperShiftOperatorReplicas = 1
 		}
 
-		objects := hyperShiftOperatorManifests(opts)
+		objects, err := hyperShiftOperatorManifests(opts)
+		if err != nil {
+			return err
+		}
 
 		switch {
 		case opts.Render:
@@ -95,9 +127,10 @@ func NewCommand() *cobra.Command {
 		default:
 			err := apply(ctx, objects)
 			if err != nil {
-				panic(err)
+				return err
 			}
 		}
+		return nil
 	}
 
 	return cmd
@@ -142,7 +175,7 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 	return nil
 }
 
-func hyperShiftOperatorManifests(opts Options) []crclient.Object {
+func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	controlPlanePriorityClass := assets.HyperShiftControlPlanePriorityClass{}.Build()
 	etcdPriorityClass := assets.HyperShiftEtcdPriorityClass{}.Build()
 	apiCriticalPriorityClass := assets.HyperShiftAPICriticalPriorityClass{}.Build()
@@ -165,25 +198,30 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 		ServiceAccount: operatorServiceAccount,
 		Role:           operatorRole,
 	}.Build()
-	var awsCredBytes []byte
-	if len(opts.AWSCreds) != 0 {
+	var oidcStorageProviderS3CredBytes []byte
+	if opts.OIDCStorageProviderS3Credentials != "" {
 		var err error
-		awsCredBytes, err = ioutil.ReadFile(opts.AWSCreds)
+		oidcStorageProviderS3CredBytes, err = ioutil.ReadFile(opts.OIDCStorageProviderS3Credentials)
 		if err != nil {
 			panic(err)
 		}
 	}
-	operatorAWSCredentialsSecret := assets.HyperShiftOperatorAWSCredentialsSecret{
-		Namespace:     operatorNamespace,
-		AWSCredsBytes: awsCredBytes,
+	operatorOIDCProviderS3Secret := assets.HyperShiftOperatorOIDCProviderS3Secret{
+		Namespace:                      operatorNamespace,
+		OIDCStorageProviderS3CredBytes: oidcStorageProviderS3CredBytes,
 	}.Build()
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
-		Namespace:                  operatorNamespace,
-		OperatorImage:              opts.HyperShiftImage,
-		ServiceAccount:             operatorServiceAccount,
-		Replicas:                   opts.HyperShiftOperatorReplicas,
-		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
-		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
+		Namespace:                       operatorNamespace,
+		OperatorImage:                   opts.HyperShiftImage,
+		ServiceAccount:                  operatorServiceAccount,
+		Replicas:                        opts.HyperShiftOperatorReplicas,
+		EnableOCPClusterMonitoring:      opts.EnableOCPClusterMonitoring,
+		EnableCIDebugOutput:             opts.EnableCIDebugOutput,
+		PrivatePlatform:                 opts.PrivatePlatform,
+		AWSPrivateRegion:                opts.AWSPrivateRegion,
+		AWSPrivateCreds:                 opts.AWSPrivateCreds,
+		OIDCStorageProviderS3BucketName: opts.OIDCStorageProviderS3BucketName,
+		OIDCStorageProviderS3Region:     opts.OIDCStorageProviderS3Region,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
@@ -205,6 +243,20 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 
 	var objects []crclient.Object
 
+	var credBytes []byte
+	switch hyperv1.PlatformType(opts.PrivatePlatform) {
+	case hyperv1.AWSPlatform:
+		var err error
+		credBytes, err = ioutil.ReadFile(opts.AWSPrivateCreds)
+		if err != nil {
+			return objects, err
+		}
+	}
+	operatorCredentialsSecret := assets.HyperShiftOperatorCredentialsSecret{
+		Namespace:  operatorNamespace,
+		CredsBytes: credBytes,
+	}.Build()
+
 	objects = append(objects, assets.CustomResourceDefinitions(func(path string) bool {
 		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
 			return false
@@ -221,13 +273,15 @@ func hyperShiftOperatorManifests(opts Options) []crclient.Object {
 	objects = append(objects, operatorClusterRoleBinding)
 	objects = append(objects, operatorRole)
 	objects = append(objects, operatorRoleBinding)
-	objects = append(objects, operatorAWSCredentialsSecret)
+	objects = append(objects, operatorCredentialsSecret)
+	objects = append(objects, operatorOIDCProviderS3Secret)
 	objects = append(objects, operatorDeployment)
 	objects = append(objects, operatorService)
 	objects = append(objects, prometheusRole)
 	objects = append(objects, prometheusRoleBinding)
 	objects = append(objects, serviceMonitor)
 	objects = append(objects, recordingRule)
+	objects = append(objects, assets.OIDCStorageProviderS3ConfigMap(opts.OIDCStorageProviderS3BucketName, opts.OIDCStorageProviderS3Region))
 
-	return objects
+	return objects, nil
 }

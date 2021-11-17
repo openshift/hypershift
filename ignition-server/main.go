@@ -52,10 +52,11 @@ func main() {
 }
 
 type Options struct {
-	Addr                  string
-	CertFile              string
-	KeyFile               string
-	ManagementClusterMode string
+	Addr              string
+	CertFile          string
+	KeyFile           string
+	RegistryOverrides map[string]string
+    ManagementClusterMode string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -65,14 +66,16 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		Addr:     "0.0.0.0:9090",
-		CertFile: "/var/run/secrets/ignition/tls.crt",
-		KeyFile:  "/var/run/secrets/ignition/tls.key",
+		Addr:              "0.0.0.0:9090",
+		CertFile:          "/var/run/secrets/ignition/tls.crt",
+		KeyFile:           "/var/run/secrets/ignition/tls.key",
+		RegistryOverrides: map[string]string{},
 	}
 
 	cmd.Flags().StringVar(&opts.Addr, "addr", opts.Addr, "Listen address")
 	cmd.Flags().StringVar(&opts.CertFile, "cert-file", opts.CertFile, "Path to the serving cert")
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", opts.KeyFile, "Path to the serving key")
+	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.Flags().StringVar(&opts.ManagementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -96,7 +99,7 @@ func NewStartCommand() *cobra.Command {
 
 // setUpPayloadStoreReconciler sets up manager with a TokenSecretReconciler controller
 // to keep the PayloadStore up to date.
-func setUpPayloadStoreReconciler(ctx context.Context) (ctrl.Manager, error) {
+func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string) (ctrl.Manager, error) {
 	if os.Getenv(namespaceEnvVariableName) == "" {
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
@@ -119,9 +122,12 @@ func setUpPayloadStoreReconciler(ctx context.Context) (ctrl.Manager, error) {
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
 		IgnitionProvider: &controllers.MCSIgnitionProvider{
-			ReleaseProvider: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
+			ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+				RegistryOverrides: registryOverrides,
 			},
 			Client:    mgr.GetClient(),
 			Namespace: os.Getenv(namespaceEnvVariableName),
@@ -134,7 +140,7 @@ func setUpPayloadStoreReconciler(ctx context.Context) (ctrl.Manager, error) {
 }
 
 func run(ctx context.Context, opts Options) error {
-	mgr, err := setUpPayloadStoreReconciler(ctx)
+	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides)
 	if err != nil {
 		return fmt.Errorf("error setting up manager: %w", err)
 	}

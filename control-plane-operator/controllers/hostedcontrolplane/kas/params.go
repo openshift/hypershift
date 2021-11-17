@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 type KubeAPIServerImages struct {
@@ -23,6 +24,7 @@ type KubeAPIServerImages struct {
 	IBMCloudKMS           string `json:"ibmcloudKMS"`
 	AWSKMS                string `json:"awsKMS"`
 	Portieris             string `json:"portieris"`
+	TokenMinterImage      string
 }
 
 type KubeAPIServerParams struct {
@@ -60,7 +62,7 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, explicitNonRootSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, explicitNonRootSecurityContext bool) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
 		FeatureGate:          globalConfig.FeatureGate,
@@ -80,6 +82,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			HyperKube:             images["hyperkube"],
 			CLI:                   images["cli"],
 			ClusterConfigOperator: images["cluster-config-operator"],
+			TokenMinterImage:      images["hosted-cluster-config-operator"],
 		},
 	}
 	if hcp.Spec.APIAdvertiseAddress != nil {
