@@ -12,7 +12,6 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
@@ -44,11 +43,6 @@ var (
 	cloudProviderConfigVolumeMount = util.PodVolumeMounts{
 		kcmContainerMain().Name: {
 			kcmVolumeCloudConfig().Name: "/etc/kubernetes/cloud",
-		},
-	}
-	cloudProviderCredsVolumeMount = util.PodVolumeMounts{
-		kcmContainerMain().Name: {
-			kcmVolumeCloudProviderCreds().Name: "/etc/kubernetes/secrets/cloud-provider",
 		},
 	}
 	kcmLabels = map[string]string{
@@ -105,7 +99,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 		applyServingCAVolume(&deployment.Spec.Template.Spec, servingCA)
 	}
 	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig)
-	applyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds)
+	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds, p.TokenMinterImage, kcmContainerMain().Name)
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
@@ -230,19 +224,6 @@ func buildKCMVolumeCloudConfig(cloudProviderConfigName string) func(v *corev1.Vo
 	}
 }
 
-func kcmVolumeCloudProviderCreds() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "cloud-creds",
-	}
-}
-
-func buildKCMVolumeCloudProviderCreds(cloudProviderCredsName string) func(v *corev1.Volume) {
-	return func(v *corev1.Volume) {
-		v.Secret = &corev1.SecretVolumeSource{}
-		v.Secret.SecretName = cloudProviderCredsName
-	}
-}
-
 type serviceCAVolumeBuilder string
 
 func (name serviceCAVolumeBuilder) buildKCMVolumeServiceServingCA(v *corev1.Volume) {
@@ -331,30 +312,6 @@ func applyCloudConfigVolumeMount(podSpec *corev1.PodSpec, cloudProviderConfigRef
 	container := mustContainer(podSpec, kcmContainerMain().Name)
 	container.VolumeMounts = append(container.VolumeMounts,
 		cloudProviderConfigVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
-}
-
-func applyCloudProviderCreds(podSpec *corev1.PodSpec, cloudProvider string, cloudProviderCreds *corev1.LocalObjectReference) {
-	if cloudProviderCreds == nil || cloudProviderCreds.Name == "" {
-		return
-	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudProviderCreds(), buildKCMVolumeCloudProviderCreds(cloudProviderCreds.Name)))
-	container := mustContainer(podSpec, kcmContainerMain().Name)
-	container.VolumeMounts = append(container.VolumeMounts,
-		cloudProviderCredsVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
-
-	switch cloudProvider {
-	case aws.Provider:
-		credsPath := path.Join(cloudProviderCredsVolumeMount.Path(kcmContainerMain().Name, kcmVolumeCloudProviderCreds().Name), AWSCloudProviderCredsKey)
-		container.Env = append(container.Env,
-			corev1.EnvVar{
-				Name:  "AWS_SHARED_CREDENTIALS_FILE",
-				Value: credsPath,
-			},
-			corev1.EnvVar{
-				Name:  "AWS_EC2_METADATA_DISABLED",
-				Value: "true",
-			})
-	}
 }
 
 func mustContainer(podSpec *corev1.PodSpec, name string) *corev1.Container {

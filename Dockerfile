@@ -14,5 +14,6 @@ COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plan
 COPY --from=builder /hypershift/bin/hosted-cluster-config-operator /usr/bin/hosted-cluster-config-operator
 COPY --from=builder /hypershift/bin/konnectivity-socks5-proxy /usr/bin/konnectivity-socks5-proxy
 COPY --from=builder /hypershift/bin/availability-prober /usr/bin/availability-prober
+COPY --from=builder /hypershift/bin/token-minter /usr/bin/token-minter
 
 ENTRYPOINT /usr/bin/hypershift

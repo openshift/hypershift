@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_1/types"
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/openshift/api/operator/v1alpha1"
@@ -849,7 +849,7 @@ func getAMI(nodePool *hyperv1.NodePool, region string, releaseImage *releaseinfo
 func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config {
 	return ignitionapi.Config{
 		Ignition: ignitionapi.Ignition{
-			Version: "3.1.0",
+			Version: "3.2.0",
 			Security: ignitionapi.Security{
 				TLS: ignitionapi.TLS{
 					CertificateAuthorities: []ignitionapi.Resource{

@@ -117,6 +117,10 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			"--admin-port=8093",
 			"--mode=http-connect",
 			"--proxy-strategies=destHost,defaultRoute",
+			"--keepalive-time",
+			"30s",
+			"--frontend-keepalive-time",
+			"30s",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -278,7 +282,6 @@ func reconcileWorkerAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig
 				SecurityContext: &corev1.PodSecurityContext{
 					RunAsUser: pointer.Int64Ptr(1000),
 				},
-				HostNetwork: true,
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port)),
 				},
@@ -335,6 +338,14 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(
 			"--health-server-port",
 			fmt.Sprint(healthPort),
 			"--agent-identifiers=default-route=true",
+			"--keepalive-time",
+			"30s",
+			"--probe-interval",
+			"30s",
+			"--sync-interval",
+			"1m",
+			"--sync-interval-cap",
+			"5m",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -399,6 +410,14 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 			fmt.Sprint(healthPort),
 			"--agent-identifiers",
 			agentIDs.String(),
+			"--keepalive-time",
+			"30s",
+			"--probe-interval",
+			"30s",
+			"--sync-interval",
+			"1m",
+			"--sync-interval-cap",
+			"5m",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}

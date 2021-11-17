@@ -75,22 +75,20 @@ type ExampleNoneOptions struct {
 }
 
 type ExampleAWSOptions struct {
-	Region                                 string
-	Zone                                   string
-	VPCID                                  string
-	SubnetID                               string
-	SecurityGroupID                        string
-	InstanceProfile                        string
-	InstanceType                           string
-	Roles                                  []hyperv1.AWSRoleCredentials
-	KubeCloudControllerUserAccessKeyID     string
-	KubeCloudControllerUserAccessKeySecret string
-	NodePoolManagementUserAccessKeyID      string
-	NodePoolManagementUserAccessKeySecret  string
-	RootVolumeSize                         int64
-	RootVolumeType                         string
-	RootVolumeIOPS                         int64
-	ResourceTags                           []hyperv1.AWSResourceTag
+	Region                     string
+	Zone                       string
+	VPCID                      string
+	SubnetID                   string
+	SecurityGroupID            string
+	InstanceProfile            string
+	InstanceType               string
+	Roles                      []hyperv1.AWSRoleCredentials
+	KubeCloudControllerRoleARN string
+	NodePoolManagementRoleARN  string
+	RootVolumeSize             int64
+	RootVolumeType             string
+	RootVolumeIOPS             int64
+	ResourceTags               []hyperv1.AWSResourceTag
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -146,7 +144,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 	switch {
 	case o.AWS != nil:
-		buildAWSCreds := func(name, id, key string) *corev1.Secret {
+		buildAWSCreds := func(name, arn string) *corev1.Secret {
 			return &corev1.Secret{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Secret",
@@ -158,21 +156,19 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				},
 				Data: map[string][]byte{
 					"credentials": []byte(fmt.Sprintf(`[default]
-aws_access_key_id = %s
-aws_secret_access_key = %s
-`, id, key)),
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`, arn)),
 				},
 			}
 		}
 		exampleAWSResources = &ExampleAWSResources{}
 		exampleAWSResources.KubeCloudControllerAWSCreds = buildAWSCreds(
 			o.Name+"-cloud-ctrl-creds",
-			o.AWS.KubeCloudControllerUserAccessKeyID,
-			o.AWS.KubeCloudControllerUserAccessKeySecret)
+			o.AWS.KubeCloudControllerRoleARN)
 		exampleAWSResources.NodePoolManagementAWSCreds = buildAWSCreds(
 			o.Name+"-node-mgmt-creds",
-			o.AWS.NodePoolManagementUserAccessKeyID,
-			o.AWS.NodePoolManagementUserAccessKeySecret)
+			o.AWS.NodePoolManagementRoleARN)
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
 			AWS: &hyperv1.AWSPlatformSpec{
@@ -206,7 +202,7 @@ aws_secret_access_key = %s
 			{
 				Service: hyperv1.OIDC,
 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type: hyperv1.Route,
+					Type: hyperv1.S3,
 				},
 			},
 			{
