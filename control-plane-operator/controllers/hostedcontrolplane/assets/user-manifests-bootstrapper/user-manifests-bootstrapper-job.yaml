@@ -10,25 +10,6 @@ spec:
           operator: "Equal"
           value: "true"
           effect: NoSchedule
-      initContainers:
-        - image: {{ .ReleaseImage }}
-          imagePullPolicy: IfNotPresent
-          name: cluster-version-operator
-          workingDir: /tmp
-          command:
-            - /bin/bash
-          args:
-            - -c
-            - |-
-              cd /tmp
-              mkdir -p output/manifests output/bootstrap
-              /usr/bin/cluster-version-operator render --output-dir /tmp/output --release-image {{ .ReleaseImage }}
-              # Exclude the CVO deployment manifest
-              rm /tmp/output/manifests/0000_00_cluster-version-operator*deployment.yaml
-              cp /tmp/output/manifests/* /work
-          volumeMounts:
-            - mountPath: /work
-              name: work
       containers:
         - image: {{ imageFor "cli" }}
           imagePullPolicy: IfNotPresent
