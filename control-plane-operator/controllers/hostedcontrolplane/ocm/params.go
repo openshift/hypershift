@@ -21,7 +21,7 @@ type OpenShiftControllerManagerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string , explicitNonRootSecurityContext bool) *OpenShiftControllerManagerParams {
+func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *OpenShiftControllerManagerParams {
 	params := &OpenShiftControllerManagerParams{
 		OpenShiftControllerManagerImage: images["openshift-controller-manager"],
 		DockerBuilderImage:              images["docker-builder"],

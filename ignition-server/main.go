@@ -52,11 +52,11 @@ func main() {
 }
 
 type Options struct {
-	Addr              string
-	CertFile          string
-	KeyFile           string
-	RegistryOverrides map[string]string
-    ManagementClusterMode string
+	Addr                  string
+	CertFile              string
+	KeyFile               string
+	RegistryOverrides     map[string]string
+	ManagementClusterMode string
 }
 
 func NewStartCommand() *cobra.Command {

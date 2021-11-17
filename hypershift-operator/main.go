@@ -88,7 +88,7 @@ type StartOptions struct {
 	OIDCStorageProviderS3BucketName  string
 	OIDCStorageProviderS3Region      string
 	OIDCStorageProviderS3Credentials string
-ManagementClusterMode      string
+	ManagementClusterMode            string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -239,7 +239,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		CreateOrUpdateProvider:     createOrUpdate,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
-        ManagementClusterMode:      opts.ManagementClusterMode,
+		ManagementClusterMode:      opts.ManagementClusterMode,
 	}
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket")
@@ -253,8 +253,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
-		Client: mgr.GetClient(),
-        ManagementClusterMode: opts.ManagementClusterMode,
+		Client:                mgr.GetClient(),
+		ManagementClusterMode: opts.ManagementClusterMode,
 		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.RegistryClientProvider{},
