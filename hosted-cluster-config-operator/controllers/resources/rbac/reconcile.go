@@ -226,19 +226,3 @@ func ReconcileCSRRenewalClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
 	}
 	return nil
 }
-
-func ReconcileServiceAccountIssuerDiscoveryClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
-	r.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.SchemeGroupVersion.Group,
-		Kind:     "ClusterRole",
-		Name:     "system:service-account-issuer-discovery",
-	}
-	r.Subjects = []rbacv1.Subject{
-		{
-			APIGroup: rbacv1.SchemeGroupVersion.Group,
-			Kind:     "Group",
-			Name:     "system:unauthenticated",
-		},
-	}
-	return nil
-}

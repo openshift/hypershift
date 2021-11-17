@@ -71,8 +71,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
@@ -3317,30 +3315,22 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src); err != nil {
 		return fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
 	}
-	var kubeconfig clientcmdapiv1.Config
-	if err := yaml.Unmarshal(src.Data["kubeconfig"], &kubeconfig); err != nil {
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(src.Data["kubeconfig"])
+	if err != nil {
 		return fmt.Errorf("failed to deserialize the kubeconfig: %w", err)
 	}
+	// Impersonate the serviceaccounts groups as a guardrail to bugs in our code
+	// as we end up writing this into a public location.
+	// The perms for this are bound through the system:service-account-issuer-discovery
+	// clusterrolebinding which is managed by the KAS itself.
+	cfg.Impersonate.Groups = []string{"system:serviceaccounts"}
+	cfg.Impersonate.UserName = "iHaveToBeSubmittedButDontActuallyExist"
 
-	// The clientcmd helper that constructs a rest.Config expects a different format so we have to convert...
-	var apiKubeconfig clientcmdapi.Config
-	if err := clientcmdapiv1.Convert_v1_Config_To_api_Config(&kubeconfig, &apiKubeconfig, nil); err != nil {
-		return fmt.Errorf("failed to covert clientcmdapiv1 kubeconfig to clientcmdapi kubeconfig: %w", err)
-	}
-	cfg, err := clientcmd.NewDefaultClientConfig(apiKubeconfig, nil).ClientConfig()
+	transport, err := rest.TransportFor(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to construct rest config for cluster: %w", err)
+		return fmt.Errorf("failed to construct transport for cfg: %w", err)
 	}
-	tlsConfig, err := rest.TLSConfigFor(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to construct tls config for cluster: %w", err)
-	}
-
-	// We put the result of this request into a public location and expect the original
-	// to be public as well so make sure we fail if that is somehow not the case.
-	tlsConfig.GetClientCertificate = nil
-
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}
+	client := &http.Client{Transport: transport}
 
 	for _, path := range oidcPublicDocumentPaths() {
 		requestURL := "https://" + hcp.Status.ControlPlaneEndpoint.Host + ":" + strconv.Itoa(int(hcp.Status.ControlPlaneEndpoint.Port)) + path
@@ -3356,7 +3346,8 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("request to %s returned with unexpected status code %d", requestURL, resp.StatusCode)
+			body, _ := ioutil.ReadAll(resp.Body)
+			return fmt.Errorf("request to %s returned with unexpected status code %d. Response body: %s", requestURL, resp.StatusCode, string(body))
 		}
 
 		// In theory we should be able to pass resp.Body

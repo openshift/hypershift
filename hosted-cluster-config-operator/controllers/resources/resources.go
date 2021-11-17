@@ -315,7 +315,6 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		{manifest: manifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
 		{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
 		{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
-		{manifest: manifests.ServiceAccountIssuerDiscoveryClusterRoleBinding, reconcile: rbac.ReconcileServiceAccountIssuerDiscoveryClusterRoleBinding},
 	}
 
 	var errs []error
