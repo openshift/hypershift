@@ -65,14 +65,14 @@ spec:
             description: Spec is the desired behavior of the HostedCluster.
             properties:
               auditWebhook:
-                description: AuditWebhook contains metadata for configuring an audit
+                description: "AuditWebhook contains metadata for configuring an audit
                   webhook endpoint for a cluster to process cluster audit events.
                   It references a secret that contains the webhook information for
                   the audit webhook endpoint. It is a secret because if the endpoint
-                  has MTLS the kubeconfig will contain client keys. This is currently
-                  only supported in IBM Cloud. The kubeconfig needs to be stored in
-                  the secret with a secret key name that corresponds to the constant
-                  AuditWebhookKubeconfigKey.
+                  has mTLS the kubeconfig will contain client keys. The kubeconfig
+                  needs to be stored in the secret with a secret key name that corresponds
+                  to the constant AuditWebhookKubeconfigKey. \n This field is currently
+                  only supported on the IBMCloud platform."
                 properties:
                   name:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -80,42 +80,47 @@ spec:
                     type: string
                 type: object
               autoscaling:
-                description: Autoscaling for compute nodes only, does not cover control
-                  plane
+                description: Autoscaling specifies auto-scaling behavior that applies
+                  to all NodePools associated with the control plane.
                 properties:
                   maxNodeProvisionTime:
-                    description: 'Maximum time CA waits for node to be provisioned
-                      default: 15 minutes'
+                    description: MaxNodeProvisionTime is the maximum time to wait
+                      for node provisioning before considering the provisioning to
+                      be unsuccessful, expressed as a Go duration string. The default
+                      is 15 minutes.
                     pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
                     type: string
                   maxNodesTotal:
-                    description: Maximum number of nodes in all node groups. Cluster
-                      autoscaler will not grow the cluster beyond this number.
+                    description: MaxNodesTotal is the maximum allowable number of
+                      nodes across all NodePools for a HostedCluster. The autoscaler
+                      will not grow the cluster beyond this number.
                     format: int32
                     minimum: 0
                     type: integer
                   maxPodGracePeriod:
-                    description: 'Gives pods graceful termination time before scaling
-                      down default: 600 seconds'
+                    description: MaxPodGracePeriod is the maximum seconds to wait
+                      for graceful pod termination before scaling down a NodePool.
+                      The default is 600 seconds.
                     format: int32
                     minimum: 0
                     type: integer
                   podPriorityThreshold:
-                    description: 'To allow users to schedule "best-effort" pods, which
-                      shouldn''t trigger Cluster Autoscaler actions, but only run
-                      when there are spare resources available, default: -10 More
-                      info: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption'
+                    description: "PodPriorityThreshold enables users to schedule \"best-effort\"
+                      pods, which shouldn't trigger autoscaler actions, but only run
+                      when there are spare resources available. The default is -10.
+                      \n See the following for more details: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption"
                     format: int32
                     type: integer
                 type: object
               configuration:
-                description: 'Configuration embeds resources that correspond to the
-                  openshift configuration API: https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html'
+                description: Configuration specifies configuration for individual
+                  OCP components in the cluster, represented as embedded resources
+                  that correspond to the openshift configuration API.
                 properties:
                   configMapRefs:
-                    description: ConfigMapRefs holds references to configmaps used
-                      in configuration entries so that they can be properly synced
-                      by the hypershift operator.
+                    description: ConfigMapRefs holds references to any configmaps
+                      referenced by configuration entries. Entries can reference the
+                      configmaps using local object references.
                     items:
                       description: LocalObjectReference contains enough information
                         to let you locate the referenced object inside the same namespace.
@@ -127,15 +132,15 @@ spec:
                       type: object
                     type: array
                   items:
-                    description: Items embeds the configuration resource
+                    description: Items embeds the serialized configuration resources.
                     items:
                       type: object
                     type: array
                     x-kubernetes-preserve-unknown-fields: true
                   secretRefs:
-                    description: SecretRefs holds references to secrets used in configuration
-                      entries so that they can be properly synced by the hypershift
-                      operator.
+                    description: SecretRefs holds references to any secrets referenced
+                      by configuration entries. Entries can reference the secrets
+                      using local object references.
                     items:
                       description: LocalObjectReference contains enough information
                         to let you locate the referenced object inside the same namespace.
@@ -148,12 +153,12 @@ spec:
                     type: array
                 type: object
               controllerAvailabilityPolicy:
-                description: ControllerAvailabilityPolicy specifies an availability
-                  policy to apply to critical control plane components. Defaults to
-                  SingleReplica when not set.
+                description: ControllerAvailabilityPolicy specifies the availability
+                  policy applied to critical control plane components. The default
+                  value is SingleReplica.
                 type: string
               dns:
-                description: DNS configuration for the cluster
+                description: DNS specifies DNS configuration for the cluster.
                 properties:
                   baseDomain:
                     description: BaseDomain is the base domain of the cluster.
@@ -173,17 +178,16 @@ spec:
               etcd:
                 default:
                   managementType: Managed
-                description: Etcd contains metadata about the etcd cluster the hypershift
-                  managed Openshift control plane components use to store data. Changing
-                  the ManagementType for the etcd cluster is not supported after initial
-                  creation.
+                description: Etcd specifies configuration for the control plane etcd
+                  cluster. The default ManagementType is Managed. Once set, the ManagementType
+                  cannot be changed.
                 properties:
                   managed:
-                    description: Managed provides metadata that defines how the hypershift
-                      controllers manage the etcd cluster
+                    description: Managed specifies the behavior of an etcd cluster
+                      managed by HyperShift.
                     properties:
                       storage:
-                        description: Storage configures how etcd data is persisted.
+                        description: Storage specifies how etcd data is persisted.
                         properties:
                           persistentVolume:
                             description: PersistentVolume is the configuration for
@@ -221,34 +225,31 @@ spec:
                     type: object
                   managementType:
                     description: ManagementType defines how the etcd cluster is managed.
-                      Unmanaged means the etcd cluster is managed by a system outside
-                      the hypershift controllers. Managed means the hypershift controllers
-                      manage the provisioning of the etcd cluster and the operations
-                      around it
                     enum:
                     - Managed
                     - Unmanaged
                     type: string
                   unmanaged:
-                    description: Unmanaged provides metadata that enables the Openshift
-                      controllers to connect to the external etcd cluster
+                    description: Unmanaged specifies configuration which enables the
+                      control plane to integrate with an eternally managed etcd cluster.
                     properties:
                       endpoint:
-                        description: Endpoint is the full url to connect to the etcd
-                          cluster endpoint. An example is https://etcd-client:2379
+                        description: "Endpoint is the full etcd cluster client endpoint
+                          URL. For example: \n     https://etcd-client:2379 \n If
+                          the URL uses an HTTPS scheme, the TLS field is required."
                         pattern: ^https://
                         type: string
                       tls:
-                        description: TLS defines a reference to a TLS secret that
-                          can be used for client MTLS authentication with the etcd
-                          cluster
+                        description: TLS specifies TLS configuration for HTTPS etcd
+                          client endpoints.
                         properties:
                           clientSecret:
-                            description: ClientSecret refers to a secret for client
-                              MTLS authentication with the etcd cluster The CA must
-                              be stored at secret key etcd-client-ca.crt. The client
-                              cert must be stored at secret key etcd-client.crt. The
-                              client key must be stored at secret key etcd-client.key.
+                            description: "ClientSecret refers to a secret for client
+                              mTLS authentication with the etcd cluster. It may have
+                              the following key/value pairs: \n     etcd-client-ca.crt:
+                              Certificate Authority value     etcd-client.crt: Client
+                              certificate value     etcd-client.key: Client certificate
+                              key value"
                             properties:
                               name:
                                 description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -267,16 +268,23 @@ spec:
                 - managementType
                 type: object
               fips:
+                description: FIPS indicates whether this cluster's nodes will be running
+                  in FIPS mode. If set to true, the control plane's ignition server
+                  will be configured to expect that nodes joining the cluster will
+                  be FIPS-enabled.
                 type: boolean
               imageContentSources:
-                description: ImageContentSources lists sources/repositories for the
-                  release-image content.
+                description: ImageContentSources specifies image mirrors that can
+                  be used by cluster nodes to pull content.
                 items:
-                  description: ImageContentSource defines a list of sources/repositories
-                    that can be used to pull content.
+                  description: ImageContentSource specifies image mirrors that can
+                    be used by cluster nodes to pull content. For cluster workloads,
+                    if a container image registry host of the pullspec matches Source
+                    then one of the Mirrors are substituted as hosts in the pullspec
+                    and tried in order to fetch the image.
                   properties:
                     mirrors:
-                      description: Mirrors is one or more repositories that may also
+                      description: Mirrors are one or more repositories that may also
                         contain the same images.
                       items:
                         type: string
@@ -290,39 +298,46 @@ spec:
                   type: object
                 type: array
               infraID:
-                description: InfraID is used to identify the cluster in cloud platforms
+                description: "InfraID is a globally unique identifier for the cluster.
+                  This identifier will be used to associate various cloud resources
+                  with the HostedCluster and its associated NodePools. \n TODO(dan):
+                  consider moving this to .platform.aws.infraID"
                 type: string
               infrastructureAvailabilityPolicy:
-                description: InfrastructureAvailabilityPolicy specifies whether to
-                  run infrastructure services that run on the guest cluster nodes
-                  in HA mode Defaults to HighlyAvailable when not set
+                description: InfrastructureAvailabilityPolicy specifies the availability
+                  policy applied to infrastructure services which run on cluster nodes.
+                  The default value is HighlyAvailable.
                 type: string
               issuerURL:
                 default: https://kubernetes.default.svc
+                description: IssuerURL is an OIDC issuer URL which is used as the
+                  issuer in all ServiceAccount tokens generated by the control plane
+                  API server. The default value is kubernetes.default.svc, which only
+                  works for in-cluster validation.
                 type: string
               networking:
-                description: Networking contains network-specific settings for this
-                  cluster
+                description: Networking specifies network configuration for the cluster.
                 properties:
                   apiServer:
                     description: APIServer contains advanced network settings for
                       the API server that affect how the APIServer is exposed inside
-                      a worker node.
+                      a cluster node.
                     properties:
                       advertiseAddress:
-                        description: AdvertiseAddress is the address that workers
-                          will use to talk to the API server. This is an address associated
-                          with the loopback adapter of each worker. If not specified,
+                        description: AdvertiseAddress is the address that nodes will
+                          use to talk to the API server. This is an address associated
+                          with the loopback adapter of each node. If not specified,
                           172.20.0.1 is used.
                         type: string
                       port:
                         description: Port is the port at which the APIServer is exposed
-                          inside a worker node Other pods using host networking cannot
-                          listen on this port. If not specified, 6443 is used.
+                          inside a node. Other pods using host networking cannot listen
+                          on this port. If not specified, 6443 is used.
                         format: int32
                         type: integer
                     type: object
                   machineCIDR:
+                    description: "MachineCIDR is... \n TODO(dan): document it"
                     type: string
                   networkType:
                     default: OpenShiftSDN
@@ -333,8 +348,10 @@ spec:
                     - Calico
                     type: string
                   podCIDR:
+                    description: "PodCIDR is... \n TODO(dan): document it"
                     type: string
                   serviceCIDR:
+                    description: "ServiceCIDR is... \n TODO(dan): document it"
                     type: string
                 required:
                 - machineCIDR
@@ -343,16 +360,21 @@ spec:
                 - serviceCIDR
                 type: object
               platform:
+                description: Platform specifies the underlying infrastructure provider
+                  for the cluster and is used to configure platform specific behavior.
                 properties:
                   aws:
-                    description: AWS contains AWS-specific settings for the HostedCluster
+                    description: AWS specifies configuration for clusters running
+                      on Amazon Web Services.
                     properties:
                       cloudProviderConfig:
-                        description: CloudProviderConfig is used to generate the ConfigMap
-                          with the cloud config consumed by the Control Plane components.
+                        description: "CloudProviderConfig specifies AWS networking
+                          configuration for the control plane. \n TODO(dan): should
+                          this be named AWSNetworkConfig?"
                         properties:
                           subnet:
-                            description: Subnet is the subnet to use for instances
+                            description: Subnet is the subnet to use for control plane
+                              cloud resources.
                             properties:
                               arn:
                                 description: ARN of resource
@@ -385,30 +407,31 @@ spec:
                                 type: string
                             type: object
                           vpc:
-                            description: VPC specifies the VPC used for the cluster
+                            description: VPC is the VPC to use for control plane cloud
+                              resources.
                             type: string
                           zone:
-                            description: Zone is the availability zone where the instances
-                              are created
+                            description: Zone is the availability zone where control
+                              plane cloud resources are created.
                             type: string
                         required:
                         - vpc
                         type: object
                       endpointAccess:
                         default: Public
-                        description: EndpointAccess determines if cluster endpoints
-                          are public and/or private
+                        description: EndpointAccess specifies the publishing scope
+                          of cluster endpoints. The default is Public.
                         enum:
                         - Public
                         - PublicAndPrivate
                         - Private
                         type: string
                       kubeCloudControllerCreds:
-                        description: KubeCloudControllerCreds is a reference to a
+                        description: "KubeCloudControllerCreds is a reference to a
                           secret containing cloud credentials with permissions matching
-                          the Kube cloud controller policy. The secret should have
-                          exactly one key, `credentials`, whose value is an AWS credentials
-                          file.
+                          the cloud controller policy. The secret should have exactly
+                          one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"cloud controller policy\""
                         properties:
                           name:
                             description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -416,11 +439,12 @@ spec:
                             type: string
                         type: object
                       nodePoolManagementCreds:
-                        description: NodePoolManagementCreds is a reference to a secret
-                          containing cloud credentials with permissions matching the
-                          noe pool management policy. The secret should have exactly
-                          one key, `credentials`, whose value is an AWS credentials
-                          file.
+                        description: "NodePoolManagementCreds is a reference to a
+                          secret containing cloud credentials with permissions matching
+                          the node pool management policy. The secret should have
+                          exactly one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"node pool management
+                          policy\""
                         properties:
                           name:
                             description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -428,13 +452,13 @@ spec:
                             type: string
                         type: object
                       region:
-                        description: Region is the AWS region for the cluster. This
-                          is used by CRs that are consumed by OCP Operators. E.g cluster-infrastructure-02-config.yaml
-                          and install-config.yaml This is also used by nodePools to
-                          fetch the default boot AMI in a given payload.
+                        description: Region is the AWS region in which the cluster
+                          resides. This configures the OCP control plane cloud integrations,
+                          and is used by NodePool to resolve the correct boot AMI
+                          for a given release.
                         type: string
                       resourceTags:
-                        description: resourceTags is a list of additional tags to
+                        description: ResourceTags is a list of additional tags to
                           apply to AWS resources created for the cluster. See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html
                           for information on tagging AWS resources. AWS supports a
                           maximum of 50 tags per resource. OpenShift reserves 25 tags
@@ -444,16 +468,17 @@ spec:
                             created for the cluster.
                           properties:
                             key:
-                              description: key is the key of the tag
+                              description: Key is the key of the tag.
                               maxLength: 128
                               minLength: 1
                               pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
                             value:
-                              description: value is the value of the tag. Some AWS
-                                service do not support empty values. Since tags are
-                                added to resources in many services, the length of
-                                the tag value must meet the requirements of all services.
+                              description: "Value is the value of the tag. \n Some
+                                AWS service do not support empty values. Since tags
+                                are added to resources in many services, the length
+                                of the tag value must meet the requirements of all
+                                services."
                               maxLength: 256
                               minLength: 1
                               pattern: ^[0-9A-Za-z_.:/=+-@]+$
@@ -465,6 +490,13 @@ spec:
                         maxItems: 25
                         type: array
                       roles:
+                        description: "Roles must contain exactly 3 entries representing
+                          the locators for roles supporting the following OCP services:
+                          \n - openshift-ingress-operator/cloud-credentials - openshift-image-registry/installer-cloud-credentials
+                          \ -openshift-cluster-csi-drivers/ebs-cloud-credentials \n
+                          Each role has unique permission requirements whose documentation
+                          is TBD. \n TODO(dan): revisit this field; it's really 3
+                          required fields with specific content requirements"
                         items:
                           properties:
                             arn:
@@ -480,9 +512,10 @@ spec:
                           type: object
                         type: array
                       serviceEndpoints:
-                        description: ServiceEndpoints list contains custom endpoints
-                          which will override default service endpoint of AWS Services.
-                          There must be only one ServiceEndpoint for a service.
+                        description: "ServiceEndpoints specifies optional custom endpoints
+                          which will override the default service endpoint of specific
+                          AWS Services. \n There must be only one ServiceEndpoint
+                          for a given service name."
                         items:
                           description: AWSServiceEndpoint stores the configuration
                             for services to override existing defaults of AWS Services.
@@ -509,8 +542,8 @@ spec:
                     - region
                     type: object
                   type:
-                    description: Type is the underlying infrastructure provider for
-                      the cluster.
+                    description: Type is the type of infrastructure provider for the
+                      cluster.
                     enum:
                     - AWS
                     - None
@@ -520,9 +553,9 @@ spec:
                 - type
                 type: object
               pullSecret:
-                description: PullSecret is a pull secret injected into the container
-                  runtime of guest workers. It should have an ".dockerconfigjson"
-                  key containing the pull secret JSON.
+                description: PullSecret references a pull secret to be injected into
+                  the container runtime of all cluster nodes. The secret must have
+                  a key named ".dockerconfigjson" whose value is the pull secret JSON.
                 properties:
                   name:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -530,19 +563,22 @@ spec:
                     type: string
                 type: object
               release:
-                description: Release specifies the release image to use for this HostedCluster
+                description: "Release specifies the desired OCP release payload for
+                  the hosted cluster. \n Updating this field will trigger a rollout
+                  of the control plane. The behavior of the rollout will be driven
+                  by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy."
                 properties:
                   image:
-                    description: Image is the release image pullspec for the control
-                      plane
+                    description: Image is the image pullspec of an OCP release payload
+                      image.
                     pattern: ^(\w+\S+)$
                     type: string
                 required:
                 - image
                 type: object
               secretEncryption:
-                description: SecretEncryption contains metadata about the kubernetes
-                  secret encryption strategy being used for the cluster when applicable.
+                description: SecretEncryption specifies a Kubernetes secret encryption
+                  strategy for the control plane.
                 properties:
                   aescbc:
                     description: AESCBC defines metadata about the AESCBC secret encryption
@@ -742,15 +778,17 @@ spec:
                 - type
                 type: object
               services:
-                description: 'Services defines metadata about how control plane services
-                  are published in the management cluster. TODO (alberto): include
-                  Ignition endpoint here.'
+                description: "Services specifies how individual control plane services
+                  are published from the hosting cluster of the control plane. \n
+                  If a given service is not present in this list, it will be exposed
+                  publicly by default."
                 items:
-                  description: ServicePublishingStrategyMapping defines the service
-                    being published and  metadata about the publishing strategy.
+                  description: ServicePublishingStrategyMapping specifies how individual
+                    control plane services are published from the hosting cluster
+                    of a control plane.
                   properties:
                     service:
-                      description: Service identifies the type of service being published
+                      description: Service identifies the type of service being published.
                       enum:
                       - APIServer
                       - OAuthServer
@@ -759,29 +797,29 @@ spec:
                       - Ignition
                       type: string
                     servicePublishingStrategy:
-                      description: ServicePublishingStrategy defines metadata around
-                        how a service is published
+                      description: ServicePublishingStrategy specifies how to publish
+                        Service.
                       properties:
                         nodePort:
-                          description: NodePort is used to define extra metadata for
-                            the NodePort publishing strategy.
+                          description: NodePort configures exposing a service using
+                            a NodePort.
                           properties:
                             address:
-                              description: Address is the host/ip that the nodePort
-                                service is exposed over
+                              description: Address is the host/ip that the NodePort
+                                service is exposed over.
                               type: string
                             port:
-                              description: Port is the nodePort of the service. If
-                                <=0 the nodePort is dynamically assigned when the
-                                service is created
+                              description: Port is the port of the NodePort service.
+                                If <=0, the port is dynamically assigned when the
+                                service is created.
                               format: int32
                               type: integer
                           required:
                           - address
                           type: object
                         type:
-                          description: Type defines the publishing strategy used for
-                            the service.
+                          description: Type is the publishing strategy used for the
+                            service.
                           enum:
                           - LoadBalancer
                           - NodePort
@@ -798,9 +836,9 @@ spec:
                   type: object
                 type: array
               sshKey:
-                description: SSHKey is a reference to a Secret containing a single
-                  key "id_rsa.pub", whose value is the public part of an SSH key that
-                  can be used to access Nodes.
+                description: SSHKey references an SSH key to be injected into all
+                  cluster node sshd servers. The secret must have a single key "id_rsa.pub"
+                  whose value is the public part of an SSH key.
                 properties:
                   name:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -821,6 +859,8 @@ spec:
             description: Status is the latest observed status of the HostedCluster.
             properties:
               conditions:
+                description: Conditions represents the latest available observations
+                  of a control plane's current state.
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
@@ -914,8 +954,8 @@ spec:
                       image or a tag.
                     properties:
                       image:
-                        description: Image is the release image pullspec for the control
-                          plane
+                        description: Image is the image pullspec of an OCP release
+                          payload image.
                         pattern: ^(\w+\S+)$
                         type: string
                     required:
