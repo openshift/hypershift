@@ -18,7 +18,7 @@ import (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		prometheusContainerMain().Name: {
-			prometheusVolumeWork().Name:      "/var/run/prometheus",
+			prometheusVolumeWork().Name:      "/prometheus",
 			prometheusVolumeConfig().Name:    "/etc/prometheus",
 			prometheusVolumeRootCA().Name:    "/etc/kubernetes/root-ca",
 			prometheusVolumeServiceCA().Name: "/etc/kubernetes/service-ca",
