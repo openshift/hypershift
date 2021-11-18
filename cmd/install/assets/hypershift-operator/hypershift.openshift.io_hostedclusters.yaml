@@ -336,11 +336,6 @@ spec:
                     type: string
                   serviceCIDR:
                     type: string
-                required:
-                - machineCIDR
-                - networkType
-                - podCIDR
-                - serviceCIDR
                 type: object
               platform:
                 properties:

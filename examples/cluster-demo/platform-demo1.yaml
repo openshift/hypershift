@@ -1,0 +1,23 @@
+---
+apiVersion: hypershift.openshift.io/v1alpha1
+kind: ProviderPlatform
+metadata:
+  name: my-demo
+  namespace: clusters
+spec:
+  platform:
+    aws:
+      region: us-east-1
+      kubeCloudControllerCreds:
+        name: aws
+      nodePoolManagementCreds:
+        name: aws
+    type: AWS
+  providerPlatformCreds:
+    name: aws
+  dns:
+    baseDomain: my-domain.com
+  pullSecret:
+    name: pull-secret
+
+

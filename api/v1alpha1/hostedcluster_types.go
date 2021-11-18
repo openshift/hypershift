@@ -253,15 +253,15 @@ type DNSSpec struct {
 
 type ClusterNetworking struct {
 	// +immutable
-	ServiceCIDR string `json:"serviceCIDR"`
+	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 	// +immutable
-	PodCIDR string `json:"podCIDR"`
+	PodCIDR string `json:"podCIDR,omitempty"`
 	// +immutable
-	MachineCIDR string `json:"machineCIDR"`
+	MachineCIDR string `json:"machineCIDR,omitempty"`
 	// NetworkType specifies the SDN provider used for cluster networking.
 	// +kubebuilder:default:="OpenShiftSDN"
 	// +immutable
-	NetworkType NetworkType `json:"networkType"`
+	NetworkType NetworkType `json:"networkType,omitempty"`
 
 	// APIServer contains advanced network settings for the API server that affect
 	// how the APIServer is exposed inside a worker node.

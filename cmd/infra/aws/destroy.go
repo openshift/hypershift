@@ -30,6 +30,8 @@ type DestroyInfraOptions struct {
 	Region             string
 	InfraID            string
 	AWSCredentialsFile string
+	AWSKey             string
+	AWSSecretKey       string
 	Name               string
 	BaseDomain         string
 }
@@ -91,10 +93,10 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	awsSession := awsutil.NewSession("cli-destroy-infra")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	awsConfig := awsutil.NewAWSConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
 	ec2Client := ec2.New(awsSession, awsConfig)
 	elbClient := elb.New(awsSession, awsConfig)
-	route53Client := route53.New(awsSession, awsutil.NewRoute53Config(o.AWSCredentialsFile))
+	route53Client := route53.New(awsSession, awsutil.NewAWSConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, "us-east-1"))
 	s3Client := s3.New(awsSession, awsConfig)
 
 	var errs []error

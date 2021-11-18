@@ -23,27 +23,16 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
-	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
-	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/management"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpgrpc"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/semconv"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -52,7 +41,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -245,93 +233,99 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
 	}
-	if err := hostedClusterReconciler.SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create controller: %w", err)
-	}
+	/*	if err := hostedClusterReconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller: %w", err)
+		}
 
-	if err := (&nodepool.NodePoolReconciler{
+		if err := (&nodepool.NodePoolReconciler{
+				Client: mgr.GetClient(),
+				ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+					Delegate: &releaseinfo.CachedProvider{
+						Inner: &releaseinfo.RegistryClientProvider{},
+						Cache: map[string]*releaseinfo.ReleaseImage{},
+					},
+					RegistryOverrides: opts.RegistryOverrides,
+				},
+				CreateOrUpdateProvider: createOrUpdate,
+			}).SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create controller: %w", err)
+			}
+
+			// Start platform-specific controllers
+			switch hyperv1.PlatformType(opts.PrivatePlatform) {
+			case hyperv1.AWSPlatform:
+				if err := (&aws.AWSEndpointServiceReconciler{
+					Client:                 mgr.GetClient(),
+					CreateOrUpdateProvider: createOrUpdate,
+				}).SetupWithManager(mgr); err != nil {
+					return fmt.Errorf("unable to create controller: %w", err)
+				}
+			}
+	*/
+	if err := (&management.ProviderPlatformReconciler{
 		Client: mgr.GetClient(),
-		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			RegistryOverrides: opts.RegistryOverrides,
-		},
-		CreateOrUpdateProvider: createOrUpdate,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
+	/*
+		// Configure OpenTelemetry
+		var tracerOpts []sdktrace.TracerProviderOption
+		tracerOpts = append(tracerOpts, sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.ServiceNameKey.String("hypershift-operator"),
+		)))
 
-	// Start platform-specific controllers
-	switch hyperv1.PlatformType(opts.PrivatePlatform) {
-	case hyperv1.AWSPlatform:
-		if err := (&aws.AWSEndpointServiceReconciler{
-			Client:                 mgr.GetClient(),
-			CreateOrUpdateProvider: createOrUpdate,
-		}).SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to create controller: %w", err)
-		}
-	}
-
-	// Configure OpenTelemetry
-	var tracerOpts []sdktrace.TracerProviderOption
-	tracerOpts = append(tracerOpts, sdktrace.WithResource(resource.NewWithAttributes(
-		semconv.ServiceNameKey.String("hypershift-operator"),
-	)))
-
-	// Export to an OTLP endpoint if specified
-	if len(opts.OpenTelemetryEndpoint) > 0 {
-		exporter, err := otlp.NewExporter(ctx,
-			otlpgrpc.NewDriver(
-				otlpgrpc.WithEndpoint("localhost:4317"),
-				otlpgrpc.WithInsecure(),
-			))
-		if err != nil {
-			return fmt.Errorf("failed to initialize export pipeline: %w", err)
-		}
-		tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
-	}
-
-	tp := sdktrace.NewTracerProvider(tracerOpts...)
-	defer func() { _ = tp.Shutdown(ctx) }()
-
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{}))
-
-	// If it exsists, block default ingress controller from admitting HCP private routes
-	ic := &operatorv1.IngressController{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default",
-			Namespace: "openshift-ingress-operator",
-		},
-	}
-	if err := mgr.GetClient().Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
-		if _, err := controllerutil.CreateOrUpdate(ctx, mgr.GetClient(), ic, func() error {
-			if ic.Spec.RouteSelector == nil {
-				ic.Spec.RouteSelector = &metav1.LabelSelector{}
+		// Export to an OTLP endpoint if specified
+		if len(opts.OpenTelemetryEndpoint) > 0 {
+			exporter, err := otlp.NewExporter(ctx,
+				otlpgrpc.NewDriver(
+					otlpgrpc.WithEndpoint("localhost:4317"),
+					otlpgrpc.WithInsecure(),
+				))
+			if err != nil {
+				return fmt.Errorf("failed to initialize export pipeline: %w", err)
 			}
-			if ic.Spec.RouteSelector.MatchExpressions == nil {
-				ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
-			}
-			for _, requirement := range ic.Spec.RouteSelector.MatchExpressions {
-				if requirement.Key != hyperutil.HypershiftRouteLabel {
-					continue
+			tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
+		}
+
+		tp := sdktrace.NewTracerProvider(tracerOpts...)
+		defer func() { _ = tp.Shutdown(ctx) }()
+
+		otel.SetTracerProvider(tp)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{}))
+
+		// If it exsists, block default ingress controller from admitting HCP private routes
+		ic := &operatorv1.IngressController{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "default",
+				Namespace: "openshift-ingress-operator",
+			},
+		}
+		if err := mgr.GetClient().Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
+			if _, err := controllerutil.CreateOrUpdate(ctx, mgr.GetClient(), ic, func() error {
+				if ic.Spec.RouteSelector == nil {
+					ic.Spec.RouteSelector = &metav1.LabelSelector{}
 				}
-				requirement.Operator = metav1.LabelSelectorOpDoesNotExist
+				if ic.Spec.RouteSelector.MatchExpressions == nil {
+					ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
+				}
+				for _, requirement := range ic.Spec.RouteSelector.MatchExpressions {
+					if requirement.Key != hyperutil.HypershiftRouteLabel {
+						continue
+					}
+					requirement.Operator = metav1.LabelSelectorOpDoesNotExist
+					return nil
+				}
+				ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
+					Key:      hyperutil.HypershiftRouteLabel,
+					Operator: metav1.LabelSelectorOpDoesNotExist,
+				})
 				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
 			}
-			ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
-				Key:      hyperutil.HypershiftRouteLabel,
-				Operator: metav1.LabelSelectorOpDoesNotExist,
-			})
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
+			log.Info("reconciled default ingress controller")
 		}
-		log.Info("reconciled default ingress controller")
-	}
-
+	*/
 	// Start the controllers
 	log.Info("starting manager")
 	return mgr.Start(ctx)

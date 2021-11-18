@@ -25,6 +25,8 @@ import (
 type CreateIAMOptions struct {
 	Region                          string
 	AWSCredentialsFile              string
+	AWSKey                          string
+	AWSSecretKey                    string
 	OIDCStorageProviderS3BucketName string
 	OIDCStorageProviderS3Region     string
 	InfraID                         string
@@ -146,7 +148,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
 	awsSession := awsutil.NewSession("cli-create-iam")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	awsConfig := awsutil.NewAWSConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
 	iamClient := iam.New(awsSession, awsConfig)
 
 	results, err := o.CreateOIDCResources(iamClient)

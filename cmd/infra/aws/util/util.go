@@ -20,9 +20,13 @@ func NewSession(agent string) *session.Session {
 }
 
 func NewConfig(credentialsFile, region string) *aws.Config {
+	return newConfig(credentials.NewSharedCredentials(credentialsFile, "default"), region)
+}
+
+func newConfig(creds *credentials.Credentials, region string) *aws.Config {
 	awsConfig := aws.NewConfig().
 		WithRegion(region).
-		WithCredentials(credentials.NewSharedCredentials(credentialsFile, "default"))
+		WithCredentials(creds)
 	awsConfig.Retryer = client.DefaultRetryer{
 		NumMaxRetries:    10,
 		MinRetryDelay:    5 * time.Second,
@@ -39,4 +43,13 @@ func NewRoute53Config(credentialsFile string) *aws.Config {
 		MinThrottleDelay: 10 * time.Second,
 	}
 	return awsConfig
+}
+
+func NewAWSConfig(credentialsFile string, credKey string, credSecretKey string, region string) *aws.Config {
+
+	if credentialsFile == "" {
+		creds := credentials.NewStaticCredentials(credKey, credSecretKey, "")
+		return newConfig(creds, region)
+	}
+	return NewConfig(credentialsFile, region)
 }

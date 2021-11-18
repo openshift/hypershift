@@ -1,0 +1,464 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.5.0
+  creationTimestamp: null
+  name: providerplatforms.hypershift.openshift.io
+spec:
+  group: hypershift.openshift.io
+  names:
+    kind: ProviderPlatform
+    listKind: ProviderPlatformList
+    plural: providerplatforms
+    shortNames:
+    - pp
+    - pps
+    singular: providerplatform
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Version
+      jsonPath: .status.version.history[?(@.state=="Completed")].version
+      name: Version
+      type: string
+    - description: KubeConfig Secret
+      jsonPath: .status.kubeconfig.name
+      name: KubeConfig
+      type: string
+    - description: Progress
+      jsonPath: .status.version.history[?(@.state!="")].state
+      name: Progress
+      type: string
+    - description: Available
+      jsonPath: .status.conditions[?(@.type=="Available")].status
+      name: Available
+      type: string
+    - description: Reason
+      jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: Reason
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ProviderPlatform is the primary representation of a HyperShift
+          cluster and encapsulates the control plane and common data plane configuration.
+          Creating a ProviderPlatform results in a fully functional OpenShift control
+          plane with no attached nodes. To support workloads (e.g. pods), a ProviderPlatform
+          may have one or more associated NodePool resources.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec is the desired behavior of the HostedCluster.
+            properties:
+              dns:
+                description: DNS configuration for the cluster
+                properties:
+                  baseDomain:
+                    description: BaseDomain is the base domain of the cluster.
+                    type: string
+                  privateZoneID:
+                    description: PrivateZoneID is the Hosted Zone ID where all the
+                      DNS records that are only available internally to the cluster
+                      exist.
+                    type: string
+                  publicZoneID:
+                    description: PublicZoneID is the Hosted Zone ID where all the
+                      DNS records that are publicly accessible to the internet exist.
+                    type: string
+                required:
+                - baseDomain
+                type: object
+              infraID:
+                description: InfraID is used to identify the cluster in cloud platforms
+                type: string
+              issuerURL:
+                default: https://kubernetes.default.svc
+                type: string
+              networking:
+                description: Networking contains network-specific settings for this
+                  cluster
+                properties:
+                  apiServer:
+                    description: APIServer contains advanced network settings for
+                      the API server that affect how the APIServer is exposed inside
+                      a worker node.
+                    properties:
+                      advertiseAddress:
+                        description: AdvertiseAddress is the address that workers
+                          will use to talk to the API server. This is an address associated
+                          with the loopback adapter of each worker. If not specified,
+                          172.20.0.1 is used.
+                        type: string
+                      port:
+                        description: Port is the port at which the APIServer is exposed
+                          inside a worker node Other pods using host networking cannot
+                          listen on this port. If not specified, 6443 is used.
+                        format: int32
+                        type: integer
+                    type: object
+                  machineCIDR:
+                    type: string
+                  networkType:
+                    default: OpenShiftSDN
+                    description: NetworkType specifies the SDN provider used for cluster
+                      networking.
+                    enum:
+                    - OpenShiftSDN
+                    - Calico
+                    type: string
+                  podCIDR:
+                    type: string
+                  serviceCIDR:
+                    type: string
+                type: object
+              platform:
+                properties:
+                  aws:
+                    description: AWS contains AWS-specific settings for the HostedCluster
+                    properties:
+                      cloudProviderConfig:
+                        description: CloudProviderConfig is used to generate the ConfigMap
+                          with the cloud config consumed by the Control Plane components.
+                        properties:
+                          subnet:
+                            description: Subnet is the subnet to use for instances
+                            properties:
+                              arn:
+                                description: ARN of resource
+                                type: string
+                              filters:
+                                description: 'Filters is a set of key/value pairs
+                                  used to identify a resource They are applied according
+                                  to the rules defined by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
+                                items:
+                                  description: Filter is a filter used to identify
+                                    an AWS resource
+                                  properties:
+                                    name:
+                                      description: Name of the filter. Filter names
+                                        are case-sensitive.
+                                      type: string
+                                    values:
+                                      description: Values includes one or more filter
+                                        values. Filter values are case-sensitive.
+                                      items:
+                                        type: string
+                                      type: array
+                                  required:
+                                  - name
+                                  - values
+                                  type: object
+                                type: array
+                              id:
+                                description: ID of resource
+                                type: string
+                            type: object
+                          vpc:
+                            description: VPC specifies the VPC used for the cluster
+                            type: string
+                          zone:
+                            description: Zone is the availability zone where the instances
+                              are created
+                            type: string
+                        required:
+                        - vpc
+                        type: object
+                      endpointAccess:
+                        default: Public
+                        description: EndpointAccess determines if cluster endpoints
+                          are public and/or private
+                        enum:
+                        - Public
+                        - PublicAndPrivate
+                        - Private
+                        type: string
+                      kubeCloudControllerCreds:
+                        description: KubeCloudControllerCreds is a reference to a
+                          secret containing cloud credentials with permissions matching
+                          the Kube cloud controller policy. The secret should have
+                          exactly one key, `credentials`, whose value is an AWS credentials
+                          file.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      nodePoolManagementCreds:
+                        description: NodePoolManagementCreds is a reference to a secret
+                          containing cloud credentials with permissions matching the
+                          noe pool management policy. The secret should have exactly
+                          one key, `credentials`, whose value is an AWS credentials
+                          file.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      region:
+                        description: Region is the AWS region for the cluster. This
+                          is used by CRs that are consumed by OCP Operators. E.g cluster-infrastructure-02-config.yaml
+                          and install-config.yaml This is also used by nodePools to
+                          fetch the default boot AMI in a given payload.
+                        type: string
+                      resourceTags:
+                        description: resourceTags is a list of additional tags to
+                          apply to AWS resources created for the cluster. See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html
+                          for information on tagging AWS resources. AWS supports a
+                          maximum of 50 tags per resource. OpenShift reserves 25 tags
+                          for its use, leaving 25 tags available for the user.
+                        items:
+                          description: AWSResourceTag is a tag to apply to AWS resources
+                            created for the cluster.
+                          properties:
+                            key:
+                              description: key is the key of the tag
+                              maxLength: 128
+                              minLength: 1
+                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                              type: string
+                            value:
+                              description: value is the value of the tag. Some AWS
+                                service do not support empty values. Since tags are
+                                added to resources in many services, the length of
+                                the tag value must meet the requirements of all services.
+                              maxLength: 256
+                              minLength: 1
+                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                              type: string
+                          required:
+                          - key
+                          - value
+                          type: object
+                        maxItems: 25
+                        type: array
+                      roles:
+                        items:
+                          properties:
+                            arn:
+                              type: string
+                            name:
+                              type: string
+                            namespace:
+                              type: string
+                          required:
+                          - arn
+                          - name
+                          - namespace
+                          type: object
+                        type: array
+                      serviceEndpoints:
+                        description: ServiceEndpoints list contains custom endpoints
+                          which will override default service endpoint of AWS Services.
+                          There must be only one ServiceEndpoint for a service.
+                        items:
+                          description: AWSServiceEndpoint stores the configuration
+                            for services to override existing defaults of AWS Services.
+                          properties:
+                            name:
+                              description: Name is the name of the AWS service. This
+                                must be provided and cannot be empty.
+                              type: string
+                            url:
+                              description: URL is fully qualified URI with scheme
+                                https, that overrides the default generated endpoint
+                                for a client. This must be provided and cannot be
+                                empty.
+                              pattern: ^https://
+                              type: string
+                          required:
+                          - name
+                          - url
+                          type: object
+                        type: array
+                    required:
+                    - kubeCloudControllerCreds
+                    - nodePoolManagementCreds
+                    - region
+                    type: object
+                  type:
+                    description: Type is the underlying infrastructure provider for
+                      the cluster.
+                    enum:
+                    - AWS
+                    - None
+                    - IBMCloud
+                    type: string
+                required:
+                - type
+                type: object
+              providerPlatformCreds:
+                description: ProviderPlatformCreds is a reference to the AWS credentials
+                  needed to provision the Infrastructure and IAM
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
+              pullSecret:
+                description: PullSecret is a pull secret injected into the container
+                  runtime of guest workers. It should have an ".dockerconfigjson"
+                  key containing the pull secret JSON.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
+              securityGroups:
+                description: SecurityGroups is the set of security groups to associate
+                  with nodepool machines
+                items:
+                  description: AWSResourceReference is a reference to a specific AWS
+                    resource by ID, ARN, or filters. Only one of ID, ARN or Filters
+                    may be specified. Specifying more than one will result in a validation
+                    error.
+                  properties:
+                    arn:
+                      description: ARN of resource
+                      type: string
+                    filters:
+                      description: 'Filters is a set of key/value pairs used to identify
+                        a resource They are applied according to the rules defined
+                        by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
+                      items:
+                        description: Filter is a filter used to identify an AWS resource
+                        properties:
+                          name:
+                            description: Name of the filter. Filter names are case-sensitive.
+                            type: string
+                          values:
+                            description: Values includes one or more filter values.
+                              Filter values are case-sensitive.
+                            items:
+                              type: string
+                            type: array
+                        required:
+                        - name
+                        - values
+                        type: object
+                      type: array
+                    id:
+                      description: ID of resource
+                      type: string
+                  type: object
+                type: array
+              sshKey:
+                description: SSHKey is a reference to a Secret containing a single
+                  key "id_rsa.pub", whose value is the public part of an SSH key that
+                  can be used to access Nodes.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
+            required:
+            - dns
+            - issuerURL
+            - platform
+            - providerPlatformCreds
+            - pullSecret
+            type: object
+          status:
+            description: Status is the latest observed status of the HostedCluster.
+            properties:
+              conditions:
+                items:
+                  description: "Condition contains details for one aspect of the current
+                    state of this API Resource. --- This struct is intended for direct
+                    use as an array at the field path .status.conditions.  For example,
+                    type FooStatus struct{     // Represents the observations of a
+                    foo's current state.     // Known .status.conditions.type are:
+                    \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type
+                    \    // +patchStrategy=merge     // +listType=map     // +listMapKey=type
+                    \    Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
+                    \n     // other fields }"
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition
+                        transitioned from one status to another. This should be when
+                        the underlying condition changed.  If that is not known, then
+                        using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating
+                        details about the transition. This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation
+                        that the condition was set based upon. For instance, if .metadata.generation
+                        is currently 12, but the .status.conditions[x].observedGeneration
+                        is 9, the condition is out of date with respect to the current
+                        state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating
+                        the reason for the condition's last transition. Producers
+                        of specific condition types may define expected values and
+                        meanings for this field, and whether the values are considered
+                        a guaranteed API. The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        --- Many .condition.type values are consistent across resources
+                        like Available, but because arbitrary conditions can be useful
+                        (see .node.status.conditions), the ability to deconflict is
+                        important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

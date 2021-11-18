@@ -44,7 +44,7 @@ hypershift install --render | oc delete -f -
 ```
 
 ## How to create a hosted cluster
-
+### hypershift cli
 The `hypershift` CLI tool comes with commands to help create an example hosted cluster. The cluster will come with a node pool consisting of two workers nodes.
 
 **Prerequisites:**
@@ -117,6 +117,71 @@ hypershift destroy cluster aws \
   --namespace clusters \
   --name example
 ```
+
+### custom resources
+1. Create the namespace `clusters`
+  ```yaml
+  oc new-project clusters
+  ```
+2. In the `clusters` namespace, create an AWS Cloud Provider secret (ACM format)
+  ```yaml
+  ---
+  apiVersion: v1
+  kind: Secret
+  type: Opaque
+  metadata:
+    name: aws
+    namespace: clusters
+  stringData:
+    aws_access_key_id: AWS_ID_KEY
+    aws_secret_access_key: AWS_SECRET_KEY
+  ```
+3. In the `clusters` namespace, create a pull secret (ACM/Hive format)
+  ```yaml
+  ---
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: pull-secret
+    namespace: clusters
+  stringData:
+    .dockerconfigjson: |-
+      {"auths": MY_PULL_SECRET }
+  type: kubernetes.io/dockerconfigjson
+  ```
+4. Start the ProviderPlatform controller
+  ```bash
+  go run hypershift-operator/main.go run
+  ```
+5. Create the ProviderPlatform for your Hypershift HostedCluster (watch the logs from the command above)
+  ```yaml
+  ---
+  apiVersion: hypershift.openshift.io/v1alpha1
+  kind: ProviderPlatform
+  metadata:
+    name: my-demo
+    namespace: clusters
+  spec:
+    platform:
+      aws:
+        region: us-east-1
+        kubeCloudControllerCreds:
+          name: aws
+        nodePoolManagementCreds:
+          name: aws
+      type: AWS
+    providerPlatformCreds:
+      name: aws
+    dns:
+      baseDomain: dev06.red-chesterfield.com
+    pullSecret:
+      name: pull-secret
+  ```
+6. Review the ProviderPlatform resource, the `Spec` will be updated with additional values. Copy those values into the HostedCluster and NodePool resources, then create them
+  ```bash
+  oc apply -f examples/cluster-demo/cluster-demo.yaml
+  ```
+7. This wil deploy a Hypershift cluster
 
 ## How to add additional node pools to the example cluster
 
