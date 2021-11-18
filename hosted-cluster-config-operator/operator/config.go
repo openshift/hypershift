@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	operatorv1 "github.com/openshift/api/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -130,16 +131,17 @@ func mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				// TODO @alvaroaleman: We want the same selector for all object types
 				// but controller-runtime doesn't support that yet. Change  this to
 				// use a default for everything once we have https://github.com/kubernetes-sigs/controller-runtime/pull/1710
-				&corev1.ConfigMap{}:          {Label: cacheLabelSelector()},
-				&corev1.Secret{}:             {Label: cacheLabelSelector()},
-				&corev1.Namespace{}:          {Label: cacheLabelSelector()},
-				&rbacv1.ClusterRole{}:        {Label: cacheLabelSelector()},
-				&rbacv1.ClusterRoleBinding{}: {Label: cacheLabelSelector()},
-				&configv1.Infrastructure{}:   {Label: cacheLabelSelector()},
-				&configv1.DNS{}:              {Label: cacheLabelSelector()},
-				&configv1.Ingress{}:          {Label: cacheLabelSelector()},
-				&configv1.Network{}:          {Label: cacheLabelSelector()},
-				&configv1.Proxy{}:            {Label: cacheLabelSelector()},
+				&corev1.ConfigMap{}:                      {Label: cacheLabelSelector()},
+				&corev1.Secret{}:                         {Label: cacheLabelSelector()},
+				&corev1.Namespace{}:                      {Label: cacheLabelSelector()},
+				&rbacv1.ClusterRole{}:                    {Label: cacheLabelSelector()},
+				&rbacv1.ClusterRoleBinding{}:             {Label: cacheLabelSelector()},
+				&configv1.Infrastructure{}:               {Label: cacheLabelSelector()},
+				&configv1.DNS{}:                          {Label: cacheLabelSelector()},
+				&configv1.Ingress{}:                      {Label: cacheLabelSelector()},
+				&configv1.Network{}:                      {Label: cacheLabelSelector()},
+				&configv1.Proxy{}:                        {Label: cacheLabelSelector()},
+				&operatorv1.OpenShiftControllerManager{}: {Label: cacheLabelSelector()},
 			},
 		}),
 		Scheme: api.Scheme,

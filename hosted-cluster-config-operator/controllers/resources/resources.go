@@ -8,6 +8,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,6 +19,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/crd"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/manifests"
@@ -52,9 +54,6 @@ func eventHandler() handler.EventHandler {
 }
 
 func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
-	if err := imageregistryv1.AddToScheme(opts.Manager().GetScheme()); err != nil {
-		return fmt.Errorf("failed to add to scheme: %w", err)
-	}
 	c, err := controller.New(ControllerName, opts.Manager(), controller.Options{Reconciler: &reconciler{
 		client:                 opts.Manager().GetClient(),
 		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,
@@ -79,6 +78,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.Ingress{},
 		&configv1.Network{},
 		&configv1.Proxy{},
+		&operatorv1.OpenShiftControllerManager{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
@@ -174,6 +174,11 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		return monitoring.ReconcileKubeAPIServerServiceMonitor(kasServiceMonitor)
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile the kube apiserver service monitor: %w", err))
+	}
+
+	log.Info("Reconciling OpenShiftControllerManager")
+	if err := r.reconcileOpenshiftControllerManager(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile OpenShiftControllerManager: %w", err))
 	}
 
 	return errors.NewAggregate(errs)
@@ -338,4 +343,21 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 	}
 
 	return errors.NewAggregate(errs)
+}
+
+// Conformance tests expect this to be set: https://github.com/openshift/origin/blob/be5b2284418341b8b0e228e9fdfa9d074d667b46/test/extended/util/framework.go#L146-L152
+const ocmObservedConfigValue = `{"dockerPullSecret": {"internalRegistryHostname": "image-registry.openshift-image-registry.svc:5000"}}`
+
+func (r *reconciler) reconcileOpenshiftControllerManager(ctx context.Context) error {
+	openshiftControllerManager := &operatorv1.OpenShiftControllerManager{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+	}
+	if _, err := r.CreateOrUpdate(ctx, r.client, openshiftControllerManager, func() error {
+		openshiftControllerManager.Spec.ObservedConfig = runtime.RawExtension{Raw: []byte(ocmObservedConfigValue)}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile %T %s: %w", openshiftControllerManager, crclient.ObjectKeyFromObject(openshiftControllerManager), err)
+	}
+
+	return nil
 }
