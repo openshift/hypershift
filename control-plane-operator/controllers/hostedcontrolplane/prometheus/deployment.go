@@ -79,12 +79,12 @@ func prometheusContainerMain() *corev1.Container {
 
 func buildPrometheusContainerMain(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
-		c.Image = image
+		c.Image = "quay.io/prometheus/prometheus:main"
 		c.Args = []string{
 			"--config.file",
 			path.Join(volumeMounts.Path(c.Name, prometheusVolumeConfig().Name), prometheusConfigFileName),
 			"--log.level=debug",
-			"--storage.tsdb.retention.time=20m",
+			"--enable-feature=agent",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
