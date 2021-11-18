@@ -332,6 +332,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		log.Info("reconciled default ingress controller")
 	}
 
+	if err := setupMetrics(mgr); err != nil {
+		return fmt.Errorf("failed to setup metrics: %w", err)
+	}
+
 	// Start the controllers
 	log.Info("starting manager")
 	return mgr.Start(ctx)
