@@ -125,7 +125,7 @@ type HostedClusterReconciler struct {
 	// Log is a thread-safe logger.
 	Log logr.Logger
 
-	// ManagementClusterMode ...
+	// ManagementClusterMode is used to configure Security Context for containers
 	ManagementClusterMode string
 
 	// Clock is used to determine the time in a testable way.
