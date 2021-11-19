@@ -514,6 +514,15 @@ spec:
                 required:
                 - type
                 type: object
+              providerPlatformRef:
+                description: ProviderPlatformRef contains the name of a ProviderPlatform
+                  resource which should be used to fill in this resource's spec
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
               pullSecret:
                 description: PullSecret is a pull secret injected into the container
                   runtime of guest workers. It should have an ".dockerconfigjson"
@@ -803,7 +812,6 @@ spec:
                     type: string
                 type: object
             required:
-            - infraID
             - issuerURL
             - networking
             - platform

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
@@ -178,6 +180,32 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
+	// Transfer configuration from ProviderPlatform
+	if hcluster.Spec.ProviderPlatformRef != nil {
+		pp := &hyperv1.ProviderPlatform{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: nodePool.Namespace, Name: hcluster.Spec.ProviderPlatformRef.Name}, pp); err != nil {
+			log.Error(err, "Did not find a ProviderPlatform resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		} else {
+			if meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderConfigured)) &&
+				meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderIAMConfigured)) {
+				if nodePool.Spec.Platform.AWS.Subnet == nil ||
+					!reflect.DeepEqual(nodePool.Spec.Platform.AWS.SecurityGroups, pp.Spec.SecurityGroups) ||
+					nodePool.Spec.Platform.AWS.InstanceProfile == "" {
+
+					nodePool.Spec.Platform.AWS.Subnet = pp.Spec.Platform.AWS.CloudProviderConfig.Subnet
+					nodePool.Spec.Platform.AWS.SecurityGroups = pp.Spec.SecurityGroups
+					nodePool.Spec.Platform.AWS.InstanceProfile = pp.Spec.InfraID + "-worker"
+					if err := r.Update(ctx, nodePool); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to update ProviderPlatform values to nodePool: %w", err)
+					}
+				}
+			} else {
+				log.Error(err, "Waiting for ProviderPlatform to be configured "+hcluster.Spec.ProviderPlatformRef.Name)
+				return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+			}
+		}
+	}
 	// Ensure the nodePool has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(nodePool, finalizer) {
 		controllerutil.AddFinalizer(nodePool, finalizer)

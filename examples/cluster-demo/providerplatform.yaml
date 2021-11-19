@@ -16,8 +16,6 @@ spec:
   providerPlatformCreds:
     name: aws
   dns:
-    baseDomain: my-domain.com
+    baseDomain: my-domain.io
   pullSecret:
     name: pull-secret
-
-

@@ -118,7 +118,7 @@ type HostedClusterSpec struct {
 
 	// InfraID is used to identify the cluster in cloud platforms
 	// +immutable
-	InfraID string `json:"infraID"`
+	InfraID string `json:"infraID,omitempty"`
 
 	// DNS configuration for the cluster
 	// +immutable
@@ -164,6 +164,12 @@ type HostedClusterSpec struct {
 	// cluster when applicable.
 	// +optional
 	SecretEncryption *SecretEncryptionSpec `json:"secretEncryption,omitempty"`
+
+	// ProviderPlatformRef contains the name of a ProviderPlatform resource which should be used
+	// to fill in this resource's spec
+	// +optional
+	// +immutable
+	ProviderPlatformRef *corev1.LocalObjectReference `json:"providerPlatformRef,omitempty"`
 }
 
 // ImageContentSource defines a list of sources/repositories that can be used to pull content.

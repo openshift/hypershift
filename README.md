@@ -118,12 +118,27 @@ hypershift destroy cluster aws \
   --name example
 ```
 
-### custom resources
-1. Create the namespace `clusters`
-  ```yaml
-  oc new-project clusters
-  ```
-2. In the `clusters` namespace, create an AWS Cloud Provider secret (ACM format)
+### provision and destroy with custom resources
+#### Pre-step
+1. Connect to OpenShift
+2. Install hypershift
+    ```bash
+    hypershift install
+    ```
+3. Run the Hypershift operator from the command line
+    ```bash
+    # Find the `operator` deployment in the hypershift namespace, set replicas to 0
+    # Then run the following command to have the operator run locally through your connection
+
+    go run hypershift-operator run --oidc-storage-provider-s3-bucket-name=my-s3-bucket --oidc-storage-provider-s3-region=us-east-1 --namespace=hypershift --oidc-storage-provider-s3-credentials=$HOME/.aws/credentials  --namespace=hypershift
+
+    # WHere you sub in your s3 bucket name, AWS region and AWS credential values
+    ```
+4. Create the namespace `clusters`
+    ```bash
+    oc new-project clusters
+    ```
+5. In the `clusters` namespace, create an AWS Cloud Provider secret (ACM format)
   ```yaml
   ---
   apiVersion: v1
@@ -148,40 +163,19 @@ hypershift destroy cluster aws \
     .dockerconfigjson: |-
       {"auths": MY_PULL_SECRET }
   type: kubernetes.io/dockerconfigjson
-  ```
-4. Start the ProviderPlatform controller
+   ```
+#### Deploying Hypershift HostedClusters
+1. Edit the file `./examples/cluster-demo/providerplatform.yaml` and set the `base-domain` value
+2. Make any changes you want to the `hostedcluster.yaml` and `nodepool.yaml`, the defaults will work
+3. Apply the three resources `ProviderPlatform`, `HostedCluster` & `NodePool` 
   ```bash
-  go run hypershift-operator/main.go run
+  oc apply -f examples/cluster-demo/
   ```
-5. Create the ProviderPlatform for your Hypershift HostedCluster (watch the logs from the command above)
-  ```yaml
-  ---
-  apiVersion: hypershift.openshift.io/v1alpha1
-  kind: ProviderPlatform
-  metadata:
-    name: my-demo
-    namespace: clusters
-  spec:
-    platform:
-      aws:
-        region: us-east-1
-        kubeCloudControllerCreds:
-          name: aws
-        nodePoolManagementCreds:
-          name: aws
-      type: AWS
-    providerPlatformCreds:
-      name: aws
-    dns:
-      baseDomain: dev06.red-chesterfield.com
-    pullSecret:
-      name: pull-secret
-  ```
-6. Review the ProviderPlatform resource, the `Spec` will be updated with additional values. Copy those values into the HostedCluster and NodePool resources, then create them
-  ```bash
-  oc apply -f examples/cluster-demo/cluster-demo.yaml
-  ```
-7. This wil deploy a Hypershift cluster
+7. It will take 5-6min for the deploy to complete!
+8. To clean up delete the three resources
+    ```bash
+    oc delete -f examples/cluster-demo/
+    ```
 
 ## How to add additional node pools to the example cluster
 

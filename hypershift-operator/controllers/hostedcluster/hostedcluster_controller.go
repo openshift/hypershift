@@ -27,6 +27,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -242,6 +243,42 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, nil
+	}
+
+	// Transfer configuration from ProviderPlatform
+	// Start the check only if the ProviderPlatformReference is present
+	if hcluster.Spec.ProviderPlatformRef != nil {
+		pp := &hyperv1.ProviderPlatform{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.ProviderPlatformRef.Name}, pp); err != nil {
+			r.Log.Error(err, "Did not find a ProviderPlatform resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		} else {
+			// Confirm that ProviderPlatform is cnfigured, otherwise requeue
+			if meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderConfigured)) &&
+				meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderIAMConfigured)) {
+
+				if !reflect.DeepEqual(hcluster.Spec.DNS, pp.Spec.DNS) ||
+					hcluster.Spec.InfraID != pp.Spec.InfraID ||
+					hcluster.Spec.Networking.MachineCIDR != pp.Spec.Networking.MachineCIDR ||
+					hcluster.Spec.Networking.NetworkType != pp.Spec.Networking.NetworkType ||
+					hcluster.Spec.IssuerURL != pp.Spec.IssuerURL ||
+					!reflect.DeepEqual(hcluster.Spec.Platform, pp.Spec.Platform) {
+
+					hcluster.Spec.DNS = pp.Spec.DNS
+					hcluster.Spec.IssuerURL = pp.Spec.IssuerURL
+					hcluster.Spec.InfraID = pp.Spec.InfraID
+					hcluster.Spec.Networking.MachineCIDR = pp.Spec.Networking.MachineCIDR
+					hcluster.Spec.Networking.NetworkType = pp.Spec.Networking.NetworkType
+					hcluster.Spec.Platform = pp.Spec.Platform
+					if err := r.Update(ctx, hcluster); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to update ProviderPlatform values to HostedCluster: %w", err)
+					}
+				}
+			} else {
+				r.Log.Error(err, "Waiting for ProviderPlatform to be configured "+hcluster.Spec.ProviderPlatformRef.Name)
+				return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+			}
+		}
 	}
 
 	// Part one: update status
