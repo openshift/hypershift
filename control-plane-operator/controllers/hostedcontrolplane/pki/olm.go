@@ -19,10 +19,6 @@ func ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret, ownerRef con
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "packageserver", []string{"openshift"}, X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
 }
 
-func ReconcileOLMProfileCollectorCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "olm-pprof", []string{"openshift"}, X509SignerUsage, X509UsageClientAuth)
-}
-
 func ReconcileOLMCatalogOperatorServingCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"catalog-operator-metrics",

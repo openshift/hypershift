@@ -41,12 +41,16 @@ var (
 	// TODO: These manifests should eventually be removed from the CVO payload by annotating
 	// them with the proper cluster profile in the OLM repository.
 	manifestsToOmit = []string{
+		"0000_50_olm_00-pprof-config.yaml",
+		"0000_50_olm_00-pprof-rbac.yaml",
+		"0000_50_olm_00-pprof-secret.yaml",
 		"0000_50_olm_01-olm-operator.serviceaccount.yaml",
 		"0000_50_olm_02-services.yaml",
 		"0000_50_olm_06-psm-operator.deployment.yaml",
 		"0000_50_olm_06-psm-operator.deployment.ibm-cloud-managed.yaml",
 		"0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml",
 		"0000_50_olm_07-olm-operator.deployment.yaml",
+		"0000_50_olm_07-collect-profiles.cronjob.yaml",
 		"0000_50_olm_08-catalog-operator.deployment.ibm-cloud-managed.yaml",
 		"0000_50_olm_08-catalog-operator.deployment.yaml",
 		"0000_50_olm_15-packageserver.clusterserviceversion.yaml",

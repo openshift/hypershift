@@ -21,7 +21,7 @@ spec:
             secretName: olm-operator-serving-cert
         - name: client-ca
           secret:
-            secretName: olm-profile-collector
+            secretName: pprof-cert
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig

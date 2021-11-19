@@ -1322,14 +1322,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile packageserver cert: %w", err)
 	}
 
-	// OLM Profile collector Cert
-	profileCollectorCert := manifests.OLMProfileCollectorCertSecret(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, profileCollectorCert, func() error {
-		return pki.ReconcileOLMProfileCollectorCertSecret(profileCollectorCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm profile collector cert: %w", err)
-	}
-
 	// OLM Catalog Operator Serving Cert
 	catalogOperatorServingCert := manifests.OLMCatalogOperatorServingCertSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, catalogOperatorServingCert, func() error {
@@ -2191,6 +2183,46 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return fmt.Errorf("failed to reconcile packageserver worker endpoints: %w", err)
 	}
 
+	// Collect Profiles
+	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
+	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	if err := r.Create(ctx, collectProfilesConfigMap); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesCronJob, func() error {
+		return olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRole, func() error {
+		return olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRoleBinding, func() error {
+		return olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
+	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	if err := r.Create(ctx, collectProfilesSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesServiceAccount, func() error {
+		return olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
 	return nil
 }
 

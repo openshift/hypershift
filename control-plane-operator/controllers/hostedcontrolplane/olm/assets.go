@@ -44,6 +44,24 @@ func MustService(fileName string) *corev1.Service {
 	return svc
 }
 
+func MustServiceAccount(fileName string) *corev1.ServiceAccount {
+	serviceAccount := &corev1.ServiceAccount{}
+	deserializeResource(fileName, serviceAccount)
+	return serviceAccount
+}
+
+func MustSecret(fileName string) *corev1.Secret {
+	secret := &corev1.Secret{}
+	deserializeResource(fileName, secret)
+	return secret
+}
+
+func MustConfigMap(fileName string) *corev1.ConfigMap {
+	configMap := &corev1.ConfigMap{}
+	deserializeResource(fileName, configMap)
+	return configMap
+}
+
 func MustDeployment(fileName string) *appsv1.Deployment {
 	deployment := &appsv1.Deployment{}
 	deserializeResource(fileName, deployment)
