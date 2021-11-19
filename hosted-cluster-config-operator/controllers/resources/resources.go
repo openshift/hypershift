@@ -176,6 +176,14 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("failed to reconcile the kube apiserver service monitor: %w", err))
 	}
 
+	log.Info("reconciling monitoring configuration")
+	monitoringConfig := manifests.MonitoringConfig()
+	if _, err := r.CreateOrUpdate(ctx, r.client, monitoringConfig, func() error {
+		return monitoring.ReconcileMonitoringConfig(monitoringConfig)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile monitoring config: %w", err))
+	}
+
 	return errors.NewAggregate(errs)
 }
 
