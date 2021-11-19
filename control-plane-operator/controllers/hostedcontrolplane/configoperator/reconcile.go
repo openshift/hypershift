@@ -182,6 +182,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 			fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
 			fmt.Sprintf("--hosted-control-plane=%s", hcpName),
 		}
+		c.Ports = []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}}
 		c.Env = []corev1.EnvVar{
 			{
 				Name: "POD_NAMESPACE",
