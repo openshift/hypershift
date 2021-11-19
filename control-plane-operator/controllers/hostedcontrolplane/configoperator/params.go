@@ -5,6 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
@@ -40,6 +41,38 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 				corev1.ResourceMemory: resource.MustParse("10Mi"),
 				corev1.ResourceCPU:    resource.MustParse("60m"),
 			},
+		},
+	}
+	params.LivenessProbes = config.LivenessProbes{
+		hccContainerMain().Name: {
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/metrics",
+					Port:   intstr.FromInt(8080),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 60,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    5,
+			TimeoutSeconds:      5,
+		},
+	}
+	params.ReadinessProbes = config.ReadinessProbes{
+		hccContainerMain().Name: {
+			Handler: corev1.Handler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/metrics",
+					Port:   intstr.FromInt(8080),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    3,
+			TimeoutSeconds:      5,
 		},
 	}
 	params.DeploymentConfig.SetColocation(hcp)
