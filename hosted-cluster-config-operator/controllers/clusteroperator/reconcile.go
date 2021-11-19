@@ -238,7 +238,12 @@ var clusterOperators = []ClusterOperatorInfo{
 		VersionMapping: map[string]string{
 			"operator": "release",
 		},
-		RelatedObjects: []configv1.ObjectReference{},
+		RelatedObjects: []configv1.ObjectReference{
+			{
+				Resource: "namespaces",
+				Name:     "openshift-operator-lifecycle-manager",
+			},
+		},
 	},
 }
 
