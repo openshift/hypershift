@@ -22,8 +22,9 @@ type ExampleResources struct {
 }
 
 type ExampleAWSResources struct {
-	KubeCloudControllerAWSCreds *corev1.Secret
-	NodePoolManagementAWSCreds  *corev1.Secret
+	KubeCloudControllerAWSCreds  *corev1.Secret
+	NodePoolManagementAWSCreds   *corev1.Secret
+	ControlPlaneOperatorAWSCreds *corev1.Secret
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
@@ -35,6 +36,7 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	if o.AWSResources != nil {
 		objects = append(objects, o.AWSResources.KubeCloudControllerAWSCreds)
 		objects = append(objects, o.AWSResources.NodePoolManagementAWSCreds)
+		objects = append(objects, o.AWSResources.ControlPlaneOperatorAWSCreds)
 	}
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
@@ -75,20 +77,21 @@ type ExampleNoneOptions struct {
 }
 
 type ExampleAWSOptions struct {
-	Region                     string
-	Zone                       string
-	VPCID                      string
-	SubnetID                   string
-	SecurityGroupID            string
-	InstanceProfile            string
-	InstanceType               string
-	Roles                      []hyperv1.AWSRoleCredentials
-	KubeCloudControllerRoleARN string
-	NodePoolManagementRoleARN  string
-	RootVolumeSize             int64
-	RootVolumeType             string
-	RootVolumeIOPS             int64
-	ResourceTags               []hyperv1.AWSResourceTag
+	Region                      string
+	Zone                        string
+	VPCID                       string
+	SubnetID                    string
+	SecurityGroupID             string
+	InstanceProfile             string
+	InstanceType                string
+	Roles                       []hyperv1.AWSRoleCredentials
+	KubeCloudControllerRoleARN  string
+	NodePoolManagementRoleARN   string
+	ControlPlaneOperatorRoleARN string
+	RootVolumeSize              int64
+	RootVolumeType              string
+	RootVolumeIOPS              int64
+	ResourceTags                []hyperv1.AWSResourceTag
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -169,6 +172,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		exampleAWSResources.NodePoolManagementAWSCreds = buildAWSCreds(
 			o.Name+"-node-mgmt-creds",
 			o.AWS.NodePoolManagementRoleARN)
+		exampleAWSResources.ControlPlaneOperatorAWSCreds = buildAWSCreds(
+			o.Name+"-cpo-creds",
+			o.AWS.ControlPlaneOperatorRoleARN)
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
 			AWS: &hyperv1.AWSPlatformSpec{
@@ -181,9 +187,10 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					},
 					Zone: o.AWS.Zone,
 				},
-				KubeCloudControllerCreds: corev1.LocalObjectReference{Name: exampleAWSResources.KubeCloudControllerAWSCreds.Name},
-				NodePoolManagementCreds:  corev1.LocalObjectReference{Name: exampleAWSResources.NodePoolManagementAWSCreds.Name},
-				ResourceTags:             o.AWS.ResourceTags,
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: exampleAWSResources.KubeCloudControllerAWSCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: exampleAWSResources.NodePoolManagementAWSCreds.Name},
+				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: exampleAWSResources.ControlPlaneOperatorAWSCreds.Name},
+				ResourceTags:              o.AWS.ResourceTags,
 			},
 		}
 		services = []hyperv1.ServicePublishingStrategyMapping{

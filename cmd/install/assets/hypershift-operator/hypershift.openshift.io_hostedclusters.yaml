@@ -417,6 +417,19 @@ spec:
                         required:
                         - vpc
                         type: object
+                      controlPlaneOperatorCreds:
+                        description: "ControlPlaneOperatorCreds is a reference to
+                          a secret containing cloud credentials with permissions matching
+                          the control-plane-operator policy. The secret should have
+                          exactly one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"node pool management
+                          policy\""
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
                       endpointAccess:
                         default: Public
                         description: EndpointAccess specifies the publishing scope
@@ -537,6 +550,7 @@ spec:
                           type: object
                         type: array
                     required:
+                    - controlPlaneOperatorCreds
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds
                     - region

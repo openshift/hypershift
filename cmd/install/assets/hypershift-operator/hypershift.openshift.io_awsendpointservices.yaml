@@ -119,9 +119,13 @@ spec:
                   - type
                   type: object
                 type: array
-              endpointServiceName:
-                description: The endpoint service name created in AWS in response
+              endpointID:
+                description: The endpoint ID created in the guest VPC in response
                   to the request
+                type: string
+              endpointServiceName:
+                description: The endpoint service name created in the management VPC
+                  in response to the request
                 type: string
             required:
             - conditions

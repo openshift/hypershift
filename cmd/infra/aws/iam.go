@@ -239,6 +239,21 @@ const (
     }
   ]
 }`
+
+	controlPlaneOperatorPolicy = `{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"ec2:CreateVpcEndpoint",
+				"ec2:DescribeVpcEndpoints",
+				"ec2:DeleteVpcEndpoints"
+			],
+			"Resource": "*"
+		}
+	]
+}`
 )
 
 type KeyResponse struct {
@@ -348,6 +363,13 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		return nil, err
 	}
 	output.NodePoolManagementRoleARN = arn
+
+	controlPlaneOperatorTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:control-plane-operator")
+	arn, err = o.CreateOIDCRole(iamClient, "control-plane-operator", controlPlaneOperatorTrustPolicy, controlPlaneOperatorPolicy)
+	if err != nil {
+		return nil, err
+	}
+	output.ControlPlaneOperatorRoleARN = arn
 
 	return output, nil
 }
