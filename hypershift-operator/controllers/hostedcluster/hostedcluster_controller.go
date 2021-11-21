@@ -575,6 +575,34 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile the platform provider node pool management credentials secret by
+	// resolving  the reference from the HostedCluster and syncing the secret in
+	// the control plane namespace.
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		var src corev1.Secret
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name}, &src)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get control plane operator provider creds %s: %w", hcluster.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name, err)
+		}
+		dest := manifests.AWSControlPlaneOperatorCreds(controlPlaneNamespace.Name)
+		_, err = r.CreateOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["credentials"]
+			if !srcHasData {
+				return fmt.Errorf("control plane operator provider credentials secret %q is missing credentials key", src.Name)
+			}
+			dest.Type = corev1.SecretTypeOpaque
+			if dest.Data == nil {
+				dest.Data = map[string][]byte{}
+			}
+			dest.Data["credentials"] = srcData
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator provider creds: %w", err)
+		}
+	}
+
 	// Reconcile the HostedControlPlane pull secret by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
 	{
@@ -1117,9 +1145,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{
 			Name: manifests.AWSKubeCloudControllerCreds(hcp.Namespace).Name,
 		}
-		// TODO: Not actually used by the control plane operator...
 		hcp.Spec.Platform.AWS.NodePoolManagementCreds = corev1.LocalObjectReference{
 			Name: manifests.AWSNodePoolManagementCreds(hcp.Namespace).Name,
+		}
+		hcp.Spec.Platform.AWS.ControlPlaneOperatorCreds = corev1.LocalObjectReference{
+			Name: manifests.AWSControlPlaneOperatorCreds(hcp.Namespace).Name,
 		}
 	case hyperv1.NonePlatform:
 		hcp.Spec.Platform.Type = hyperv1.NonePlatform
@@ -1908,6 +1938,72 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			},
 		},
 	}
+
+	// Add platform specific settings
+	switch hc.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: "cloud-token",
+				VolumeSource: corev1.VolumeSource{
+					EmptyDir: &corev1.EmptyDirVolumeSource{
+						Medium: corev1.StorageMediumMemory,
+					},
+				},
+			},
+			corev1.Volume{
+				Name: "provider-creds",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: manifests.AWSControlPlaneOperatorCreds(deployment.Namespace).Name,
+					},
+				},
+			})
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: "/etc/provider/credentials",
+			},
+			corev1.EnvVar{
+				Name:  "AWS_REGION",
+				Value: hc.Spec.Platform.AWS.Region,
+			},
+			corev1.EnvVar{
+				Name:  "AWS_SDK_LOAD_CONFIG",
+				Value: "true",
+			})
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "cloud-token",
+				MountPath: "/var/run/secrets/openshift/serviceaccount",
+			},
+			corev1.VolumeMount{
+				Name:      "provider-creds",
+				MountPath: "/etc/provider",
+			})
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            "token-minter",
+			Image:           image,
+			ImagePullPolicy: corev1.PullAlways,
+			Command:         []string{"/usr/bin/token-minter"},
+			Args: []string{
+				"-service-account-namespace=kube-system",
+				"-service-account-name=control-plane-operator",
+				"-token-audience=openshift",
+				"-token-file=/var/run/secrets/openshift/serviceaccount/token",
+				fmt.Sprintf("-kubeconfig-secret-namespace=%s", deployment.Namespace),
+				"-kubeconfig-secret-name=service-network-admin-kubeconfig",
+				"--sleep=true",
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "cloud-token",
+					MountPath: "/var/run/secrets/openshift/serviceaccount",
+				},
+			},
+		})
+	}
+
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
@@ -2913,6 +3009,16 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	for key := range nodePools {
 		if err := r.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("failed to delete nodePool %q for cluster %q: %w", nodePools[key].GetName(), req.Name, err)
+		}
+	}
+
+	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
+	if err := r.List(ctx, &awsEndpointServiceList); err != nil && !apierrors.IsNotFound(err) {
+		return false, fmt.Errorf("failed to list AWSEndpointServices for cluster %q: %w", req.Name, err)
+	}
+	for _, ep := range awsEndpointServiceList.Items {
+		if err := r.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("failed to delete AWSEndpointService %q for cluster %q: %w", ep.Name, req.Name, err)
 		}
 	}
 

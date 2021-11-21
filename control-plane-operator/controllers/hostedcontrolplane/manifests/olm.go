@@ -276,3 +276,58 @@ func OLMAlertRulesWorkerManifest(ns string) *corev1.ConfigMap {
 		},
 	}
 }
+
+// Collect Profiles
+func CollectProfilesConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "olm-collect-profiles",
+			Namespace: ns,
+		},
+	}
+}
+
+func CollectProfilesCronJob(ns string) *batchv1beta1.CronJob {
+	return &batchv1beta1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "olm-collect-profiles",
+			Namespace: ns,
+		},
+	}
+}
+
+func CollectProfilesRole(ns string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "olm-collect-profiles",
+			Namespace: ns,
+		},
+	}
+}
+
+func CollectProfilesRoleBinding(ns string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "olm-collect-profiles",
+			Namespace: ns,
+		},
+	}
+}
+
+func CollectProfilesSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pprof-cert",
+			Namespace: ns,
+		},
+	}
+}
+
+func CollectProfilesServiceAccount(ns string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "olm-collect-profiles",
+			Namespace: ns,
+		},
+	}
+}
