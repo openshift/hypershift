@@ -49,7 +49,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
@@ -67,10 +66,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
-	cpoutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	cpoutil "github.com/openshift/hypershift/support/util"
 )
 
 const (
