@@ -45,7 +45,7 @@ verify: staticcheck deps api fmt vet promtool
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	$(eval STATUS = $(shell git status -s))
-	$(if $(strip $(STATUS)),$(error untracked files detected))
+	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
 
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
