@@ -191,10 +191,6 @@ func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort 
 					RunAsUser: pointer.Int64Ptr(1001),
 				},
 				Resources: corev1.ResourceRequirements{
-					Limits: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("512Mi"),
-						corev1.ResourceCPU:    resource.MustParse("300m"),
-					},
 					Requests: corev1.ResourceList{
 						corev1.ResourceMemory: resource.MustParse("16Mi"),
 						corev1.ResourceCPU:    resource.MustParse("13m"),
