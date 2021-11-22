@@ -658,7 +658,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile cluster version operator
 	r.Log.Info("Reonciling Cluster Version Operator")
-	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane); err != nil {
+	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
 
@@ -680,7 +680,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile hosted cluster config operator
 	r.Log.Info("Reconciling Hosted Cluster Config Operator")
-	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImage); err != nil {
+	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImage, infraStatus); err != nil {
 		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
 	}
 
@@ -1320,14 +1320,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileOLMPackageServerCertSecret(packageServerCertSecret, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile packageserver cert: %w", err)
-	}
-
-	// OLM Profile collector Cert
-	profileCollectorCert := manifests.OLMProfileCollectorCertSecret(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, profileCollectorCert, func() error {
-		return pki.ReconcileOLMProfileCollectorCertSecret(profileCollectorCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm profile collector cert: %w", err)
 	}
 
 	// OLM Catalog Operator Serving Cert
@@ -1991,12 +1983,12 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	p := cvo.NewCVOParams(hcp)
+func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := cvo.NewCVOParams(hcp, releaseImage.ComponentImages())
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
@@ -2191,6 +2183,46 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return fmt.Errorf("failed to reconcile packageserver worker endpoints: %w", err)
 	}
 
+	// Collect Profiles
+	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
+	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	if err := r.Create(ctx, collectProfilesConfigMap); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesCronJob, func() error {
+		return olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRole, func() error {
+		return olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRoleBinding, func() error {
+		return olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
+	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	if err := r.Create(ctx, collectProfilesSecret); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
+
+	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesServiceAccount, func() error {
+		return olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	}
 	return nil
 }
 
@@ -2429,7 +2461,7 @@ func reconcileImageContentSourceIgnitionConfig(ignitionConfig *corev1.ConfigMap,
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage) error {
+func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus) error {
 	versions, err := releaseInfo.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)
@@ -2459,7 +2491,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}

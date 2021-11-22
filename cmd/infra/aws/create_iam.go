@@ -44,8 +44,9 @@ type CreateIAMOutput struct {
 	IssuerURL   string                       `json:"issuerURL"`
 	Roles       []hyperv1.AWSRoleCredentials `json:"roles"`
 
-	KubeCloudControllerRoleARN string `json:"kubeCloudControllerRoleARN"`
-	NodePoolManagementRoleARN  string `json:"nodePoolManagementRoleARN"`
+	KubeCloudControllerRoleARN  string `json:"kubeCloudControllerRoleARN"`
+	NodePoolManagementRoleARN   string `json:"nodePoolManagementRoleARN"`
+	ControlPlaneOperatorRoleARN string `json:"controlPlaneOperatorRoleARN"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {

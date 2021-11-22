@@ -72,8 +72,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
@@ -609,6 +607,34 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile node pool provider creds: %w", err)
+		}
+	}
+
+	// Reconcile the platform provider node pool management credentials secret by
+	// resolving  the reference from the HostedCluster and syncing the secret in
+	// the control plane namespace.
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		var src corev1.Secret
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name}, &src)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get control plane operator provider creds %s: %w", hcluster.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name, err)
+		}
+		dest := manifests.AWSControlPlaneOperatorCreds(controlPlaneNamespace.Name)
+		_, err = r.CreateOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["credentials"]
+			if !srcHasData {
+				return fmt.Errorf("control plane operator provider credentials secret %q is missing credentials key", src.Name)
+			}
+			dest.Type = corev1.SecretTypeOpaque
+			if dest.Data == nil {
+				dest.Data = map[string][]byte{}
+			}
+			dest.Data["credentials"] = srcData
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator provider creds: %w", err)
 		}
 	}
 
@@ -1154,9 +1180,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{
 			Name: manifests.AWSKubeCloudControllerCreds(hcp.Namespace).Name,
 		}
-		// TODO: Not actually used by the control plane operator...
 		hcp.Spec.Platform.AWS.NodePoolManagementCreds = corev1.LocalObjectReference{
 			Name: manifests.AWSNodePoolManagementCreds(hcp.Namespace).Name,
+		}
+		hcp.Spec.Platform.AWS.ControlPlaneOperatorCreds = corev1.LocalObjectReference{
+			Name: manifests.AWSControlPlaneOperatorCreds(hcp.Namespace).Name,
 		}
 	case hyperv1.NonePlatform:
 		hcp.Spec.Platform.Type = hyperv1.NonePlatform
@@ -1948,6 +1976,72 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			},
 		},
 	}
+
+	// Add platform specific settings
+	switch hc.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: "cloud-token",
+				VolumeSource: corev1.VolumeSource{
+					EmptyDir: &corev1.EmptyDirVolumeSource{
+						Medium: corev1.StorageMediumMemory,
+					},
+				},
+			},
+			corev1.Volume{
+				Name: "provider-creds",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: manifests.AWSControlPlaneOperatorCreds(deployment.Namespace).Name,
+					},
+				},
+			})
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: "/etc/provider/credentials",
+			},
+			corev1.EnvVar{
+				Name:  "AWS_REGION",
+				Value: hc.Spec.Platform.AWS.Region,
+			},
+			corev1.EnvVar{
+				Name:  "AWS_SDK_LOAD_CONFIG",
+				Value: "true",
+			})
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "cloud-token",
+				MountPath: "/var/run/secrets/openshift/serviceaccount",
+			},
+			corev1.VolumeMount{
+				Name:      "provider-creds",
+				MountPath: "/etc/provider",
+			})
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            "token-minter",
+			Image:           image,
+			ImagePullPolicy: corev1.PullAlways,
+			Command:         []string{"/usr/bin/token-minter"},
+			Args: []string{
+				"-service-account-namespace=kube-system",
+				"-service-account-name=control-plane-operator",
+				"-token-audience=openshift",
+				"-token-file=/var/run/secrets/openshift/serviceaccount/token",
+				fmt.Sprintf("-kubeconfig-secret-namespace=%s", deployment.Namespace),
+				"-kubeconfig-secret-name=service-network-admin-kubeconfig",
+				"--sleep=true",
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "cloud-token",
+					MountPath: "/var/run/secrets/openshift/serviceaccount",
+				},
+			},
+		})
+	}
+
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
@@ -2956,6 +3050,16 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 		}
 	}
 
+	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
+	if err := r.List(ctx, &awsEndpointServiceList); err != nil && !apierrors.IsNotFound(err) {
+		return false, fmt.Errorf("failed to list AWSEndpointServices for cluster %q: %w", req.Name, err)
+	}
+	for _, ep := range awsEndpointServiceList.Items {
+		if err := r.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("failed to delete AWSEndpointService %q for cluster %q: %w", ep.Name, req.Name, err)
+		}
+	}
+
 	if hc != nil && len(hc.Spec.InfraID) > 0 {
 		r.Log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
 		cluster := &capiv1.Cluster{
@@ -3354,30 +3458,22 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src); err != nil {
 		return fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
 	}
-	var kubeconfig clientcmdapiv1.Config
-	if err := yaml.Unmarshal(src.Data["kubeconfig"], &kubeconfig); err != nil {
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(src.Data["kubeconfig"])
+	if err != nil {
 		return fmt.Errorf("failed to deserialize the kubeconfig: %w", err)
 	}
+	// Impersonate the serviceaccounts groups as a guardrail to bugs in our code
+	// as we end up writing this into a public location.
+	// The perms for this are bound through the system:service-account-issuer-discovery
+	// clusterrolebinding which is managed by the KAS itself.
+	cfg.Impersonate.Groups = []string{"system:serviceaccounts"}
+	cfg.Impersonate.UserName = "iHaveToBeSubmittedButDontActuallyExist"
 
-	// The clientcmd helper that constructs a rest.Config expects a different format so we have to convert...
-	var apiKubeconfig clientcmdapi.Config
-	if err := clientcmdapiv1.Convert_v1_Config_To_api_Config(&kubeconfig, &apiKubeconfig, nil); err != nil {
-		return fmt.Errorf("failed to covert clientcmdapiv1 kubeconfig to clientcmdapi kubeconfig: %w", err)
-	}
-	cfg, err := clientcmd.NewDefaultClientConfig(apiKubeconfig, nil).ClientConfig()
+	transport, err := rest.TransportFor(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to construct rest config for cluster: %w", err)
+		return fmt.Errorf("failed to construct transport for cfg: %w", err)
 	}
-	tlsConfig, err := rest.TLSConfigFor(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to construct tls config for cluster: %w", err)
-	}
-
-	// We put the result of this request into a public location and expect the original
-	// to be public as well so make sure we fail if that is somehow not the case.
-	tlsConfig.GetClientCertificate = nil
-
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}
+	client := &http.Client{Transport: transport}
 
 	for _, path := range oidcPublicDocumentPaths() {
 		requestURL := "https://" + hcp.Status.ControlPlaneEndpoint.Host + ":" + strconv.Itoa(int(hcp.Status.ControlPlaneEndpoint.Port)) + path
@@ -3393,7 +3489,8 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("request to %s returned with unexpected status code %d", requestURL, resp.StatusCode)
+			body, _ := ioutil.ReadAll(resp.Body)
+			return fmt.Errorf("request to %s returned with unexpected status code %d. Response body: %s", requestURL, resp.StatusCode, string(body))
 		}
 
 		// In theory we should be able to pass resp.Body

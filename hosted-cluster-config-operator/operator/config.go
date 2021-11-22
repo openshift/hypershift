@@ -8,6 +8,7 @@ import (
 	"github.com/go-logr/logr"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -20,10 +21,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	configv1 "github.com/openshift/api/config/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
 	common "github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
 	"github.com/openshift/hypershift/support/upsert"
 )
@@ -43,23 +46,34 @@ func cacheLabelSelector() labels.Selector {
 
 type ControllerSetupFunc func(*HostedClusterConfigOperatorConfig) error
 
-func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc, enableCIDebugOutput bool, platformType hyperv1.PlatformType, clusterSignerCA []byte) *HostedClusterConfigOperatorConfig {
+func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace, hcpName string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc, enableCIDebugOutput bool, platformType hyperv1.PlatformType, clusterSignerCA []byte) *HostedClusterConfigOperatorConfig {
 	cfg := cfgFromFile(targetKubeconfig)
-	mgr := mgr(cfg)
+	cpConfig := ctrl.GetConfigOrDie()
+	mgr := mgr(cfg, cpConfig, namespace)
+	cpCluster, err := cluster.New(cpConfig, withScheme(api.Scheme), withNamespace(namespace))
+	if err != nil {
+		panic(fmt.Sprintf("Cannot create control plane cluster: %v", err))
+	}
+	if err := mgr.Add(cpCluster); err != nil {
+		panic(fmt.Sprintf("Cannot add CPCluster to manager: %v", err))
+	}
 	return &HostedClusterConfigOperatorConfig{
 		TargetCreateOrUpdateProvider: &labelEnforcingUpsertProvider{
 			upstream:  upsert.New(enableCIDebugOutput),
 			apiReader: mgr.GetAPIReader(),
 		},
+		config:          cpConfig,
 		targetConfig:    cfg,
 		manager:         mgr,
 		namespace:       namespace,
+		hcpName:         hcpName,
 		initialCA:       initialCA,
 		clusterSignerCA: clusterSignerCA,
 		controllers:     controllers,
 		controllerFuncs: controllerFuncs,
 		versions:        versions,
 		PlatformType:    platformType,
+		CPCluster:       cpCluster,
 	}
 }
 
@@ -70,9 +84,11 @@ type HostedClusterConfigOperatorConfig struct {
 	targetKubeClient             kubeclient.Interface
 	TargetCreateOrUpdateProvider upsert.CreateOrUpdateProvider
 	kubeClient                   kubeclient.Interface
+	CPCluster                    cluster.Cluster
 	logger                       logr.Logger
 
 	versions            map[string]string
+	hcpName             string
 	namespace           string
 	initialCA           []byte
 	clusterSignerCA     []byte
@@ -90,12 +106,15 @@ func (c *HostedClusterConfigOperatorConfig) Manager() ctrl.Manager {
 	return c.manager
 }
 
-func mgr(cfg *rest.Config) ctrl.Manager {
+func mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 	cfg.UserAgent = "hosted-cluster-config-operator-manager"
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		LeaderElection:          true,
-		LeaderElectionNamespace: "openshift-config-managed",
-		LeaderElectionID:        "hypershift-operator",
+		LeaderElection:             true,
+		LeaderElectionResourceLock: "leases",
+		LeaderElectionNamespace:    namespace,
+		LeaderElectionConfig:       cpConfig,
+		LeaderElectionID:           "hcco.hypershift.openshift.io",
+
 		NewClient: func(cache cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
 			client, err := cluster.DefaultNewClient(cache, config, options, uncachedObjects...)
 			if err != nil {
@@ -111,19 +130,32 @@ func mgr(cfg *rest.Config) ctrl.Manager {
 				// TODO @alvaroaleman: We want the same selector for all object types
 				// but controller-runtime doesn't support that yet. Change  this to
 				// use a default for everything once we have https://github.com/kubernetes-sigs/controller-runtime/pull/1710
-				&corev1.ConfigMap{}: {Label: cacheLabelSelector()},
-				&corev1.Secret{}:    {Label: cacheLabelSelector()},
+				&corev1.ConfigMap{}:          {Label: cacheLabelSelector()},
+				&corev1.Secret{}:             {Label: cacheLabelSelector()},
+				&corev1.Namespace{}:          {Label: cacheLabelSelector()},
+				&rbacv1.ClusterRole{}:        {Label: cacheLabelSelector()},
+				&rbacv1.ClusterRoleBinding{}: {Label: cacheLabelSelector()},
+				&configv1.Infrastructure{}:   {Label: cacheLabelSelector()},
+				&configv1.DNS{}:              {Label: cacheLabelSelector()},
+				&configv1.Ingress{}:          {Label: cacheLabelSelector()},
+				&configv1.Network{}:          {Label: cacheLabelSelector()},
+				&configv1.Proxy{}:            {Label: cacheLabelSelector()},
 			},
 		}),
+		Scheme: api.Scheme,
 	})
 	if err != nil {
-		panic(fmt.Sprintf("failed t create controller manager: %v", err))
+		panic(fmt.Sprintf("failed to create controller manager: %v", err))
 	}
 	return mgr
 }
 
 func (c *HostedClusterConfigOperatorConfig) Namespace() string {
 	return c.namespace
+}
+
+func (c *HostedClusterConfigOperatorConfig) HCPName() string {
+	return c.hcpName
 }
 
 func (c *HostedClusterConfigOperatorConfig) Config() *rest.Config {
@@ -196,6 +228,18 @@ func (c *HostedClusterConfigOperatorConfig) TargetKubeInformersForNamespace(name
 		}))
 	}
 	return informer
+}
+
+func withScheme(scheme *runtime.Scheme) func(*cluster.Options) {
+	return func(o *cluster.Options) {
+		o.Scheme = scheme
+	}
+}
+
+func withNamespace(ns string) func(*cluster.Options) {
+	return func(o *cluster.Options) {
+		o.Namespace = ns
+	}
 }
 
 func (c *HostedClusterConfigOperatorConfig) KubeClient() kubeclient.Interface {

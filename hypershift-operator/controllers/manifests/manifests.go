@@ -41,3 +41,12 @@ func AWSNodePoolManagementCreds(controlPlaneNamespace string) *corev1.Secret {
 		},
 	}
 }
+
+func AWSControlPlaneOperatorCreds(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cpo-provider-creds",
+		},
+	}
+}
