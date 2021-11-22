@@ -9,13 +9,13 @@ spec:
     aws:
       region: us-east-1
       kubeCloudControllerCreds:
-        name: aws
+        name: auto-generated
       nodePoolManagementCreds:
-        name: aws
+        name: auto-generated
       controlPlaneOperatorCreds:
         name: aws
     type: AWS
   dns:
-    baseDomain: dev06.red-chesterfield.com
+    baseDomain: my-domain.com
   pullSecret:
     name: pull-secret
