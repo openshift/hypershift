@@ -336,15 +336,6 @@ spec:
                 required:
                 - type
                 type: object
-              providerPlatformCreds:
-                description: ProviderPlatformCreds is a reference to the AWS credentials
-                  needed to provision the Infrastructure and IAM
-                properties:
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                      TODO: Add other useful fields. apiVersion, kind, uid?'
-                    type: string
-                type: object
               pullSecret:
                 description: PullSecret is a pull secret injected into the container
                   runtime of guest workers. It should have an ".dockerconfigjson"
@@ -407,7 +398,6 @@ spec:
             - dns
             - issuerURL
             - platform
-            - providerPlatformCreds
             - pullSecret
             type: object
           status:

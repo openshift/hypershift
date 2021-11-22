@@ -86,7 +86,8 @@ type HostedClusterSpec struct {
 	// TODO(dan): consider moving this to .platform.aws.infraID
 	//
 	// +immutable
-	InfraID string `json:"infraID"`
+	// +optional
+	InfraID string `json:"infraID,omitempty"`
 
 	// Platform specifies the underlying infrastructure provider for the cluster
 	// and is used to configure platform specific behavior.

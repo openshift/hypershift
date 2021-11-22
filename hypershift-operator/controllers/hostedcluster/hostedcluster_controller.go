@@ -624,6 +624,10 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		_, err = r.CreateOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["credentials"]
 			if !srcHasData {
+				if len(src.Data["aws_access_key_id"]) > 0 && len(src.Data["aws_secret_access_key"]) > 0 {
+					srcData = []byte("[default]\naws_access_key_id = " + string(src.Data["aws_access_key_id"]) + "\naws_secret_access_key = " + string(src.Data["aws_secret_access_key"]) + "\n")
+				}
+			} else {
 				return fmt.Errorf("control plane operator provider credentials secret %q is missing credentials key", src.Name)
 			}
 			dest.Type = corev1.SecretTypeOpaque

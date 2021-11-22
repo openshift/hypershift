@@ -57,11 +57,6 @@ type ProviderPlatformSpec struct {
 	// InfraID is used to identify the cluster in cloud platforms
 	// +optional
 	InfraID string `json:"infraID,omitempty"`
-
-	// ProviderPlatformCreds is a reference to the AWS credentials needed to provision the
-	// Infrastructure and IAM
-	// +immutable
-	ProviderPlatformCreds corev1.LocalObjectReference `json:"providerPlatformCreds"`
 }
 
 type ProviderPlatformStatus struct {

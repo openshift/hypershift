@@ -113,7 +113,7 @@ func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	var providerSecret v1.Secret
 	var pullSecret v1.Secret
 
-	err = r.Client.Get(ctx, types.NamespacedName{Namespace: pp.Namespace, Name: pp.Spec.ProviderPlatformCreds.Name}, &providerSecret)
+	err = r.Client.Get(ctx, types.NamespacedName{Namespace: pp.Namespace, Name: pp.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name}, &providerSecret)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

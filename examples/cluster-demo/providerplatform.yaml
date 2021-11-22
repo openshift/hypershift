@@ -12,10 +12,10 @@ spec:
         name: aws
       nodePoolManagementCreds:
         name: aws
+      controlPlaneOperatorCreds:
+        name: aws
     type: AWS
-  providerPlatformCreds:
-    name: aws
   dns:
-    baseDomain: my-domain.io
+    baseDomain: dev06.red-chesterfield.com
   pullSecret:
     name: pull-secret
