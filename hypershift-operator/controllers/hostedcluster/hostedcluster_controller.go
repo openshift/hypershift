@@ -73,8 +73,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
-	capiv1alpha4 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiv1alpha4 "sigs.k8s.io/cluster-api/api/v1alpha4" // Need this dep atm to satisfy IBM provider dep.
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -96,17 +96,17 @@ const (
 	// Upstream canonical image is k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
 	imageClusterAutoscaler = "quay.io/openshift/origin-cluster-autoscaler:4.10.0"
 
+	// Image built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
+	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
+
 	// Image built from https://github.com/openshift/cluster-api/tree/release-1.0
 	// Upstream canonical image comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
 	// us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0
 	imageCAPI = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
 
-	// Image built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
-	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
-
 	// TODO (alberto): Eventually this image will be mirrored and pulled from an internal registry.
 	// This comes from https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
-	imageCAPA = "us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v0.7.0"
+	imageCAPA = "us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v1.1.0"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -1729,7 +1729,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								"--registry-overrides", convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides),
 							},
 							LivenessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
+								ProbeHandler: corev1.ProbeHandler{
 									TCPSocket: &corev1.TCPSocketAction{
 										Port: intstr.FromInt(9090),
 									},
@@ -1741,7 +1741,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								SuccessThreshold:    1,
 							},
 							ReadinessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
+								ProbeHandler: corev1.ProbeHandler{
 									TCPSocket: &corev1.TCPSocketAction{
 										Port: intstr.FromInt(9090),
 									},
@@ -2165,6 +2165,20 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 
 		if hcluster.Spec.Platform.AWS.CloudProviderConfig != nil {
 			awsCluster.Spec.NetworkSpec.VPC.ID = hcluster.Spec.Platform.AWS.CloudProviderConfig.VPC
+
+			// TODO: This https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2728
+			// broke our assumption in CAPA 0.7 for externally managed infrastructure.
+			// This effectively limit our ability to span NodePools across multiple subnets.
+			// In a follow up we need to either enable upstream back to support arbitrary subnets IDs
+			// in the awsMachine CR or possibly expose a slice of available subnets for NodePools in hcluster.Spec.Platform.AWS.
+			if hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet != nil &&
+				hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
+				awsCluster.Spec.NetworkSpec.Subnets = []capiawsv1.SubnetSpec{
+					{
+						ID: *hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID,
+					},
+				}
+			}
 		}
 
 		if len(hcluster.Spec.Platform.AWS.ResourceTags) > 0 {
@@ -2177,7 +2191,7 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 
 	// Set the values for upper level controller
 	awsCluster.Status.Ready = true
-	awsCluster.Spec.ControlPlaneEndpoint = capiv1alpha4.APIEndpoint{
+	awsCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
@@ -2528,7 +2542,7 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 							},
 						},
 						LivenessProbe: &corev1.Probe{
-							Handler: corev1.Handler{
+							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path: "/healthz",
 									Port: intstr.FromString("healthz"),
@@ -2536,7 +2550,7 @@ func reconcileCAPIAWSProviderDeployment(deployment *appsv1.Deployment, hc *hyper
 							},
 						},
 						ReadinessProbe: &corev1.Probe{
-							Handler: corev1.Handler{
+							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path: "/readyz",
 									Port: intstr.FromString("healthz"),

@@ -96,7 +96,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalco
 	}
 	p.LivenessProbes = config.LivenessProbes{
 		oauthContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(OAuthServerPort)),
@@ -112,7 +112,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalco
 	}
 	p.ReadinessProbes = config.ReadinessProbes{
 		oauthContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(OAuthServerPort)),

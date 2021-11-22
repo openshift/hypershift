@@ -20,7 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )

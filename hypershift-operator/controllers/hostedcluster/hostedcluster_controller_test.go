@@ -4,23 +4,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
-
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-
+	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
-
-	configv1 "github.com/openshift/api/config/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 )
 
 var Now = metav1.NewTime(time.Now())
