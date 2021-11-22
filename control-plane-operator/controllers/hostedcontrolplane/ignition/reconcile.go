@@ -14,9 +14,9 @@ import (
 	"k8s.io/utils/pointer"
 
 	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/openshift/hypershift/control-plane-operator/api"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 

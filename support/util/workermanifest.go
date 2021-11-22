@@ -9,7 +9,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
+	hyperapi "github.com/openshift/hypershift/support/api"
 )
 
 const (
