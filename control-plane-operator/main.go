@@ -13,8 +13,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -27,7 +25,6 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
@@ -106,14 +103,6 @@ func NewStartCommand() *cobra.Command {
 			LeaderElection:     enableLeaderElection,
 			LeaderElectionID:   "b2ed43cb.hypershift.openshift.io",
 			Namespace:          namespace,
-			// Use a non-caching client everywhere. The default split client does not
-			// promise to invalidate the cache during writes (nor does it promise
-			// sequential create/get coherence), and we have code which (probably
-			// incorrectly) assumes a get immediately following a create/update will
-			// return the updated resource. All client consumers will need audited to
-			// ensure they are tolerant of stale data (or we need a cache or client that
-			// makes stronger coherence guarantees).
-			NewClient: uncachedNewClient,
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
@@ -262,12 +251,4 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	return cmd
-}
-
-func uncachedNewClient(_ cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
-	c, err := client.New(config, options)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
 }
