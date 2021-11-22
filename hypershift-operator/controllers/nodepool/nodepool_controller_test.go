@@ -610,6 +610,58 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 				autoscalerMaxAnnotation: "5",
 			},
 		},
+		{
+			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
+				" and the MachineDeployment has 0 replicas",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 1,
+						Max: 5,
+					},
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: pointer.Int32Ptr(0),
+				},
+			},
+			expectReplicas: 1,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "1",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
+		{
+			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
+				" and the MachineDeployment has nil replicas",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 1,
+						Max: 5,
+					},
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: nil,
+				},
+			},
+			expectReplicas: 1,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "1",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
