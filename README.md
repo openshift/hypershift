@@ -45,7 +45,7 @@ hypershift install --render | oc delete -f -
 
 ## How to create a hosted cluster
 
-The `hypershift` CLI tool comes with commands to help create an example hosted cluster. The cluster will come with a node pool consisting of two workers nodes.
+The `hypershift` CLI tool comes with commands to help create an example hosted cluster. The cluster will be created with a default node pool with the number of workers specified by the `--node-pool-replicas` flag (defaults to 0).
 
 **Prerequisites:**
 
@@ -64,6 +64,7 @@ hypershift create cluster aws \
   --pull-secret /my/pull-secret \
   --aws-creds ~/.aws/credentials \
   --name example \
+  --node-pool-replicas=3 \
   --base-domain hypershift.example.com
 ```
 
