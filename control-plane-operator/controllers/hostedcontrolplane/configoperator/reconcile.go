@@ -79,6 +79,17 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 				"update",
 			},
 		},
+		{
+			APIGroups: []string{corev1.SchemeGroupVersion.Group},
+			Resources: []string{
+				"secrets",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
 	}
 	return nil
 }

@@ -633,11 +633,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 	}
 
-	r.Log.Info("Reconciling default ingress controller")
-	if err = r.reconcileDefaultIngressController(ctx, hostedControlPlane); err != nil {
-		return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
-	}
-
 	// Reconcile oauth server
 	r.Log.Info("Reconciling OAuth Server")
 	if err = r.reconcileOAuthServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OAuthHost, infraStatus.OAuthPort); err != nil {
@@ -1819,31 +1814,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile openshift oauth apiserver worker apiservice (%s): %w", apiSvcGroup, err)
 		}
-	}
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileDefaultIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	replicas := int32(2)
-	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.SingleReplica {
-		replicas = 1
-	}
-	ingressControllerManifest := manifests.IngressDefaultIngressControllerWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, ingressControllerManifest, func() error {
-		return ingress.ReconcileDefaultIngressControllerWorkerManifest(ingressControllerManifest, config.OwnerRefFrom(hcp), config.IngressSubdomain(hcp), hcp.Spec.Platform.Type, replicas)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile default ingress controller worker manifest: %w", err)
-	}
-
-	ingressServingCert := manifests.IngressCert(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(ingressServingCert), ingressServingCert); err != nil {
-		return fmt.Errorf("cannot get ingress serving cert: %w", err)
-	}
-	ingressControllerCertManifest := manifests.IngressDefaultIngressControllerCertWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, ingressControllerCertManifest, func() error {
-		return ingress.ReconcileDefaultIngressControllerCertWorkerManifest(ingressControllerCertManifest, config.OwnerRefFrom(hcp), ingressServingCert)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile default ingress controller cert worker manifest: %w", err)
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,9 +42,6 @@ func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.O
 }
 
 func TestReconcileErrorHandling(t *testing.T) {
-	fakeHCP := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"}}
-	fakeHCP.Status.ControlPlaneEndpoint.Host = "server"
-	fakeHCP.Status.ControlPlaneEndpoint.Port = 1234
 
 	// get initial number of creates with no get errors
 	var totalCreates int
@@ -57,7 +55,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
-			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP).Build(),
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP(), fakeIngressCert()).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 		}
@@ -79,7 +77,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
-			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP).Build(),
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP(), fakeIngressCert()).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 		}
@@ -94,4 +92,20 @@ type simpleCreateOrUpdater struct{}
 
 func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 	return controllerutil.CreateOrUpdate(ctx, c, obj, f)
+}
+
+func fakeHCP() *hyperv1.HostedControlPlane {
+	hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"}}
+	hcp.Status.ControlPlaneEndpoint.Host = "server"
+	hcp.Status.ControlPlaneEndpoint.Port = 1234
+	return hcp
+}
+
+func fakeIngressCert() *corev1.Secret {
+	s := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "ingress-crt", Namespace: "bar"}}
+	s.Data = map[string][]byte{
+		"tls.crt": []byte("12345"),
+		"tls.key": []byte("12345"),
+	}
+	return s
 }
