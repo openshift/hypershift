@@ -21,10 +21,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"net"
 	"strings"
 	"time"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
@@ -125,8 +126,8 @@ type HostedClusterReconciler struct {
 	// Log is a thread-safe logger.
 	Log logr.Logger
 
-	// ManagementClusterMode is used to configure Security Context for containers
-	ManagementClusterMode string
+	// SetSecurityContext is used to configure Security Context for containers
+	SetSecurityContext bool `default:false`
 
 	// Clock is used to determine the time in a testable way.
 	Clock clock.Clock
@@ -143,6 +144,7 @@ type HostedClusterReconciler struct {
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters/status,verbs=get;update;patch
 
+// SetupWithManager creates a hostedcluster controller
 func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Clock == nil {
 		r.Clock = clock.RealClock{}
@@ -164,8 +166,14 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
 
+	// checking for routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		builder.Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
+	}
+
+	// checking for scc capability
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint) {
+		r.SetSecurityContext = true
 	}
 
 	return builder.Complete(r)
@@ -1179,7 +1187,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, hclu
 	_, err = r.CreateOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, capiManagerServiceAccount, capiImage, r.ManagementClusterMode == "base-kube")
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, capiManagerServiceAccount, capiImage, r.SetSecurityContext)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -1227,7 +1235,7 @@ func (r *HostedClusterReconciler) reconcileCAPIAWSProvider(ctx context.Context, 
 	_, err = r.CreateOrUpdate(ctx, r.Client, capiAwsProviderDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2453
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, hcluster, capiAwsProviderServiceAccount, r.ManagementClusterMode == "base-kube")
+		return reconcileCAPIAWSProviderDeployment(capiAwsProviderDeployment, hcluster, capiAwsProviderServiceAccount, r.SetSecurityContext)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi aws provider deployment: %w", err)
@@ -1304,12 +1312,11 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = r.CreateOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
 		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment,
-														hcluster,
-														controlPlaneOperatorImage,
-														controlPlaneOperatorServiceAccount,
-														r.EnableCIDebugOutput,
-														convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides),
-														r.ManagementClusterMode)
+			hcluster,
+			controlPlaneOperatorImage,
+			controlPlaneOperatorServiceAccount,
+			r.EnableCIDebugOutput,
+			convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1656,7 +1663,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
 								"--registry-overrides", convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides),
-								"--management-cluster-mode", r.ManagementClusterMode,
 							},
 							LivenessProbe: &corev1.Probe{
 								Handler: corev1.Handler{
@@ -1705,7 +1711,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, h
 				},
 			},
 		}
-		if r.ManagementClusterMode == "base-kube" {
+		if r.SetSecurityContext {
 			ignitionServerDeployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
 				RunAsUser: k8sutilspointer.Int64Ptr(10001),
 			}
@@ -1795,7 +1801,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, hclus
 		}
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = r.CreateOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.AvailabilityProberImage, r.ManagementClusterMode == "base-kube")
+			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.AvailabilityProberImage, r.SetSecurityContext)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -1826,7 +1832,7 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	}
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string, managementClusterMode string) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
@@ -1864,7 +1870,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							RunAsUser: k8sutilspointer.Int64Ptr(1000),
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
-						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator", "--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput), fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine), fmt.Sprintf("--management-cluster-mode=%s", managementClusterMode)},
+						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator", "--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput), fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine)},
 						Ports:   []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
 					},
 				},
@@ -3013,7 +3019,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		}
 		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
 		if _, err := r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.AvailabilityProberImage, r.ManagementClusterMode == "base-kube")
+			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.AvailabilityProberImage, r.SetSecurityContext)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}
