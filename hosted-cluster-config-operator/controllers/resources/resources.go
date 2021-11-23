@@ -266,6 +266,13 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
 	}
 
+	icsp := globalconfig.ImageContentSourcePolicy()
+	if _, err := r.CreateOrUpdate(ctx, r.client, icsp, func() error {
+		return globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile image content source policy: %w", err))
+	}
+
 	installConfigCM := manifests.InstallConfigConfigMap()
 	if _, err := r.CreateOrUpdate(ctx, r.client, installConfigCM, func() error {
 		installConfigCM.Data = map[string]string{

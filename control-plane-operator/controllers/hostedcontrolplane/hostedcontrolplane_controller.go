@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/hypershift/support/capabilities"
 
 	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
@@ -28,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
-	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -657,14 +655,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
 
-	// Reconcile Image Content Source Policy
-	if hostedControlPlane.Spec.ImageContentSources != nil {
-		r.Log.Info("Reconciling Image Content Source Policy")
-		if err = r.reconcileImageContentSourcePolicy(ctx, hostedControlPlane); err != nil {
-			return fmt.Errorf("failed to reconcile image content source policy: %w", err)
-		}
-	}
-
 	// Reconcile private IngressController
 	if cpoutil.IsPrivateHCP(hostedControlPlane) {
 		r.Log.Info("Reconciling private IngressController")
@@ -686,8 +676,8 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile Ignition
-	r.Log.Info("Reconciling Ignition")
-	if err = r.reconcileIgnition(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort); err != nil {
+	r.Log.Info("Reconciling core machine configs")
+	if err = r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort); err != nil {
 		return fmt.Errorf("failed to reconcile ignition: %w", err)
 	}
 
@@ -2220,7 +2210,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
+func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
 	sshKey := ""
 	if len(hcp.Spec.SSHKey.Name) > 0 {
 		var sshKeySecret corev1.Secret
@@ -2235,7 +2225,7 @@ func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hc
 		sshKey = string(data)
 	}
 
-	p := ignition.NewIgnitionParams(hcp, releaseImage.ComponentImages(), apiServerAddress, apiServerPort, sshKey)
+	p := ignition.NewIgnitionConfigParams(hcp, releaseImage.ComponentImages(), apiServerAddress, apiServerPort, sshKey)
 
 	fipsConfig := manifests.IgnitionFIPSConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, fipsConfig, func() error {
@@ -2262,6 +2252,33 @@ func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hc
 			p.APIServerInternalPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server ha proxy ignition config: %w", err)
+	}
+
+	imageContentSourceIgnitionConfig := manifests.ImageContentSourcePolicyIgnitionConfig(hcp.GetNamespace())
+	if !p.HasImageContentSourcePolicy {
+		// ensure the icsp configmap has been removed if no longer needed
+		err := r.Get(ctx, client.ObjectKeyFromObject(imageContentSourceIgnitionConfig), imageContentSourceIgnitionConfig)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to check whether image content source policy configuration configmap exists: %w", err)
+			}
+		} else {
+			if err := r.Delete(ctx, imageContentSourceIgnitionConfig); err != nil {
+				return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
+			}
+		}
+		return nil
+	}
+
+	icsp := globalconfig.ImageContentSourcePolicy()
+	if err := globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp); err != nil {
+		return fmt.Errorf("failed to reconcile image content source policy: %w", err)
+	}
+
+	if _, err := r.CreateOrUpdate(ctx, r, imageContentSourceIgnitionConfig, func() error {
+		return ignition.ReconcileImageContentSourcePolicyIgnitionConfig(imageContentSourceIgnitionConfig, p.OwnerRef, icsp)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
 	}
 
 	return nil
@@ -2378,56 +2395,6 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx con
 	if err != nil {
 		return err
 	}
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileImageContentSourcePolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	imageContentSource := manifests.ImageContentSourcePolicy()
-	imageContentSource.Labels = map[string]string{
-		"machineconfiguration.openshift.io/role": "worker",
-	}
-	imageContentSource.Spec.RepositoryDigestMirrors = []v1alpha1.RepositoryDigestMirrors{}
-	for _, imageContentSourceEntry := range hcp.Spec.ImageContentSources {
-		imageContentSource.Spec.RepositoryDigestMirrors = append(imageContentSource.Spec.RepositoryDigestMirrors, v1alpha1.RepositoryDigestMirrors{
-			Source:  imageContentSourceEntry.Source,
-			Mirrors: imageContentSourceEntry.Mirrors,
-		})
-	}
-	r.Log.Info("Updating ImageContentSource Ignition Config")
-	scheme := runtime.NewScheme()
-	v1alpha1.Install(scheme)
-	yamlSerializer := jsonserializer.NewSerializerWithOptions(
-		jsonserializer.DefaultMetaFactory, scheme, scheme,
-		jsonserializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true})
-	imageContentSourceBytesBuffer := bytes.NewBuffer([]byte{})
-	err := yamlSerializer.Encode(imageContentSource, imageContentSourceBytesBuffer)
-	if err != nil {
-		return err
-	}
-	imageContentSourceIgnitionConfig := manifests.ImageContentSourcePolicyIgnitionConfig(hcp.GetNamespace())
-	_, err = r.CreateOrUpdate(ctx, r.Client, imageContentSourceIgnitionConfig, func() error {
-		return reconcileImageContentSourceIgnitionConfig(imageContentSourceIgnitionConfig, imageContentSourceBytesBuffer.Bytes())
-	})
-	if err != nil {
-		return err
-	}
-	r.Log.Info("Updating ImageContentSource CRD user manifest")
-	imageContentSourceWorkerManifest := manifests.ImageContentSourcePolicyUserManifest(hcp.GetNamespace())
-	_, err = r.CreateOrUpdate(ctx, r.Client, imageContentSourceWorkerManifest, func() error {
-		return cpoutil.ReconcileWorkerManifest(imageContentSourceWorkerManifest, imageContentSource)
-	})
-	return err
-}
-
-func reconcileImageContentSourceIgnitionConfig(ignitionConfig *corev1.ConfigMap, serializedImageContentSourcePolicy []byte) error {
-	if ignitionConfig.Data == nil {
-		ignitionConfig.Data = map[string]string{}
-	}
-	ignitionConfig.Data[manifests.IgnitionConfigKey] = string(serializedImageContentSourcePolicy)
-	if ignitionConfig.Labels == nil {
-		ignitionConfig.Labels = map[string]string{}
-	}
-	ignitionConfig.Labels[manifests.CoreIgnitionFieldLabelKey] = manifests.CoreIgnitionFieldLabelValue
 	return nil
 }
 
