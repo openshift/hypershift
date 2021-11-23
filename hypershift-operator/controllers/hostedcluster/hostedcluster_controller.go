@@ -104,9 +104,10 @@ const (
 	// us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0
 	imageCAPI = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
 
-	// TODO (alberto): Eventually this image will be mirrored and pulled from an internal registry.
-	// This comes from https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
-	imageCAPA = "us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v1.1.0"
+	// Image built from https://github.com/openshift/cluster-api-provider-aws/tree/release-1.1
+	// Upstream canonical image comes from  https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
+	// us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v1.1.0
+	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
