@@ -55,7 +55,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		kcmContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(params.Port)),
@@ -71,7 +71,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
 		kcmContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(params.Port)),

@@ -111,7 +111,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		PriorityClass: config.APICriticalPriorityClass,
 	}
 	baseLivenessProbeConfig := corev1.Probe{
-		Handler: corev1.Handler{
+		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Scheme: corev1.URISchemeHTTPS,
 				Port:   intstr.FromInt(int(params.APIServerPort)),
@@ -154,7 +154,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.LivenessProbes = config.LivenessProbes{
 		kasContainerMain().Name: baseLivenessProbeConfig,
 		kasContainerIBMCloudKMS().Name: corev1.Probe{
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(ibmCloudKMSHealthPort)),
@@ -168,7 +168,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			SuccessThreshold:    1,
 		},
 		kasContainerAWSKMSBackup().Name: corev1.Probe{
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(backupAWSKMSHealthPort),
@@ -182,7 +182,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			SuccessThreshold:    1,
 		},
 		kasContainerAWSKMSActive().Name: corev1.Probe{
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(activeAWSKMSHealthPort),
@@ -196,7 +196,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			SuccessThreshold:    1,
 		},
 		kasContainerPortieries().Name: corev1.Probe{
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(portierisPort),
@@ -212,7 +212,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
 		kasContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(params.APIServerPort)),

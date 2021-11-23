@@ -35,7 +35,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.ServerDeploymentConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityServerContainer().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),
@@ -74,7 +74,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	p.AgentDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.AgentDeploymentConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityAgentContainer().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),
@@ -110,7 +110,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.AgentDeamonSetConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityAgentContainer().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),

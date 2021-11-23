@@ -8,7 +8,7 @@ The `hypershift` CLI tool helps you install and work with HyperShift.
 
 **Prerequisites:**
 
-* Go 1.16
+* Go 1.17
 
 Install the `hypershift` CLI using Go:
 

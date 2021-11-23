@@ -15,7 +15,7 @@ you should adjust to your own environment.
 
 ## Prerequisites
 
-* Go 1.16+
+* Go 1.17+
 * Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`)
 * An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)

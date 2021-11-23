@@ -201,7 +201,7 @@ func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort 
 					InitialDelaySeconds: 120,
 					PeriodSeconds:       120,
 					SuccessThreshold:    1,
-					Handler: corev1.Handler{
+					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/version",
 							Scheme: corev1.URISchemeHTTPS,

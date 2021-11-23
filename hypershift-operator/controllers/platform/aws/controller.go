@@ -59,7 +59,10 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 }
 
 func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logr.FromContext(ctx)
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("no logger found: %w", err)
+	}
 	log.Info("reconciling")
 
 	// Fetch the AWSEndpointService
@@ -69,8 +72,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Namespace: req.Namespace,
 		},
 	}
-	err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-	if err != nil {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -142,7 +144,10 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, elbv2Client elbv2iface.ELBV2API) error {
-	log := logr.FromContext(ctx)
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("no logger found: %w", err)
+	}
 
 	serviceName := awsEndpointService.Status.EndpointServiceName
 	if len(serviceName) != 0 {
@@ -241,7 +246,10 @@ func findExistingVpcEndpointService(ctx context.Context, ec2Client ec2iface.EC2A
 }
 
 func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService) (bool, error) {
-	log := logr.FromContext(ctx)
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return false, fmt.Errorf("no logger found: %w", err)
+	}
 
 	serviceName := awsEndpointService.Status.EndpointServiceName
 	if len(serviceName) == 0 {
