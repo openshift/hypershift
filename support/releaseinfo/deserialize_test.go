@@ -7,13 +7,17 @@ import (
 )
 
 func TestDeserializeImageStream(t *testing.T) {
-	if _, err := DeserializeImageStream(fixtures.ImageReferencesJSON_4_8); err != nil {
-		t.Fatal(err)
+	for _, imageStream := range [][]byte{fixtures.ImageReferencesJSON_4_8, fixtures.ImageReferencesJSON_4_10} {
+		if _, err := DeserializeImageStream(imageStream); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
 func TestDeserializeImageMetadata(t *testing.T) {
-	if _, err := DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_4_8); err != nil {
-		t.Fatal(err)
+	for _, imageMetadata := range [][]byte{fixtures.CoreOSBootImagesYAML_4_8, fixtures.CoreOSBootImagesYAML_4_10} {
+		if _, err := DeserializeImageMetadata(imageMetadata); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
