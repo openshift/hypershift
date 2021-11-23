@@ -194,15 +194,6 @@ func KonnectivityAgentSecret(ns string) *corev1.Secret {
 	}
 }
 
-func KonnectivityWorkerAgentSecret(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-manifest-konnectivity-agent-secret",
-			Namespace: ns,
-		},
-	}
-}
-
 func IngressCert(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

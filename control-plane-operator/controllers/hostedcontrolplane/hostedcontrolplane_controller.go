@@ -1267,14 +1267,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
 	}
 
-	// Konnectivity Worker Agent Cert
-	konnectivityWorkerAgentSecret := manifests.KonnectivityWorkerAgentSecret(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, konnectivityWorkerAgentSecret, func() error {
-		return pki.ReconcileKonnectivityWorkerAgentSecret(konnectivityWorkerAgentSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity worker agent cert: %w", err)
-	}
-
 	// Ingress Cert
 	ingressCert := manifests.IngressCert(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, ingressCert, func() error {
@@ -1448,12 +1440,6 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage, ips)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity agent deployment: %w", err)
-	}
-	agentDaemonSet := manifests.KonnectivityWorkerAgentDaemonSet(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, agentDaemonSet, func() error {
-		return konnectivity.ReconcileWorkerAgentDaemonSet(agentDaemonSet, p.OwnerRef, p.AgentDeamonSetConfig, p.KonnectivityAgentImage, p.ExternalAddress, p.ExternalPort)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity agent daemonset: %w", err)
 	}
 	return nil
 }
@@ -2428,7 +2414,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}
