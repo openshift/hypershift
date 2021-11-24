@@ -58,7 +58,7 @@ const (
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=ProviderPlatform/status,verbs=get;update;patch
 
 func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.Log = logr.FromContext(ctx).WithValues("ProviderPlatform", req.NamespacedName)
+	r.Log, _ = logr.FromContext(ctx)
 	log := r.Log
 
 	// your logic here

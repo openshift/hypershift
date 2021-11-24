@@ -29,11 +29,11 @@ spec:
       jsonPath: .status.replicas
       name: Replicas
       type: integer
-    name: v1alpha4
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: AWSManagedMachinePool is the Schema for the awsmanagedmachinepools
-          API
+          API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -48,7 +48,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: AWSManagedMachinePoolSpec defines the desired state of AWSManagedMachinePool
+            description: AWSManagedMachinePoolSpec defines the desired state of AWSManagedMachinePool.
             properties:
               additionalTags:
                 additionalProperties:
@@ -77,6 +77,14 @@ spec:
                 items:
                   type: string
                 type: array
+              capacityType:
+                default: onDemand
+                description: CapacityType specifies the capacity type for the ASG
+                  behind this pool
+                enum:
+                - onDemand
+                - spot
+                type: string
               diskSize:
                 description: DiskSize specifies the root disk size
                 format: int32
@@ -121,6 +129,13 @@ spec:
                       plane is used.
                     type: string
                 type: object
+              roleAdditionalPolicies:
+                description: RoleAdditionalPolicies allows you to attach additional
+                  polices to the node group role. You must enable the EKSAllowAddRoles
+                  feature flag to incorporate these into the created role.
+                items:
+                  type: string
+                type: array
               roleName:
                 description: RoleName specifies the name of IAM role for the node
                   group. If the role is pre-existing we will treat it as unmanaged
@@ -171,7 +186,7 @@ spec:
             type: object
           status:
             description: AWSManagedMachinePoolStatus defines the observed state of
-              AWSManagedMachinePool
+              AWSManagedMachinePool.
             properties:
               conditions:
                 description: Conditions defines current service state of the managed
@@ -214,6 +229,7 @@ spec:
                         important.
                       type: string
                   required:
+                  - lastTransitionTime
                   - status
                   - type
                   type: object

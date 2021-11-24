@@ -8,7 +8,7 @@ The `hypershift` CLI tool helps you install and work with HyperShift.
 
 **Prerequisites:**
 
-* Go 1.16
+* Go 1.17
 
 Install the `hypershift` CLI using Go:
 
@@ -45,7 +45,8 @@ hypershift install --render | oc delete -f -
 
 ## How to create a hosted cluster
 ### hypershift cli
-The `hypershift` CLI tool comes with commands to help create an example hosted cluster. The cluster will come with a node pool consisting of two workers nodes.
+
+The `hypershift` CLI tool comes with commands to help create an example hosted cluster. The cluster will be created with a default node pool with the number of workers specified by the `--node-pool-replicas` flag (defaults to 0).
 
 **Prerequisites:**
 
@@ -64,6 +65,7 @@ hypershift create cluster aws \
   --pull-secret /my/pull-secret \
   --aws-creds ~/.aws/credentials \
   --name example \
+  --node-pool-replicas=3 \
   --base-domain hypershift.example.com
 ```
 
@@ -126,11 +128,15 @@ hypershift destroy cluster aws \
     hypershift install
     ```
 3. Run the Hypershift operator from the command line
-    ```bash
+    ```shell
     # Find the `operator` deployment in the hypershift namespace, set replicas to 0
     # Then run the following command to have the operator run locally through your connection
 
-    go run ./hypershift-operator run --oidc-storage-provider-s3-bucket-name=my-s3-bucket --oidc-storage-provider-s3-region=us-east-1 --namespace=hypershift --oidc-storage-provider-s3-credentials=$HOME/.aws/credentials
+    go run ./hypershift-operator run \
+      --oidc-storage-provider-s3-bucket-name=my-s3-bucket \
+      --oidc-storage-provider-s3-region=us-east-1 \
+      --namespace=hypershift \
+      --oidc-storage-provider-s3-credentials=$HOME/.aws/credentials
 
     # Substitute in your s3 bucket name, AWS region and AWS credential values
     ```

@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/api"
+	"github.com/openshift/hypershift/support/api"
 )
 
 //go:embed assets/*

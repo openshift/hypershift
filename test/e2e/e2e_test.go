@@ -22,14 +22,12 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/version"
-
-	"github.com/bombsimon/logrusr"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
@@ -41,7 +39,7 @@ var (
 	// be cancelled if a SIGINT or SIGTERM is received. It's set up in TestMain.
 	testContext context.Context
 
-	log = logrusr.NewLogger(logrus.New())
+	log = zap.New(zap.UseDevMode(true), zap.JSONEncoder())
 )
 
 func init() {

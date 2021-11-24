@@ -177,7 +177,11 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 }
 
 func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logr.FromContext(ctx)
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("logger not found: %w", err)
+	}
+
 	log.Info("reconciling")
 
 	// Fetch the AWSEndpointService
@@ -273,7 +277,11 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, hcp hyperv1.HostedControlPlane) error {
-	log := logr.FromContext(ctx)
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("logger not found: %w", err)
+	}
+
 	serviceName := awsEndpointService.Status.EndpointServiceName
 
 	endpointID := awsEndpointService.Status.EndpointID
@@ -319,7 +327,10 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 }
 
 func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API) (bool, error) {
-	log := logr.FromContext(ctx)
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return false, fmt.Errorf("logger not found: %w", err)
+	}
 
 	endpointID := awsEndpointService.Status.EndpointID
 	if endpointID == "" {
