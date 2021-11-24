@@ -43,6 +43,7 @@ import (
 // ProviderPlatformReconciler reconciles a ProviderPlatform object
 type ProviderPlatformReconciler struct {
 	client.Client
+	Log logr.Logger
 }
 
 const (
@@ -57,7 +58,8 @@ const (
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=ProviderPlatform/status,verbs=get;update;patch
 
 func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logr.FromContext(ctx).WithValues("ProviderPlatform", req.NamespacedName)
+	r.Log = logr.FromContext(ctx).WithValues("ProviderPlatform", req.NamespacedName)
+	log := r.Log
 
 	// your logic here
 	var pp hypv1alpha1.ProviderPlatform
@@ -66,15 +68,6 @@ func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if err != nil {
 		log.Info("ProviderPlatform resource has been deleted " + req.NamespacedName.Name)
 		return ctrl.Result{}, nil
-	}
-
-	condition := metav1.Condition{
-		Type:               string(hyperv1.CloudProviderConfigured),
-		ObservedGeneration: pp.Generation,
-	}
-	iamCondition := metav1.Condition{
-		Type:               string(hyperv1.CloudProviderIAMConfigured),
-		ObservedGeneration: pp.Generation,
 	}
 
 	if pp.Spec.InfraID == "" {
@@ -90,17 +83,8 @@ func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 
 		//Update the status.conditions
-		condition.Status = metav1.ConditionFalse
-		iamCondition.Status = metav1.ConditionFalse
-		condition.Message = "Configuring platform with infra-id: " + pp.Spec.InfraID
-		iamCondition.Message = "Configuring platform IAM with infra-id: " + pp.Spec.InfraID
-		condition.Reason = hyperv1.CloudProviderConfiguredAsExpected
-		iamCondition.Reason = hyperv1.CloudProviderIAMConfiguredAsExpected
-		if pp.Status.Conditions == nil {
-			pp.Status.Conditions = []metav1.Condition{}
-		}
-		meta.SetStatusCondition(&pp.Status.Conditions, condition)
-		meta.SetStatusCondition(&pp.Status.Conditions, iamCondition)
+		setStatusCondition(&pp, hyperv1.CloudProviderConfigured, metav1.ConditionFalse, "Configuring platform with infra-id: "+pp.Spec.InfraID, hyperv1.CloudProviderConfiguredAsExpected)
+		setStatusCondition(&pp, hyperv1.CloudProviderIAMConfigured, metav1.ConditionFalse, "Configuring platform IAM with infra-id: "+pp.Spec.InfraID, hyperv1.CloudProviderIAMConfiguredAsExpected)
 
 		if err := r.Client.Status().Update(ctx, &pp); err != nil {
 			if apierrors.IsConflict(err) {
@@ -125,64 +109,7 @@ func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Destroying Platform infrastructure used by the ProviderPlatform scheduled for deletion
 	if pp.DeletionTimestamp != nil {
-		dOpts := awsinfra.DestroyInfraOptions{
-			AWSCredentialsFile: "",
-			AWSKey:             string(providerSecret.Data["aws_access_key_id"]),
-			AWSSecretKey:       string(providerSecret.Data["aws_secret_access_key"]),
-			Region:             pp.Spec.Platform.AWS.Region,
-			BaseDomain:         pp.Spec.DNS.BaseDomain,
-			InfraID:            pp.Spec.InfraID,
-		}
-
-		condition.Status = metav1.ConditionFalse
-		condition.Message = "Destroying ProviderPlatform with infra-id: " + pp.Spec.InfraID
-		condition.Reason = hyperv1.CloudProviderConfiguredAsExpected
-		meta.SetStatusCondition(&pp.Status.Conditions, condition)
-
-		iamCondition.Status = metav1.ConditionFalse
-		iamCondition.Message = "Removing ProviderPlatform IAM with infra-id: " + pp.Spec.InfraID
-		iamCondition.Reason = hyperv1.CloudProviderIAMConfiguredAsExpected
-		meta.SetStatusCondition(&pp.Status.Conditions, iamCondition)
-
-		if err := r.Client.Status().Update(ctx, &pp); err != nil {
-			if apierrors.IsConflict(err) {
-				return ctrl.Result{Requeue: true}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-		}
-
-		if err = dOpts.DestroyInfra(ctx); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to destroy ProviderPlatform: %w", err)
-		}
-
-		iamOpt := awsinfra.DestroyIAMOptions{
-			Region:       pp.Spec.Platform.AWS.Region,
-			AWSKey:       dOpts.AWSKey,
-			AWSSecretKey: dOpts.AWSSecretKey,
-			InfraID:      dOpts.InfraID,
-		}
-
-		if err := iamOpt.DestroyIAM(ctx); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete IAM ProviderPlatform: %w", err)
-		}
-
-		if err := destroyOIDCSecrets(r, &pp); err != nil {
-			log.Error(err, "Encountered an issue while deleting secrets")
-		}
-
-		if err = r.Client.Get(ctx, req.NamespacedName, &pp); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update ProviderPlatform values when removing finalizer: %w", err)
-		}
-
-		controllerutil.RemoveFinalizer(&pp, destroyFinalizer)
-
-		if err := r.Client.Update(ctx, &pp); err != nil {
-			if apierrors.IsConflict(err) {
-				return ctrl.Result{Requeue: true}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer, update status: %w", err)
-		}
-		return ctrl.Result{}, nil
+		return r.deleteProviderPlatform(ctx, &pp, &providerSecret)
 	}
 
 	origPp := pp.DeepCopy()
@@ -202,14 +129,16 @@ func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		result, err := o.CreateInfra(ctx)
 		if err != nil {
 			log.Error(err, "Could not create infrastructure")
-			condition.Status = metav1.ConditionFalse
-			condition.Message = err.Error()
-			condition.Reason = hyperv1.CloudProviderMisConfiguredReason
 
-			updateStatusConditions(r, pp.DeepCopy(), condition)
-			return ctrl.Result{RequeueAfter: 1 * time.Minute, Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: 1 * time.Minute, Requeue: true},
+				r.updateStatusConditionsOnChange(
+					&pp, hyperv1.CloudProviderIAMConfigured,
+					metav1.ConditionFalse,
+					err.Error(),
+					hyperv1.CloudProviderMisConfiguredReason)
 		}
 
+		// todo, create more paramaters to cover all resources created by CreateInfra
 		pp.Spec.DNS.PrivateZoneID = result.PrivateZoneID
 		pp.Spec.DNS.PublicZoneID = result.PublicZoneID
 		pp.Spec.Networking.MachineCIDR = result.ComputeCIDR
@@ -225,10 +154,7 @@ func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		pp.Spec.SecurityGroups = []hypv1alpha1.AWSResourceReference{
 			hypv1alpha1.AWSResourceReference{ID: &result.SecurityGroupID},
 		}
-		condition.Status = metav1.ConditionTrue
-		condition.Message = ""
-		condition.Reason = hyperv1.CloudProviderConfiguredAsExpected
-		meta.SetStatusCondition(&pp.Status.Conditions, condition)
+		setStatusCondition(&pp, hyperv1.CloudProviderConfigured, metav1.ConditionTrue, "", hyperv1.CloudProviderConfiguredAsExpected)
 	}
 
 	if !meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderIAMConfigured)) {
@@ -248,23 +174,17 @@ func (r *ProviderPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			var iamInfo *awsinfra.CreateIAMOutput
 			iamInfo, iamErr = iamOpt.CreateIAM(ctx, r.Client)
 			if iamErr == nil {
+				// todo, create more paramaters to cover all resources created by CreateIAM
 				pp.Spec.Platform.AWS.Roles = iamInfo.Roles
 				pp.Spec.IssuerURL = iamInfo.IssuerURL
 				if iamErr = createOIDCSecrets(r, &pp, iamInfo); iamErr == nil {
-					iamCondition.Status = metav1.ConditionTrue
-					iamCondition.Message = ""
-					iamCondition.Reason = hyperv1.CloudProviderIAMConfiguredAsExpected
+					setStatusCondition(&pp, hyperv1.CloudProviderIAMConfigured, metav1.ConditionTrue, "", hyperv1.CloudProviderIAMConfiguredAsExpected)
 				}
 			}
 		}
 		if iamErr != nil {
-			iamCondition.Status = metav1.ConditionFalse
-			iamCondition.Message = iamErr.Error()
-			iamCondition.Reason = hyperv1.CloudProviderIAMMisConfiguredReason
-			updateStatusConditions(r, pp.DeepCopy(), iamCondition)
+			r.updateStatusConditionsOnChange(&pp, hyperv1.CloudProviderIAMConfigured, metav1.ConditionFalse, iamErr.Error(), hyperv1.CloudProviderIAMMisConfiguredReason)
 		}
-		// Include the condition
-		meta.SetStatusCondition(&pp.Status.Conditions, iamCondition)
 	}
 
 	if !reflect.DeepEqual(origPp.Spec, pp.Spec) {
@@ -359,11 +279,82 @@ func destroyOIDCSecrets(r *ProviderPlatformReconciler, pp *hypv1alpha1.ProviderP
 
 }
 
-func updateStatusConditions(r *ProviderPlatformReconciler, pp *hypv1alpha1.ProviderPlatform, condition metav1.Condition) error {
-	cc := meta.FindStatusCondition(pp.Status.Conditions, condition.Type)
-	if cc == nil || cc.ObservedGeneration != condition.ObservedGeneration || cc.Status != condition.Status {
-		meta.SetStatusCondition(&pp.Status.Conditions, condition)
-		return r.Client.Status().Update(context.Background(), pp)
+func setStatusCondition(pp *hypv1alpha1.ProviderPlatform, conditionType hyperv1.ConditionType, status metav1.ConditionStatus, message string, reason string) metav1.Condition {
+	if pp.Status.Conditions == nil {
+		pp.Status.Conditions = []metav1.Condition{}
+	}
+	condition := metav1.Condition{
+		Type:               string(conditionType),
+		ObservedGeneration: pp.Generation,
+		Status:             status,
+		Message:            message,
+		Reason:             reason,
+	}
+	meta.SetStatusCondition(&pp.Status.Conditions, condition)
+	return condition
+}
+
+func (r *ProviderPlatformReconciler) updateStatusConditionsOnChange(pp *hypv1alpha1.ProviderPlatform, conditionType hyperv1.ConditionType, conditionStatus metav1.ConditionStatus, message string, reason string) error {
+	cc := meta.FindStatusCondition(pp.Status.Conditions, string(conditionType))
+	if cc == nil || cc.ObservedGeneration != pp.Generation || cc.Status != conditionStatus {
+		setStatusCondition(pp, conditionType, conditionStatus, message, reason)
+		return r.Client.Status().Update(context.Background(), pp.DeepCopy())
 	}
 	return nil
+}
+
+func (r *ProviderPlatformReconciler) deleteProviderPlatform(ctx context.Context, pp *hypv1alpha1.ProviderPlatform, providerSecret *corev1.Secret) (ctrl.Result, error) {
+	log := r.Log
+
+	dOpts := awsinfra.DestroyInfraOptions{
+		AWSCredentialsFile: "",
+		AWSKey:             string(providerSecret.Data["aws_access_key_id"]),
+		AWSSecretKey:       string(providerSecret.Data["aws_secret_access_key"]),
+		Region:             pp.Spec.Platform.AWS.Region,
+		BaseDomain:         pp.Spec.DNS.BaseDomain,
+		InfraID:            pp.Spec.InfraID,
+	}
+
+	setStatusCondition(pp, hyperv1.CloudProviderConfigured, metav1.ConditionFalse, "Destroying ProviderPlatform with infra-id: "+pp.Spec.InfraID, hyperv1.CloudProviderConfiguredAsExpected)
+	setStatusCondition(pp, hyperv1.CloudProviderIAMConfigured, metav1.ConditionFalse, "Removing ProviderPlatform IAM with infra-id: "+pp.Spec.InfraID, hyperv1.CloudProviderIAMConfiguredAsExpected)
+
+	if err := r.Client.Status().Update(ctx, pp); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+
+	if err := dOpts.DestroyInfra(ctx); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to destroy ProviderPlatform: %w", err)
+	}
+
+	iamOpt := awsinfra.DestroyIAMOptions{
+		Region:       pp.Spec.Platform.AWS.Region,
+		AWSKey:       dOpts.AWSKey,
+		AWSSecretKey: dOpts.AWSSecretKey,
+		InfraID:      dOpts.InfraID,
+	}
+
+	if err := iamOpt.DestroyIAM(ctx); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to delete IAM ProviderPlatform: %w", err)
+	}
+
+	if err := destroyOIDCSecrets(r, pp); err != nil {
+		log.Error(err, "Encountered an issue while deleting secrets")
+	}
+
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: pp.Namespace, Name: pp.Name}, pp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update ProviderPlatform values when removing finalizer: %w", err)
+	}
+
+	controllerutil.RemoveFinalizer(pp, destroyFinalizer)
+
+	if err := r.Client.Update(ctx, pp); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer, update status: %w", err)
+	}
+	return ctrl.Result{}, nil
 }

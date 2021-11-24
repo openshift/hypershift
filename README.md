@@ -130,9 +130,9 @@ hypershift destroy cluster aws \
     # Find the `operator` deployment in the hypershift namespace, set replicas to 0
     # Then run the following command to have the operator run locally through your connection
 
-    go run hypershift-operator run --oidc-storage-provider-s3-bucket-name=my-s3-bucket --oidc-storage-provider-s3-region=us-east-1 --namespace=hypershift --oidc-storage-provider-s3-credentials=$HOME/.aws/credentials  --namespace=hypershift
+    go run ./hypershift-operator run --oidc-storage-provider-s3-bucket-name=my-s3-bucket --oidc-storage-provider-s3-region=us-east-1 --namespace=hypershift --oidc-storage-provider-s3-credentials=$HOME/.aws/credentials
 
-    # WHere you sub in your s3 bucket name, AWS region and AWS credential values
+    # Substitute in your s3 bucket name, AWS region and AWS credential values
     ```
 4. Create the namespace `clusters`
     ```bash
