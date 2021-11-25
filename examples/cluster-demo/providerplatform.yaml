@@ -1,6 +1,6 @@
 ---
 apiVersion: hypershift.openshift.io/v1alpha1
-kind: ProviderPlatform
+kind: PlatformConfiguration
 metadata:
   name: my-demo
   namespace: clusters

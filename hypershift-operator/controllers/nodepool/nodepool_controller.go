@@ -182,13 +182,13 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Transfer configuration from ProviderPlatform
 	if hcluster.Spec.ProviderPlatformRef != nil {
-		pp := &hyperv1.ProviderPlatform{}
+		pp := &hyperv1.PlatformConfiguration{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: nodePool.Namespace, Name: hcluster.Spec.ProviderPlatformRef.Name}, pp); err != nil {
 			log.Error(err, "Did not find a ProviderPlatform resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
 			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 		} else {
-			if meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderConfigured)) &&
-				meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderIAMConfigured)) {
+			if meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformConfigured)) &&
+				meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformIAMConfigured)) {
 				if nodePool.Spec.Platform.AWS.Subnet == nil ||
 					!reflect.DeepEqual(nodePool.Spec.Platform.AWS.SecurityGroups, pp.Spec.SecurityGroups) ||
 					nodePool.Spec.Platform.AWS.InstanceProfile == "" {

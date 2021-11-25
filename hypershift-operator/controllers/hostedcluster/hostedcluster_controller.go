@@ -248,14 +248,14 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Transfer configuration from ProviderPlatform
 	// Start the check only if the ProviderPlatformReference is present
 	if hcluster.Spec.ProviderPlatformRef != nil {
-		pp := &hyperv1.ProviderPlatform{}
+		pp := &hyperv1.PlatformConfiguration{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.ProviderPlatformRef.Name}, pp); err != nil {
 			r.Log.Error(err, "Did not find a ProviderPlatform resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
 			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 		} else {
 			// Confirm that ProviderPlatform is cnfigured, otherwise requeue
-			if meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderConfigured)) &&
-				meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.CloudProviderIAMConfigured)) {
+			if meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformConfigured)) &&
+				meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformIAMConfigured)) {
 
 				if !reflect.DeepEqual(hcluster.Spec.DNS, pp.Spec.DNS) ||
 					hcluster.Spec.InfraID != pp.Spec.InfraID ||

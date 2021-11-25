@@ -274,7 +274,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	if err := (&management.ProviderPlatformReconciler{
+	if err := (&management.PlatformConfigurationReconciler{
 		Client: mgr.GetClient(),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)

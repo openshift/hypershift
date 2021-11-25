@@ -6,17 +6,17 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
-  name: providerplatforms.hypershift.openshift.io
+  name: platformconfiguration.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
   names:
-    kind: ProviderPlatform
-    listKind: ProviderPlatformList
-    plural: providerplatforms
+    kind: PlatformConfiguration
+    listKind: PlatformConfigurationList
+    plural: platformconfiguration
     shortNames:
-    - pp
-    - pps
-    singular: providerplatform
+    - pc
+    - pcs
+    singular: platformconfiguration
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -43,11 +43,11 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ProviderPlatform is the primary representation of a HyperShift
+        description: PlatformConfiguration is the primary representation of a HyperShift
           cluster and encapsulates the control plane and common data plane configuration.
-          Creating a ProviderPlatform results in a fully functional OpenShift control
-          plane with no attached nodes. To support workloads (e.g. pods), a ProviderPlatform
-          may have one or more associated NodePool resources.
+          Creating a PlatformConfiguration results in a fully functional OpenShift
+          control plane with no attached nodes. To support workloads (e.g. pods),
+          a PlatformConfiguration may have one or more associated NodePool resources.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -62,7 +62,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: Spec is the desired behavior of the HostedCluster.
+            description: Spec is the desired behavior of the PlatformConfiguration.
             properties:
               dns:
                 description: DNS configuration for the cluster
@@ -83,7 +83,8 @@ spec:
                 - baseDomain
                 type: object
               infraID:
-                description: InfraID is used to identify the cluster in cloud platforms
+                description: InfraID is used to identify the cluster related Platform
+                  Configurations in a provider
                 type: string
               issuerURL:
                 default: https://kubernetes.default.svc
@@ -401,7 +402,7 @@ spec:
             - pullSecret
             type: object
           status:
-            description: Status is the latest observed status of the HostedCluster.
+            description: Status is the latest observed status of the PlatformConfiguration.
             properties:
               conditions:
                 items:

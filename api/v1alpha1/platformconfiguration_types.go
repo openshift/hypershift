@@ -6,23 +6,23 @@ import (
 )
 
 func init() {
-	SchemeBuilder.Register(&ProviderPlatform{}, &ProviderPlatformList{})
+	SchemeBuilder.Register(&PlatformConfiguration{}, &PlatformConfigurationList{})
 }
 
 const (
-	CloudProviderConfiguredAsExpected    = "CloudProviderInfrastructureConfiguredAsExpected"
-	CloudProviderMisConfiguredReason     = "CloudProviderInfrastructureMisconfigured"
-	CloudProviderIAMConfiguredAsExpected = "CloudProviderIAMConfiguredAsExpected"
-	CloudProviderIAMMisConfiguredReason  = "CloudProviderIAMMisconfigured"
+	PlatformConfiguredAsExpected    = "PlatformInfrastructureConfiguredAsExpected"
+	PlatformMisConfiguredReason     = "PlatformInfrastructureMisconfigured"
+	PlatformIAMConfiguredAsExpected = "PlatformIAMConfiguredAsExpected"
+	PlatformIAMMisConfiguredReason  = "PlatformIAMMisconfigured"
 
-	// CloudProviderConfigured indicates (if status is true) that the
-	// Cloud provider configuration specified for the hostedCluster has been deployed
-	CloudProviderConfigured    ConditionType = "CloudProviderInfrastructureConfigured"
-	CloudProviderIAMConfigured ConditionType = "CloudProviderIAMConfigured"
+	// PlatformConfigured indicates (if status is true) that the
+	// platform configuration specified for the platform provider has been deployed
+	PlatformConfigured    ConditionType = "PlatformInfrastructureConfigured"
+	PlatformIAMConfigured ConditionType = "PlatformIAMConfigured"
 )
 
 // ProviderPlatformSpec defines the desired state of HostedCluster
-type ProviderPlatformSpec struct {
+type PlatformConfigurationSpec struct {
 
 	// PullSecret is a pull secret injected into the container runtime of guest
 	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
@@ -54,25 +54,25 @@ type ProviderPlatformSpec struct {
 	// +optional
 	SecurityGroups []AWSResourceReference `json:"securityGroups,omitempty"`
 
-	// InfraID is used to identify the cluster in cloud platforms
+	// InfraID is used to identify the cluster related Platform Configurations in a provider
 	// +optional
 	InfraID string `json:"infraID,omitempty"`
 }
 
-type ProviderPlatformStatus struct {
+type PlatformConfigurationStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +genclient
 
-// ProviderPlatform is the primary representation of a HyperShift cluster and encapsulates
-// the control plane and common data plane configuration. Creating a ProviderPlatform
+// PlatformConfiguration is the primary representation of a HyperShift cluster and encapsulates
+// the control plane and common data plane configuration. Creating a PlatformConfiguration
 // results in a fully functional OpenShift control plane with no attached nodes.
-// To support workloads (e.g. pods), a ProviderPlatform may have one or more associated
+// To support workloads (e.g. pods), a PlatformConfiguration may have one or more associated
 // NodePool resources.
 //
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path=providerplatforms,shortName=pp;pps,scope=Namespaced
+// +kubebuilder:resource:path=platformconfiguration,shortName=pc;pcs,scope=Namespaced
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version.history[?(@.state==\"Completed\")].version",description="Version"
@@ -80,21 +80,21 @@ type ProviderPlatformStatus struct {
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
 // +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
-type ProviderPlatform struct {
+type PlatformConfiguration struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Spec is the desired behavior of the HostedCluster.
-	Spec ProviderPlatformSpec `json:"spec"`
+	// Spec is the desired behavior of the PlatformConfiguration.
+	Spec PlatformConfigurationSpec `json:"spec"`
 
-	// Status is the latest observed status of the HostedCluster.
-	Status ProviderPlatformStatus `json:"status,omitempty"`
+	// Status is the latest observed status of the PlatformConfiguration.
+	Status PlatformConfigurationStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-// HostedClusterList contains a list of HostedCluster
-type ProviderPlatformList struct {
+// PlatformConfigurationList contains a list of PlatformConfiguration
+type PlatformConfigurationList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ProviderPlatform `json:"items"`
+	Items           []PlatformConfiguration `json:"items"`
 }
