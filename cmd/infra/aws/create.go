@@ -30,18 +30,25 @@ type CreateInfraOptions struct {
 }
 
 type CreateInfraOutput struct {
-	Region          string `json:"region"`
-	Zone            string `json:"zone"`
-	InfraID         string `json:"infraID"`
-	ComputeCIDR     string `json:"computeCIDR"`
-	VPCID           string `json:"vpcID"`
-	PrivateSubnetID string `json:"privateSubnetID"`
-	PublicSubnetID  string `json:"publicSubnetID"`
-	SecurityGroupID string `json:"securityGroupID"`
-	Name            string `json:"Name"`
-	BaseDomain      string `json:"baseDomain"`
-	PublicZoneID    string `json:"publicZoneID"`
-	PrivateZoneID   string `json:"privateZoneID"`
+	Region            string `json:"region"`
+	Zone              string `json:"zone"`
+	InfraID           string `json:"infraID"`
+	ComputeCIDR       string `json:"computeCIDR"`
+	VPCID             string `json:"vpcID"`
+	PrivateSubnetID   string `json:"privateSubnetID"`
+	PublicSubnetID    string `json:"publicSubnetID"`
+	SecurityGroupID   string `json:"securityGroupID"`
+	Name              string `json:"Name"`
+	BaseDomain        string `json:"baseDomain"`
+	PublicZoneID      string `json:"publicZoneID"`
+	PrivateZoneID     string `json:"privateZoneID"`
+	DHCPOptionsSet    string `json:"dhcpOptionsSet"`
+	IGWID             string `json:"igwID"`
+	NatGatewayID      string `json:"natGatewayID"`
+	NatGatewayEIP     string `json:"natGatewayEIP"`
+	PrivateRouteTable string `json:"privateRouteTable"`
+	PublicRouteTable  string `json:"publicRouteTable"`
+	VPCS3Endpoint     string `json:"vpcS3Endpoint"`
 }
 
 const (
@@ -146,7 +153,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
-	if err = o.CreateDHCPOptions(ec2Client, result.VPCID); err != nil {
+	if result.DHCPOptionsSet, err = o.CreateDHCPOptions(ec2Client, result.VPCID); err != nil {
 		return nil, err
 	}
 	result.PrivateSubnetID, err = o.CreatePrivateSubnet(ec2Client, result.VPCID, result.Zone)
@@ -157,11 +164,11 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
-	igwID, err := o.CreateInternetGateway(ec2Client, result.VPCID)
+	result.IGWID, err = o.CreateInternetGateway(ec2Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	natGatewayID, err := o.CreateNATGateway(ec2Client, result.PublicSubnetID, result.Zone)
+	result.NatGatewayID, result.NatGatewayEIP, err = o.CreateNATGateway(ec2Client, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
@@ -169,15 +176,15 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
-	privateRouteTable, err := o.CreatePrivateRouteTable(ec2Client, result.VPCID, natGatewayID, result.PrivateSubnetID, result.Zone)
+	result.PrivateRouteTable, err = o.CreatePrivateRouteTable(ec2Client, result.VPCID, result.NatGatewayID, result.PrivateSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	publicRouteTable, err := o.CreatePublicRouteTable(ec2Client, result.VPCID, igwID, result.PublicSubnetID, result.Zone)
+	result.PublicRouteTable, err = o.CreatePublicRouteTable(ec2Client, result.VPCID, result.IGWID, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
-	err = o.CreateVPCS3Endpoint(ec2Client, result.VPCID, privateRouteTable, publicRouteTable)
+	result.VPCS3Endpoint, err = o.CreateVPCS3Endpoint(ec2Client, result.VPCID, result.PrivateRouteTable, result.PublicRouteTable)
 	if err != nil {
 		return nil, err
 	}

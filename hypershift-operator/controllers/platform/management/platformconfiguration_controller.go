@@ -24,6 +24,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	hypv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/infra/aws"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/util"
 	corev1 "k8s.io/api/core/v1"
@@ -47,11 +48,12 @@ type PlatformConfigurationReconciler struct {
 }
 
 const (
-	destroyFinalizer    = "openshift.io/destroy-platform"
-	oidcStorageProvider = "oidc-storage-provider-s3-config"
-	oidcSPNamespace     = "kube-public"
-	AutoInfraLabelName  = "hypershift.openshift.io/auto-created-for-infra"
-	InfraLabelName      = "hypershift.openshift.io/infra-id"
+	destroyFinalizer       = "hypershift.openshift.io/finalizer"
+	HostedClusterFinalizer = "hypershift.openshift.io/used-by-hostedcluster"
+	oidcStorageProvider    = "oidc-storage-provider-s3-config"
+	oidcSPNamespace        = "kube-public"
+	AutoInfraLabelName     = "hypershift.openshift.io/auto-created-for-infra"
+	InfraLabelName         = "hypershift.openshift.io/infra-id"
 )
 
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=PlatformConfiguration,verbs=get;list;watch;create;update;patch;delete
@@ -107,7 +109,7 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 	}
 
 	// Destroying Platform infrastructure used by the PlatformConfiguration scheduled for deletion
-	if pp.DeletionTimestamp != nil {
+	if pp.DeletionTimestamp != nil && !controllerutil.ContainsFinalizer(&pp, HostedClusterFinalizer) {
 		return r.destroyPlatformConfiguration(&pp, &providerSecret)
 	}
 
@@ -135,27 +137,14 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 					hyperv1.PlatformMisConfiguredReason)
 		}
 
-		// todo, create more paramaters to cover all resources created by CreateInfra
-		pp.Spec.DNS.PrivateZoneID = result.PrivateZoneID
-		pp.Spec.DNS.PublicZoneID = result.PublicZoneID
-		pp.Spec.Networking.MachineCIDR = result.ComputeCIDR
-		if pp.Spec.Platform.AWS.CloudProviderConfig == nil || pp.Spec.Platform.AWS.CloudProviderConfig.Subnet == nil {
-			pp.Spec.Platform.AWS.CloudProviderConfig = &hypv1alpha1.AWSCloudProviderConfig{
-				Subnet: &hypv1alpha1.AWSResourceReference{},
-			}
-		}
-		pp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID = &result.PrivateSubnetID
+		copyResults(&pp, result)
+		log.Info(fmt.Sprintf("\n%s\n", pp))
 
-		pp.Spec.Platform.AWS.CloudProviderConfig.Zone = result.Zone
-		pp.Spec.Platform.AWS.CloudProviderConfig.VPC = result.VPCID
-		pp.Spec.SecurityGroups = []hypv1alpha1.AWSResourceReference{
-			hypv1alpha1.AWSResourceReference{ID: &result.SecurityGroupID},
-		}
 		if err := r.updatePlatformConfigurationResource(&pp); err != nil {
 			return ctrl.Result{}, r.updateStatusConditionsOnChange(&pp, hyperv1.PlatformConfigured, metav1.ConditionFalse, err.Error(), hyperv1.PlatformMisConfiguredReason)
 		}
 		r.updateStatusConditionsOnChange(&pp, hyperv1.PlatformConfigured, metav1.ConditionTrue, "", hyperv1.PlatformConfiguredAsExpected)
-
+		log.Info("Applied Platform Configuration changes to PlatformConfiguration resource")
 	}
 
 	if !meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformIAMConfigured)) {
@@ -178,6 +167,8 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 				// todo, create more paramaters to cover all resources created by CreateIAM
 				pp.Spec.Platform.AWS.Roles = iamInfo.Roles
 				pp.Spec.IssuerURL = iamInfo.IssuerURL
+				pp.Spec.IAM.InstanceProfile = iamInfo.ProfileName
+				pp.Spec.IAM.OIDCProvider = iamInfo.ControlPlaneOperatorRoleARN
 				if iamErr = createOIDCSecrets(r, &pp, iamInfo); iamErr == nil {
 					if err := r.updatePlatformConfigurationResource(&pp); err != nil {
 						return ctrl.Result{}, r.updateStatusConditionsOnChange(&pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, err.Error(), hyperv1.PlatformIAMMisConfiguredReason)
@@ -362,4 +353,39 @@ func (r *PlatformConfigurationReconciler) destroyPlatformConfiguration(pp *hypv1
 		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer, update status: %w", err)
 	}
 	return ctrl.Result{}, nil
+}
+
+func copyResults(pp *hypv1alpha1.PlatformConfiguration, result *aws.CreateInfraOutput) {
+
+	// This covers all parameters currently be created
+	pp.Spec.DNS.PrivateZoneID = result.PrivateZoneID
+	pp.Spec.DNS.PublicZoneID = result.PublicZoneID
+	pp.Spec.Networking.MachineCIDR = result.ComputeCIDR
+
+	cpc := pp.Spec.Platform.AWS.CloudProviderConfig
+	if cpc == nil {
+		cpc = &hypv1alpha1.AWSCloudProviderConfig{}
+	}
+	cpc.DHCPOptionsSet = result.DHCPOptionsSet
+	cpc.InternetGateway = result.IGWID
+	cpc.NATGateway = result.NatGatewayID
+	cpc.NatGatewayEIP = result.NatGatewayEIP
+	cpc.PrivateRouteTable = result.PrivateRouteTable
+	cpc.PulbicRouteTable = result.PublicRouteTable
+	cpc.VPCS3Endpoint = result.VPCS3Endpoint
+	if cpc.Subnet == nil {
+		cpc.Subnet = &hypv1alpha1.AWSResourceReference{}
+	}
+	cpc.Subnet.ID = &result.PrivateSubnetID
+	if cpc.PublicSubnet == nil {
+		cpc.PublicSubnet = &hypv1alpha1.AWSResourceReference{}
+	}
+	cpc.PublicSubnet.ID = &result.PublicSubnetID
+	cpc.Zone = result.Zone
+	cpc.VPC = result.VPCID
+	pp.Spec.IAM.SecurityGroups = []hypv1alpha1.AWSResourceReference{
+		hypv1alpha1.AWSResourceReference{ID: &result.SecurityGroupID},
+	}
+	// Make sure we apply the cpc changes, required if the configuration was just generated
+	pp.Spec.Platform.AWS.CloudProviderConfig = cpc
 }

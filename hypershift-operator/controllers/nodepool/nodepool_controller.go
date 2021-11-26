@@ -180,28 +180,28 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	// Transfer configuration from ProviderPlatform
+	// Transfer configuration from PlatformConfiguration
 	if hcluster.Spec.ProviderPlatformRef != nil {
 		pp := &hyperv1.PlatformConfiguration{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: nodePool.Namespace, Name: hcluster.Spec.ProviderPlatformRef.Name}, pp); err != nil {
-			log.Error(err, "Did not find a ProviderPlatform resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
+			log.Error(err, "Did not find a PlatformConfiguration resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
 			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 		} else {
 			if meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformConfigured)) &&
 				meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformIAMConfigured)) {
 				if nodePool.Spec.Platform.AWS.Subnet == nil ||
-					!reflect.DeepEqual(nodePool.Spec.Platform.AWS.SecurityGroups, pp.Spec.SecurityGroups) ||
+					!reflect.DeepEqual(nodePool.Spec.Platform.AWS.SecurityGroups, pp.Spec.IAM.SecurityGroups) ||
 					nodePool.Spec.Platform.AWS.InstanceProfile == "" {
 
 					nodePool.Spec.Platform.AWS.Subnet = pp.Spec.Platform.AWS.CloudProviderConfig.Subnet
-					nodePool.Spec.Platform.AWS.SecurityGroups = pp.Spec.SecurityGroups
+					nodePool.Spec.Platform.AWS.SecurityGroups = pp.Spec.IAM.SecurityGroups
 					nodePool.Spec.Platform.AWS.InstanceProfile = pp.Spec.InfraID + "-worker"
 					if err := r.Update(ctx, nodePool); err != nil {
-						return ctrl.Result{}, fmt.Errorf("failed to update ProviderPlatform values to nodePool: %w", err)
+						return ctrl.Result{}, fmt.Errorf("failed to update PlatformConfiguration values to nodePool: %w", err)
 					}
 				}
 			} else {
-				log.Error(err, "Waiting for ProviderPlatform to be configured "+hcluster.Spec.ProviderPlatformRef.Name)
+				log.Error(err, "Waiting for Platform to be configured "+hcluster.Spec.ProviderPlatformRef.Name)
 				return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 			}
 		}

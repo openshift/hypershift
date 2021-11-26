@@ -49,6 +49,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/machineapprover"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/management"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
@@ -83,6 +84,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	"sigs.k8s.io/yaml"
@@ -233,7 +235,19 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
 		}
 		r.Log.Info("finished deleting hostedcluster", "name", req.NamespacedName)
-		// Now we can remove the finalizer.
+		// Now we can remove the finalizers.
+		if hcluster.Spec.ProviderPlatformRef != nil {
+			pp := &hyperv1.PlatformConfiguration{}
+			if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.ProviderPlatformRef.Name}, pp); err != nil {
+				r.Log.Error(err, "Did not find a PlatformConfiguration resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
+			} else {
+				controllerutil.RemoveFinalizer(pp, management.HostedClusterFinalizer)
+				if err := r.Update(ctx, pp); err != nil {
+					r.Log.Error(err, "Failed to update finalizer on PlatformContfiguration resource: "+pp.Name)
+				}
+			}
+
+		}
 		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
 			controllerutil.RemoveFinalizer(hcluster, finalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
@@ -245,12 +259,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	// Transfer configuration from ProviderPlatform
-	// Start the check only if the ProviderPlatformReference is present
+	// Transfer configuration from PlatformConfiguration
+	// Start the check only if the PlatformConfigurationReference is present
 	if hcluster.Spec.ProviderPlatformRef != nil {
 		pp := &hyperv1.PlatformConfiguration{}
 		if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.ProviderPlatformRef.Name}, pp); err != nil {
-			r.Log.Error(err, "Did not find a ProviderPlatform resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
+			r.Log.Error(err, "Did not find a PlatformConfiguration resources with name "+hcluster.Spec.ProviderPlatformRef.Name)
 			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 		} else {
 			// Confirm that ProviderPlatform is cnfigured, otherwise requeue
@@ -260,7 +274,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				if !reflect.DeepEqual(hcluster.Spec.DNS, pp.Spec.DNS) ||
 					hcluster.Spec.InfraID != pp.Spec.InfraID ||
 					hcluster.Spec.Networking.MachineCIDR != pp.Spec.Networking.MachineCIDR ||
-					hcluster.Spec.Networking.NetworkType != pp.Spec.Networking.NetworkType ||
 					hcluster.Spec.IssuerURL != pp.Spec.IssuerURL ||
 					!reflect.DeepEqual(hcluster.Spec.Platform, pp.Spec.Platform) {
 
@@ -268,14 +281,18 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					hcluster.Spec.IssuerURL = pp.Spec.IssuerURL
 					hcluster.Spec.InfraID = pp.Spec.InfraID
 					hcluster.Spec.Networking.MachineCIDR = pp.Spec.Networking.MachineCIDR
-					hcluster.Spec.Networking.NetworkType = pp.Spec.Networking.NetworkType
 					hcluster.Spec.Platform = pp.Spec.Platform
 					if err := r.Update(ctx, hcluster); err != nil {
 						return ctrl.Result{}, fmt.Errorf("failed to update ProviderPlatform values to HostedCluster: %w", err)
 					}
+					// Ensure the cluster has a finalizer for cleanup and update right away.
+					controllerutil.AddFinalizer(pp, management.HostedClusterFinalizer)
+					if err := r.Update(ctx, pp); err != nil {
+						log.Log.Error(err, "Failed to update finalizer on PlatformContfiguration resource: "+pp.Name)
+					}
 				}
 			} else {
-				r.Log.Error(err, "Waiting for ProviderPlatform to be configured "+hcluster.Spec.ProviderPlatformRef.Name)
+				r.Log.Error(err, "Waiting for Platform to be configured "+hcluster.Spec.ProviderPlatformRef.Name)
 				return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 			}
 		}

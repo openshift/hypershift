@@ -83,14 +83,14 @@ func (o *CreateInfraOptions) existingVPC(client ec2iface.EC2API, vpcName string)
 	return vpcID, nil
 }
 
-func (o *CreateInfraOptions) CreateVPCS3Endpoint(client ec2iface.EC2API, vpcID, privateRouteTableId, publicRouteTableId string) error {
+func (o *CreateInfraOptions) CreateVPCS3Endpoint(client ec2iface.EC2API, vpcID, privateRouteTableId, publicRouteTableId string) (string, error) {
 	existingEndpoint, err := o.existingVPCS3Endpoint(client)
 	if err != nil {
-		return err
+		return existingEndpoint, err
 	}
 	if len(existingEndpoint) > 0 {
 		log.Info("Found existing s3 VPC endpoint", "id", existingEndpoint)
-		return nil
+		return existingEndpoint, nil
 	}
 	result, err := client.CreateVpcEndpoint(&ec2.CreateVpcEndpointInput{
 		VpcId:       aws.String(vpcID),
@@ -102,10 +102,10 @@ func (o *CreateInfraOptions) CreateVPCS3Endpoint(client ec2iface.EC2API, vpcID, 
 		TagSpecifications: o.ec2TagSpecifications("vpc-endpoint", ""),
 	})
 	if err != nil {
-		return fmt.Errorf("cannot create VPC S3 endpoint: %w", err)
+		return "", fmt.Errorf("cannot create VPC S3 endpoint: %w", err)
 	}
 	log.Info("Created s3 VPC endpoint", "id", aws.StringValue(result.VpcEndpoint.VpcEndpointId))
-	return nil
+	return aws.StringValue(result.VpcEndpoint.VpcEndpointId), nil
 }
 
 func (o *CreateInfraOptions) existingVPCS3Endpoint(client ec2iface.EC2API) (string, error) {
@@ -120,14 +120,14 @@ func (o *CreateInfraOptions) existingVPCS3Endpoint(client ec2iface.EC2API) (stri
 	return endpointID, nil
 }
 
-func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID string) error {
+func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID string) (string, error) {
 	domainName := "ec2.internal"
 	if o.Region != "us-east-1" {
 		domainName = fmt.Sprintf("%s.compute.internal", o.Region)
 	}
 	optID, err := o.existingDHCPOptions(client)
 	if err != nil {
-		return err
+		return optID, err
 	}
 	if len(optID) == 0 {
 		result, err := client.CreateDhcpOptions(&ec2.CreateDhcpOptionsInput{
@@ -144,7 +144,7 @@ func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID str
 			TagSpecifications: o.ec2TagSpecifications("dhcp-options", ""),
 		})
 		if err != nil {
-			return fmt.Errorf("cannot create dhcp-options: %w", err)
+			return optID, fmt.Errorf("cannot create dhcp-options: %w", err)
 		}
 		optID = aws.StringValue(result.DhcpOptions.DhcpOptionsId)
 		log.Info("Created DHCP options", "id", optID)
@@ -156,10 +156,10 @@ func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID str
 		VpcId:         aws.String(vpcID),
 	})
 	if err != nil {
-		return fmt.Errorf("cannot associate dhcp-options to VPC: %w", err)
+		return optID, fmt.Errorf("cannot associate dhcp-options to VPC: %w", err)
 	}
 	log.Info("Associated DHCP options with VPC", "vpc", vpcID, "dhcp options", optID)
-	return nil
+	return optID, nil
 }
 
 func (o *CreateInfraOptions) existingDHCPOptions(client ec2iface.EC2API) (string, error) {
@@ -268,17 +268,17 @@ func (o *CreateInfraOptions) existingInternetGateway(client ec2iface.EC2API, nam
 	return nil, nil
 }
 
-func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubnetID, availabilityZone string) (string, error) {
+func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubnetID, availabilityZone string) (string, string, error) {
 	allocationID, err := o.existingEIP(client)
 	if err != nil {
-		return "", err
+		return "", allocationID, err
 	}
 	if len(allocationID) == 0 {
 		eipResult, err := client.AllocateAddress(&ec2.AllocateAddressInput{
 			Domain: aws.String("vpc"),
 		})
 		if err != nil {
-			return "", fmt.Errorf("cannot allocate EIP for NAT gateway: %w", err)
+			return "", allocationID, fmt.Errorf("cannot allocate EIP for NAT gateway: %w", err)
 		}
 		allocationID = aws.StringValue(eipResult.AllocationId)
 		// NOTE: there's a potential to leak EIP addresses if the following tag operation fails, since we have no way of
@@ -288,7 +288,7 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 			Tags:      append(ec2Tags(o.InfraID, fmt.Sprintf("%s-eip-%s", o.InfraID, availabilityZone)), o.additionalEC2Tags...),
 		})
 		if err != nil {
-			return "", fmt.Errorf("cannot tag NAT gateway EIP: %w", err)
+			return "", allocationID, fmt.Errorf("cannot tag NAT gateway EIP: %w", err)
 		}
 		log.Info("Created elastic IP for NAT gateway", "id", allocationID)
 	} else {
@@ -303,7 +303,7 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 			TagSpecifications: o.ec2TagSpecifications("natgateway", natGatewayName),
 		})
 		if err != nil {
-			return "", fmt.Errorf("cannot create NAT gateway: %w", err)
+			return "", allocationID, fmt.Errorf("cannot create NAT gateway: %w", err)
 		}
 		natGateway = gatewayResult.NatGateway
 		log.Info("Created NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
@@ -311,7 +311,7 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		log.Info("Found existing NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
 	}
 	natGatewayID := aws.StringValue(natGateway.NatGatewayId)
-	return natGatewayID, nil
+	return natGatewayID, allocationID, nil
 }
 
 func (o *CreateInfraOptions) existingEIP(client ec2iface.EC2API) (string, error) {
