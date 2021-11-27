@@ -71,12 +71,17 @@ spec:
             description: Spec is the desired behavior of the NodePool.
             properties:
               autoScaling:
+                description: Autoscaling specifies auto-scaling behavior for the NodePool.
                 properties:
                   max:
+                    description: Max is the maximum number of nodes allowed in the
+                      pool. Must be >= 1.
                     format: int32
                     minimum: 1
                     type: integer
                   min:
+                    description: Min is the minimum number of nodes to maintain in
+                      the pool. Must be >= 1.
                     format: int32
                     minimum: 1
                     type: integer
@@ -85,15 +90,19 @@ spec:
                 - min
                 type: object
               clusterName:
-                description: ClusterName is the name of the Cluster this object belongs
-                  to.
+                description: "ClusterName is the name of the HostedCluster this NodePool
+                  belongs to. \n TODO(dan): Should this be a LocalObjectReference?"
                 type: string
               config:
-                description: 'TODO (alberto): this ConfigMaps are meant to contain
-                  MachineConfig, KubeletConfig and ContainerRuntimeConfig but MCO
-                  only supports MachineConfig in bootstrap mode atm https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119
-                  By contractual convention the ConfigMap structure is as follow:
-                  type: ConfigMap   data:     config: |-'
+                description: "Config is a list of references to ConfigMaps containing
+                  serialized MachineConfig resources to be injected into the ignition
+                  configurations of nodes in the NodePool. The MachineConfig API schema
+                  is defined here: \n https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172
+                  \n Each ConfigMap must have a single key named \"config\" whose
+                  value is the JSON or YAML of a serialized MachineConfig. \n TODO
+                  (alberto): this ConfigMaps are meant to contain MachineConfig, KubeletConfig
+                  and ContainerRuntimeConfig but MCO only supports MachineConfig in
+                  bootstrap mode atm. See: https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119"
                 items:
                   description: LocalObjectReference contains enough information to
                     let you locate the referenced object inside the same namespace.
@@ -104,14 +113,16 @@ spec:
                       type: string
                   type: object
                 type: array
-              nodeCount:
-                format: int32
-                type: integer
-              nodePoolManagement:
+              management:
+                description: Management specifies behavior for managing nodes in the
+                  pool, such as upgrade strategies and auto-repair behaviors.
                 properties:
                   autoRepair:
+                    description: AutoRepair specifies whether health checks should
+                      be enabled for machines in the NodePool. The default is false.
                     type: boolean
                   inPlace:
+                    description: InPlace is the configuration for in-place upgrades.
                     type: object
                   replace:
                     default:
@@ -119,27 +130,60 @@ spec:
                         maxSurge: 1
                         maxUnavailable: 0
                       strategy: RollingUpdate
+                    description: Replace is the configuration for rolling upgrades.
                     properties:
                       rollingUpdate:
+                        description: RollingUpdate specifies a rolling update strategy
+                          which upgrades nodes by creating new nodes and deleting
+                          the old ones.
                         properties:
                           maxSurge:
                             anyOf:
                             - type: integer
                             - type: string
+                            description: "MaxSurge is the maximum number of nodes
+                              that can be provisioned above the desired number of
+                              nodes. \n Value can be an absolute number (ex: 5) or
+                              a percentage of desired nodes (ex: 10%). \n Absolute
+                              number is calculated from percentage by rounding up.
+                              \n This can not be 0 if MaxUnavailable is 0. \n Defaults
+                              to 1. \n Example: when this is set to 30%, new nodes
+                              can be provisioned immediately when the rolling update
+                              starts, such that the total number of old and new nodes
+                              do not exceed 130% of desired nodes. Once old nodes
+                              have been deleted, new nodes can be provisioned, ensuring
+                              that total number of nodes running at any time during
+                              the update is at most 130% of desired nodes."
                             x-kubernetes-int-or-string: true
                           maxUnavailable:
                             anyOf:
                             - type: integer
                             - type: string
+                            description: "MaxUnavailable is the maximum number of
+                              nodes that can be unavailable during the update. \n
+                              Value can be an absolute number (ex: 5) or a percentage
+                              of desired nodes (ex: 10%). \n Absolute number is calculated
+                              from percentage by rounding down. \n This can not be
+                              0 if MaxSurge is 0. \n Defaults to 0. \n Example: when
+                              this is set to 30%, old nodes can be deleted down to
+                              70% of desired nodes immediately when the rolling update
+                              starts. Once new nodes are ready, more old nodes be
+                              deleted, followed by provisioning new nodes, ensuring
+                              that the total number of nodes available at all times
+                              during the update is at least 70% of desired nodes."
                             x-kubernetes-int-or-string: true
                         type: object
                       strategy:
+                        description: Strategy is the node replacement strategy for
+                          nodes in the pool.
                         enum:
                         - RollingUpdate
                         - OnDelete
                         type: string
                     type: object
                   upgradeType:
+                    description: UpgradeType specifies the type of strategy for handling
+                      upgrades.
                     enum:
                     - Replace
                     - InPlace
@@ -147,46 +191,55 @@ spec:
                 required:
                 - upgradeType
                 type: object
+              nodeCount:
+                description: NodeCount is the desired number of nodes the pool should
+                  maintain. If unset, the default value is 0.
+                format: int32
+                type: integer
               platform:
-                description: NodePoolPlatform is the platform-specific configuration
-                  for a node pool. Only one of the platforms should be set.
+                description: Platform specifies the underlying infrastructure provider
+                  for the NodePool and is used to configure platform specific behavior.
                 properties:
                   aws:
-                    description: AWS is the configuration used when installing on
-                      AWS.
+                    description: AWS specifies the configuration used when operating
+                      on AWS.
                     properties:
                       ami:
-                        description: AMI is the image id to use
+                        description: AMI is the image id to use for node instances.
+                          If unspecified, the default is chosen based on the NodePool
+                          release payload image.
                         type: string
                       instanceProfile:
+                        description: InstanceProfile is TODO
                         type: string
                       instanceType:
-                        description: InstanceType defines the ec2 instance type. eg.
-                          m4-large
+                        description: InstanceType is an ec2 instance type for node
+                          instances (e.g. m4-large).
                         type: string
                       resourceTags:
-                        description: resourceTags is a list of additional tags to
-                          apply to AWS nodes. These will be merged with Cluster-level
-                          tags and Cluster-level tags take precedence in case of conflicts.
-                          See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html
+                        description: "ResourceTags is an optional list of additional
+                          tags to apply to AWS node instances. \n These will be merged
+                          with HostedCluster scoped tags, and HostedCluster tags take
+                          precedence in case of conflicts. \n See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html
                           for information on tagging AWS resources. AWS supports a
                           maximum of 50 tags per resource. OpenShift reserves 25 tags
-                          for its use, leaving 25 tags available for the user.
+                          for its use, leaving 25 tags available for the user."
                         items:
                           description: AWSResourceTag is a tag to apply to AWS resources
                             created for the cluster.
                           properties:
                             key:
-                              description: key is the key of the tag
+                              description: Key is the key of the tag.
                               maxLength: 128
                               minLength: 1
                               pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
                             value:
-                              description: value is the value of the tag. Some AWS
-                                service do not support empty values. Since tags are
-                                added to resources in many services, the length of
-                                the tag value must meet the requirements of all services.
+                              description: "Value is the value of the tag. \n Some
+                                AWS service do not support empty values. Since tags
+                                are added to resources in many services, the length
+                                of the tag value must meet the requirements of all
+                                services."
                               maxLength: 256
                               minLength: 1
                               pattern: ^[0-9A-Za-z_.:/=+-@]+$
@@ -198,7 +251,8 @@ spec:
                         maxItems: 25
                         type: array
                       rootVolume:
-                        description: RootVolume specifies the root volume of the platform.
+                        description: RootVolume specifies configuration for the root
+                          volume of node instances.
                         properties:
                           iops:
                             description: IOPS is the number of IOPS requested for
@@ -206,9 +260,9 @@ spec:
                             format: int64
                             type: integer
                           size:
-                            description: Size specifies size (in Gi) of the storage
-                              device. Must be greater than the image snapshot size
-                              or 8 (whichever is greater).
+                            description: "Size specifies size (in Gi) of the storage
+                              device. \n Must be greater than the image snapshot size
+                              or 8 (whichever is greater)."
                             format: int64
                             minimum: 8
                             type: integer
@@ -220,8 +274,8 @@ spec:
                         - type
                         type: object
                       securityGroups:
-                        description: SecurityGroups is the set of security groups
-                          to associate with nodepool machines
+                        description: SecurityGroups is an optional set of security
+                          groups to associate with node instances.
                         items:
                           description: AWSResourceReference is a reference to a specific
                             AWS resource by ID, ARN, or filters. Only one of ID, ARN
@@ -260,7 +314,7 @@ spec:
                           type: object
                         type: array
                       subnet:
-                        description: Subnet is the subnet to use for instances
+                        description: Subnet is the subnet to use for node instances.
                         properties:
                           arn:
                             description: ARN of resource
@@ -307,8 +361,7 @@ spec:
                         type: string
                     type: object
                   type:
-                    description: PlatformType is a specific supported infrastructure
-                      provider.
+                    description: Type specifies the platform name.
                     enum:
                     - AWS
                     - None
@@ -318,14 +371,14 @@ spec:
                 - type
                 type: object
               release:
-                description: Release specifies the release image to use for this NodePool
-                  For a nodePool a given version dictates the ignition config and
-                  an image artifact e.g an AMI in AWS. Release specifies the release
-                  image to use for this HostedCluster
+                description: Release specifies the OCP release used for the NodePool.
+                  This informs the ignition configuration for machines, as well as
+                  other platform specific machine properties (e.g. an AMI on the AWS
+                  platform).
                 properties:
                   image:
-                    description: Image is the release image pullspec for the control
-                      plane
+                    description: Image is the image pullspec of an OCP release payload
+                      image.
                     pattern: ^(\w+\S+)$
                     type: string
                 required:
@@ -333,14 +386,16 @@ spec:
                 type: object
             required:
             - clusterName
-            - nodePoolManagement
+            - management
             - platform
             - release
             type: object
           status:
-            description: Status is the most recently observed status of the NodePool.
+            description: Status is the latest observed status of the NodePool.
             properties:
               conditions:
+                description: Conditions represents the latest available observations
+                  of the node pool's current state.
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
@@ -410,14 +465,13 @@ spec:
                   type: object
                 type: array
               nodeCount:
-                description: NodeCount is the most recently observed number of replicas.
+                description: NodeCount is the latest observed number of nodes in the
+                  pool.
                 format: int32
                 type: integer
               version:
-                description: Version is the semantic version of the release applied
-                  by the hosted control plane operator. For a nodePool a given version
-                  represents the ignition config and an image artifact e.g an AMI
-                  in AWS.
+                description: Version is the semantic version of the latest applied
+                  release specified by the NodePool.
                 type: string
             required:
             - conditions

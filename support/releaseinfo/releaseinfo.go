@@ -51,7 +51,8 @@ type CoreOSFormat struct {
 }
 
 type CoreOSImages struct {
-	AWS CoreOSAWSImages `json:"aws"`
+	AWS     CoreOSAWSImages     `json:"aws"`
+	PowerVS CoreOSPowerVSImages `json:"powervs"`
 }
 
 type CoreOSAWSImages struct {
@@ -61,6 +62,17 @@ type CoreOSAWSImages struct {
 type CoreOSAWSImage struct {
 	Release string `json:"release"`
 	Image   string `json:"image"`
+}
+
+type CoreOSPowerVSImages struct {
+	Regions map[string]CoreOSPowerVSImage `json:"regions"`
+}
+
+type CoreOSPowerVSImage struct {
+	Release string `json:"release"`
+	Object  string `json:"object"`
+	Bucket  string `json:"bucket"`
+	URL     string `json:"url"`
 }
 
 func (i *ReleaseImage) Version() string {

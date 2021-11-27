@@ -7,9 +7,9 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type OpenShiftAPIServerParams struct {
@@ -57,7 +57,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 		},
 		LivenessProbes: config.LivenessProbes{
 			oasContainerMain().Name: {
-				Handler: corev1.Handler{
+				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
@@ -73,7 +73,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 		},
 		ReadinessProbes: config.ReadinessProbes{
 			oasContainerMain().Name: {
-				Handler: corev1.Handler{
+				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
@@ -104,7 +104,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 		},
 		LivenessProbes: config.LivenessProbes{
 			oauthContainerMain().Name: {
-				Handler: corev1.Handler{
+				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftOAuthAPIServerPort)),
@@ -120,7 +120,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 		},
 		ReadinessProbes: config.ReadinessProbes{
 			oasContainerMain().Name: {
-				Handler: corev1.Handler{
+				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftOAuthAPIServerPort)),

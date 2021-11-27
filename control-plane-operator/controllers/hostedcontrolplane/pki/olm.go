@@ -5,7 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/support/config"
 )
 
 func ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
@@ -17,10 +17,6 @@ func ReconcileOLMPackageServerCertSecret(secret, ca *corev1.Secret, ownerRef con
 		"packageserver.default.svc.cluster.local",
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "packageserver", []string{"openshift"}, X509SignerUsage, X509UsageClientServerAuth, dnsNames, nil)
-}
-
-func ReconcileOLMProfileCollectorCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "olm-pprof", []string{"openshift"}, X509SignerUsage, X509UsageClientAuth)
 }
 
 func ReconcileOLMCatalogOperatorServingCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {

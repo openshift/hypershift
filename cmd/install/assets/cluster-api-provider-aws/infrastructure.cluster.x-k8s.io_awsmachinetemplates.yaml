@@ -20,11 +20,11 @@ spec:
     singular: awsmachinetemplate
   scope: Namespaced
   versions:
-  - name: v1alpha4
+  - name: v1beta1
     schema:
       openAPIV3Schema:
-        description: AWSMachineTemplate is the Schema for the awsmachinetemplates
-          API
+        description: AWSMachineTemplate is the schema for the Amazon EC2 Machine Templates
+          API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -39,12 +39,33 @@ spec:
           metadata:
             type: object
           spec:
-            description: AWSMachineTemplateSpec defines the desired state of AWSMachineTemplate
+            description: AWSMachineTemplateSpec defines the desired state of AWSMachineTemplate.
             properties:
               template:
                 description: AWSMachineTemplateResource describes the data needed
-                  to create am AWSMachine from a template
+                  to create am AWSMachine from a template.
                 properties:
+                  metadata:
+                    description: 'Standard object''s metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata'
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: 'Annotations is an unstructured key value map
+                          stored with a resource that may be set by external tools
+                          to store and retrieve arbitrary metadata. They are not queryable
+                          and should be preserved when modifying objects. More info:
+                          http://kubernetes.io/docs/user-guide/annotations'
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: 'Map of string keys and values that can be used
+                          to organize and categorize (scope and select) objects. May
+                          match selectors of replication controllers and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels'
+                        type: object
+                    type: object
                   spec:
                     description: Spec is the specification of the desired behavior
                       of the machine.
@@ -72,7 +93,7 @@ spec:
                                 to the rules defined by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
                               items:
                                 description: Filter is a filter used to identify an
-                                  AWS resource
+                                  AWS resource.
                                 properties:
                                   name:
                                     description: Name of the filter. Filter names
@@ -189,6 +210,7 @@ spec:
                       instanceType:
                         description: 'InstanceType is the type of instance to create.
                           Example: m4.xlarge'
+                        minLength: 2
                         type: string
                       networkInterfaces:
                         description: NetworkInterfaces is a list of ENIs to associate
@@ -202,7 +224,7 @@ spec:
                           volumes.
                         items:
                           description: Volume encapsulates the configuration options
-                            for the storage device
+                            for the storage device.
                           properties:
                             deviceName:
                               description: Device name
@@ -324,7 +346,7 @@ spec:
                               the rules defined by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
                             items:
                               description: Filter is a filter used to identify an
-                                AWS resource
+                                AWS resource.
                               properties:
                                 name:
                                   description: Name of the filter. Filter names are
@@ -359,6 +381,8 @@ spec:
                           cloud-init has built-in support for gzip-compressed user
                           data user data stored in aws secret manager is always gzip-compressed.
                         type: boolean
+                    required:
+                    - instanceType
                     type: object
                 required:
                 - spec

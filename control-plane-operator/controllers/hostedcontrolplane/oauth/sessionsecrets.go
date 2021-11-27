@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	osinv1 "github.com/openshift/api/osin/v1"
-	"github.com/openshift/hypershift/control-plane-operator/api"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 )
 
 const (

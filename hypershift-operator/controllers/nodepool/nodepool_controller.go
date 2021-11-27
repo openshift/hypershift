@@ -40,7 +40,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -745,10 +745,10 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		// We return early here during a version/config update to persist the resource with new user data Secret,
 		// so in the next reconciling loop we get a new MachineDeployment.Generation
 		// and we can do a legit MachineDeploymentComplete/MachineDeployment.Status.ObservedGeneration check.
-		// Before persisting if the NodePool is brand new we want to make sure the replica number is set so the machineDeployment controller
+		// Before persisting, if the NodePool is brand new we want to make sure the replica number is set so the machineDeployment controller
 		// does not panic.
 		if machineDeployment.Spec.Replicas == nil {
-			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 1))
+			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
 		}
 		return nil
 	}
@@ -823,9 +823,9 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	}
 
 	if isAutoscalingEnabled(nodePool) {
-		if machineDeployment.CreationTimestamp.IsZero() {
-			// if autoscaling is enabled and the machineDeployment does not exist yet and so it has nil/0 replicas
-			// we start with 1 replica as the autoscaler does not support scaling from zero yet.
+		if k8sutilspointer.Int32PtrDerefOr(machineDeployment.Spec.Replicas, 0) == 0 {
+			// if autoscaling is enabled and the machineDeployment does not exist yet or it has 0 replicas
+			// we set it to 1 replica as the autoscaler does not support scaling from zero yet.
 			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
 		}
 		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))

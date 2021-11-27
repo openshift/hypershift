@@ -8,8 +8,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
@@ -21,8 +21,8 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
-	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -223,6 +223,7 @@ func NewStartCommand() *cobra.Command {
 
 		controllerName := "PrivateKubeAPIServerServiceObserver"
 		if err := (&awsprivatelink.PrivateServiceObserver{
+			Client:                 mgr.GetClient(),
 			ControllerName:         controllerName,
 			ServiceNamespace:       namespace,
 			ServiceName:            manifests.KubeAPIServerPrivateServiceName,
@@ -236,6 +237,7 @@ func NewStartCommand() *cobra.Command {
 
 		controllerName = "PrivateIngressServiceObserver"
 		if err := (&awsprivatelink.PrivateServiceObserver{
+			Client:                 mgr.GetClient(),
 			ControllerName:         controllerName,
 			ServiceNamespace:       "openshift-ingress",
 			ServiceName:            fmt.Sprintf("router-%s", namespace),
@@ -244,6 +246,11 @@ func NewStartCommand() *cobra.Command {
 		}).SetupWithManager(ctx, mgr); err != nil {
 			controllerName := awsprivatelink.ControllerName(fmt.Sprintf("router-%s", namespace))
 			setupLog.Error(err, "unable to create controller", "controller", controllerName)
+			os.Exit(1)
+		}
+
+		if err := (&awsprivatelink.AWSEndpointServiceReconciler{}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
 			os.Exit(1)
 		}
 

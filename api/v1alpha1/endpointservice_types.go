@@ -11,11 +11,15 @@ func init() {
 // The following are reasons for the IgnitionEndpointAvailable condition.
 const (
 	// AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
-	// has been created for the specified NLB
-	AWSEndpointServiceAvailable ConditionType = "Available"
+	// has been created for the specified NLB in the management VPC
+	AWSEndpointServiceAvailable ConditionType = "EndpointServiceAvailable"
 
-	AWSSuccessReason string = "AWSSuccessReason"
-	AWSErrorReason   string = "AWSErrorReason"
+	// AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
+	// created in the guest VPC
+	AWSEndpointAvailable ConditionType = "EndpointAvailable"
+
+	AWSSuccessReason string = "AWSSuccess"
+	AWSErrorReason   string = "AWSError"
 )
 
 // AWSEndpointServiceSpec defines the desired state of AWSEndpointService
@@ -26,9 +30,13 @@ type AWSEndpointServiceSpec struct {
 
 // AWSEndpointServiceStatus defines the observed state of AWSEndpointService
 type AWSEndpointServiceStatus struct {
-	// The endpoint service name created in AWS in response to the request
+	// The endpoint service name created in the management VPC in response to the request
 	// +optional
 	EndpointServiceName string `json:"endpointServiceName,omitempty"`
+
+	// The endpoint ID created in the guest VPC in response to the request
+	// +optional
+	EndpointID string `json:"endpointID,omitempty"`
 
 	// Condition contains details for the current state of the Endpoint Service
 	// request If there is an error processing the request e.g. the NLB doesn't
