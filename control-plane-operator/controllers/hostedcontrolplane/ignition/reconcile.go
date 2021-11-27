@@ -10,13 +10,16 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/runtime"
+	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/openshift/hypershift/control-plane-operator/api"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
@@ -29,13 +32,21 @@ var (
 	setupAPIServerIPScriptTemplate    = template.Must(template.New("setupAPIServerIP").Parse(MustAsset("apiserver-haproxy/setup-apiserver-ip.sh")))
 	teardownAPIServerIPScriptTemplate = template.Must(template.New("teardownAPIServerIP").Parse(MustAsset("apiserver-haproxy/teardown-apiserver-ip.sh")))
 	haProxyConfigTemplate             = template.Must(template.New("haProxyConfig").Parse(MustAsset("apiserver-haproxy/haproxy.cfg")))
+
+	defaultMachineConfigLabels = map[string]string{
+		"machineconfiguration.openshift.io/role": "worker",
+	}
+
+	defaultIgnitionConfigMapLabels = map[string]string{
+		"hypershift.openshift.io/core-ignition-config": "true",
+	}
 )
 
 func ReconcileFIPSIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, fipsEnabled bool) error {
 	machineConfig := manifests.MachineConfigFIPS()
 	setMachineConfigLabels(machineConfig)
 	machineConfig.Spec.FIPS = fipsEnabled
-	return reconcileIgnitionConfigMap(cm, machineConfig, ownerRef)
+	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
 func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, sshKey string) error {
@@ -46,7 +57,7 @@ func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.Owne
 		return fmt.Errorf("failed to serialize ignition config: %w", err)
 	}
 	machineConfig.Spec.Config.Raw = serializedConfig
-	return reconcileIgnitionConfigMap(cm, machineConfig, ownerRef)
+	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
 func ReconcileAPIServerHAProxyIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, haProxyImage, externalAPIAddress, internalAPIAddress string, externalAPIPort, internalAPIPort int32) error {
@@ -57,7 +68,11 @@ func ReconcileAPIServerHAProxyIgnitionConfig(cm *corev1.ConfigMap, ownerRef conf
 		return fmt.Errorf("failed to serialize ignition config: %w", err)
 	}
 	machineConfig.Spec.Config.Raw = serializedConfig
-	return reconcileIgnitionConfigMap(cm, machineConfig, ownerRef)
+	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
+}
+
+func ReconcileImageContentSourcePolicyIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageContentSourcePolicy *v1alpha1.ImageContentSourcePolicy) error {
+	return reconcileICSPIgnitionConfigMap(cm, imageContentSourcePolicy, ownerRef)
 }
 
 func workerSSHConfig(sshKey string) ([]byte, error) {
@@ -191,10 +206,6 @@ func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort 
 					RunAsUser: pointer.Int64Ptr(1001),
 				},
 				Resources: corev1.ResourceRequirements{
-					Limits: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("512Mi"),
-						corev1.ResourceCPU:    resource.MustParse("300m"),
-					},
 					Requests: corev1.ResourceList{
 						corev1.ResourceMemory: resource.MustParse("16Mi"),
 						corev1.ResourceCPU:    resource.MustParse("13m"),
@@ -205,7 +216,7 @@ func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort 
 					InitialDelaySeconds: 120,
 					PeriodSeconds:       120,
 					SuccessThreshold:    1,
-					Handler: corev1.Handler{
+					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/version",
 							Scheme: corev1.URISchemeHTTPS,
@@ -250,25 +261,47 @@ func serializeIgnitionConfig(cfg *igntypes.Config) ([]byte, error) {
 }
 
 func setMachineConfigLabels(mc *mcfgv1.MachineConfig) {
-	mc.Labels = map[string]string{
-		"machineconfiguration.openshift.io/role": "worker",
+	if mc.Labels == nil {
+		mc.Labels = map[string]string{}
+	}
+	for k, v := range defaultMachineConfigLabels {
+		mc.Labels[k] = v
 	}
 }
 
-func reconcileIgnitionConfigMap(cm *corev1.ConfigMap, mc *mcfgv1.MachineConfig, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(cm)
+func reconcileICSPIgnitionConfigMap(cm *corev1.ConfigMap, icsp *v1alpha1.ImageContentSourcePolicy, ownerRef config.OwnerRef) error {
+	scheme := runtime.NewScheme()
+	v1alpha1.Install(scheme)
+	yamlSerializer := jsonserializer.NewSerializerWithOptions(
+		jsonserializer.DefaultMetaFactory, scheme, scheme,
+		jsonserializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true})
+	imageContentSourceBytesBuffer := bytes.NewBuffer([]byte{})
+	if err := yamlSerializer.Encode(icsp, imageContentSourceBytesBuffer); err != nil {
+		return fmt.Errorf("failed to serialize image content source policy: %w", err)
+	}
+	return reconcileIgnitionConfigMap(cm, imageContentSourceBytesBuffer.String(), ownerRef)
+}
+
+func reconcileMachineConfigIgnitionConfigMap(cm *corev1.ConfigMap, mc *mcfgv1.MachineConfig, ownerRef config.OwnerRef) error {
 	buf := &bytes.Buffer{}
 	mc.APIVersion = mcfgv1.SchemeGroupVersion.String()
 	mc.Kind = "MachineConfig"
 	if err := api.YamlSerializer.Encode(mc, buf); err != nil {
 		return fmt.Errorf("failed to serialize machine config %s: %w", cm.Name, err)
 	}
+	return reconcileIgnitionConfigMap(cm, buf.String(), ownerRef)
+}
+
+func reconcileIgnitionConfigMap(cm *corev1.ConfigMap, content string, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(cm)
 	if cm.Labels == nil {
 		cm.Labels = map[string]string{}
 	}
-	cm.Labels["hypershift.openshift.io/core-ignition-config"] = "true"
+	for k, v := range defaultIgnitionConfigMapLabels {
+		cm.Labels[k] = v
+	}
 	cm.Data = map[string]string{
-		ignitionConfigKey: buf.String(),
+		ignitionConfigKey: content,
 	}
 	return nil
 }

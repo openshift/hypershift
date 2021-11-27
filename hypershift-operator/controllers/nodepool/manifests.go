@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sutilspointer "k8s.io/utils/pointer"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )

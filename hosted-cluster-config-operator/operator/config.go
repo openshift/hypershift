@@ -166,9 +166,7 @@ func (c *HostedClusterConfigOperatorConfig) Config() *rest.Config {
 }
 
 func (c *HostedClusterConfigOperatorConfig) Logger() logr.Logger {
-	if c.logger == nil {
-		c.logger = ctrl.Log.WithName("hypershift-operator")
-	}
+	c.logger = ctrl.Log.WithName("hypershift-operator")
 	return c.logger
 }
 

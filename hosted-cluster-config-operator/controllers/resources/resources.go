@@ -20,6 +20,7 @@ import (
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/crd"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/monitoring"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/namespaces"
@@ -138,6 +139,11 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+	}
+
+	log.Info("reconciling ingress controller")
+	if err := r.reconcileIngressController(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
 	}
 
 	log.Info("reconciling kube control plane signer secret")
@@ -260,6 +266,13 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
 	}
 
+	icsp := globalconfig.ImageContentSourcePolicy()
+	if _, err := r.CreateOrUpdate(ctx, r.client, icsp, func() error {
+		return globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile image content source policy: %w", err))
+	}
+
 	installConfigCM := manifests.InstallConfigConfigMap()
 	if _, err := r.CreateOrUpdate(ctx, r.client, installConfigCM, func() error {
 		installConfigCM.Data = map[string]string{
@@ -323,7 +336,6 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		{manifest: manifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
 		{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
 		{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
-		{manifest: manifests.ServiceAccountIssuerDiscoveryClusterRoleBinding, reconcile: rbac.ReconcileServiceAccountIssuerDiscoveryClusterRoleBinding},
 	}
 
 	var errs []error
@@ -345,5 +357,29 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		}
 	}
 
+	return errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	var errs []error
+	p := ingress.NewIngressParams(hcp)
+	ingressController := manifests.IngressDefaultIngressController()
+	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
+		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
+	}
+
+	sourceCert := manifests.IngressCert(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
+		errs = append(errs, fmt.Errorf("failed to get ingress cert (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
+	} else {
+		ingressControllerCert := manifests.IngressDefaultIngressControllerCert()
+		if _, err := r.CreateOrUpdate(ctx, r.client, ingressControllerCert, func() error {
+			return ingress.ReconcileDefaultIngressControllerCertSecret(ingressControllerCert, sourceCert)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller cert: %w", err))
+		}
+	}
 	return errors.NewAggregate(errs)
 }

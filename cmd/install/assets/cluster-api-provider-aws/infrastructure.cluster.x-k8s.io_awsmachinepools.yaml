@@ -41,10 +41,10 @@ spec:
       jsonPath: .status.launchTemplateID
       name: LaunchTemplate ID
       type: string
-    name: v1alpha4
+    name: v1beta1
     schema:
       openAPIV3Schema:
-        description: AWSMachinePool is the Schema for the awsmachinepools API
+        description: AWSMachinePool is the Schema for the awsmachinepools API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -59,7 +59,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: AWSMachinePoolSpec defines the desired state of AWSMachinePool
+            description: AWSMachinePoolSpec defines the desired state of AWSMachinePool.
             properties:
               additionalTags:
                 additionalProperties:
@@ -97,7 +97,7 @@ spec:
                             rules defined by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
                           items:
                             description: Filter is a filter used to identify an AWS
-                              resource
+                              resource.
                             properties:
                               name:
                                 description: Name of the filter. Filter names are
@@ -341,7 +341,7 @@ spec:
                         a resource They are applied according to the rules defined
                         by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
                       items:
-                        description: Filter is a filter used to identify an AWS resource
+                        description: Filter is a filter used to identify an AWS resource.
                         properties:
                           name:
                             description: Name of the filter. Filter names are case-sensitive.
@@ -368,11 +368,11 @@ spec:
             - minSize
             type: object
           status:
-            description: AWSMachinePoolStatus defines the observed state of AWSMachinePool
+            description: AWSMachinePoolStatus defines the observed state of AWSMachinePool.
             properties:
               asgStatus:
                 description: ASGStatus is a status string returned by the autoscaling
-                  API
+                  API.
                 type: string
               conditions:
                 description: Conditions defines current service state of the AWSMachinePool.
@@ -414,6 +414,7 @@ spec:
                         important.
                       type: string
                   required:
+                  - lastTransitionTime
                   - status
                   - type
                   type: object

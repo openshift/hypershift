@@ -1,8 +1,7 @@
 package core
 
 import (
-	"github.com/bombsimon/logrusr"
-	"github.com/sirupsen/logrus"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-var log = logrusr.NewLogger(logrus.New())
+var log = zap.New(zap.UseDevMode(true), zap.JSONEncoder())
