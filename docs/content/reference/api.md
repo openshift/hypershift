@@ -3102,6 +3102,11 @@ IBMCloudIAASProvider
 </td>
 <td>
 <p>IAASProvider is a specific supported infrastructure provider within IBM Cloud.</p>
+<p>
+Value must be one of:
+&#34;upi&#34;, 
+&#34;g2&#34;
+</p>
 </td>
 </tr>
 </tbody>
