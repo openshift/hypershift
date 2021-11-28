@@ -111,6 +111,10 @@ func SSHKey(controlPlaneNamespace string) *corev1.Secret {
 
 func IBMCloudCluster(controlPlaneNamespace string, hostedClusterName string) *capiibmv1.IBMVPCCluster {
 	return &capiibmv1.IBMVPCCluster{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "IBMVPCCluster",
+			APIVersion: capiibmv1.GroupVersion.String(),
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hostedClusterName,
@@ -129,6 +133,10 @@ func PodMonitor(controlPlaneNamespace string, hostedClusterName string) *prometh
 
 func AWSCluster(controlPlaneNamespace string, hostedClusterName string) *capiawsv1.AWSCluster {
 	return &capiawsv1.AWSCluster{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "AWSCluster",
+			APIVersion: capiawsv1.GroupVersion.String(),
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hostedClusterName,
