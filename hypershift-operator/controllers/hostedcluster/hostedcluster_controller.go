@@ -944,6 +944,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSCluster: %w", err)
 		}
+		// reconciliation strips TypeMeta. We repopulate the static values since they are necessary for
+		// downstream reconciliation of the CAPI Cluster resource.
+		awsCluster.TypeMeta = controlplaneoperator.AWSCluster(controlPlaneNamespace.Name, hcluster.Name).TypeMeta
 		infraCR = awsCluster
 	case hyperv1.IBMCloudPlatform:
 		// Reconcile external IBM Cloud Cluster
@@ -959,6 +962,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile IBMCluster: %w", err)
 		}
+		// reconciliation strips TypeMeta. We repopulate the static values since they are necessary for
+		// downstream reconciliation of the CAPI Cluster resource.
+		ibmCluster.TypeMeta = controlplaneoperator.IBMCloudCluster(controlPlaneNamespace.Name, hcluster.Name).TypeMeta
 		infraCR = ibmCluster
 	default:
 		// TODO(alberto): for platform None implement back a "pass through" infra CR similar to externalInfraCluster.
