@@ -31,7 +31,7 @@ var capiResources = map[string]string{
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":         "v1beta1",
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":         "v1beta1",
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml": "v1beta1",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml": "v1beta1",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml": "v1alpha1",
 	"hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml":              "v1alpha1",
 }
 
