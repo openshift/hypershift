@@ -15,7 +15,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
-	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"golang.org/x/crypto/ssh"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )

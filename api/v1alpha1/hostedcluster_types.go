@@ -509,6 +509,16 @@ type AWSPlatformSpec struct {
 	// +immutable
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
+	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the control-plane-operator policy.
+	// The secret should have exactly one key, `credentials`, whose value is
+	// an AWS credentials file.
+	//
+	// TODO(dan): document the "node pool management policy"
+	//
+	// +immutable
+	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
+
 	// ResourceTags is a list of additional tags to apply to AWS resources created
 	// for the cluster. See
 	// https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for

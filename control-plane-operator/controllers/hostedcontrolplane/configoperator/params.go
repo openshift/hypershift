@@ -8,8 +8,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type HostedClusterConfigOperatorParams struct {

@@ -1103,6 +1103,23 @@ credentials file.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneOperatorCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
+credentials with permissions matching the control-plane-operator policy.
+The secret should have exactly one key, <code>credentials</code>, whose value is
+an AWS credentials file.</p>
+<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>resourceTags</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.AWSResourceTag">
@@ -1674,9 +1691,13 @@ and conditions fields may represent a previous version.</p>
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;Available&#34;</p></td>
+<tbody><tr><td><p>&#34;EndpointAvailable&#34;</p></td>
+<td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
+created in the guest VPC</p>
+</td>
+</tr><tr><td><p>&#34;EndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
-has been created for the specified NLB</p>
+has been created for the specified NLB in the management VPC</p>
 </td>
 </tr><tr><td><p>&#34;ClusterVersionFailing&#34;</p></td>
 <td></td>

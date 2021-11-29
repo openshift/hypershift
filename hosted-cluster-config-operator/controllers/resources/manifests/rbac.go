@@ -68,11 +68,3 @@ func CSRRenewalClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 		},
 	}
 }
-
-func ServiceAccountIssuerDiscoveryClusterRoleBinding() *rbacv1.ClusterRoleBinding {
-	return &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "system:service-account-issuer-discovery-unauthenticated",
-		},
-	}
-}

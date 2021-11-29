@@ -41,10 +41,10 @@ spec:
       jsonPath: .metadata.ownerReferences[?(@.kind=="Machine")].name
       name: Machine
       type: string
-    name: v1alpha4
+    name: v1beta1
     schema:
       openAPIV3Schema:
-        description: AWSMachine is the Schema for the awsmachines API
+        description: AWSMachine is the schema for Amazon EC2 machines.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -59,7 +59,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: AWSMachineSpec defines the desired state of AWSMachine
+            description: AWSMachineSpec defines the desired state of an Amazon EC2
+              instance.
             properties:
               additionalSecurityGroups:
                 description: AdditionalSecurityGroups is an array of references to
@@ -83,7 +84,7 @@ spec:
                         a resource They are applied according to the rules defined
                         by the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
                       items:
-                        description: Filter is a filter used to identify an AWS resource
+                        description: Filter is a filter used to identify an AWS resource.
                         properties:
                           name:
                             description: Name of the filter. Filter names are case-sensitive.
@@ -196,6 +197,7 @@ spec:
               instanceType:
                 description: 'InstanceType is the type of instance to create. Example:
                   m4.xlarge'
+                minLength: 2
                 type: string
               networkInterfaces:
                 description: NetworkInterfaces is a list of ENIs to associate with
@@ -208,7 +210,7 @@ spec:
                 description: Configuration options for the non root storage volumes.
                 items:
                   description: Volume encapsulates the configuration options for the
-                    storage device
+                    storage device.
                   properties:
                     deviceName:
                       description: Device name
@@ -323,7 +325,7 @@ spec:
                       a resource They are applied according to the rules defined by
                       the AWS API: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html'
                     items:
-                      description: Filter is a filter used to identify an AWS resource
+                      description: Filter is a filter used to identify an AWS resource.
                       properties:
                         name:
                           description: Name of the filter. Filter names are case-sensitive.
@@ -357,9 +359,11 @@ spec:
                   built-in support for gzip-compressed user data user data stored
                   in aws secret manager is always gzip-compressed.
                 type: boolean
+            required:
+            - instanceType
             type: object
           status:
-            description: AWSMachineStatus defines the observed state of AWSMachine
+            description: AWSMachineStatus defines the observed state of AWSMachine.
             properties:
               addresses:
                 description: Addresses contains the AWS instance associated addresses.
@@ -419,6 +423,7 @@ spec:
                         important.
                       type: string
                   required:
+                  - lastTransitionTime
                   - status
                   - type
                   type: object

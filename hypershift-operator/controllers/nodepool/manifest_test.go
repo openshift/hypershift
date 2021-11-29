@@ -7,7 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8sutilspointer "k8s.io/utils/pointer"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 )
 
 const amiName = "ami"

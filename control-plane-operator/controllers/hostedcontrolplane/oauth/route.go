@@ -3,9 +3,9 @@ package oauth
 import (
 	routev1 "github.com/openshift/api/route/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
 )
 
 func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool) error {

@@ -200,6 +200,10 @@ type EC2API interface {
 	CancelCapacityReservationWithContext(aws.Context, *ec2.CancelCapacityReservationInput, ...request.Option) (*ec2.CancelCapacityReservationOutput, error)
 	CancelCapacityReservationRequest(*ec2.CancelCapacityReservationInput) (*request.Request, *ec2.CancelCapacityReservationOutput)
 
+	CancelCapacityReservationFleets(*ec2.CancelCapacityReservationFleetsInput) (*ec2.CancelCapacityReservationFleetsOutput, error)
+	CancelCapacityReservationFleetsWithContext(aws.Context, *ec2.CancelCapacityReservationFleetsInput, ...request.Option) (*ec2.CancelCapacityReservationFleetsOutput, error)
+	CancelCapacityReservationFleetsRequest(*ec2.CancelCapacityReservationFleetsInput) (*request.Request, *ec2.CancelCapacityReservationFleetsOutput)
+
 	CancelConversionTask(*ec2.CancelConversionTaskInput) (*ec2.CancelConversionTaskOutput, error)
 	CancelConversionTaskWithContext(aws.Context, *ec2.CancelConversionTaskInput, ...request.Option) (*ec2.CancelConversionTaskOutput, error)
 	CancelConversionTaskRequest(*ec2.CancelConversionTaskInput) (*request.Request, *ec2.CancelConversionTaskOutput)
@@ -243,6 +247,10 @@ type EC2API interface {
 	CreateCapacityReservation(*ec2.CreateCapacityReservationInput) (*ec2.CreateCapacityReservationOutput, error)
 	CreateCapacityReservationWithContext(aws.Context, *ec2.CreateCapacityReservationInput, ...request.Option) (*ec2.CreateCapacityReservationOutput, error)
 	CreateCapacityReservationRequest(*ec2.CreateCapacityReservationInput) (*request.Request, *ec2.CreateCapacityReservationOutput)
+
+	CreateCapacityReservationFleet(*ec2.CreateCapacityReservationFleetInput) (*ec2.CreateCapacityReservationFleetOutput, error)
+	CreateCapacityReservationFleetWithContext(aws.Context, *ec2.CreateCapacityReservationFleetInput, ...request.Option) (*ec2.CreateCapacityReservationFleetOutput, error)
+	CreateCapacityReservationFleetRequest(*ec2.CreateCapacityReservationFleetInput) (*request.Request, *ec2.CreateCapacityReservationFleetOutput)
 
 	CreateCarrierGateway(*ec2.CreateCarrierGatewayInput) (*ec2.CreateCarrierGatewayOutput, error)
 	CreateCarrierGatewayWithContext(aws.Context, *ec2.CreateCarrierGatewayInput, ...request.Option) (*ec2.CreateCarrierGatewayOutput, error)
@@ -773,6 +781,13 @@ type EC2API interface {
 
 	DescribeByoipCidrsPages(*ec2.DescribeByoipCidrsInput, func(*ec2.DescribeByoipCidrsOutput, bool) bool) error
 	DescribeByoipCidrsPagesWithContext(aws.Context, *ec2.DescribeByoipCidrsInput, func(*ec2.DescribeByoipCidrsOutput, bool) bool, ...request.Option) error
+
+	DescribeCapacityReservationFleets(*ec2.DescribeCapacityReservationFleetsInput) (*ec2.DescribeCapacityReservationFleetsOutput, error)
+	DescribeCapacityReservationFleetsWithContext(aws.Context, *ec2.DescribeCapacityReservationFleetsInput, ...request.Option) (*ec2.DescribeCapacityReservationFleetsOutput, error)
+	DescribeCapacityReservationFleetsRequest(*ec2.DescribeCapacityReservationFleetsInput) (*request.Request, *ec2.DescribeCapacityReservationFleetsOutput)
+
+	DescribeCapacityReservationFleetsPages(*ec2.DescribeCapacityReservationFleetsInput, func(*ec2.DescribeCapacityReservationFleetsOutput, bool) bool) error
+	DescribeCapacityReservationFleetsPagesWithContext(aws.Context, *ec2.DescribeCapacityReservationFleetsInput, func(*ec2.DescribeCapacityReservationFleetsOutput, bool) bool, ...request.Option) error
 
 	DescribeCapacityReservations(*ec2.DescribeCapacityReservationsInput) (*ec2.DescribeCapacityReservationsOutput, error)
 	DescribeCapacityReservationsWithContext(aws.Context, *ec2.DescribeCapacityReservationsInput, ...request.Option) (*ec2.DescribeCapacityReservationsOutput, error)
@@ -1406,6 +1421,9 @@ type EC2API interface {
 	DescribeTrunkInterfaceAssociationsWithContext(aws.Context, *ec2.DescribeTrunkInterfaceAssociationsInput, ...request.Option) (*ec2.DescribeTrunkInterfaceAssociationsOutput, error)
 	DescribeTrunkInterfaceAssociationsRequest(*ec2.DescribeTrunkInterfaceAssociationsInput) (*request.Request, *ec2.DescribeTrunkInterfaceAssociationsOutput)
 
+	DescribeTrunkInterfaceAssociationsPages(*ec2.DescribeTrunkInterfaceAssociationsInput, func(*ec2.DescribeTrunkInterfaceAssociationsOutput, bool) bool) error
+	DescribeTrunkInterfaceAssociationsPagesWithContext(aws.Context, *ec2.DescribeTrunkInterfaceAssociationsInput, func(*ec2.DescribeTrunkInterfaceAssociationsOutput, bool) bool, ...request.Option) error
+
 	DescribeVolumeAttribute(*ec2.DescribeVolumeAttributeInput) (*ec2.DescribeVolumeAttributeOutput, error)
 	DescribeVolumeAttributeWithContext(aws.Context, *ec2.DescribeVolumeAttributeInput, ...request.Option) (*ec2.DescribeVolumeAttributeOutput, error)
 	DescribeVolumeAttributeRequest(*ec2.DescribeVolumeAttributeInput) (*request.Request, *ec2.DescribeVolumeAttributeOutput)
@@ -1778,6 +1796,17 @@ type EC2API interface {
 	GetTransitGatewayRouteTablePropagationsPages(*ec2.GetTransitGatewayRouteTablePropagationsInput, func(*ec2.GetTransitGatewayRouteTablePropagationsOutput, bool) bool) error
 	GetTransitGatewayRouteTablePropagationsPagesWithContext(aws.Context, *ec2.GetTransitGatewayRouteTablePropagationsInput, func(*ec2.GetTransitGatewayRouteTablePropagationsOutput, bool) bool, ...request.Option) error
 
+	GetVpnConnectionDeviceSampleConfiguration(*ec2.GetVpnConnectionDeviceSampleConfigurationInput) (*ec2.GetVpnConnectionDeviceSampleConfigurationOutput, error)
+	GetVpnConnectionDeviceSampleConfigurationWithContext(aws.Context, *ec2.GetVpnConnectionDeviceSampleConfigurationInput, ...request.Option) (*ec2.GetVpnConnectionDeviceSampleConfigurationOutput, error)
+	GetVpnConnectionDeviceSampleConfigurationRequest(*ec2.GetVpnConnectionDeviceSampleConfigurationInput) (*request.Request, *ec2.GetVpnConnectionDeviceSampleConfigurationOutput)
+
+	GetVpnConnectionDeviceTypes(*ec2.GetVpnConnectionDeviceTypesInput) (*ec2.GetVpnConnectionDeviceTypesOutput, error)
+	GetVpnConnectionDeviceTypesWithContext(aws.Context, *ec2.GetVpnConnectionDeviceTypesInput, ...request.Option) (*ec2.GetVpnConnectionDeviceTypesOutput, error)
+	GetVpnConnectionDeviceTypesRequest(*ec2.GetVpnConnectionDeviceTypesInput) (*request.Request, *ec2.GetVpnConnectionDeviceTypesOutput)
+
+	GetVpnConnectionDeviceTypesPages(*ec2.GetVpnConnectionDeviceTypesInput, func(*ec2.GetVpnConnectionDeviceTypesOutput, bool) bool) error
+	GetVpnConnectionDeviceTypesPagesWithContext(aws.Context, *ec2.GetVpnConnectionDeviceTypesInput, func(*ec2.GetVpnConnectionDeviceTypesOutput, bool) bool, ...request.Option) error
+
 	ImportClientVpnClientCertificateRevocationList(*ec2.ImportClientVpnClientCertificateRevocationListInput) (*ec2.ImportClientVpnClientCertificateRevocationListOutput, error)
 	ImportClientVpnClientCertificateRevocationListWithContext(aws.Context, *ec2.ImportClientVpnClientCertificateRevocationListInput, ...request.Option) (*ec2.ImportClientVpnClientCertificateRevocationListOutput, error)
 	ImportClientVpnClientCertificateRevocationListRequest(*ec2.ImportClientVpnClientCertificateRevocationListInput) (*request.Request, *ec2.ImportClientVpnClientCertificateRevocationListOutput)
@@ -1813,6 +1842,10 @@ type EC2API interface {
 	ModifyCapacityReservation(*ec2.ModifyCapacityReservationInput) (*ec2.ModifyCapacityReservationOutput, error)
 	ModifyCapacityReservationWithContext(aws.Context, *ec2.ModifyCapacityReservationInput, ...request.Option) (*ec2.ModifyCapacityReservationOutput, error)
 	ModifyCapacityReservationRequest(*ec2.ModifyCapacityReservationInput) (*request.Request, *ec2.ModifyCapacityReservationOutput)
+
+	ModifyCapacityReservationFleet(*ec2.ModifyCapacityReservationFleetInput) (*ec2.ModifyCapacityReservationFleetOutput, error)
+	ModifyCapacityReservationFleetWithContext(aws.Context, *ec2.ModifyCapacityReservationFleetInput, ...request.Option) (*ec2.ModifyCapacityReservationFleetOutput, error)
+	ModifyCapacityReservationFleetRequest(*ec2.ModifyCapacityReservationFleetInput) (*request.Request, *ec2.ModifyCapacityReservationFleetOutput)
 
 	ModifyClientVpnEndpoint(*ec2.ModifyClientVpnEndpointInput) (*ec2.ModifyClientVpnEndpointOutput, error)
 	ModifyClientVpnEndpointWithContext(aws.Context, *ec2.ModifyClientVpnEndpointInput, ...request.Option) (*ec2.ModifyClientVpnEndpointOutput, error)

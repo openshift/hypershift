@@ -42,10 +42,11 @@ spec:
       jsonPath: .status.bastion.publicIp
       name: Bastion IP
       type: string
-    name: v1alpha4
+    name: v1beta1
     schema:
       openAPIV3Schema:
-        description: AWSCluster is the Schema for the awsclusters API.
+        description: AWSCluster is the schema for Amazon EC2 based Kubernetes Cluster
+          API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -60,7 +61,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: AWSClusterSpec defines the desired state of AWSCluster
+            description: AWSClusterSpec defines the desired state of an EC2-based
+              Kubernetes cluster.
             properties:
               additionalTags:
                 additionalProperties:
@@ -137,12 +139,21 @@ spec:
                       registered instances in its Availability Zone only. \n Defaults
                       to false."
                     type: boolean
+                  name:
+                    description: Name sets the name of the classic ELB load balancer.
+                      As per AWS, the name must be unique within your set of load
+                      balancers for the region, must have a maximum of 32 characters,
+                      must contain only alphanumeric characters or hyphens, and cannot
+                      begin or end with a hyphen. Once set, the value cannot be changed.
+                    maxLength: 32
+                    pattern: ^[A-Za-z0-9]([A-Za-z0-9]{0,31}|[-A-Za-z0-9]{0,30}[A-Za-z0-9])$
+                    type: string
                   scheme:
-                    default: Internet-facing
+                    default: internet-facing
                     description: Scheme sets the scheme of the load balancer (defaults
-                      to Internet-facing)
+                      to internet-facing)
                     enum:
-                    - Internet-facing
+                    - internet-facing
                     - internal
                     type: string
                   subnets:
@@ -335,7 +346,7 @@ spec:
                 type: string
             type: object
           status:
-            description: AWSClusterStatus defines the observed state of AWSCluster
+            description: AWSClusterStatus defines the observed state of AWSCluster.
             properties:
               bastion:
                 description: Instance describes an AWS instance.
@@ -390,7 +401,7 @@ spec:
                     description: Configuration options for the non root storage volumes.
                     items:
                       description: Volume encapsulates the configuration options for
-                        the storage device
+                        the storage device.
                       properties:
                         deviceName:
                           description: Device name
@@ -566,6 +577,7 @@ spec:
                         important.
                       type: string
                   required:
+                  - lastTransitionTime
                   - status
                   - type
                   type: object
