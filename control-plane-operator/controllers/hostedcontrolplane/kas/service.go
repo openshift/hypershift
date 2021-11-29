@@ -95,7 +95,7 @@ func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) 
 	return nil
 }
 
-func ReconcilePrivateServiceStatus(svc *corev1.Service, mgmtBaseDomain string) (host string, port int32, err error) {
-	//return fmt.Sprintf("api-%s.%s", svc.GetNamespace(), mgmtBaseDomain), 6443, nil
-	return fmt.Sprintf("kube-apiserver.%s.svc", svc.Namespace), 6443, nil
+func ReconcilePrivateServiceStatus(svc *corev1.Service) (host string, port int32, err error) {
+	// TODO: will be change to api.$hcpName.hypershift.local once OIDC controller is switch the service network
+	return fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace), 6443, nil
 }

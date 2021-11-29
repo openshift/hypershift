@@ -422,7 +422,7 @@ spec:
                           a secret containing cloud credentials with permissions matching
                           the control-plane-operator policy. The secret should have
                           exactly one key, `credentials`, whose value is an AWS credentials
-                          file. \n TODO(dan): document the \"node pool management
+                          file. \n TODO(dan): document the \"control plane operator
                           policy\""
                         properties:
                           name:
