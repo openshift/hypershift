@@ -55,9 +55,8 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		}
 		infra.Status.PlatformStatus.AWS.ResourceTags = tags
 	case hyperv1.IBMCloudPlatform:
-		//Platform Spec not expected to be set
-		infra.Spec.PlatformSpec = configv1.PlatformSpec{}
 		infra.Status.Platform = configv1.PlatformType(hcp.Spec.Platform.Type)
+		infra.Status.PlatformStatus = &configv1.PlatformStatus{}
 		infra.Status.PlatformStatus.Type = configv1.IBMCloudPlatformType
 	}
 }
