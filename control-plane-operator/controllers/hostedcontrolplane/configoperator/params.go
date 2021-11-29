@@ -45,10 +45,10 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		hccContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/metrics",
-					Port:   intstr.FromInt(8080),
+					Path:   "/healthz",
+					Port:   intstr.FromInt(6060),
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
@@ -61,10 +61,10 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
 		hccContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/metrics",
-					Port:   intstr.FromInt(8080),
+					Path:   "/readyz",
+					Port:   intstr.FromInt(6060),
 					Scheme: corev1.URISchemeHTTP,
 				},
 			},
