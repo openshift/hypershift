@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -97,12 +98,13 @@ func NewStartCommand() *cobra.Command {
 		restConfig := ctrl.GetConfigOrDie()
 		restConfig.UserAgent = "hypershift-controlplane-manager"
 		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-			Scheme:             hyperapi.Scheme,
-			MetricsBindAddress: metricsAddr,
-			Port:               9443,
-			LeaderElection:     enableLeaderElection,
-			LeaderElectionID:   "b2ed43cb.hypershift.openshift.io",
-			Namespace:          namespace,
+			Scheme:                 hyperapi.Scheme,
+			MetricsBindAddress:     metricsAddr,
+			Port:                   9443,
+			LeaderElection:         enableLeaderElection,
+			LeaderElectionID:       "b2ed43cb.hypershift.openshift.io",
+			Namespace:              namespace,
+			HealthProbeBindAddress: ":6060",
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
@@ -240,6 +242,15 @@ func NewStartCommand() *cobra.Command {
 
 		if err := (&awsprivatelink.AWSEndpointServiceReconciler{}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
+			os.Exit(1)
+		}
+
+		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+			setupLog.Error(err, "unable to set up health check")
+			os.Exit(1)
+		}
+		if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+			setupLog.Error(err, "unable to set up ready check")
 			os.Exit(1)
 		}
 
