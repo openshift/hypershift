@@ -41,7 +41,10 @@ type MCSIgnitionProvider struct {
 	Client                client.Client
 	ReleaseProvider       releaseinfo.Provider
 	Namespace             string
-	ManagementClusterMode string
+	// ManagementClusterMode string
+
+	// SetSecurityContext is used to configure Security Context for containers
+	SetSecurityContext bool `default:false`
 }
 
 func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
@@ -78,7 +81,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
 	mcsPod := machineConfigServerPod(p.Namespace, img,
 		mcsServiceAccount, mcsConfigConfigMap)
-	if p.ManagementClusterMode == "base-kube" {
+	if p.SetSecurityContext {
 		mcsPod.Spec.SecurityContext = &corev1.PodSecurityContext{
 			RunAsUser: k8sutilspointer.Int64Ptr(1001),
 		}

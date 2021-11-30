@@ -13,9 +13,11 @@ import (
 	"time"
 
 	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/discovery"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -56,7 +58,7 @@ type Options struct {
 	CertFile              string
 	KeyFile               string
 	RegistryOverrides     map[string]string
-	ManagementClusterMode string
+	// ManagementClusterMode string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -76,7 +78,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.CertFile, "cert-file", opts.CertFile, "Path to the serving cert")
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", opts.KeyFile, "Path to the serving key")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
-	cmd.Flags().StringVar(&opts.ManagementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
+	// cmd.Flags().StringVar(&opts.ManagementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -118,6 +120,22 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 	if err != nil {
 		return nil, fmt.Errorf("unable to start manager: %w", err)
 	}
+
+	kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+	if err != nil {
+		return nil, fmt.Errorf("unable to create discovery client: %w", err)
+	}
+
+	mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(kubeDiscoveryClient)
+	if err != nil {
+		return nil, fmt.Errorf("unable to detect cluster capabilities: %w", err)
+	}
+	// checking for scc capability
+	var securityContextBool bool  // default is false
+	if !mgmtClusterCaps.Has(capabilities.CapabilitySecurityContextConstraint) {
+		securityContextBool = true
+	}
+
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
@@ -131,6 +149,7 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 			},
 			Client:    mgr.GetClient(),
 			Namespace: os.Getenv(namespaceEnvVariableName),
+			SetSecurityContext: securityContextBool,
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)
