@@ -1,26 +1,27 @@
 package hostedcluster
 
 import (
+	"github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
-
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-
+	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
-
-	configv1 "github.com/openshift/api/config/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 )
 
 var Now = metav1.NewTime(time.Now())
@@ -797,6 +798,145 @@ func TestReconcileAWSCluster(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.initialAWSCluster, tc.expectedAWSCluster); diff != "" {
 				t.Errorf("reconciled AWS cluster differs from expcted AWS cluster: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReconcileCAPICluster(t *testing.T) {
+	testCases := []struct {
+		name               string
+		capiCluster        *v1beta1.Cluster
+		hostedCluster      *hyperv1.HostedCluster
+		hostedControlPlane *hyperv1.HostedControlPlane
+		infraCR            client.Object
+
+		expectedCAPICluster *v1beta1.Cluster
+	}{
+		{
+			name:        "IBM Cloud cluster",
+			capiCluster: controlplaneoperator.CAPICluster("master-cluster1", "cluster1"),
+			hostedCluster: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "HostedCluster",
+					APIVersion: hyperv1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "master",
+					Name:      "cluster1",
+				},
+			},
+			hostedControlPlane: &hyperv1.HostedControlPlane{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "HostedControlPlane",
+					APIVersion: hyperv1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "master-cluster1",
+					Name:      "cluster1",
+				},
+			},
+			infraCR: &v1alpha4.IBMVPCCluster{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "IBMVPCCluster",
+					APIVersion: v1alpha4.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cluster1",
+					Namespace: "master-cluster1",
+				},
+			},
+			expectedCAPICluster: &v1beta1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hostedClusterAnnotation: "master/cluster1",
+					},
+					Namespace: "master-cluster1",
+					Name:      "cluster1",
+				},
+				Spec: v1beta1.ClusterSpec{
+					ControlPlaneEndpoint: v1beta1.APIEndpoint{},
+					ControlPlaneRef: &corev1.ObjectReference{
+						APIVersion: "hypershift.openshift.io/v1alpha1",
+						Kind:       "HostedControlPlane",
+						Namespace:  "master-cluster1",
+						Name:       "cluster1",
+					},
+					InfrastructureRef: &corev1.ObjectReference{
+						APIVersion: v1alpha4.GroupVersion.String(),
+						Kind:       "IBMVPCCluster",
+						Namespace:  "master-cluster1",
+						Name:       "cluster1",
+					},
+				},
+			},
+		},
+		{
+			name:        "AWS cluster",
+			capiCluster: controlplaneoperator.CAPICluster("master-cluster1", "cluster1"),
+			hostedCluster: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "HostedCluster",
+					APIVersion: hyperv1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "master",
+					Name:      "cluster1",
+				},
+			},
+			hostedControlPlane: &hyperv1.HostedControlPlane{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "HostedControlPlane",
+					APIVersion: hyperv1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "master-cluster1",
+					Name:      "cluster1",
+				},
+			},
+			infraCR: &capiawsv1.AWSCluster{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "AWSCluster",
+					APIVersion: capiawsv1.GroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cluster1",
+					Namespace: "master-cluster1",
+				},
+			},
+			expectedCAPICluster: &v1beta1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hostedClusterAnnotation: "master/cluster1",
+					},
+					Namespace: "master-cluster1",
+					Name:      "cluster1",
+				},
+				Spec: v1beta1.ClusterSpec{
+					ControlPlaneEndpoint: v1beta1.APIEndpoint{},
+					ControlPlaneRef: &corev1.ObjectReference{
+						APIVersion: "hypershift.openshift.io/v1alpha1",
+						Kind:       "HostedControlPlane",
+						Namespace:  "master-cluster1",
+						Name:       "cluster1",
+					},
+					InfrastructureRef: &corev1.ObjectReference{
+						APIVersion: capiawsv1.GroupVersion.String(),
+						Kind:       "AWSCluster",
+						Namespace:  "master-cluster1",
+						Name:       "cluster1",
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := reconcileCAPICluster(tc.capiCluster, tc.hostedCluster, tc.hostedControlPlane, tc.infraCR); err != nil {
+				t.Fatalf("reconcileCAPICluster failed: %v", err)
+			}
+			if diff := cmp.Diff(tc.capiCluster, tc.expectedCAPICluster); diff != "" {
+				t.Errorf("reconciled CAPI cluster differs from expcted CAPI cluster: %s", diff)
 			}
 		})
 	}

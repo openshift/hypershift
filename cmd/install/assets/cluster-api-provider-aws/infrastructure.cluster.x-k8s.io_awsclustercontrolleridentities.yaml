@@ -20,7 +20,7 @@ spec:
     singular: awsclustercontrolleridentity
   scope: Cluster
   versions:
-  - name: v1alpha4
+  - name: v1beta1
     schema:
       openAPIV3Schema:
         description: AWSClusterControllerIdentity is the Schema for the awsclustercontrolleridentities

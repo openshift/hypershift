@@ -12,9 +12,9 @@ import (
 	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -132,10 +132,13 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 		},
 		Spec: corev1.PodSpec{
-			DNSPolicy:                     corev1.DNSClusterFirst,
-			RestartPolicy:                 corev1.RestartPolicyAlways,
-			SecurityContext:               &corev1.PodSecurityContext{},
-			TerminationGracePeriodSeconds: pointer.Int64Ptr(30),
+			DNSPolicy:       corev1.DNSClusterFirst,
+			RestartPolicy:   corev1.RestartPolicyAlways,
+			SecurityContext: &corev1.PodSecurityContext{},
+			// The KAS takes 90 seconds to finish its graceful shutdown, give it enough
+			// time to do that + 5 seconds margin. The shutdown sequence is described
+			// in detail here: https://github.com/openshift/installer/blob/master/docs/dev/kube-apiserver-health-check.md
+			TerminationGracePeriodSeconds: pointer.Int64Ptr(95),
 			SchedulerName:                 corev1.DefaultSchedulerName,
 			AutomountServiceAccountToken:  pointer.BoolPtr(false),
 			InitContainers: []corev1.Container{

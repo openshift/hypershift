@@ -137,6 +137,9 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	if err = o.DestroyOIDCRole(iamClient, "node-pool"); err != nil {
 		return err
 	}
+	if err = o.DestroyOIDCRole(iamClient, "control-plane-operator"); err != nil {
+		return err
+	}
 
 	return nil
 }

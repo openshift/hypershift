@@ -8,7 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1alpha4"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -82,15 +82,6 @@ func HostedControlPlane(controlPlaneNamespace string, hostedClusterName string) 
 	}
 }
 
-func AWSCluster(controlPlaneNamespace string, hostedClusterName string) *capiawsv1.AWSCluster {
-	return &capiawsv1.AWSCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      hostedClusterName,
-		},
-	}
-}
-
 func PullSecret(controlPlaneNamespace string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -120,6 +111,10 @@ func SSHKey(controlPlaneNamespace string) *corev1.Secret {
 
 func IBMCloudCluster(controlPlaneNamespace string, hostedClusterName string) *capiibmv1.IBMVPCCluster {
 	return &capiibmv1.IBMVPCCluster{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "IBMVPCCluster",
+			APIVersion: capiibmv1.GroupVersion.String(),
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hostedClusterName,
@@ -129,6 +124,19 @@ func IBMCloudCluster(controlPlaneNamespace string, hostedClusterName string) *ca
 
 func PodMonitor(controlPlaneNamespace string, hostedClusterName string) *prometheusoperatorv1.PodMonitor {
 	return &prometheusoperatorv1.PodMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      hostedClusterName,
+		},
+	}
+}
+
+func AWSCluster(controlPlaneNamespace string, hostedClusterName string) *capiawsv1.AWSCluster {
+	return &capiawsv1.AWSCluster{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "AWSCluster",
+			APIVersion: capiawsv1.GroupVersion.String(),
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hostedClusterName,

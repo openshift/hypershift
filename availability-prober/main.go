@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/bombsimon/logrusr"
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 type options struct {
@@ -21,7 +21,7 @@ func main() {
 	flag.StringVar(&opts.target, "target", "", "A http url to probe. The program will continue until it gets a http 2XX back.")
 	flag.Parse()
 
-	log := logrusr.NewLogger(logrus.New())
+	log := zap.New(zap.UseDevMode(true), zap.JSONEncoder())
 
 	url, err := url.Parse(opts.target)
 	if err != nil {

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/bombsimon/logrusr"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
-	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -18,7 +18,7 @@ func newUpdateLoopDetector() *updateLoopDetector {
 	return &updateLoopDetector{
 		hasNoOpUpdate:    sets.String{},
 		updateEventCount: map[string]int{},
-		log:              logrusr.NewLogger(func() logrus.FieldLogger { l := logrus.New(); l.SetFormatter(&logrus.JSONFormatter{}); return l }()),
+		log:              zap.New(zap.UseDevMode(true), zap.JSONEncoder()),
 	}
 }
 

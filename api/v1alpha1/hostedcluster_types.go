@@ -70,130 +70,183 @@ const (
 	MachineApproverImage = "hypershift.openshift.io/machine-approver-image"
 )
 
-// HostedClusterSpec defines the desired state of HostedCluster
+// HostedClusterSpec is the desired behavior of a HostedCluster.
 type HostedClusterSpec struct {
-
-	// Release specifies the release image to use for this HostedCluster
+	// Release specifies the desired OCP release payload for the hosted cluster.
+	//
+	// Updating this field will trigger a rollout of the control plane. The
+	// behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+	// and InfrastructureAvailabilityPolicy.
 	Release Release `json:"release"`
 
-	// +optional
-	// +immutable
-	FIPS bool `json:"fips"`
-
-	// PullSecret is a pull secret injected into the container runtime of guest
-	// workers. It should have an ".dockerconfigjson" key containing the pull secret JSON.
-	// +immutable
-	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
-
-	// AuditWebhook contains metadata for configuring an audit webhook
-	// endpoint for a cluster to process cluster audit events. It references
-	// a secret that contains the webhook information for the audit webhook endpoint.
-	// It is a secret because if the endpoint has MTLS the kubeconfig will contain client
-	// keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored
-	// in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.
-	// +optional
-	// +immutable
-	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
-
-	// +kubebuilder:default:="https://kubernetes.default.svc"
-	// +immutable
-	IssuerURL string `json:"issuerURL"`
-
-	// SSHKey is a reference to a Secret containing a single key "id_rsa.pub",
-	// whose value is the public part of an SSH key that can be used to access
-	// Nodes.
-	// +immutable
-	SSHKey corev1.LocalObjectReference `json:"sshKey"`
-
-	// Networking contains network-specific settings for this cluster
-	// +immutable
-	Networking ClusterNetworking `json:"networking"`
-
-	// Autoscaling for compute nodes only, does not cover control plane
-	// +optional
-	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
-
-	// +immutable
-	Platform PlatformSpec `json:"platform"`
-
-	// InfraID is used to identify the cluster in cloud platforms
+	// InfraID is a globally unique identifier for the cluster. This identifier
+	// will be used to associate various cloud resources with the HostedCluster
+	// and its associated NodePools.
+	//
+	// TODO(dan): consider moving this to .platform.aws.infraID
+	//
 	// +immutable
 	InfraID string `json:"infraID"`
 
-	// DNS configuration for the cluster
+	// Platform specifies the underlying infrastructure provider for the cluster
+	// and is used to configure platform specific behavior.
+	//
 	// +immutable
-	DNS DNSSpec `json:"dns,omitempty"`
+	Platform PlatformSpec `json:"platform"`
 
-	// Services defines metadata about how control plane services are published
-	// in the management cluster.
-	// TODO (alberto): include Ignition endpoint here.
-	Services []ServicePublishingStrategyMapping `json:"services"`
-
-	// ControllerAvailabilityPolicy specifies an availability policy to apply
-	// to critical control plane components.
-	// Defaults to SingleReplica when not set.
+	// ControllerAvailabilityPolicy specifies the availability policy applied to
+	// critical control plane components. The default value is SingleReplica.
+	//
 	// +optional
+	// +immutable
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
-	// InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
-	// run on the guest cluster nodes in HA mode
-	// Defaults to HighlyAvailable when not set
+	// InfrastructureAvailabilityPolicy specifies the availability policy applied
+	// to infrastructure services which run on cluster nodes. The default value is
+	// HighlyAvailable.
+	//
 	// +optional
 	// +immutable
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
-	// Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
-	// use to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.
+	// DNS specifies DNS configuration for the cluster.
+	//
+	// +immutable
+	DNS DNSSpec `json:"dns,omitempty"`
+
+	// Networking specifies network configuration for the cluster.
+	//
+	// +immutable
+	Networking ClusterNetworking `json:"networking"`
+
+	// Autoscaling specifies auto-scaling behavior that applies to all NodePools
+	// associated with the control plane.
+	//
+	// +optional
+	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
+
+	// Etcd specifies configuration for the control plane etcd cluster. The
+	// default ManagementType is Managed. Once set, the ManagementType cannot be
+	// changed.
+	//
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed"}
 	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 
-	// Configuration embeds resources that correspond to the openshift configuration API:
-	// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
+	// Services specifies how individual control plane services are published from
+	// the hosting cluster of the control plane.
+	//
+	// If a given service is not present in this list, it will be exposed publicly
+	// by default.
+	Services []ServicePublishingStrategyMapping `json:"services"`
+
+	// PullSecret references a pull secret to be injected into the container
+	// runtime of all cluster nodes. The secret must have a key named
+	// ".dockerconfigjson" whose value is the pull secret JSON.
+	//
+	// +immutable
+	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
+
+	// SSHKey references an SSH key to be injected into all cluster node sshd
+	// servers. The secret must have a single key "id_rsa.pub" whose value is the
+	// public part of an SSH key.
+	//
+	// +immutable
+	SSHKey corev1.LocalObjectReference `json:"sshKey"`
+
+	// IssuerURL is an OIDC issuer URL which is used as the issuer in all
+	// ServiceAccount tokens generated by the control plane API server. The
+	// default value is kubernetes.default.svc, which only works for in-cluster
+	// validation.
+	//
+	// +kubebuilder:default:="https://kubernetes.default.svc"
+	// +immutable
+	IssuerURL string `json:"issuerURL"`
+
+	// Configuration specifies configuration for individual OCP components in the
+	// cluster, represented as embedded resources that correspond to the openshift
+	// configuration API.
+	//
 	// +kubebuilder:validation:Optional
 	// +optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 
-	// ImageContentSources lists sources/repositories for the release-image content.
+	// AuditWebhook contains metadata for configuring an audit webhook endpoint
+	// for a cluster to process cluster audit events. It references a secret that
+	// contains the webhook information for the audit webhook endpoint. It is a
+	// secret because if the endpoint has mTLS the kubeconfig will contain client
+	// keys. The kubeconfig needs to be stored in the secret with a secret key
+	// name that corresponds to the constant AuditWebhookKubeconfigKey.
+	//
+	// This field is currently only supported on the IBMCloud platform.
+	//
+	// +optional
+	// +immutable
+	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
+
+	// ImageContentSources specifies image mirrors that can be used by cluster
+	// nodes to pull content.
+	//
 	// +optional
 	// +immutable
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
-	// SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
-	// cluster when applicable.
+	// SecretEncryption specifies a Kubernetes secret encryption strategy for the
+	// control plane.
+	//
 	// +optional
 	SecretEncryption *SecretEncryptionSpec `json:"secretEncryption,omitempty"`
+
+	// FIPS indicates whether this cluster's nodes will be running in FIPS mode.
+	// If set to true, the control plane's ignition server will be configured to
+	// expect that nodes joining the cluster will be FIPS-enabled.
+	//
+	// +optional
+	// +immutable
+	FIPS bool `json:"fips"`
 }
 
-// ImageContentSource defines a list of sources/repositories that can be used to pull content.
+// ImageContentSource specifies image mirrors that can be used by cluster nodes
+// to pull content. For cluster workloads, if a container image registry host of
+// the pullspec matches Source then one of the Mirrors are substituted as hosts
+// in the pullspec and tried in order to fetch the image.
 type ImageContentSource struct {
-	// Source is the repository that users refer to, e.g. in image pull specifications.
+	// Source is the repository that users refer to, e.g. in image pull
+	// specifications.
+	//
 	// +immutable
 	Source string `json:"source"`
 
-	// Mirrors is one or more repositories that may also contain the same images.
+	// Mirrors are one or more repositories that may also contain the same images.
+	//
 	// +optional
 	// +immutable
 	Mirrors []string `json:"mirrors,omitempty"`
 }
 
-// ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.
+// ServicePublishingStrategyMapping specifies how individual control plane
+// services are published from the hosting cluster of a control plane.
 type ServicePublishingStrategyMapping struct {
-	// Service identifies the type of service being published
+	// Service identifies the type of service being published.
+	//
 	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition
 	// +immutable
-	Service                   ServiceType `json:"service"`
+	Service ServiceType `json:"service"`
+
+	// ServicePublishingStrategy specifies how to publish Service.
 	ServicePublishingStrategy `json:"servicePublishingStrategy"`
 }
 
-// ServicePublishingStrategy defines metadata around how a service is published
+// ServicePublishingStrategy specfies how to publish a ServiceType.
 type ServicePublishingStrategy struct {
-	// Type defines the publishing strategy used for the service.
+	// Type is the publishing strategy used for the service.
+	//
 	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None;S3
 	// +immutable
 	Type PublishingStrategyType `json:"type"`
-	// NodePort is used to define extra metadata for the NodePort publishing strategy.
+
+	// NodePort configures exposing a service using a NodePort.
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
 }
 
@@ -213,76 +266,111 @@ var (
 	None PublishingStrategyType = "None"
 )
 
-// ServiceType defines what control plane services can be exposed from the management control plane
+// ServiceType defines what control plane services can be exposed from the
+// management control plane.
 type ServiceType string
 
 var (
-	APIServer    ServiceType = "APIServer"
+	// APIServer is the control plane API server.
+	APIServer ServiceType = "APIServer"
+
+	// Konnectivity is the control plane Konnectivity networking service.
 	Konnectivity ServiceType = "Konnectivity"
-	OAuthServer  ServiceType = "OAuthServer"
-	OIDC         ServiceType = "OIDC"
-	Ignition     ServiceType = "Ignition"
+
+	// OAuthServer is the control plane OAuth service.
+	OAuthServer ServiceType = "OAuthServer"
+
+	// OIDC is the control plane OIDC service.
+	OIDC ServiceType = "OIDC"
+
+	// Ignition is the control plane ignition service for nodes.
+	Ignition ServiceType = "Ignition"
 )
 
-// NodePortPublishingStrategy defines the network endpoint that can be used to contact the NodePort service
+// NodePortPublishingStrategy specifies a NodePort used to expose a service.
 type NodePortPublishingStrategy struct {
-	// Address is the host/ip that the nodePort service is exposed over
+	// Address is the host/ip that the NodePort service is exposed over.
 	Address string `json:"address"`
-	// Port is the nodePort of the service. If <=0 the nodePort is dynamically assigned when the service is created
+
+	// Port is the port of the NodePort service. If <=0, the port is dynamically
+	// assigned when the service is created.
 	Port int32 `json:"port,omitempty"`
 }
 
-// DNSSpec specifies the DNS configuration in the cluster
+// DNSSpec specifies the DNS configuration in the cluster.
 type DNSSpec struct {
 	// BaseDomain is the base domain of the cluster.
+	//
 	// +immutable
 	BaseDomain string `json:"baseDomain"`
 
-	// PublicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to
-	// the internet exist.
+	// PublicZoneID is the Hosted Zone ID where all the DNS records that are
+	// publicly accessible to the internet exist.
+	//
 	// +optional
 	// +immutable
 	PublicZoneID string `json:"publicZoneID,omitempty"`
 
-	// PrivateZoneID is the Hosted Zone ID where all the DNS records that are only available internally
-	// to the cluster exist.
+	// PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
+	// available internally to the cluster exist.
+	//
 	// +optional
 	// +immutable
 	PrivateZoneID string `json:"privateZoneID,omitempty"`
 }
 
+// ClusterNetworking specifies network configuration for a cluster.
 type ClusterNetworking struct {
+	// ServiceCIDR is...
+	//
+	// TODO(dan): document it
+	//
 	// +immutable
 	ServiceCIDR string `json:"serviceCIDR"`
+
+	// PodCIDR is...
+	//
+	// TODO(dan): document it
+	//
 	// +immutable
 	PodCIDR string `json:"podCIDR"`
+
+	// MachineCIDR is...
+	//
+	// TODO(dan): document it
+	//
 	// +immutable
 	MachineCIDR string `json:"machineCIDR"`
+
 	// NetworkType specifies the SDN provider used for cluster networking.
+	//
 	// +kubebuilder:default:="OpenShiftSDN"
 	// +immutable
 	NetworkType NetworkType `json:"networkType"`
 
 	// APIServer contains advanced network settings for the API server that affect
-	// how the APIServer is exposed inside a worker node.
+	// how the APIServer is exposed inside a cluster node.
+	//
 	// +immutable
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
 
-// APIServerNetworking specifies how the APIServer is exposed inside a worker node.
+// APIServerNetworking specifies how the APIServer is exposed inside a cluster
+// node.
 type APIServerNetworking struct {
-	// AdvertiseAddress is the address that workers will use to talk to the
-	// API server. This is an address associated with the loopback adapter of
-	// each worker. If not specified, 172.20.0.1 is used.
+	// AdvertiseAddress is the address that nodes will use to talk to the API
+	// server. This is an address associated with the loopback adapter of each
+	// node. If not specified, 172.20.0.1 is used.
 	AdvertiseAddress *string `json:"advertiseAddress,omitempty"`
 
-	// Port is the port at which the APIServer is exposed inside a worker node
-	// Other pods using host networking cannot listen on this port. If not
-	// specified, 6443 is used.
+	// Port is the port at which the APIServer is exposed inside a node. Other
+	// pods using host networking cannot listen on this port. If not specified,
+	// 6443 is used.
 	Port *int32 `json:"port,omitempty"`
 }
 
 // NetworkType specifies the SDN provider used for cluster networking.
+//
 // +kubebuilder:validation:Enum=OpenShiftSDN;Calico
 type NetworkType string
 
@@ -295,104 +383,156 @@ const (
 )
 
 // PlatformType is a specific supported infrastructure provider.
+//
 // +kubebuilder:validation:Enum=AWS;None;IBMCloud
 type PlatformType string
 
 const (
-	// AWSPlatformType represents Amazon Web Services infrastructure.
+	// AWSPlatform represents Amazon Web Services infrastructure.
 	AWSPlatform PlatformType = "AWS"
 
+	// NonePlatform represents user supplied (e.g. bare metal) infrastructure.
 	NonePlatform PlatformType = "None"
 
+	// IBMCloudPlatform represents IBM Cloud infrastructure.
 	IBMCloudPlatform PlatformType = "IBMCloud"
 )
 
+// PlatformSpec specifies the underlying infrastructure provider for the cluster
+// and is used to configure platform specific behavior.
 type PlatformSpec struct {
-	// Type is the underlying infrastructure provider for the cluster.
+	// Type is the type of infrastructure provider for the cluster.
 	//
 	// +unionDiscriminator
 	// +immutable
 	Type PlatformType `json:"type"`
 
-	// AWS contains AWS-specific settings for the HostedCluster
+	// AWS specifies configuration for clusters running on Amazon Web Services.
+	//
 	// +optional
 	// +immutable
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
 }
 
+// AWSCloudProviderConfig specifies AWS networking configuration.
 type AWSCloudProviderConfig struct {
-	// Subnet is the subnet to use for instances
+	// Subnet is the subnet to use for control plane cloud resources.
+	//
 	// +optional
 	Subnet *AWSResourceReference `json:"subnet,omitempty"`
 
-	// Zone is the availability zone where the instances are created
+	// Zone is the availability zone where control plane cloud resources are
+	// created.
+	//
 	// +optional
 	Zone string `json:"zone,omitempty"`
 
-	// VPC specifies the VPC used for the cluster
+	// VPC is the VPC to use for control plane cloud resources.
 	VPC string `json:"vpc"`
 }
 
+// AWSEndpointAccessType specifies the publishing scope of cluster endpoints.
 type AWSEndpointAccessType string
 
 const (
-	// Public endpoint access allows public kube-apiserver access and public node communication with the control plane
+	// Public endpoint access allows public API server access and public node
+	// communication with the control plane.
 	Public AWSEndpointAccessType = "Public"
 
-	// PublicAndPrivate endpoint access allows public kube-apiserver access and private node communication with the control plane
+	// PublicAndPrivate endpoint access allows public API server access and
+	// private node communication with the control plane.
 	PublicAndPrivate AWSEndpointAccessType = "PublicAndPrivate"
 
-	// Private endpoint access allows only private kube-apiserver access and private node communication with the control plane
+	// Private endpoint access allows only private API server access and private
+	// node communication with the control plane.
 	Private AWSEndpointAccessType = "Private"
 )
 
+// AWSPlatformSpec specifies configuration for clusters running on Amazon Web Services.
 type AWSPlatformSpec struct {
-	// Region is the AWS region for the cluster.
-	// This is used by CRs that are consumed by OCP Operators.
-	// E.g cluster-infrastructure-02-config.yaml and install-config.yaml
-	// This is also used by nodePools to fetch the default boot AMI in a given payload.
+	// Region is the AWS region in which the cluster resides. This configures the
+	// OCP control plane cloud integrations, and is used by NodePool to resolve
+	// the correct boot AMI for a given release.
+	//
 	// +immutable
 	Region string `json:"region"`
 
-	// CloudProviderConfig is used to generate the ConfigMap with the cloud config consumed
-	// by the Control Plane components.
+	// CloudProviderConfig specifies AWS networking configuration for the control
+	// plane.
+	//
+	// TODO(dan): should this be named AWSNetworkConfig?
+	//
 	// +optional
 	// +immutable
 	CloudProviderConfig *AWSCloudProviderConfig `json:"cloudProviderConfig,omitempty"`
 
-	// ServiceEndpoints list contains custom endpoints which will override default
-	// service endpoint of AWS Services.
-	// There must be only one ServiceEndpoint for a service.
+	// ServiceEndpoints specifies optional custom endpoints which will override
+	// the default service endpoint of specific AWS Services.
+	//
+	// There must be only one ServiceEndpoint for a given service name.
+	//
 	// +optional
 	// +immutable
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
+	// Roles must contain exactly 3 entries representing the locators for roles
+	// supporting the following OCP services:
+	//
+	// - openshift-ingress-operator/cloud-credentials
+	// - openshift-image-registry/installer-cloud-credentials
+	//  -openshift-cluster-csi-drivers/ebs-cloud-credentials
+	//
+	// Each role has unique permission requirements whose documentation is TBD.
+	//
+	// TODO(dan): revisit this field; it's really 3 required fields with specific content requirements
+	//
 	// +immutable
 	Roles []AWSRoleCredentials `json:"roles,omitempty"`
 
 	// KubeCloudControllerCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the Kube cloud controller policy.
-	// The secret should have exactly one key, `credentials`, whose value is
-	// an AWS credentials file.
+	// credentials with permissions matching the cloud controller policy. The
+	// secret should have exactly one key, `credentials`, whose value is an AWS
+	// credentials file.
+	//
+	// TODO(dan): document the "cloud controller policy"
+	//
 	// +immutable
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
 
 	// NodePoolManagementCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the noe pool management policy.
-	// The secret should have exactly one key, `credentials`, whose value is
-	// an AWS credentials file.
+	// credentials with permissions matching the node pool management policy. The
+	// secret should have exactly one key, `credentials`, whose value is an AWS
+	// credentials file.
+	//
+	// TODO(dan): document the "node pool management policy"
+	//
 	// +immutable
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
-	// resourceTags is a list of additional tags to apply to AWS resources created for the cluster.
-	// See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for information on tagging AWS resources.
-	// AWS supports a maximum of 50 tags per resource. OpenShift reserves 25 tags for its use, leaving 25 tags
-	// available for the user.
+	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the control-plane-operator policy.
+	// The secret should have exactly one key, `credentials`, whose value is
+	// an AWS credentials file.
+	//
+	// TODO(dan): document the "node pool management policy"
+	//
+	// +immutable
+	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
+
+	// ResourceTags is a list of additional tags to apply to AWS resources created
+	// for the cluster. See
+	// https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
+	// information on tagging AWS resources. AWS supports a maximum of 50 tags per
+	// resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
+	// for the user.
+	//
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
-	// EndpointAccess determines if cluster endpoints are public and/or private
+	// EndpointAccess specifies the publishing scope of cluster endpoints. The
+	// default is Public.
+	//
 	// +kubebuilder:validation:Enum=Public;PublicAndPrivate;Private
 	// +kubebuilder:default=Public
 	// +optional
@@ -401,21 +541,21 @@ type AWSPlatformSpec struct {
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.
 type AWSResourceTag struct {
-	// key is the key of the tag
-	// +kubebuilder:validation:Required
+	// Key is the key of the tag.
+	//
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
 	// +kubebuilder:validation:Pattern=`^[0-9A-Za-z_.:/=+-@]+$`
-	// +required
 	Key string `json:"key"`
-	// value is the value of the tag.
-	// Some AWS service do not support empty values. Since tags are added to resources in many services, the
-	// length of the tag value must meet the requirements of all services.
-	// +kubebuilder:validation:Required
+	// Value is the value of the tag.
+	//
+	// Some AWS service do not support empty values. Since tags are added to
+	// resources in many services, the length of the tag value must meet the
+	// requirements of all services.
+	//
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
 	// +kubebuilder:validation:Pattern=`^[0-9A-Za-z_.:/=+-@]+$`
-	// +required
 	Value string `json:"value"`
 }
 
@@ -440,34 +580,45 @@ type AWSServiceEndpoint struct {
 	URL string `json:"url"`
 }
 
+// Release represents the metadata for an OCP release payload image.
 type Release struct {
-	// Image is the release image pullspec for the control plane
-	// +kubebuilder:validation:Required
+	// Image is the image pullspec of an OCP release payload image.
+	//
 	// +kubebuilder:validation:Pattern=^(\w+\S+)$
 	Image string `json:"image"`
 }
 
-// TODO maybe we have profiles for scaling behaviors
+// ClusterAutoscaling specifies auto-scaling behavior that applies to all
+// NodePools associated with a control plane.
 type ClusterAutoscaling struct {
-	// Maximum number of nodes in all node groups.
-	// Cluster autoscaler will not grow the cluster beyond this number.
+	// MaxNodesTotal is the maximum allowable number of nodes across all NodePools
+	// for a HostedCluster. The autoscaler will not grow the cluster beyond this
+	// number.
+	//
 	// +kubebuilder:validation:Minimum=0
 	MaxNodesTotal *int32 `json:"maxNodesTotal,omitempty"`
 
-	// Gives pods graceful termination time before scaling down
-	// default: 600 seconds
+	// MaxPodGracePeriod is the maximum seconds to wait for graceful pod
+	// termination before scaling down a NodePool. The default is 600 seconds.
+	//
 	// +kubebuilder:validation:Minimum=0
 	MaxPodGracePeriod *int32 `json:"maxPodGracePeriod,omitempty"`
 
-	// Maximum time CA waits for node to be provisioned
-	// default: 15 minutes
+	// MaxNodeProvisionTime is the maximum time to wait for node provisioning
+	// before considering the provisioning to be unsuccessful, expressed as a Go
+	// duration string. The default is 15 minutes.
+	//
 	// +kubebuilder:validation:Pattern=^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
 	MaxNodeProvisionTime string `json:"maxNodeProvisionTime,omitempty"`
 
-	// To allow users to schedule "best-effort" pods, which shouldn't trigger
-	// Cluster Autoscaler actions, but only run when there are spare resources available,
-	// default: -10
-	// More info: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
+	// PodPriorityThreshold enables users to schedule "best-effort" pods, which
+	// shouldn't trigger autoscaler actions, but only run when there are spare
+	// resources available. The default is -10.
+	//
+	// See the following for more details:
+	// https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
+	//
+	// +optional
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
 }
 
@@ -476,35 +627,46 @@ type ClusterAutoscaling struct {
 type EtcdManagementType string
 
 const (
-	Managed   EtcdManagementType = "Managed"
+	// Managed means HyperShift should provision and operator the etcd cluster
+	// automatically.
+	Managed EtcdManagementType = "Managed"
+
+	// Unmanaged means HyperShift will not provision or manage the etcd cluster,
+	// and the user is responsible for doing so.
 	Unmanaged EtcdManagementType = "Unmanaged"
 )
 
+// EtcdSpec specifies configuration for a control plane etcd cluster.
 type EtcdSpec struct {
-	// ManagementType defines how the etcd cluster is managed. Unmanaged means
-	// the etcd cluster is managed by a system outside the hypershift controllers.
-	// Managed means the hypershift controllers manage the provisioning of the etcd cluster
-	// and the operations around it
+	// ManagementType defines how the etcd cluster is managed.
+	//
 	// +unionDiscriminator
 	// +immutable
 	ManagementType EtcdManagementType `json:"managementType"`
 
-	// Managed provides metadata that defines how the hypershift controllers manage the etcd cluster
+	// Managed specifies the behavior of an etcd cluster managed by HyperShift.
+	//
 	// +optional
 	// +immutable
 	Managed *ManagedEtcdSpec `json:"managed,omitempty"`
 
-	// Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster
+	// Unmanaged specifies configuration which enables the control plane to
+	// integrate with an eternally managed etcd cluster.
+	//
 	// +optional
 	// +immutable
 	Unmanaged *UnmanagedEtcdSpec `json:"unmanaged,omitempty"`
 }
 
+// ManagedEtcdSpec specifies the behavior of an etcd cluster managed by
+// HyperShift.
 type ManagedEtcdSpec struct {
-	// Storage configures how etcd data is persisted.
+	// Storage specifies how etcd data is persisted.
 	Storage ManagedEtcdStorageSpec `json:"storage"`
 }
 
+// ManagedEtcdStorageType is a storage type for an etcd cluster.
+//
 // +kubebuilder:validation:Enum=PersistentVolume
 type ManagedEtcdStorageType string
 
@@ -521,7 +683,6 @@ var (
 type ManagedEtcdStorageSpec struct {
 	// Type is the kind of persistent storage implementation to use for etcd.
 	//
-	// +kubebuilder:validation:Required
 	// +immutable
 	// +unionDiscriminator
 	Type ManagedEtcdStorageType `json:"type"`
@@ -553,24 +714,30 @@ type PersistentVolumeEtcdStorageSpec struct {
 	Size *resource.Quantity `json:"size,omitempty"`
 }
 
-// UnmanagedEtcdSpec defines metadata that enables the Openshift controllers to connect to the external etcd cluster
+// UnmanagedEtcdSpec specifies configuration which enables the control plane to
+// integrate with an eternally managed etcd cluster.
 type UnmanagedEtcdSpec struct {
-	// Endpoint is the full url to connect to the etcd cluster endpoint. An example is
-	// https://etcd-client:2379
-	// +kubebuilder:validation:Required
+	// Endpoint is the full etcd cluster client endpoint URL. For example:
+	//
+	//     https://etcd-client:2379
+	//
+	// If the URL uses an HTTPS scheme, the TLS field is required.
+	//
 	// +kubebuilder:validation:Pattern=`^https://`
 	Endpoint string `json:"endpoint"`
 
-	// TLS defines a reference to a TLS secret that can be used for client MTLS authentication with
-	// the etcd cluster
+	// TLS specifies TLS configuration for HTTPS etcd client endpoints.
 	TLS EtcdTLSConfig `json:"tls"`
 }
 
+// EtcdTLSConfig specifies TLS configuration for HTTPS etcd client endpoints.
 type EtcdTLSConfig struct {
-	// ClientSecret refers to a secret for client MTLS authentication with the etcd cluster
-	// The CA must be stored at secret key etcd-client-ca.crt.
-	// The client cert must be stored at secret key etcd-client.crt.
-	// The client key must be stored at secret key etcd-client.key.
+	// ClientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
+	// may have the following key/value pairs:
+	//
+	//     etcd-client-ca.crt: Certificate Authority value
+	//     etcd-client.crt: Client certificate value
+	//     etcd-client.key: Client certificate key value
 	ClientSecret corev1.LocalObjectReference `json:"clientSecret"`
 }
 
@@ -771,7 +938,7 @@ const (
 	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
 )
 
-// HostedClusterStatus defines the observed state of HostedCluster
+// HostedClusterStatus is the latest observed status of a HostedCluster.
 type HostedClusterStatus struct {
 	// Version is the status of the release version applied to the
 	// HostedCluster.
@@ -788,6 +955,8 @@ type HostedClusterStatus struct {
 	// +optional
 	IgnitionEndpoint string `json:"ignitionEndpoint"`
 
+	// Conditions represents the latest available observations of a control
+	// plane's current state.
 	Conditions []metav1.Condition `json:"conditions"`
 }
 
@@ -801,8 +970,6 @@ type ClusterVersionStatus struct {
 	// desired is the version that the cluster is reconciling towards.
 	// If the cluster is not yet fully initialized desired will be set
 	// with the information available, which may be an image or a tag.
-	// +kubebuilder:validation:Required
-	// +required
 	Desired Release `json:"desired"`
 
 	// history contains a list of the most recent versions applied to the cluster.
@@ -812,32 +979,40 @@ type ClusterVersionStatus struct {
 	// Completed if the rollout completed - if an update was failing or halfway
 	// applied the state will be Partial. Only a limited amount of update history
 	// is preserved.
+	//
 	// +optional
 	History []configv1.UpdateHistory `json:"history,omitempty"`
 
 	// observedGeneration reports which version of the spec is being synced.
 	// If this value is not equal to metadata.generation, then the desired
 	// and conditions fields may represent a previous version.
-	// +kubebuilder:validation:Required
-	// +required
 	ObservedGeneration int64 `json:"observedGeneration"`
 }
 
-// ClusterConfiguration contains global configuration for a HostedCluster.
+// ClusterConfiguration specifies configuration for individual OCP components in the
+// cluster, represented as embedded resources that correspond to the openshift
+// configuration API.
+//
+// The API for individual configuration items is at:
+// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
 type ClusterConfiguration struct {
-	// SecretRefs holds references to secrets used in configuration entries
-	// so that they can be properly synced by the hypershift operator.
+	// SecretRefs holds references to any secrets referenced by configuration
+	// entries. Entries can reference the secrets using local object references.
+	//
 	// +kubebuilder:validation:Optional
 	// +optional
 	SecretRefs []corev1.LocalObjectReference `json:"secretRefs,omitempty"`
 
-	// ConfigMapRefs holds references to configmaps used in configuration entries
-	// so that they can be properly synced by the hypershift operator.
+	// ConfigMapRefs holds references to any configmaps referenced by
+	// configuration entries. Entries can reference the configmaps using local
+	// object references.
+	//
 	// +kubebuilder:validation:Optional
 	// +optional
 	ConfigMapRefs []corev1.LocalObjectReference `json:"configMapRefs,omitempty"`
 
-	// Items embeds the configuration resource
+	// Items embeds the serialized configuration resources.
+	//
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Optional
 	// +optional

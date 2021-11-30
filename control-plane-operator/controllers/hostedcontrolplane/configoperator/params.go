@@ -7,14 +7,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type HostedClusterConfigOperatorParams struct {
 	config.DeploymentConfig
 	config.OwnerRef
 	Image                   string
+	ReleaseImage            string
 	OpenShiftVersion        string
 	KubernetesVersion       string
 	AvailabilityProberImage string
@@ -23,6 +24,7 @@ type HostedClusterConfigOperatorParams struct {
 func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, openShiftVersion, kubernetesVersion string) *HostedClusterConfigOperatorParams {
 	params := &HostedClusterConfigOperatorParams{
 		Image:                   images["hosted-cluster-config-operator"],
+		ReleaseImage:            hcp.Spec.ReleaseImage,
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		OpenShiftVersion:        openShiftVersion,
 		KubernetesVersion:       kubernetesVersion,

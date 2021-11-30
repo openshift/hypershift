@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"github.com/openshift/hypershift/control-plane-operator/api"
+	"github.com/openshift/hypershift/support/api"
 	"hash/fnv"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

@@ -33,10 +33,10 @@ spec:
       jsonPath: .status.failureReason
       name: FailureReason
       type: string
-    name: v1alpha4
+    name: v1beta1
     schema:
       openAPIV3Schema:
-        description: AWSFargateProfile is the Schema for the awsfargateprofiles API
+        description: AWSFargateProfile is the Schema for the awsfargateprofiles API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -51,7 +51,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: FargateProfileSpec defines the desired state of FargateProfile
+            description: FargateProfileSpec defines the desired state of FargateProfile.
             properties:
               additionalTags:
                 additionalProperties:
@@ -78,7 +78,7 @@ spec:
                 description: Selectors specify fargate pod selectors.
                 items:
                   description: FargateSelector specifies a selector for pods that
-                    should run on this fargate pool
+                    should run on this fargate pool.
                   properties:
                     labels:
                       additionalProperties:
@@ -102,7 +102,7 @@ spec:
             - clusterName
             type: object
           status:
-            description: FargateProfileStatus defines the observed state of FargateProfile
+            description: FargateProfileStatus defines the observed state of FargateProfile.
             properties:
               conditions:
                 description: Conditions defines current state of the Fargate profile.
@@ -144,6 +144,7 @@ spec:
                         important.
                       type: string
                   required:
+                  - lastTransitionTime
                   - status
                   - type
                   type: object

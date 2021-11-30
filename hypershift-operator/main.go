@@ -235,7 +235,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			RegistryOverrides: opts.RegistryOverrides,
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
-		CreateOrUpdateProvider:     createOrUpdate,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
 	}
 	if opts.OIDCStorageProviderS3Credentials != "" {
@@ -245,7 +244,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
 	}
-	if err := hostedClusterReconciler.SetupWithManager(mgr); err != nil {
+	if err := hostedClusterReconciler.SetupWithManager(mgr, createOrUpdate); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
@@ -330,6 +329,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
 		}
 		log.Info("reconciled default ingress controller")
+	}
+
+	if err := setupMetrics(mgr); err != nil {
+		return fmt.Errorf("failed to setup metrics: %w", err)
 	}
 
 	// Start the controllers
