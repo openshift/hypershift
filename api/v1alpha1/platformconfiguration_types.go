@@ -10,9 +10,13 @@ func init() {
 }
 
 const (
+	PlatformBeingConfigured         = "PlatformInfrastructureBeingConfigured"
 	PlatformConfiguredAsExpected    = "PlatformInfrastructureConfiguredAsExpected"
+	PlatfromDestroy                 = "PlatformInfrastructureDestroy"
 	PlatformMisConfiguredReason     = "PlatformInfrastructureMisconfigured"
+	PlatformIAMBeingConfigured      = "PlatformIAMBeingConfigured"
 	PlatformIAMConfiguredAsExpected = "PlatformIAMConfiguredAsExpected"
+	PlatformIAMRemove               = "PlatformIAMRemove"
 	PlatformIAMMisConfiguredReason  = "PlatformIAMMisconfigured"
 
 	// PlatformConfigured indicates (if status is true) that the
@@ -109,14 +113,13 @@ type PlatformConfigurationStatus struct {
 // NodePool resources.
 //
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path=platformconfiguration,shortName=pcfg;pcfgs,scope=Namespaced
+// +kubebuilder:resource:path=platformconfiguration,shortName=pcg;pcgs,scope=Namespaced
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version.history[?(@.state==\"Completed\")].version",description="Version"
-// +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
-// +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
-// +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
-// +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
+// +kubebuilder:printcolumn:name="INFRA Ready",type="string",JSONPath=".status.conditions[?(@.type==\"PlatformInfrastructureConfigured\")].status",description="Configured"
+// +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"PlatformInfrastructureConfigured\")].reason",description="Reason"
+// +kubebuilder:printcolumn:name="IAM Ready",type="string",JSONPath=".status.conditions[?(@.type==\"PlatformIAMConfigured\")].status",description="Configured"
+// +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"PlatformIAMConfigured\")].reason",description="Reason"
 type PlatformConfiguration struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

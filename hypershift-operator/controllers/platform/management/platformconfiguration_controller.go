@@ -83,9 +83,9 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 			return ctrl.Result{}, fmt.Errorf("failed to update infra-id: %w", err)
 		}
 
-		//Update the status.conditions
-		setStatusCondition(&pp, hyperv1.PlatformConfigured, metav1.ConditionFalse, "Configuring platform with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformConfiguredAsExpected)
-		setStatusCondition(&pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, "Configuring platform IAM with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformIAMConfiguredAsExpected)
+		//Update the status.conditions. This only works the first time, so if you fix an issue, it will still be set to PlatformXXXMisConfigured
+		setStatusCondition(&pp, hyperv1.PlatformConfigured, metav1.ConditionFalse, "Configuring platform with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformBeingConfigured)
+		setStatusCondition(&pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, "Configuring platform IAM with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformIAMBeingConfigured)
 
 		if err := r.Client.Status().Update(ctx, &pp); err != nil {
 			if apierrors.IsConflict(err) {
@@ -309,10 +309,11 @@ func (r *PlatformConfigurationReconciler) destroyPlatformConfiguration(pp *hypv1
 		Region:             pp.Spec.Platform.AWS.Region,
 		BaseDomain:         pp.Spec.DNS.BaseDomain,
 		InfraID:            pp.Spec.InfraID,
+		Name:               pp.GetName(),
 	}
 
-	setStatusCondition(pp, hyperv1.PlatformConfigured, metav1.ConditionFalse, "Destroying PlatformConfiguration with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformConfiguredAsExpected)
-	setStatusCondition(pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, "Removing PlatformConfiguration IAM with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformIAMConfiguredAsExpected)
+	setStatusCondition(pp, hyperv1.PlatformConfigured, metav1.ConditionFalse, "Destroying PlatformConfiguration with infra-id: "+pp.Spec.InfraID, hyperv1.PlatfromDestroy)
+	setStatusCondition(pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, "Removing PlatformConfiguration IAM with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformIAMRemove)
 
 	if err := r.Client.Status().Update(ctx, pp); err != nil {
 		if apierrors.IsConflict(err) {

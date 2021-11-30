@@ -14,30 +14,26 @@ spec:
     listKind: PlatformConfigurationList
     plural: platformconfiguration
     shortNames:
-    - pcfg
-    - pcfgs
+    - pcg
+    - pcgs
     singular: platformconfiguration
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Version
-      jsonPath: .status.version.history[?(@.state=="Completed")].version
-      name: Version
-      type: string
-    - description: KubeConfig Secret
-      jsonPath: .status.kubeconfig.name
-      name: KubeConfig
-      type: string
-    - description: Progress
-      jsonPath: .status.version.history[?(@.state!="")].state
-      name: Progress
-      type: string
-    - description: Available
-      jsonPath: .status.conditions[?(@.type=="Available")].status
-      name: Available
+    - description: Configured
+      jsonPath: .status.conditions[?(@.type=="PlatformInfrastructureConfigured")].status
+      name: INFRA Ready
       type: string
     - description: Reason
-      jsonPath: .status.conditions[?(@.type=="Available")].reason
+      jsonPath: .status.conditions[?(@.type=="PlatformInfrastructureConfigured")].reason
+      name: Reason
+      type: string
+    - description: Configured
+      jsonPath: .status.conditions[?(@.type=="PlatformIAMConfigured")].status
+      name: IAM Ready
+      type: string
+    - description: Reason
+      jsonPath: .status.conditions[?(@.type=="PlatformIAMConfigured")].reason
       name: Reason
       type: string
     name: v1alpha1
