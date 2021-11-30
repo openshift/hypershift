@@ -906,8 +906,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 
 	if cpoutil.IsPrivateHCP(hcp) {
 		// If private: true, assume nodes will be connecting over the private connection
-		// This DNS record is created out-of-band and points to the Endpoint within the guest VPC
-		return kas.ReconcilePrivateServiceStatus(svc)
+		return kas.ReconcilePrivateServiceStatus(hcp.Name)
 	}
 
 	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
@@ -2379,13 +2378,9 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 }
 
 func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	dnsConfig := manifests.DNSConfig()
-	if err := r.Get(ctx, client.ObjectKeyFromObject(dnsConfig), dnsConfig); err != nil {
-		return err
-	}
 	ic := manifests.IngressPrivateIngressController(hcp.Namespace)
 	_, err := r.CreateOrUpdate(ctx, r.Client, ic, func() error {
-		return ingress.ReconcilePrivateIngressController(ic, hcp.Namespace, fmt.Sprintf("%s.%s", hcp.Namespace, dnsConfig.Spec.BaseDomain), hcp.Spec.Platform.Type)
+		return ingress.ReconcilePrivateIngressController(ic, hcp.Namespace, fmt.Sprintf("%s.hypershift.local", hcp.Name), hcp.Spec.Platform.Type)
 	})
 	if err != nil {
 		return err

@@ -208,6 +208,7 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool
 			route.Labels = map[string]string{}
 		}
 		route.Labels[ingress.HypershiftRouteLabel] = route.GetNamespace()
+		route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", route.Name, ownerRef.Reference.Name)
 	}
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
