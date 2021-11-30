@@ -939,7 +939,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		awsCluster := controlplaneoperator.AWSCluster(controlPlaneNamespace.Name, hcluster.Name)
-		_, err = controllerutil.CreateOrPatch(ctx, r.Client, awsCluster, func() error {
+		_, err = createOrUpdate(ctx, r.Client, awsCluster, func() error {
 			return reconcileAWSCluster(awsCluster, hcluster, hcp.Status.ControlPlaneEndpoint)
 		})
 		if err != nil {
