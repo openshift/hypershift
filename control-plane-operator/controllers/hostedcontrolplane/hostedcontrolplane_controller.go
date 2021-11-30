@@ -907,12 +907,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 	if cpoutil.IsPrivateHCP(hcp) {
 		// If private: true, assume nodes will be connecting over the private connection
 		// This DNS record is created out-of-band and points to the Endpoint within the guest VPC
-		dnsConfig := manifests.DNSConfig()
-		err = r.Get(ctx, client.ObjectKeyFromObject(dnsConfig), dnsConfig)
-		if err != nil {
-			return
-		}
-		return kas.ReconcilePrivateServiceStatus(svc, dnsConfig.Spec.BaseDomain)
+		return kas.ReconcilePrivateServiceStatus(svc)
 	}
 
 	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {

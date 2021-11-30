@@ -576,7 +576,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Reconcile the platform provider node pool management credentials secret by
+	// Reconcile the platform provider control plane operator credentials secret by
 	// resolving  the reference from the HostedCluster and syncing the secret in
 	// the control plane namespace.
 	switch hcluster.Spec.Platform.Type {
@@ -3030,16 +3030,6 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 		}
 	}
 
-	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
-	if err := r.List(ctx, &awsEndpointServiceList); err != nil && !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("failed to list AWSEndpointServices for cluster %q: %w", req.Name, err)
-	}
-	for _, ep := range awsEndpointServiceList.Items {
-		if err := r.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("failed to delete AWSEndpointService %q for cluster %q: %w", ep.Name, req.Name, err)
-		}
-	}
-
 	if hc != nil && len(hc.Spec.InfraID) > 0 {
 		r.Log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
 		cluster := &capiv1.Cluster{
@@ -3058,6 +3048,21 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 			r.Log.Info("Waiting for Cluster deletion", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
 			return false, nil
 		}
+	}
+
+	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
+	if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: controlPlaneNamespace}); err != nil && !apierrors.IsNotFound(err) {
+		return false, fmt.Errorf("failed to list AWSEndpointServices for cluster %q: %w", req.Name, err)
+	}
+	for _, ep := range awsEndpointServiceList.Items {
+		if err := r.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("failed to delete AWSEndpointService %q for cluster %q: %w", ep.Name, req.Name, err)
+		}
+	}
+	if len(awsEndpointServiceList.Items) != 0 {
+		// The CPO puts a finalizer on AWSEndpointService resources and should
+		// not be terminated until the resources are removed from the API server
+		return false, nil
 	}
 
 	r.Log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)

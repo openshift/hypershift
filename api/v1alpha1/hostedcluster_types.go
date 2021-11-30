@@ -514,7 +514,7 @@ type AWSPlatformSpec struct {
 	// The secret should have exactly one key, `credentials`, whose value is
 	// an AWS credentials file.
 	//
-	// TODO(dan): document the "node pool management policy"
+	// TODO(dan): document the "control plane operator policy"
 	//
 	// +immutable
 	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`

@@ -1115,7 +1115,7 @@ Kubernetes core/v1.LocalObjectReference
 credentials with permissions matching the control-plane-operator policy.
 The secret should have exactly one key, <code>credentials</code>, whose value is
 an AWS credentials file.</p>
-<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+<p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
 </td>
 </tr>
 <tr>
