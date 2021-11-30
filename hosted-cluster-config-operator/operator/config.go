@@ -149,8 +149,14 @@ func mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 	if err != nil {
 		panic(fmt.Sprintf("failed to create controller manager: %v", err))
 	}
-	mgr.AddHealthzCheck("ping", healthz.Ping)
-	mgr.AddReadyzCheck("ping", healthz.Ping)
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		panic(fmt.Sprintf("unable to set up health check: %v", err))
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		panic(fmt.Sprintf("unable to set up ready check: %v", err))
+	}
+
 	return mgr
 }
 
