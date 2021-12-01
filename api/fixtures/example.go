@@ -16,8 +16,6 @@ type Resources interface {
 	AsObjects() []crclient.Object
 }
 
-var _ Resources = &ExampleResources{}
-
 type ExampleResources struct {
 	Namespace  *corev1.Namespace
 	PullSecret *corev1.Secret
@@ -164,16 +162,11 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
-		awsResources := &ExampleAWSResources{}
-		awsResources.KubeCloudControllerAWSCreds = buildAWSCreds(
-			o.Name+"-cloud-ctrl-creds",
-			o.AWS.KubeCloudControllerRoleARN)
-		awsResources.NodePoolManagementAWSCreds = buildAWSCreds(
-			o.Name+"-node-mgmt-creds",
-			o.AWS.NodePoolManagementRoleARN)
-		awsResources.ControlPlaneOperatorAWSCreds = buildAWSCreds(
-			o.Name+"-cpo-creds",
-			o.AWS.ControlPlaneOperatorRoleARN)
+		resources = &ExampleAWSResources{
+			buildAWSCreds(o.Name+"-cloud-ctrl-creds", o.AWS.KubeCloudControllerRoleARN),
+			buildAWSCreds(o.Name+"-node-mgmt-creds", o.AWS.NodePoolManagementRoleARN),
+			buildAWSCreds(o.Name+"-cpo-creds", o.AWS.ControlPlaneOperatorRoleARN),
+		}
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
 			AWS: &hyperv1.AWSPlatformSpec{
@@ -186,9 +179,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					},
 					Zone: o.AWS.Zone,
 				},
-				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: awsResources.KubeCloudControllerAWSCreds.Name},
-				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: awsResources.NodePoolManagementAWSCreds.Name},
-				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: awsResources.ControlPlaneOperatorAWSCreds.Name},
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).KubeCloudControllerAWSCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).NodePoolManagementAWSCreds.Name},
+				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).ControlPlaneOperatorAWSCreds.Name},
 				ResourceTags:              o.AWS.ResourceTags,
 			},
 		}
@@ -224,7 +217,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			},
 		}
-		resources = awsResources
 	case o.None != nil:
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.NonePlatform,
