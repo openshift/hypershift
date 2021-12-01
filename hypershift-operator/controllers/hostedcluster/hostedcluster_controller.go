@@ -1187,10 +1187,10 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 				MaxSurge:       &maxSurge,
 				MaxUnavailable: &maxUnavailable,
 			}
-			deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+			hyperutil.SetDeploymentReplicas(hcluster, deployment, 3)
 			hyperutil.SetMultizoneSpread(labels, deployment)
 		default:
-			deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+			hyperutil.SetDeploymentReplicas(hcluster, deployment, 1)
 		}
 		return nil
 	})
@@ -1563,7 +1563,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		}
 		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
-			Replicas: k8sutilspointer.Int32Ptr(1),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: ignitionServerLabels,
 			},
@@ -1671,10 +1670,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				MaxSurge:       &maxSurge,
 				MaxUnavailable: &maxUnavailable,
 			}
-			ignitionServerDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+			hyperutil.SetDeploymentReplicas(hcluster, ignitionServerDeployment, 3)
 			hyperutil.SetMultizoneSpread(ignitionServerLabels, ignitionServerDeployment)
 		default:
-			ignitionServerDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+			hyperutil.SetDeploymentReplicas(hcluster, ignitionServerDeployment, 1)
 		}
 
 		return nil
@@ -1780,7 +1779,6 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				"name": "control-plane-operator",
@@ -1823,6 +1821,8 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			},
 		},
 	}
+
+	hyperutil.SetDeploymentReplicas(hc, deployment, 1)
 
 	// Add platform specific settings
 	switch hc.Spec.Platform.Type {
@@ -2071,7 +2071,6 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 		hyperv1.ControlPlaneComponent: "cluster-api",
 	}
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: capiManagerLabels,
 		},
@@ -2146,10 +2145,10 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			MaxSurge:       &maxSurge,
 			MaxUnavailable: &maxUnavailable,
 		}
-		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+		hyperutil.SetDeploymentReplicas(hc, deployment, 3)
 		hyperutil.SetMultizoneSpread(capiManagerLabels, deployment)
 	default:
-		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+		hyperutil.SetDeploymentReplicas(hc, deployment, 1)
 	}
 
 	return nil
