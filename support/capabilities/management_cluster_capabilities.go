@@ -69,7 +69,7 @@ func isGroupVersionRegistered(client discovery.ServerResourcesInterface, groupVe
 	return false, nil
 }
 
-// DetectManagementClusterCapabilities returns 
+// DetectManagementClusterCapabilities discovers server supported API groups to check cluster capabilities
 func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterface) (*ManagementClusterCapabilities, error) {
 	discoveredCapabilities := map[CapabilityType]struct{}{}
 	hasRoutesCap, err := isGroupVersionRegistered(client, routev1.GroupVersion)
