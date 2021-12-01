@@ -21,31 +21,35 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func main() {
-	var serviceAccountNamespace string
-	var serviceAccountName string
-	var tokenAudience string
-	var tokenFile string
-	var kubeconfigPath string
-	var kubeconfigSecretName string
-	var kubeconfigSecretNamespace string
-	var sleep bool
+type options struct {
+	serviceAccountNamespace   string
+	serviceAccountName        string
+	tokenAudience             string
+	tokenFile                 string
+	kubeconfigPath            string
+	kubeconfigSecretName      string
+	kubeconfigSecretNamespace string
+	oneshot                   bool
+}
 
-	flag.StringVar(&serviceAccountNamespace, "service-account-namespace", "kube-system", "namespace of the service account for which to mint a token")
-	flag.StringVar(&serviceAccountName, "service-account-name", "", "name of the service account for which to mint a token")
-	flag.StringVar(&tokenAudience, "token-audience", "openshift", "audience for the token")
-	flag.StringVar(&tokenFile, "token-file", "/var/run/secrets/openshift/serviceaccount/token", "path to the file where the token will be written")
-	flag.StringVar(&kubeconfigPath, "kubeconfig", "/etc/kubernetes/kubeconfig", "path to the kubeconfig file")
-	flag.StringVar(&kubeconfigSecretName, "kubeconfig-secret-name", "", "name of a secret containing a kubeconfig key")
-	flag.StringVar(&kubeconfigSecretNamespace, "kubeconfig-secret-namespace", "", "namespace of a secret containing a kubeconfig key")
-	flag.BoolVar(&sleep, "sleep", false, "If the binary should sleep after finishing. Required when running as a sidecar, as otherwise the container will be considered crashing.")
+func main() {
+	var opts options
+
+	flag.StringVar(&opts.serviceAccountNamespace, "service-account-namespace", "kube-system", "namespace of the service account for which to mint a token")
+	flag.StringVar(&opts.serviceAccountName, "service-account-name", "", "name of the service account for which to mint a token")
+	flag.StringVar(&opts.tokenAudience, "token-audience", "openshift", "audience for the token")
+	flag.StringVar(&opts.tokenFile, "token-file", "/var/run/secrets/openshift/serviceaccount/token", "path to the file where the token will be written")
+	flag.StringVar(&opts.kubeconfigPath, "kubeconfig", "/etc/kubernetes/kubeconfig", "path to the kubeconfig file")
+	flag.StringVar(&opts.kubeconfigSecretName, "kubeconfig-secret-name", "", "name of a secret containing a kubeconfig key")
+	flag.StringVar(&opts.kubeconfigSecretNamespace, "kubeconfig-secret-namespace", "", "namespace of a secret containing a kubeconfig key")
+	flag.BoolVar(&opts.oneshot, "oneshot", false, "Exit after minting the token")
 	flag.Parse()
 
-	if serviceAccountNamespace == "" ||
-		serviceAccountName == "" ||
-		tokenAudience == "" ||
-		tokenFile == "" ||
-		kubeconfigPath == "" {
+	if opts.serviceAccountNamespace == "" ||
+		opts.serviceAccountName == "" ||
+		opts.tokenAudience == "" ||
+		opts.tokenFile == "" ||
+		opts.kubeconfigPath == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -61,15 +65,40 @@ func main() {
 		os.Exit(1) // second signal. Exit directly.
 	}()
 
+	expirationTimestamp := mintToken(ctx, opts)
+
+	if opts.oneshot {
+		return
+	}
+
+	for {
+		renewDuration := renewDuration(expirationTimestamp)
+		fmt.Println("renew delay set for", renewDuration.String())
+		select {
+		case <-time.After(renewDuration):
+			expirationTimestamp = mintToken(ctx, opts)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func renewDuration(expirationTimestamp metav1.Time) time.Duration {
+	// kubelet waits until 80% of valid time has passed to renew
+	// https://github.com/kubernetes/kubernetes/blob/047a6b9f861b2cc9dd2eea77da752ac398e7546f/pkg/kubelet/token/token_manager.go#L186
+	return time.Duration(time.Until(expirationTimestamp.Time).Nanoseconds() * 80 / 100)
+}
+
+func mintToken(ctx context.Context, opts options) metav1.Time {
 	var restConfig *rest.Config
-	if kubeconfigSecretName != "" && kubeconfigSecretNamespace != "" {
+	if opts.kubeconfigSecretName != "" && opts.kubeconfigSecretNamespace != "" {
 		config, err := rest.InClusterConfig()
 		if err != nil {
 			panic(err)
 		}
 		kubeClient := kubernetes.NewForConfigOrDie(config)
 		if err := wait.PollImmediate(time.Second*5, time.Minute*2, func() (done bool, err error) {
-			secret, err := kubeClient.CoreV1().Secrets(kubeconfigSecretNamespace).Get(ctx, kubeconfigSecretName, metav1.GetOptions{})
+			secret, err := kubeClient.CoreV1().Secrets(opts.kubeconfigSecretNamespace).Get(ctx, opts.kubeconfigSecretName, metav1.GetOptions{})
 			if err != nil {
 				fmt.Println("Unable to get kubeconfig secret, retrying in 5s:", err)
 				return false, nil
@@ -87,7 +116,7 @@ func main() {
 			panic(err)
 		}
 	} else {
-		loadingRules := clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath}
+		loadingRules := clientcmd.ClientConfigLoadingRules{ExplicitPath: opts.kubeconfigPath}
 		clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&loadingRules, &clientcmd.ConfigOverrides{})
 		var err error
 		restConfig, err = clientConfig.ClientConfig()
@@ -104,7 +133,7 @@ func main() {
 	// Get the service account
 	var serviceAccount *corev1.ServiceAccount
 	err = wait.PollImmediate(time.Second*5, time.Minute*2, func() (done bool, err error) {
-		serviceAccount, err = clientset.CoreV1().ServiceAccounts(serviceAccountNamespace).Get(ctx, serviceAccountName, metav1.GetOptions{})
+		serviceAccount, err = clientset.CoreV1().ServiceAccounts(opts.serviceAccountNamespace).Get(ctx, opts.serviceAccountName, metav1.GetOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -120,12 +149,12 @@ func main() {
 	} else {
 		serviceAccount = &corev1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: serviceAccountName,
+				Name: opts.serviceAccountName,
 			},
 		}
 		// Create the service account
 		err = wait.PollImmediate(time.Second*5, time.Minute*2, func() (done bool, err error) {
-			if serviceAccount, err = clientset.CoreV1().ServiceAccounts(serviceAccountNamespace).Create(ctx, serviceAccount, metav1.CreateOptions{}); err != nil {
+			if serviceAccount, err = clientset.CoreV1().ServiceAccounts(opts.serviceAccountNamespace).Create(ctx, serviceAccount, metav1.CreateOptions{}); err != nil {
 				fmt.Println("Unable to create service account, retry in 10s:", err)
 				return false, nil
 			}
@@ -138,11 +167,9 @@ func main() {
 		fmt.Println("Created service account", serviceAccount.GetName())
 	}
 
-	expSeconds := int64(60 * 60 * 24 * 365) // 1 year
 	treq := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
-			Audiences:         []string{tokenAudience},
-			ExpirationSeconds: &expSeconds,
+			Audiences: []string{opts.tokenAudience},
 		},
 	}
 
@@ -166,16 +193,13 @@ func main() {
 	fmt.Println("Created service account token for service account", serviceAccount.GetName())
 
 	// Write token to file
-	f, err := os.Create(tokenFile)
+	f, err := os.Create(opts.tokenFile)
 	if err != nil {
 		panic(err)
 	}
 	defer f.Close()
 	f.WriteString(token.Status.Token)
 
-	fmt.Println("Successfully wrote token to", tokenFile)
-	if sleep {
-		fmt.Println("Done, starting to sleep")
-		<-ctx.Done()
-	}
+	fmt.Println("Successfully wrote token to", opts.tokenFile)
+	return token.Status.ExpirationTimestamp
 }
