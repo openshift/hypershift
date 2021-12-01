@@ -7,11 +7,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
-	"net/url"
 	"time"
 
 	"github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/hypershift/support/capabilities"
+
 	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"sigs.k8s.io/cluster-api/util/annotations"
@@ -53,6 +53,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
@@ -579,24 +580,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile cloud provider config: %w", err)
 	}
 
-	// Reconcile OIDC Route
-	for _, service := range hostedControlPlane.Spec.Services {
-		if service.Service != hyperv1.OIDC {
-			continue
-		}
-		switch service.Type {
-		case hyperv1.Route:
-			r.Log.Info("Reconciling OIDC Route servicetype resources")
-			if err := r.reconcileOIDCRouteResources(ctx, hostedControlPlane); err != nil {
-				return fmt.Errorf("failed to reconcile OIDC route: %w", err)
-			}
-		case hyperv1.None:
-			r.Log.Info("OIDC Route is disabled")
-		default:
-			return fmt.Errorf("invalid publishing strategy for OIDC service: %s", service.Type)
-		}
-	}
-
 	globalConfig, err := config.ParseGlobalConfig(ctx, hostedControlPlane.Spec.Configuration)
 	if err != nil {
 		return fmt.Errorf("failed to parse global config: %w", err)
@@ -709,6 +692,12 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reconciling OLM")
 	if err = r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImage, infraStatus.PackageServerAPIAddress); err != nil {
 		return fmt.Errorf("failed to reconcile olm: %w", err)
+	}
+
+	// Reconcile Ignition
+	r.Log.Info("Reconciling Ignition")
+	if err = r.reconcileIgnition(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort); err != nil {
+		return fmt.Errorf("failed to reconcile ignition: %w", err)
 	}
 
 	// Install the control plane into the infrastructure
@@ -2195,22 +2184,56 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
-	targetNamespace := hcp.GetNamespace()
+func (r *HostedControlPlaneReconciler) reconcileIgnition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
 
-	var sshKeyData []byte
+	sshKey := ""
 	if len(hcp.Spec.SSHKey.Name) > 0 {
 		var sshKeySecret corev1.Secret
 		err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
+			return fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
 		}
 		data, hasSSHKeyData := sshKeySecret.Data["id_rsa.pub"]
 		if !hasSSHKeyData {
-			return nil, fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
+			return fmt.Errorf("SSH key secret secret %s is missing the id_rsa.pub key", hcp.Spec.SSHKey.Name)
 		}
-		sshKeyData = data
+		sshKey = string(data)
 	}
+
+	p := ignition.NewIgnitionParams(hcp, releaseImage.ComponentImages(), apiServerAddress, apiServerPort, sshKey)
+
+	fipsConfig := manifests.IgnitionFIPSConfig(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, fipsConfig, func() error {
+		return ignition.ReconcileFIPSIgnitionConfig(fipsConfig, p.OwnerRef, p.FIPSEnabled)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile fips ignition config: %w", err)
+	}
+
+	sshKeyConfig := manifests.IgnitionWorkerSSHConfig(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, sshKeyConfig, func() error {
+		return ignition.ReconcileWorkerSSHIgnitionConfig(sshKeyConfig, p.OwnerRef, sshKey)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ssh key ignition config: %w", err)
+	}
+
+	haProxyConfig := manifests.IgnitionAPIServerHAProxyConfig(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, haProxyConfig, func() error {
+		return ignition.ReconcileAPIServerHAProxyIgnitionConfig(haProxyConfig,
+			p.OwnerRef,
+			p.HAProxyImage,
+			p.APIServerExternalAddress,
+			p.APIServerInternalAddress,
+			p.APIServerExternalPort,
+			p.APIServerInternalPort)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile api server ha proxy ignition config: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
+	targetNamespace := hcp.GetNamespace()
 
 	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
 	if err != nil {
@@ -2265,7 +2288,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.SingleReplica {
 		params.InfrastructureAvailabilityPolicy = render.SingleReplica
 	}
-	params.SSHKey = string(sshKeyData)
 
 	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
@@ -2307,38 +2329,6 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 		return nil, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
 	}
 	return manifests, nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileOIDCRouteResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	route := manifests.OIDCRoute(hcp.GetNamespace())
-	r.Log.Info("Updating OIDC route")
-	_, err := r.CreateOrUpdate(ctx, r.Client, route, func() error {
-		rootCASecret := manifests.RootCASecret(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
-			return err
-		}
-		u, err := url.Parse(hcp.Spec.IssuerURL)
-		if err != nil {
-			return fmt.Errorf("unable to parse issuer URL: %s", hcp.Spec.IssuerURL)
-		}
-		route.OwnerReferences = ensureHCPOwnerRef(hcp, route.OwnerReferences)
-		route.Spec = routev1.RouteSpec{
-			To: routev1.RouteTargetReference{
-				Kind: "Service",
-				Name: manifests.KubeAPIServerServiceName,
-			},
-			Host: u.Host,
-			TLS: &routev1.TLSConfig{
-				// Reencrypt is used here because we need to probe for the
-				// CA thumbprint before the KAS on the HCP is running
-				Termination:                   routev1.TLSTerminationReencrypt,
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
-				DestinationCACertificate:      string(rootCASecret.Data["ca.crt"]),
-			},
-		}
-		return nil
-	})
-	return err
 }
 
 func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

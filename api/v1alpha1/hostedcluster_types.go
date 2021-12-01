@@ -118,7 +118,7 @@ type HostedClusterSpec struct {
 
 	// InfraID is used to identify the cluster in cloud platforms
 	// +immutable
-	InfraID string `json:"infraID,omitempty"`
+	InfraID string `json:"infraID"`
 
 	// DNS configuration for the cluster
 	// +immutable
@@ -129,7 +129,8 @@ type HostedClusterSpec struct {
 	// TODO (alberto): include Ignition endpoint here.
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
-	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
+	// ControllerAvailabilityPolicy specifies an availability policy to apply
+	// to critical control plane components.
 	// Defaults to SingleReplica when not set.
 	// +optional
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
@@ -189,7 +190,7 @@ type ServicePublishingStrategyMapping struct {
 // ServicePublishingStrategy defines metadata around how a service is published
 type ServicePublishingStrategy struct {
 	// Type defines the publishing strategy used for the service.
-	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None
+	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None;S3
 	// +immutable
 	Type PublishingStrategyType `json:"type"`
 	// NodePort is used to define extra metadata for the NodePort publishing strategy.
@@ -206,6 +207,8 @@ var (
 	NodePort PublishingStrategyType = "NodePort"
 	// Route exposes services with a Route + ClusterIP kube service.
 	Route PublishingStrategyType = "Route"
+	// S3 exoses a service through an S3 bucket
+	S3 PublishingStrategyType = "S3"
 	// None disables exposing the service
 	None PublishingStrategyType = "None"
 )
@@ -740,6 +743,13 @@ const (
 	// ValidHostedClusterConfiguration indicates (if status is true) that the
 	// ClusterConfiguration specified for the HostedCluster is valid.
 	ValidHostedClusterConfiguration ConditionType = "ValidConfiguration"
+
+	// SupportedHostedCluster indicates whether a HostedCluster is supported by
+	// the current configuration of the hypershift-operator.
+	// e.g. If HostedCluster requests endpointAcess Private but the hypershift-operator
+	// is running on a management cluster outside AWS or is not configured with AWS
+	// credentials, the HostedCluster is not supported.
+	SupportedHostedCluster ConditionType = "SupportedHostedCluster"
 )
 
 const (
@@ -751,6 +761,8 @@ const (
 	HostedClusterAsExpectedReason          = "HostedClusterAsExpected"
 	HostedClusterUnhealthyComponentsReason = "UnhealthyControlPlaneComponents"
 	InvalidConfigurationReason             = "InvalidConfiguration"
+
+	UnsupportedHostedClusterReason = "UnsupportedHostedCluster"
 
 	UnmanagedEtcdStatusUnknownReason = "UnmanagedEtcdStatusUnknown"
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
@@ -832,6 +844,14 @@ type ClusterConfiguration struct {
 	Items []runtime.RawExtension `json:"items,omitempty"`
 }
 
+// +genclient
+
+// HostedCluster is the primary representation of a HyperShift cluster and encapsulates
+// the control plane and common data plane configuration. Creating a HostedCluster
+// results in a fully functional OpenShift control plane with no attached nodes.
+// To support workloads (e.g. pods), a HostedCluster may have one or more associated
+// NodePool resources.
+//
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=hostedclusters,shortName=hc;hcs,scope=Namespaced
 // +kubebuilder:storageversion
@@ -841,12 +861,14 @@ type ClusterConfiguration struct {
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
 // +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
-// HostedCluster is the Schema for the hostedclusters API
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   HostedClusterSpec   `json:"spec,omitempty"`
+	// Spec is the desired behavior of the HostedCluster.
+	Spec HostedClusterSpec `json:"spec,omitempty"`
+
+	// Status is the latest observed status of the HostedCluster.
 	Status HostedClusterStatus `json:"status,omitempty"`
 }
 

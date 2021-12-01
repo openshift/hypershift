@@ -38,7 +38,7 @@ endif
 
 all: build e2e
 
-build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator konnectivity-socks5-proxy hypershift availability-prober
+build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
 
 .PHONY: verify
 verify: staticcheck deps api fmt vet promtool
@@ -87,6 +87,10 @@ hypershift:
 .PHONY: availability-prober
 availability-prober:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/availability-prober ./availability-prober
+
+.PHONY: token-minter
+token-minter:
+	$(GO_BUILD_RECIPE) -o bin/token-minter ./token-minter
 
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
@@ -189,4 +193,7 @@ run-local:
 
 .PHONY: ci-install-hypershift
 ci-install-hypershift:
-	bin/hypershift install --hypershift-image $(HYPERSHIFT_RELEASE_LATEST)
+	bin/hypershift install --hypershift-image $(HYPERSHIFT_RELEASE_LATEST) \
+		--oidc-storage-provider-s3-credentials=/etc/hypershift-pool-aws-credentials/credentials \
+		--oidc-storage-provider-s3-bucket-name=hypershift-ci-oidc \
+		--oidc-storage-provider-s3-region=us-east-1

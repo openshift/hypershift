@@ -79,6 +79,9 @@ github.com/blang/semver/v4
 github.com/bombsimon/logrusr
 # github.com/cespare/xxhash/v2 v2.1.1
 github.com/cespare/xxhash/v2
+# github.com/clarketm/json v1.14.1
+## explicit
+github.com/clarketm/json
 # github.com/coreos/go-semver v0.3.0
 github.com/coreos/go-semver/semver
 # github.com/coreos/go-systemd/v22 v22.3.2
@@ -88,7 +91,7 @@ github.com/coreos/go-systemd/v22/unit
 github.com/coreos/ignition/v2/config/shared/errors
 github.com/coreos/ignition/v2/config/shared/validations
 github.com/coreos/ignition/v2/config/util
-github.com/coreos/ignition/v2/config/v3_1/types
+github.com/coreos/ignition/v2/config/v3_2/types
 # github.com/coreos/vcontext v0.0.0-20210407161507-4ee6c745c8bd
 github.com/coreos/vcontext/path
 github.com/coreos/vcontext/report
@@ -519,6 +522,7 @@ gopkg.in/square/go-jose.v2
 gopkg.in/square/go-jose.v2/cipher
 gopkg.in/square/go-jose.v2/json
 # gopkg.in/yaml.v2 v2.4.0
+## explicit
 gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 gopkg.in/yaml.v3

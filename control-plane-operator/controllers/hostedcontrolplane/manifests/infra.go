@@ -11,7 +11,6 @@ const (
 	KubeAPIServerPrivateServiceName = "kube-apiserver-private"
 	OauthServiceName                = "oauth-openshift"
 	oauthRouteName                  = "oauth"
-	oidcRouteName                   = "oidc"
 	konnectivityServerServiceName   = "konnectivity-server"
 	openshiftAPIServerServiceName   = "openshift-apiserver"
 	oauthAPIServerName              = "openshift-oauth-apiserver"
@@ -50,15 +49,6 @@ func OauthServerRoute(hostedClusterNamespace string) *routev1.Route {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedClusterNamespace,
 			Name:      oauthRouteName,
-		},
-	}
-}
-
-func OIDCRoute(hostedClusterNamespace string) *routev1.Route {
-	return &routev1.Route{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: hostedClusterNamespace,
-			Name:      oidcRouteName,
 		},
 	}
 }
