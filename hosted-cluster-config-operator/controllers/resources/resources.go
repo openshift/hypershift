@@ -53,17 +53,17 @@ func eventHandler() handler.EventHandler {
 }
 
 func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
-	if err := imageregistryv1.AddToScheme(opts.Manager().GetScheme()); err != nil {
+	if err := imageregistryv1.AddToScheme(opts.Manager.GetScheme()); err != nil {
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
-	c, err := controller.New(ControllerName, opts.Manager(), controller.Options{Reconciler: &reconciler{
-		client:                 opts.Manager().GetClient(),
+	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
+		client:                 opts.Manager.GetClient(),
 		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,
 		platformType:           opts.PlatformType,
-		clusterSignerCA:        opts.ClusterSignerCA(),
+		clusterSignerCA:        opts.ClusterSignerCA,
 		cpClient:               opts.CPCluster.GetClient(),
-		hcpName:                opts.HCPName(),
-		hcpNamespace:           opts.Namespace(),
+		hcpName:                opts.HCPName,
+		hcpNamespace:           opts.Namespace,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)

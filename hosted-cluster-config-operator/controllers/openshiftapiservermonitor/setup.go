@@ -20,7 +20,7 @@ import (
 )
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
-	apiextClient, err := apiextensionsclient.NewForConfig(cfg.TargetConfig())
+	apiextClient, err := apiextensionsclient.NewForConfig(cfg.TargetConfig)
 	if err != nil {
 		return err
 	}
@@ -37,16 +37,16 @@ func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
 		controllers.DefaultResync,
 		cache.Indexers{},
 	)
-	cfg.Manager().Add(manager.RunnableFunc(func(ctx context.Context) error {
+	cfg.Manager.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		crdInformer.Run(ctx.Done())
 		return nil
 	}))
 	reconciler := &OpenshiftAPIServerMonitor{
 		KubeClient: cfg.KubeClient(),
-		Namespace:  cfg.Namespace(),
-		Log:        cfg.Logger().WithName("OpenshiftAPIServerMonitor"),
+		Namespace:  cfg.Namespace,
+		Log:        cfg.Logger.WithName("OpenshiftAPIServerMonitor"),
 	}
-	c, err := controller.New("openshift-apiserver-monitor", cfg.Manager(), controller.Options{Reconciler: reconciler})
+	c, err := controller.New("openshift-apiserver-monitor", cfg.Manager, controller.Options{Reconciler: reconciler})
 	if err != nil {
 		return err
 	}

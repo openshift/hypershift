@@ -27,7 +27,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -3433,7 +3432,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 	src := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hcp.Namespace,
-			Name:      hcp.Status.KubeConfig.Name,
+			Name:      "service-network-admin-kubeconfig",
 		},
 	}
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src); err != nil {
@@ -3443,6 +3442,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("failed to deserialize the kubeconfig: %w", err)
 	}
+	cfg.Host = strings.Replace(cfg.Host, "kube-apiserver", fmt.Sprintf("kube-apiserver.%s.svc", hcp.Namespace), 1)
 	// Impersonate the serviceaccounts groups as a guardrail to bugs in our code
 	// as we end up writing this into a public location.
 	// The perms for this are bound through the system:service-account-issuer-discovery
@@ -3457,7 +3457,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 	client := &http.Client{Transport: transport}
 
 	for _, path := range oidcPublicDocumentPaths() {
-		requestURL := "https://" + hcp.Status.ControlPlaneEndpoint.Host + ":" + strconv.Itoa(int(hcp.Status.ControlPlaneEndpoint.Port)) + path
+		requestURL := cfg.Host + path
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return fmt.Errorf("failed to construct request for %s: %w", requestURL, err)
@@ -3482,7 +3482,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		// https://github.com/aws/aws-sdk-js/issues/15#issuecomment-11666580
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("faild to read body: %w", err)
+			return fmt.Errorf("failed to read body: %w", err)
 		}
 
 		_, err = r.S3Client.PutObject(&s3.PutObjectInput{
