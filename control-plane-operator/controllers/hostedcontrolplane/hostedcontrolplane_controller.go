@@ -1,13 +1,10 @@
 package hostedcontrolplane
 
 import (
-	"bytes"
 	"context"
 	crand "crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/support/capabilities"
@@ -15,22 +12,14 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	"golang.org/x/crypto/bcrypt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+
 	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,8 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	"sigs.k8s.io/cluster-api/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
@@ -62,7 +49,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/render"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -75,15 +61,6 @@ const (
 	finalizer                  = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
-)
-
-var (
-	excludeManifests = sets.NewString(
-		"openshift-apiserver-service.yaml",
-		"v4-0-config-system-branding.yaml",
-		"oauth-server-service.yaml",
-		"kube-apiserver-service.yaml",
-	)
 )
 
 type InfrastructureStatus struct {
@@ -117,8 +94,7 @@ type HostedControlPlaneReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
-	EnableCIDebugOutput       bool
-	manifestClientObjectCache map[string]client.Object
+	EnableCIDebugOutput bool
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -511,30 +487,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 	r.Log.Info("Found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", len(releaseImage.ComponentImages()), "componentVersions", componentVersions)
 
-	// During an upgrade, if there's an old bootstrapper pod referring to the old
-	// image, delete the pod to make way for the new one to be rendered. This is
-	// a hack to avoid the refactoring of moving this pod into the hosted cluster
-	// config operator.
-	if hostedControlPlane.Spec.ReleaseImage != hostedControlPlane.Status.ReleaseImage {
-		var bootstrapPod corev1.Pod
-		err := r.Client.Get(ctx, types.NamespacedName{Namespace: hostedControlPlane.Namespace, Name: "manifests-bootstrapper"}, &bootstrapPod)
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to get manifests bootstrapper pod: %w", err)
-			}
-		} else {
-			currentImage := bootstrapPod.Spec.Containers[0].Image
-			latestImage, latestImageFound := releaseImage.ComponentImages()["cli"]
-			if latestImageFound && currentImage != latestImage {
-				err := r.Client.Delete(ctx, &bootstrapPod)
-				if err != nil {
-					return fmt.Errorf("failed to delete manifests bootstrapper pod: %w", err)
-				}
-				r.Log.Info("deleted manifests bootstrapper pod as part of an image rollout", "pod", bootstrapPod.Name, "from", currentImage, "to", latestImage)
-			}
-		}
-	}
-
 	r.Log.Info("Reconciling infrastructure services")
 	if err := r.reconcileInfrastructure(ctx, hostedControlPlane); err != nil {
 		return fmt.Errorf("failed to ensure infrastructure: %w", err)
@@ -684,9 +636,9 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile mcs config: %w", err)
 	}
 
-	// Install the control plane into the infrastructure
-	r.Log.Info("Reconciling hosted control plane")
-	if err := r.ensureControlPlane(ctx, hostedControlPlane, infraStatus, releaseImage); err != nil {
+	// Reconcile kubeadmin password
+	r.Log.Info("Reconciling kubeadmin password secret")
+	if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane); err != nil {
 		return fmt.Errorf("failed to ensure control plane: %w", err)
 	}
 	return nil
@@ -698,17 +650,6 @@ func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.
 		if err := r.Delete(ctx, ic); err != nil {
 			return fmt.Errorf("unable to delete private ingress controller: %w", err)
 		}
-	}
-	releaseImage, err := r.LookupReleaseImage(ctx, hcp)
-	if err != nil {
-		return fmt.Errorf("failed to look up release info: %w", err)
-	}
-	manifests, err := r.generateControlPlaneManifests(ctx, hcp, InfrastructureStatus{}, releaseImage)
-	if err != nil {
-		return nil
-	}
-	if err := deleteManifests(ctx, r, r.Log, hcp.GetNamespace(), manifests); err != nil {
-		return err
 	}
 	return nil
 }
@@ -1002,83 +943,14 @@ func (r *HostedControlPlaneReconciler) reconcileClusterIPServiceStatus(ctx conte
 	return svc.Spec.ClusterIP, nil
 }
 
-func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) error {
-	r.Log.Info("ensuring control plane for cluster", "cluster", hcp.Name)
-
-	targetNamespace := hcp.GetNamespace()
-
-	// Create the configmap with the pull secret for the guest cluster
-	pullSecret := common.PullSecret(targetNamespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret %s: %w", pullSecret.Name, err)
-	}
-	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
-	if !hasPullSecretData {
-		return fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", pullSecret.Data)
-	}
-	targetPullSecrets, err := generateTargetPullSecrets(r.Scheme(), pullSecretData, targetNamespace)
-	if err != nil {
-		return fmt.Errorf("failed to geneerate pull secret manifests for target cluster: %w", err)
-	}
-	for _, ps := range targetPullSecrets {
-		if err := r.Create(ctx, ps); err != nil && !apierrors.IsAlreadyExists(err) {
-			return fmt.Errorf("failed to create target pull secret manifest (%s): %v", ps.Name, err)
-		}
-	}
-
-	if hcp.Spec.Platform.AWS != nil {
-		for _, role := range hcp.Spec.Platform.AWS.Roles {
-			targetCredentialsSecret, err := generateTargetCredentialsSecret(r.Scheme(), role, targetNamespace)
-			if err != nil {
-				return fmt.Errorf("failed to create credentials secret manifest for target cluster: %w", err)
-			}
-			if err := r.Create(ctx, targetCredentialsSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-				return fmt.Errorf("failed to generate roleSecret: %v", err)
-			}
-		}
-	}
-
-	userManifestBoostrapperServiceAccount := manifests.ManifestBootstrapperServiceAccount(targetNamespace)
-	if _, err := r.CreateOrUpdate(ctx, r.Client, userManifestBoostrapperServiceAccount, func() error {
-		cpoutil.EnsurePullSecret(userManifestBoostrapperServiceAccount, common.PullSecret(targetNamespace).Name)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to apply userManifestBoostrapperServiceAccount: %w", err)
-	}
-
-	manifests, err := r.generateControlPlaneManifests(ctx, hcp, infraStatus, releaseImage)
-	if err != nil {
-		return err
-	}
-
-	if err := r.applyManifests(ctx, r.Log, targetNamespace, manifests); err != nil {
-		return err
-	}
-	r.Log.Info("successfully applied all manifests")
-
+func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var kubeadminPassword string
-	kubeadminPasswordSecret := common.KubeadminPasswordSecret(targetNamespace)
+	kubeadminPasswordSecret := common.KubeadminPasswordSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeadminPasswordSecret, func() error {
 		return reconcileKubeadminPasswordSecret(kubeadminPasswordSecret, hcp, &kubeadminPassword)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kubeadminPasswordSecret: %w", err)
 	}
-
-	kubeadminPasswordTargetSecret, err := generateKubeadminPasswordTargetSecret(r.Scheme(), kubeadminPassword, targetNamespace)
-	if err != nil {
-		return fmt.Errorf("failed to create kubeadmin secret manifest for target cluster: %w", err)
-	}
-	kubeadminPasswordTargetSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeadminPasswordTargetSecret.OwnerReferences)
-	if err := r.Create(ctx, kubeadminPasswordTargetSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate kubeadminPasswordTargetSecret: %w", err)
-	}
-
-	baseDomain := clusterBaseDomain(hcp)
-	r.Log.Info(fmt.Sprintf("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIHost, infraStatus.APIPort)))
-	r.Log.Info(fmt.Sprintf("Kubeconfig is available in secret admin-kubeconfig in the %s namespace", hcp.GetNamespace()))
-	r.Log.Info(fmt.Sprintf("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", fmt.Sprintf("apps.%s", baseDomain))))
-	r.Log.Info(fmt.Sprintf("kubeadmin password is available in secret %q in the %s namespace", "kubeadmin-password", targetNamespace))
-
 	return nil
 }
 
@@ -1699,33 +1571,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
-
-	workerEndpoints := manifests.OpenShiftAPIServerWorkerEndpoints(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, workerEndpoints, func() error {
-		return oapi.ReconcileWorkerEndpoints(workerEndpoints, p.OwnerRef, manifests.OpenShiftAPIServerClusterEndpoints(), serviceClusterIP)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err)
-	}
-
-	workerService := manifests.OpenShiftAPIServerWorkerService(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, workerService, func() error {
-		return oapi.ReconcileWorkerService(workerService, p.OwnerRef, manifests.OpenShiftAPIServerClusterService())
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift apiserver worker service: %w", err)
-	}
-
-	rootCA := manifests.RootCASecret(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return fmt.Errorf("failed to get root ca cert secret: %w", err)
-	}
-	for _, apiSvcGroup := range manifests.OpenShiftAPIServerAPIServiceGroups() {
-		workerAPISvc := manifests.OpenShiftAPIServerWorkerAPIService(apiSvcGroup, hcp.Namespace)
-		if _, err := r.CreateOrUpdate(ctx, r, workerAPISvc, func() error {
-			return oapi.ReconcileWorkerAPIService(workerAPISvc, p.OwnerRef, manifests.OpenShiftAPIServerClusterService(), rootCA, apiSvcGroup)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile openshift apiserver worker apiservice (%s): %w", apiSvcGroup, err)
-		}
-	}
 	return nil
 }
 
@@ -1753,33 +1598,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 		return oapi.ReconcileOAuthAPIServerDeployment(deployment, p.OwnerRef, p.OAuthAPIServerDeploymentParams(), hcp.Spec.APIPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver deployment: %w", err)
-	}
-
-	workerEndpoints := manifests.OpenShiftOAuthAPIServerWorkerEndpoints(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, workerEndpoints, func() error {
-		return oapi.ReconcileWorkerEndpoints(workerEndpoints, p.OwnerRef, manifests.OpenShiftOAuthAPIServerClusterEndpoints(), serviceClusterIP)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift oauth apiserver endpoints: %w", err)
-	}
-
-	workerService := manifests.OpenShiftOAuthAPIServerWorkerService(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, workerService, func() error {
-		return oapi.ReconcileWorkerService(workerService, p.OwnerRef, manifests.OpenShiftOAuthAPIServerClusterService())
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift oauth apiserver worker service: %w", err)
-	}
-
-	rootCA := manifests.RootCASecret(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return fmt.Errorf("failed to get root ca cert secret: %w", err)
-	}
-	for _, apiSvcGroup := range manifests.OpenShiftOAuthAPIServerAPIServiceGroups() {
-		workerAPISvc := manifests.OpenShiftAPIServerWorkerAPIService(apiSvcGroup, hcp.Namespace)
-		if _, err := r.CreateOrUpdate(ctx, r, workerAPISvc, func() error {
-			return oapi.ReconcileWorkerAPIService(workerAPISvc, p.OwnerRef, manifests.OpenShiftOAuthAPIServerClusterService(), rootCA, apiSvcGroup)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile openshift oauth apiserver worker apiservice (%s): %w", apiSvcGroup, err)
-		}
 	}
 	return nil
 }
@@ -1819,12 +1637,6 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 	if err := r.Get(ctx, client.ObjectKeyFromObject(oauthServingCert), oauthServingCert); err != nil {
 		return fmt.Errorf("cannot get oauth serving cert: %w", err)
 	}
-	oauthServingCertManifest := manifests.OAuthServerCertWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, oauthServingCertManifest, func() error {
-		return oauth.ReconcileOAuthServerCertWorkerManifest(oauthServingCertManifest, config.OwnerRefFrom(hcp), oauthServingCert)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth server cert worker manifest: %w", err)
-	}
 
 	oauthConfig := manifests.OAuthServerConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, oauthConfig, func() error {
@@ -1848,21 +1660,6 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
-
-	oauthBrowserClient := manifests.OAuthServerBrowserClientManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, oauthBrowserClient, func() error {
-		return oauth.ReconcileBrowserClientWorkerManifest(oauthBrowserClient, p.OwnerRef, p.ExternalHost, p.ExternalPort)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth browser client manifest: %w", err)
-	}
-
-	oauthChallengingClient := manifests.OAuthServerChallengingClientManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, oauthChallengingClient, func() error {
-		return oauth.ReconcileChallengingClientWorkerManifest(oauthChallengingClient, p.OwnerRef, p.ExternalHost, p.ExternalPort)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth challenging client manifest: %w", err)
-	}
-
 	return nil
 }
 
@@ -1882,21 +1679,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager deployment: %w", err)
 	}
-
-	workerNamespace := manifests.OpenShiftControllerManagerNamespaceWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, workerNamespace, func() error {
-		return ocm.ReconcileOpenShiftControllerManagerNamespaceWorkerManifest(workerNamespace, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager worker namespace: %w", err)
-	}
-
-	workerServiceCA := manifests.OpenShiftControllerManagerServiceCAWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, workerServiceCA, func() error {
-		return ocm.ReconcileOpenShiftControllerManagerServiceCAWorkerManifest(workerServiceCA, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager worker service ca: %w", err)
-	}
-
 	return nil
 }
 
@@ -1933,31 +1715,6 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, packageServerAddress string) error {
 	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImage.ComponentImages(), releaseImage.Version())
-
-	certifiedCatalogSource := manifests.CertifiedOperatorsCatalogSourceWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, certifiedCatalogSource, func() error {
-		return olm.ReconcileCertifiedOperatorsCatalogSourceWorkerManifest(certifiedCatalogSource, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile certified operators catalogsource manifest: %w", err)
-	}
-	communityCatalogSource := manifests.CommunityOperatorsCatalogSourceWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, communityCatalogSource, func() error {
-		return olm.ReconcileCommunityOperatorsCatalogSourceWorkerManifest(communityCatalogSource, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile community operators catalogsource manifest: %w", err)
-	}
-	marketplaceCatalogSource := manifests.RedHatMarketplaceOperatorsCatalogSourceWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, marketplaceCatalogSource, func() error {
-		return olm.ReconcileRedHatMarketplaceOperatorsCatalogSourceWorkerManifest(marketplaceCatalogSource, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile marketplace operators catalogsource manifest: %w", err)
-	}
-	redHatCatalogSource := manifests.RedHatOperatorsCatalogSourceWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, redHatCatalogSource, func() error {
-		return olm.ReconcileRedHatOperatorsCatalogSourceWorkerManifest(redHatCatalogSource, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile red hat operators catalogsource manifest: %w", err)
-	}
 
 	certifiedOperatorsService := manifests.CertifiedOperatorsService(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, certifiedOperatorsService, func() error {
@@ -2080,43 +1837,11 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return fmt.Errorf("failed to reconcile olm operator deployment: %w", err)
 	}
 
-	olmAlertRules := manifests.OLMAlertRulesWorkerManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, olmAlertRules, func() error {
-		return olm.ReconcileOLMWorkerPrometheusRulesManifest(olmAlertRules, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm prometheus rules: %w", err)
-	}
-
 	packageServerDeployment := manifests.OLMPackageServerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, packageServerDeployment, func() error {
 		return olm.ReconcilePackageServerDeployment(packageServerDeployment, p.OwnerRef, p.OLMImage, p.ProxyImage, p.ReleaseVersion, p.PackageServerConfig, p.AvailabilityProberImage, hcp.Spec.APIPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile packageserver deployment: %w", err)
-	}
-
-	packageServerWorkerService := manifests.OLMPackageServerWorkerServiceManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, packageServerWorkerService, func() error {
-		return olm.ReconcilePackageServerWorkerServiceManifest(packageServerWorkerService, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile packageserver worker service: %w", err)
-	}
-
-	rootCA := manifests.RootCASecret(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return fmt.Errorf("failed to get root ca cert secret: %w", err)
-	}
-	packageServerWorkerAPIService := manifests.OLMPackageServerWorkerAPIServiceManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, packageServerWorkerAPIService, func() error {
-		return olm.ReconcilePackageServerWorkerAPIServiceManifest(packageServerWorkerAPIService, p.OwnerRef, rootCA)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile packageserver worker apiservice: %w", err)
-	}
-
-	packageServerWorkerEndpoints := manifests.OLMPackageServerWorkerEndpointsManifest(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, packageServerWorkerEndpoints, func() error {
-		return olm.ReconcilePackageServerWorkerEndpointsManifest(packageServerWorkerEndpoints, p.OwnerRef, packageServerAddress)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile packageserver worker endpoints: %w", err)
 	}
 
 	// Collect Profiles
@@ -2264,102 +1989,6 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
-	targetNamespace := hcp.GetNamespace()
-
-	baseDomain := clusterBaseDomain(hcp)
-
-	params := render.NewClusterParams()
-	params.Namespace = targetNamespace
-	params.ExternalAPIDNSName = infraStatus.APIHost
-	params.ExternalAPIPort = uint(infraStatus.APIPort)
-	if hcp.Spec.APIAdvertiseAddress != nil {
-		params.ExternalAPIAddress = *hcp.Spec.APIAdvertiseAddress
-	} else {
-		params.ExternalAPIAddress = config.DefaultAdvertiseAddress
-	}
-	params.ExternalOauthDNSName = infraStatus.OAuthHost
-	params.ExternalOauthPort = uint(infraStatus.OAuthPort)
-	params.ServiceCIDR = hcp.Spec.ServiceCIDR
-	params.PodCIDR = hcp.Spec.PodCIDR
-	params.MachineCIDR = hcp.Spec.MachineCIDR
-	params.ReleaseImage = hcp.Spec.ReleaseImage
-	params.IngressSubdomain = fmt.Sprintf("apps.%s", baseDomain)
-	params.OpenShiftAPIClusterIP = infraStatus.OpenShiftAPIHost
-	params.OauthAPIClusterIP = infraStatus.OauthAPIServerHost
-	params.PackageServerAPIClusterIP = infraStatus.PackageServerAPIAddress
-	params.BaseDomain = baseDomain
-	params.PublicZoneID = hcp.Spec.DNS.PublicZoneID
-	params.PrivateZoneID = hcp.Spec.DNS.PrivateZoneID
-	params.CloudProvider = cloudProvider(hcp)
-	params.PlatformType = platformType(hcp)
-	params.InfraID = hcp.Spec.InfraID
-	params.FIPS = hcp.Spec.FIPS
-	if _, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
-		params.RestartDate = hcp.Annotations[hyperv1.RestartDateAnnotation]
-	}
-
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		params.AWSRegion = hcp.Spec.Platform.AWS.Region
-		params.AWSResourceTags = hcp.Spec.Platform.AWS.ResourceTags
-	}
-
-	if hcp.Spec.APIPort != nil {
-		params.InternalAPIPort = uint(*hcp.Spec.APIPort)
-	} else {
-		params.InternalAPIPort = config.DefaultAPIServerPort
-	}
-	params.IssuerURL = hcp.Spec.IssuerURL
-	params.NetworkType = hcp.Spec.NetworkType
-	params.APIAvailabilityPolicy = render.SingleReplica
-	params.InfrastructureAvailabilityPolicy = render.HighlyAvailable
-	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.SingleReplica {
-		params.InfrastructureAvailabilityPolicy = render.SingleReplica
-	}
-
-	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
-		return nil, fmt.Errorf("cannot get combined ca secret: %w", err)
-	}
-	caBytes, hasData := combinedCA.Data[pki.CASignerCertMapKey]
-	if !hasData {
-		return nil, fmt.Errorf("pki secret %q is missing a %s key", combinedCA.Name, pki.CASignerCertMapKey)
-	}
-	params.OpenshiftAPIServerCABundle = base64.StdEncoding.EncodeToString([]byte(caBytes))
-	params.OauthAPIServerCABundle = params.OpenshiftAPIServerCABundle
-	params.PackageServerCABundle = params.OpenshiftAPIServerCABundle
-
-	// Calculate a pseudo-random daily schedule default catalog rollouts
-	// to avoid large pod bursts across guest cluster namespaces.
-	params.CatalogRolloutCronSchedule = generateModularDailyCronSchedule([]byte(params.Namespace))
-
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return nil, fmt.Errorf("failed to get pull secret %s: %w", hcp.Spec.PullSecret.Name, err)
-	}
-	pullSecretData, hasPullSecretData := pullSecret.Data[".dockerconfigjson"]
-	if !hasPullSecretData {
-		return nil, fmt.Errorf("pull secret %s is missing the .dockerconfigjson key", hcp.Spec.PullSecret.Name)
-	}
-
-	secrets := &corev1.SecretList{}
-	if err := r.List(ctx, secrets, client.InNamespace(hcp.Namespace)); err != nil {
-		return nil, fmt.Errorf("failed to list secrets in current namespace: %w", err)
-	}
-
-	configMaps := &corev1.ConfigMapList{}
-	if err := r.List(ctx, configMaps, client.InNamespace(hcp.Namespace)); err != nil {
-		return nil, fmt.Errorf("failed to list configmaps in current namespace: %w", err)
-	}
-
-	manifests, err := render.RenderClusterManifests(params, releaseImage, pullSecretData, secrets, configMaps)
-	if err != nil {
-		return nil, fmt.Errorf("failed to render hypershift manifests for cluster: %w", err)
-	}
-	return manifests, nil
-}
-
 func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	ic := manifests.IngressPrivateIngressController(hcp.Namespace)
 	_, err := r.CreateOrUpdate(ctx, r.Client, ic, func() error {
@@ -2401,161 +2030,12 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}
 
 	return nil
-}
-
-func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, namespace string, manifests map[string][]byte) error {
-	// Use server side apply for manifestss
-	applyErrors := []error{}
-	for manifestName, manifestBytes := range manifests {
-		if excludeManifests.Has(manifestName) {
-			continue
-		}
-		obj := &unstructured.Unstructured{}
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(obj); err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err))
-		}
-		obj.SetNamespace(namespace)
-		err := c.Delete(ctx, obj)
-		if err != nil && !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to delete manifest %s: %w", manifestName, err))
-		} else {
-			log.Info("deleted manifest", "manifest", manifestName)
-		}
-	}
-	if errs := errors.NewAggregate(applyErrors); errs != nil {
-		return fmt.Errorf("failed to delete some manifests: %w", errs)
-	}
-	return nil
-}
-
-func clusterBaseDomain(hcp *hyperv1.HostedControlPlane) string {
-	return fmt.Sprintf("%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
-}
-
-func ensureHCPOwnerRef(hcp *hyperv1.HostedControlPlane, ownerReferences []metav1.OwnerReference) []metav1.OwnerReference {
-	return util.EnsureOwnerRef(ownerReferences, metav1.OwnerReference{
-		APIVersion: hyperv1.GroupVersion.String(),
-		Kind:       "HostedControlPlane",
-		Name:       hcp.GetName(),
-		UID:        hcp.UID,
-	})
-}
-
-func generateTargetPullSecrets(scheme *runtime.Scheme, data []byte, namespace string) ([]*corev1.ConfigMap, error) {
-	result := []*corev1.ConfigMap{}
-	for _, ns := range []string{"openshift-config", "openshift"} {
-		secret := &corev1.Secret{}
-		secret.Name = "pull-secret"
-		secret.Namespace = ns
-		secret.Data = map[string][]byte{".dockerconfigjson": data}
-		secret.Type = corev1.SecretTypeDockerConfigJson
-		secretBytes, err := runtime.Encode(serializer.NewCodecFactory(scheme).LegacyCodec(corev1.SchemeGroupVersion), secret)
-		if err != nil {
-			return nil, err
-		}
-		configMap := &corev1.ConfigMap{}
-		configMap.Namespace = namespace
-		configMap.Name = fmt.Sprintf("user-manifest-pullsecret-%s", ns)
-		configMap.Data = map[string]string{"data": string(secretBytes)}
-		result = append(result, configMap)
-	}
-	return result, nil
-}
-
-const awsCredentialsTemplate = `[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-`
-
-func generateTargetCredentialsSecret(scheme *runtime.Scheme, creds hyperv1.AWSRoleCredentials, namespace string) (*corev1.ConfigMap, error) {
-	secret := &corev1.Secret{}
-	secret.Name = creds.Name
-	secret.Namespace = creds.Namespace
-	credentials := fmt.Sprintf(awsCredentialsTemplate, creds.ARN)
-	secret.Data = map[string][]byte{"credentials": []byte(credentials)}
-	secret.Type = corev1.SecretTypeOpaque
-	secretBytes, err := runtime.Encode(serializer.NewCodecFactory(scheme).LegacyCodec(corev1.SchemeGroupVersion), secret)
-	if err != nil {
-		return nil, err
-	}
-	configMap := &corev1.ConfigMap{}
-	configMap.Namespace = namespace
-	configMap.Name = fmt.Sprintf("user-manifest-%s-%s", creds.Namespace, creds.Name)
-	configMap.Data = map[string]string{"data": string(secretBytes)}
-	return configMap, nil
-}
-
-func (r *HostedControlPlaneReconciler) applyManifests(ctx context.Context, log logr.Logger, namespace string, manifests map[string][]byte) error {
-	// Use server side apply for manifestss
-	applyErrors := []error{}
-	for manifestName, manifestBytes := range manifests {
-		if excludeManifests.Has(manifestName) {
-			continue
-		}
-
-		obj, err := r.clientObjectForManifestName(manifestName, manifestBytes)
-		if err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to get object for manifest %s: %w", manifestName, err))
-			continue
-		}
-
-		obj.SetNamespace(namespace)
-
-		if _, err := r.CreateOrUpdate(ctx, r.Client, obj, func() error {
-			if err := yaml.Unmarshal(manifestBytes, obj); err != nil {
-				return fmt.Errorf("failed to decode %s manifest into %T: %w", manifestName, obj, err)
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-	}
-	if errs := errors.NewAggregate(applyErrors); errs != nil {
-		return fmt.Errorf("failed to apply some manifests: %w", errs)
-	}
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) clientObjectForManifestName(manifestName string, manifestBytes []byte) (client.Object, error) {
-	if obj, exists := r.manifestClientObjectCache[manifestName]; exists {
-		return obj.DeepCopyObject().(client.Object), nil
-	}
-
-	objRaw := &unstructured.Unstructured{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(objRaw); err != nil {
-		return nil, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err)
-	}
-	apiVersion := objRaw.GetAPIVersion()
-	gvk := schema.GroupVersionKind{Kind: objRaw.GetKind()}
-	if split := strings.Split(apiVersion, "/"); len(split) == 2 {
-		gvk.Group = split[0]
-		gvk.Version = split[1]
-	} else {
-		// core group
-		gvk.Version = apiVersion
-	}
-	runtimeObj, err := r.Client.Scheme().New(gvk)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get type for gvk %s for manifest %s from scheme: %w", manifestName, gvk.String(), err)
-	}
-	obj, ok := runtimeObj.(client.Object)
-	if !ok {
-		return nil, fmt.Errorf("%T is not a client.Object", runtimeObj)
-	}
-	obj.SetName(objRaw.GetName())
-
-	if r.manifestClientObjectCache == nil {
-		r.manifestClientObjectCache = map[string]client.Object{}
-	}
-	r.manifestClientObjectCache[manifestName] = obj
-
-	return obj.DeepCopyObject().(client.Object), nil
 }
 
 func generateKubeadminPassword() (string, error) {
@@ -2592,29 +2072,6 @@ func generateKubeadminPassword() (string, error) {
 	return string(pw), nil
 }
 
-func generateKubeadminPasswordTargetSecret(scheme *runtime.Scheme, password string, namespace string) (*corev1.ConfigMap, error) {
-	secret := &corev1.Secret{}
-	secret.APIVersion = "v1"
-	secret.Kind = "Secret"
-	secret.Name = "kubeadmin"
-	secret.Namespace = "kube-system"
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, err
-	}
-	secret.Data = map[string][]byte{"kubeadmin": passwordHash}
-
-	secretBytes, err := runtime.Encode(serializer.NewCodecFactory(scheme).LegacyCodec(corev1.SchemeGroupVersion), secret)
-	if err != nil {
-		return nil, err
-	}
-	configMap := &corev1.ConfigMap{}
-	configMap.Namespace = namespace
-	configMap.Name = "user-manifest-kubeadmin-password"
-	configMap.Data = map[string]string{"data": string(secretBytes)}
-	return configMap, nil
-}
-
 func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, password *string) error {
 	ownerRef := config.OwnerRefFrom(hcp)
 	ownerRef.ApplyTo(secret)
@@ -2630,30 +2087,4 @@ func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.Hosted
 		*password = string(existingPassword)
 	}
 	return nil
-}
-
-func platformType(hcp *hyperv1.HostedControlPlane) string {
-	return string(hcp.Spec.Platform.Type)
-}
-
-func cloudProvider(hcp *hyperv1.HostedControlPlane) string {
-	switch {
-	case hcp.Spec.Platform.AWS != nil:
-		return "aws"
-	case hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform:
-		return "external"
-	default:
-		return ""
-	}
-}
-
-// generateModularDailyCronSchedule returns a daily crontab schedule
-// where, given a is input's integer representation, the minute is a % 60
-// and hour is a % 24.
-func generateModularDailyCronSchedule(input []byte) string {
-	a := big.NewInt(0).SetBytes(input)
-	var hi, mi big.Int
-	m := mi.Mod(a, big.NewInt(60))
-	h := hi.Mod(a, big.NewInt(24))
-	return fmt.Sprintf("%d %d * * *", m.Int64(), h.Int64())
 }

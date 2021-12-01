@@ -15,8 +15,6 @@ var (
 
 	olmOperatorMetricsService = MustService("assets/olm-metrics-service.yaml")
 	olmOperatorDeployment     = MustDeployment("assets/olm-operator-deployment.yaml")
-
-	olmAlertRules = MustAsset("assets/prometheus-rule-guest.yaml")
 )
 
 func ReconcileCatalogOperatorMetricsService(svc *corev1.Service, ownerRef config.OwnerRef) error {
@@ -94,9 +92,4 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 	dc.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
-}
-
-func ReconcileOLMWorkerPrometheusRulesManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(cm)
-	return util.ReconcileWorkerManifestString(cm, string(olmAlertRules))
 }
