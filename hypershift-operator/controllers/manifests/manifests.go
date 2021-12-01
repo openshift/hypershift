@@ -23,3 +23,12 @@ func KubeConfigSecret(hostedClusterNamespace string, hostedClusterName string) *
 		},
 	}
 }
+
+func KubeadminPasswordSecret(hostedClusterNamespace string, hostedClusterName string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedClusterNamespace,
+			Name:      hostedClusterName + "-kubeadmin-password",
+		},
+	}
+}

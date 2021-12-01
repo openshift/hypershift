@@ -248,6 +248,19 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Set kubeadminPassword status
+	{
+		kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeadmin password secret: %w", err)
+			}
+		} else {
+			hcluster.Status.KubeadminPassword = &corev1.LocalObjectReference{Name: kubeadminPasswordSecret.Name}
+		}
+	}
+
 	// Set version status
 	{
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -824,6 +837,38 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				dest.Data = map[string][]byte{}
 			}
 			dest.Data["kubeconfig"] = srcData
+			dest.SetOwnerReferences([]metav1.OwnerReference{{
+				APIVersion: hyperv1.GroupVersion.String(),
+				Kind:       "HostedCluster",
+				Name:       hcluster.Name,
+				UID:        hcluster.UID,
+			}})
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster kubeconfig secret: %w", err)
+		}
+	}
+
+	// Reconcile the HostedControlPlane kubeadminPassword
+	if hcp.Status.KubeadminPassword != nil {
+		src := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hcp.Namespace,
+				Name:      hcp.Status.KubeadminPassword.Name,
+			},
+		}
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get controlplane kubeadmin password secret %q: %w", client.ObjectKeyFromObject(src), err)
+		}
+		dest := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
+		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
+			dest.Type = corev1.SecretTypeOpaque
+			dest.Data = map[string][]byte{}
+			for k, v := range src.Data {
+				dest.Data[k] = v
+			}
 			dest.SetOwnerReferences([]metav1.OwnerReference{{
 				APIVersion: hyperv1.GroupVersion.String(),
 				Kind:       "HostedCluster",

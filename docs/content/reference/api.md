@@ -2306,6 +2306,21 @@ for the cluster.</p>
 </tr>
 <tr>
 <td>
+<code>kubeadminPassword</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KubeadminPassword is a reference to the secret that contains the initial
+kubeadmin user password for the guest cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>ignitionEndpoint</code></br>
 <em>
 string
@@ -2772,6 +2787,21 @@ KubeconfigSecretRef
 <td>
 <p>KubeConfig is a reference to the secret containing the default kubeconfig
 for this control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeadminPassword</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KubeadminPassword is a reference to the secret containing the initial kubeadmin password
+for the guest cluster.</p>
 </td>
 </tr>
 <tr>
