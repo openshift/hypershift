@@ -38,9 +38,9 @@ type Platform interface {
 		hcluster *hyperv1.HostedCluster,
 		controlPlaneNamespace string) error
 
-	// ReconcileCredentials is responsible for reconciling resources related to secret encryption
+	// ReconcileSecretEncryption is responsible for reconciling resources related to secret encryption
 	// from the HostedCluster namespace into to the HostedControlPlaneNamespace. So they can be used by
-	// the Control Plane Operator.
+	// the Control Plane Operator if your platform supports KMS.
 	ReconcileSecretEncryption(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, ctx context.Context, c client.Client,
 		createOrUpdate upsert.CreateOrUpdateFN) error
 }
