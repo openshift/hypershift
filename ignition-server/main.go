@@ -58,7 +58,6 @@ type Options struct {
 	CertFile              string
 	KeyFile               string
 	RegistryOverrides     map[string]string
-	// ManagementClusterMode string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -78,7 +77,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.CertFile, "cert-file", opts.CertFile, "Path to the serving cert")
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", opts.KeyFile, "Path to the serving key")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
-	// cmd.Flags().StringVar(&opts.ManagementClusterMode, "management-cluster-mode", "", "Proto: set to kube for auto security context apply")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())

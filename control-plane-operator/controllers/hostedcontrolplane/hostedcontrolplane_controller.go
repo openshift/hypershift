@@ -112,16 +112,15 @@ type HostedControlPlaneReconciler struct {
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
 	ManagementClusterCapabilities *capabilities.ManagementClusterCapabilities
+	
+	// SetSecurityContext is used to configure Security Context for containers
+	SetSecurityContext bool
 
 	Log             logr.Logger
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
 	EnableCIDebugOutput   bool
-	// ManagementClusterMode string
-
-	// SetSecurityContext is used to configure Security Context for containers
-	SetSecurityContext bool `default:false`
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {

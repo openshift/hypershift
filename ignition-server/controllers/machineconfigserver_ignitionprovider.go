@@ -41,10 +41,8 @@ type MCSIgnitionProvider struct {
 	Client                client.Client
 	ReleaseProvider       releaseinfo.Provider
 	Namespace             string
-	// ManagementClusterMode string
-
 	// SetSecurityContext is used to configure Security Context for containers
-	SetSecurityContext bool `default:false`
+	SetSecurityContext    bool
 }
 
 func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
