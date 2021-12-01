@@ -23,30 +23,3 @@ func KubeConfigSecret(hostedClusterNamespace string, hostedClusterName string) *
 		},
 	}
 }
-
-func AWSKubeCloudControllerCreds(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      "provider-creds",
-		},
-	}
-}
-
-func AWSNodePoolManagementCreds(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      "node-provider-creds",
-		},
-	}
-}
-
-func AWSControlPlaneOperatorCreds(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      "cpo-provider-creds",
-		},
-	}
-}
