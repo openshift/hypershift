@@ -260,42 +260,6 @@ func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, str
 	return
 }
 
-func ReconcileWorkerAgentDaemonSet(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, host string, port int32) error {
-	ownerRef.ApplyTo(cm)
-	agentDaemonSet := manifests.KonnectivityAgentDaemonSet()
-	if err := reconcileWorkerAgentDaemonSet(agentDaemonSet, deploymentConfig, image, host, port); err != nil {
-		return err
-	}
-	return util.ReconcileWorkerManifest(cm, agentDaemonSet)
-}
-
-func reconcileWorkerAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32) error {
-	daemonset.Spec = appsv1.DaemonSetSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels(),
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels(),
-			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				SecurityContext: &corev1.PodSecurityContext{
-					RunAsUser: pointer.Int64Ptr(1000),
-				},
-				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
-				},
-			},
-		},
-	}
-	deploymentConfig.ApplyToDaemonSet(daemonset)
-	return nil
-}
-
 func konnectivityAgentContainer() *corev1.Container {
 	return &corev1.Container{
 		Name: "konnectivity-agent",
@@ -308,47 +272,9 @@ func konnectivityVolumeAgentCerts() *corev1.Volume {
 	}
 }
 
-func buildKonnectivityVolumeWorkerAgentCerts(v *corev1.Volume) {
+func buildKonnectivityVolumeAgentCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName: manifests.KonnectivityAgentSecret("").Name,
-	}
-}
-
-func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(c *corev1.Container) {
-	cpath := func(volume, file string) string {
-		return path.Join(volumeMounts.Path(konnectivityAgentContainer().Name, volume), file)
-	}
-	return func(c *corev1.Container) {
-		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
-		c.Command = []string{
-			"/usr/bin/proxy-agent",
-		}
-		c.Args = []string{
-			"--logtostderr=true",
-			"--ca-cert",
-			cpath(konnectivityVolumeAgentCerts().Name, pki.CASignerCertMapKey),
-			"--agent-cert",
-			cpath(konnectivityVolumeAgentCerts().Name, corev1.TLSCertKey),
-			"--agent-key",
-			cpath(konnectivityVolumeAgentCerts().Name, corev1.TLSPrivateKeyKey),
-			"--proxy-server-host",
-			host,
-			"--proxy-server-port",
-			fmt.Sprint(port),
-			"--health-server-port",
-			fmt.Sprint(healthPort),
-			"--agent-identifiers=default-route=true",
-			"--keepalive-time",
-			"30s",
-			"--probe-interval",
-			"30s",
-			"--sync-interval",
-			"1m",
-			"--sync-interval-cap",
-			"5m",
-		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
 
@@ -368,7 +294,7 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
 				},
 				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
+					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeAgentCerts),
 				},
 			},
 		},

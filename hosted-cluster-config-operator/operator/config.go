@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -22,6 +23,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 )
 
@@ -55,6 +57,9 @@ type HostedClusterConfigOperatorConfig struct {
 	Controllers                  []string
 	PlatformType                 hyperv1.PlatformType
 	ControllerFuncs              map[string]ControllerSetupFunc
+	ReleaseProvider              releaseinfo.Provider
+	KonnectivityAddress          string
+	KonnectivityPort             int32
 
 	kubeClient kubeclient.Interface
 }
@@ -93,6 +98,7 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&configv1.Ingress{}:          {Label: cacheLabelSelector()},
 				&configv1.Network{}:          {Label: cacheLabelSelector()},
 				&configv1.Proxy{}:            {Label: cacheLabelSelector()},
+				&appsv1.DaemonSet{}:          {Label: cacheLabelSelector()},
 			},
 		}),
 		Scheme: api.Scheme,
