@@ -30,8 +30,8 @@ import (
 
 const (
 	finalizer                              = "hypershift.openshift.io/hypershift-operator-finalizer"
-	endpointServiceDeletionRequeueDuration = time.Duration(5 * time.Second)
-	lbNotActiveRequeueDuration             = time.Duration(20 * time.Second)
+	endpointServiceDeletionRequeueDuration = 5 * time.Second
+	lbNotActiveRequeueDuration             = 20 * time.Second
 )
 
 type AWSEndpointServiceReconciler struct {

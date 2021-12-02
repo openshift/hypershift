@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
+	"time"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
@@ -12,9 +16,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apiserver/pkg/apis/config/v1"
 	"k8s.io/utils/pointer"
-	"sort"
-	"strconv"
-	"time"
 )
 
 var (
@@ -156,51 +157,51 @@ func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, c
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Env = []corev1.EnvVar{
-			corev1.EnvVar{
+			{
 				Name:  "LOG_LEVEL",
 				Value: "info",
 			},
-			corev1.EnvVar{
+			{
 				Name:  "NUM_LEN_BYTES",
 				Value: "4",
 			},
-			corev1.EnvVar{
+			{
 				Name:  "CACHE_TIMEOUT_IN_HOURS",
 				Value: "1",
 			},
-			corev1.EnvVar{
+			{
 				Name:  "RESTART_DELAY_IN_SECONDS",
 				Value: "0",
 			},
-			corev1.EnvVar{
+			{
 				Name:  "UNIX_SOCKET_PATH",
 				Value: fmt.Sprintf("%s/%s", ibmCloudKMSVolumeMounts.Path(kasContainerIBMCloudKMS().Name, kasVolumeKMSSocket().Name), ibmCloudKMSUnixSocketFileName),
 			},
-			corev1.EnvVar{
+			{
 				Name:  "KP_TIMEOUT",
 				Value: "10",
 			},
-			corev1.EnvVar{
+			{
 				Name:  "KP_WDEK_PATH",
 				Value: fmt.Sprintf("%s/%s", ibmCloudKMSVolumeMounts.Path(kasContainerIBMCloudKMS().Name, kasVolumeIBMCloudKMSKP().Name), ibmCloudKMSWDEKSecretKeyName),
 			},
-			corev1.EnvVar{
+			{
 				Name:  "KP_STATE_PATH",
 				Value: fmt.Sprintf("%s/%s", ibmCloudKMSVolumeMounts.Path(kasContainerIBMCloudKMS().Name, kasVolumeIBMCloudKMSKP().Name), ibmCloudKMSWDEKStateKeyName),
 			},
-			corev1.EnvVar{
+			{
 				Name:  "HEALTHZ_PATH",
 				Value: "/healthz",
 			},
-			corev1.EnvVar{
+			{
 				Name:  "HEALTHZ_PORT",
 				Value: fmt.Sprintf(":%d", ibmCloudKMSHealthPort),
 			},
-			corev1.EnvVar{
+			{
 				Name:  "KP_DATA_JSON",
 				Value: kmsInfo,
 			},
-			corev1.EnvVar{
+			{
 				Name:  "REGION",
 				Value: region,
 			},

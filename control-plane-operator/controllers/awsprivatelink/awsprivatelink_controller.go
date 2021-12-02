@@ -158,7 +158,7 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 
 const (
 	finalizer                              = "hypershift.openshift.io/control-plane-operator-finalizer"
-	endpointServiceDeletionRequeueDuration = time.Duration(5 * time.Second)
+	endpointServiceDeletionRequeueDuration = 5 * time.Second
 	hypershiftLocalZone                    = "hypershift.local"
 )
 
