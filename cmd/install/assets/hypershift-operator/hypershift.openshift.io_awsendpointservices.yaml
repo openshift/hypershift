@@ -46,7 +46,7 @@ spec:
             description: AWSEndpointServiceStatus defines the observed state of AWSEndpointService
             properties:
               conditions:
-                description: "Condition contains details for the current state of
+                description: "Conditions contains details for the current state of
                   the Endpoint Service request If there is an error processing the
                   request e.g. the NLB doesn't exist, then the Available condition
                   will be false, reason AWSErrorReason, and the error reported in
@@ -119,9 +119,20 @@ spec:
                   - type
                   type: object
                 type: array
+              dnsName:
+                description: DNSName is the name for the record created in the hypershift
+                  private zone
+                type: string
+              dnsZoneID:
+                description: DNSZoneID is ID for the hypershift private zone
+                type: string
+              endpointID:
+                description: EndpointID is the ID of the Endpoint created in the guest
+                  VPC
+                type: string
               endpointServiceName:
-                description: The endpoint service name created in AWS in response
-                  to the request
+                description: EndpointServiceName is the name of the Endpoint Service
+                  created in the management VPC
                 type: string
             required:
             - conditions

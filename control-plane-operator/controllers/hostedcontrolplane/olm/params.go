@@ -2,8 +2,8 @@ package olm
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 	k8sutilspointer "k8s.io/utils/pointer"
 )
 

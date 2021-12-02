@@ -8,26 +8,23 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
-	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
@@ -106,14 +103,6 @@ func NewStartCommand() *cobra.Command {
 			LeaderElection:     enableLeaderElection,
 			LeaderElectionID:   "b2ed43cb.hypershift.openshift.io",
 			Namespace:          namespace,
-			// Use a non-caching client everywhere. The default split client does not
-			// promise to invalidate the cache during writes (nor does it promise
-			// sequential create/get coherence), and we have code which (probably
-			// incorrectly) assumes a get immediately following a create/update will
-			// return the updated resource. All client consumers will need audited to
-			// ensure they are tolerant of stale data (or we need a cache or client that
-			// makes stronger coherence guarantees).
-			NewClient: uncachedNewClient,
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
@@ -223,6 +212,7 @@ func NewStartCommand() *cobra.Command {
 
 		controllerName := "PrivateKubeAPIServerServiceObserver"
 		if err := (&awsprivatelink.PrivateServiceObserver{
+			Client:                 mgr.GetClient(),
 			ControllerName:         controllerName,
 			ServiceNamespace:       namespace,
 			ServiceName:            manifests.KubeAPIServerPrivateServiceName,
@@ -236,6 +226,7 @@ func NewStartCommand() *cobra.Command {
 
 		controllerName = "PrivateIngressServiceObserver"
 		if err := (&awsprivatelink.PrivateServiceObserver{
+			Client:                 mgr.GetClient(),
 			ControllerName:         controllerName,
 			ServiceNamespace:       "openshift-ingress",
 			ServiceName:            fmt.Sprintf("router-%s", namespace),
@@ -247,6 +238,11 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		if err := (&awsprivatelink.AWSEndpointServiceReconciler{}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
+			os.Exit(1)
+		}
+
 		setupLog.Info("starting manager")
 		if err := mgr.Start(ctx); err != nil {
 			setupLog.Error(err, "problem running manager")
@@ -255,12 +251,4 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	return cmd
-}
-
-func uncachedNewClient(_ cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
-	c, err := client.New(config, options)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
 }

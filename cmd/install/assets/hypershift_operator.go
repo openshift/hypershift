@@ -109,6 +109,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		"--metrics-addr=:9000",
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
+		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
 	}
 	if o.OIDCStorageProviderS3BucketName != "" {
 		args = append(args,
@@ -162,13 +163,37 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 										},
 									},
 								},
-								{
-									Name:  "AWS_SHARED_CREDENTIALS_FILE",
-									Value: "/etc/aws/" + awsCredsSecretKey,
-								},
 							},
 							Command: []string{"/usr/bin/hypershift-operator"},
 							Args:    args,
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/metrics",
+										Port:   intstr.FromInt(9000),
+										Scheme: corev1.URISchemeHTTP,
+									},
+								},
+								InitialDelaySeconds: int32(60),
+								PeriodSeconds:       int32(60),
+								SuccessThreshold:    int32(1),
+								FailureThreshold:    int32(5),
+								TimeoutSeconds:      int32(5),
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/metrics",
+										Port:   intstr.FromInt(9000),
+										Scheme: corev1.URISchemeHTTP,
+									},
+								},
+								InitialDelaySeconds: int32(15),
+								PeriodSeconds:       int32(60),
+								SuccessThreshold:    int32(1),
+								FailureThreshold:    int32(3),
+								TimeoutSeconds:      int32(5),
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "metrics",
@@ -178,10 +203,6 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "credentials",
-									MountPath: "/etc/aws",
-								},
-								{
 									Name:      "oidc-storage-provider-s3-creds",
 									MountPath: "/etc/oidc-storage-provider-s3-creds",
 								},
@@ -189,14 +210,6 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 						},
 					},
 					Volumes: []corev1.Volume{
-						{
-							Name: "credentials",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: awsCredsSecretName,
-								},
-							},
-						},
 						{
 							Name: "oidc-storage-provider-s3-creds",
 							VolumeSource: corev1.VolumeSource{
@@ -221,7 +234,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		Name: "credentials",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
-				SecretName: "hypershift-operator-creds",
+				SecretName: awsCredsSecretName,
 			},
 		},
 	})

@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/util"
 )
 
 func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, isPublic bool) error {
@@ -95,6 +95,6 @@ func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) 
 	return nil
 }
 
-func ReconcilePrivateServiceStatus(svc *corev1.Service, mgmtBaseDomain string) (host string, port int32, err error) {
-	return fmt.Sprintf("api-%s.%s", svc.GetNamespace(), mgmtBaseDomain), 6443, nil
+func ReconcilePrivateServiceStatus(hcpName string) (host string, port int32, err error) {
+	return fmt.Sprintf("api.%s.hypershift.local", hcpName), 6443, nil
 }

@@ -7,17 +7,19 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/support/config"
 )
 
 type CVOParams struct {
 	Image            string
+	CLIImage         string
 	OwnerRef         config.OwnerRef
 	DeploymentConfig config.DeploymentConfig
 }
 
-func NewCVOParams(hcp *hyperv1.HostedControlPlane, explicitNonRootSecurityContext bool) *CVOParams {
+func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string, explicitNonRootSecurityContext bool) *CVOParams {
 	p := &CVOParams{
+		CLIImage: images["cli"],
 		Image:    hcp.Spec.ReleaseImage,
 		OwnerRef: config.OwnerRefFrom(hcp),
 	}

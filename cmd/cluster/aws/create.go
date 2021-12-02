@@ -44,7 +44,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeSize, "root-volume-size", opts.AWSPlatform.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.AdditionalTags, "additional-tags", opts.AWSPlatform.AdditionalTags, "Additional tags to set on AWS resources")
 
-	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -151,20 +150,21 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.InfraID = infraID
 
 	exampleOptions.AWS = &apifixtures.ExampleAWSOptions{
-		Region:                     infra.Region,
-		Zone:                       infra.Zone,
-		VPCID:                      infra.VPCID,
-		SubnetID:                   infra.PrivateSubnetID,
-		SecurityGroupID:            infra.SecurityGroupID,
-		InstanceProfile:            iamInfo.ProfileName,
-		InstanceType:               opts.AWSPlatform.InstanceType,
-		Roles:                      iamInfo.Roles,
-		KubeCloudControllerRoleARN: iamInfo.KubeCloudControllerRoleARN,
-		NodePoolManagementRoleARN:  iamInfo.NodePoolManagementRoleARN,
-		RootVolumeSize:             opts.AWSPlatform.RootVolumeSize,
-		RootVolumeType:             opts.AWSPlatform.RootVolumeType,
-		RootVolumeIOPS:             opts.AWSPlatform.RootVolumeIOPS,
-		ResourceTags:               tags,
+		Region:                      infra.Region,
+		Zone:                        infra.Zone,
+		VPCID:                       infra.VPCID,
+		SubnetID:                    infra.PrivateSubnetID,
+		SecurityGroupID:             infra.SecurityGroupID,
+		InstanceProfile:             iamInfo.ProfileName,
+		InstanceType:                opts.AWSPlatform.InstanceType,
+		Roles:                       iamInfo.Roles,
+		KubeCloudControllerRoleARN:  iamInfo.KubeCloudControllerRoleARN,
+		NodePoolManagementRoleARN:   iamInfo.NodePoolManagementRoleARN,
+		ControlPlaneOperatorRoleARN: iamInfo.ControlPlaneOperatorRoleARN,
+		RootVolumeSize:              opts.AWSPlatform.RootVolumeSize,
+		RootVolumeType:              opts.AWSPlatform.RootVolumeType,
+		RootVolumeIOPS:              opts.AWSPlatform.RootVolumeIOPS,
+		ResourceTags:                tags,
 	}
 	return nil
 }

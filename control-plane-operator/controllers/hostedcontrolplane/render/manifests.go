@@ -7,7 +7,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/assets"
 	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
@@ -56,26 +55,7 @@ func newClusterManifestContext(images, versions map[string]string, params *Clust
 }
 
 func (c *clusterManifestContext) setupManifests() {
-	c.clusterBootstrap()
 	c.userManifestsBootstrapper()
-	c.machineConfigServer()
-}
-
-func (c *clusterManifestContext) clusterBootstrap() {
-	manifests, err := assets.AssetDir("cluster-bootstrap")
-	if err != nil {
-		panic(err)
-	}
-	for _, m := range manifests {
-		c.addUserManifestFiles("cluster-bootstrap/" + m)
-	}
-}
-
-func (c *clusterManifestContext) machineConfigServer() {
-	c.addManifestFiles(
-		"machine-config-server/machine-config-server-configmap.yaml",
-		"machine-config-server/machine-config-server-kubeconfig-secret.yaml",
-	)
 }
 
 func (c *clusterManifestContext) userManifestsBootstrapper() {
@@ -111,10 +91,6 @@ func (c *clusterManifestContext) userManifestsBootstrapper() {
 		}
 		c.addManifest("user-manifest-"+name, manifest)
 	}
-}
-
-func (c *clusterManifestContext) addUserManifestFiles(name ...string) {
-	c.userManifestFiles = append(c.userManifestFiles, name...)
 }
 
 func userConfigMapName(file string) string {

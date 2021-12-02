@@ -8,8 +8,9 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type OpenShiftAPIServerParams struct {
@@ -40,7 +41,7 @@ type OAuthDeploymentParams struct {
 	OwnerRef                config.OwnerRef
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
@@ -57,7 +58,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		},
 		LivenessProbes: config.LivenessProbes{
 			oasContainerMain().Name: {
-				Handler: corev1.Handler{
+				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
@@ -73,7 +74,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		},
 		ReadinessProbes: config.ReadinessProbes{
 			oasContainerMain().Name: {
-				Handler: corev1.Handler{
+				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
@@ -104,7 +105,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		},
 		LivenessProbes: config.LivenessProbes{
 			oauthContainerMain().Name: {
-				Handler: corev1.Handler{
+				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftOAuthAPIServerPort)),
@@ -120,7 +121,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig c
 		},
 		ReadinessProbes: config.ReadinessProbes{
 			oasContainerMain().Name: {
-				Handler: corev1.Handler{
+				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftOAuthAPIServerPort)),

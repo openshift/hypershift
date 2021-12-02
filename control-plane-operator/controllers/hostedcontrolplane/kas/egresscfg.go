@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"path"
 
-	"github.com/openshift/hypershift/control-plane-operator/api"
-	hcpconfig "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/api"
+	hcpconfig "github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"

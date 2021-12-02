@@ -1,8 +1,7 @@
 package none
 
 import (
-	"github.com/bombsimon/logrusr"
-	"github.com/sirupsen/logrus"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
-var log = logrusr.NewLogger(logrus.New())
+var log = util.Log

@@ -101,16 +101,16 @@ type HostedControlPlaneSpec struct {
 type AvailabilityPolicy string
 
 const (
-	// HighlyAvailable means components should be resilient to problems across fault
-	// boundaries as defined by the component to which the policy is attached. This
-	// usually means running critical workloads with 3 replicas and with little or
-	// no toleration of disruption of the component.
+	// HighlyAvailable means components should be resilient to problems across
+	// fault boundaries as defined by the component to which the policy is
+	// attached. This usually means running critical workloads with 3 replicas and
+	// with little or no toleration of disruption of the component.
 	HighlyAvailable AvailabilityPolicy = "HighlyAvailable"
 
 	// SingleReplica means components are not expected to be resilient to problems
-	// across most fault boundaries associated with high availability. This usually
-	// means running critical workloads with just 1 replica and with toleration of
-	// full disruption of the component.
+	// across most fault boundaries associated with high availability. This
+	// usually means running critical workloads with just 1 replica and with
+	// toleration of full disruption of the component.
 	SingleReplica AvailabilityPolicy = "SingleReplica"
 )
 

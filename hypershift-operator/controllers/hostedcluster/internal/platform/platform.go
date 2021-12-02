@@ -1,0 +1,59 @@
+package platform
+
+import (
+	"context"
+	"fmt"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
+	"github.com/openshift/hypershift/support/upsert"
+	appsv1 "k8s.io/api/apps/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+var _ Platform = aws.AWS{}
+var _ Platform = ibmcloud.IBMCloud{}
+var _ Platform = none.None{}
+
+type Platform interface {
+	// ReconcileCAPIInfraCR is called during HostedCluster reconciliation prior to reconciling the CAPI Cluster CR.
+	// Implementations should use the given input and client to create and update the desired state of the
+	// platform infrastructure CAPI CR, which will then be referenced by the CAPI Cluster CR.
+	// TODO (alberto): Pass createOrUpdate construct instead of client.
+	ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint,
+		c client.Client, ctx context.Context) (client.Object, error)
+
+	// CAPIProviderDeploymentSpec is called during HostedCluster reconciliation prior to reconciling
+	// the CAPI provider Deployment.
+	// It should return a CAPI provider DeploymentSpec with the specific needs for a particular platform.
+	// E.g particular volumes and secrets for credentials, containers, etc.
+	CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error)
+
+	// ReconcileCredentials is responsible for reconciling resources related to cloud credentials
+	// from the HostedCluster namespace into to the HostedControlPlaneNamespace. So they can be used by
+	// the Control Plane Operator.
+	ReconcileCredentials(c client.Client, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
+		hcluster *hyperv1.HostedCluster,
+		controlPlaneNamespace string) error
+
+	// ReconcileCredentials is responsible for reconciling resources related to secret encryption
+	// from the HostedCluster namespace into to the HostedControlPlaneNamespace. So they can be used by
+	// the Control Plane Operator.
+	ReconcileSecretEncryption(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, ctx context.Context, c client.Client,
+		createOrUpdate upsert.CreateOrUpdateFN) error
+}
+
+func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
+	var platform Platform
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		platform = aws.AWS{}
+	case hyperv1.IBMCloudPlatform:
+		platform = ibmcloud.IBMCloud{}
+	default:
+		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
+	}
+	return platform, nil
+}

@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -26,12 +27,18 @@ func main() {
 	var tokenAudience string
 	var tokenFile string
 	var kubeconfigPath string
+	var kubeconfigSecretName string
+	var kubeconfigSecretNamespace string
+	var sleep bool
 
 	flag.StringVar(&serviceAccountNamespace, "service-account-namespace", "kube-system", "namespace of the service account for which to mint a token")
 	flag.StringVar(&serviceAccountName, "service-account-name", "", "name of the service account for which to mint a token")
 	flag.StringVar(&tokenAudience, "token-audience", "openshift", "audience for the token")
 	flag.StringVar(&tokenFile, "token-file", "/var/run/secrets/openshift/serviceaccount/token", "path to the file where the token will be written")
 	flag.StringVar(&kubeconfigPath, "kubeconfig", "/etc/kubernetes/kubeconfig", "path to the kubeconfig file")
+	flag.StringVar(&kubeconfigSecretName, "kubeconfig-secret-name", "", "name of a secret containing a kubeconfig key")
+	flag.StringVar(&kubeconfigSecretNamespace, "kubeconfig-secret-namespace", "", "namespace of a secret containing a kubeconfig key")
+	flag.BoolVar(&sleep, "sleep", false, "If the binary should sleep after finishing. Required when running as a sidecar, as otherwise the container will be considered crashing.")
 	flag.Parse()
 
 	if serviceAccountNamespace == "" ||
@@ -54,11 +61,39 @@ func main() {
 		os.Exit(1) // second signal. Exit directly.
 	}()
 
-	loadingRules := clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath}
-	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&loadingRules, &clientcmd.ConfigOverrides{})
-	restConfig, err := clientConfig.ClientConfig()
-	if err != nil {
-		panic(err)
+	var restConfig *rest.Config
+	if kubeconfigSecretName != "" && kubeconfigSecretNamespace != "" {
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			panic(err)
+		}
+		kubeClient := kubernetes.NewForConfigOrDie(config)
+		if err := wait.PollImmediate(time.Second*5, time.Minute*2, func() (done bool, err error) {
+			secret, err := kubeClient.CoreV1().Secrets(kubeconfigSecretNamespace).Get(ctx, kubeconfigSecretName, metav1.GetOptions{})
+			if err != nil {
+				fmt.Println("Unable to get kubeconfig secret, retrying in 5s:", err)
+				return false, nil
+			}
+			kubeconfigBytes, ok := secret.Data["kubeconfig"]
+			if !ok {
+				return false, fmt.Errorf("kubeconfig secret does not have a kubeconfig key")
+			}
+			restConfig, err = clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
+			if err != nil {
+				return false, fmt.Errorf("invalid kubeconfig: %w", err)
+			}
+			return true, nil
+		}); err != nil {
+			panic(err)
+		}
+	} else {
+		loadingRules := clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath}
+		clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(&loadingRules, &clientcmd.ConfigOverrides{})
+		var err error
+		restConfig, err = clientConfig.ClientConfig()
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	clientset, err := kubernetes.NewForConfig(restConfig)
@@ -76,7 +111,7 @@ func main() {
 		if apierrors.IsNotFound(err) {
 			return true, err
 		}
-		fmt.Println("Unable to get service account, retry in 10s:", err)
+		fmt.Println("Unable to get service account, retrying in 5s:", err)
 		return false, nil
 	})
 
@@ -139,4 +174,8 @@ func main() {
 	f.WriteString(token.Status.Token)
 
 	fmt.Println("Successfully wrote token to", tokenFile)
+	if sleep {
+		fmt.Println("Done, starting to sleep")
+		<-ctx.Done()
+	}
 }

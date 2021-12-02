@@ -3,6 +3,7 @@ theme:
   name: material
   features:
   - navigation.tabs
+  - toc.integrate
 plugins:
 - search
 - mermaid2

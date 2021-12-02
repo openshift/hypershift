@@ -406,7 +406,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					Name: "kubeconfig",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: "machine-config-server-kubeconfig",
+							SecretName: "bootstrap-kubeconfig",
 						},
 					},
 				},

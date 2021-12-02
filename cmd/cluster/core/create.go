@@ -15,7 +15,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
-	hyperapi "github.com/openshift/hypershift/control-plane-operator/api"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"golang.org/x/crypto/ssh"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -152,8 +152,6 @@ func generateSSHKeys() ([]byte, []byte, error) {
 
 func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, render bool) error {
 
-	client := util.GetClientOrDie()
-
 	exampleObjects := exampleOptions.Resources().AsObjects()
 	switch {
 	case render:
@@ -165,6 +163,7 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 			fmt.Println("---")
 		}
 	default:
+		client := util.GetClientOrDie()
 		for _, object := range exampleObjects {
 			key := crclient.ObjectKeyFromObject(object)
 			object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})

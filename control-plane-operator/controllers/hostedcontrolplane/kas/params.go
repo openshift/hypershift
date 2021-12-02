@@ -12,8 +12,9 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 type KubeAPIServerImages struct {
@@ -23,6 +24,7 @@ type KubeAPIServerImages struct {
 	IBMCloudKMS           string `json:"ibmcloudKMS"`
 	AWSKMS                string `json:"awsKMS"`
 	Portieris             string `json:"portieris"`
+	TokenMinterImage      string
 }
 
 type KubeAPIServerParams struct {
@@ -60,7 +62,7 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, explicitNonRootSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, explicitNonRootSecurityContext bool) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
 		FeatureGate:          globalConfig.FeatureGate,
@@ -80,6 +82,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			HyperKube:             images["hyperkube"],
 			CLI:                   images["cli"],
 			ClusterConfigOperator: images["cluster-config-operator"],
+			TokenMinterImage:      images["hosted-cluster-config-operator"],
 		},
 	}
 	if hcp.Spec.APIAdvertiseAddress != nil {
@@ -108,7 +111,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		PriorityClass: config.APICriticalPriorityClass,
 	}
 	baseLivenessProbeConfig := corev1.Probe{
-		Handler: corev1.Handler{
+		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Scheme: corev1.URISchemeHTTPS,
 				Port:   intstr.FromInt(int(params.APIServerPort)),
@@ -151,7 +154,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.LivenessProbes = config.LivenessProbes{
 		kasContainerMain().Name: baseLivenessProbeConfig,
 		kasContainerIBMCloudKMS().Name: corev1.Probe{
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(ibmCloudKMSHealthPort)),
@@ -165,7 +168,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			SuccessThreshold:    1,
 		},
 		kasContainerAWSKMSBackup().Name: corev1.Probe{
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(backupAWSKMSHealthPort),
@@ -179,7 +182,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			SuccessThreshold:    1,
 		},
 		kasContainerAWSKMSActive().Name: corev1.Probe{
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(activeAWSKMSHealthPort),
@@ -193,7 +196,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			SuccessThreshold:    1,
 		},
 		kasContainerPortieries().Name: corev1.Probe{
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(portierisPort),
@@ -209,7 +212,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
 		kasContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(params.APIServerPort)),

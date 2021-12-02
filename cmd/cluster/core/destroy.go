@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,7 +43,7 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 
 	var hostedCluster hyperv1.HostedCluster
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
-		if apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
 			log.Info("Hosted cluster not found, destroying infrastructure from user input", "namespace", o.Namespace, "name", o.Name, "infraID", o.InfraID)
 			return nil, nil
 		}

@@ -2,9 +2,6 @@ package assets
 
 import "embed"
 
-//go:embed cluster-bootstrap/*
-//go:embed install-config/*
-//go:embed machine-config-server/*
 //go:embed user-manifests-bootstrapper/*
 var content embed.FS
 

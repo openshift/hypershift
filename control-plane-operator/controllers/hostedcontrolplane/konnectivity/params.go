@@ -7,7 +7,7 @@ import (
 	k8sutilspointer "k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
+	"github.com/openshift/hypershift/support/config"
 )
 
 const (
@@ -36,7 +36,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.ServerDeploymentConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityServerContainer().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),
@@ -75,7 +75,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	p.AgentDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.AgentDeploymentConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityAgentContainer().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),
@@ -111,7 +111,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.AgentDeamonSetConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityAgentContainer().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),

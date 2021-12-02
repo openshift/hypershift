@@ -107,9 +107,9 @@ func TestLabelEnforcingUpsertProvider(t *testing.T) {
 	// we want to test, so clear it.
 	obj.ResourceVersion = ""
 
-	provider := &labelEnforcingUpsertProvider{
-		upstream:  upsert.New(false),
-		apiReader: client,
+	provider := &LabelEnforcingUpsertProvider{
+		Upstream:  upsert.New(false),
+		APIReader: client,
 	}
 
 	ctx := context.Background()

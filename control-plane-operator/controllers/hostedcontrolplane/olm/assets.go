@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/api"
+	"github.com/openshift/hypershift/support/api"
 )
 
 //go:embed assets/*
@@ -42,6 +42,24 @@ func MustService(fileName string) *corev1.Service {
 	svc := &corev1.Service{}
 	deserializeResource(fileName, svc)
 	return svc
+}
+
+func MustServiceAccount(fileName string) *corev1.ServiceAccount {
+	serviceAccount := &corev1.ServiceAccount{}
+	deserializeResource(fileName, serviceAccount)
+	return serviceAccount
+}
+
+func MustSecret(fileName string) *corev1.Secret {
+	secret := &corev1.Secret{}
+	deserializeResource(fileName, secret)
+	return secret
+}
+
+func MustConfigMap(fileName string) *corev1.ConfigMap {
+	configMap := &corev1.ConfigMap{}
+	deserializeResource(fileName, configMap)
+	return configMap
 }
 
 func MustDeployment(fileName string) *appsv1.Deployment {

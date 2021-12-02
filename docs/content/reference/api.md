@@ -89,103 +89,24 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the release image to use for this HostedCluster</p>
+<p>Release specifies the desired OCP release payload for the hosted cluster.</p>
+<p>Updating this field will trigger a rollout of the control plane. The
+behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+and InfrastructureAvailabilityPolicy.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>fips</code></br>
-<em>
-bool
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-</td>
-</tr>
-<tr>
-<td>
-<code>pullSecret</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>PullSecret is a pull secret injected into the container runtime of guest
-workers. It should have an &ldquo;.dockerconfigjson&rdquo; key containing the pull secret JSON.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>auditWebhook</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>AuditWebhook contains metadata for configuring an audit webhook
-endpoint for a cluster to process cluster audit events. It references
-a secret that contains the webhook information for the audit webhook endpoint.
-It is a secret because if the endpoint has MTLS the kubeconfig will contain client
-keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored
-in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>issuerURL</code></br>
+<code>infraID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-</td>
-</tr>
-<tr>
-<td>
-<code>sshKey</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>SSHKey is a reference to a Secret containing a single key &ldquo;id_rsa.pub&rdquo;,
-whose value is the public part of an SSH key that can be used to access
-Nodes.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>networking</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">
-ClusterNetworking
-</a>
-</em>
-</td>
-<td>
-<p>Networking contains network-specific settings for this cluster</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>autoscaling</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.ClusterAutoscaling">
-ClusterAutoscaling
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Autoscaling for compute nodes only, does not cover control plane</p>
+<p>InfraID is a globally unique identifier for the cluster. This identifier
+will be used to associate various cloud resources with the HostedCluster
+and its associated NodePools.</p>
+<p>TODO(dan): consider moving this to .platform.aws.infraID</p>
 </td>
 </tr>
 <tr>
@@ -198,45 +119,8 @@ PlatformSpec
 </em>
 </td>
 <td>
-</td>
-</tr>
-<tr>
-<td>
-<code>infraID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>InfraID is used to identify the cluster in cloud platforms</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>dns</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.DNSSpec">
-DNSSpec
-</a>
-</em>
-</td>
-<td>
-<p>DNS configuration for the cluster</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>services</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategyMapping">
-[]ServicePublishingStrategyMapping
-</a>
-</em>
-</td>
-<td>
-<p>Services defines metadata about how control plane services are published
-in the management cluster.
-TODO (alberto): include Ignition endpoint here.</p>
+<p>Platform specifies the underlying infrastructure provider for the cluster
+and is used to configure platform specific behavior.</p>
 </td>
 </tr>
 <tr>
@@ -250,9 +134,13 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControllerAvailabilityPolicy specifies an availability policy to apply
-to critical control plane components.
-Defaults to SingleReplica when not set.</p>
+<p>ControllerAvailabilityPolicy specifies the availability policy applied to
+critical control plane components. The default value is SingleReplica.</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -266,9 +154,55 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
-run on the guest cluster nodes in HA mode
-Defaults to HighlyAvailable when not set</p>
+<p>InfrastructureAvailabilityPolicy specifies the availability policy applied
+to infrastructure services which run on cluster nodes. The default value is
+HighlyAvailable.</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dns</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.DNSSpec">
+DNSSpec
+</a>
+</em>
+</td>
+<td>
+<p>DNS specifies DNS configuration for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networking</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">
+ClusterNetworking
+</a>
+</em>
+</td>
+<td>
+<p>Networking specifies network configuration for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoscaling</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterAutoscaling">
+ClusterAutoscaling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
+associated with the control plane.</p>
 </td>
 </tr>
 <tr>
@@ -281,8 +215,69 @@ EtcdSpec
 </em>
 </td>
 <td>
-<p>Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
-use to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.</p>
+<p>Etcd specifies configuration for the control plane etcd cluster. The
+default ManagementType is Managed. Once set, the ManagementType cannot be
+changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>services</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategyMapping">
+[]ServicePublishingStrategyMapping
+</a>
+</em>
+</td>
+<td>
+<p>Services specifies how individual control plane services are published from
+the hosting cluster of the control plane.</p>
+<p>If a given service is not present in this list, it will be exposed publicly
+by default.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>pullSecret</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>PullSecret references a pull secret to be injected into the container
+runtime of all cluster nodes. The secret must have a key named
+&ldquo;.dockerconfigjson&rdquo; whose value is the pull secret JSON.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>sshKey</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>SSHKey references an SSH key to be injected into all cluster node sshd
+servers. The secret must have a single key &ldquo;id_rsa.pub&rdquo; whose value is the
+public part of an SSH key.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>issuerURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
+ServiceAccount tokens generated by the control plane API server. The
+default value is kubernetes.default.svc, which only works for in-cluster
+validation.</p>
 </td>
 </tr>
 <tr>
@@ -296,8 +291,29 @@ ClusterConfiguration
 </td>
 <td>
 <em>(Optional)</em>
-<p>Configuration embeds resources that correspond to the openshift configuration API:
-<a href="https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html">https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html</a></p>
+<p>Configuration specifies configuration for individual OCP components in the
+cluster, represented as embedded resources that correspond to the openshift
+configuration API.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>auditWebhook</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AuditWebhook contains metadata for configuring an audit webhook endpoint
+for a cluster to process cluster audit events. It references a secret that
+contains the webhook information for the audit webhook endpoint. It is a
+secret because if the endpoint has mTLS the kubeconfig will contain client
+keys. The kubeconfig needs to be stored in the secret with a secret key
+name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
+<p>This field is currently only supported on the IBMCloud platform.</p>
 </td>
 </tr>
 <tr>
@@ -311,7 +327,8 @@ ClusterConfiguration
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageContentSources lists sources/repositories for the release-image content.</p>
+<p>ImageContentSources specifies image mirrors that can be used by cluster
+nodes to pull content.</p>
 </td>
 </tr>
 <tr>
@@ -325,8 +342,22 @@ SecretEncryptionSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
-cluster when applicable.</p>
+<p>SecretEncryption specifies a Kubernetes secret encryption strategy for the
+control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>fips</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>FIPS indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
+If set to true, the control plane&rsquo;s ignition server will be configured to
+expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
 </tr>
 </table>
@@ -349,9 +380,9 @@ HostedClusterStatus
 </table>
 ##NodePool { #hypershift.openshift.io/v1alpha1.NodePool }
 <p>
-<p>NodePool is a scalable set of worker nodes attached to a HostedCluster. NodePool
-machine architectures are uniform within a given pool, and are independent of
-the control plane’s underlying machine architecture.</p>
+<p>NodePool is a scalable set of worker nodes attached to a HostedCluster.
+NodePool machine architectures are uniform within a given pool, and are
+independent of the control plane’s underlying machine architecture.</p>
 </p>
 <table>
 <thead>
@@ -414,7 +445,37 @@ string
 </em>
 </td>
 <td>
-<p>ClusterName is the name of the Cluster this object belongs to.</p>
+<p>ClusterName is the name of the HostedCluster this NodePool belongs to.</p>
+<p>TODO(dan): Should this be a LocalObjectReference?</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>release</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.Release">
+Release
+</a>
+</em>
+</td>
+<td>
+<p>Release specifies the OCP release used for the NodePool. This informs the
+ignition configuration for machines, as well as other platform specific
+machine properties (e.g. an AMI on the AWS platform).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">
+NodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<p>Platform specifies the underlying infrastructure provider for the NodePool
+and is used to configure platform specific behavior.</p>
 </td>
 </tr>
 <tr>
@@ -426,31 +487,13 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
+<p>NodeCount is the desired number of nodes the pool should maintain. If
+unset, the default value is 0.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>config</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-[]Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>TODO (alberto): this ConfigMaps are meant to contain
-MachineConfig, KubeletConfig and ContainerRuntimeConfig but
-MCO only supports MachineConfig in bootstrap mode atm
-<a href="https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119">https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119</a>
-By contractual convention the ConfigMap structure is as follow:
-type: ConfigMap
-data:
-config: |-</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>nodePoolManagement</code></br>
+<code>management</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolManagement">
 NodePoolManagement
@@ -458,6 +501,8 @@ NodePoolManagement
 </em>
 </td>
 <td>
+<p>Management specifies behavior for managing nodes in the pool, such as
+upgrade strategies and auto-repair behaviors.</p>
 </td>
 </tr>
 <tr>
@@ -471,34 +516,29 @@ NodePoolAutoScaling
 </td>
 <td>
 <em>(Optional)</em>
+<p>Autoscaling specifies auto-scaling behavior for the NodePool.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>platform</code></br>
+<code>config</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">
-NodePoolPlatform
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+[]Kubernetes core/v1.LocalObjectReference
 </a>
 </em>
 </td>
 <td>
-</td>
-</tr>
-<tr>
-<td>
-<code>release</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.Release">
-Release
-</a>
-</em>
-</td>
-<td>
-<p>Release specifies the release image to use for this NodePool
-For a nodePool a given version dictates the ignition config and
-an image artifact e.g an AMI in AWS.
-Release specifies the release image to use for this HostedCluster</p>
+<p>Config is a list of references to ConfigMaps containing serialized
+MachineConfig resources to be injected into the ignition configurations of
+nodes in the NodePool. The MachineConfig API schema is defined here:</p>
+<p><a href="https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172">https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172</a></p>
+<p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
+JSON or YAML of a serialized MachineConfig.</p>
+<p>TODO (alberto): this ConfigMaps are meant to contain MachineConfig,
+KubeletConfig and ContainerRuntimeConfig but MCO only supports
+MachineConfig in bootstrap mode atm. See:
+<a href="https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119">https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119</a></p>
 </td>
 </tr>
 </table>
@@ -514,7 +554,7 @@ NodePoolStatus
 </em>
 </td>
 <td>
-<p>Status is the most recently observed status of the NodePool.</p>
+<p>Status is the latest observed status of the NodePool.</p>
 </td>
 </tr>
 </tbody>
@@ -571,7 +611,8 @@ secrets can continue to be decrypted until they are all re-encrypted with the ac
 <a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>)
 </p>
 <p>
-<p>APIServerNetworking specifies how the APIServer is exposed inside a worker node.</p>
+<p>APIServerNetworking specifies how the APIServer is exposed inside a cluster
+node.</p>
 </p>
 <table>
 <thead>
@@ -589,9 +630,9 @@ string
 </em>
 </td>
 <td>
-<p>AdvertiseAddress is the address that workers will use to talk to the
-API server. This is an address associated with the loopback adapter of
-each worker. If not specified, 172.20.0.1 is used.</p>
+<p>AdvertiseAddress is the address that nodes will use to talk to the API
+server. This is an address associated with the loopback adapter of each
+node. If not specified, 172.20.0.1 is used.</p>
 </td>
 </tr>
 <tr>
@@ -602,9 +643,9 @@ int32
 </em>
 </td>
 <td>
-<p>Port is the port at which the APIServer is exposed inside a worker node
-Other pods using host networking cannot listen on this port. If not
-specified, 6443 is used.</p>
+<p>Port is the port at which the APIServer is exposed inside a node. Other
+pods using host networking cannot listen on this port. If not specified,
+6443 is used.</p>
 </td>
 </tr>
 </tbody>
@@ -615,6 +656,7 @@ specified, 6443 is used.</p>
 <a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
+<p>AWSCloudProviderConfig specifies AWS networking configuration.</p>
 </p>
 <table>
 <thead>
@@ -635,7 +677,7 @@ AWSResourceReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>Subnet is the subnet to use for instances</p>
+<p>Subnet is the subnet to use for control plane cloud resources.</p>
 </td>
 </tr>
 <tr>
@@ -647,7 +689,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Zone is the availability zone where the instances are created</p>
+<p>Zone is the availability zone where control plane cloud resources are
+created.</p>
 </td>
 </tr>
 <tr>
@@ -658,7 +701,7 @@ string
 </em>
 </td>
 <td>
-<p>VPC specifies the VPC used for the cluster</p>
+<p>VPC is the VPC to use for control plane cloud resources.</p>
 </td>
 </tr>
 </tbody>
@@ -669,6 +712,7 @@ string
 <a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
+<p>AWSEndpointAccessType specifies the publishing scope of cluster endpoints.</p>
 </p>
 <table>
 <thead>
@@ -678,13 +722,16 @@ string
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Private&#34;</p></td>
-<td><p>Private endpoint access allows only private kube-apiserver access and private node communication with the control plane</p>
+<td><p>Private endpoint access allows only private API server access and private
+node communication with the control plane.</p>
 </td>
 </tr><tr><td><p>&#34;Public&#34;</p></td>
-<td><p>Public endpoint access allows public kube-apiserver access and public node communication with the control plane</p>
+<td><p>Public endpoint access allows public API server access and public node
+communication with the control plane.</p>
 </td>
 </tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
-<td><p>PublicAndPrivate endpoint access allows public kube-apiserver access and private node communication with the control plane</p>
+<td><p>PublicAndPrivate endpoint access allows public API server access and
+private node communication with the control plane.</p>
 </td>
 </tr></tbody>
 </table>
@@ -826,8 +873,8 @@ AWSKMSAuthSpec
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>)
 </p>
 <p>
-<p>AWSNodePoolPlatform stores the configuration for a node pool
-installed on AWS.</p>
+<p>AWSNodePoolPlatform specifies the configuration of a NodePool when operating
+on AWS.</p>
 </p>
 <table>
 <thead>
@@ -845,8 +892,7 @@ string
 </em>
 </td>
 <td>
-<p>InstanceType defines the ec2 instance type.
-eg. m4-large</p>
+<p>InstanceType is an ec2 instance type for node instances (e.g. m4-large).</p>
 </td>
 </tr>
 <tr>
@@ -857,6 +903,7 @@ string
 </em>
 </td>
 <td>
+<p>InstanceProfile is TODO</p>
 </td>
 </tr>
 <tr>
@@ -870,7 +917,7 @@ AWSResourceReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>Subnet is the subnet to use for instances</p>
+<p>Subnet is the subnet to use for node instances.</p>
 </td>
 </tr>
 <tr>
@@ -882,7 +929,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>AMI is the image id to use</p>
+<p>AMI is the image id to use for node instances. If unspecified, the default
+is chosen based on the NodePool release payload image.</p>
 </td>
 </tr>
 <tr>
@@ -896,7 +944,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecurityGroups is the set of security groups to associate with nodepool machines</p>
+<p>SecurityGroups is an optional set of security groups to associate with node
+instances.</p>
 </td>
 </tr>
 <tr>
@@ -910,7 +959,7 @@ Volume
 </td>
 <td>
 <em>(Optional)</em>
-<p>RootVolume specifies the root volume of the platform.</p>
+<p>RootVolume specifies configuration for the root volume of node instances.</p>
 </td>
 </tr>
 <tr>
@@ -924,11 +973,14 @@ Volume
 </td>
 <td>
 <em>(Optional)</em>
-<p>resourceTags is a list of additional tags to apply to AWS nodes.
-These will be merged with Cluster-level tags and Cluster-level tags take precedence in case of conflicts.
-See <a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for information on tagging AWS resources.
-AWS supports a maximum of 50 tags per resource. OpenShift reserves 25 tags for its use, leaving 25 tags
-available for the user.</p>
+<p>ResourceTags is an optional list of additional tags to apply to AWS node
+instances.</p>
+<p>These will be merged with HostedCluster scoped tags, and HostedCluster tags
+take precedence in case of conflicts.</p>
+<p>See <a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for
+information on tagging AWS resources. AWS supports a maximum of 50 tags per
+resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
+for the user.</p>
 </td>
 </tr>
 </tbody>
@@ -939,6 +991,7 @@ available for the user.</p>
 <a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
+<p>AWSPlatformSpec specifies configuration for clusters running on Amazon Web Services.</p>
 </p>
 <table>
 <thead>
@@ -956,10 +1009,9 @@ string
 </em>
 </td>
 <td>
-<p>Region is the AWS region for the cluster.
-This is used by CRs that are consumed by OCP Operators.
-E.g cluster-infrastructure-02-config.yaml and install-config.yaml
-This is also used by nodePools to fetch the default boot AMI in a given payload.</p>
+<p>Region is the AWS region in which the cluster resides. This configures the
+OCP control plane cloud integrations, and is used by NodePool to resolve
+the correct boot AMI for a given release.</p>
 </td>
 </tr>
 <tr>
@@ -973,8 +1025,9 @@ AWSCloudProviderConfig
 </td>
 <td>
 <em>(Optional)</em>
-<p>CloudProviderConfig is used to generate the ConfigMap with the cloud config consumed
-by the Control Plane components.</p>
+<p>CloudProviderConfig specifies AWS networking configuration for the control
+plane.</p>
+<p>TODO(dan): should this be named AWSNetworkConfig?</p>
 </td>
 </tr>
 <tr>
@@ -988,9 +1041,9 @@ by the Control Plane components.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceEndpoints list contains custom endpoints which will override default
-service endpoint of AWS Services.
-There must be only one ServiceEndpoint for a service.</p>
+<p>ServiceEndpoints specifies optional custom endpoints which will override
+the default service endpoint of specific AWS Services.</p>
+<p>There must be only one ServiceEndpoint for a given service name.</p>
 </td>
 </tr>
 <tr>
@@ -1003,6 +1056,15 @@ There must be only one ServiceEndpoint for a service.</p>
 </em>
 </td>
 <td>
+<p>Roles must contain exactly 3 entries representing the locators for roles
+supporting the following OCP services:</p>
+<ul>
+<li>openshift-ingress-operator/cloud-credentials</li>
+<li>openshift-image-registry/installer-cloud-credentials
+-openshift-cluster-csi-drivers/ebs-cloud-credentials</li>
+</ul>
+<p>Each role has unique permission requirements whose documentation is TBD.</p>
+<p>TODO(dan): revisit this field; it&rsquo;s really 3 required fields with specific content requirements</p>
 </td>
 </tr>
 <tr>
@@ -1016,9 +1078,10 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <p>KubeCloudControllerCreds is a reference to a secret containing cloud
-credentials with permissions matching the Kube cloud controller policy.
-The secret should have exactly one key, <code>credentials</code>, whose value is
-an AWS credentials file.</p>
+credentials with permissions matching the cloud controller policy. The
+secret should have exactly one key, <code>credentials</code>, whose value is an AWS
+credentials file.</p>
+<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -1032,9 +1095,27 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <p>NodePoolManagementCreds is a reference to a secret containing cloud
-credentials with permissions matching the noe pool management policy.
+credentials with permissions matching the node pool management policy. The
+secret should have exactly one key, <code>credentials</code>, whose value is an AWS
+credentials file.</p>
+<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperatorCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
+credentials with permissions matching the control-plane-operator policy.
 The secret should have exactly one key, <code>credentials</code>, whose value is
 an AWS credentials file.</p>
+<p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -1048,10 +1129,12 @@ an AWS credentials file.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>resourceTags is a list of additional tags to apply to AWS resources created for the cluster.
-See <a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for information on tagging AWS resources.
-AWS supports a maximum of 50 tags per resource. OpenShift reserves 25 tags for its use, leaving 25 tags
-available for the user.</p>
+<p>ResourceTags is a list of additional tags to apply to AWS resources created
+for the cluster. See
+<a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for
+information on tagging AWS resources. AWS supports a maximum of 50 tags per
+resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
+for the user.</p>
 </td>
 </tr>
 <tr>
@@ -1065,7 +1148,14 @@ AWSEndpointAccessType
 </td>
 <td>
 <em>(Optional)</em>
-<p>EndpointAccess determines if cluster endpoints are public and/or private</p>
+<p>EndpointAccess specifies the publishing scope of cluster endpoints. The
+default is Public.</p>
+<p>
+Value must be one of:
+&#34;Private&#34;, 
+&#34;Public&#34;, 
+&#34;PublicAndPrivate&#34;
+</p>
 </td>
 </tr>
 </tbody>
@@ -1156,7 +1246,7 @@ string
 </em>
 </td>
 <td>
-<p>key is the key of the tag</p>
+<p>Key is the key of the tag.</p>
 </td>
 </tr>
 <tr>
@@ -1167,9 +1257,10 @@ string
 </em>
 </td>
 <td>
-<p>value is the value of the tag.
-Some AWS service do not support empty values. Since tags are added to resources in many services, the
-length of the tag value must meet the requirements of all services.</p>
+<p>Value is the value of the tag.</p>
+<p>Some AWS service do not support empty values. Since tags are added to
+resources in many services, the length of the tag value must meet the
+requirements of all services.</p>
 </td>
 </tr>
 </tbody>
@@ -1282,16 +1373,16 @@ This must be provided and cannot be empty.</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;HighlyAvailable&#34;</p></td>
-<td><p>HighlyAvailable means components should be resilient to problems across fault
-boundaries as defined by the component to which the policy is attached. This
-usually means running critical workloads with 3 replicas and with little or
-no toleration of disruption of the component.</p>
+<td><p>HighlyAvailable means components should be resilient to problems across
+fault boundaries as defined by the component to which the policy is
+attached. This usually means running critical workloads with 3 replicas and
+with little or no toleration of disruption of the component.</p>
 </td>
 </tr><tr><td><p>&#34;SingleReplica&#34;</p></td>
 <td><p>SingleReplica means components are not expected to be resilient to problems
-across most fault boundaries associated with high availability. This usually
-means running critical workloads with just 1 replica and with toleration of
-full disruption of the component.</p>
+across most fault boundaries associated with high availability. This
+usually means running critical workloads with just 1 replica and with
+toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
@@ -1301,7 +1392,8 @@ full disruption of the component.</p>
 <a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>)
 </p>
 <p>
-<p>TODO maybe we have profiles for scaling behaviors</p>
+<p>ClusterAutoscaling specifies auto-scaling behavior that applies to all
+NodePools associated with a control plane.</p>
 </p>
 <table>
 <thead>
@@ -1319,8 +1411,9 @@ int32
 </em>
 </td>
 <td>
-<p>Maximum number of nodes in all node groups.
-Cluster autoscaler will not grow the cluster beyond this number.</p>
+<p>MaxNodesTotal is the maximum allowable number of nodes across all NodePools
+for a HostedCluster. The autoscaler will not grow the cluster beyond this
+number.</p>
 </td>
 </tr>
 <tr>
@@ -1331,8 +1424,8 @@ int32
 </em>
 </td>
 <td>
-<p>Gives pods graceful termination time before scaling down
-default: 600 seconds</p>
+<p>MaxPodGracePeriod is the maximum seconds to wait for graceful pod
+termination before scaling down a NodePool. The default is 600 seconds.</p>
 </td>
 </tr>
 <tr>
@@ -1343,8 +1436,9 @@ string
 </em>
 </td>
 <td>
-<p>Maximum time CA waits for node to be provisioned
-default: 15 minutes</p>
+<p>MaxNodeProvisionTime is the maximum time to wait for node provisioning
+before considering the provisioning to be unsuccessful, expressed as a Go
+duration string. The default is 15 minutes.</p>
 </td>
 </tr>
 <tr>
@@ -1355,10 +1449,12 @@ int32
 </em>
 </td>
 <td>
-<p>To allow users to schedule &ldquo;best-effort&rdquo; pods, which shouldn&rsquo;t trigger
-Cluster Autoscaler actions, but only run when there are spare resources available,
-default: -10
-More info: <a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption">https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption</a></p>
+<em>(Optional)</em>
+<p>PodPriorityThreshold enables users to schedule &ldquo;best-effort&rdquo; pods, which
+shouldn&rsquo;t trigger autoscaler actions, but only run when there are spare
+resources available. The default is -10.</p>
+<p>See the following for more details:
+<a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption">https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption</a></p>
 </td>
 </tr>
 </tbody>
@@ -1370,7 +1466,11 @@ More info: <a href="https://github.com/kubernetes/autoscaler/blob/master/cluster
 <a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>ClusterConfiguration contains global configuration for a HostedCluster.</p>
+<p>ClusterConfiguration specifies configuration for individual OCP components in the
+cluster, represented as embedded resources that correspond to the openshift
+configuration API.</p>
+<p>The API for individual configuration items is at:
+<a href="https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html">https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html</a></p>
 </p>
 <table>
 <thead>
@@ -1391,8 +1491,8 @@ More info: <a href="https://github.com/kubernetes/autoscaler/blob/master/cluster
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecretRefs holds references to secrets used in configuration entries
-so that they can be properly synced by the hypershift operator.</p>
+<p>SecretRefs holds references to any secrets referenced by configuration
+entries. Entries can reference the secrets using local object references.</p>
 </td>
 </tr>
 <tr>
@@ -1406,8 +1506,9 @@ so that they can be properly synced by the hypershift operator.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ConfigMapRefs holds references to configmaps used in configuration entries
-so that they can be properly synced by the hypershift operator.</p>
+<p>ConfigMapRefs holds references to any configmaps referenced by
+configuration entries. Entries can reference the configmaps using local
+object references.</p>
 </td>
 </tr>
 <tr>
@@ -1421,7 +1522,7 @@ so that they can be properly synced by the hypershift operator.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>Items embeds the configuration resource</p>
+<p>Items embeds the serialized configuration resources.</p>
 </td>
 </tr>
 </tbody>
@@ -1432,6 +1533,7 @@ so that they can be properly synced by the hypershift operator.</p>
 <a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>)
 </p>
 <p>
+<p>ClusterNetworking specifies network configuration for a cluster.</p>
 </p>
 <table>
 <thead>
@@ -1449,6 +1551,8 @@ string
 </em>
 </td>
 <td>
+<p>ServiceCIDR is&hellip;</p>
+<p>TODO(dan): document it</p>
 </td>
 </tr>
 <tr>
@@ -1459,6 +1563,8 @@ string
 </em>
 </td>
 <td>
+<p>PodCIDR is&hellip;</p>
+<p>TODO(dan): document it</p>
 </td>
 </tr>
 <tr>
@@ -1469,6 +1575,8 @@ string
 </em>
 </td>
 <td>
+<p>MachineCIDR is&hellip;</p>
+<p>TODO(dan): document it</p>
 </td>
 </tr>
 <tr>
@@ -1482,6 +1590,11 @@ NetworkType
 </td>
 <td>
 <p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<p>
+Value must be one of:
+&#34;Calico&#34;, 
+&#34;OpenShiftSDN&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -1495,7 +1608,7 @@ APIServerNetworking
 </td>
 <td>
 <p>APIServer contains advanced network settings for the API server that affect
-how the APIServer is exposed inside a worker node.</p>
+how the APIServer is exposed inside a cluster node.</p>
 </td>
 </tr>
 </tbody>
@@ -1578,9 +1691,13 @@ and conditions fields may represent a previous version.</p>
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;Available&#34;</p></td>
+<tbody><tr><td><p>&#34;EndpointAvailable&#34;</p></td>
+<td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
+created in the guest VPC</p>
+</td>
+</tr><tr><td><p>&#34;EndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
-has been created for the specified NLB</p>
+has been created for the specified NLB in the management VPC</p>
 </td>
 </tr><tr><td><p>&#34;ClusterVersionFailing&#34;</p></td>
 <td></td>
@@ -1626,7 +1743,7 @@ ClusterConfiguration specified for the HostedCluster is valid.</p>
 <a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>DNSSpec specifies the DNS configuration in the cluster</p>
+<p>DNSSpec specifies the DNS configuration in the cluster.</p>
 </p>
 <table>
 <thead>
@@ -1656,8 +1773,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PublicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to
-the internet exist.</p>
+<p>PublicZoneID is the Hosted Zone ID where all the DNS records that are
+publicly accessible to the internet exist.</p>
 </td>
 </tr>
 <tr>
@@ -1669,8 +1786,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PrivateZoneID is the Hosted Zone ID where all the DNS records that are only available internally
-to the cluster exist.</p>
+<p>PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
+available internally to the cluster exist.</p>
 </td>
 </tr>
 </tbody>
@@ -1691,9 +1808,13 @@ to the cluster exist.</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Managed&#34;</p></td>
-<td></td>
+<td><p>Managed means HyperShift should provision and operator the etcd cluster
+automatically.</p>
+</td>
 </tr><tr><td><p>&#34;Unmanaged&#34;</p></td>
-<td></td>
+<td><p>Unmanaged means HyperShift will not provision or manage the etcd cluster,
+and the user is responsible for doing so.</p>
+</td>
 </tr></tbody>
 </table>
 ###EtcdSpec { #hypershift.openshift.io/v1alpha1.EtcdSpec }
@@ -1703,6 +1824,7 @@ to the cluster exist.</p>
 <a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
+<p>EtcdSpec specifies configuration for a control plane etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -1722,10 +1844,12 @@ EtcdManagementType
 </em>
 </td>
 <td>
-<p>ManagementType defines how the etcd cluster is managed. Unmanaged means
-the etcd cluster is managed by a system outside the hypershift controllers.
-Managed means the hypershift controllers manage the provisioning of the etcd cluster
-and the operations around it</p>
+<p>ManagementType defines how the etcd cluster is managed.</p>
+<p>
+Value must be one of:
+&#34;Managed&#34;, 
+&#34;Unmanaged&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -1739,7 +1863,7 @@ ManagedEtcdSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Managed provides metadata that defines how the hypershift controllers manage the etcd cluster</p>
+<p>Managed specifies the behavior of an etcd cluster managed by HyperShift.</p>
 </td>
 </tr>
 <tr>
@@ -1753,7 +1877,8 @@ UnmanagedEtcdSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Unmanaged provides metadata that enables the Openshift controllers to connect to the external etcd cluster</p>
+<p>Unmanaged specifies configuration which enables the control plane to
+integrate with an eternally managed etcd cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -1764,6 +1889,7 @@ UnmanagedEtcdSpec
 <a href="#hypershift.openshift.io/v1alpha1.UnmanagedEtcdSpec">UnmanagedEtcdSpec</a>)
 </p>
 <p>
+<p>EtcdTLSConfig specifies TLS configuration for HTTPS etcd client endpoints.</p>
 </p>
 <table>
 <thead>
@@ -1783,10 +1909,12 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ClientSecret refers to a secret for client MTLS authentication with the etcd cluster
-The CA must be stored at secret key etcd-client-ca.crt.
-The client cert must be stored at secret key etcd-client.crt.
-The client key must be stored at secret key etcd-client.key.</p>
+<p>ClientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
+may have the following key/value pairs:</p>
+<pre><code>etcd-client-ca.crt: Certificate Authority value
+etcd-client.crt: Client certificate value
+etcd-client.key: Client certificate key value
+</code></pre>
 </td>
 </tr>
 </tbody>
@@ -1837,7 +1965,7 @@ string
 <a href="#hypershift.openshift.io/v1alpha1.HostedCluster">HostedCluster</a>)
 </p>
 <p>
-<p>HostedClusterSpec defines the desired state of HostedCluster</p>
+<p>HostedClusterSpec is the desired behavior of a HostedCluster.</p>
 </p>
 <table>
 <thead>
@@ -1857,103 +1985,24 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the release image to use for this HostedCluster</p>
+<p>Release specifies the desired OCP release payload for the hosted cluster.</p>
+<p>Updating this field will trigger a rollout of the control plane. The
+behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+and InfrastructureAvailabilityPolicy.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>fips</code></br>
-<em>
-bool
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-</td>
-</tr>
-<tr>
-<td>
-<code>pullSecret</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>PullSecret is a pull secret injected into the container runtime of guest
-workers. It should have an &ldquo;.dockerconfigjson&rdquo; key containing the pull secret JSON.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>auditWebhook</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>AuditWebhook contains metadata for configuring an audit webhook
-endpoint for a cluster to process cluster audit events. It references
-a secret that contains the webhook information for the audit webhook endpoint.
-It is a secret because if the endpoint has MTLS the kubeconfig will contain client
-keys. This is currently only supported in IBM Cloud. The kubeconfig needs to be stored
-in the secret with a secret key name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>issuerURL</code></br>
+<code>infraID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-</td>
-</tr>
-<tr>
-<td>
-<code>sshKey</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>SSHKey is a reference to a Secret containing a single key &ldquo;id_rsa.pub&rdquo;,
-whose value is the public part of an SSH key that can be used to access
-Nodes.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>networking</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">
-ClusterNetworking
-</a>
-</em>
-</td>
-<td>
-<p>Networking contains network-specific settings for this cluster</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>autoscaling</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.ClusterAutoscaling">
-ClusterAutoscaling
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Autoscaling for compute nodes only, does not cover control plane</p>
+<p>InfraID is a globally unique identifier for the cluster. This identifier
+will be used to associate various cloud resources with the HostedCluster
+and its associated NodePools.</p>
+<p>TODO(dan): consider moving this to .platform.aws.infraID</p>
 </td>
 </tr>
 <tr>
@@ -1966,45 +2015,8 @@ PlatformSpec
 </em>
 </td>
 <td>
-</td>
-</tr>
-<tr>
-<td>
-<code>infraID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>InfraID is used to identify the cluster in cloud platforms</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>dns</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.DNSSpec">
-DNSSpec
-</a>
-</em>
-</td>
-<td>
-<p>DNS configuration for the cluster</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>services</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategyMapping">
-[]ServicePublishingStrategyMapping
-</a>
-</em>
-</td>
-<td>
-<p>Services defines metadata about how control plane services are published
-in the management cluster.
-TODO (alberto): include Ignition endpoint here.</p>
+<p>Platform specifies the underlying infrastructure provider for the cluster
+and is used to configure platform specific behavior.</p>
 </td>
 </tr>
 <tr>
@@ -2018,9 +2030,13 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControllerAvailabilityPolicy specifies an availability policy to apply
-to critical control plane components.
-Defaults to SingleReplica when not set.</p>
+<p>ControllerAvailabilityPolicy specifies the availability policy applied to
+critical control plane components. The default value is SingleReplica.</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2034,9 +2050,55 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
-run on the guest cluster nodes in HA mode
-Defaults to HighlyAvailable when not set</p>
+<p>InfrastructureAvailabilityPolicy specifies the availability policy applied
+to infrastructure services which run on cluster nodes. The default value is
+HighlyAvailable.</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dns</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.DNSSpec">
+DNSSpec
+</a>
+</em>
+</td>
+<td>
+<p>DNS specifies DNS configuration for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networking</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">
+ClusterNetworking
+</a>
+</em>
+</td>
+<td>
+<p>Networking specifies network configuration for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoscaling</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterAutoscaling">
+ClusterAutoscaling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
+associated with the control plane.</p>
 </td>
 </tr>
 <tr>
@@ -2049,8 +2111,69 @@ EtcdSpec
 </em>
 </td>
 <td>
-<p>Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
-use to store data. Changing the ManagementType for the etcd cluster is not supported after initial creation.</p>
+<p>Etcd specifies configuration for the control plane etcd cluster. The
+default ManagementType is Managed. Once set, the ManagementType cannot be
+changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>services</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategyMapping">
+[]ServicePublishingStrategyMapping
+</a>
+</em>
+</td>
+<td>
+<p>Services specifies how individual control plane services are published from
+the hosting cluster of the control plane.</p>
+<p>If a given service is not present in this list, it will be exposed publicly
+by default.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>pullSecret</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>PullSecret references a pull secret to be injected into the container
+runtime of all cluster nodes. The secret must have a key named
+&ldquo;.dockerconfigjson&rdquo; whose value is the pull secret JSON.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>sshKey</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>SSHKey references an SSH key to be injected into all cluster node sshd
+servers. The secret must have a single key &ldquo;id_rsa.pub&rdquo; whose value is the
+public part of an SSH key.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>issuerURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
+ServiceAccount tokens generated by the control plane API server. The
+default value is kubernetes.default.svc, which only works for in-cluster
+validation.</p>
 </td>
 </tr>
 <tr>
@@ -2064,8 +2187,29 @@ ClusterConfiguration
 </td>
 <td>
 <em>(Optional)</em>
-<p>Configuration embeds resources that correspond to the openshift configuration API:
-<a href="https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html">https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html</a></p>
+<p>Configuration specifies configuration for individual OCP components in the
+cluster, represented as embedded resources that correspond to the openshift
+configuration API.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>auditWebhook</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AuditWebhook contains metadata for configuring an audit webhook endpoint
+for a cluster to process cluster audit events. It references a secret that
+contains the webhook information for the audit webhook endpoint. It is a
+secret because if the endpoint has mTLS the kubeconfig will contain client
+keys. The kubeconfig needs to be stored in the secret with a secret key
+name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
+<p>This field is currently only supported on the IBMCloud platform.</p>
 </td>
 </tr>
 <tr>
@@ -2079,7 +2223,8 @@ ClusterConfiguration
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageContentSources lists sources/repositories for the release-image content.</p>
+<p>ImageContentSources specifies image mirrors that can be used by cluster
+nodes to pull content.</p>
 </td>
 </tr>
 <tr>
@@ -2093,8 +2238,22 @@ SecretEncryptionSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
-cluster when applicable.</p>
+<p>SecretEncryption specifies a Kubernetes secret encryption strategy for the
+control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>fips</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>FIPS indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
+If set to true, the control plane&rsquo;s ignition server will be configured to
+expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
 </tr>
 </tbody>
@@ -2105,7 +2264,7 @@ cluster when applicable.</p>
 <a href="#hypershift.openshift.io/v1alpha1.HostedCluster">HostedCluster</a>)
 </p>
 <p>
-<p>HostedClusterStatus defines the observed state of HostedCluster</p>
+<p>HostedClusterStatus is the latest observed status of a HostedCluster.</p>
 </p>
 <table>
 <thead>
@@ -2168,6 +2327,8 @@ It exposes the config for instances to become kubernetes nodes.</p>
 </em>
 </td>
 <td>
+<p>Conditions represents the latest available observations of a control
+plane&rsquo;s current state.</p>
 </td>
 </tr>
 </tbody>
@@ -2257,6 +2418,11 @@ NetworkType
 </td>
 <td>
 <p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<p>
+Value must be one of:
+&#34;Calico&#34;, 
+&#34;OpenShiftSDN&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2343,6 +2509,11 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
 Defaults to SingleReplica when not set</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2359,6 +2530,11 @@ AvailabilityPolicy
 <p>InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
 run on the guest cluster nodes in HA mode
 Defaults to HighlyAvailable when not set</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2641,6 +2817,11 @@ IBMCloudKMSAuthType
 </td>
 <td>
 <p>Type defines the IBM Cloud KMS authentication strategy</p>
+<p>
+Value must be one of:
+&#34;Managed&#34;, 
+&#34;Unmanaged&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2876,7 +3057,10 @@ call IBM Cloud KMS APIs</p>
 <a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>ImageContentSource defines a list of sources/repositories that can be used to pull content.</p>
+<p>ImageContentSource specifies image mirrors that can be used by cluster nodes
+to pull content. For cluster workloads, if a container image registry host of
+the pullspec matches Source then one of the Mirrors are substituted as hosts
+in the pullspec and tried in order to fetch the image.</p>
 </p>
 <table>
 <thead>
@@ -2894,7 +3078,8 @@ string
 </em>
 </td>
 <td>
-<p>Source is the repository that users refer to, e.g. in image pull specifications.</p>
+<p>Source is the repository that users refer to, e.g. in image pull
+specifications.</p>
 </td>
 </tr>
 <tr>
@@ -2906,7 +3091,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Mirrors is one or more repositories that may also contain the same images.</p>
+<p>Mirrors are one or more repositories that may also contain the same images.</p>
 </td>
 </tr>
 </tbody>
@@ -2917,6 +3102,8 @@ string
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolManagement">NodePoolManagement</a>)
 </p>
 <p>
+<p>InPlaceUpgrade specifies an upgrade strategy which upgrades nodes in-place
+without any new nodes being created or any old nodes being deleted.</p>
 </p>
 ###KMSProvider { #hypershift.openshift.io/v1alpha1.KMSProvider }
 <p>
@@ -2966,6 +3153,11 @@ KMSProvider
 </td>
 <td>
 <p>Provider defines the KMS provider</p>
+<p>
+Value must be one of:
+&#34;AWS&#34;, 
+&#34;IBMCloud&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3004,6 +3196,8 @@ AWSKMSSpec
 <a href="#hypershift.openshift.io/v1alpha1.EtcdSpec">EtcdSpec</a>)
 </p>
 <p>
+<p>ManagedEtcdSpec specifies the behavior of an etcd cluster managed by
+HyperShift.</p>
 </p>
 <table>
 <thead>
@@ -3023,7 +3217,7 @@ ManagedEtcdStorageSpec
 </em>
 </td>
 <td>
-<p>Storage configures how etcd data is persisted.</p>
+<p>Storage specifies how etcd data is persisted.</p>
 </td>
 </tr>
 </tbody>
@@ -3055,6 +3249,10 @@ ManagedEtcdStorageType
 </td>
 <td>
 <p>Type is the kind of persistent storage implementation to use for etcd.</p>
+<p>
+Value must be one of:
+&#34;PersistentVolume&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3082,6 +3280,7 @@ availability configuration).</p>
 <a href="#hypershift.openshift.io/v1alpha1.ManagedEtcdStorageSpec">ManagedEtcdStorageSpec</a>)
 </p>
 <p>
+<p>ManagedEtcdStorageType is a storage type for an etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -3125,6 +3324,7 @@ availability configuration).</p>
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolSpec">NodePoolSpec</a>)
 </p>
 <p>
+<p>NodePoolAutoScaling specifies auto-scaling behavior for a NodePool.</p>
 </p>
 <table>
 <thead>
@@ -3142,6 +3342,7 @@ int32
 </em>
 </td>
 <td>
+<p>Min is the minimum number of nodes to maintain in the pool. Must be &gt;= 1.</p>
 </td>
 </tr>
 <tr>
@@ -3152,6 +3353,7 @@ int32
 </em>
 </td>
 <td>
+<p>Max is the maximum number of nodes allowed in the pool. Must be &gt;= 1.</p>
 </td>
 </tr>
 </tbody>
@@ -3162,6 +3364,8 @@ int32
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolSpec">NodePoolSpec</a>)
 </p>
 <p>
+<p>NodePoolManagement specifies behavior for managing nodes in a NodePool, such
+as upgrade strategies and auto-repair behaviors.</p>
 </p>
 <table>
 <thead>
@@ -3181,6 +3385,12 @@ UpgradeType
 </em>
 </td>
 <td>
+<p>UpgradeType specifies the type of strategy for handling upgrades.</p>
+<p>
+Value must be one of:
+&#34;InPlace&#34;, 
+&#34;Replace&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3193,6 +3403,7 @@ ReplaceUpgrade
 </em>
 </td>
 <td>
+<p>Replace is the configuration for rolling upgrades.</p>
 </td>
 </tr>
 <tr>
@@ -3205,6 +3416,7 @@ InPlaceUpgrade
 </em>
 </td>
 <td>
+<p>InPlace is the configuration for in-place upgrades.</p>
 </td>
 </tr>
 <tr>
@@ -3216,6 +3428,8 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
+<p>AutoRepair specifies whether health checks should be enabled for machines
+in the NodePool. The default is false.</p>
 </td>
 </tr>
 </tbody>
@@ -3226,8 +3440,8 @@ bool
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolSpec">NodePoolSpec</a>)
 </p>
 <p>
-<p>NodePoolPlatform is the platform-specific configuration for a node
-pool. Only one of the platforms should be set.</p>
+<p>NodePoolPlatform specifies the underlying infrastructure provider for the
+NodePool and is used to configure platform specific behavior.</p>
 </p>
 <table>
 <thead>
@@ -3247,6 +3461,13 @@ PlatformType
 </em>
 </td>
 <td>
+<p>Type specifies the platform name.</p>
+<p>
+Value must be one of:
+&#34;AWS&#34;, 
+&#34;IBMCloud&#34;, 
+&#34;None&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3259,7 +3480,8 @@ AWSNodePoolPlatform
 </em>
 </td>
 <td>
-<p>AWS is the configuration used when installing on AWS.</p>
+<em>(Optional)</em>
+<p>AWS specifies the configuration used when operating on AWS.</p>
 </td>
 </tr>
 </tbody>
@@ -3270,7 +3492,7 @@ AWSNodePoolPlatform
 <a href="#hypershift.openshift.io/v1alpha1.NodePool">NodePool</a>)
 </p>
 <p>
-<p>NodePoolSpec defines the desired state of NodePool</p>
+<p>NodePoolSpec is the desired behavior of a NodePool.</p>
 </p>
 <table>
 <thead>
@@ -3288,7 +3510,37 @@ string
 </em>
 </td>
 <td>
-<p>ClusterName is the name of the Cluster this object belongs to.</p>
+<p>ClusterName is the name of the HostedCluster this NodePool belongs to.</p>
+<p>TODO(dan): Should this be a LocalObjectReference?</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>release</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.Release">
+Release
+</a>
+</em>
+</td>
+<td>
+<p>Release specifies the OCP release used for the NodePool. This informs the
+ignition configuration for machines, as well as other platform specific
+machine properties (e.g. an AMI on the AWS platform).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">
+NodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<p>Platform specifies the underlying infrastructure provider for the NodePool
+and is used to configure platform specific behavior.</p>
 </td>
 </tr>
 <tr>
@@ -3300,31 +3552,13 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
+<p>NodeCount is the desired number of nodes the pool should maintain. If
+unset, the default value is 0.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>config</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-[]Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>TODO (alberto): this ConfigMaps are meant to contain
-MachineConfig, KubeletConfig and ContainerRuntimeConfig but
-MCO only supports MachineConfig in bootstrap mode atm
-<a href="https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119">https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119</a>
-By contractual convention the ConfigMap structure is as follow:
-type: ConfigMap
-data:
-config: |-</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>nodePoolManagement</code></br>
+<code>management</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolManagement">
 NodePoolManagement
@@ -3332,6 +3566,8 @@ NodePoolManagement
 </em>
 </td>
 <td>
+<p>Management specifies behavior for managing nodes in the pool, such as
+upgrade strategies and auto-repair behaviors.</p>
 </td>
 </tr>
 <tr>
@@ -3345,34 +3581,29 @@ NodePoolAutoScaling
 </td>
 <td>
 <em>(Optional)</em>
+<p>Autoscaling specifies auto-scaling behavior for the NodePool.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>platform</code></br>
+<code>config</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">
-NodePoolPlatform
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+[]Kubernetes core/v1.LocalObjectReference
 </a>
 </em>
 </td>
 <td>
-</td>
-</tr>
-<tr>
-<td>
-<code>release</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1alpha1.Release">
-Release
-</a>
-</em>
-</td>
-<td>
-<p>Release specifies the release image to use for this NodePool
-For a nodePool a given version dictates the ignition config and
-an image artifact e.g an AMI in AWS.
-Release specifies the release image to use for this HostedCluster</p>
+<p>Config is a list of references to ConfigMaps containing serialized
+MachineConfig resources to be injected into the ignition configurations of
+nodes in the NodePool. The MachineConfig API schema is defined here:</p>
+<p><a href="https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172">https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172</a></p>
+<p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
+JSON or YAML of a serialized MachineConfig.</p>
+<p>TODO (alberto): this ConfigMaps are meant to contain MachineConfig,
+KubeletConfig and ContainerRuntimeConfig but MCO only supports
+MachineConfig in bootstrap mode atm. See:
+<a href="https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119">https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119</a></p>
 </td>
 </tr>
 </tbody>
@@ -3383,7 +3614,7 @@ Release specifies the release image to use for this HostedCluster</p>
 <a href="#hypershift.openshift.io/v1alpha1.NodePool">NodePool</a>)
 </p>
 <p>
-<p>NodePoolStatus defines the observed state of NodePool</p>
+<p>NodePoolStatus is the latest observed status of a NodePool.</p>
 </p>
 <table>
 <thead>
@@ -3402,7 +3633,19 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeCount is the most recently observed number of replicas.</p>
+<p>NodeCount is the latest observed number of nodes in the pool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>version</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Version is the semantic version of the latest applied release specified by
+the NodePool.</p>
 </td>
 </tr>
 <tr>
@@ -3415,20 +3658,8 @@ int32
 </em>
 </td>
 <td>
-</td>
-</tr>
-<tr>
-<td>
-<code>version</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>Version is the semantic version of the release applied by
-the hosted control plane operator.
-For a nodePool a given version represents the ignition config and
-an image artifact e.g an AMI in AWS.</p>
+<p>Conditions represents the latest available observations of the node pool&rsquo;s
+current state.</p>
 </td>
 </tr>
 </tbody>
@@ -3439,7 +3670,7 @@ an image artifact e.g an AMI in AWS.</p>
 <a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategy">ServicePublishingStrategy</a>)
 </p>
 <p>
-<p>NodePortPublishingStrategy defines the network endpoint that can be used to contact the NodePort service</p>
+<p>NodePortPublishingStrategy specifies a NodePort used to expose a service.</p>
 </p>
 <table>
 <thead>
@@ -3457,7 +3688,7 @@ string
 </em>
 </td>
 <td>
-<p>Address is the host/ip that the nodePort service is exposed over</p>
+<p>Address is the host/ip that the NodePort service is exposed over.</p>
 </td>
 </tr>
 <tr>
@@ -3468,7 +3699,8 @@ int32
 </em>
 </td>
 <td>
-<p>Port is the nodePort of the service. If &lt;=0 the nodePort is dynamically assigned when the service is created</p>
+<p>Port is the port of the NodePort service. If &lt;=0, the port is dynamically
+assigned when the service is created.</p>
 </td>
 </tr>
 </tbody>
@@ -3526,6 +3758,8 @@ k8s.io/apimachinery/pkg/api/resource.Quantity
 <a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
+<p>PlatformSpec specifies the underlying infrastructure provider for the cluster
+and is used to configure platform specific behavior.</p>
 </p>
 <table>
 <thead>
@@ -3545,7 +3779,13 @@ PlatformType
 </em>
 </td>
 <td>
-<p>Type is the underlying infrastructure provider for the cluster.</p>
+<p>Type is the type of infrastructure provider for the cluster.</p>
+<p>
+Value must be one of:
+&#34;AWS&#34;, 
+&#34;IBMCloud&#34;, 
+&#34;None&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3559,7 +3799,7 @@ AWSPlatformSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>AWS contains AWS-specific settings for the HostedCluster</p>
+<p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
 </td>
 </tr>
 </tbody>
@@ -3581,12 +3821,14 @@ AWSPlatformSpec
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;AWS&#34;</p></td>
-<td><p>AWSPlatformType represents Amazon Web Services infrastructure.</p>
+<td><p>AWSPlatform represents Amazon Web Services infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
-<td></td>
+<td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>
+</td>
 </tr><tr><td><p>&#34;None&#34;</p></td>
-<td></td>
+<td><p>NonePlatform represents user supplied (e.g. bare metal) infrastructure.</p>
+</td>
 </tr></tbody>
 </table>
 ###PublishingStrategyType { #hypershift.openshift.io/v1alpha1.PublishingStrategyType }
@@ -3605,6 +3847,7 @@ AWSPlatformSpec
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolSpec">NodePoolSpec</a>)
 </p>
 <p>
+<p>Release represents the metadata for an OCP release payload image.</p>
 </p>
 <table>
 <thead>
@@ -3622,7 +3865,7 @@ string
 </em>
 </td>
 <td>
-<p>Image is the release image pullspec for the control plane</p>
+<p>Image is the image pullspec of an OCP release payload image.</p>
 </td>
 </tr>
 </tbody>
@@ -3633,6 +3876,8 @@ string
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolManagement">NodePoolManagement</a>)
 </p>
 <p>
+<p>ReplaceUpgrade specifies upgrade behavior that replaces existing nodes
+according to a given strategy.</p>
 </p>
 <table>
 <thead>
@@ -3652,6 +3897,12 @@ UpgradeStrategy
 </em>
 </td>
 <td>
+<p>Strategy is the node replacement strategy for nodes in the pool.</p>
+<p>
+Value must be one of:
+&#34;OnDelete&#34;, 
+&#34;RollingUpdate&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3664,6 +3915,8 @@ RollingUpdate
 </em>
 </td>
 <td>
+<p>RollingUpdate specifies a rolling update strategy which upgrades nodes by
+creating new nodes and deleting the old ones.</p>
 </td>
 </tr>
 </tbody>
@@ -3674,6 +3927,8 @@ RollingUpdate
 <a href="#hypershift.openshift.io/v1alpha1.ReplaceUpgrade">ReplaceUpgrade</a>)
 </p>
 <p>
+<p>RollingUpdate specifies a rolling update strategy which upgrades nodes by
+creating new nodes and deleting the old ones.</p>
 </p>
 <table>
 <thead>
@@ -3693,6 +3948,19 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>MaxUnavailable is the maximum number of nodes that can be unavailable
+during the update.</p>
+<p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
+(ex: 10%).</p>
+<p>Absolute number is calculated from percentage by rounding down.</p>
+<p>This can not be 0 if MaxSurge is 0.</p>
+<p>Defaults to 0.</p>
+<p>Example: when this is set to 30%, old nodes can be deleted down to 70% of
+desired nodes immediately when the rolling update starts. Once new nodes
+are ready, more old nodes be deleted, followed by provisioning new nodes,
+ensuring that the total number of nodes available at all times during the
+update is at least 70% of desired nodes.</p>
 </td>
 </tr>
 <tr>
@@ -3705,6 +3973,19 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>MaxSurge is the maximum number of nodes that can be provisioned above the
+desired number of nodes.</p>
+<p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
+(ex: 10%).</p>
+<p>Absolute number is calculated from percentage by rounding up.</p>
+<p>This can not be 0 if MaxUnavailable is 0.</p>
+<p>Defaults to 1.</p>
+<p>Example: when this is set to 30%, new nodes can be provisioned immediately
+when the rolling update starts, such that the total number of old and new
+nodes do not exceed 130% of desired nodes. Once old nodes have been
+deleted, new nodes can be provisioned, ensuring that total number of nodes
+running at any time during the update is at most 130% of desired nodes.</p>
 </td>
 </tr>
 </tbody>
@@ -3738,6 +4019,11 @@ SecretEncryptionType
 </td>
 <td>
 <p>Type defines the type of kube secret encryption being used</p>
+<p>
+Value must be one of:
+&#34;aescbc&#34;, 
+&#34;kms&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3799,7 +4085,7 @@ AESCBCSpec
 <a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategyMapping">ServicePublishingStrategyMapping</a>)
 </p>
 <p>
-<p>ServicePublishingStrategy defines metadata around how a service is published</p>
+<p>ServicePublishingStrategy specfies how to publish a ServiceType.</p>
 </p>
 <table>
 <thead>
@@ -3819,7 +4105,7 @@ PublishingStrategyType
 </em>
 </td>
 <td>
-<p>Type defines the publishing strategy used for the service.</p>
+<p>Type is the publishing strategy used for the service.</p>
 </td>
 </tr>
 <tr>
@@ -3832,7 +4118,7 @@ NodePortPublishingStrategy
 </em>
 </td>
 <td>
-<p>NodePort is used to define extra metadata for the NodePort publishing strategy.</p>
+<p>NodePort configures exposing a service using a NodePort.</p>
 </td>
 </tr>
 </tbody>
@@ -3844,7 +4130,8 @@ NodePortPublishingStrategy
 <a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>ServicePublishingStrategyMapping defines the service being published and  metadata about the publishing strategy.</p>
+<p>ServicePublishingStrategyMapping specifies how individual control plane
+services are published from the hosting cluster of a control plane.</p>
 </p>
 <table>
 <thead>
@@ -3864,7 +4151,7 @@ ServiceType
 </em>
 </td>
 <td>
-<p>Service identifies the type of service being published</p>
+<p>Service identifies the type of service being published.</p>
 </td>
 </tr>
 <tr>
@@ -3877,6 +4164,7 @@ ServicePublishingStrategy
 </em>
 </td>
 <td>
+<p>ServicePublishingStrategy specifies how to publish Service.</p>
 </td>
 </tr>
 </tbody>
@@ -3887,7 +4175,8 @@ ServicePublishingStrategy
 <a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategyMapping">ServicePublishingStrategyMapping</a>)
 </p>
 <p>
-<p>ServiceType defines what control plane services can be exposed from the management control plane</p>
+<p>ServiceType defines what control plane services can be exposed from the
+management control plane.</p>
 </p>
 ###UnmanagedEtcdSpec { #hypershift.openshift.io/v1alpha1.UnmanagedEtcdSpec }
 <p>
@@ -3895,7 +4184,8 @@ ServicePublishingStrategy
 <a href="#hypershift.openshift.io/v1alpha1.EtcdSpec">EtcdSpec</a>)
 </p>
 <p>
-<p>UnmanagedEtcdSpec defines metadata that enables the Openshift controllers to connect to the external etcd cluster</p>
+<p>UnmanagedEtcdSpec specifies configuration which enables the control plane to
+integrate with an eternally managed etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -3913,8 +4203,10 @@ string
 </em>
 </td>
 <td>
-<p>Endpoint is the full url to connect to the etcd cluster endpoint. An example is
-<a href="https://etcd-client:2379">https://etcd-client:2379</a></p>
+<p>Endpoint is the full etcd cluster client endpoint URL. For example:</p>
+<pre><code>https://etcd-client:2379
+</code></pre>
+<p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
 </td>
 </tr>
 <tr>
@@ -3927,8 +4219,7 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>TLS defines a reference to a TLS secret that can be used for client MTLS authentication with
-the etcd cluster</p>
+<p>TLS specifies TLS configuration for HTTPS etcd client endpoints.</p>
 </td>
 </tr>
 </tbody>
@@ -3939,6 +4230,7 @@ the etcd cluster</p>
 <a href="#hypershift.openshift.io/v1alpha1.ReplaceUpgrade">ReplaceUpgrade</a>)
 </p>
 <p>
+<p>UpgradeStrategy is a specific strategy for upgrading nodes in a NodePool.</p>
 </p>
 <table>
 <thead>
@@ -3948,9 +4240,12 @@ the etcd cluster</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;OnDelete&#34;</p></td>
-<td></td>
+<td><p>UpgradeStrategyOnDelete replaces old nodes when the deletion of the
+associated node instances are completed.</p>
+</td>
 </tr><tr><td><p>&#34;RollingUpdate&#34;</p></td>
-<td></td>
+<td><p>UpgradeStrategyRollingUpdate means use a rolling update for nodes.</p>
+</td>
 </tr></tbody>
 </table>
 ###UpgradeType { #hypershift.openshift.io/v1alpha1.UpgradeType }
@@ -3959,6 +4254,7 @@ the etcd cluster</p>
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolManagement">NodePoolManagement</a>)
 </p>
 <p>
+<p>UpgradeType is a type of high-level upgrade behavior nodes in a NodePool.</p>
 </p>
 <table>
 <thead>
@@ -3968,9 +4264,13 @@ the etcd cluster</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;InPlace&#34;</p></td>
-<td></td>
+<td><p>UpgradeTypeInPlace is a strategy which replaces nodes in-place with no
+additional node capacity requirements.</p>
+</td>
 </tr><tr><td><p>&#34;Replace&#34;</p></td>
-<td></td>
+<td><p>UpgradeTypeReplace is a strategy which replaces nodes using surge node
+capacity.</p>
+</td>
 </tr></tbody>
 </table>
 ###Volume { #hypershift.openshift.io/v1alpha1.Volume }
@@ -3979,7 +4279,7 @@ the etcd cluster</p>
 <a href="#hypershift.openshift.io/v1alpha1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
 </p>
 <p>
-<p>Volume encapsulates the configuration options for the storage device</p>
+<p>Volume specifies the configuration options for node instance storage devices.</p>
 </p>
 <table>
 <thead>
@@ -3997,8 +4297,8 @@ int64
 </em>
 </td>
 <td>
-<p>Size specifies size (in Gi) of the storage device.
-Must be greater than the image snapshot size or 8 (whichever is greater).</p>
+<p>Size specifies size (in Gi) of the storage device.</p>
+<p>Must be greater than the image snapshot size or 8 (whichever is greater).</p>
 </td>
 </tr>
 <tr>

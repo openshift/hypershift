@@ -5,6 +5,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -19,19 +20,24 @@ const (
 )
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(cfg.TargetKubeClient(), controllers.DefaultResync, informers.WithNamespace(metav1.NamespaceSystem))
-	cfg.Manager().Add(manager.RunnableFunc(func(ctx context.Context) error {
+	targetKubeClient, err := kubeclient.NewForConfig(cfg.TargetConfig)
+	if err != nil {
+		return err
+	}
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(targetKubeClient, controllers.DefaultResync, informers.WithNamespace(metav1.NamespaceSystem))
+	cfg.Manager.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		informerFactory.Start(ctx.Done())
 		return nil
 	}))
+
 	secrets := informerFactory.Core().V1().Secrets()
 	reconciler := &OAuthRestarter{
 		Client:       cfg.KubeClient(),
-		Namespace:    cfg.Namespace(),
+		Namespace:    cfg.Namespace,
 		SecretLister: secrets.Lister(),
-		Log:          cfg.Logger().WithName("OAuthRestarter"),
+		Log:          cfg.Logger.WithName("OAuthRestarter"),
 	}
-	c, err := controller.New("oauth-restarter", cfg.Manager(), controller.Options{Reconciler: reconciler})
+	c, err := controller.New("oauth-restarter", cfg.Manager, controller.Options{Reconciler: reconciler})
 	if err != nil {
 		return err
 	}

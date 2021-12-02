@@ -9,8 +9,9 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type KubeSchedulerParams struct {
@@ -22,7 +23,7 @@ type KubeSchedulerParams struct {
 	config.DeploymentConfig `json:",inline"`
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig config.GlobalConfig, explicitNonRootSecurityContext bool) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig globalconfig.GlobalConfig, explicitNonRootSecurityContext bool) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		FeatureGate:             globalConfig.FeatureGate,
 		Scheduler:               globalConfig.Scheduler,

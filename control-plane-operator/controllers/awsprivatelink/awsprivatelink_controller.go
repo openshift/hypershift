@@ -7,22 +7,34 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/workqueue"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/upsert"
 )
 
@@ -31,8 +43,8 @@ const (
 )
 
 type PrivateServiceObserver struct {
-	client client.Client
-	log    logr.Logger
+	client.Client
+	log logr.Logger
 
 	ControllerName   string
 	ServiceNamespace string
@@ -68,7 +80,6 @@ func ControllerName(name string) string {
 
 func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	r.log = ctrl.Log.WithName(r.ControllerName).WithValues("name", r.ServiceName, "namespace", r.ServiceNamespace)
-	r.client = mgr.GetClient()
 	var err error
 	kubeClient, err := kubeclient.NewForConfig(mgr.GetConfig())
 	if err != nil {
@@ -91,16 +102,39 @@ func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.
 }
 
 func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.log.Info("reconcile start", "request", req)
+	r.log.Info("reconciling")
+
+	// Fetch the Service
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      req.Name,
 			Namespace: req.Namespace,
 		},
 	}
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// Fetch the HostedControlPlane
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: r.HCPNamespace}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get resource: %w", err)
+	}
+	if len(hcpList.Items) == 0 {
+		// Return early if HostedControlPlane is deleted
+		return ctrl.Result{}, nil
+	}
+	if len(hcpList.Items) > 1 {
+		return ctrl.Result{}, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
+	}
+
+	hcp := hcpList.Items[0]
+
+	// Return early if HostedControlPlane is deleted
+	if !hcp.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
 	if len(svc.Status.LoadBalancer.Ingress) == 0 {
 		r.log.Info("load balancer not provisioned yet")
 		return ctrl.Result{}, nil
@@ -112,16 +146,285 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 		},
 	}
 	lbName := strings.Split(strings.Split(svc.Status.LoadBalancer.Ingress[0].Hostname, ".")[0], "-")[0]
-	if _, err := r.CreateOrUpdate(ctx, r.client, awsEndpointService, func() error {
-		return reconcileAWSEndpointService(awsEndpointService, lbName)
+	if _, err := r.CreateOrUpdate(ctx, r, awsEndpointService, func() error {
+		awsEndpointService.Spec.NetworkLoadBalancerName = lbName
+		return nil
 	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile AWS Endpoint Service: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSEndpointService: %w", err)
 	}
 	r.log.Info("reconcile complete", "request", req)
 	return ctrl.Result{}, nil
 }
 
-func reconcileAWSEndpointService(awsEndpointService *hyperv1.AWSEndpointService, lbName string) error {
-	awsEndpointService.Spec.NetworkLoadBalancerName = lbName
+const (
+	finalizer                              = "hypershift.openshift.io/control-plane-operator-finalizer"
+	endpointServiceDeletionRequeueDuration = time.Duration(5 * time.Second)
+	hypershiftLocalZone                    = "hypershift.local"
+)
+
+type AWSEndpointServiceReconciler struct {
+	client.Client
+	ec2Client     ec2iface.EC2API
+	route53Client route53iface.Route53API
+}
+
+func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	_, err := ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.AWSEndpointService{}).
+		WithOptions(controller.Options{
+			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(3*time.Second, 30*time.Second),
+		}).
+		Build(r)
+	if err != nil {
+		return fmt.Errorf("failed setting up with a controller manager: %w", err)
+	}
+
+	r.Client = mgr.GetClient()
+
+	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
+	awsSession := awsutil.NewSession("control-plane-operator")
+	awsConfig := aws.NewConfig()
+	r.ec2Client = ec2.New(awsSession, awsConfig)
+	route53Config := aws.NewConfig()
+	// Hardcode region for route53 config
+	route53Config.Region = aws.String("us-east-1")
+	r.route53Client = route53.New(awsSession, route53Config)
+
 	return nil
+}
+
+func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("logger not found: %w", err)
+	}
+
+	log.Info("reconciling")
+
+	// Fetch the AWSEndpointService
+	obj := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      req.Name,
+			Namespace: req.Namespace,
+		},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to get resource: %w", err)
+	}
+
+	// Don't change the cached object
+	awsEndpointService := obj.DeepCopy()
+
+	// Return early if deleted
+	if !awsEndpointService.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+			// If we previously removed our finalizer, don't delete again and return early
+			return ctrl.Result{}, nil
+		}
+		completed, err := r.delete(ctx, awsEndpointService, r.ec2Client, r.route53Client)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
+		}
+		if !completed {
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+		}
+		if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+			controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
+			if err := r.Update(ctx, awsEndpointService); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Ensure the awsEndpointService has a finalizer for cleanup
+	if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		controllerutil.AddFinalizer(awsEndpointService, finalizer)
+		if err := r.Update(ctx, awsEndpointService); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to add finalizer: %w", err)
+		}
+	}
+
+	serviceName := awsEndpointService.Status.EndpointServiceName
+	if serviceName == "" {
+		// Service Endpoint is not yet set, wait for hypershift-operator to populate
+		// Likely observing our own Create
+		return ctrl.Result{}, nil
+	}
+
+	// Fetch the HostedControlPlane
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get resource: %w", err)
+	}
+	if len(hcpList.Items) == 0 {
+		// Return early if HostedControlPlane is deleted
+		return ctrl.Result{}, nil
+	}
+	if len(hcpList.Items) > 1 {
+		return ctrl.Result{}, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
+	}
+	hcp := &hcpList.Items[0]
+
+	// Reconcile the AWSEndpointService
+	if err := reconcileAWSEndpointService(ctx, awsEndpointService, hcp, r.ec2Client, r.route53Client); err != nil {
+		meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
+			Type:    string(hyperv1.AWSEndpointAvailable),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.AWSErrorReason,
+			Message: err.Error(),
+		})
+		if err := r.Status().Update(ctx, awsEndpointService); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, err
+	}
+
+	meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
+		Type:    string(hyperv1.AWSEndpointAvailable),
+		Status:  metav1.ConditionTrue,
+		Reason:  hyperv1.AWSSuccessReason,
+		Message: "",
+	})
+
+	if err := r.Status().Update(ctx, awsEndpointService); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	log.Info("reconcilation complete")
+	return ctrl.Result{}, nil
+}
+
+func hasAWSConfig(platform *hyperv1.PlatformSpec) bool {
+	return platform.Type == hyperv1.AWSPlatform && platform.AWS != nil && platform.AWS.CloudProviderConfig != nil &&
+		platform.AWS.CloudProviderConfig.Subnet != nil && platform.AWS.CloudProviderConfig.Subnet.ID != nil
+}
+
+func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) error {
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("logger not found: %w", err)
+	}
+	serviceName := awsEndpointService.Status.EndpointServiceName
+
+	endpointID := awsEndpointService.Status.EndpointID
+	var endpointDNSEntries []*ec2.DnsEntry
+	if endpointID != "" {
+		// check if Endpoint exists in AWS
+		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
+			VpcEndpointIds: []*string{aws.String(endpointID)},
+		})
+		if err != nil {
+			return err
+		}
+		if len(output.VpcEndpoints) == 0 {
+			// clear the EndpointID so a new Endpoint is created on the requeue
+			awsEndpointService.Status.EndpointID = ""
+			return fmt.Errorf("endpoint %s not found, resetting status", serviceName)
+		}
+		log.Info("endpoint exists", "endpointID", endpointID)
+		endpointDNSEntries = output.VpcEndpoints[0].DnsEntries
+	} else {
+		if !hasAWSConfig(&hcp.Spec.Platform) {
+			return fmt.Errorf("AWS platform information not provided in HostedControlPlane")
+		}
+		input := &ec2.CreateVpcEndpointInput{
+			ServiceName:     aws.String(serviceName),
+			VpcId:           aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
+			VpcEndpointType: aws.String(ec2.VpcEndpointTypeInterface),
+			SubnetIds:       []*string{hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID},
+		}
+		output, err := ec2Client.CreateVpcEndpointWithContext(ctx, input)
+		if err != nil {
+			return err
+		}
+		if output == nil || output.VpcEndpoint == nil {
+			return fmt.Errorf("CreateVpcEndpointWithContext output is nil")
+		}
+
+		endpointID = *output.VpcEndpoint.VpcEndpointId
+		log.Info("endpoint created", "endpointID", endpointID)
+		awsEndpointService.Status.EndpointID = endpointID
+		endpointDNSEntries = output.VpcEndpoint.DnsEntries
+	}
+
+	if len(endpointDNSEntries) == 0 {
+		log.Info("endpoint has no DNS entries, skipping DNS record creation", "endpointID", endpointID)
+		return nil
+	}
+
+	var recordName string
+	if awsEndpointService.Name == "kube-apiserver-private" {
+		recordName = "api"
+	} else if strings.HasPrefix(awsEndpointService.Name, "router-") {
+		recordName = "*.apps"
+	} else {
+		return fmt.Errorf("no mapping from AWSEndpointService to DNS")
+	}
+
+	zoneName := fmt.Sprintf("%s.%s", hcp.Name, hypershiftLocalZone)
+	zoneID, err := lookupZoneID(ctx, route53Client, zoneName)
+	if err != nil {
+		return err
+	}
+
+	fqdn := fmt.Sprintf("%s.%s", recordName, zoneName)
+	err = createRecord(ctx, route53Client, zoneID, fqdn, *(endpointDNSEntries[0].DnsName))
+	if err != nil {
+		return err
+	}
+	log.Info("DNS record created", "fqdn", fqdn)
+
+	awsEndpointService.Status.DNSName = fqdn
+	awsEndpointService.Status.DNSZoneID = zoneID
+
+	return nil
+}
+
+func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) (bool, error) {
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return false, fmt.Errorf("logger not found: %w", err)
+	}
+
+	endpointID := awsEndpointService.Status.EndpointID
+	if endpointID != "" {
+		if _, err := ec2Client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
+			VpcEndpointIds: []*string{aws.String(endpointID)},
+		}); err != nil {
+			return false, err
+		}
+		log.Info("endpoint deleted", "endpointID", endpointID)
+	}
+
+	fqdn := awsEndpointService.Status.DNSName
+	zoneID := awsEndpointService.Status.DNSZoneID
+	if err != nil {
+		return false, err
+	}
+	if fqdn != "" && zoneID != "" {
+		record, err := findRecord(ctx, route53Client, zoneID, fqdn)
+		if err != nil {
+			return false, err
+		}
+		if record != nil {
+			err = deleteRecord(ctx, route53Client, zoneID, record)
+			if err != nil {
+				return false, err
+			}
+			log.Info("DNS record deleted", "fqdn", fqdn)
+		} else {
+			log.Info("no DNS record found", "fqdn", fqdn)
+		}
+	} else {
+		log.Info("no DNS status set in AWSEndpointService", "name", awsEndpointService.Name)
+	}
+
+	return true, nil
 }

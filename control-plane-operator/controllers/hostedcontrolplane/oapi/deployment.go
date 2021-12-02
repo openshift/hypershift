@@ -14,12 +14,12 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 var (
@@ -192,7 +192,7 @@ func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Con
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: fmt.Sprintf("%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname),
+				Value: fmt.Sprintf("%s,%s,registry.access.redhat.com,quay.io,registry.redhat.io", manifests.KubeAPIServerService("").Name, etcdHostname),
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)

@@ -12,11 +12,10 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -44,20 +43,6 @@ var (
 	cloudProviderConfigVolumeMount = util.PodVolumeMounts{
 		kcmContainerMain().Name: {
 			kcmVolumeCloudConfig().Name: "/etc/kubernetes/cloud",
-		},
-	}
-	cloudProviderCredsVolumeMount = util.PodVolumeMounts{
-		kcmContainerMain().Name: {
-			kcmVolumeCloudProviderCreds().Name: "/etc/kubernetes/secrets/cloud-provider",
-		},
-	}
-	cloudProviderTokenVolumeMount = util.PodVolumeMounts{
-		kcmContainerMain().Name: {
-			kcmVolumeCloudProviderToken().Name: "/var/run/secrets/openshift/serviceaccount",
-		},
-		kcmInitContainerTokenMinter().Name: {
-			kcmVolumeCloudProviderToken().Name: "/var/run/secrets/openshift/serviceaccount",
-			kcmVolumeKubeconfig().Name:         "/etc/kubernetes",
 		},
 	}
 	kcmLabels = map[string]string{
@@ -114,26 +99,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 		applyServingCAVolume(&deployment.Spec.Template.Spec, servingCA)
 	}
 	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig)
-	applyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds, p.TokenMinterImage)
+	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds, p.TokenMinterImage, kcmContainerMain().Name)
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
-}
-
-func kcmInitContainerTokenMinter() *corev1.Container {
-	return &corev1.Container{
-		Name: "token-minter",
-	}
-}
-
-func buildKCMInitContainerTokenMinter(image string, args []string) func(c *corev1.Container) {
-	return func(c *corev1.Container) {
-		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
-		c.Command = []string{"/usr/bin/token-minter"}
-		c.Args = args
-		c.VolumeMounts = cloudProviderTokenVolumeMount.ContainerMounts(c.Name)
-	}
 }
 
 func kcmContainerMain() *corev1.Container {
@@ -255,31 +224,6 @@ func buildKCMVolumeCloudConfig(cloudProviderConfigName string) func(v *corev1.Vo
 	}
 }
 
-func kcmVolumeCloudProviderCreds() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "cloud-creds",
-	}
-}
-
-func buildKCMVolumeCloudProviderCreds(cloudProviderCredsName string) func(v *corev1.Volume) {
-	return func(v *corev1.Volume) {
-		v.Secret = &corev1.SecretVolumeSource{}
-		v.Secret.SecretName = cloudProviderCredsName
-	}
-}
-
-func kcmVolumeCloudProviderToken() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "cloud-token",
-	}
-}
-
-func buildKCMVolumeCloudProviderToken() func(v *corev1.Volume) {
-	return func(v *corev1.Volume) {
-		v.EmptyDir = &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}
-	}
-}
-
 type serviceCAVolumeBuilder string
 
 func (name serviceCAVolumeBuilder) buildKCMVolumeServiceServingCA(v *corev1.Volume) {
@@ -352,19 +296,6 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	return args
 }
 
-func tokenMinterArgs() []string {
-	cpath := func(vol, file string) string {
-		return path.Join(cloudProviderTokenVolumeMount.Path(kcmInitContainerTokenMinter().Name, vol), file)
-	}
-	return []string{
-		"-service-account-namespace=kube-system",
-		"-service-account-name=kube-controller-manager",
-		"-token-audience=openshift",
-		fmt.Sprintf("-token-file=%s", cpath(kcmVolumeCloudProviderToken().Name, "token")),
-		fmt.Sprintf("-kubeconfig=%s", cpath(kcmVolumeKubeconfig().Name, kas.KubeconfigKey)),
-	}
-}
-
 func cloudProviderConfig(cloudProvider string, configRef *corev1.LocalObjectReference) string {
 	if configRef != nil && configRef.Name != "" {
 		cfgDir := cloudProviderConfigVolumeMount.Path(kcmContainerMain().Name, kcmVolumeCloudConfig().Name)
@@ -381,39 +312,6 @@ func applyCloudConfigVolumeMount(podSpec *corev1.PodSpec, cloudProviderConfigRef
 	container := mustContainer(podSpec, kcmContainerMain().Name)
 	container.VolumeMounts = append(container.VolumeMounts,
 		cloudProviderConfigVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
-}
-
-func applyCloudProviderCreds(podSpec *corev1.PodSpec, cloudProvider string, cloudProviderCreds *corev1.LocalObjectReference, tokenMinterImage string) {
-	if cloudProviderCreds == nil || cloudProviderCreds.Name == "" {
-		return
-	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudProviderCreds(), buildKCMVolumeCloudProviderCreds(cloudProviderCreds.Name)))
-	container := mustContainer(podSpec, kcmContainerMain().Name)
-	container.VolumeMounts = append(container.VolumeMounts,
-		cloudProviderCredsVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
-
-	switch cloudProvider {
-	case aws.Provider:
-		credsPath := path.Join(cloudProviderCredsVolumeMount.Path(kcmContainerMain().Name, kcmVolumeCloudProviderCreds().Name), AWSCloudProviderCredsKey)
-		container.Env = append(container.Env,
-			corev1.EnvVar{
-				Name:  "AWS_SHARED_CREDENTIALS_FILE",
-				Value: credsPath,
-			},
-			corev1.EnvVar{
-				Name:  "AWS_SDK_LOAD_CONFIG",
-				Value: "true",
-			},
-			corev1.EnvVar{
-				Name:  "AWS_EC2_METADATA_DISABLED",
-				Value: "true",
-			})
-		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudProviderToken(), buildKCMVolumeCloudProviderToken()))
-		container.VolumeMounts = append(container.VolumeMounts,
-			cloudProviderTokenVolumeMount.ContainerMounts(kcmContainerMain().Name)...)
-		tokenMinterInitContainer := util.BuildContainer(kcmInitContainerTokenMinter(), buildKCMInitContainerTokenMinter(tokenMinterImage, tokenMinterArgs()))
-		podSpec.InitContainers = append(podSpec.InitContainers, tokenMinterInitContainer)
-	}
 }
 
 func mustContainer(podSpec *corev1.PodSpec, name string) *corev1.Container {

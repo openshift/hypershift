@@ -12,8 +12,9 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/util"
 	k8sutilspointer "k8s.io/utils/pointer"
 )
 
@@ -70,7 +71,7 @@ type ConfigOverride struct {
 	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.GlobalConfig, images map[string]string, host string, port int32, explicitNonRootSecurityContext bool) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, host string, port int32, explicitNonRootSecurityContext bool) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,
@@ -96,7 +97,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.G
 	}
 	p.LivenessProbes = config.LivenessProbes{
 		oauthContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(OAuthServerPort)),
@@ -112,7 +113,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig config.G
 	}
 	p.ReadinessProbes = config.ReadinessProbes{
 		oauthContainerMain().Name: {
-			Handler: corev1.Handler{
+			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
 					Port:   intstr.FromInt(int(OAuthServerPort)),

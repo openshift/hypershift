@@ -12,18 +12,17 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type ExampleResources struct {
-	Namespace    *corev1.Namespace
-	PullSecret   *corev1.Secret
-	AWSResources *ExampleAWSResources
-	SSHKey       *corev1.Secret
-	Cluster      *hyperv1.HostedCluster
-	NodePool     *hyperv1.NodePool
+type Resources interface {
+	AsObjects() []crclient.Object
 }
 
-type ExampleAWSResources struct {
-	KubeCloudControllerAWSCreds *corev1.Secret
-	NodePoolManagementAWSCreds  *corev1.Secret
+type ExampleResources struct {
+	Namespace  *corev1.Namespace
+	PullSecret *corev1.Secret
+	Resources  Resources
+	SSHKey     *corev1.Secret
+	Cluster    *hyperv1.HostedCluster
+	NodePool   *hyperv1.NodePool
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
@@ -32,9 +31,9 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 		o.PullSecret,
 		o.Cluster,
 	}
-	if o.AWSResources != nil {
-		objects = append(objects, o.AWSResources.KubeCloudControllerAWSCreds)
-		objects = append(objects, o.AWSResources.NodePoolManagementAWSCreds)
+	if o.Resources != nil {
+		resourceObjects := o.Resources.AsObjects()
+		objects = append(objects, resourceObjects...)
 	}
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
@@ -75,20 +74,21 @@ type ExampleNoneOptions struct {
 }
 
 type ExampleAWSOptions struct {
-	Region                     string
-	Zone                       string
-	VPCID                      string
-	SubnetID                   string
-	SecurityGroupID            string
-	InstanceProfile            string
-	InstanceType               string
-	Roles                      []hyperv1.AWSRoleCredentials
-	KubeCloudControllerRoleARN string
-	NodePoolManagementRoleARN  string
-	RootVolumeSize             int64
-	RootVolumeType             string
-	RootVolumeIOPS             int64
-	ResourceTags               []hyperv1.AWSResourceTag
+	Region                      string
+	Zone                        string
+	VPCID                       string
+	SubnetID                    string
+	SecurityGroupID             string
+	InstanceProfile             string
+	InstanceType                string
+	Roles                       []hyperv1.AWSRoleCredentials
+	KubeCloudControllerRoleARN  string
+	NodePoolManagementRoleARN   string
+	ControlPlaneOperatorRoleARN string
+	RootVolumeSize              int64
+	RootVolumeType              string
+	RootVolumeIOPS              int64
+	ResourceTags                []hyperv1.AWSResourceTag
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -139,7 +139,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	}
 
 	var platformSpec hyperv1.PlatformSpec
-	var exampleAWSResources *ExampleAWSResources
+	var resources Resources
 	var services []hyperv1.ServicePublishingStrategyMapping
 
 	switch {
@@ -162,13 +162,11 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
-		exampleAWSResources = &ExampleAWSResources{}
-		exampleAWSResources.KubeCloudControllerAWSCreds = buildAWSCreds(
-			o.Name+"-cloud-ctrl-creds",
-			o.AWS.KubeCloudControllerRoleARN)
-		exampleAWSResources.NodePoolManagementAWSCreds = buildAWSCreds(
-			o.Name+"-node-mgmt-creds",
-			o.AWS.NodePoolManagementRoleARN)
+		resources = &ExampleAWSResources{
+			buildAWSCreds(o.Name+"-cloud-ctrl-creds", o.AWS.KubeCloudControllerRoleARN),
+			buildAWSCreds(o.Name+"-node-mgmt-creds", o.AWS.NodePoolManagementRoleARN),
+			buildAWSCreds(o.Name+"-cpo-creds", o.AWS.ControlPlaneOperatorRoleARN),
+		}
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
 			AWS: &hyperv1.AWSPlatformSpec{
@@ -181,9 +179,10 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					},
 					Zone: o.AWS.Zone,
 				},
-				KubeCloudControllerCreds: corev1.LocalObjectReference{Name: exampleAWSResources.KubeCloudControllerAWSCreds.Name},
-				NodePoolManagementCreds:  corev1.LocalObjectReference{Name: exampleAWSResources.NodePoolManagementAWSCreds.Name},
-				ResourceTags:             o.AWS.ResourceTags,
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).KubeCloudControllerAWSCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).NodePoolManagementAWSCreds.Name},
+				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).ControlPlaneOperatorAWSCreds.Name},
+				ResourceTags:              o.AWS.ResourceTags,
 			},
 		}
 		services = []hyperv1.ServicePublishingStrategyMapping{
@@ -367,11 +366,11 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	}
 
 	return &ExampleResources{
-		Namespace:    namespace,
-		PullSecret:   pullSecret,
-		AWSResources: exampleAWSResources,
-		SSHKey:       sshKeySecret,
-		Cluster:      cluster,
-		NodePool:     nodePool,
+		Namespace:  namespace,
+		PullSecret: pullSecret,
+		Resources:  resources,
+		SSHKey:     sshKeySecret,
+		Cluster:    cluster,
+		NodePool:   nodePool,
 	}
 }

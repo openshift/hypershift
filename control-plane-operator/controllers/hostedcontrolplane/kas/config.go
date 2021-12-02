@@ -15,8 +15,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
-	hcpconfig "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	hcpconfig "github.com/openshift/hypershift/support/config"
 )
 
 const (

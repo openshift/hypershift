@@ -7,10 +7,10 @@ import (
 
 	"github.com/go-logr/logr"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -18,13 +18,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	configclient "github.com/openshift/client-go/config/clientset/versioned"
-	configinformers "github.com/openshift/client-go/config/informers/externalversions"
+	configv1 "github.com/openshift/api/config/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	common "github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 )
 
@@ -43,59 +42,37 @@ func cacheLabelSelector() labels.Selector {
 
 type ControllerSetupFunc func(*HostedClusterConfigOperatorConfig) error
 
-func NewHostedClusterConfigOperatorConfig(targetKubeconfig, namespace string, initialCA []byte, versions map[string]string, controllers []string, controllerFuncs map[string]ControllerSetupFunc, enableCIDebugOutput bool, platformType hyperv1.PlatformType, clusterSignerCA []byte) *HostedClusterConfigOperatorConfig {
-	cfg := cfgFromFile(targetKubeconfig)
-	mgr := mgr(cfg)
-	return &HostedClusterConfigOperatorConfig{
-		TargetCreateOrUpdateProvider: &labelEnforcingUpsertProvider{
-			upstream:  upsert.New(enableCIDebugOutput),
-			apiReader: mgr.GetAPIReader(),
-		},
-		targetConfig:    cfg,
-		manager:         mgr,
-		namespace:       namespace,
-		initialCA:       initialCA,
-		clusterSignerCA: clusterSignerCA,
-		controllers:     controllers,
-		controllerFuncs: controllerFuncs,
-		versions:        versions,
-		PlatformType:    platformType,
-	}
-}
-
 type HostedClusterConfigOperatorConfig struct {
-	manager                      ctrl.Manager
-	config                       *rest.Config
-	targetConfig                 *rest.Config
-	targetKubeClient             kubeclient.Interface
+	Manager                      ctrl.Manager
+	Config                       *rest.Config
+	TargetConfig                 *rest.Config
 	TargetCreateOrUpdateProvider upsert.CreateOrUpdateProvider
-	kubeClient                   kubeclient.Interface
-	logger                       logr.Logger
+	CPCluster                    cluster.Cluster
+	Logger                       logr.Logger
+	Versions                     map[string]string
+	HCPName                      string
+	Namespace                    string
+	InitialCA                    string
+	ClusterSignerCA              string
+	Controllers                  []string
+	PlatformType                 hyperv1.PlatformType
+	ControllerFuncs              map[string]ControllerSetupFunc
+	ReleaseProvider              releaseinfo.Provider
+	KonnectivityAddress          string
+	KonnectivityPort             int32
 
-	versions            map[string]string
-	namespace           string
-	initialCA           []byte
-	clusterSignerCA     []byte
-	controllers         []string
-	PlatformType        hyperv1.PlatformType
-	controllerFuncs     map[string]ControllerSetupFunc
-	namespacedInformers map[string]informers.SharedInformerFactory
+	kubeClient kubeclient.Interface
 }
 
-func (c *HostedClusterConfigOperatorConfig) Scheme() *runtime.Scheme {
-	return c.manager.GetScheme()
-}
-
-func (c *HostedClusterConfigOperatorConfig) Manager() ctrl.Manager {
-	return c.manager
-}
-
-func mgr(cfg *rest.Config) ctrl.Manager {
+func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 	cfg.UserAgent = "hosted-cluster-config-operator-manager"
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		LeaderElection:          true,
-		LeaderElectionNamespace: "openshift-config-managed",
-		LeaderElectionID:        "hypershift-operator",
+		LeaderElection:             true,
+		LeaderElectionResourceLock: "leases",
+		LeaderElectionNamespace:    namespace,
+		LeaderElectionConfig:       cpConfig,
+		LeaderElectionID:           "hcco.hypershift.openshift.io",
+
 		NewClient: func(cache cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
 			client, err := cluster.DefaultNewClient(cache, config, options, uncachedObjects...)
 			if err != nil {
@@ -111,40 +88,28 @@ func mgr(cfg *rest.Config) ctrl.Manager {
 				// TODO @alvaroaleman: We want the same selector for all object types
 				// but controller-runtime doesn't support that yet. Change  this to
 				// use a default for everything once we have https://github.com/kubernetes-sigs/controller-runtime/pull/1710
-				&corev1.ConfigMap{}: {Label: cacheLabelSelector()},
-				&corev1.Secret{}:    {Label: cacheLabelSelector()},
+				&corev1.ConfigMap{}:          {Label: cacheLabelSelector()},
+				&corev1.Secret{}:             {Label: cacheLabelSelector()},
+				&corev1.Namespace{}:          {Label: cacheLabelSelector()},
+				&rbacv1.ClusterRole{}:        {Label: cacheLabelSelector()},
+				&rbacv1.ClusterRoleBinding{}: {Label: cacheLabelSelector()},
+				&configv1.Infrastructure{}:   {Label: cacheLabelSelector()},
+				&configv1.DNS{}:              {Label: cacheLabelSelector()},
+				&configv1.Ingress{}:          {Label: cacheLabelSelector()},
+				&configv1.Network{}:          {Label: cacheLabelSelector()},
+				&configv1.Proxy{}:            {Label: cacheLabelSelector()},
+				&appsv1.DaemonSet{}:          {Label: cacheLabelSelector()},
 			},
 		}),
+		Scheme: api.Scheme,
 	})
 	if err != nil {
-		panic(fmt.Sprintf("failed t create controller manager: %v", err))
+		panic(fmt.Sprintf("failed to create controller manager: %v", err))
 	}
 	return mgr
 }
 
-func (c *HostedClusterConfigOperatorConfig) Namespace() string {
-	return c.namespace
-}
-
-func (c *HostedClusterConfigOperatorConfig) Config() *rest.Config {
-	if c.config == nil {
-		c.config = ctrl.GetConfigOrDie()
-	}
-	return c.config
-}
-
-func (c *HostedClusterConfigOperatorConfig) Logger() logr.Logger {
-	if c.logger == nil {
-		c.logger = ctrl.Log.WithName("hypershift-operator")
-	}
-	return c.logger
-}
-
-func (c *HostedClusterConfigOperatorConfig) TargetConfig() *rest.Config {
-	return c.targetConfig
-}
-
-func cfgFromFile(path string) *rest.Config {
+func CfgFromFile(path string) *rest.Config {
 	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: path},
 		&clientcmd.ConfigOverrides{}).ClientConfig()
@@ -154,56 +119,10 @@ func cfgFromFile(path string) *rest.Config {
 	return cfg
 }
 
-func (c *HostedClusterConfigOperatorConfig) TargetKubeClient() kubeclient.Interface {
-	if c.targetKubeClient == nil {
-		var err error
-		c.targetKubeClient, err = kubeclient.NewForConfig(c.TargetConfig())
-		if err != nil {
-			c.Fatal(err, "cannot get target kube client")
-		}
-	}
-	return c.targetKubeClient
-}
-
-func (c *HostedClusterConfigOperatorConfig) TargetConfigClient() configclient.Interface {
-	client, err := configclient.NewForConfig(c.TargetConfig())
-	if err != nil {
-		c.Fatal(err, "cannot get target config client")
-	}
-	return client
-}
-
-func (c *HostedClusterConfigOperatorConfig) TargetConfigInformers() configinformers.SharedInformerFactory {
-	informerFactory := configinformers.NewSharedInformerFactory(c.TargetConfigClient(), common.DefaultResync)
-	c.Manager().Add(manager.RunnableFunc(func(ctx context.Context) error {
-		informerFactory.Start(ctx.Done())
-		return nil
-	}))
-	return informerFactory
-}
-
-func (c *HostedClusterConfigOperatorConfig) TargetKubeInformersForNamespace(namespace string) informers.SharedInformerFactory {
-	informer, exists := c.namespacedInformers[namespace]
-	if !exists {
-		informer = informers.NewSharedInformerFactoryWithOptions(c.TargetKubeClient(), common.DefaultResync, informers.WithNamespace(namespace))
-		if c.namespacedInformers == nil {
-			c.namespacedInformers = map[string]informers.SharedInformerFactory{}
-		}
-		c.namespacedInformers[namespace] = informer
-		c.Manager().Add(manager.RunnableFunc(func(ctx context.Context) error {
-			informer.Start(ctx.Done())
-			return nil
-		}))
-	}
-	return informer
-}
-
 func (c *HostedClusterConfigOperatorConfig) KubeClient() kubeclient.Interface {
 	if c.kubeClient == nil {
 		var err error
-		config := c.Config()
-		config.UserAgent = "hosted-cluster-config-operator-kubeclient"
-		c.kubeClient, err = kubeclient.NewForConfig(config)
+		c.kubeClient, err = kubeclient.NewForConfig(c.Config)
 		if err != nil {
 			c.Fatal(err, "cannot get management kube client")
 		}
@@ -211,26 +130,14 @@ func (c *HostedClusterConfigOperatorConfig) KubeClient() kubeclient.Interface {
 	return c.kubeClient
 }
 
-func (c *HostedClusterConfigOperatorConfig) Versions() map[string]string {
-	return c.versions
-}
-
-func (c *HostedClusterConfigOperatorConfig) InitialCA() string {
-	return string(c.initialCA)
-}
-
-func (c *HostedClusterConfigOperatorConfig) ClusterSignerCA() string {
-	return string(c.clusterSignerCA)
-}
-
 func (c *HostedClusterConfigOperatorConfig) Fatal(err error, msg string) {
-	c.Logger().Error(err, msg)
+	c.Logger.Error(err, msg)
 	os.Exit(1)
 }
 
 func (c *HostedClusterConfigOperatorConfig) Start(ctx context.Context) error {
-	for _, controllerName := range c.controllers {
-		setupFunc, ok := c.controllerFuncs[controllerName]
+	for _, controllerName := range c.Controllers {
+		setupFunc, ok := c.ControllerFuncs[controllerName]
 		if !ok {
 			return fmt.Errorf("unknown controller specified: %s", controllerName)
 		}
@@ -238,6 +145,5 @@ func (c *HostedClusterConfigOperatorConfig) Start(ctx context.Context) error {
 			return fmt.Errorf("cannot setup controller %s: %v", controllerName, err)
 		}
 	}
-	// TODO: receive a context from the caller
-	return c.Manager().Start(ctx)
+	return c.Manager.Start(ctx)
 }

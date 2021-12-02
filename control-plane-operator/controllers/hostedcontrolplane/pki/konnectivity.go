@@ -3,11 +3,8 @@ package pki
 import (
 	"fmt"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/config"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/util"
+	"github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/yaml"
 )
 
 func ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
@@ -40,15 +37,4 @@ func ReconcileKonnectivityClientSecret(secret, ca *corev1.Secret, ownerRef confi
 
 func ReconcileKonnectivityAgentSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-agent", []string{"kubernetes"}, X509DefaultUsage, X509UsageClientAuth)
-}
-
-func ReconcileKonnectivityWorkerAgentSecret(cm *corev1.ConfigMap, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(cm)
-	secret := manifests.KonnectivityAgentSecret("kube-system")
-	// Ignore errors here, the configmap might be empty initially
-	yaml.Unmarshal([]byte(cm.Data[util.UserDataKey]), secret)
-	if err := ReconcileKonnectivityAgentSecret(secret, ca, config.OwnerRef{}); err != nil {
-		return err
-	}
-	return util.ReconcileWorkerManifest(cm, secret)
 }
