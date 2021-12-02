@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
@@ -724,8 +723,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed reconciling etcd client secret: %w", err)
+		} else {
+			r.Log.Info("reconciled etcd client mtls secret to control plane namespace", "result", result)
 		}
-		r.Log.Info("reconciled etcd client mtls secret to control plane namespace", "result", result)
 	}
 
 	// Reconcile global config related configmaps and secrets
@@ -1342,8 +1342,9 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return reconcileIgnitionServerService(ignitionServerService, serviceStrategy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition service: %w", err)
+	} else {
+		span.AddEvent("reconciled ignition server service", trace.WithAttributes(attribute.String("result", string(result))))
 	}
-	span.AddEvent("reconciled ignition server service", trace.WithAttributes(attribute.String("result", string(result))))
 
 	var ignitionServerAddress string
 	switch serviceStrategy.Type {
@@ -1375,8 +1376,9 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition route: %w", err)
+		} else {
+			span.AddEvent("reconciled ignition server route", trace.WithAttributes(attribute.String("result", string(result))))
 		}
-		span.AddEvent("reconciled ignition server route", trace.WithAttributes(attribute.String("result", string(result))))
 
 		// The route must be admitted and assigned a host before we can generate certs
 		if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
@@ -1417,9 +1419,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition ca cert: %w", err)
+	} else {
+		span.AddEvent("reconciled ignition CA cert secret", trace.WithAttributes(attribute.String("result", string(result))))
+		r.Log.Info("reconciled ignition CA cert secret", "result", result)
 	}
-	span.AddEvent("reconciled ignition CA cert secret", trace.WithAttributes(attribute.String("result", string(result))))
-	r.Log.Info("reconciled ignition CA cert secret", "result", result)
 
 	// Reconcile a ignition serving certificate issued by the generated root CA. We
 	// only create this and don't update it for now.
@@ -1458,9 +1461,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition serving cert: %w", err)
+	} else {
+		span.AddEvent("reconciled ignition serving cert secret", trace.WithAttributes(attribute.String("result", string(result))))
+		r.Log.Info("reconciled ignition serving cert secret", "result", result)
 	}
-	span.AddEvent("reconciled ignition serving cert secret", trace.WithAttributes(attribute.String("result", string(result))))
-	r.Log.Info("reconciled ignition serving cert secret", "result", result)
 
 	role := ignitionserver.Role(controlPlaneNamespace.Name)
 	if result, err := createOrUpdate(ctx, r.Client, role, func() error {
@@ -1490,14 +1494,16 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition role: %w", err)
+	} else {
+		span.AddEvent("reconciled ignition server role", trace.WithAttributes(attribute.String("result", string(result))))
 	}
-	span.AddEvent("reconciled ignition server role", trace.WithAttributes(attribute.String("result", string(result))))
 
 	sa := ignitionserver.ServiceAccount(controlPlaneNamespace.Name)
 	if result, err := createOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
+	} else {
+		span.AddEvent("reconciled ignition ServiceAccount", trace.WithAttributes(attribute.String("result", string(result))))
 	}
-	span.AddEvent("reconciled ignition ServiceAccount", trace.WithAttributes(attribute.String("result", string(result))))
 
 	roleBinding := ignitionserver.RoleBinding(controlPlaneNamespace.Name)
 	if result, err := createOrUpdate(ctx, r.Client, roleBinding, func() error {
@@ -1517,8 +1523,9 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition RoleBinding: %w", err)
+	} else {
+		span.AddEvent("reconciled ignition RoleBinding", trace.WithAttributes(attribute.String("result", string(result))))
 	}
-	span.AddEvent("reconciled ignition RoleBinding", trace.WithAttributes(attribute.String("result", string(result))))
 
 	// Reconcile deployment
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
