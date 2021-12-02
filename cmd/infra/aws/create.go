@@ -185,11 +185,11 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
-	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.Name, o.BaseDomain), result.VPCID)
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.InfraID, o.BaseDomain), result.VPCID)
 	if err != nil {
 		return nil, err
 	}
-	_, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
+	_, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.InfraID, hypershiftLocalZoneName), result.VPCID)
 	if err != nil {
 		return nil, err
 	}

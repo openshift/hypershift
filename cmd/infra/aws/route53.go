@@ -90,8 +90,8 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route
 
 func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client route53iface.Route53API) []error {
 	var errs []error
-	errs = append(errs, o.DestroyPrivateZone(ctx, client, fmt.Sprintf("%s.%s", o.Name, o.BaseDomain)))
-	errs = append(errs, o.DestroyPrivateZone(ctx, client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName)))
+	errs = append(errs, o.DestroyPrivateZone(ctx, client, fmt.Sprintf("%s.%s", o.InfraID, o.BaseDomain)))
+	errs = append(errs, o.DestroyPrivateZone(ctx, client, fmt.Sprintf("%s.%s", o.InfraID, hypershiftLocalZoneName)))
 	errs = append(errs, o.CleanupPublicZone(ctx, client))
 	return errs
 }
