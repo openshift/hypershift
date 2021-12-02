@@ -1514,11 +1514,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				},
 				Verbs: []string{"*"},
 			},
-			{
-				APIGroups: []string{"rbac.authorization.k8s.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			},
 		}
 		return nil
 	}); err != nil {
