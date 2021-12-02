@@ -527,7 +527,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err := p.ReconcileCredentials(r.Client, ctx, createOrUpdate,
+	if err := p.ReconcileCredentials(ctx, r.Client, createOrUpdate,
 		hcluster,
 		controlPlaneNamespace.Name); err != nil {
 		return ctrl.Result{}, err
@@ -628,8 +628,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				// don't return error here as reconciling won't fix input error
 				return ctrl.Result{}, nil
 			}
-			if err := p.ReconcileSecretEncryption(hcluster, controlPlaneNamespace.Name, ctx, r.Client,
-				createOrUpdate); err != nil {
+			if err := p.ReconcileSecretEncryption(ctx, r.Client, createOrUpdate,
+				hcluster,
+				controlPlaneNamespace.Name); err != nil {
 				return ctrl.Result{}, err
 			}
 		default:
@@ -784,7 +785,10 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile CAPI Infra CR.
-	infraCR, err := p.ReconcileCAPIInfraCR(hcluster, controlPlaneNamespace.Name, hcp.Status.ControlPlaneEndpoint, r.Client, ctx)
+	infraCR, err := p.ReconcileCAPIInfraCR(ctx, r.Client, createOrUpdate,
+		hcluster,
+		controlPlaneNamespace.Name,
+		hcp.Status.ControlPlaneEndpoint)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

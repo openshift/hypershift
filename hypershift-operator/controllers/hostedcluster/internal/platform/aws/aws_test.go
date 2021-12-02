@@ -28,8 +28,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 
 			expectedAWSCluster: &capiawsv1.AWSCluster{
 				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
-					"cluster.x-k8s.io/managed-by":     "external",
-					"hypershift.openshift.io/cluster": "/",
+					"cluster.x-k8s.io/managed-by": "external",
 				}},
 				Spec: capiawsv1.AWSClusterSpec{
 					AdditionalTags: capiawsv1.Tags{"foo": "bar"},
@@ -52,8 +51,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 
 			expectedAWSCluster: &capiawsv1.AWSCluster{
 				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
-					"cluster.x-k8s.io/managed-by":     "external",
-					"hypershift.openshift.io/cluster": "/",
+					"cluster.x-k8s.io/managed-by": "external",
 				}},
 				Spec: capiawsv1.AWSClusterSpec{
 					AdditionalTags: capiawsv1.Tags{"foo": "bar"},
@@ -72,8 +70,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 
 			expectedAWSCluster: &capiawsv1.AWSCluster{
 				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
-					"cluster.x-k8s.io/managed-by":     "external",
-					"hypershift.openshift.io/cluster": "/",
+					"cluster.x-k8s.io/managed-by": "external",
 				}},
 				Status: capiawsv1.AWSClusterStatus{
 					Ready: true,
