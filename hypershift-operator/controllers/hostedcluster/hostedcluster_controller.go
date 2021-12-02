@@ -1836,7 +1836,6 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				"-token-file=/var/run/secrets/openshift/serviceaccount/token",
 				fmt.Sprintf("-kubeconfig-secret-namespace=%s", deployment.Namespace),
 				"-kubeconfig-secret-name=service-network-admin-kubeconfig",
-				"--sleep=true",
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
