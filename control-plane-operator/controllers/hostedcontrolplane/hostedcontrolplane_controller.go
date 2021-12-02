@@ -412,6 +412,17 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	kubeadminPassword := common.KubeadminPasswordSecret(hostedControlPlane.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeadminPassword), kubeadminPassword); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to get kubeadmin password: %w", err)
+		}
+	} else {
+		hostedControlPlane.Status.KubeadminPassword = &corev1.LocalObjectReference{
+			Name: kubeadminPassword.Name,
+		}
+	}
+
 	hostedControlPlane.Status.Initialized = true
 
 	// If a rollout is in progress, compute and record the rollout status. The
@@ -1060,9 +1071,12 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	r.Log.Info("successfully applied all manifests")
 
-	kubeadminPassword, err := generateKubeadminPassword()
-	if err != nil {
-		return fmt.Errorf("failed to generate kubeadmin password: %w", err)
+	var kubeadminPassword string
+	kubeadminPasswordSecret := common.KubeadminPasswordSecret(targetNamespace)
+	if _, err := r.CreateOrUpdate(ctx, r, kubeadminPasswordSecret, func() error {
+		return reconcileKubeadminPasswordSecret(kubeadminPasswordSecret, hcp, &kubeadminPassword)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kubeadminPasswordSecret: %w", err)
 	}
 
 	kubeadminPasswordTargetSecret, err := generateKubeadminPasswordTargetSecret(r.Scheme(), kubeadminPassword, targetNamespace)
@@ -1072,12 +1086,6 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	kubeadminPasswordTargetSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeadminPasswordTargetSecret.OwnerReferences)
 	if err := r.Create(ctx, kubeadminPasswordTargetSecret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to generate kubeadminPasswordTargetSecret: %w", err)
-	}
-
-	kubeadminPasswordSecret := generateKubeadminPasswordSecret(targetNamespace, kubeadminPassword)
-	kubeadminPasswordSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeadminPasswordSecret.OwnerReferences)
-	if err := r.Create(ctx, kubeadminPasswordSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate kubeadminPasswordSecret: %w", err)
 	}
 
 	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
@@ -2576,12 +2584,21 @@ func generateKubeadminPasswordTargetSecret(scheme *runtime.Scheme, password stri
 	return configMap, nil
 }
 
-func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret {
-	secret := &corev1.Secret{}
-	secret.Namespace = namespace
-	secret.Name = "kubeadmin-password"
-	secret.Data = map[string][]byte{"password": []byte(password)}
-	return secret
+func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, password *string) error {
+	ownerRef := config.OwnerRefFrom(hcp)
+	ownerRef.ApplyTo(secret)
+	existingPassword, exists := secret.Data["password"]
+	if !exists || len(existingPassword) == 0 {
+		generated, err := generateKubeadminPassword()
+		if err != nil {
+			return fmt.Errorf("failed to generate kubeadmin password: %w", err)
+		}
+		*password = generated
+		secret.Data = map[string][]byte{"password": []byte(generated)}
+	} else {
+		*password = string(existingPassword)
+	}
+	return nil
 }
 
 func platformType(hcp *hyperv1.HostedControlPlane) string {
