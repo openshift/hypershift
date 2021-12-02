@@ -56,7 +56,7 @@ func (p IBMCloud) ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlP
 		Kind:       "IBMVPCCluster",
 		APIVersion: capiibmv1.GroupVersion.String(),
 	}
-	return nil, nil
+	return ibmCluster, nil
 }
 
 func (p IBMCloud) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
