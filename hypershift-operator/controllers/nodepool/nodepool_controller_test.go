@@ -301,6 +301,7 @@ spec:
 		config                      []client.Object
 		expectedCoreConfigResources int
 		expect                      string
+		missingConfigs              bool
 		error                       bool
 	}{
 		{
@@ -519,6 +520,17 @@ spec:
 			expect:                      "\n---\n" + coreMachineConfig1 + "\n---\n" + machineConfig1,
 			error:                       false,
 		},
+		{
+			name: "No configs, missingConfigs is returned",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+			},
+			expectedCoreConfigResources: 1,
+			missingConfigs:              true,
+			error:                       false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -528,11 +540,12 @@ spec:
 			r := NodePoolReconciler{
 				Client: fake.NewClientBuilder().WithObjects(tc.config...).Build(),
 			}
-			got, err := r.getConfig(context.Background(), tc.nodePool, tc.expectedCoreConfigResources, namespace)
+			got, missingConfigs, err := r.getConfig(context.Background(), tc.nodePool, tc.expectedCoreConfigResources, namespace)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				return
 			}
+			g.Expect(missingConfigs).To(Equal(tc.missingConfigs))
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(got).To(Equal(tc.expect))
 		})
