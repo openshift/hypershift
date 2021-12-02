@@ -51,6 +51,7 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 				RunAsUser: k8sutilspointer.Int64Ptr(1001),
 			},
 		}
+	}
 
 	params.LivenessProbes = config.LivenessProbes{
 		hccContainerMain().Name: {
