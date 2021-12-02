@@ -7,6 +7,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 
+	configv1 "github.com/openshift/api/config/v1"
 	//TODO: Switch to k8s.io/api/batch/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -24,7 +25,7 @@ type CreateOrUpdateProvider interface {
 	CreateOrUpdate(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error)
 }
 
-var withStatusSubresource = sets.NewString(fmt.Sprintf("%T", &capiawsv1beta1.AWSCluster{}))
+var withStatusSubresource = sets.NewString(fmt.Sprintf("%T", &capiawsv1beta1.AWSCluster{}), fmt.Sprintf("%T", &configv1.ClusterOperator{}))
 
 func hasStatusSubResource(o crclient.Object) bool {
 	return withStatusSubresource.Has(fmt.Sprintf("%T", o))
