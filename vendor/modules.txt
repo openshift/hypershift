@@ -247,16 +247,6 @@ github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
-# github.com/openshift/client-go v0.0.0-20200929181438-91d71ef2122c
-## explicit; go 1.13
-github.com/openshift/client-go/config/clientset/versioned
-github.com/openshift/client-go/config/clientset/versioned/scheme
-github.com/openshift/client-go/config/clientset/versioned/typed/config/v1
-github.com/openshift/client-go/config/informers/externalversions
-github.com/openshift/client-go/config/informers/externalversions/config
-github.com/openshift/client-go/config/informers/externalversions/config/v1
-github.com/openshift/client-go/config/informers/externalversions/internalinterfaces
-github.com/openshift/client-go/config/listers/config/v1
 # github.com/operator-framework/api v0.10.7
 ## explicit; go 1.16
 github.com/operator-framework/api/pkg/lib/version

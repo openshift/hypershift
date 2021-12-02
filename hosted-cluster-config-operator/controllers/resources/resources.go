@@ -93,6 +93,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.Proxy{},
 		&appsv1.DaemonSet{},
 		&configv1.ClusterOperator{},
+		&configv1.ClusterVersion{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
@@ -138,6 +139,11 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	log.Info("reconciling guest cluster crds")
 	if err := r.reconcileCRDs(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile crds: %w", err))
+	}
+
+	log.Info("reconciling clusterversion")
+	if err := r.reconcileClusterVersion(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile clusterversion: %w", err))
 	}
 
 	log.Info("reconciling clusterOperators")
@@ -444,4 +450,18 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 	}
 
 	return errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileClusterVersion(ctx context.Context) error {
+	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
+		clusterVersion.Spec.Upstream = ""
+		clusterVersion.Spec.Channel = ""
+		clusterVersion.Spec.DesiredUpdate = nil
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile clusterVersion: %w", err)
+	}
+
+	return nil
 }
