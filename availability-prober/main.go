@@ -45,6 +45,7 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 			log.Error(err, "Request failed, retrying...")
 			continue
 		}
+		defer response.Body.Close()
 		if response.StatusCode < 200 || response.StatusCode > 299 {
 			log.WithValues("statuscode", response.StatusCode).Info("Request didn't return a 2XX status code, retrying...")
 			continue

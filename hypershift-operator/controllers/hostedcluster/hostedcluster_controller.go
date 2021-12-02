@@ -82,7 +82,7 @@ import (
 const (
 	finalizer                      = "hypershift.openshift.io/finalizer"
 	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
-	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
+	clusterDeletionRequeueDuration = 5 * time.Second
 
 	// Image built from https://github.com/openshift/kubernetes-autoscaler/tree/release-4.10
 	// Upstream canonical image is k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
@@ -339,7 +339,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Type:               string(hyperv1.SupportedHostedCluster),
 			ObservedGeneration: hcluster.Generation,
 		}
-		if err := r.validateHostedClusterSupport(hcluster, r.PrivatePlatform); err != nil {
+		if err := r.validateHostedClusterSupport(hcluster); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.UnsupportedHostedClusterReason
@@ -908,7 +908,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the Ignition server
-	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster, hcp); err != nil {
+	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
 
@@ -1351,7 +1351,7 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	var span trace.Span
 	ctx, span = r.tracer.Start(ctx, "reconcile-ignition-server")
 	defer span.End()
@@ -2867,7 +2867,7 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyper
 	return nil
 }
 
-func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster, privatePlatform hyperv1.PlatformType) error {
+func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		if hc.Spec.Platform.AWS == nil {

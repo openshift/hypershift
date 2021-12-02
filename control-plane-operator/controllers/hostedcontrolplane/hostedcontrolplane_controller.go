@@ -75,7 +75,6 @@ const (
 	finalizer                  = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
-	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
 )
 
 var (
@@ -694,7 +693,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcle machine config server config
 	r.Log.Info("Reconciling machine config server config")
-	if err = r.reconcileMachineConfigServerConfig(ctx, hostedControlPlane, infraStatus, globalConfig); err != nil {
+	if err = r.reconcileMachineConfigServerConfig(ctx, hostedControlPlane, globalConfig); err != nil {
 		return fmt.Errorf("failed to reconcile mcs config: %w", err)
 	}
 
@@ -1088,10 +1087,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate kubeadminPasswordTargetSecret: %w", err)
 	}
 
-	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
-	if err != nil {
-		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
-	}
+	baseDomain := clusterBaseDomain(hcp)
 	r.Log.Info(fmt.Sprintf("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIHost, infraStatus.APIPort)))
 	r.Log.Info(fmt.Sprintf("Kubeconfig is available in secret admin-kubeconfig in the %s namespace", hcp.GetNamespace()))
 	r.Log.Info(fmt.Sprintf("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", fmt.Sprintf("apps.%s", baseDomain))))
@@ -2133,48 +2129,52 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 	// Collect Profiles
 	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
-	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
 	if err := r.Create(ctx, collectProfilesConfigMap); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
 	}
 
 	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesCronJob, func() error {
-		return olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
+		olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
+		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
 	}
 
 	collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRole, func() error {
-		return olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef, p.OLMImage, hcp.Namespace)
+		olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef)
+		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
 	}
 
 	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRoleBinding, func() error {
-		return olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef, p.OLMImage, hcp.Namespace)
+		olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef)
+		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
 	}
 
 	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
-	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef, p.OLMImage, hcp.Namespace)
+	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
 	if err := r.Create(ctx, collectProfilesSecret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
 	}
 
 	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesServiceAccount, func() error {
-		return olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef, p.OLMImage, hcp.Namespace)
+		olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef)
+		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
 	}
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, globalConfig globalconfig.GlobalConfig) error {
+func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig) error {
 	rootCA := manifests.RootCASecret(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca: %w", err)
@@ -2275,10 +2275,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
 	targetNamespace := hcp.GetNamespace()
 
-	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
-	}
+	baseDomain := clusterBaseDomain(hcp)
 
 	params := render.NewClusterParams()
 	params.Namespace = targetNamespace
@@ -2355,12 +2352,12 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 
 	secrets := &corev1.SecretList{}
-	if err = r.List(ctx, secrets, client.InNamespace(hcp.Namespace)); err != nil {
+	if err := r.List(ctx, secrets, client.InNamespace(hcp.Namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list secrets in current namespace: %w", err)
 	}
 
 	configMaps := &corev1.ConfigMapList{}
-	if err = r.List(ctx, configMaps, client.InNamespace(hcp.Namespace)); err != nil {
+	if err := r.List(ctx, configMaps, client.InNamespace(hcp.Namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list configmaps in current namespace: %w", err)
 	}
 
@@ -2445,8 +2442,8 @@ func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, name
 	return nil
 }
 
-func clusterBaseDomain(c client.Client, ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
-	return fmt.Sprintf("%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain), nil
+func clusterBaseDomain(hcp *hyperv1.HostedControlPlane) string {
+	return fmt.Sprintf("%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
 }
 
 func ensureHCPOwnerRef(hcp *hyperv1.HostedControlPlane, ownerReferences []metav1.OwnerReference) []metav1.OwnerReference {
