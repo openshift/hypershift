@@ -6,6 +6,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -48,4 +49,5 @@ func init() {
 	apiextensionsv1.AddToScheme(Scheme)
 	kasv1beta1.AddToScheme(Scheme)
 	prometheusoperatorv1.AddToScheme(Scheme)
+	agentv1.AddToScheme(Scheme)
 }

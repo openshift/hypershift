@@ -44,6 +44,11 @@ type CreateOptions struct {
 	SSHKeyFile                       string
 	NonePlatform                     NonePlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
+	AgentPlatform                    AgentPlatformCreateOptions
+}
+
+type AgentPlatformCreateOptions struct {
+	APIServerAddress string
 }
 
 type NonePlatformCreateOptions struct {

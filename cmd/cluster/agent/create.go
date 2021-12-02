@@ -1,4 +1,4 @@
-package none
+package agent
 
 import (
 	"context"
@@ -19,16 +19,12 @@ import (
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "none",
-		Short:        "Creates basic functional HostedCluster resources on None",
+		Use:          "agent",
+		Short:        "Creates basic functional HostedCluster resources on Agent",
 		SilenceUsage: true,
 	}
 
-	opts.NonePlatform = core.NonePlatformCreateOptions{
-		APIServerAddress: "",
-	}
-
-	cmd.Flags().StringVar(&opts.NonePlatform.APIServerAddress, "external-api-server-address", opts.NonePlatform.APIServerAddress, "The external API Server Address when using platform none")
+	opts.AgentPlatform = core.AgentPlatformCreateOptions{}
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -59,7 +55,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	// - NodeExternalDNS
 	// - NodeExternalIP
 	// - NodeInternalIP
-	if opts.NonePlatform.APIServerAddress == "" {
+	if opts.AgentPlatform.APIServerAddress == "" {
 		kubeClient := kubeclient.NewForConfigOrDie(util.GetConfigOrDie())
 		nodes, err := kubeClient.CoreV1().Nodes().List(ctx, v1.ListOptions{Limit: 1})
 		if err != nil {
@@ -74,14 +70,14 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 		for _, addrType := range []corev1.NodeAddressType{corev1.NodeExternalDNS, corev1.NodeExternalIP, corev1.NodeInternalIP} {
 			if address, exists := addresses[addrType]; exists {
-				opts.NonePlatform.APIServerAddress = address
+				opts.AgentPlatform.APIServerAddress = address
 				break
 			}
 		}
-		if opts.NonePlatform.APIServerAddress == "" {
+		if opts.AgentPlatform.APIServerAddress == "" {
 			return fmt.Errorf("node %q does not expose any IP addresses, this should not be possible", nodes.Items[0].Name)
 		}
-		log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", opts.NonePlatform.APIServerAddress, nodes.Items[0].Name))
+		log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", opts.AgentPlatform.APIServerAddress, nodes.Items[0].Name))
 	}
 
 	infraID := opts.InfraID
@@ -95,8 +91,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	// every platform or the field in the API should be optional if there's platform which don't need it.
 	exampleOptions.BaseDomain = "example.com"
 
-	exampleOptions.None = &apifixtures.ExampleNoneOptions{
-		APIServerAddress: opts.NonePlatform.APIServerAddress,
+	exampleOptions.Agent = &apifixtures.ExampleAgentOptions{
+		APIServerAddress: opts.AgentPlatform.APIServerAddress,
 	}
 	return nil
 }
