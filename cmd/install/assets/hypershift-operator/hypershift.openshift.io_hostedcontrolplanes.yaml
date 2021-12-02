@@ -478,6 +478,7 @@ spec:
                     - AWS
                     - None
                     - IBMCloud
+                    - Agent
                     type: string
                 required:
                 - type

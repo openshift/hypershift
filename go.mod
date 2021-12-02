@@ -9,6 +9,7 @@ require (
 	github.com/clarketm/json v1.14.1
 	github.com/coreos/ignition/v2 v2.10.1
 	github.com/docker/distribution v2.7.1+incompatible
+	github.com/eranco74/cluster-api-provider-agent/api v0.0.0-20211202085429-b633556695e5
 	github.com/go-logr/logr v1.2.0
 	github.com/go-logr/zapr v1.2.0
 	github.com/google/go-cmp v0.5.6

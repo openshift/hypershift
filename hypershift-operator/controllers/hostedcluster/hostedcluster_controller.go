@@ -2227,6 +2227,11 @@ func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
 			Resources: []string{"customresourcedefinitions"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		{
+			APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
 	}
 	return nil
 }

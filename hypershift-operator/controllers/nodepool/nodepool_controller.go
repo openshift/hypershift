@@ -503,6 +503,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		span.AddEvent("reconciled ignition user data secret", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
+	// Store new template hash.
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+
 	var machineTemplate client.Object
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -511,6 +516,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSMachineTemplate: %w", err)
 		}
 		span.AddEvent("reconciled awsmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
+	case hyperv1.AgentPlatform:
+		machineTemplate = AgentMachineTemplate(nodePool, controlPlaneNamespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(machineTemplate), machineTemplate); err != nil {
+			if apierrors.IsNotFound(err) {
+				if createErr := r.Create(ctx, machineTemplate); createErr != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to create AgentMachineTemplate: %w", err)
+				}
+			} else {
+				return ctrl.Result{}, fmt.Errorf("failed to get AgentMachineTemplate: %w", err)
+			}
+		}
 	case hyperv1.NonePlatform:
 		// TODO: When fleshing out platform None design revisit the right semantic to signal this as conditions in a NodePool.
 		return ctrl.Result{}, nil
@@ -610,10 +626,6 @@ func (r NodePoolReconciler) reconcileAWSMachineTemplate(ctx context.Context,
 	// May be consider one single template the whole NodePool lifecycle. Modify it in place
 	// and trigger rolling update by e.g annotating the machineDeployment.
 
-	// Store new template hash.
-	if nodePool.Annotations == nil {
-		nodePool.Annotations = make(map[string]string)
-	}
 	nodePool.Annotations[nodePoolAnnotationCurrentProviderConfig] = targetTemplateHash
 
 	return targetAWSMachineTemplate, nil

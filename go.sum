@@ -362,6 +362,8 @@ github.com/envoyproxy/go-control-plane v0.9.9-0.20201210154907-fd9021fe5dad/go.m
 github.com/envoyproxy/go-control-plane v0.9.9-0.20210217033140-668b12f5399d/go.mod h1:cXg6YxExXjJnVBQHBLXeUAgxn2UodCpnH306RInaBQk=
 github.com/envoyproxy/go-control-plane v0.9.9-0.20210512163311-63b5d3c536b0/go.mod h1:hliV/p42l8fGbc6Y9bQ70uLwIvmJyVE5k4iMKlh8wCQ=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
+github.com/eranco74/cluster-api-provider-agent/api v0.0.0-20211202085429-b633556695e5 h1:+5p+psdeabkkAPXQENwEJbXmDgowvhE19pK3HRZ+sDk=
+github.com/eranco74/cluster-api-provider-agent/api v0.0.0-20211202085429-b633556695e5/go.mod h1:TmGUtel26XbvYWkrjPCX96OmUSww4imarG7EfbyZv+M=
 github.com/evanphx/json-patch v0.5.2/go.mod h1:ZWS5hhDbVDyob71nXKNL0+PWn6ToqBHMikGIFbs31qQ=
 github.com/evanphx/json-patch v4.2.0+incompatible/go.mod h1:50XU6AFN0ol/bzJsmQLiYLvXMP4fmwYFNcr97nuDLSk=
 github.com/evanphx/json-patch v4.5.0+incompatible/go.mod h1:50XU6AFN0ol/bzJsmQLiYLvXMP4fmwYFNcr97nuDLSk=
@@ -1704,6 +1706,7 @@ k8s.io/api v0.21.3/go.mod h1:hUgeYHUbBp23Ue4qdX9tR8/ANi/g3ehylAqDn9NWVOg=
 k8s.io/api v0.21.4/go.mod h1:fTVGP+M4D8+00FN2cMnJqk/eb/GH53bvmNs2SVTmpFk=
 k8s.io/api v0.22.1/go.mod h1:bh13rkTp3F1XEaLGykbyRD2QaTTzPm0e/BMd8ptFONY=
 k8s.io/api v0.22.2/go.mod h1:y3ydYpLJAaDI+BbSe2xmGcqxiWHmWjkEeIbiwHvnPR8=
+k8s.io/api v0.22.3/go.mod h1:azgiXFiXqiWyLCfI62/eYBOu19rj2LKmIhFPP4+33fs=
 k8s.io/api v0.23.0-alpha.4 h1:jqhlAybNGUat3I73xXHmkKi2If1cBZbTvRUxM1fyHVY=
 k8s.io/api v0.23.0-alpha.4/go.mod h1:C2RqQ86jH9nM0YFGjLhKlfldBYLnBEb5sn+x50lF2zg=
 k8s.io/apiextensions-apiserver v0.18.3/go.mod h1:TMsNGs7DYpMXd+8MOCX8KzPOCx8fnZMoIGB24m03+JE=
@@ -1727,6 +1730,7 @@ k8s.io/apimachinery v0.21.3/go.mod h1:H/IM+5vH9kZRNJ4l3x/fXP/5bOPJaVP/guptnZPeCF
 k8s.io/apimachinery v0.21.4/go.mod h1:H/IM+5vH9kZRNJ4l3x/fXP/5bOPJaVP/guptnZPeCFI=
 k8s.io/apimachinery v0.22.1/go.mod h1:O3oNtNadZdeOMxHFVxOreoznohCpy0z6mocxbZr7oJ0=
 k8s.io/apimachinery v0.22.2/go.mod h1:O3oNtNadZdeOMxHFVxOreoznohCpy0z6mocxbZr7oJ0=
+k8s.io/apimachinery v0.22.3/go.mod h1:O3oNtNadZdeOMxHFVxOreoznohCpy0z6mocxbZr7oJ0=
 k8s.io/apimachinery v0.23.0-alpha.4 h1:mLx8eaYBGBm13xsVXm+mA1njW30uRm6+KKExkm4h4Rc=
 k8s.io/apimachinery v0.23.0-alpha.4/go.mod h1:oyH3LcOKLLooQH1NlpHlilzkWxqsiHWETyHgssntcXg=
 k8s.io/apiserver v0.18.3/go.mod h1:tHQRmthRPLUtwqsOnJJMoI8SW3lnoReZeE861lH8vUw=

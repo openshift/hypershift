@@ -3,6 +3,7 @@ package nodepool
 import (
 	"fmt"
 
+	agentv1 "github.com/eranco74/cluster-api-provider-agent/api/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -149,4 +150,25 @@ func TokenSecret(namespace, name, payloadInputHash string) *corev1.Secret {
 			Name:      fmt.Sprintf("token-%s-%s", name, payloadInputHash),
 		},
 	}
+}
+
+func AgentMachineTemplate(nodePool *hyperv1.NodePool, controlPlaneNamespace string) *agentv1.AgentMachineTemplate {
+	agentMachineTemplate := &agentv1.AgentMachineTemplate{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				nodePoolAnnotation: ctrlclient.ObjectKeyFromObject(nodePool).String(),
+			},
+			Namespace: controlPlaneNamespace,
+		},
+		Spec: agentv1.AgentMachineTemplateSpec{
+			Template: agentv1.AgentMachineTemplateResource{
+				Spec: agentv1.AgentMachineSpec{},
+			},
+		},
+	}
+	specHash := hashStruct(agentMachineTemplate.Spec.Template.Spec)
+	agentMachineTemplate.SetName(fmt.Sprintf("%s-%s", nodePool.GetName(), specHash))
+
+	return agentMachineTemplate
 }

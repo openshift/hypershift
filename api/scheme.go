@@ -1,6 +1,7 @@
 package api
 
 import (
+	agentv1 "github.com/eranco74/cluster-api-provider-agent/api/v1alpha1"
 	capiibm "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -48,4 +49,5 @@ func init() {
 	apiextensionsv1.AddToScheme(Scheme)
 	kasv1beta1.AddToScheme(Scheme)
 	prometheusoperatorv1.AddToScheme(Scheme)
+	agentv1.AddToScheme(Scheme)
 }

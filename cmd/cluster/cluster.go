@@ -4,6 +4,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/none"
@@ -50,6 +51,7 @@ func NewCreateCommands() *cobra.Command {
 
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(none.NewCreateCommand(opts))
+	cmd.AddCommand(agent.NewCreateCommand(opts))
 
 	return cmd
 }
@@ -76,6 +78,7 @@ func NewDestroyCommands() *cobra.Command {
 
 	cmd.AddCommand(aws.NewDestroyCommand(opts))
 	cmd.AddCommand(none.NewDestroyCommand(opts))
+	cmd.AddCommand(agent.NewDestroyCommand(opts))
 
 	return cmd
 }

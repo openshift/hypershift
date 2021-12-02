@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/agent"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
@@ -16,6 +17,7 @@ import (
 var _ Platform = aws.AWS{}
 var _ Platform = ibmcloud.IBMCloud{}
 var _ Platform = none.None{}
+var _ Platform = agent.Agent{}
 
 type Platform interface {
 	// ReconcileCAPIInfraCR is called during HostedCluster reconciliation prior to reconciling the CAPI Cluster CR.
@@ -56,6 +58,8 @@ func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
 		platform = aws.AWS{}
 	case hyperv1.IBMCloudPlatform:
 		platform = ibmcloud.IBMCloud{}
+	case hyperv1.AgentPlatform:
+		platform = agent.Agent{}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
