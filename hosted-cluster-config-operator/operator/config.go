@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -72,6 +73,7 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 		LeaderElectionNamespace:    namespace,
 		LeaderElectionConfig:       cpConfig,
 		LeaderElectionID:           "hcco.hypershift.openshift.io",
+		HealthProbeBindAddress:     ":6060",
 
 		NewClient: func(cache cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
 			client, err := cluster.DefaultNewClient(cache, config, options, uncachedObjects...)
@@ -106,6 +108,14 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 	if err != nil {
 		panic(fmt.Sprintf("failed to create controller manager: %v", err))
 	}
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		panic(fmt.Sprintf("unable to set up health check: %v", err))
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		panic(fmt.Sprintf("unable to set up ready check: %v", err))
+	}
+
 	return mgr
 }
 

@@ -185,7 +185,6 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMi
 							"-token-audience=openshift",
 							"-token-file=/var/run/secrets/openshift/serviceaccount/token",
 							"-kubeconfig=/etc/kubernetes/kubeconfig",
-							"-sleep=true",
 						},
 					},
 				},

@@ -195,6 +195,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 			fmt.Sprintf("--konnectivity-address=%s", konnectivityAddress),
 			fmt.Sprintf("--konnectivity-port=%d", konnectivityPort),
 		}
+		c.Ports = []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}}
 		c.Env = []corev1.EnvVar{
 			{
 				Name: "POD_NAMESPACE",
