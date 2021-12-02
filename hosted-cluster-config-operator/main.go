@@ -11,10 +11,12 @@ import (
 	"github.com/spf13/cobra"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusteroperator"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
@@ -22,11 +24,14 @@ import (
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/upsert"
 )
 
 const (
 	defaultReleaseVersion    = "0.0.1-snapshot"
 	defaultKubernetesVersion = "0.0.1-snapshot-kubernetes"
+	konnectivityAgentImage   = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 )
 
 func main() {
@@ -75,6 +80,12 @@ type HostedClusterConfigOperator struct {
 	// KubernetesVersion is the kubernetes version included in the release
 	KubernetesVersion string
 
+	// KonnectivityAddress is the external address of the konnectivity server
+	KonnectivityAddress string
+
+	// KonnectivityPort is the external port of the konnectivity server
+	KonnectivityPort int32
+
 	initialCA []byte
 
 	platformType string
@@ -109,6 +120,8 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringVar(&cpo.platformType, "platform-type", "", "The platform of the cluster")
 	flags.BoolVar(&cpo.enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	flags.StringVar(&cpo.HostedControlPlaneName, "hosted-control-plane", cpo.HostedControlPlaneName, "Name of the hosted control plane that owns this operator")
+	flags.StringVar(&cpo.KonnectivityAddress, "konnectivity-address", cpo.KonnectivityAddress, "Address of external konnectivity endpoint")
+	flags.Int32Var(&cpo.KonnectivityPort, "konnectivity-port", cpo.KonnectivityPort, "Port of external konnectivity endpoint")
 	return cmd
 }
 
@@ -169,17 +182,49 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		"release":    o.ReleaseVersion,
 		"kubernetes": o.KubernetesVersion,
 	}
-	cfg := operator.NewHostedClusterConfigOperatorConfig(
-		o.TargetKubeconfig,
-		o.Namespace,
-		o.HostedControlPlaneName,
-		o.initialCA,
-		versions,
-		o.Controllers,
-		controllerFuncs,
-		o.enableCIDebugOutput,
-		hyperv1.PlatformType(o.platformType),
-		o.clusterSignerCA,
-	)
-	return cfg.Start(ctx)
+	cfg := operator.CfgFromFile(o.TargetKubeconfig)
+	cpConfig := ctrl.GetConfigOrDie()
+	mgr := operator.Mgr(cfg, cpConfig, o.Namespace)
+	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
+		opt.Namespace = o.Namespace
+		opt.Scheme = api.Scheme
+	})
+	if err != nil {
+		return fmt.Errorf("cannot create control plane cluster: %v", err)
+	}
+	if err := mgr.Add(cpCluster); err != nil {
+		return fmt.Errorf("cannot add CPCluster to manager: %v", err)
+	}
+	releaseProvider := &releaseinfo.StaticProviderDecorator{
+		Delegate: &releaseinfo.CachedProvider{
+			Inner: &releaseinfo.RegistryClientProvider{},
+			Cache: map[string]*releaseinfo.ReleaseImage{},
+		},
+		ComponentImages: map[string]string{
+			"konnectivity-agent": konnectivityAgentImage,
+		},
+	}
+	operatorConfig := &operator.HostedClusterConfigOperatorConfig{
+		TargetCreateOrUpdateProvider: &operator.LabelEnforcingUpsertProvider{
+			Upstream:  upsert.New(o.enableCIDebugOutput),
+			APIReader: mgr.GetAPIReader(),
+		},
+		Config:              cpConfig,
+		TargetConfig:        cfg,
+		Manager:             mgr,
+		Namespace:           o.Namespace,
+		HCPName:             o.HostedControlPlaneName,
+		InitialCA:           string(o.initialCA),
+		ClusterSignerCA:     string(o.clusterSignerCA),
+		Controllers:         o.Controllers,
+		ControllerFuncs:     controllerFuncs,
+		Versions:            versions,
+		PlatformType:        hyperv1.PlatformType(o.platformType),
+		CPCluster:           cpCluster,
+		Logger:              ctrl.Log.WithName("hypershift-operator"),
+		ReleaseProvider:     releaseProvider,
+		KonnectivityAddress: o.KonnectivityAddress,
+		KonnectivityPort:    o.KonnectivityPort,
+	}
+	return operatorConfig.Start(ctx)
 }

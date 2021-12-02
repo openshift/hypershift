@@ -84,6 +84,10 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !awsEndpointService.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+			// If we previously removed our finalizer, don't delete again and return early
+			return ctrl.Result{}, nil
+		}
 		completed, err := r.delete(ctx, awsEndpointService)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
@@ -207,6 +211,7 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 				var err error
 				serviceName, err = findExistingVpcEndpointService(ctx, ec2Client, *lbARN)
 				if err != nil {
+					log.Info("existing endpoint service not found, adoption failed", "err", err)
 					return awsErr
 				}
 			} else {
@@ -262,12 +267,21 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	serviceID := parts[len(parts)-1]
 
 	// delete the Endpoint Service
-	if _, err := r.ec2Client.DeleteVpcEndpointServiceConfigurationsWithContext(ctx, &ec2.DeleteVpcEndpointServiceConfigurationsInput{
+	output, err := r.ec2Client.DeleteVpcEndpointServiceConfigurationsWithContext(ctx, &ec2.DeleteVpcEndpointServiceConfigurationsInput{
 		ServiceIds: []*string{aws.String(serviceID)},
-	}); err != nil {
+	})
+	if err != nil {
 		return false, err
 	}
+	if output != nil && len(output.Unsuccessful) != 0 && output.Unsuccessful[0].Error != nil {
+		itemErr := *output.Unsuccessful[0].Error
+		if itemErr.Code != nil && *itemErr.Code == "InvalidVpcEndpointService.NotFound" {
+			log.Info("endpoint service already deleted", "serviceID", serviceID)
+			return true, nil
+		}
+		return false, fmt.Errorf("%s", *output.Unsuccessful[0].Error.Message)
+	}
 
-	log.Info("endpoint service deleted", "serviceName", serviceName)
+	log.Info("endpoint service deleted", "serviceID", serviceID)
 	return true, nil
 }

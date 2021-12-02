@@ -22,3 +22,12 @@ func DefaultServiceAccount(ns string) *corev1.ServiceAccount {
 		},
 	}
 }
+
+func KubeadminPasswordSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kubeadmin-password",
+			Namespace: ns,
+		},
+	}
+}

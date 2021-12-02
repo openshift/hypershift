@@ -1,7 +1,5 @@
 package core
 
-import (
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-)
+import "github.com/openshift/hypershift/cmd/util"
 
-var log = zap.New(zap.UseDevMode(true), zap.JSONEncoder())
+var log = util.Log
