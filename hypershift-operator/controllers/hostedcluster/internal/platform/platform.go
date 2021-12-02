@@ -22,8 +22,11 @@ type Platform interface {
 	// Implementations should use the given input and client to create and update the desired state of the
 	// platform infrastructure CAPI CR, which will then be referenced by the CAPI Cluster CR.
 	// TODO (alberto): Pass createOrUpdate construct instead of client.
-	ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint,
-		c client.Client, ctx context.Context) (client.Object, error)
+	ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+		hcluster *hyperv1.HostedCluster,
+		controlPlaneNamespace string,
+		apiEndpoint hyperv1.APIEndpoint,
+	) (client.Object, error)
 
 	// CAPIProviderDeploymentSpec is called during HostedCluster reconciliation prior to reconciling
 	// the CAPI provider Deployment.
@@ -34,15 +37,16 @@ type Platform interface {
 	// ReconcileCredentials is responsible for reconciling resources related to cloud credentials
 	// from the HostedCluster namespace into to the HostedControlPlaneNamespace. So they can be used by
 	// the Control Plane Operator.
-	ReconcileCredentials(c client.Client, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
+	ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 		hcluster *hyperv1.HostedCluster,
 		controlPlaneNamespace string) error
 
 	// ReconcileSecretEncryption is responsible for reconciling resources related to secret encryption
 	// from the HostedCluster namespace into to the HostedControlPlaneNamespace. So they can be used by
 	// the Control Plane Operator if your platform supports KMS.
-	ReconcileSecretEncryption(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, ctx context.Context, c client.Client,
-		createOrUpdate upsert.CreateOrUpdateFN) error
+	ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+		hcluster *hyperv1.HostedCluster,
+		controlPlaneNamespace string) error
 }
 
 func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
