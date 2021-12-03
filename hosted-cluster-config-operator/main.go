@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -33,7 +34,9 @@ const (
 )
 
 func main() {
-	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
+	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}))
 	setupLog := ctrl.Log.WithName("setup")
 	if err := newHostedClusterConfigOperatorCommand().Execute(); err != nil {
 		setupLog.Error(err, "Operator failed")
