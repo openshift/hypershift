@@ -1,8 +1,8 @@
 ---
-title: Quickstart
+title: Getting started
 ---
 
-# HyperShift Quickstart
+# Getting started
 
 HyperShift is middleware for hosting OpenShift control planes at scale that
 solves for cost and time to provision, as well as portability cross cloud with
@@ -99,8 +99,8 @@ hypershift create cluster aws \
 
 !!! note
 
-    The `--node-pool-replicas` flag will cause a default NodePool to be automatically
-    created for the cluster.
+    A default NodePool will be created for the cluster with 3 replicas per the
+    `--node-pool-replicas` flag.
 
 After a few minutes, check the `hostedclusters` resources in the `clusters`
 namespace and when ready it will look similar to the following:
@@ -135,6 +135,12 @@ hypershift create nodepool --cluster-name $CLUSTER_NAME \
   --node-count $NODEPOOL_REPLICAS \
   --instance-type $INSTANCE_TYPE
 ```
+
+!!! important
+
+    The default infrastructure created for the cluster during [Create a HostedCluster](#create-a-hostedcluster)
+    lives in a single availability zone. Any additional NodePool created for that
+    cluster must be in the same availability zone and subnet.
 
 Check the status of the NodePool by listing `nodepool` resources in the `clusters`
 namespace:

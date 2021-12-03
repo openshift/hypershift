@@ -1,8 +1,8 @@
 ---
-title: Contribute docs
+title: Contribute documentation content
 ---
 
-# How to contribute docs
+# Contributing documentation content
 
 Documentation is based on [MkDocs](https://www.mkdocs.org) with the [Material theme](https://squidfunk.github.io).
 
