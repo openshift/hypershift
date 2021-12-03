@@ -218,7 +218,11 @@ func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	_, err := createOrUpdate(ctx, c, dest, func() error {
 		srcData, srcHasData := src.Data["credentials"]
 		if !srcHasData {
-			return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key", src.Name)
+			if len(src.Data["aws_access_key_id"]) > 0 && len(src.Data["aws_secret_access_key"]) > 0 {
+				srcData = []byte("[default]\naws_access_key_id = " + string(src.Data["aws_access_key_id"]) + "\naws_secret_access_key = " + string(src.Data["aws_secret_access_key"]) + "\n")
+			} else {
+				return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key", src.Name)
+			}
 		}
 		dest.Type = corev1.SecretTypeOpaque
 		if dest.Data == nil {
@@ -247,7 +251,11 @@ func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	_, err = createOrUpdate(ctx, c, dest, func() error {
 		srcData, srcHasData := src.Data["credentials"]
 		if !srcHasData {
-			return fmt.Errorf("node pool provider credentials secret %q is missing credentials key", src.Name)
+			if len(src.Data["aws_access_key_id"]) > 0 && len(src.Data["aws_secret_access_key"]) > 0 {
+				srcData = []byte("[default]\naws_access_key_id = " + string(src.Data["aws_access_key_id"]) + "\naws_secret_access_key = " + string(src.Data["aws_secret_access_key"]) + "\n")
+			} else {
+				return fmt.Errorf("node pool provider credentials secret %q is missing credentials key", src.Name)
+			}
 		}
 		dest.Type = corev1.SecretTypeOpaque
 		if dest.Data == nil {
@@ -276,7 +284,11 @@ func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	_, err = createOrUpdate(ctx, c, dest, func() error {
 		srcData, srcHasData := src.Data["credentials"]
 		if !srcHasData {
-			return fmt.Errorf("control plane operator provider credentials secret %q is missing credentials key", src.Name)
+			if len(src.Data["aws_access_key_id"]) > 0 && len(src.Data["aws_secret_access_key"]) > 0 {
+				srcData = []byte("[default]\naws_access_key_id = " + string(src.Data["aws_access_key_id"]) + "\naws_secret_access_key = " + string(src.Data["aws_secret_access_key"]) + "\n")
+			} else {
+				return fmt.Errorf("control plane operator provider credentials secret %q is missing credentials key", src.Name)
+			}
 		}
 		dest.Type = corev1.SecretTypeOpaque
 		if dest.Data == nil {
