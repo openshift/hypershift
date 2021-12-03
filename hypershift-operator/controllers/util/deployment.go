@@ -19,7 +19,7 @@ const (
 	// debugDeploymentsAnnotation is applied to a HostedCluster and contains a
 	// comma separated list of deployment names which should always be scaled to 0
 	// for development.
-	debugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"
+	DebugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"
 )
 
 func SetDefaultPriorityClass(deployment *appsv1.Deployment) {
@@ -160,7 +160,7 @@ func SetControlPlaneIsolation(hc *hyperv1.HostedCluster, deployment *appsv1.Depl
 // debugDeploymentsAnnotation value that contains the Deployment name,
 // indicating the deployment should be considered to be in development mode.
 func IsDeploymentDebugEnabled(hc *hyperv1.HostedCluster, deployment *appsv1.Deployment) bool {
-	val, exists := hc.Annotations[debugDeploymentsAnnotation]
+	val, exists := hc.Annotations[DebugDeploymentsAnnotation]
 	if !exists {
 		return false
 	}

@@ -111,7 +111,7 @@ flag which sets up the deployment with zero replicas:
 
 ```shell
 go run . install \
-  --oidc-storage-provider-s3-bucket-name=$BUCKET \
+  --oidc-storage-provider-s3-bucket-name=$BUCKET_NAME \
   --oidc-storage-provider-s3-region=$BUCKET_REGION \
   --oidc-storage-provider-s3-credentials=$AWS_CREDS \ 
   --development
@@ -120,17 +120,20 @@ go run . install \
 Now, you can build and publish the `hypershift-operator` image and run it interactively
 in a single shot using `publish-ocp.sh` together with the `oc debug` command:
 
-```shell
-oc debug --namespace hypershift deployments/operator --image $(hack/publish-ocp.sh ./hypershift-operator) -- /ko-app/hypershift-operator run
+```shell hl_lines="3 4"
+oc debug --namespace hypershift deployments/operator --image $(hack/publish-ocp.sh ./hypershift-operator) -- \
+  /ko-app/hypershift-operator run \
+  --oidc-storage-provider-s3-region $BUCKET_NAME \
+  --oidc-storage-provider-s3-bucket-name $BUCKET_REGION
 ```
-
-Your latest code should be deployed and logs should soon begin streaming. Just
-press `ctrl-c` to terminate and delete the pod.
 
 !!! note
 
-    The default arguments to `hypershift-operator run` should be sufficient to
-    get started.
+    Make sure to replace `$BUCKET_NAME` and `$BUCKET_REGION` with the same values used to
+    install HyperShift.
+
+Your latest code should be deployed and logs should soon begin streaming. Just
+press `ctrl-c` to terminate and delete the pod.
 
 ## Configure a HostedCluster for iterative control plane development
 
@@ -181,13 +184,16 @@ sure to replace `$NAMESPACE` with the namespace of the control plane that was de
 for the `HostedCluster`.
 
 ```shell
-oc debug --namespace $NAMESPACE deployments/control-plane-operator \
-  --image $(hack/publish-ocp.sh ./control-plane-operator) -- \
-  /ko-app/control-plane-operator run --namespace $NAMESPACE --deployment-name control-plane-operator
+oc debug --namespace $NAMESPACE deployments/control-plane-operator --image $(hack/publish-ocp.sh ./control-plane-operator) -- /ko-app/control-plane-operator run
 ```
 
 Your latest code should be deployed and logs should soon begin streaming. Just
 press `ctrl-c` to terminate and delete the pod.
+
+!!! note
+
+    The default arguments to `control-plane-operator run` should be sufficient to
+    get started.
 
 ## Launch a custom `ignition-server` image interactively
 
@@ -201,11 +207,13 @@ sure to replace `$NAMESPACE` with the namespace of the control plane that was de
 for the `HostedCluster`.
 
 ```shell
-oc debug --namespace $NAMESPACE deployments/ignition-server \
-  --image $(hack/publish-ocp.sh ./ignition-server) -- \
-  /ko-app/ignition-server start --cert-file /var/run/secrets/ignition/serving-cert/tls.crt \
-  --key-file /var/run/secrets/ignition/serving-cert/tls.key
+oc debug --namespace $NAMESPACE deployments/ignition-server --image $(hack/publish-ocp.sh ./ignition-server) -- /ko-app/ignition-server start
 ```
 
 Your latest code should be deployed and logs should soon begin streaming. Just
 press `ctrl-c` to terminate and delete the pod.
+
+!!! note
+
+    The default arguments to `ignition-server start` should be sufficient to
+    get started.

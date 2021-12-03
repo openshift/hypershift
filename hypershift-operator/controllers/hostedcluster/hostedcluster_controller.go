@@ -945,23 +945,33 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Annotations = map[string]string{
 		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
-	for annotationKey := range hcluster.Annotations {
-		if annotationKey == hyperv1.DisablePKIReconciliationAnnotation {
-			hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation] = hcluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
-		} else if annotationKey == hyperv1.OauthLoginURLOverrideAnnotation {
-			hcp.Annotations[hyperv1.OauthLoginURLOverrideAnnotation] = hcluster.Annotations[hyperv1.OauthLoginURLOverrideAnnotation]
-		} else if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
-			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
-		} else if annotationKey == hyperv1.KonnectivityAgentImageAnnotation || annotationKey == hyperv1.KonnectivityServerImageAnnotation {
-			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
-		} else if annotationKey == hyperv1.RestartDateAnnotation {
-			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
-		} else if annotationKey == hyperv1.IBMCloudKMSProviderImage || annotationKey == hyperv1.AWSKMSProviderImage {
-			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
-		} else if annotationKey == hyperv1.PortierisImageAnnotation {
-			hcp.Annotations[hyperv1.PortierisImageAnnotation] = hcluster.Annotations[hyperv1.PortierisImageAnnotation]
+
+	// These annotations are copied from the HostedCluster
+	mirroredAnnotations := []string{
+		hyperv1.DisablePKIReconciliationAnnotation,
+		hyperv1.OauthLoginURLOverrideAnnotation,
+		hyperv1.KonnectivityAgentImageAnnotation,
+		hyperv1.KonnectivityServerImageAnnotation,
+		hyperv1.RestartDateAnnotation,
+		hyperv1.IBMCloudKMSProviderImage,
+		hyperv1.AWSKMSProviderImage,
+		hyperv1.PortierisImageAnnotation,
+		hyperutil.DebugDeploymentsAnnotation,
+	}
+	for _, key := range mirroredAnnotations {
+		val, hasVal := hcluster.Annotations[key]
+		if hasVal {
+			hcp.Annotations[key] = val
 		}
 	}
+
+	// All annotations on the HostedCluster with this special prefix are copied
+	for key, val := range hcluster.Annotations {
+		if strings.HasPrefix(key, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
+			hcp.Annotations[key] = val
+		}
+	}
+
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
