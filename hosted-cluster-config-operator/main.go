@@ -17,7 +17,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeadminpwd"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
@@ -44,7 +43,6 @@ func main() {
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"controller-manager-ca": cmca.Setup,
 	"kubeadmin-password":    kubeadminpwd.Setup,
-	"cluster-version":       clusterversion.Setup,
 	// TODO: non-essential, can't statically link to operator
 	//"openshift-apiserver":          openshiftapiserver.Setup,
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
