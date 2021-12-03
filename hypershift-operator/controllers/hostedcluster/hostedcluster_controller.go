@@ -29,7 +29,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
@@ -129,7 +128,7 @@ type HostedClusterReconciler struct {
 	Log logr.Logger
 
 	// SetSecurityContext is used to configure Security Context for containers
-	SetSecurityContext bool `default:false`
+	SetSecurityContext bool
 
 	// Clock is used to determine the time in a testable way.
 	Clock clock.Clock
@@ -177,7 +176,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		builder.Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
 	}
-
+	
 	// checking for scc capability
 	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint) {
 		r.SetSecurityContext = true
@@ -1139,13 +1138,14 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		// hyperutil.SetRestartAnnotation(hc, deployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, deployment)
 		hyperutil.SetDefaultPriorityClass(deployment)
-		
+
 		// set security context
 		if r.SetSecurityContext {
 			deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
 				RunAsUser: k8sutilspointer.Int64Ptr(1001),
 			}
 		}
+
 		switch hcluster.Spec.ControllerAvailabilityPolicy {
 		case hyperv1.HighlyAvailable:
 			maxSurge := intstr.FromInt(1)
@@ -1343,7 +1343,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 	} else {
 		span.AddEvent("reconciled ignition server service", trace.WithAttributes(attribute.String("result", string(result))))
 	}
-
 	var ignitionServerAddress string
 	switch serviceStrategy.Type {
 	case hyperv1.Route:
@@ -1633,11 +1632,13 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				},
 			},
 		}
+		// set security context
 		if r.SetSecurityContext {
 			ignitionServerDeployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
 				RunAsUser: k8sutilspointer.Int64Ptr(10001),
 			}
 		}
+
 		hyperutil.SetColocation(hcluster, ignitionServerDeployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, ignitionServerDeployment)
 		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
@@ -1746,9 +1747,12 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		return "", err
 	}
 	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
+	pullSpec := "registry.ci.openshift.org/hypershift/hypershift"
 	switch versionMajMin {
-	case "4.8", "4.9", "4.10":
+	case "4.9", "4.10":
 		return hypershiftOperatorImage, nil
+	case "4.8":
+		return fmt.Sprintf("%s:%s", pullSpec, versionMajMin), nil
 	default:
 		return "", fmt.Errorf("unsupported release image with version %s", versionMajMin)
 	}
@@ -1854,6 +1858,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				"-token-file=/var/run/secrets/openshift/serviceaccount/token",
 				fmt.Sprintf("-kubeconfig-secret-namespace=%s", deployment.Namespace),
 				"-kubeconfig-secret-name=service-network-admin-kubeconfig",
+				"--sleep=true",
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
@@ -2107,6 +2112,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			},
 		},
 	}
+	// set security context
 	if explicitNonRootSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
 			RunAsUser: k8sutilspointer.Int64Ptr(10001),
@@ -2285,7 +2291,7 @@ func reconcileCAPIProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string, explicitNonRootSecurityContext bool) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string,  explicitNonRootSecurityContext bool) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -2401,6 +2407,8 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 		port = hc.Spec.Networking.APIServer.Port
 	}
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
+
+	// set security context
 	if explicitNonRootSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
 			RunAsUser: k8sutilspointer.Int64Ptr(10001),
@@ -3021,6 +3029,8 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 		port = hc.Spec.Networking.APIServer.Port
 	}
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
+
+	// set security context
 	if explicitNonRootSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
 			RunAsUser: k8sutilspointer.Int64Ptr(10001),
