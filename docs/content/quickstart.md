@@ -10,126 +10,154 @@ strong separation of concerns between management and workloads. Clusters are
 fully compliant OpenShift Container Platform (OCP) clusters and are compatible
 with standard OCP and Kubernetes toolchains.
 
-In the following instructions, shell variables are used to indicate values that 
+This guide will lead you through the process of creating a new hosted cluster.
+Throughout the instructions, shell variables are used to indicate values that
 you should adjust to your own environment.
 
 ## Prerequisites
 
-* Go 1.17+
-* Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable
-* The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`)
+* The HyperShift CLI (`hypershift`).
+
+    Install it using Go 1.17+:
+       ```shell
+       go install github.com/openshift/hypershift@latest
+       ```
+
+* Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
+* The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
+* A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository.
 * An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)
-  with permissions to create infrastructure for the cluster
-* A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository
-* A Route53 public zone for the cluster's DNS records
+  with permissions to create infrastructure for the cluster.
+* A Route53 public zone for cluster DNS records.
 
     To create a public zone:
-
+        ```shell linenums="1"
         DOMAIN=www.example.com
         aws route53 create-hosted-zone --name $DOMAIN --caller-reference $(whoami)-$(date --rfc-3339=date)
+        ```
 
-    NOTE: In order to access applications in your guest clusters, the public zone must be routable.
+    !!! important
 
-* An S3 bucket with public access to host OIDC discovery documents for your guest clusters.
+        In order to access applications in your guest clusters, the public zone must be routable.
+
+* An S3 bucket with public access to host OIDC discovery documents for your clusters.
 
     To create the bucket (in us-east-1):
-
+        ```shell linenums="1"
         BUCKET_NAME=your-bucket-name
         aws s3api create-bucket --acl public-read --bucket $BUCKET_NAME
+        ```
 
     To create the bucket in a region other than us-east-1:
-
+        ```shell linenums="1"
         BUCKET_NAME=your-bucket-name
         REGION=us-east-2
         aws s3api create-bucket --acl public-read --bucket $BUCKET_NAME \
           --create-bucket-configuration LocationConstraint=$REGION \
           --region $REGION
+        ```
 
+## Before you begin
 
-## Create a cluster
+Install HyperShift into the management cluster, specifying the OIDC bucket,
+its region and credentials to access it (see [Prerequisites](#prerequisites)):
 
+```shell linenums="1"
+REGION=us-east-1
+BUCKET_NAME=your-bucket-name
+AWS_CREDS="$HOME/.aws/credentials"
 
-1. Install the HyperShift CLI using Go 1.16+:
+hypershift install \
+--oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
+--oidc-storage-provider-s3-credentials $AWS_CREDS \
+--oidc-storage-provider-s3-region $REGION
+```
 
-        go install github.com/openshift/hypershift@latest
+## Create a HostedCluster
 
-1. Install HyperShift into the management cluster
+Create a new cluster, specifying the domain of the public zone provided in the
+[Prerequisites](#prerequisites):
 
-    On AWS, install hypershift, specifying the OIDC bucket (see Prerequisites), its region and 
-    credentials to access it:
+```shell linenums="1"
+CLUSTER_NAME=example
+BASE_DOMAIN=example.com
+AWS_CREDS="$HOME/.aws/credentials"
+PULL_SECRET="$HOME/pull-secret"
 
-        REGION=us-east-2
-        BUCKET_NAME=your-bucket-name
-        AWS_CREDS="$HOME/.aws/credentials"
-        hypershift install --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
-          --oidc-storage-provider-s3-credentials $AWS_CREDS \
-          --oidc-storage-provider-s3-region $REGION
+hypershift create cluster aws \
+--name $CLUSTER_NAME \
+--node-pool-replicas=3 \
+--base-domain $BASE_DOMAIN \
+--pull-secret $PULL_SECRET \
+--aws-creds $AWS_CREDS
+```
 
-    If not installing on AWS, simply run:
+!!! important
 
-        hypershift install
+    The cluster name (`--name`) _must be unique within the base domain_ to
+    avoid unexpected and conflicting cluster management behavior.
 
-1. Create a new cluster, specifying the domain of the public
-   zone provided in the prerequisites:
+!!! note
 
-        CLUSTER_NAME=example
-        BASE_DOMAIN=example.com
-        AWS_CREDS="$HOME/.aws/credentials"
-        PULL_SECRET="$HOME/pull-secret"
+    The `--node-pool-replicas` flag will cause a default NodePool to be automatically
+    created for the cluster.
 
-        hypershift create cluster aws \
-        --pull-secret $PULL_SECRET \
-        --aws-creds $AWS_CREDS \
-        --name $CLUSTER_NAME \
-        --node-pool-replicas=3 \
-        --base-domain $BASE_DOMAIN \
-        --generate-ssh
+After a few minutes, check the `hostedclusters` resources in the `clusters`
+namespace and when ready it will look similar to the following:
 
-1. After a few minutes, check the `hostedclusters` resources in the `clusters`
-   namespace and when ready it will look similar to the following:
+```
+oc get --namespace clusters hostedclusters
+NAME      VERSION   KUBECONFIG                 AVAILABLE
+example   4.8.0     example-admin-kubeconfig   True
+```
 
-        oc get --namespace clusters hostedclusters
-        NAME      VERSION   KUBECONFIG                 AVAILABLE
-        example   4.8.0     example-admin-kubeconfig   True
+Eventually the cluster's kubeconfig will become available and can be printed to
+standard out using the `hypershift` CLI:
 
-1. Eventually the cluster's kubeconfig will become available and can be printed to
-  standard out using the `hypershift` CLI:
+```shell
+hypershift create kubeconfig
+```
 
-        hypershift create kubeconfig
+## Add NodePools
 
-## Create a NodePool
+Create additional NodePools for a cluster by specifying a name, number of replicas
+and additional information such as instance type.
 
-* The created cluster will have a default nodepool associated with it. However, you
-   can create additional nodepools for your cluster by specifying a name, number of replicas
-   and additional information such as instance type.
+Create a NodePool:
 
-        NODEPOOL_NAME=${CLUSTER_NAME}-work
-        INSTANCE_TYPE=m5.2xlarge
-        NODEPOOL_REPLICAS=2
+```shell linenums="1"
+NODEPOOL_NAME=${CLUSTER_NAME}-work
+INSTANCE_TYPE=m5.2xlarge
+NODEPOOL_REPLICAS=2
 
-        hypershift create nodepool --cluster-name $CLUSTER_NAME \
-          --name $NODEPOOL_NAME \
-          --instance-type $INSTANCE_TYPE
+hypershift create nodepool --cluster-name $CLUSTER_NAME \
+  --name $NODEPOOL_NAME \
+  --node-count $NODEPOOL_REPLICAS \
+  --instance-type $INSTANCE_TYPE
+```
 
-    After the nodepool is created, you can query its state by listing nodepool
-    resources in the `clusters` namespace:
+Check the status of the NodePool by listing `nodepool` resources in the `clusters`
+namespace:
 
-        oc get nodepools -n clusters
+```shell
+oc get nodepools --namespace clusters
+```
 
 ## Scale a NodePool
 
-* You can manually scale a nodepool using the `oc scale` command:
+Manually scale a NodePool using the `oc scale` command:
 
-        NODEPOOL_NAME=${CLUSTER_NAME}-work
-        NODEPOOL_REPLICAS=5
+```shell linenums="1"
+NODEPOOL_NAME=${CLUSTER_NAME}-work
+NODEPOOL_REPLICAS=5
 
-        oc scale nodepool/$NODEPOOL_NAME -n clusters --replicas=$NODEPOOL_REPLICAS
+oc scale nodepool/$NODEPOOL_NAME --namespace clusters --replicas=$NODEPOOL_REPLICAS
+```
 
+## Delete a HostedCluster
 
-## Delete Cluster
+To delete a HostedCluster:
 
-* Delete the example cluster:
-
-        hypershift destroy cluster aws \
-        --aws-creds $AWS_CREDS \
-        --name $CLUSTER_NAME
+```shell
+hypershift destroy cluster aws --name $CLUSTER_NAME --aws-creds $AWS_CREDS
+```

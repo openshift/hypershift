@@ -4,6 +4,7 @@ theme:
   features:
   - navigation.tabs
   - toc.integrate
+  - content.code.annotate
 plugins:
 - search
 - mermaid2
