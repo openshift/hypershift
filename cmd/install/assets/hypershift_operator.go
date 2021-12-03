@@ -111,12 +111,31 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
 	}
+	var oidcVolumeMount []corev1.VolumeMount
+	var oidcVolumeCred []corev1.Volume
+
 	if o.OIDCStorageProviderS3BucketName != "" {
 		args = append(args,
 			"--oidc-storage-provider-s3-bucket-name="+o.OIDCStorageProviderS3BucketName,
 			"--oidc-storage-provider-s3-region="+o.OIDCStorageProviderS3Region,
 			"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+awsCredsSecretKey,
 		)
+		oidcVolumeMount = []corev1.VolumeMount{
+			{
+				Name:      "oidc-storage-provider-s3-creds",
+				MountPath: "/etc/oidc-storage-provider-s3-creds",
+			},
+		}
+		oidcVolumeCred = []corev1.Volume{
+			{
+				Name: "oidc-storage-provider-s3-creds",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: oidcProviderS3CredsSecretName,
+					},
+				},
+			},
+		}
 	}
 
 	deployment := &appsv1.Deployment{
@@ -201,24 +220,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "oidc-storage-provider-s3-creds",
-									MountPath: "/etc/oidc-storage-provider-s3-creds",
-								},
-							},
+							VolumeMounts: oidcVolumeMount,
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "oidc-storage-provider-s3-creds",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: oidcProviderS3CredsSecretName,
-								},
-							},
-						},
-					},
+					Volumes: oidcVolumeCred,
 				},
 			},
 		},
