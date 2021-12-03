@@ -47,6 +47,7 @@ type reconciler struct {
 	releaseProvider           releaseinfo.Provider
 	konnectivityServerAddress string
 	konnectivityServerPort    int32
+	versions                  map[string]string
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -73,6 +74,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		releaseProvider:           opts.ReleaseProvider,
 		konnectivityServerAddress: opts.KonnectivityAddress,
 		konnectivityServerPort:    opts.KonnectivityPort,
+		versions:                  opts.Versions,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -90,6 +92,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.Network{},
 		&configv1.Proxy{},
 		&appsv1.DaemonSet{},
+		&configv1.ClusterOperator{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
@@ -135,6 +138,11 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	log.Info("reconciling guest cluster crds")
 	if err := r.reconcileCRDs(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile crds: %w", err))
+	}
+
+	log.Info("reconciling clusterOperators")
+	if err := r.reconcileClusterOperators(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile clusterOperators: %w", err))
 	}
 
 	log.Info("reconciling guest cluster global configuration")

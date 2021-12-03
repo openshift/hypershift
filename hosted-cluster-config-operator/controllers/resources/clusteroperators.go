@@ -1,21 +1,12 @@
-package clusteroperator
+package resources
 
 import (
 	"context"
 	"fmt"
-	"reflect"
-
-	"github.com/go-logr/logr"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
-	ctrl "sigs.k8s.io/controller-runtime"
 
 	configv1 "github.com/openshift/api/config/v1"
-	configclient "github.com/openshift/client-go/config/clientset/versioned"
-	configlister "github.com/openshift/client-go/config/listers/config/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 )
 
 type ClusterOperatorInfo struct {
@@ -247,149 +238,25 @@ var clusterOperators = []ClusterOperatorInfo{
 	},
 }
 
-var clusterOperatorNames sets.String
-
-func init() {
-	clusterOperatorNames = sets.NewString()
-	for _, co := range clusterOperators {
-		clusterOperatorNames.Insert(co.Name)
-	}
-}
-
-type ControlPlaneClusterOperatorSyncer struct {
-	Client   configclient.Interface
-	Lister   configlister.ClusterOperatorLister
-	Log      logr.Logger
-	Versions map[string]string
-}
-
-func (r *ControlPlaneClusterOperatorSyncer) Reconcile(_ context.Context, req ctrl.Request) (ctrl.Result, error) {
-	if err := r.ensureClusterOperatorsExist(); err != nil {
-		return ctrl.Result{}, err
-	}
-	if !clusterOperatorNames.Has(req.Name) {
-		return ctrl.Result{}, nil
-	}
-
-	clusterOperator, err := r.Lister.Get(req.Name)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("cannot fetch cluster operator %s: %v", req.Name, err)
-	}
-	err = r.ensureClusterOperatorIsUpToDate(clusterOperator)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("cannot update cluster operator %s: %v", req.Name, err)
-	}
-	return ctrl.Result{}, nil
-}
-
-func (r *ControlPlaneClusterOperatorSyncer) ensureClusterOperatorsExist() error {
-	existingOperators, err := r.Lister.List(labels.Everything())
-	if err != nil {
-		return err
-	}
-	notFound := sets.NewString(clusterOperatorNames.List()...)
-	for _, co := range existingOperators {
-		if notFound.Has(co.Name) {
-			notFound.Delete(co.Name)
-		}
-	}
-	if notFound.Len() == 0 {
-		return nil
-	}
-	errs := []error{}
-	for _, coInfo := range clusterOperators {
-		if notFound.Has(coInfo.Name) {
-			if err := r.createClusterOperator(coInfo); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
-	return errors.NewAggregate(errs)
-}
-
-func (r *ControlPlaneClusterOperatorSyncer) ensureClusterOperatorIsUpToDate(co *configv1.ClusterOperator) error {
-	coInfo := clusterOperatorInfo(co.Name)
-	needsUpdate := false
-	expectedStatus := r.clusterOperatorStatus(coInfo)
-
-	now := metav1.Now()
-	// Check version info
-	for _, operandVersion := range expectedStatus.Versions {
-		found := false
-		for i, actualOperandVersion := range co.Status.Versions {
-			if actualOperandVersion.Name != operandVersion.Name {
-				continue
-			}
-			found = true
-			if actualOperandVersion.Version == operandVersion.Version {
-				continue
-			}
-			co.Status.Versions[i].Version = operandVersion.Version
-			needsUpdate = true
-			break
-		}
-		if !found {
-			co.Status.Versions = append(co.Status.Versions, operandVersion)
-			needsUpdate = true
+func (r *reconciler) reconcileClusterOperators(ctx context.Context) error {
+	var errs []error
+	for _, info := range clusterOperators {
+		clusterOperator := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: info.Name}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, clusterOperator, func() error {
+			clusterOperator.Status = r.clusterOperatorStatus(info, clusterOperator.Status)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterOperator, clusterOperator.Name, err))
 		}
 	}
 
-	// Check conditions
-	for _, condition := range expectedStatus.Conditions {
-		found := false
-		for i, actualCondition := range co.Status.Conditions {
-			if actualCondition.Type != condition.Type {
-				continue
-			}
-			found = true
-			if actualCondition.Status == condition.Status {
-				continue
-			}
-			co.Status.Conditions[i].Status = condition.Status
-			co.Status.Conditions[i].Reason = "AsExpected"
-			co.Status.Conditions[i].LastTransitionTime = now
-			needsUpdate = true
-			break
-		}
-		if !found {
-			co.Status.Conditions = append(co.Status.Conditions, condition)
-			needsUpdate = true
-		}
-	}
-
-	// Check related objects
-	if !reflect.DeepEqual(expectedStatus.RelatedObjects, co.Status.RelatedObjects) {
-		needsUpdate = true
-		co.Status.RelatedObjects = expectedStatus.RelatedObjects
-	}
-
-	if !needsUpdate {
-		return nil
-	}
-	_, err := r.Client.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
-	return err
+	return utilerrors.NewAggregate(errs)
 }
 
-func (r *ControlPlaneClusterOperatorSyncer) createClusterOperator(coInfo ClusterOperatorInfo) error {
-	co := &configv1.ClusterOperator{}
-	co.Name = coInfo.Name
-	co, err := r.Client.ConfigV1().ClusterOperators().Create(context.TODO(), co, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create cluster operator %s: %v", coInfo.Name, err)
-	}
-
-	co.Status = r.clusterOperatorStatus(coInfo)
-
-	if _, err := r.Client.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{}); err != nil {
-		return fmt.Errorf("failed to update cluster operator status for %s: %v", coInfo.Name, err)
-	}
-	return nil
-}
-
-func (r *ControlPlaneClusterOperatorSyncer) clusterOperatorStatus(coInfo ClusterOperatorInfo) configv1.ClusterOperatorStatus {
+func (r *reconciler) clusterOperatorStatus(coInfo ClusterOperatorInfo, currentStatus configv1.ClusterOperatorStatus) configv1.ClusterOperatorStatus {
 	status := configv1.ClusterOperatorStatus{}
 	for key, target := range coInfo.VersionMapping {
-		v, hasVersion := r.Versions[target]
+		v, hasVersion := r.versions[target]
 		if !hasVersion {
 			continue
 		}
@@ -398,8 +265,9 @@ func (r *ControlPlaneClusterOperatorSyncer) clusterOperatorStatus(coInfo Cluster
 			Version: v,
 		})
 	}
+
 	now := metav1.Now()
-	status.Conditions = []configv1.ClusterOperatorStatusCondition{
+	conditions := []configv1.ClusterOperatorStatusCondition{
 		{
 			Type:               configv1.OperatorAvailable,
 			Status:             configv1.ConditionTrue,
@@ -425,16 +293,27 @@ func (r *ControlPlaneClusterOperatorSyncer) clusterOperatorStatus(coInfo Cluster
 			Reason:             "AsExpected",
 		},
 	}
+	for _, condition := range conditions {
+		existingCondition := findClusterOperatorStatusCondition(currentStatus.Conditions, condition.Type)
+		// Use existing condition if present to keep the LastTransitionTime
+		if existingCondition != nil && existingCondition.Status == condition.Status && existingCondition.Reason == condition.Reason {
+			condition = *existingCondition
+		}
+
+		status.Conditions = append(status.Conditions, condition)
+	}
 	status.RelatedObjects = coInfo.RelatedObjects
 	return status
 }
 
-func clusterOperatorInfo(name string) ClusterOperatorInfo {
-	for _, coInfo := range clusterOperators {
-		if coInfo.Name == name {
-			return coInfo
+// findClusterOperatorStatusCondition is identical to meta.FindStatusCondition except that it works on config1.ClusterOperatorStatusCondition instead of
+// metav1.StatusCondition
+func findClusterOperatorStatusCondition(conditions []configv1.ClusterOperatorStatusCondition, conditionType configv1.ClusterStatusConditionType) *configv1.ClusterOperatorStatusCondition {
+	for i := range conditions {
+		if conditions[i].Type == conditionType {
+			return &conditions[i]
 		}
 	}
-	// should not happen
-	return ClusterOperatorInfo{}
+
+	return nil
 }
