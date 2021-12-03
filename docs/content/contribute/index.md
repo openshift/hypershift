@@ -1,6 +1,10 @@
-# How to contribute to Hypershift
+---
+title: Contribute to HyperShift
+---
 
-Thanks for your interest in contributing to Hypershift. Here are some guidelines that help making the process more straight-forward for everyone:
+# Contributing to HyperShift
+
+Thanks for your interest in contributing to HyperShift. Here are some guidelines that help make the process more straight-forward for everyone:
 
 * For small changes, you can just do the change and submit a pull request with it.
 * For bigger changes (more than 200 lines of code diff), do not just do the change but ask for feedback on the idea and direction of the change first (Either in a GitHub issue or the #project-hypershift channel in the CoreOS slack). This avoids situations where big changes are submitted that are then declined or never reviewed, which is frustrating for everyone.

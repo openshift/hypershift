@@ -3,7 +3,7 @@ theme:
   name: material
   features:
   - navigation.tabs
-  - toc.integrate
+  - navigation.indexes
   - content.code.annotate
 plugins:
 - search
@@ -26,3 +26,20 @@ markdown_extensions:
 - pymdownx.snippets
 - admonition
 - pymdownx.details
+nav:
+- Home: index.md
+- 'Getting started': getting-started.md
+- 'How-to guides':
+  - how-to/index.md
+  - how-to/deploy-aws-private-clusters.md
+- 'Reference':
+  - reference/index.md
+  - reference/api.md
+  - reference/concepts.md
+  - reference/controller-architecture.md
+- 'Contribute':
+  - contribute/index.md
+  - contribute/develop-in-cluster.md
+  - contribute/onboard-a-platform.md
+  - contribute/run-tests.md
+  - contribute/contribute-docs.md
