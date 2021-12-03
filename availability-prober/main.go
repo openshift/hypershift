@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/sirupsen/logrus"
+	"go.uber.org/zap/zapcore"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -21,7 +22,9 @@ func main() {
 	flag.StringVar(&opts.target, "target", "", "A http url to probe. The program will continue until it gets a http 2XX back.")
 	flag.Parse()
 
-	log := zap.New(zap.UseDevMode(true), zap.JSONEncoder())
+	log := zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	})
 
 	url, err := url.Parse(opts.target)
 	if err != nil {

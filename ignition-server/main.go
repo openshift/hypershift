@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -102,7 +103,9 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}))
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "ignition-server-manager"
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
