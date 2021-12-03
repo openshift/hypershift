@@ -7,10 +7,12 @@ import (
 	"testing"
 	"time"
 
+	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -41,6 +43,21 @@ func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.O
 	return c.Client.Get(ctx, key, obj)
 }
 
+var cpObjects = []client.Object{
+	fakeHCP(),
+	fakeIngressCert(),
+	fakePullSecret(),
+	fakeKonnectivityAgentSecret(),
+}
+
+type fakeReleaseProvider struct{}
+
+func (*fakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+	return &releaseinfo.ReleaseImage{
+		ImageStream: &imageapi.ImageStream{},
+	}, nil
+}
+
 func TestReconcileErrorHandling(t *testing.T) {
 
 	// get initial number of creates with no get errors
@@ -55,9 +72,10 @@ func TestReconcileErrorHandling(t *testing.T) {
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
-			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP(), fakeIngressCert()).Build(),
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
+			releaseProvider:        &fakeReleaseProvider{},
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
@@ -77,9 +95,10 @@ func TestReconcileErrorHandling(t *testing.T) {
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
-			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP(), fakeIngressCert()).Build(),
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
+			releaseProvider:        &fakeReleaseProvider{},
 		}
 		r.Reconcile(context.Background(), controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
@@ -95,14 +114,31 @@ func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Clien
 }
 
 func fakeHCP() *hyperv1.HostedControlPlane {
-	hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "bar"}}
+	hcp := manifests.HostedControlPlane("bar", "foo")
 	hcp.Status.ControlPlaneEndpoint.Host = "server"
 	hcp.Status.ControlPlaneEndpoint.Port = 1234
 	return hcp
 }
 
 func fakeIngressCert() *corev1.Secret {
-	s := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "ingress-crt", Namespace: "bar"}}
+	s := manifests.IngressCert("bar")
+	s.Data = map[string][]byte{
+		"tls.crt": []byte("12345"),
+		"tls.key": []byte("12345"),
+	}
+	return s
+}
+
+func fakePullSecret() *corev1.Secret {
+	s := manifests.PullSecret("bar")
+	s.Data = map[string][]byte{
+		corev1.DockerConfigJsonKey: []byte("data"),
+	}
+	return s
+}
+
+func fakeKonnectivityAgentSecret() *corev1.Secret {
+	s := manifests.KonnectivityControlPlaneAgentSecret("bar")
 	s.Data = map[string][]byte{
 		"tls.crt": []byte("12345"),
 		"tls.key": []byte("12345"),

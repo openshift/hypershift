@@ -583,7 +583,7 @@ type AWSPlatformSpec struct {
 	// The secret should have exactly one key, `credentials`, whose value is
 	// an AWS credentials file.
 	//
-	// TODO(dan): document the "node pool management policy"
+	// TODO(dan): document the "control plane operator policy"
 	//
 	// +immutable
 	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
@@ -1018,6 +1018,11 @@ type HostedClusterStatus struct {
 	// for the cluster.
 	// +optional
 	KubeConfig *corev1.LocalObjectReference `json:"kubeconfig,omitempty"`
+
+	// KubeadminPassword is a reference to the secret that contains the initial
+	// kubeadmin user password for the guest cluster.
+	// +optional
+	KubeadminPassword *corev1.LocalObjectReference `json:"kubeadminPassword,omitempty"`
 
 	// IgnitionEndpoint is the endpoint injected in the ign config userdata.
 	// It exposes the config for instances to become kubernetes nodes.

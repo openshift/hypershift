@@ -37,29 +37,29 @@ func (l *labelEnforcingClient) setLabels(obj client.Object) {
 	obj.SetLabels(labels)
 }
 
-// labelEnforcingUpsertProvider wraps an existing upsert provider who is called with a cache-backed client
+// LabelEnforcingUpsertProvider wraps an existing upsert provider who is called with a cache-backed client
 // that has a labelselector configured. If someone unlabels an object, the upserprovider will always get
 // a notfound when trying to Get is, because it is not in the cache. Thus it will subsquently try to Create
-// it, which will fail with an IsAlreadyExists since it exists in the api. To deal with this, the labelEnforcingUpsertProvider
+// it, which will fail with an IsAlreadyExists since it exists in the api. To deal with this, the LabelEnforcingUpsertProvider
 // simply re-runs the upsert logic with an api reading client if an IsAlreadyExists happened.
-type labelEnforcingUpsertProvider struct {
-	upstream  upsert.CreateOrUpdateProvider
-	apiReader client.Reader
+type LabelEnforcingUpsertProvider struct {
+	Upstream  upsert.CreateOrUpdateProvider
+	APIReader client.Reader
 }
 
-func (l *labelEnforcingUpsertProvider) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
-	result, err := l.upstream.CreateOrUpdate(ctx, c, obj, f)
+func (l *LabelEnforcingUpsertProvider) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	result, err := l.Upstream.CreateOrUpdate(ctx, c, obj, f)
 	if err == nil || !apierrors.IsAlreadyExists(err) {
 		return result, err
 	}
 
 	apiReadingClient, err := client.NewDelegatingClient(client.NewDelegatingClientInput{
-		CacheReader: l.apiReader,
+		CacheReader: l.APIReader,
 		Client:      c,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to construct api reading client: %w", err)
 	}
 
-	return l.upstream.CreateOrUpdate(ctx, apiReadingClient, obj, f)
+	return l.Upstream.CreateOrUpdate(ctx, apiReadingClient, obj, f)
 }

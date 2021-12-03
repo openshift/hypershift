@@ -16,12 +16,12 @@ import (
 )
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
-	openshiftClient, err := configclient.NewForConfig(cfg.TargetConfig())
+	openshiftClient, err := configclient.NewForConfig(cfg.TargetConfig)
 	if err != nil {
 		return err
 	}
 	informerFactory := configinformers.NewSharedInformerFactory(openshiftClient, controllers.DefaultResync)
-	cfg.Manager().Add(manager.RunnableFunc(func(ctx context.Context) error {
+	cfg.Manager.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		informerFactory.Start(ctx.Done())
 		return nil
 	}))
@@ -29,9 +29,9 @@ func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
 	reconciler := &ClusterVersionReconciler{
 		Client: openshiftClient,
 		Lister: clusterVersions.Lister(),
-		Log:    cfg.Logger().WithName("ClusterVersion"),
+		Log:    cfg.Logger.WithName("ClusterVersion"),
 	}
-	c, err := controller.New("cluster-version", cfg.Manager(), controller.Options{Reconciler: reconciler})
+	c, err := controller.New("cluster-version", cfg.Manager, controller.Options{Reconciler: reconciler})
 	if err != nil {
 		return err
 	}

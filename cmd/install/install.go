@@ -273,15 +273,19 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	objects = append(objects, operatorClusterRoleBinding)
 	objects = append(objects, operatorRole)
 	objects = append(objects, operatorRoleBinding)
-	objects = append(objects, operatorCredentialsSecret)
-	objects = append(objects, operatorOIDCProviderS3Secret)
+	switch hyperv1.PlatformType(opts.PrivatePlatform) {
+	case hyperv1.AWSPlatform:
+		objects = append(objects, operatorCredentialsSecret)
+	}
 	objects = append(objects, operatorDeployment)
 	objects = append(objects, operatorService)
 	objects = append(objects, prometheusRole)
 	objects = append(objects, prometheusRoleBinding)
 	objects = append(objects, serviceMonitor)
 	objects = append(objects, recordingRule)
-	objects = append(objects, assets.OIDCStorageProviderS3ConfigMap(opts.OIDCStorageProviderS3BucketName, opts.OIDCStorageProviderS3Region))
-
+	if opts.OIDCStorageProviderS3BucketName != "" {
+		objects = append(objects, operatorOIDCProviderS3Secret)
+		objects = append(objects, assets.OIDCStorageProviderS3ConfigMap(opts.OIDCStorageProviderS3BucketName, opts.OIDCStorageProviderS3Region))
+	}
 	return objects, nil
 }

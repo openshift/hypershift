@@ -30,15 +30,24 @@ type AWSEndpointServiceSpec struct {
 
 // AWSEndpointServiceStatus defines the observed state of AWSEndpointService
 type AWSEndpointServiceStatus struct {
-	// The endpoint service name created in the management VPC in response to the request
+	// EndpointServiceName is the name of the Endpoint Service created in the
+	// management VPC
 	// +optional
 	EndpointServiceName string `json:"endpointServiceName,omitempty"`
 
-	// The endpoint ID created in the guest VPC in response to the request
+	// EndpointID is the ID of the Endpoint created in the guest VPC
 	// +optional
 	EndpointID string `json:"endpointID,omitempty"`
 
-	// Condition contains details for the current state of the Endpoint Service
+	// DNSName is the name for the record created in the hypershift private zone
+	// +optional
+	DNSName string `json:"dnsName,omitempty"`
+
+	// DNSZoneID is ID for the hypershift private zone
+	// +optional
+	DNSZoneID string `json:"dnsZoneID,omitempty"`
+
+	// Conditions contains details for the current state of the Endpoint Service
 	// request If there is an error processing the request e.g. the NLB doesn't
 	// exist, then the Available condition will be false, reason AWSErrorReason,
 	// and the error reported in the message.

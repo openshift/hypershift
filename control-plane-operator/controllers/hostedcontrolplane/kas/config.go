@@ -35,7 +35,7 @@ func ReconcileConfig(config *corev1.ConfigMap,
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	kasConfig := generateConfig(config.Namespace, p)
+	kasConfig := generateConfig(p)
 	serializedConfig, err := json.Marshal(kasConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver config: %w", err)
@@ -52,7 +52,7 @@ func (a kubeAPIServerArgs) Set(name string, values ...string) {
 	a[name] = v
 }
 
-func generateConfig(ns string, p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
+func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
 	}
