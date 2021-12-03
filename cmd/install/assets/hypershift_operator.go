@@ -260,6 +260,27 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				Name:  "AWS_REGION",
 				Value: o.AWSPrivateRegion,
 			})
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "token",
+				MountPath: "/var/run/secrets/openshift/serviceaccount",
+			})
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: "token",
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources: []corev1.VolumeProjection{
+							{
+								ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+									Audience: "openshift",
+									Path:     "token",
+								},
+							},
+						},
+					},
+				},
+			})
 	}
 	return deployment
 }
