@@ -66,8 +66,8 @@ func NewStartCommand() *cobra.Command {
 
 	opts := Options{
 		Addr:              "0.0.0.0:9090",
-		CertFile:          "/var/run/secrets/ignition/tls.crt",
-		KeyFile:           "/var/run/secrets/ignition/tls.key",
+		CertFile:          "/var/run/secrets/ignition/serving-cert/tls.crt",
+		KeyFile:           "/var/run/secrets/ignition/serving-cert/tls.key",
 		RegistryOverrides: map[string]string{},
 	}
 

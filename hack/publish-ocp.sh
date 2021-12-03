@@ -13,7 +13,7 @@ INTERNAL_REPO="image-registry.openshift-image-registry.svc:5000"
 
 PROJECT="$1"
 
-export KO_DOCKER_REPO="$(oc registry info)/hypershift"
+export KO_DOCKER_REPO="$(oc registry info --public)/hypershift"
 EXTERNAL_PULLSPEC=$(ko publish --insecure-registry "$PROJECT")
 
 INTERNAL_PULLSPEC="$INTERNAL_REPO/$(echo $EXTERNAL_PULLSPEC | cut -d'/' -f2 -f3)"
