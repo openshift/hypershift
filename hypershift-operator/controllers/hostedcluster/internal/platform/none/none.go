@@ -11,8 +11,9 @@ import (
 
 type None struct{}
 
-func (p None) ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint,
-	c client.Client, ctx context.Context) (client.Object, error) {
+func (p None) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
 
 	return nil, nil
 }
@@ -21,12 +22,14 @@ func (p None) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenM
 	return nil, nil
 }
 
-func (p None) ReconcileCredentials(c client.Client, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
+func (p None) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	return nil
 }
 
-func (None) ReconcileSecretEncryption(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, ctx context.Context, c client.Client,
-	createOrUpdate upsert.CreateOrUpdateFN) error {
+func (None) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string) error {
 	return nil
 }

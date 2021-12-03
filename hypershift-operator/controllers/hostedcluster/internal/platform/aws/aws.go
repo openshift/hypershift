@@ -14,7 +14,6 @@ import (
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -22,14 +21,15 @@ const (
 	// Upstream canonical image comes from  https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
 	// us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v1.1.0
 	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
-
-	hostedClusterAnnotation = "hypershift.openshift.io/cluster"
 )
 
 type AWS struct{}
 
-func (p AWS) ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint,
-	c client.Client, ctx context.Context) (client.Object, error) {
+func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string,
+	apiEndpoint hyperv1.APIEndpoint,
+) (client.Object, error) {
 	awsCluster := &capiawsv1.AWSCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
@@ -37,7 +37,7 @@ func (p AWS) ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlPlaneN
 		},
 	}
 
-	_, err := controllerutil.CreateOrPatch(ctx, c, awsCluster, func() error {
+	_, err := createOrUpdate(ctx, c, awsCluster, func() error {
 		return reconcileAWSCluster(awsCluster, hcluster, apiEndpoint)
 	})
 	if err != nil {
@@ -199,7 +199,8 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMi
 	return deploymentSpec, nil
 }
 
-func (p AWS) ReconcileCredentials(c client.Client, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
+func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	// Reconcile the platform provider cloud controller credentials secret by resolving
 	// the reference from the HostedCluster and syncing the secret in the control
@@ -290,8 +291,9 @@ func (p AWS) ReconcileCredentials(c client.Client, ctx context.Context, createOr
 	return nil
 }
 
-func (AWS) ReconcileSecretEncryption(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, ctx context.Context, c client.Client,
-	createOrUpdate upsert.CreateOrUpdateFN) error {
+func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string) error {
 	if hcluster.Spec.SecretEncryption.KMS.AWS == nil || len(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name) == 0 {
 		return fmt.Errorf("aws kms metadata nil")
 	}
@@ -325,8 +327,6 @@ func (AWS) ReconcileSecretEncryption(hcluster *hyperv1.HostedCluster, controlPla
 func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
 	// We only create this resource once and then let CAPI own it
 	awsCluster.Annotations = map[string]string{
-		// TODO (alberto): let this annotation be set by our createOrUpdate construct.
-		hostedClusterAnnotation:    client.ObjectKeyFromObject(hcluster).String(),
 		capiv1.ManagedByAnnotation: "external",
 	}
 

@@ -14,17 +14,14 @@ import (
 	capiv1alpha4 "sigs.k8s.io/cluster-api/api/v1alpha4" // Need this dep atm to satisfy IBM provider dep.
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-)
-
-const (
-	hostedClusterAnnotation = "hypershift.openshift.io/cluster"
 )
 
 type IBMCloud struct{}
 
-func (p IBMCloud) ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint,
-	c client.Client, ctx context.Context) (client.Object, error) {
+func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string,
+	apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
 
 	ibmCluster := &capiibmv1.IBMVPCCluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -33,9 +30,8 @@ func (p IBMCloud) ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlP
 		},
 	}
 
-	_, err := controllerutil.CreateOrPatch(ctx, c, ibmCluster, func() error {
+	_, err := createOrUpdate(ctx, c, ibmCluster, func() error {
 		ibmCluster.Annotations = map[string]string{
-			hostedClusterAnnotation:    client.ObjectKeyFromObject(hcluster).String(),
 			capiv1.ManagedByAnnotation: "external",
 		}
 
@@ -56,20 +52,22 @@ func (p IBMCloud) ReconcileCAPIInfraCR(hcluster *hyperv1.HostedCluster, controlP
 		Kind:       "IBMVPCCluster",
 		APIVersion: capiibmv1.GroupVersion.String(),
 	}
-	return nil, nil
+	return ibmCluster, nil
 }
 
 func (p IBMCloud) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
 	return nil, nil
 }
 
-func (p IBMCloud) ReconcileCredentials(c client.Client, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
+func (p IBMCloud) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	return nil
 }
 
-func (IBMCloud) ReconcileSecretEncryption(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, ctx context.Context, c client.Client,
-	createOrUpdate upsert.CreateOrUpdateFN) error {
+func (IBMCloud) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string) error {
 	if hcluster.Spec.SecretEncryption.KMS.IBMCloud == nil {
 		return fmt.Errorf("ibm kms metadata nil")
 	}

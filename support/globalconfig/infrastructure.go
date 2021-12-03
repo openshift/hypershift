@@ -29,13 +29,14 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	infra.Status.EtcdDiscoveryDomain = BaseDomain(hcp)
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
 	infra.Status.Platform = configv1.PlatformType(hcp.Spec.Platform.Type)
-	infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
 
 	switch hcp.Spec.InfrastructureAvailabilityPolicy {
 	case hyperv1.SingleReplica:
 		infra.Status.InfrastructureTopology = configv1.SingleReplicaTopologyMode
+		infra.Status.ControlPlaneTopology = configv1.SingleReplicaTopologyMode
 	default:
 		infra.Status.InfrastructureTopology = configv1.HighlyAvailableTopologyMode
+		infra.Status.ControlPlaneTopology = configv1.HighlyAvailableTopologyMode
 	}
 
 	switch hcp.Spec.Platform.Type {

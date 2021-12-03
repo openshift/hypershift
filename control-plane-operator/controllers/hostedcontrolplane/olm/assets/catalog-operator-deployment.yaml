@@ -19,9 +19,6 @@ spec:
         - name: srv-cert
           secret:
             secretName: catalog-operator-serving-cert
-        - name: profile-collector
-          secret:
-            secretName: pprof-cert
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig
