@@ -89,6 +89,7 @@ type ExampleAWSOptions struct {
 	RootVolumeType              string
 	RootVolumeIOPS              int64
 	ResourceTags                []hyperv1.AWSResourceTag
+	EndpointAccess              string
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -183,6 +184,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).NodePoolManagementAWSCreds.Name},
 				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).ControlPlaneOperatorAWSCreds.Name},
 				ResourceTags:              o.AWS.ResourceTags,
+				EndpointAccess:            hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess),
 			},
 		}
 		services = []hyperv1.ServicePublishingStrategyMapping{
