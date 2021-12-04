@@ -101,6 +101,8 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&configv1.Network{}:          {Label: cacheLabelSelector()},
 				&configv1.Proxy{}:            {Label: cacheLabelSelector()},
 				&appsv1.DaemonSet{}:          {Label: cacheLabelSelector()},
+				&configv1.ClusterOperator{}:  {Label: cacheLabelSelector()},
+				&configv1.ClusterVersion{}:   {Label: cacheLabelSelector()},
 			},
 		}),
 		Scheme: api.Scheme,

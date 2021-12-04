@@ -144,7 +144,7 @@ func dataURLEncode(params interface{}, rc *renderContext) func(string) string {
 		if err != nil {
 			panic(err.Error())
 		}
-		return dataurl.EncodeBytes([]byte(result))
+		return dataurl.EncodeBytes(result)
 	}
 }
 

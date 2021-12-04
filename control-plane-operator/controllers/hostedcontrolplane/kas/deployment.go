@@ -20,7 +20,6 @@ import (
 const (
 	kasNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
 	configHashAnnotation               = "kube-apiserver.hypershift.openshift.io/config-hash"
-	awsCloudProviderCredsKey           = "credentials"
 )
 
 var (

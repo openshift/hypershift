@@ -5,6 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -38,6 +39,38 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 				corev1.ResourceMemory: resource.MustParse("150Mi"),
 				corev1.ResourceCPU:    resource.MustParse("25m"),
 			},
+		},
+	}
+	params.LivenessProbes = config.LivenessProbes{
+		schedulerContainerMain().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(10251),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 60,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    5,
+			TimeoutSeconds:      5,
+		},
+	}
+	params.ReadinessProbes = config.ReadinessProbes{
+		schedulerContainerMain().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(10251),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    3,
+			TimeoutSeconds:      5,
 		},
 	}
 	params.DeploymentConfig.SetColocation(hcp)

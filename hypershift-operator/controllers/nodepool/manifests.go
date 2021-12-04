@@ -60,10 +60,10 @@ func AWSMachineTemplate(infraName, ami string, hostedCluster *hyperv1.HostedClus
 			rootVolume.Type = capiaws.VolumeType(EC2VolumeDefaultType)
 		}
 		if nodePool.Spec.Platform.AWS.RootVolume.Size > 0 {
-			rootVolume.Size = int64(nodePool.Spec.Platform.AWS.RootVolume.Size)
+			rootVolume.Size = nodePool.Spec.Platform.AWS.RootVolume.Size
 		}
 		if nodePool.Spec.Platform.AWS.RootVolume.IOPS > 0 {
-			rootVolume.IOPS = int64(nodePool.Spec.Platform.AWS.RootVolume.IOPS)
+			rootVolume.IOPS = nodePool.Spec.Platform.AWS.RootVolume.IOPS
 		}
 	}
 
