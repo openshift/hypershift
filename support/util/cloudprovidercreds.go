@@ -127,7 +127,6 @@ func tokenMinterArgs() []string {
 		"-token-audience=openshift",
 		fmt.Sprintf("-token-file=%s", cpath(cloudProviderTokenVolume().Name, "token")),
 		fmt.Sprintf("-kubeconfig=%s", cpath(cloudProviderTokenKubeconfigVolume().Name, KubeconfigKey)),
-		"--sleep=true",
 	}
 }
 

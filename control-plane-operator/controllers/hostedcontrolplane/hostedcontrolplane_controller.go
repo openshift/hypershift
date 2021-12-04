@@ -412,6 +412,17 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	kubeadminPassword := common.KubeadminPasswordSecret(hostedControlPlane.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeadminPassword), kubeadminPassword); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to get kubeadmin password: %w", err)
+		}
+	} else {
+		hostedControlPlane.Status.KubeadminPassword = &corev1.LocalObjectReference{
+			Name: kubeadminPassword.Name,
+		}
+	}
+
 	hostedControlPlane.Status.Initialized = true
 
 	// If a rollout is in progress, compute and record the rollout status. The
@@ -906,13 +917,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 
 	if cpoutil.IsPrivateHCP(hcp) {
 		// If private: true, assume nodes will be connecting over the private connection
-		// This DNS record is created out-of-band and points to the Endpoint within the guest VPC
-		dnsConfig := manifests.DNSConfig()
-		err = r.Get(ctx, client.ObjectKeyFromObject(dnsConfig), dnsConfig)
-		if err != nil {
-			return
-		}
-		return kas.ReconcilePrivateServiceStatus(svc, dnsConfig.Spec.BaseDomain)
+		return kas.ReconcilePrivateServiceStatus(hcp.Name)
 	}
 
 	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
@@ -1066,9 +1071,12 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	}
 	r.Log.Info("successfully applied all manifests")
 
-	kubeadminPassword, err := generateKubeadminPassword()
-	if err != nil {
-		return fmt.Errorf("failed to generate kubeadmin password: %w", err)
+	var kubeadminPassword string
+	kubeadminPasswordSecret := common.KubeadminPasswordSecret(targetNamespace)
+	if _, err := r.CreateOrUpdate(ctx, r, kubeadminPasswordSecret, func() error {
+		return reconcileKubeadminPasswordSecret(kubeadminPasswordSecret, hcp, &kubeadminPassword)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kubeadminPasswordSecret: %w", err)
 	}
 
 	kubeadminPasswordTargetSecret, err := generateKubeadminPasswordTargetSecret(r.Scheme(), kubeadminPassword, targetNamespace)
@@ -1078,12 +1086,6 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 	kubeadminPasswordTargetSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeadminPasswordTargetSecret.OwnerReferences)
 	if err := r.Create(ctx, kubeadminPasswordTargetSecret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to generate kubeadminPasswordTargetSecret: %w", err)
-	}
-
-	kubeadminPasswordSecret := generateKubeadminPasswordSecret(targetNamespace, kubeadminPassword)
-	kubeadminPasswordSecret.OwnerReferences = ensureHCPOwnerRef(hcp, kubeadminPasswordSecret.OwnerReferences)
-	if err := r.Create(ctx, kubeadminPasswordSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to generate kubeadminPasswordSecret: %w", err)
 	}
 
 	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
@@ -1267,14 +1269,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
 	}
 
-	// Konnectivity Worker Agent Cert
-	konnectivityWorkerAgentSecret := manifests.KonnectivityWorkerAgentSecret(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, konnectivityWorkerAgentSecret, func() error {
-		return pki.ReconcileKonnectivityWorkerAgentSecret(konnectivityWorkerAgentSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity worker agent cert: %w", err)
-	}
-
 	// Ingress Cert
 	ingressCert := manifests.IngressCert(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, ingressCert, func() error {
@@ -1448,12 +1442,6 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage, ips)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity agent deployment: %w", err)
-	}
-	agentDaemonSet := manifests.KonnectivityWorkerAgentDaemonSet(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, agentDaemonSet, func() error {
-		return konnectivity.ReconcileWorkerAgentDaemonSet(agentDaemonSet, p.OwnerRef, p.AgentDeamonSetConfig, p.KonnectivityAgentImage, p.ExternalAddress, p.ExternalPort)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity agent daemonset: %w", err)
 	}
 	return nil
 }
@@ -2384,13 +2372,9 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 }
 
 func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	dnsConfig := manifests.DNSConfig()
-	if err := r.Get(ctx, client.ObjectKeyFromObject(dnsConfig), dnsConfig); err != nil {
-		return err
-	}
 	ic := manifests.IngressPrivateIngressController(hcp.Namespace)
 	_, err := r.CreateOrUpdate(ctx, r.Client, ic, func() error {
-		return ingress.ReconcilePrivateIngressController(ic, hcp.Namespace, fmt.Sprintf("%s.%s", hcp.Namespace, dnsConfig.Spec.BaseDomain), hcp.Spec.Platform.Type)
+		return ingress.ReconcilePrivateIngressController(ic, hcp.Namespace, fmt.Sprintf("%s.hypershift.local", hcp.Name), hcp.Spec.Platform.Type)
 	})
 	if err != nil {
 		return err
@@ -2428,7 +2412,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}
@@ -2600,12 +2584,21 @@ func generateKubeadminPasswordTargetSecret(scheme *runtime.Scheme, password stri
 	return configMap, nil
 }
 
-func generateKubeadminPasswordSecret(namespace, password string) *corev1.Secret {
-	secret := &corev1.Secret{}
-	secret.Namespace = namespace
-	secret.Name = "kubeadmin-password"
-	secret.Data = map[string][]byte{"password": []byte(password)}
-	return secret
+func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, password *string) error {
+	ownerRef := config.OwnerRefFrom(hcp)
+	ownerRef.ApplyTo(secret)
+	existingPassword, exists := secret.Data["password"]
+	if !exists || len(existingPassword) == 0 {
+		generated, err := generateKubeadminPassword()
+		if err != nil {
+			return fmt.Errorf("failed to generate kubeadmin password: %w", err)
+		}
+		*password = generated
+		secret.Data = map[string][]byte{"password": []byte(generated)}
+	} else {
+		*password = string(existingPassword)
+	}
+	return nil
 }
 
 func platformType(hcp *hyperv1.HostedControlPlane) string {

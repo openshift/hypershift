@@ -177,6 +177,11 @@ type HostedControlPlaneStatus struct {
 	// for this control plane.
 	KubeConfig *KubeconfigSecretRef `json:"kubeConfig,omitempty"`
 
+	// KubeadminPassword is a reference to the secret containing the initial kubeadmin password
+	// for the guest cluster.
+	// +optional
+	KubeadminPassword *corev1.LocalObjectReference `json:"kubeadminPassword,omitempty"`
+
 	// Condition contains details for one aspect of the current state of the HostedControlPlane.
 	// Current condition types are: "Available"
 	// +kubebuilder:validation:Required

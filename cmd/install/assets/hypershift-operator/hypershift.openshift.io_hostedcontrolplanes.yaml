@@ -338,7 +338,7 @@ spec:
                           a secret containing cloud credentials with permissions matching
                           the control-plane-operator policy. The secret should have
                           exactly one key, `credentials`, whose value is an AWS credentials
-                          file. \n TODO(dan): document the \"node pool management
+                          file. \n TODO(dan): document the \"control plane operator
                           policy\""
                         properties:
                           name:
@@ -892,6 +892,15 @@ spec:
                 required:
                 - key
                 - name
+                type: object
+              kubeadminPassword:
+                description: KubeadminPassword is a reference to the secret containing
+                  the initial kubeadmin password for the guest cluster.
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
                 type: object
               lastReleaseImageTransitionTime:
                 description: lastReleaseImageTransitionTime is the time of the last

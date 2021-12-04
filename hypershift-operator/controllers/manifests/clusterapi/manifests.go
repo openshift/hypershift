@@ -59,38 +59,38 @@ func CAPIManagerRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
 	}
 }
 
-func CAPIAWSProviderDeployment(controlPlaneNamespace string) *appsv1.Deployment {
+func CAPIProviderDeployment(controlPlaneNamespace string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      "capa-controller-manager",
+			Name:      "capi-provider",
 		},
 	}
 }
 
-func CAPIAWSProviderServiceAccount(controlPlaneNamespace string) *corev1.ServiceAccount {
+func CAPIProviderServiceAccount(controlPlaneNamespace string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      "capa-controller-manager",
+			Name:      "capi-provider",
 		},
 	}
 }
 
-func CAPIAWSProviderRole(controlPlaneNamespace string) *rbacv1.Role {
+func CAPIProviderRole(controlPlaneNamespace string) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      "capa-manager",
+			Name:      "capi-provider",
 		},
 	}
 }
 
-func CAPIAWSProviderRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
+func CAPIProviderRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      "capa-manager",
+			Name:      "capi-provider",
 		},
 	}
 }

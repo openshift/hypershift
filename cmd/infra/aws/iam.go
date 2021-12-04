@@ -248,7 +248,10 @@ const (
 			"Action": [
 				"ec2:CreateVpcEndpoint",
 				"ec2:DescribeVpcEndpoints",
-				"ec2:DeleteVpcEndpoints"
+				"ec2:DeleteVpcEndpoints",
+				"route53:ListHostedZones",
+				"route53:ChangeResourceRecordSets",
+				"route53:ListResourceRecordSets"
 			],
 			"Resource": "*"
 		}

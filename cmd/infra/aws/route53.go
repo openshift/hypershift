@@ -51,8 +51,7 @@ func lookupZone(ctx context.Context, client route53iface.Route53API, name string
 	return cleanZoneID(*res.Id), nil
 }
 
-func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route53iface.Route53API, vpcID string) (string, error) {
-	name := fmt.Sprintf("%s.%s", o.Name, o.BaseDomain)
+func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route53iface.Route53API, name, vpcID string) (string, error) {
 	id, err := lookupZone(ctx, client, name, true)
 	if err == nil {
 		log.Info("Found existing private zone", "name", name, "id", id)
@@ -91,13 +90,13 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route
 
 func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client route53iface.Route53API) []error {
 	var errs []error
-	errs = append(errs, o.DestroyPrivateZone(ctx, client))
+	errs = append(errs, o.DestroyPrivateZone(ctx, client, fmt.Sprintf("%s.%s", o.Name, o.BaseDomain)))
+	errs = append(errs, o.DestroyPrivateZone(ctx, client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName)))
 	errs = append(errs, o.CleanupPublicZone(ctx, client))
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyPrivateZone(ctx context.Context, client route53iface.Route53API) error {
-	name := fmt.Sprintf("%s.%s", o.Name, o.BaseDomain)
+func (o *DestroyInfraOptions) DestroyPrivateZone(ctx context.Context, client route53iface.Route53API, name string) error {
 	id, err := lookupZone(ctx, client, name, true)
 	if err != nil {
 		return nil
