@@ -10,11 +10,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/util"
+	"go.uber.org/zap/zapcore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -27,7 +27,6 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	// +kubebuilder:scaffold:imports
 )
@@ -77,9 +76,9 @@ func NewStartCommand() *cobra.Command {
 		registryOverrides                map[string]string
 	)
 
-	cmd.Flags().StringVar(&namespace, "namespace", "", "The namespace this operator lives in (required)")
-	cmd.Flags().StringVar(&deploymentName, "deployment-name", "", "The name of the deployment of this operator")
-	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0", "The address the metric endpoint binds to.")
+	cmd.Flags().StringVar(&namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
+	cmd.Flags().StringVar(&deploymentName, "deployment-name", "control-plane-operator", "The name of the deployment of this operator")
+	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0.0.0.0:8080", "The address the metric endpoint binds to.")
 	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -91,29 +90,23 @@ func NewStartCommand() *cobra.Command {
 		"to avoid assuming access to the service network)")
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
-	cmd.MarkFlagRequired("namespace")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
+		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+			o.TimeEncoder = zapcore.RFC3339TimeEncoder
+		}))
 		ctx := ctrl.SetupSignalHandler()
 
 		restConfig := ctrl.GetConfigOrDie()
 		restConfig.UserAgent = "hypershift-controlplane-manager"
 		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-			Scheme:             hyperapi.Scheme,
-			MetricsBindAddress: metricsAddr,
-			Port:               9443,
-			LeaderElection:     enableLeaderElection,
-			LeaderElectionID:   "b2ed43cb.hypershift.openshift.io",
-			Namespace:          namespace,
-			// Use a non-caching client everywhere. The default split client does not
-			// promise to invalidate the cache during writes (nor does it promise
-			// sequential create/get coherence), and we have code which (probably
-			// incorrectly) assumes a get immediately following a create/update will
-			// return the updated resource. All client consumers will need audited to
-			// ensure they are tolerant of stale data (or we need a cache or client that
-			// makes stronger coherence guarantees).
-			NewClient: uncachedNewClient,
+			Scheme:                 hyperapi.Scheme,
+			MetricsBindAddress:     metricsAddr,
+			Port:                   9443,
+			LeaderElection:         enableLeaderElection,
+			LeaderElectionID:       "b2ed43cb.hypershift.openshift.io",
+			Namespace:              namespace,
+			HealthProbeBindAddress: ":6060",
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
@@ -254,6 +247,15 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+			setupLog.Error(err, "unable to set up health check")
+			os.Exit(1)
+		}
+		if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+			setupLog.Error(err, "unable to set up ready check")
+			os.Exit(1)
+		}
+
 		setupLog.Info("starting manager")
 		if err := mgr.Start(ctx); err != nil {
 			setupLog.Error(err, "problem running manager")
@@ -262,12 +264,4 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	return cmd
-}
-
-func uncachedNewClient(_ cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
-	c, err := client.New(config, options)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
 }

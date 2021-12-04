@@ -47,7 +47,8 @@ const (
 	PrivateSubnetCIDR = "10.0.128.0/20"
 	PublicSubnetCIDR  = "10.0.0.0/20"
 
-	clusterTagValue = "owned"
+	clusterTagValue         = "owned"
+	hypershiftLocalZoneName = "hypershift.local"
 )
 
 func NewCreateCommand() *cobra.Command {
@@ -184,7 +185,11 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
-	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, route53Client, result.VPCID)
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.Name, o.BaseDomain), result.VPCID)
+	if err != nil {
+		return nil, err
+	}
+	_, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,8 @@ theme:
   name: material
   features:
   - navigation.tabs
-  - toc.integrate
+  - navigation.indexes
+  - content.code.annotate
 plugins:
 - search
 - mermaid2
@@ -14,3 +15,31 @@ markdown_extensions:
 - toc:
     toc_depth: "2-2"
 - attr_list:
+- pymdownx.highlight
+- pymdownx.inlinehilite
+- pymdownx.superfences:
+    # make exceptions to highlighting of code:
+    custom_fences:
+    - name: mermaid
+      class: mermaid
+      format: !!python/name:mermaid2.fence_mermaid
+- pymdownx.snippets
+- admonition
+- pymdownx.details
+nav:
+- Home: index.md
+- 'Getting started': getting-started.md
+- 'How-to guides':
+  - how-to/index.md
+  - how-to/deploy-aws-private-clusters.md
+- 'Reference':
+  - reference/index.md
+  - reference/api.md
+  - reference/concepts.md
+  - reference/controller-architecture.md
+- 'Contribute':
+  - contribute/index.md
+  - contribute/develop-in-cluster.md
+  - contribute/onboard-a-platform.md
+  - contribute/run-tests.md
+  - contribute/contribute-docs.md

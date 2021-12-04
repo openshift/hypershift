@@ -42,16 +42,14 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/semconv"
+	"go.uber.org/zap/zapcore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -91,7 +89,9 @@ type StartOptions struct {
 }
 
 func NewStartCommand() *cobra.Command {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}))
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -99,16 +99,17 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := StartOptions{
-		Namespace:                   "hypershift",
-		DeploymentName:              "operator",
-		MetricsAddr:                 "0",
-		EnableLeaderElection:        false,
-		ControlPlaneOperatorImage:   "",
-		IgnitionServerImage:         "",
-		OpenTelemetryEndpoint:       "",
-		RegistryOverrides:           map[string]string{},
-		PrivatePlatform:             string(hyperv1.NonePlatform),
-		OIDCStorageProviderS3Region: "us-east-1",
+		Namespace:                        "hypershift",
+		DeploymentName:                   "operator",
+		MetricsAddr:                      "0",
+		EnableLeaderElection:             false,
+		ControlPlaneOperatorImage:        "",
+		IgnitionServerImage:              "",
+		OpenTelemetryEndpoint:            "",
+		RegistryOverrides:                map[string]string{},
+		PrivatePlatform:                  string(hyperv1.NonePlatform),
+		OIDCStorageProviderS3Region:      "us-east-1",
+		OIDCStorageProviderS3Credentials: "/etc/oidc-storage-provider-s3-creds/credentials",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -127,7 +128,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
-	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", "", "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -150,14 +151,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		Port:               9443,
 		LeaderElection:     opts.EnableLeaderElection,
 		LeaderElectionID:   "b2ed43ca.hypershift.openshift.io",
-		// Use a non-caching client everywhere. The default split client does not
-		// promise to invalidate the cache during writes (nor does it promise
-		// sequential create/get coherence), and we have code which (probably
-		// incorrectly) assumes a get immediately following a create/update will
-		// return the updated resource. All client consumers will need audited to
-		// ensure they are tolerant of stale data (or we need a cache or client that
-		// makes stronger coherence guarantees).
-		NewClient: uncachedNewClient,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
@@ -338,12 +331,4 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Start the controllers
 	log.Info("starting manager")
 	return mgr.Start(ctx)
-}
-
-func uncachedNewClient(_ cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
-	c, err := client.New(config, options)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
 }

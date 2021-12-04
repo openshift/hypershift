@@ -32,6 +32,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		RootVolumeType:     "gp2",
 		RootVolumeSize:     16,
 		RootVolumeIOPS:     0,
+		EndpointAccess:     string(hyperv1.Public),
 	}
 
 	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
@@ -43,8 +44,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeIOPS, "root-volume-iops", opts.AWSPlatform.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeSize, "root-volume-size", opts.AWSPlatform.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.AdditionalTags, "additional-tags", opts.AWSPlatform.AdditionalTags, "Additional tags to set on AWS resources")
+	cmd.Flags().StringVar(&opts.AWSPlatform.EndpointAccess, "endpoint-access", opts.AWSPlatform.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
 
-	cmd.MarkFlagRequired("pull-secret")
 	cmd.MarkFlagRequired("aws-creds")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -166,6 +167,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		RootVolumeType:              opts.AWSPlatform.RootVolumeType,
 		RootVolumeIOPS:              opts.AWSPlatform.RootVolumeIOPS,
 		ResourceTags:                tags,
+		EndpointAccess:              opts.AWSPlatform.EndpointAccess,
 	}
 	return nil
 }

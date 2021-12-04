@@ -58,7 +58,7 @@ func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	controllerLog.Info("syncing configmap")
 
-	additionalCAs, err := r.getAdditionalCAs(ctx, controllerLog)
+	additionalCAs, err := r.getAdditionalCAs(ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -117,7 +117,7 @@ func (r *ManagedCAObserver) ensureAnnotationOnDeployment(ctx context.Context, de
 	return err
 }
 
-func (r *ManagedCAObserver) getAdditionalCAs(ctx context.Context, logger logr.Logger) ([][]byte, error) {
+func (r *ManagedCAObserver) getAdditionalCAs(ctx context.Context) ([][]byte, error) {
 	additionalCAs := [][]byte{}
 	cm, err := r.TargetClient.CoreV1().ConfigMaps(ManagedConfigNamespace).Get(ctx, RouterCAConfigMap, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {

@@ -716,6 +716,11 @@ func (in *HostedClusterStatus) DeepCopyInto(out *HostedClusterStatus) {
 		*out = new(corev1.LocalObjectReference)
 		**out = **in
 	}
+	if in.KubeadminPassword != nil {
+		in, out := &in.KubeadminPassword, &out.KubeadminPassword
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]v1.Condition, len(*in))
@@ -874,6 +879,11 @@ func (in *HostedControlPlaneStatus) DeepCopyInto(out *HostedControlPlaneStatus) 
 	if in.KubeConfig != nil {
 		in, out := &in.KubeConfig, &out.KubeConfig
 		*out = new(KubeconfigSecretRef)
+		**out = **in
+	}
+	if in.KubeadminPassword != nil {
+		in, out := &in.KubeadminPassword, &out.KubeadminPassword
+		*out = new(corev1.LocalObjectReference)
 		**out = **in
 	}
 	if in.Conditions != nil {

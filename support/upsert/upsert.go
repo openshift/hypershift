@@ -6,11 +6,15 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
+
+	configv1 "github.com/openshift/api/config/v1"
 	//TODO: Switch to k8s.io/api/batch/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
+	capiawsv1beta1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -19,6 +23,12 @@ type CreateOrUpdateFN = func(ctx context.Context, c crclient.Client, obj crclien
 
 type CreateOrUpdateProvider interface {
 	CreateOrUpdate(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error)
+}
+
+var withStatusSubresource = sets.NewString(fmt.Sprintf("%T", &capiawsv1beta1.AWSCluster{}), fmt.Sprintf("%T", &configv1.ClusterOperator{}))
+
+func hasStatusSubResource(o crclient.Object) bool {
+	return withStatusSubresource.Has(fmt.Sprintf("%T", o))
 }
 
 func New(enableUpdateLoopDetector bool) CreateOrUpdateProvider {
@@ -49,6 +59,14 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 		}
 		if err := c.Create(ctx, obj); err != nil {
 			return controllerutil.OperationResultNone, err
+		}
+		if hasStatusSubResource(obj) {
+			if err := mutate(f, key, obj); err != nil {
+				return controllerutil.OperationResultNone, err
+			}
+			if err := c.Status().Update(ctx, obj); err != nil {
+				return controllerutil.OperationResultNone, err
+			}
 		}
 		return controllerutil.OperationResultCreated, nil
 	}
@@ -83,6 +101,14 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 
 	if err := c.Update(ctx, obj); err != nil {
 		return controllerutil.OperationResultNone, err
+	}
+	if hasStatusSubResource(obj) {
+		if err := mutate(f, key, obj); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		if err := c.Status().Update(ctx, obj); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
 	}
 	return controllerutil.OperationResultUpdated, nil
 }

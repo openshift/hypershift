@@ -1,9 +1,12 @@
 package cmca
 
 import (
-	"time"
+	"context"
 
+	"k8s.io/client-go/informers"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers"
@@ -13,7 +16,6 @@ import (
 const (
 	ManagedConfigNamespace                 = "openshift-config-managed"
 	ControllerManagerAdditionalCAConfigMap = "controller-manager-additional-ca"
-	syncInterval                           = 10 * time.Minute
 )
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
@@ -24,16 +26,25 @@ func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
 }
 
 func setupConfigMapObserver(cfg *operator.HostedClusterConfigOperatorConfig) error {
-	informerFactory := cfg.TargetKubeInformersForNamespace(ManagedConfigNamespace)
+	targetKubeClient, err := kubeclient.NewForConfig(cfg.TargetConfig)
+	if err != nil {
+		return err
+	}
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(targetKubeClient, controllers.DefaultResync, informers.WithNamespace(ManagedConfigNamespace))
+	cfg.Manager.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		informerFactory.Start(ctx.Done())
+		return nil
+	}))
+
 	configMaps := informerFactory.Core().V1().ConfigMaps()
 	reconciler := &ManagedCAObserver{
-		InitialCA:    cfg.InitialCA(),
+		InitialCA:    cfg.InitialCA,
 		Client:       cfg.KubeClient(),
-		TargetClient: cfg.TargetKubeClient(),
-		Namespace:    cfg.Namespace(),
-		Log:          cfg.Logger().WithName("ManagedCAObserver"),
+		TargetClient: targetKubeClient,
+		Namespace:    cfg.Namespace,
+		Log:          cfg.Logger.WithName("ManagedCAObserver"),
 	}
-	c, err := controller.New("ca-configmap-observer", cfg.Manager(), controller.Options{Reconciler: reconciler})
+	c, err := controller.New("ca-configmap-observer", cfg.Manager, controller.Options{Reconciler: reconciler})
 	if err != nil {
 		return err
 	}

@@ -390,7 +390,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// additional core config resource created when image content source specified.
 		expectedCoreConfigResources += 1
 	}
-	config, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace)
+	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace)
 	if err != nil {
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
@@ -400,6 +400,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			ObservedGeneration: nodePool.Generation,
 		})
 		return ctrl.Result{}, fmt.Errorf("failed to get config: %w", err)
+	}
+	if missingConfigs {
+		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Message:            "Core ignition config has not been created yet",
+			ObservedGeneration: nodePool.Generation,
+		})
+		// We watch configmaps so we will get an event when these get created
+		return ctrl.Result{}, nil
 	}
 	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 		Type:               hyperv1.NodePoolConfigValidConfigConditionType,
@@ -878,7 +889,7 @@ func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config 
 	}
 }
 
-func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int, controlPlaneResource string) (string, error) {
+func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int, controlPlaneResource string) (configsRaw string, missingConfigs bool, err error) {
 	var configs []corev1.ConfigMap
 	allConfigPlainText := ""
 	var errors []error
@@ -891,7 +902,7 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 	}
 
 	if len(coreConfigMapList.Items) != expectedCoreConfigResources {
-		errors = append(errors, fmt.Errorf("core ingition config has not been created yet"))
+		missingConfigs = true
 	}
 
 	configs = coreConfigMapList.Items
@@ -919,7 +930,7 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 		allConfigPlainText = allConfigPlainText + "\n---\n" + manifest
 	}
 
-	return allConfigPlainText, utilerrors.NewAggregate(errors)
+	return allConfigPlainText, missingConfigs, utilerrors.NewAggregate(errors)
 }
 
 // validateManagement does additional backend validation. API validation/default should
