@@ -515,7 +515,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// user provided infrastructure should not have any machine level cluster-api components (user provides infrastructure)
-	if !(nodePool.Spec.Platform.Type == hyperv1.IBMCloudPlatform && nodePool.Spec.Platform.IBMCloud != nil && nodePool.Spec.Platform.IBMCloud.IAASProvider == hyperv1.UPI) {
+	if nodePool.Spec.Platform.Type == hyperv1.IBMCloudPlatform && nodePool.Spec.Platform.IBMCloud != nil && nodePool.Spec.Platform.IBMCloud.IAASProvider == hyperv1.UPI {
+		nodePool.Status.Version = targetVersion
+		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
+			log.Info("Config update complete",
+				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
+			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+		}
+		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
+	} else {
 		md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
 			return r.reconcileMachineDeployment(
