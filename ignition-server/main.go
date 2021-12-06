@@ -13,11 +13,9 @@ import (
 	"time"
 
 	hyperapi "github.com/openshift/hypershift/api"
-	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/discovery"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -119,21 +117,6 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("unable to start manager: %w", err)
 	}
 
-	kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
-	if err != nil {
-		return nil, fmt.Errorf("unable to create discovery client: %w", err)
-	}
-
-	mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(kubeDiscoveryClient)
-	if err != nil {
-		return nil, fmt.Errorf("unable to detect cluster capabilities: %w", err)
-	}
-	// checking for scc capability
-	var securityContextBool bool  // default is false
-	if !mgmtClusterCaps.Has(capabilities.CapabilitySecurityContextConstraint) {
-		securityContextBool = true
-	}
-
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
@@ -147,7 +130,6 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 			},
 			Client:    mgr.GetClient(),
 			Namespace: os.Getenv(namespaceEnvVariableName),
-			SetSecurityContext: securityContextBool,
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)

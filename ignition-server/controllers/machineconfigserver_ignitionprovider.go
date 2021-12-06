@@ -41,8 +41,6 @@ type MCSIgnitionProvider struct {
 	Client                client.Client
 	ReleaseProvider       releaseinfo.Provider
 	Namespace             string
-	// SetSecurityContext is used to configure Security Context for containers
-	SetSecurityContext    bool
 }
 
 func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
@@ -77,13 +75,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	// and we might lose data.
 	base64CompressedConfig := base64.StdEncoding.EncodeToString(compressedConfig)
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
-	mcsPod := machineConfigServerPod(p.Namespace, img,
-		mcsServiceAccount, mcsConfigConfigMap)
-	if p.SetSecurityContext {
-		mcsPod.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: k8sutilspointer.Int64Ptr(1001),
-		}
-	}
+	mcsPod := machineConfigServerPod(p.Namespace, img, mcsServiceAccount, mcsConfigConfigMap)
 
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
@@ -235,8 +227,7 @@ cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests
 
 var mcoBootstrapScriptTemplate = template.Must(template.New("mcoBootstrap").Parse(mcoBootstrapScript))
 
-func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, sa *corev1.ServiceAccount,
-	config *corev1.ConfigMap) *corev1.Pod {
+func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, sa *corev1.ServiceAccount, config *corev1.ConfigMap) *corev1.Pod {
 	images := releaseImage.ComponentImages()
 	scriptArgs := map[string]string{
 		"mcoImage":                 images["machine-config-operator"],
