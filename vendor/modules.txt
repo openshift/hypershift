@@ -419,8 +419,8 @@ golang.org/x/sys/windows
 # golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b
 ## explicit; go 1.17
 golang.org/x/term
-# golang.org/x/text v0.3.6
-## explicit; go 1.11
+# golang.org/x/text v0.3.7
+## explicit; go 1.17
 golang.org/x/text/encoding
 golang.org/x/text/encoding/charmap
 golang.org/x/text/encoding/htmlindex
@@ -1008,7 +1008,7 @@ sigs.k8s.io/cluster-api-provider-aws/exp/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/iam/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/pkg/eks
 sigs.k8s.io/cluster-api-provider-aws/pkg/hash
-# sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211110210527-619e6b92dab9
+# sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211203170428-e3773b639dd7
 ## explicit; go 1.17
 sigs.k8s.io/controller-runtime
 sigs.k8s.io/controller-runtime/pkg/builder
