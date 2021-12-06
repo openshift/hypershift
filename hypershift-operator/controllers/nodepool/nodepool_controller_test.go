@@ -331,7 +331,7 @@ spec:
 					BinaryData: nil,
 				},
 			},
-			expect: "\n---\n" + machineConfig1,
+			expect: machineConfig1,
 			error:  false,
 		},
 		{
@@ -372,7 +372,7 @@ spec:
 					},
 				},
 			},
-			expect: "\n---\n" + machineConfig1 + "\n---\n" + machineConfig2,
+			expect: machineConfig1 + "\n---\n" + machineConfig2,
 			error:  false,
 		},
 		{
@@ -462,7 +462,7 @@ spec:
 				},
 			},
 			expectedCoreConfigResources: 1,
-			expect:                      "\n---\n" + coreMachineConfig1 + "\n---\n" + machineConfig1,
+			expect:                      coreMachineConfig1 + "\n---\n" + machineConfig1,
 			error:                       false,
 		},
 		{
@@ -517,7 +517,7 @@ spec:
 				},
 			},
 			expectedCoreConfigResources: 1,
-			expect:                      "\n---\n" + coreMachineConfig1 + "\n---\n" + machineConfig1,
+			expect:                      coreMachineConfig1 + "\n---\n" + machineConfig1,
 			error:                       false,
 		},
 		{
