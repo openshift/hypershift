@@ -112,7 +112,6 @@ func dialKonnectivityFunc(caCertPath string, clientCertPath string, clientKeyPat
 			return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via proxy %s failed: %v",
 				requestAddress, proxyAddress, err)
 		}
-		defer res.Body.Close()
 		if res.StatusCode != 200 {
 			return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", proxyAddress, requestAddress, res.Status)
 		}
