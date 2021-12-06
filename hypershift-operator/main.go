@@ -42,6 +42,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/semconv"
+	"go.uber.org/zap/zapcore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
@@ -88,7 +89,9 @@ type StartOptions struct {
 }
 
 func NewStartCommand() *cobra.Command {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}))
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -96,16 +99,17 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	opts := StartOptions{
-		Namespace:                   "hypershift",
-		DeploymentName:              "operator",
-		MetricsAddr:                 "0",
-		EnableLeaderElection:        false,
-		ControlPlaneOperatorImage:   "",
-		IgnitionServerImage:         "",
-		OpenTelemetryEndpoint:       "",
-		RegistryOverrides:           map[string]string{},
-		PrivatePlatform:             string(hyperv1.NonePlatform),
-		OIDCStorageProviderS3Region: "us-east-1",
+		Namespace:                        "hypershift",
+		DeploymentName:                   "operator",
+		MetricsAddr:                      "0",
+		EnableLeaderElection:             false,
+		ControlPlaneOperatorImage:        "",
+		IgnitionServerImage:              "",
+		OpenTelemetryEndpoint:            "",
+		RegistryOverrides:                map[string]string{},
+		PrivatePlatform:                  string(hyperv1.NonePlatform),
+		OIDCStorageProviderS3Region:      "us-east-1",
+		OIDCStorageProviderS3Credentials: "/etc/oidc-storage-provider-s3-creds/credentials",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -124,7 +128,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
-	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", "", "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
+	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())

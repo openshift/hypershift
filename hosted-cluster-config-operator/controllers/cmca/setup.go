@@ -2,7 +2,6 @@ package cmca
 
 import (
 	"context"
-	"time"
 
 	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
@@ -17,7 +16,6 @@ import (
 const (
 	ManagedConfigNamespace                 = "openshift-config-managed"
 	ControllerManagerAdditionalCAConfigMap = "controller-manager-additional-ca"
-	syncInterval                           = 10 * time.Minute
 )
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {

@@ -100,7 +100,7 @@ func ValidateGlobalConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) 
 	}
 	// Skipping FeatureGate because it has no referenced resources
 	if gCfg.Image != nil {
-		refErrs := validateImageReferencedResources(gCfg.Image, referencedSecrets, referencedConfigMaps)
+		refErrs := validateImageReferencedResources(gCfg.Image, referencedConfigMaps)
 		errs = append(errs, refErrs...)
 	}
 	// Skipping Ingress because it has no referenced resources
@@ -110,7 +110,7 @@ func ValidateGlobalConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) 
 		errs = append(errs, refErrs...)
 	}
 	if gCfg.Scheduler != nil {
-		refErrs := validateSchedulerReferencedResources(gCfg.Scheduler, referencedSecrets, referencedConfigMaps)
+		refErrs := validateSchedulerReferencedResources(gCfg.Scheduler, referencedConfigMaps)
 		errs = append(errs, refErrs...)
 	}
 	return utilerrors.NewAggregate(errs)
@@ -150,7 +150,7 @@ func validateAuthenticationReferencedResources(cfg *configv1.Authentication, sec
 	return errs
 }
 
-func validateImageReferencedResources(cfg *configv1.Image, secrets, configMaps sets.String) []error {
+func validateImageReferencedResources(cfg *configv1.Image, configMaps sets.String) []error {
 	var errs []error
 	if len(cfg.Spec.AdditionalTrustedCA.Name) > 0 {
 		if !configMaps.Has(cfg.Spec.AdditionalTrustedCA.Name) {
@@ -278,7 +278,7 @@ func validateOauthReferencedResources(cfg *configv1.OAuth, secrets, configMaps s
 	return errs
 }
 
-func validateSchedulerReferencedResources(cfg *configv1.Scheduler, secrets, configMaps sets.String) []error {
+func validateSchedulerReferencedResources(cfg *configv1.Scheduler, configMaps sets.String) []error {
 	var errs []error
 	if len(cfg.Spec.Policy.Name) > 0 {
 		if !configMaps.Has(cfg.Spec.Policy.Name) {

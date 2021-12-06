@@ -18,7 +18,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -32,20 +31,21 @@ var _ IgnitionProvider = (*MCSIgnitionProvider)(nil)
 const (
 	resourceGenerateName = "machine-config-server-"
 	mcsPodSubdomain      = "machine-config-server"
+	pullSecretName       = "pull-secret"
 )
 
 // MCSIgnitionProvider is an IgnitionProvider that uses
 // MachineConfigServer pods to build ignition payload contents
 // out of a given releaseImage and a config string containing 0..N MachineConfig yaml definitions.
 type MCSIgnitionProvider struct {
-	Client                client.Client
-	ReleaseProvider       releaseinfo.Provider
-	Namespace             string
+	Client          client.Client
+	ReleaseProvider releaseinfo.Provider
+	Namespace       string
 }
 
 func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
 	pullSecret := &corev1.Secret{}
-	if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: "pull-secret"}, pullSecret); err != nil {
+	if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: pullSecretName}, pullSecret); err != nil {
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
@@ -66,8 +66,6 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress config: %w", err)
 	}
-	mcsServiceAccount := machineConfigServerServiceAccount(p.Namespace)
-	mcsRoleBinding := machineConfigServerRoleBinding(mcsServiceAccount)
 
 	// The ConfigMap requires data stored to be a string.
 	// By base64ing the compressed data we ensure all bytes are decodable back.
@@ -75,17 +73,11 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	// and we might lose data.
 	base64CompressedConfig := base64.StdEncoding.EncodeToString(compressedConfig)
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
-	mcsPod := machineConfigServerPod(p.Namespace, img, mcsServiceAccount, mcsConfigConfigMap)
+	mcsPod := machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap)
 
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
 		var deleteErrors []error
-		if err := p.Client.Delete(ctx, mcsServiceAccount); err != nil && !errors.IsNotFound(err) {
-			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server ServiceAccount: %w", err))
-		}
-		if err := p.Client.Delete(ctx, mcsRoleBinding); err != nil && !errors.IsNotFound(err) {
-			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server RoleBinding: %w", err))
-		}
 		if err := p.Client.Delete(ctx, mcsConfigConfigMap); err != nil && !errors.IsNotFound(err) {
 			deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete machine config server config ConfigMap: %w", err))
 		}
@@ -97,21 +89,12 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 			err = utilerrors.NewAggregate(deleteErrors)
 		}
 	}()
-	if err := p.Client.Create(ctx, mcsServiceAccount); err != nil {
-		return nil, fmt.Errorf("failed to create machine config server ServiceAccount: %w", err)
-	}
-
-	mcsRoleBinding = machineConfigServerRoleBinding(mcsServiceAccount)
-	if err := p.Client.Create(ctx, mcsRoleBinding); err != nil {
-		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
-	}
 
 	if err := p.Client.Create(ctx, mcsConfigConfigMap); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
 	}
 
-	mcsPod = machineConfigServerPod(p.Namespace, img, mcsServiceAccount,
-		mcsConfigConfigMap)
+	mcsPod = machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap)
 	if err := p.Client.Create(ctx, mcsPod); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server Pod: %w", err)
 	}
@@ -227,7 +210,7 @@ cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests
 
 var mcoBootstrapScriptTemplate = template.Must(template.New("mcoBootstrap").Parse(mcoBootstrapScript))
 
-func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, sa *corev1.ServiceAccount, config *corev1.ConfigMap) *corev1.Pod {
+func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, config *corev1.ConfigMap) *corev1.Pod {
 	images := releaseImage.ComponentImages()
 	scriptArgs := map[string]string{
 		"mcoImage":                 images["machine-config-operator"],
@@ -257,7 +240,6 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			},
 		},
 		Spec: corev1.PodSpec{
-			ServiceAccountName:            sa.Name,
 			TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
 			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
 			Subdomain:                     mcsPodSubdomain,
@@ -266,6 +248,11 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 				{
 					Key:      "hypershift.openshift.io/cluster",
 					Operator: corev1.TolerationOpExists,
+				},
+			},
+			ImagePullSecrets: []corev1.LocalObjectReference{
+				{
+					Name: pullSecretName,
 				},
 			},
 			InitContainers: []corev1.Container{
@@ -447,39 +434,6 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 						},
 					},
 				},
-			},
-		},
-	}
-}
-
-func machineConfigServerServiceAccount(namespace string) *corev1.ServiceAccount {
-	return &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    namespace,
-			GenerateName: resourceGenerateName,
-		},
-		ImagePullSecrets: []corev1.LocalObjectReference{
-			{Name: "pull-secret"},
-		},
-	}
-}
-
-func machineConfigServerRoleBinding(sa *corev1.ServiceAccount) *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:    sa.Namespace,
-			GenerateName: resourceGenerateName,
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "edit",
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      sa.Name,
-				Namespace: sa.Namespace,
 			},
 		},
 	}

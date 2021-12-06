@@ -10,5 +10,5 @@ import (
 
 func ReconcileIngressCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef, ingressSubdomain string) error {
 	ingressHostNames := []string{fmt.Sprintf("*.%s", ingressSubdomain)}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-ingress", []string{"openshift"}, X509DefaultUsage, X509UsageClientServerAuth, ingressHostNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-ingress", []string{"openshift"}, X509UsageClientServerAuth, ingressHostNames, nil)
 }

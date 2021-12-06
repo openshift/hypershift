@@ -82,7 +82,7 @@ import (
 const (
 	finalizer                      = "hypershift.openshift.io/finalizer"
 	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
-	clusterDeletionRequeueDuration = time.Duration(5 * time.Second)
+	clusterDeletionRequeueDuration = 5 * time.Second
 
 	// Image built from https://github.com/openshift/kubernetes-autoscaler/tree/release-4.10
 	// Upstream canonical image is k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
@@ -348,7 +348,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Type:               string(hyperv1.SupportedHostedCluster),
 			ObservedGeneration: hcluster.Generation,
 		}
-		if err := r.validateHostedClusterSupport(hcluster, r.PrivatePlatform); err != nil {
+		if err := r.validateHostedClusterSupport(hcluster); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.UnsupportedHostedClusterReason
@@ -917,7 +917,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the Ignition server
-	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster, hcp); err != nil {
+	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
 
@@ -954,23 +954,33 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Annotations = map[string]string{
 		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
-	for annotationKey := range hcluster.Annotations {
-		if annotationKey == hyperv1.DisablePKIReconciliationAnnotation {
-			hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation] = hcluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
-		} else if annotationKey == hyperv1.OauthLoginURLOverrideAnnotation {
-			hcp.Annotations[hyperv1.OauthLoginURLOverrideAnnotation] = hcluster.Annotations[hyperv1.OauthLoginURLOverrideAnnotation]
-		} else if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
-			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
-		} else if annotationKey == hyperv1.KonnectivityAgentImageAnnotation || annotationKey == hyperv1.KonnectivityServerImageAnnotation {
-			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
-		} else if annotationKey == hyperv1.RestartDateAnnotation {
-			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
-		} else if annotationKey == hyperv1.IBMCloudKMSProviderImage || annotationKey == hyperv1.AWSKMSProviderImage {
-			hcp.Annotations[annotationKey] = hcluster.Annotations[annotationKey]
-		} else if annotationKey == hyperv1.PortierisImageAnnotation {
-			hcp.Annotations[hyperv1.PortierisImageAnnotation] = hcluster.Annotations[hyperv1.PortierisImageAnnotation]
+
+	// These annotations are copied from the HostedCluster
+	mirroredAnnotations := []string{
+		hyperv1.DisablePKIReconciliationAnnotation,
+		hyperv1.OauthLoginURLOverrideAnnotation,
+		hyperv1.KonnectivityAgentImageAnnotation,
+		hyperv1.KonnectivityServerImageAnnotation,
+		hyperv1.RestartDateAnnotation,
+		hyperv1.IBMCloudKMSProviderImage,
+		hyperv1.AWSKMSProviderImage,
+		hyperv1.PortierisImageAnnotation,
+		hyperutil.DebugDeploymentsAnnotation,
+	}
+	for _, key := range mirroredAnnotations {
+		val, hasVal := hcluster.Annotations[key]
+		if hasVal {
+			hcp.Annotations[key] = val
 		}
 	}
+
+	// All annotations on the HostedCluster with this special prefix are copied
+	for key, val := range hcluster.Annotations {
+		if strings.HasPrefix(key, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
+			hcp.Annotations[key] = val
+		}
+	}
+
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
@@ -1204,10 +1214,10 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 				MaxSurge:       &maxSurge,
 				MaxUnavailable: &maxUnavailable,
 			}
-			deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+			hyperutil.SetDeploymentReplicas(hcluster, deployment, 3)
 			hyperutil.SetMultizoneSpread(labels, deployment)
 		default:
-			deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+			hyperutil.SetDeploymentReplicas(hcluster, deployment, 1)
 		}
 		return nil
 	})
@@ -1368,7 +1378,7 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	var span trace.Span
 	ctx, span = r.tracer.Start(ctx, "reconcile-ignition-server")
 	defer span.End()
@@ -1531,11 +1541,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				},
 				Verbs: []string{"*"},
 			},
-			{
-				APIGroups: []string{"rbac.authorization.k8s.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
-			},
 		}
 		return nil
 	}); err != nil {
@@ -1585,7 +1590,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		}
 		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
-			Replicas: k8sutilspointer.Int32Ptr(1),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: ignitionServerLabels,
 			},
@@ -1700,10 +1704,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				MaxSurge:       &maxSurge,
 				MaxUnavailable: &maxUnavailable,
 			}
-			ignitionServerDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+			hyperutil.SetDeploymentReplicas(hcluster, ignitionServerDeployment, 3)
 			hyperutil.SetMultizoneSpread(ignitionServerLabels, ignitionServerDeployment)
 		default:
-			ignitionServerDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+			hyperutil.SetDeploymentReplicas(hcluster, ignitionServerDeployment, 1)
 		}
 
 		return nil
@@ -1809,7 +1813,6 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				"name": "control-plane-operator",
@@ -1847,11 +1850,41 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 						Command: []string{"/usr/bin/control-plane-operator"},
 						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator", "--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput), fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine)},
 						Ports:   []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/healthz",
+									Port:   intstr.FromInt(6060),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: 60,
+							PeriodSeconds:       60,
+							SuccessThreshold:    1,
+							FailureThreshold:    5,
+							TimeoutSeconds:      5,
+						},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/readyz",
+									Port:   intstr.FromInt(6060),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: 15,
+							PeriodSeconds:       60,
+							SuccessThreshold:    1,
+							FailureThreshold:    3,
+							TimeoutSeconds:      5,
+						},
 					},
 				},
 			},
 		},
 	}
+
+	hyperutil.SetDeploymentReplicas(hc, deployment, 1)
 
 	// Add platform specific settings
 	switch hc.Spec.Platform.Type {
@@ -2101,7 +2134,6 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 		hyperv1.ControlPlaneComponent: "cluster-api",
 	}
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: capiManagerLabels,
 		},
@@ -2143,6 +2175,34 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 							"--v=4",
 							"--leader-elect=true",
 						},
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/healthz",
+									Port:   intstr.FromInt(9440),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: 60,
+							PeriodSeconds:       60,
+							SuccessThreshold:    1,
+							FailureThreshold:    5,
+							TimeoutSeconds:      5,
+						},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/readyz",
+									Port:   intstr.FromInt(9440),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: 15,
+							PeriodSeconds:       60,
+							SuccessThreshold:    1,
+							FailureThreshold:    3,
+							TimeoutSeconds:      5,
+						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceMemory: resource.MustParse("20Mi"),
@@ -2182,10 +2242,10 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			MaxSurge:       &maxSurge,
 			MaxUnavailable: &maxUnavailable,
 		}
-		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(3)
+		hyperutil.SetDeploymentReplicas(hc, deployment, 3)
 		hyperutil.SetMultizoneSpread(capiManagerLabels, deployment)
 	default:
-		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(1)
+		hyperutil.SetDeploymentReplicas(hc, deployment, 1)
 	}
 
 	return nil
@@ -2911,7 +2971,7 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyper
 	return nil
 }
 
-func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster, privatePlatform hyperv1.PlatformType) error {
+func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		if hc.Spec.Platform.AWS == nil {
