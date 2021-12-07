@@ -273,6 +273,7 @@ spec:
                 enum:
                 - OpenShiftSDN
                 - Calico
+                - OVNKubernetes
                 type: string
               platform:
                 description: PlatformSpec specifies the underlying infrastructure
