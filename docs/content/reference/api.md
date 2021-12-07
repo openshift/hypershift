@@ -1910,7 +1910,9 @@ NetworkType
 <p>
 Value must be one of:
 &#34;Calico&#34;, 
-&#34;OpenShiftSDN&#34;
+&#34;OVNKubernetes&#34;, 
+&#34;OpenShiftSDN&#34;, 
+&#34;Other&#34;
 </p>
 </td>
 </tr>
@@ -2824,7 +2826,9 @@ NetworkType
 <p>
 Value must be one of:
 &#34;Calico&#34;, 
-&#34;OpenShiftSDN&#34;
+&#34;OVNKubernetes&#34;, 
+&#34;OpenShiftSDN&#34;, 
+&#34;Other&#34;
 </p>
 </td>
 </tr>
@@ -3873,8 +3877,14 @@ availability configuration).</p>
 <tbody><tr><td><p>&#34;Calico&#34;</p></td>
 <td><p>Calico specifies Calico as the SDN provider</p>
 </td>
+</tr><tr><td><p>&#34;OVNKubernetes&#34;</p></td>
+<td><p>OVNKubernetes specifies OVN as the SDN provider</p>
+</td>
 </tr><tr><td><p>&#34;OpenShiftSDN&#34;</p></td>
 <td><p>OpenShiftSDN specifies OpenshiftSDN as the SDN provider</p>
+</td>
+</tr><tr><td><p>&#34;Other&#34;</p></td>
+<td><p>Other specifies an undefined SDN provider</p>
 </td>
 </tr></tbody>
 </table>

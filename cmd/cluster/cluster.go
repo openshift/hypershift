@@ -41,7 +41,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specificed domain for services with publishing type LoadBalancer or Route.")
-	cmd.PersistentFlags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico or OpenshiftSDN.")
+	cmd.PersistentFlags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenshiftSDN or Other.")
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Path to a pull secret (required)")
 	cmd.PersistentFlags().StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
