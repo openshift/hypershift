@@ -4,212 +4,197 @@ title: Deploy AWS private clusters
 
 # Deploying AWS private clusters
 
-## Create a hypershift-operator IAM user in the management account
+By default, HyperShift guest clusters are publicly accessible through public DNS
+and the management cluster's default router.
 
-**NOTE: An IAM Role can also be used but this is the simpliest method to document**
+For private clusters on AWS, all communication with the guest cluster occur over
+[AWS PrivateLink](https://aws.amazon.com/privatelink). This guide will lead you
+through the process of configuring HyperShift for private cluster support on AWS.
 
-Create the policy document
-```
-# cat << EOF >> policy.json
-{
-    "Version": "2012-10-17",
-    "Statement": [
+## Before you begin
+
+To enable private hosted clusters, HyperShift must be installed with private
+cluster support. This guide assumes you have performed all the
+[Getting started guide prerequisites](../getting-started.md#prerequisites). The
+following steps will reference elements of the steps you already performed.
+
+1. Create the private cluster IAM policy document.
+    
+    === "Shell"
+
+        ```shell
+        cat << EOF >> policy.json
         {
-            "Effect": "Allow",
-            "Action": [
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
                 "ec2:CreateVpcEndpointServiceConfiguration",
                 "ec2:DescribeVpcEndpointServiceConfigurations",
                 "ec2:DeleteVpcEndpointServiceConfigurations",
                 "elasticloadbalancing:DescribeLoadBalancers"
-            ],
-            "Resource": "*"
+              ],
+              "Resource": "*"
+            }
+          ]
         }
-    ]
-}
-EOF
+        EOF
+        ```
+
+    === "JSON"
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "ec2:CreateVpcEndpointServiceConfiguration",
+                "ec2:DescribeVpcEndpointServiceConfigurations",
+                "ec2:DeleteVpcEndpointServiceConfigurations",
+                "elasticloadbalancing:DescribeLoadBalancers"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+        ```
+
+2. Create the IAM policy in AWS.
+
+    ```shell
+    aws iam create-policy --policy-name=hypershift-operator-policy --policy-document=file://policy.json
+    ```
+
+3. Create a `hypershift-operator` IAM user.
+
+    ```shell
+    aws iam create-user --user-name=hypershift-operator
+    ```
+
+4. Attach the policy to the `hypershift-operator` user, replacing `$POLICY_ARN` with the ARN of the policy
+   created in step 2.
+
+    ```shell
+    aws iam attach-user-policy --user-name=hypershift-operator --policy-arn=$POLICY_ARN
+    ```
+
+5. Create an IAM access key for the user.
+
+    ```shell
+    aws iam create-access-key --user-name=hypershift-operator
+    ```
+
+6. Create a credentials file (`$AWS_PRIVATE_CREDS`) with the access ID and key for the user
+   created in step 5.
+
+    ```shell
+    cat << EOF >> $AWS_PRIVATE_CREDS
+    [default]
+    aws_access_key_id = <secret>
+    aws_secret_access_key = <secret>
+    EOF
+    ```
+
+7. Now you can install HyperShift with private cluster support.
+
+    ```shell linenums="1"
+    REGION=us-east-1
+    BUCKET_NAME=your-bucket-name
+    AWS_CREDS="$HOME/.aws/credentials"
+
+    hypershift install \
+    --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
+    --oidc-storage-provider-s3-credentials $AWS_CREDS \
+    --oidc-storage-provider-s3-region $REGION \
+    --private-platform=AWS \
+    --aws-private-creds=$AWS_PRIVATE_CREDS \
+    --aws-private-region=$REGION
+    ```
+
+    !!! note
+
+        Even if you already installed HyperShift using the [Getting started guide](../getting-started.md), you
+        can safely run `hypershift install` again with private cluster support to update the existing installation.
+
+    !!! important
+
+        Although public clusters can be created in any region, **private clusters can only be created in the same
+        region specified by `--aws-private-region`**.
+
+## Create a private HostedCluster
+
+Create a new private cluster, specifying values used in the [Before you
+begin](#before-you-begin) section.
+
+```shell linenums="1" hl_lines="13"
+CLUSTER_NAME=example
+BASE_DOMAIN=example.com
+AWS_CREDS="$HOME/.aws/credentials"
+PULL_SECRET="$HOME/pull-secret"
+
+hypershift create cluster aws \
+--name $CLUSTER_NAME \
+--node-pool-replicas=3 \
+--base-domain $BASE_DOMAIN \
+--pull-secret $PULL_SECRET \
+--aws-creds $AWS_CREDS \
+--region $REGION \
+--endpoint-access Private
 ```
 
-Create the policy
-```
-# aws iam create-policy --policy-name=hypershift-operator-policy --policy-document=file://policy.json
-{
-    "Policy": {
-        "PolicyName": "hypershift-operator-policy",
-        "PolicyId": "...",
-        "Arn": "arn:aws:iam::...:policy/hypershift-operator-policy",
-        "Path": "/",
-        "DefaultVersionId": "v1",
-        "AttachmentCount": 0,
-        "PermissionsBoundaryUsageCount": 0,
-        "IsAttachable": true,
-        "CreateDate": "2021-11-30T16:24:56+00:00",
-        "UpdateDate": "2021-11-30T16:24:56+00:00"
-    }
-}
+!!! note
+
+    The `--endpoint-access` flag is used to designate whether a cluster is public or private.
+
+The cluster's API endpoints will be accessible through a private DNS zone:
+
+- `api.$CLUSTER_NAME.hypershift.local`
+- `*.apps.$CLUSTER_NAME.hypershift.local`
+
+## Access a private HostedCluster
+
+Use a bastion host to access a private cluster.
+
+Start a bastion instance, replacing `$SSH_KEY` with credentials to use for connecting to the bastion.
+
+```shell
+hypershift create bastion aws --aws-creds=$AWS_CREDS --infra-id=$INFRA_ID --region=$REGION --ssh-key-file=$SSH_KEY
 ```
 
-Create the hypershift-operator user
-```
-# aws iam create-user --user-name=hypershift-operator
-{
-    "User": {
-        "Path": "/",
-        "UserName": "hypershift-operator",
-        "UserId": "...",
-        "Arn": "arn:aws:iam::...:user/hypershift-operator",
-        "CreateDate": "2021-11-30T16:26:37+00:00"
-    }
-}
+Find the private IPs of nodes in the cluster's NodePool.
+
+```shell
+aws ec2 describe-instances --filter="Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" | jq '.Reservations[] | .Instances[] | select(.PublicDnsName=="") | .PrivateIpAddress'
 ```
 
-Attach user policy (use policy-arn from `create-policy` output)
-```
-aws iam attach-user-policy --user-name=hypershift-operator --policy-arn=arn:aws:iam::...:policy/hypershift-operator-policy
+Create a kubeconfig for the cluster which can be copied to a node.
+
+```shell
+hypershift create kubeconfig > $CLUSTER_KUBECONFIG
 ```
 
-Create access key
-```
-# aws iam create-access-key --user-name=hypershift-operator
-{
-    "AccessKey": {
-        "UserName": "hypershift-operator",
-        "AccessKeyId": "...",
-        "Status": "Active",
-        "SecretAccessKey": "...",
-        "CreateDate": "2021-11-30T16:31:19+00:00"
-    }
-}
+SSH into one of the nodes via the bastion using the IP printed from the `create bastion` command.
+
+```shell
+ssh -o ProxyCommand="ssh ec2-user@$BASTION_IP -W %h:%p" core@$NODE_IP
 ```
 
-Create the credentials file (copy `AccessKeyId` and `SecretAccessKey` from `create-access-key` output)
-```
-# cat << EOF >> aws-private-creds
-[default]
-aws_access_key_id = <secret>
-aws_secret_access_key = <secret>
-EOF
-```
+From the SSH shell, copy the kubeconfig contents to a file on the node.
 
-## Install hypershift-operator
-
-```
-# ./bin/hypershift install \
-  --private-platform=AWS \
-  --aws-private-creds=aws-private-creds \
-  --aws-private-region=us-west-1 \
-  --oidc-storage-provider-s3-bucket-name=$BUCKET_NAME \
-  --oidc-storage-provider-s3-credentials=$HOME/hypershift/aws-creds \
-  --oidc-storage-provider-s3-region=us-west-1
-```
-
-## Create the HostedCluster
-
-Create the manifests
-```
-# ./bin/hypershift create cluster aws \
-  --aws-creds=$AWS_CREDS \
-  --pull-secret=$PULL_SECRET \
-  --ssh-key=$SSH_KEY \
-  --region=us-west-1 \
-  --base-domain=hypershift.example.com \
-  --render > cluster.yaml
-```
-
-Edit the HostedCluster with `endpointAccess: Private`
-```
-# vi cluster.yaml
-...
-apiVersion: hypershift.openshift.io/v1alpha1
-kind: HostedCluster
-metadata:
-  name: example
-  namespace: clusters
-spec:
-...
-  platform:
-    aws:
-      endpointAccess: Private <--
-```
-
-Create the HostedCluster resources
-```
-# oc create -f cluster.yaml
-```
-
-## Observe HostedCluster rollout
-
-### Watch AWSEndpointServices
-AWSEndpointService CRs are created when the following services are created
-* `kube-apiserver-private` in the HCP namespace
-* `router-$hcpNamespace` in the `openshift-ingress` namespace
-
-```
-# oc get awsendpointservice
-NAME                      AGE
-kube-apiserver-private    64m
-router-clusters-example   64m
-```
-
-The AWSEndpointServices are acted upon by two different controllers, one in the `hypershift-operator` (HO) which creates the Endpoint Services in the management account, and one in the `control-plane-operator` (CPO) which creates the Endpoints and `$hcpName.hypershift.local` DNS zone that contains CNAME records for `api.$hcpName.hypershift.local` and `*.apps.$hcpName.hypershift.local` whose value is the DNS name of the corresponding Endpoint.
-
-The AWSEndpointServices will go through several states:
-* LB not active
-    * AWS is still activiating the NLB for the service type LoadBalancer)
-    * takes 2-3m
-* EndpointService is created by HO
-    * `status.endpointServiceName` is set and `EndpointServiceAvailable` condition is `True`
-    * immediate
-* Endpoint and DNS records are created CPO
-    * `status.{endpointID,dnsZoneID,dnsName}` are set and `EndpointAvailable` condition is `True`
-    * takes ~30s
-
-## Access the private guest cluster
-
-Start a bastion
-```
-# hypershift create bastion aws --aws-creds=$AWS_CREDS --infra-id=$INFRA_ID --region=us-west-1 --ssh-key-file=$SSH_KEY
-2021-11-30T09:54:36-06:00       INFO    Created security group  {"name": "...", "id": "..."}
-2021-11-30T09:54:37-06:00       INFO    Created key pair        {"id": "...", "name": "..."}
-2021-11-30T09:54:39-06:00       INFO    Created ec2 instance    {"id": "...", "name": "..."}
-2021-11-30T09:55:24-06:00       INFO    Successfully created bastion    {"id": "...", "publicIP": "54.177.195.110"}
-```
-
-Get private IP of nodes in the NodePool
-```
-# aws ec2 describe-instances --filter="Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" | jq '.Reservations[] | .Instances[] | select(.PublicDnsName=="") | .PrivateIpAddress'
-"10.0.133.98"
-"10.0.136.236"
-```
-
-Dump kubeconfig for the HostedCluster to copy to the node
-```
-# ./bin/hypershift create kubeconfig
-apiVersion: v1
-clusters:
-- cluster:
-    certificate-authority-data: <redacted>
-    server: https://api.example.hypershift.local:6443
-  name: clusters-example
-...
-```
-
-SSH into one of the nodes via the bastion (bastion IP from the `create bastion` output)
-```
-# ssh -o ProxyCommand="ssh ec2-user@54.177.195.110 -W %h:%p" core@10.0.133.98
-```
-
-Copy the kubeconfig contents to a file on the node
-```
-# cat << EOF >> kubeconfig
+```shell
+cat << EOF >> kubeconfig
 <paste kubeconfig contents>
 EOF
-# export KUBECONFIG=$PWD/kubeconfig
+export KUBECONFIG=$PWD/kubeconfig
 ```
 
-Observe guest cluster status
-```
-# oc get clusteroperators
-...
-# oc get clusterversion
-...
+From the SSH shell, observe the guest cluster status or run other `oc` commands.
+
+```shell
+oc get clusteroperators
+oc get clusterversion
+# ...
 ```
