@@ -17,6 +17,9 @@ import (
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"golang.org/x/crypto/ssh"
+	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -181,6 +184,39 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 		return nil
 	}
 	return nil
+}
+
+func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
+	// Fetch a single node and determine possible DNS or IP entries to use
+	// for external node-port communication.
+	// Possible values are considered with the following priority based on the address type:
+	// - NodeExternalDNS
+	// - NodeExternalIP
+	// - NodeInternalIP
+	apiServerAddress := ""
+	kubeClient := kubeclient.NewForConfigOrDie(util.GetConfigOrDie())
+	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, v1.ListOptions{Limit: 1})
+	if err != nil {
+		return "", fmt.Errorf("unable to fetch node objects: %w", err)
+	}
+	if len(nodes.Items) < 1 {
+		return "", fmt.Errorf("no node objects found: %w", err)
+	}
+	addresses := map[corev1.NodeAddressType]string{}
+	for _, address := range nodes.Items[0].Status.Addresses {
+		addresses[address.Type] = address.Address
+	}
+	for _, addrType := range []corev1.NodeAddressType{corev1.NodeExternalDNS, corev1.NodeExternalIP, corev1.NodeInternalIP} {
+		if address, exists := addresses[addrType]; exists {
+			apiServerAddress = address
+			break
+		}
+	}
+	if apiServerAddress == "" {
+		return "", fmt.Errorf("node %q does not expose any IP addresses, this should not be possible", nodes.Items[0].Name)
+	}
+	log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", apiServerAddress, nodes.Items[0].Name))
+	return apiServerAddress, nil
 }
 
 func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApply ApplyPlatformSpecifics) error {

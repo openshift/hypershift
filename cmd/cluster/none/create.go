@@ -9,12 +9,8 @@ import (
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/util"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	kubeclient "k8s.io/client-go/kubernetes"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -53,35 +49,11 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 }
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	// Fetch a single node and determine possible DNS or IP entries to use
-	// for external node-port communication.
-	// Possible values are considered with the following priority based on the address type:
-	// - NodeExternalDNS
-	// - NodeExternalIP
-	// - NodeInternalIP
 	if opts.NonePlatform.APIServerAddress == "" {
-		kubeClient := kubeclient.NewForConfigOrDie(util.GetConfigOrDie())
-		nodes, err := kubeClient.CoreV1().Nodes().List(ctx, v1.ListOptions{Limit: 1})
+		opts.NonePlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx)
 		if err != nil {
-			return fmt.Errorf("unable to fetch node objects: %w", err)
+			return err
 		}
-		if len(nodes.Items) < 1 {
-			return fmt.Errorf("no node objects found: %w", err)
-		}
-		addresses := map[corev1.NodeAddressType]string{}
-		for _, address := range nodes.Items[0].Status.Addresses {
-			addresses[address.Type] = address.Address
-		}
-		for _, addrType := range []corev1.NodeAddressType{corev1.NodeExternalDNS, corev1.NodeExternalIP, corev1.NodeInternalIP} {
-			if address, exists := addresses[addrType]; exists {
-				opts.NonePlatform.APIServerAddress = address
-				break
-			}
-		}
-		if opts.NonePlatform.APIServerAddress == "" {
-			return fmt.Errorf("node %q does not expose any IP addresses, this should not be possible", nodes.Items[0].Name)
-		}
-		log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", opts.NonePlatform.APIServerAddress, nodes.Items[0].Name))
 	}
 
 	infraID := opts.InfraID
