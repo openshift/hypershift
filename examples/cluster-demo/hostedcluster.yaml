@@ -6,7 +6,7 @@ metadata:
   namespace: clusters
 spec:
   release:
-    image: quay.io/openshift-release-dev/ocp-release:4.9.5-x86_64
+    image: quay.io/openshift-release-dev/ocp-release:4.9.8-x86_64
   services:
   - service: APIServer
     servicePublishingStrategy:
@@ -31,5 +31,12 @@ spec:
   platform:
     type: AWS
   sshKey: {}
+  fips: false
+  managed:
+    storage:
+      persistentVolume:
+        size: 4Gi
+      type: PersistentVolume
+    managementType: Managed
   providerPlatformRef:
     name: my-demo

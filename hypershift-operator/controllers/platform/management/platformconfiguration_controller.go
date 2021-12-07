@@ -22,13 +22,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	hypv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/infra/aws"
-	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/util"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,8 +81,8 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 		}
 
 		//Update the status.conditions. This only works the first time, so if you fix an issue, it will still be set to PlatformXXXMisConfigured
-		setStatusCondition(&pp, hyperv1.PlatformConfigured, metav1.ConditionFalse, "Configuring platform with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformBeingConfigured)
-		setStatusCondition(&pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, "Configuring platform IAM with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformIAMBeingConfigured)
+		setStatusCondition(&pp, hypv1alpha1.PlatformConfigured, metav1.ConditionFalse, "Configuring platform with infra-id: "+pp.Spec.InfraID, hypv1alpha1.PlatformBeingConfigured)
+		setStatusCondition(&pp, hypv1alpha1.PlatformIAMConfigured, metav1.ConditionFalse, "Configuring platform IAM with infra-id: "+pp.Spec.InfraID, hypv1alpha1.PlatformIAMBeingConfigured)
 
 		if err := r.Client.Status().Update(ctx, &pp); err != nil {
 			if apierrors.IsConflict(err) {
@@ -95,8 +92,8 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 		}
 	}
 
-	var providerSecret v1.Secret
-	var pullSecret v1.Secret
+	var providerSecret corev1.Secret
+	var pullSecret corev1.Secret
 
 	err = r.Client.Get(ctx, types.NamespacedName{Namespace: pp.Namespace, Name: pp.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name}, &providerSecret)
 	if err != nil {
@@ -114,9 +111,9 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 	}
 
 	// Skip reconcile based on condition
-	if !meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformConfigured)) {
+	if !meta.IsStatusConditionTrue(pp.Status.Conditions, string(hypv1alpha1.PlatformConfigured)) {
 		// Creating Platform infrastructure used by the PlatformConfiguration NodePools and ingress
-		o := awsinfra.CreateInfraOptions{
+		o := aws.CreateInfraOptions{
 			AWSKey:       string(providerSecret.Data["aws_access_key_id"]),
 			AWSSecretKey: string(providerSecret.Data["aws_secret_access_key"]),
 			Region:       pp.Spec.Platform.AWS.Region,
@@ -131,26 +128,25 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 
 			return ctrl.Result{RequeueAfter: 1 * time.Minute, Requeue: true},
 				r.updateStatusConditionsOnChange(
-					&pp, hyperv1.PlatformConfigured,
+					&pp, hypv1alpha1.PlatformConfigured,
 					metav1.ConditionFalse,
 					err.Error(),
-					hyperv1.PlatformMisConfiguredReason)
+					hypv1alpha1.PlatformMisConfiguredReason)
 		}
 
 		copyResults(&pp, result)
-		log.Info(fmt.Sprintf("\n%s\n", pp))
 
 		if err := r.updatePlatformConfigurationResource(&pp); err != nil {
-			return ctrl.Result{}, r.updateStatusConditionsOnChange(&pp, hyperv1.PlatformConfigured, metav1.ConditionFalse, err.Error(), hyperv1.PlatformMisConfiguredReason)
+			return ctrl.Result{}, r.updateStatusConditionsOnChange(&pp, hypv1alpha1.PlatformConfigured, metav1.ConditionFalse, err.Error(), hypv1alpha1.PlatformMisConfiguredReason)
 		}
-		r.updateStatusConditionsOnChange(&pp, hyperv1.PlatformConfigured, metav1.ConditionTrue, "", hyperv1.PlatformConfiguredAsExpected)
+		r.updateStatusConditionsOnChange(&pp, hypv1alpha1.PlatformConfigured, metav1.ConditionTrue, "", hypv1alpha1.PlatformConfiguredAsExpected)
 		log.Info("Applied Platform Configuration changes to PlatformConfiguration resource")
 	}
 
-	if !meta.IsStatusConditionTrue(pp.Status.Conditions, string(hyperv1.PlatformIAMConfigured)) {
+	if !meta.IsStatusConditionTrue(pp.Status.Conditions, string(hypv1alpha1.PlatformIAMConfigured)) {
 		oidcSPName, oidcSPRegion, iamErr := oidcDiscoveryURL(r, pp.Spec.InfraID)
 		if iamErr == nil {
-			iamOpt := awsinfra.CreateIAMOptions{
+			iamOpt := aws.CreateIAMOptions{
 				Region:                          pp.Spec.Platform.AWS.Region,
 				AWSKey:                          string(providerSecret.Data["aws_access_key_id"]),
 				AWSSecretKey:                    string(providerSecret.Data["aws_secret_access_key"]),
@@ -161,7 +157,7 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 				OIDCStorageProviderS3Region:     oidcSPRegion,
 			}
 
-			var iamInfo *awsinfra.CreateIAMOutput
+			var iamInfo *aws.CreateIAMOutput
 			iamInfo, iamErr = iamOpt.CreateIAM(ctx, r.Client)
 			if iamErr == nil {
 				// todo, create more paramaters to cover all resources created by CreateIAM
@@ -171,15 +167,15 @@ func (r *PlatformConfigurationReconciler) Reconcile(ctx context.Context, req ctr
 				pp.Spec.IAM.OIDCProvider = iamInfo.ControlPlaneOperatorRoleARN
 				if iamErr = createOIDCSecrets(r, &pp, iamInfo); iamErr == nil {
 					if err := r.updatePlatformConfigurationResource(&pp); err != nil {
-						return ctrl.Result{}, r.updateStatusConditionsOnChange(&pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, err.Error(), hyperv1.PlatformIAMMisConfiguredReason)
+						return ctrl.Result{}, r.updateStatusConditionsOnChange(&pp, hypv1alpha1.PlatformIAMConfigured, metav1.ConditionFalse, err.Error(), hypv1alpha1.PlatformIAMMisConfiguredReason)
 					}
-					r.updateStatusConditionsOnChange(&pp, hyperv1.PlatformIAMConfigured, metav1.ConditionTrue, "", hyperv1.PlatformIAMConfiguredAsExpected)
+					r.updateStatusConditionsOnChange(&pp, hypv1alpha1.PlatformIAMConfigured, metav1.ConditionTrue, "", hypv1alpha1.PlatformIAMConfiguredAsExpected)
 					log.Info("Finished reconciling PlatformConfiguration")
 				}
 			}
 		}
 		if iamErr != nil {
-			return ctrl.Result{RequeueAfter: 1 * time.Minute, Requeue: true}, r.updateStatusConditionsOnChange(&pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, iamErr.Error(), hyperv1.PlatformIAMMisConfiguredReason)
+			return ctrl.Result{RequeueAfter: 1 * time.Minute, Requeue: true}, r.updateStatusConditionsOnChange(&pp, hypv1alpha1.PlatformIAMConfigured, metav1.ConditionFalse, iamErr.Error(), hypv1alpha1.PlatformIAMMisConfiguredReason)
 		}
 	}
 
@@ -197,14 +193,14 @@ func (r *PlatformConfigurationReconciler) SetupWithManager(mgr ctrl.Manager) err
 
 func oidcDiscoveryURL(r *PlatformConfigurationReconciler, infraID string) (string, string, error) {
 
-	cm := &v1.ConfigMap{}
+	cm := &corev1.ConfigMap{}
 	if err := r.Client.Get(context.Background(), types.NamespacedName{Name: oidcStorageProvider, Namespace: oidcSPNamespace}, cm); err != nil {
 		return "", "", err
 	}
 	return cm.Data["name"], cm.Data["region"], nil
 }
 
-func createOIDCSecrets(r *PlatformConfigurationReconciler, pp *hypv1alpha1.PlatformConfiguration, iamInfo *awsinfra.CreateIAMOutput) error {
+func createOIDCSecrets(r *PlatformConfigurationReconciler, pp *hypv1alpha1.PlatformConfiguration, iamInfo *aws.CreateIAMOutput) error {
 
 	buildAWSCreds := func(name, arn string) *corev1.Secret {
 		return &corev1.Secret{
@@ -249,11 +245,11 @@ func createOIDCSecrets(r *PlatformConfigurationReconciler, pp *hypv1alpha1.Platf
 
 func destroyOIDCSecrets(r *PlatformConfigurationReconciler, pp *hypv1alpha1.PlatformConfiguration) error {
 	//clean up CLI generated secrets
-	return r.DeleteAllOf(r.ctx, &v1.Secret{}, client.InNamespace(pp.GetNamespace()), client.MatchingLabels{util.AutoInfraLabelName: pp.Spec.InfraID})
+	return r.DeleteAllOf(r.ctx, &corev1.Secret{}, client.InNamespace(pp.GetNamespace()), client.MatchingLabels{util.AutoInfraLabelName: pp.Spec.InfraID})
 
 }
 
-func setStatusCondition(pp *hypv1alpha1.PlatformConfiguration, conditionType hyperv1.ConditionType, status metav1.ConditionStatus, message string, reason string) metav1.Condition {
+func setStatusCondition(pp *hypv1alpha1.PlatformConfiguration, conditionType hypv1alpha1.ConditionType, status metav1.ConditionStatus, message string, reason string) metav1.Condition {
 	if pp.Status.Conditions == nil {
 		pp.Status.Conditions = []metav1.Condition{}
 	}
@@ -268,7 +264,7 @@ func setStatusCondition(pp *hypv1alpha1.PlatformConfiguration, conditionType hyp
 	return condition
 }
 
-func (r *PlatformConfigurationReconciler) updateStatusConditionsOnChange(pp *hypv1alpha1.PlatformConfiguration, conditionType hyperv1.ConditionType, conditionStatus metav1.ConditionStatus, message string, reason string) error {
+func (r *PlatformConfigurationReconciler) updateStatusConditionsOnChange(pp *hypv1alpha1.PlatformConfiguration, conditionType hypv1alpha1.ConditionType, conditionStatus metav1.ConditionStatus, message string, reason string) error {
 
 	var err error = nil
 	cc := meta.FindStatusCondition(pp.Status.Conditions, string(conditionType))
@@ -302,7 +298,7 @@ func (r *PlatformConfigurationReconciler) destroyPlatformConfiguration(pp *hypv1
 	log := r.Log
 	ctx := r.ctx
 
-	dOpts := awsinfra.DestroyInfraOptions{
+	dOpts := aws.DestroyInfraOptions{
 		AWSCredentialsFile: "",
 		AWSKey:             string(providerSecret.Data["aws_access_key_id"]),
 		AWSSecretKey:       string(providerSecret.Data["aws_secret_access_key"]),
@@ -312,8 +308,8 @@ func (r *PlatformConfigurationReconciler) destroyPlatformConfiguration(pp *hypv1
 		Name:               pp.GetName(),
 	}
 
-	setStatusCondition(pp, hyperv1.PlatformConfigured, metav1.ConditionFalse, "Destroying PlatformConfiguration with infra-id: "+pp.Spec.InfraID, hyperv1.PlatfromDestroy)
-	setStatusCondition(pp, hyperv1.PlatformIAMConfigured, metav1.ConditionFalse, "Removing PlatformConfiguration IAM with infra-id: "+pp.Spec.InfraID, hyperv1.PlatformIAMRemove)
+	setStatusCondition(pp, hypv1alpha1.PlatformConfigured, metav1.ConditionFalse, "Destroying PlatformConfiguration with infra-id: "+pp.Spec.InfraID, hypv1alpha1.PlatfromDestroy)
+	setStatusCondition(pp, hypv1alpha1.PlatformIAMConfigured, metav1.ConditionFalse, "Removing PlatformConfiguration IAM with infra-id: "+pp.Spec.InfraID, hypv1alpha1.PlatformIAMRemove)
 
 	if err := r.Client.Status().Update(ctx, pp); err != nil {
 		if apierrors.IsConflict(err) {
@@ -326,7 +322,7 @@ func (r *PlatformConfigurationReconciler) destroyPlatformConfiguration(pp *hypv1
 		return ctrl.Result{}, fmt.Errorf("failed to destroy PlatformConfiguration: %w", err)
 	}
 
-	iamOpt := awsinfra.DestroyIAMOptions{
+	iamOpt := aws.DestroyIAMOptions{
 		Region:       pp.Spec.Platform.AWS.Region,
 		AWSKey:       dOpts.AWSKey,
 		AWSSecretKey: dOpts.AWSSecretKey,
