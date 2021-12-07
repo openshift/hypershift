@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/util"
+	"go.uber.org/zap/zapcore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
@@ -91,7 +92,9 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
+		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+			o.TimeEncoder = zapcore.RFC3339TimeEncoder
+		}))
 		ctx := ctrl.SetupSignalHandler()
 
 		restConfig := ctrl.GetConfigOrDie()

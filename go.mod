@@ -18,7 +18,6 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
 	github.com/openshift/api v0.0.0-20210901140736-d8ed1449662d
-	github.com/openshift/client-go v0.0.0-20200929181438-91d71ef2122c
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.51.1
@@ -51,7 +50,7 @@ require (
 	sigs.k8s.io/apiserver-network-proxy v0.0.24
 	sigs.k8s.io/cluster-api v1.0.1-0.20211111175208-4cc2fce2111a
 	sigs.k8s.io/cluster-api-provider-aws v1.1.0
-	sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211110210527-619e6b92dab9
+	sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211203170428-e3773b639dd7
 	sigs.k8s.io/yaml v1.3.0
 )
 
@@ -96,7 +95,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f // indirect
 	golang.org/x/sys v0.0.0-20211029165221-6e7872819dc8 // indirect
 	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b // indirect
-	golang.org/x/text v0.3.6 // indirect
+	golang.org/x/text v0.3.7 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20210828152312-66f60bf46e71 // indirect

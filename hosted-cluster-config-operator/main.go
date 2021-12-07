@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -17,7 +18,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/clusterversion"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeadminpwd"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
@@ -34,7 +34,9 @@ const (
 )
 
 func main() {
-	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder()))
+	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}))
 	setupLog := ctrl.Log.WithName("setup")
 	if err := newHostedClusterConfigOperatorCommand().Execute(); err != nil {
 		setupLog.Error(err, "Operator failed")
@@ -44,7 +46,6 @@ func main() {
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"controller-manager-ca": cmca.Setup,
 	"kubeadmin-password":    kubeadminpwd.Setup,
-	"cluster-version":       clusterversion.Setup,
 	// TODO: non-essential, can't statically link to operator
 	//"openshift-apiserver":          openshiftapiserver.Setup,
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
