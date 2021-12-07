@@ -114,7 +114,7 @@ type HostedControlPlaneReconciler struct {
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
 	ManagementClusterCapabilities *capabilities.ManagementClusterCapabilities
-	
+
 	// SetSecurityContext is used to configure Security Context for containers
 	SetSecurityContext bool
 
@@ -144,7 +144,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager %w", err)
 	}
-	
+
 	// check for scc capability
 	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint) {
 		r.SetSecurityContext = true

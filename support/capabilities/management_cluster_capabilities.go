@@ -15,8 +15,8 @@ type CapabilityType int
 const (
 	// CapabilityRoute indicates if the management cluster supports routes
 	CapabilityRoute CapabilityType = iota
-	
-	// CapabilitySecurityContextConstraint indicates if the management cluster 
+
+	// CapabilitySecurityContextConstraint indicates if the management cluster
 	// supports security context constraints
 	CapabilitySecurityContextConstraint
 )
@@ -79,7 +79,7 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	if hasRoutesCap {
 		discoveredCapabilities[CapabilityRoute] = struct{}{}
 	}
-	
+
 	// check for Scc capability
 	hasSccCap, err := isGroupVersionRegistered(client, securityv1.GroupVersion)
 	if err != nil {

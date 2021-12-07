@@ -84,7 +84,6 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 			FailureThreshold:    3,
 			TimeoutSeconds:      5,
 		},
-
 	}
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
