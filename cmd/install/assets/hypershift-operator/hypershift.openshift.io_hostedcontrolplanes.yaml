@@ -288,6 +288,8 @@ spec:
                 enum:
                 - OpenShiftSDN
                 - Calico
+                - OVNKubernetes
+                - Other
                 type: string
               olmCatalogPlacement:
                 default: management

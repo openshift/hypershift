@@ -20026,6 +20026,8 @@ objects:
                       enum:
                       - OpenShiftSDN
                       - Calico
+                      - OVNKubernetes
+                      - Other
                       type: string
                     podCIDR:
                       description: "PodCIDR is... \n TODO(dan): document it"
@@ -21155,6 +21157,8 @@ objects:
                   enum:
                   - OpenShiftSDN
                   - Calico
+                  - OVNKubernetes
+                  - Other
                   type: string
                 olmCatalogPlacement:
                   default: management

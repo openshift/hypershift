@@ -462,7 +462,7 @@ type APIServerNetworking struct {
 
 // NetworkType specifies the SDN provider used for cluster networking.
 //
-// +kubebuilder:validation:Enum=OpenShiftSDN;Calico
+// +kubebuilder:validation:Enum=OpenShiftSDN;Calico;OVNKubernetes;Other
 type NetworkType string
 
 const (
@@ -471,6 +471,12 @@ const (
 
 	// Calico specifies Calico as the SDN provider
 	Calico NetworkType = "Calico"
+
+	// OVNKubernetes specifies OVN as the SDN provider
+	OVNKubernetes NetworkType = "OVNKubernetes"
+
+	// Other specifies an undefined SDN provider
+	Other NetworkType = "Other"
 )
 
 // PlatformType is a specific supported infrastructure provider.
