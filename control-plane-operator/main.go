@@ -11,9 +11,14 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
@@ -25,6 +30,8 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -107,6 +114,11 @@ func NewStartCommand() *cobra.Command {
 			LeaderElectionID:       "b2ed43cb.hypershift.openshift.io",
 			Namespace:              namespace,
 			HealthProbeBindAddress: ":6060",
+			NewClient: func(cache cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
+				// We on operate IngressControllers and Services outside the HCP namespace using the manager client
+				uncachedObjects = append(uncachedObjects, &operatorv1.IngressController{}, &corev1.Service{})
+				return cluster.DefaultNewClient(cache, config, options, uncachedObjects...)
+			},
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
