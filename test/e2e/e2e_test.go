@@ -55,6 +55,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
 	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
 	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
 	flag.StringVar(&globalOpts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
@@ -181,6 +182,7 @@ type configurableClusterOptions struct {
 	PullSecretFile            string
 	BaseDomain                string
 	ControlPlaneOperatorImage string
+	AWSEndpointAccess         string
 }
 
 func (o *options) DefaultClusterOptions() core.CreateOptions {
@@ -199,6 +201,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			BaseDomain:         o.configurableClusterOptions.BaseDomain,
 			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
 			Region:             o.configurableClusterOptions.Region,
+			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
 		},
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
