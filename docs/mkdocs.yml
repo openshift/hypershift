@@ -26,6 +26,8 @@ markdown_extensions:
 - pymdownx.snippets
 - admonition
 - pymdownx.details
+- pymdownx.tabbed:
+    alternate_style: true
 nav:
 - Home: index.md
 - 'Getting started': getting-started.md

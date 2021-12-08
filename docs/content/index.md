@@ -12,3 +12,5 @@ clusters and are compatible with standard OCP and Kubernetes toolchains.
 
 [Quick start](getting-started.md){ .md-button .md-button--primary }
 [Contribute](contribute/){ .md-button }
+
+![Overview](images/high-level-overview.png)

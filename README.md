@@ -8,6 +8,7 @@ clusters and are compatible with standard OCP and Kubernetes toolchains.
 
 To get started, visit [the documentation](https://hypershift-docs.netlify.app/).
 
+![Overview](docs/content/images/high-level-overview.png)
 
 ### provision and destroy with custom resources
 #### Pre-step
@@ -71,3 +72,4 @@ To get started, visit [the documentation](https://hypershift-docs.netlify.app/).
     ```bash
     oc delete -f examples/cluster-demo/
     ```
+
