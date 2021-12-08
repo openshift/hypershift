@@ -13,12 +13,11 @@ import (
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
@@ -112,13 +111,14 @@ func NewStartCommand() *cobra.Command {
 			Port:                   9443,
 			LeaderElection:         enableLeaderElection,
 			LeaderElectionID:       "b2ed43cb.hypershift.openshift.io",
-			Namespace:              namespace,
 			HealthProbeBindAddress: ":6060",
-			NewClient: func(cache cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
-				// We on operate IngressControllers and Services outside the HCP namespace using the manager client
-				uncachedObjects = append(uncachedObjects, &operatorv1.IngressController{}, &corev1.Service{})
-				return cluster.DefaultNewClient(cache, config, options, uncachedObjects...)
-			},
+			// We manage a service outside the HCP namespace, but we don't want to scope the cache for all objects
+			// to both namespaces so just read from the API.
+			ClientDisableCacheFor: []client.Object{&corev1.Service{}},
+			NewCache: cache.BuilderWithOptions(cache.Options{
+				DefaultSelector:   cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
+				SelectorsByObject: cache.SelectorsByObject{&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", "openshift-ingress-controller")}},
+			}),
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
