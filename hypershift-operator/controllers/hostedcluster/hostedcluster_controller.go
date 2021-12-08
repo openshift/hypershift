@@ -807,12 +807,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI Cluster resource
-	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
-	_, err = createOrUpdate(ctx, r.Client, capiCluster, func() error {
-		return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
-	})
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+	// In the None platform case, there is no CAPI provider/resources so infraCR is nil
+	if infraCR != nil {
+		capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
+		_, err = createOrUpdate(ctx, r.Client, capiCluster, func() error {
+			return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane kubeconfig if one is reported
