@@ -49,7 +49,7 @@ func NewCreateCommand() *cobra.Command {
 		ReleaseImage:   "",
 		InstanceType:   "m4.large",
 		RootVolumeType: "gp2",
-		RootVolumeSize: 16,
+		RootVolumeSize: 120,
 		RootVolumeIOPS: 0,
 	}
 
@@ -67,7 +67,7 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
-	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (default: 16, min: 8) for machines in the NodePool")
+	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
