@@ -13,7 +13,7 @@ func ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret, ownerRef confi
 		fmt.Sprintf("konnectivity-server-local.%s.svc", secret.Namespace),
 		fmt.Sprintf("konnectivity-server-local.%s.svc.cluster.local", secret.Namespace),
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server-local", []string{"kubernetes"}, X509DefaultUsage, X509UsageServerAuth, dnsNames, nil)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server-local", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, nil)
 }
 
 func ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalKconnectivityAddress string) error {
@@ -28,13 +28,13 @@ func ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret, ownerRef conf
 	} else {
 		dnsNames = append(dnsNames, externalKconnectivityAddress)
 	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server", []string{"kubernetes"}, X509DefaultUsage, X509UsageServerAuth, dnsNames, ips)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, ips)
 }
 
 func ReconcileKonnectivityClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-client", []string{"kubernetes"}, X509DefaultUsage, X509UsageClientAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-client", []string{"kubernetes"}, X509UsageClientAuth)
 }
 
 func ReconcileKonnectivityAgentSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-agent", []string{"kubernetes"}, X509DefaultUsage, X509UsageClientAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "konnectivity-agent", []string{"kubernetes"}, X509UsageClientAuth)
 }

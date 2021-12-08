@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/support/capabilities"
@@ -26,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -75,7 +77,6 @@ const (
 	finalizer                  = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
-	oauthBrandingManifest      = "v4-0-config-system-branding.yaml"
 )
 
 var (
@@ -118,7 +119,8 @@ type HostedControlPlaneReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
-	EnableCIDebugOutput bool
+	EnableCIDebugOutput       bool
+	manifestClientObjectCache map[string]client.Object
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -694,7 +696,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcle machine config server config
 	r.Log.Info("Reconciling machine config server config")
-	if err = r.reconcileMachineConfigServerConfig(ctx, hostedControlPlane, infraStatus, globalConfig); err != nil {
+	if err = r.reconcileMachineConfigServerConfig(ctx, hostedControlPlane, globalConfig); err != nil {
 		return fmt.Errorf("failed to reconcile mcs config: %w", err)
 	}
 
@@ -1066,7 +1068,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return err
 	}
 
-	if err := applyManifests(ctx, r, r.Log, targetNamespace, manifests); err != nil {
+	if err := r.applyManifests(ctx, r.Log, targetNamespace, manifests); err != nil {
 		return err
 	}
 	r.Log.Info("successfully applied all manifests")
@@ -1088,10 +1090,7 @@ func (r *HostedControlPlaneReconciler) ensureControlPlane(ctx context.Context, h
 		return fmt.Errorf("failed to generate kubeadminPasswordTargetSecret: %w", err)
 	}
 
-	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
-	if err != nil {
-		return fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
-	}
+	baseDomain := clusterBaseDomain(hcp)
 	r.Log.Info(fmt.Sprintf("Cluster API URL: %s", fmt.Sprintf("https://%s:%d", infraStatus.APIHost, infraStatus.APIPort)))
 	r.Log.Info(fmt.Sprintf("Kubeconfig is available in secret admin-kubeconfig in the %s namespace", hcp.GetNamespace()))
 	r.Log.Info(fmt.Sprintf("Console URL:  %s", fmt.Sprintf("https://console-openshift-console.%s", fmt.Sprintf("apps.%s", baseDomain))))
@@ -1272,17 +1271,9 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Ingress Cert
 	ingressCert := manifests.IngressCert(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, ingressCert, func() error {
-		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress, p.IngressSubdomain)
+		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
-	}
-
-	// OAuth server Cert
-	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, oauthServerCert, func() error {
-		return pki.ReconcileOAuthServerCert(oauthServerCert, ingressCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
 	}
 
 	// MCS Cert
@@ -2130,51 +2121,10 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile packageserver worker endpoints: %w", err)
 	}
-
-	// Collect Profiles
-	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
-	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef, p.OLMImage, hcp.Namespace)
-	if err := r.Create(ctx, collectProfilesConfigMap); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesCronJob, func() error {
-		return olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRole, func() error {
-		return olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef, p.OLMImage, hcp.Namespace)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRoleBinding, func() error {
-		return olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef, p.OLMImage, hcp.Namespace)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
-	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef, p.OLMImage, hcp.Namespace)
-	if err := r.Create(ctx, collectProfilesSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesServiceAccount, func() error {
-		return olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef, p.OLMImage, hcp.Namespace)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, globalConfig globalconfig.GlobalConfig) error {
+func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig) error {
 	rootCA := manifests.RootCASecret(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca: %w", err)
@@ -2275,10 +2225,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus InfrastructureStatus, releaseImage *releaseinfo.ReleaseImage) (map[string][]byte, error) {
 	targetNamespace := hcp.GetNamespace()
 
-	baseDomain, err := clusterBaseDomain(r.Client, ctx, hcp)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't determine cluster base domain  name: %w", err)
-	}
+	baseDomain := clusterBaseDomain(hcp)
 
 	params := render.NewClusterParams()
 	params.Namespace = targetNamespace
@@ -2355,12 +2302,12 @@ func (r *HostedControlPlaneReconciler) generateControlPlaneManifests(ctx context
 	}
 
 	secrets := &corev1.SecretList{}
-	if err = r.List(ctx, secrets, client.InNamespace(hcp.Namespace)); err != nil {
+	if err := r.List(ctx, secrets, client.InNamespace(hcp.Namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list secrets in current namespace: %w", err)
 	}
 
 	configMaps := &corev1.ConfigMapList{}
-	if err = r.List(ctx, configMaps, client.InNamespace(hcp.Namespace)); err != nil {
+	if err := r.List(ctx, configMaps, client.InNamespace(hcp.Namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list configmaps in current namespace: %w", err)
 	}
 
@@ -2445,8 +2392,8 @@ func deleteManifests(ctx context.Context, c client.Client, log logr.Logger, name
 	return nil
 }
 
-func clusterBaseDomain(c client.Client, ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
-	return fmt.Sprintf("%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain), nil
+func clusterBaseDomain(hcp *hyperv1.HostedControlPlane) string {
+	return fmt.Sprintf("%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
 }
 
 func ensureHCPOwnerRef(hcp *hyperv1.HostedControlPlane, ownerReferences []metav1.OwnerReference) []metav1.OwnerReference {
@@ -2502,29 +2449,71 @@ func generateTargetCredentialsSecret(scheme *runtime.Scheme, creds hyperv1.AWSRo
 	return configMap, nil
 }
 
-func applyManifests(ctx context.Context, c client.Client, log logr.Logger, namespace string, manifests map[string][]byte) error {
+func (r *HostedControlPlaneReconciler) applyManifests(ctx context.Context, log logr.Logger, namespace string, manifests map[string][]byte) error {
 	// Use server side apply for manifestss
 	applyErrors := []error{}
 	for manifestName, manifestBytes := range manifests {
 		if excludeManifests.Has(manifestName) {
 			continue
 		}
-		obj := &unstructured.Unstructured{}
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(obj); err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err))
-		}
-		obj.SetNamespace(namespace)
-		err := c.Patch(ctx, obj, client.RawPatch(types.ApplyPatchType, manifestBytes), client.ForceOwnership, client.FieldOwner("control-plane-operator"))
+
+		obj, err := r.clientObjectForManifestName(manifestName, manifestBytes)
 		if err != nil {
-			applyErrors = append(applyErrors, fmt.Errorf("failed to apply manifest %s: %w", manifestName, err))
-		} else {
-			log.Info("applied manifest", "manifest", manifestName)
+			applyErrors = append(applyErrors, fmt.Errorf("failed to get object for manifest %s: %w", manifestName, err))
+			continue
+		}
+
+		obj.SetNamespace(namespace)
+
+		if _, err := r.CreateOrUpdate(ctx, r.Client, obj, func() error {
+			if err := yaml.Unmarshal(manifestBytes, obj); err != nil {
+				return fmt.Errorf("failed to decode %s manifest into %T: %w", manifestName, obj, err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 	if errs := errors.NewAggregate(applyErrors); errs != nil {
 		return fmt.Errorf("failed to apply some manifests: %w", errs)
 	}
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) clientObjectForManifestName(manifestName string, manifestBytes []byte) (client.Object, error) {
+	if obj, exists := r.manifestClientObjectCache[manifestName]; exists {
+		return obj.DeepCopyObject().(client.Object), nil
+	}
+
+	objRaw := &unstructured.Unstructured{}
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(manifestBytes), 100).Decode(objRaw); err != nil {
+		return nil, fmt.Errorf("failed to decode manifest %s: %w", manifestName, err)
+	}
+	apiVersion := objRaw.GetAPIVersion()
+	gvk := schema.GroupVersionKind{Kind: objRaw.GetKind()}
+	if split := strings.Split(apiVersion, "/"); len(split) == 2 {
+		gvk.Group = split[0]
+		gvk.Version = split[1]
+	} else {
+		// core group
+		gvk.Version = apiVersion
+	}
+	runtimeObj, err := r.Client.Scheme().New(gvk)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get type for gvk %s for manifest %s from scheme: %w", manifestName, gvk.String(), err)
+	}
+	obj, ok := runtimeObj.(client.Object)
+	if !ok {
+		return nil, fmt.Errorf("%T is not a client.Object", runtimeObj)
+	}
+	obj.SetName(objRaw.GetName())
+
+	if r.manifestClientObjectCache == nil {
+		r.manifestClientObjectCache = map[string]client.Object{}
+	}
+	r.manifestClientObjectCache[manifestName] = obj
+
+	return obj.DeepCopyObject().(client.Object), nil
 }
 
 func generateKubeadminPassword() (string, error) {

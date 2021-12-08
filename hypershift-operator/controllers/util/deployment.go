@@ -2,17 +2,24 @@ package util
 
 import (
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sutilspointer "k8s.io/utils/pointer"
 )
 
 const (
 	// DefaultPriorityClass is for pods in the Hypershift control plane that are
 	// not API critical but still need elevated priority.
 	DefaultPriorityClass = "hypershift-control-plane"
+
+	// debugDeploymentsAnnotation is applied to a HostedCluster and contains a
+	// comma separated list of deployment names which should always be scaled to 0
+	// for development.
+	DebugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"
 )
 
 func SetDefaultPriorityClass(deployment *appsv1.Deployment) {
@@ -146,5 +153,37 @@ func SetControlPlaneIsolation(hc *hyperv1.HostedCluster, deployment *appsv1.Depl
 				},
 			},
 		},
+	}
+}
+
+// IsDeploymentDebugEnabled returns true if the HostedCluster has a
+// debugDeploymentsAnnotation value that contains the Deployment name,
+// indicating the deployment should be considered to be in development mode.
+func IsDeploymentDebugEnabled(hc *hyperv1.HostedCluster, deployment *appsv1.Deployment) bool {
+	val, exists := hc.Annotations[DebugDeploymentsAnnotation]
+	if !exists {
+		return false
+	}
+	names := strings.Split(val, ",")
+	for _, name := range names {
+		if deployment.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// SetDeploymentReplicas is a helper which sets replicas of the Deployment to
+// zero if the HostedCluster is in development mode according
+// isDeploymentDebugEnabled, and otherwise sets replicas to the given replicas
+// argument.
+//
+// Use this anywhere you'd normally set replicas directly on a control plane
+// deployment to automatically support development mode.
+func SetDeploymentReplicas(hc *hyperv1.HostedCluster, deployment *appsv1.Deployment, replicas int32) {
+	if IsDeploymentDebugEnabled(hc, deployment) {
+		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(0)
+	} else {
+		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(replicas)
 	}
 }

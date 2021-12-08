@@ -71,16 +71,16 @@ type TokenSecretReconciler struct {
 func tokenSecretAnnotationPredicate(ctx context.Context) predicate.Predicate {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return processIfMatchesAnnotation(ctrl.LoggerFrom(ctx).WithValues("predicate", "updateEvent"), e.ObjectNew, TokenSecretAnnotation)
+			return processIfMatchesAnnotation(ctrl.LoggerFrom(ctx).WithValues("predicate", "updateEvent"), e.ObjectNew)
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
-			return processIfMatchesAnnotation(ctrl.LoggerFrom(ctx).WithValues("predicate", "createEvent"), e.Object, TokenSecretAnnotation)
+			return processIfMatchesAnnotation(ctrl.LoggerFrom(ctx).WithValues("predicate", "createEvent"), e.Object)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return processIfMatchesAnnotation(ctrl.LoggerFrom(ctx).WithValues("predicate", "deleteEvent"), e.Object, TokenSecretAnnotation)
+			return processIfMatchesAnnotation(ctrl.LoggerFrom(ctx).WithValues("predicate", "deleteEvent"), e.Object)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return processIfMatchesAnnotation(ctrl.LoggerFrom(ctx).WithValues("predicate", "genericEvent"), e.Object, TokenSecretAnnotation)
+			return processIfMatchesAnnotation(ctrl.LoggerFrom(ctx).WithValues("predicate", "genericEvent"), e.Object)
 		},
 	}
 }
@@ -92,11 +92,11 @@ func (r *TokenSecretReconciler) SetupWithManager(ctx context.Context, mgr ctrl.M
 		Complete(r)
 }
 
-func processIfMatchesAnnotation(logger logr.Logger, obj client.Object, annotation string) bool {
+func processIfMatchesAnnotation(logger logr.Logger, obj client.Object) bool {
 	kind := strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)
 	log := logger.WithValues("namespace", obj.GetNamespace(), kind, obj.GetName())
 
-	if _, ok := obj.GetAnnotations()[annotation]; ok {
+	if _, ok := obj.GetAnnotations()[TokenSecretAnnotation]; ok {
 		log.V(3).Info("Resource matches annotation, will attempt to map resource")
 		return true
 	}
