@@ -16,7 +16,7 @@ const (
 	ServiceSignerPublicKey  = "service-account.pub"
 )
 
-func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, serviceCIDR string) error {
+func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, internalAPIAddress, serviceCIDR string) error {
 	svc := manifests.KubeAPIServerService(secret.Namespace)
 	_, serviceIPNet, err := net.ParseCIDR(serviceCIDR)
 	if err != nil {
@@ -41,6 +41,11 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 		apiServerIPs = append(apiServerIPs, externalAPIAddress)
 	} else {
 		dnsNames = append(dnsNames, externalAPIAddress)
+	}
+	if isNumericIP(internalAPIAddress) {
+		apiServerIPs = append(apiServerIPs, internalAPIAddress)
+	} else {
+		dnsNames = append(dnsNames, internalAPIAddress)
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, apiServerIPs)
 }
