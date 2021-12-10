@@ -11,9 +11,13 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
@@ -25,6 +29,8 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -105,8 +111,14 @@ func NewStartCommand() *cobra.Command {
 			Port:                   9443,
 			LeaderElection:         enableLeaderElection,
 			LeaderElectionID:       "b2ed43cb.hypershift.openshift.io",
-			Namespace:              namespace,
 			HealthProbeBindAddress: ":6060",
+			// We manage a service outside the HCP namespace, but we don't want to scope the cache for all objects
+			// to both namespaces so just read from the API.
+			ClientDisableCacheFor: []client.Object{&corev1.Service{}},
+			NewCache: cache.BuilderWithOptions(cache.Options{
+				DefaultSelector:   cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
+				SelectorsByObject: cache.SelectorsByObject{&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", "openshift-ingress-controller")}},
+			}),
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")

@@ -1,0 +1,17 @@
+FROM registry.ci.openshift.org/openshift/release:golang-1.17 as builder
+
+WORKDIR /hypershift
+
+COPY . .
+
+RUN make control-plane-operator ignition-server hosted-cluster-config-operator konnectivity-socks5-proxy availability-prober token-minter
+
+FROM quay.io/openshift/origin-base:4.10
+COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
+COPY --from=builder /hypershift/bin/ignition-server /usr/bin/ignition-server
+COPY --from=builder /hypershift/bin/hosted-cluster-config-operator /usr/bin/hosted-cluster-config-operator
+COPY --from=builder /hypershift/bin/konnectivity-socks5-proxy /usr/bin/konnectivity-socks5-proxy
+COPY --from=builder /hypershift/bin/availability-prober /usr/bin/availability-prober
+COPY --from=builder /hypershift/bin/token-minter /usr/bin/token-minter
+
+ENTRYPOINT /usr/bin/control-plane-operator

@@ -10,6 +10,7 @@ plugins:
 - mermaid2
 docs_dir: content
 repo_url: https://github.com/openshift/hypershift
+edit_uri: edit/main/docs/content
 repo_name: openshift/hypershift
 markdown_extensions:
 - toc:
@@ -26,6 +27,8 @@ markdown_extensions:
 - pymdownx.snippets
 - admonition
 - pymdownx.details
+- pymdownx.tabbed:
+    alternate_style: true
 nav:
 - Home: index.md
 - 'Getting started': getting-started.md

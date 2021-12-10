@@ -7,3 +7,5 @@ Clusters are fully compliant [OpenShift Container Platform](https://www.redhat.c
 clusters and are compatible with standard OCP and Kubernetes toolchains.
 
 To get started, visit [the documentation](https://hypershift-docs.netlify.app/).
+
+![Overview](docs/content/images/high-level-overview.png)

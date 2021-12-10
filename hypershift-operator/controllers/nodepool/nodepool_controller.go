@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -889,7 +891,7 @@ func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config 
 
 func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int, controlPlaneResource string) (configsRaw string, missingConfigs bool, err error) {
 	var configs []corev1.ConfigMap
-	allConfigPlainText := ""
+	var allConfigPlainText []string
 	var errors []error
 
 	coreConfigMapList := &corev1.ConfigMapList{}
@@ -925,10 +927,14 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 			continue
 		}
 
-		allConfigPlainText = allConfigPlainText + "\n---\n" + manifest
+		allConfigPlainText = append(allConfigPlainText, manifest)
 	}
 
-	return allConfigPlainText, missingConfigs, utilerrors.NewAggregate(errors)
+	// These configs are the input to a hash func whose output is used as part of the name of the user-data secret,
+	// so our output must be deterministic.
+	sort.Strings(allConfigPlainText)
+
+	return strings.Join(allConfigPlainText, "\n---\n"), missingConfigs, utilerrors.NewAggregate(errors)
 }
 
 // validateManagement does additional backend validation. API validation/default should
