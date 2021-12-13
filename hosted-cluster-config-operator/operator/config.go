@@ -7,9 +7,6 @@ import (
 
 	"github.com/go-logr/logr"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -19,8 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
@@ -86,24 +81,7 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 			}, nil
 		},
 		NewCache: cache.BuilderWithOptions(cache.Options{
-			SelectorsByObject: cache.SelectorsByObject{
-				// TODO @alvaroaleman: We want the same selector for all object types
-				// but controller-runtime doesn't support that yet. Change  this to
-				// use a default for everything once we have https://github.com/kubernetes-sigs/controller-runtime/pull/1710
-				&corev1.ConfigMap{}:          {Label: cacheLabelSelector()},
-				&corev1.Secret{}:             {Label: cacheLabelSelector()},
-				&corev1.Namespace{}:          {Label: cacheLabelSelector()},
-				&rbacv1.ClusterRole{}:        {Label: cacheLabelSelector()},
-				&rbacv1.ClusterRoleBinding{}: {Label: cacheLabelSelector()},
-				&configv1.Infrastructure{}:   {Label: cacheLabelSelector()},
-				&configv1.DNS{}:              {Label: cacheLabelSelector()},
-				&configv1.Ingress{}:          {Label: cacheLabelSelector()},
-				&configv1.Network{}:          {Label: cacheLabelSelector()},
-				&configv1.Proxy{}:            {Label: cacheLabelSelector()},
-				&appsv1.DaemonSet{}:          {Label: cacheLabelSelector()},
-				&configv1.ClusterOperator{}:  {Label: cacheLabelSelector()},
-				&configv1.ClusterVersion{}:   {Label: cacheLabelSelector()},
-			},
+			DefaultSelector: cache.ObjectSelector{Label: cacheLabelSelector()},
 		}),
 		Scheme: api.Scheme,
 	})

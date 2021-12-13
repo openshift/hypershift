@@ -1,6 +1,8 @@
 package pki
 
 import (
+	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	"github.com/openshift/hypershift/support/config"
@@ -18,6 +20,10 @@ type PKIParams struct {
 	// ExternalAPIAddress
 	// An externally accessible DNS name or IP for the API server. Currently obtained from the load balancer DNS name.
 	ExternalAPIAddress string `json:"externalAPIAddress"`
+
+	// InternalAPIAddress
+	// An internally accessible DNS name or IP for the API server.
+	InternalAPIAddress string `json:"internalAPIAddress"`
 
 	// ExternalKconnectivityAddress
 	// An externally accessible DNS name or IP for the Konnectivity proxy. Currently obtained from the load balancer DNS name.
@@ -51,6 +57,7 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 		PodCIDR:                      hcp.Spec.PodCIDR,
 		Namespace:                    hcp.Namespace,
 		ExternalAPIAddress:           apiExternalAddress,
+		InternalAPIAddress:           fmt.Sprintf("api.%s.hypershift.local", hcp.Name),
 		ExternalKconnectivityAddress: konnectivityExternalAddress,
 		ExternalOauthAddress:         oauthExternalAddress,
 		IngressSubdomain:             config.IngressSubdomain(hcp),
