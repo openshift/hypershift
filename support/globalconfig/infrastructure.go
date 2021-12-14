@@ -57,5 +57,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	case hyperv1.IBMCloudPlatform:
 		infra.Status.PlatformStatus = &configv1.PlatformStatus{}
 		infra.Status.PlatformStatus.Type = configv1.IBMCloudPlatformType
+	case hyperv1.NonePlatform:
+		infra.Status.PlatformStatus = &configv1.PlatformStatus{}
 	}
 }

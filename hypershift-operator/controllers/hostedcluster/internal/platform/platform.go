@@ -56,6 +56,8 @@ func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
 		platform = aws.AWS{}
 	case hyperv1.IBMCloudPlatform:
 		platform = ibmcloud.IBMCloud{}
+	case hyperv1.NonePlatform:
+		platform = none.None{}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
