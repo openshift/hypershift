@@ -2649,14 +2649,7 @@ func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.Hosted
 }
 
 func platformType(hcp *hyperv1.HostedControlPlane) string {
-	switch {
-	case hcp.Spec.Platform.AWS != nil:
-		return "AWS"
-	case hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform:
-		return "IBMCloud"
-	default:
-		return "None"
-	}
+	return string(hcp.Spec.Platform.Type)
 }
 
 func cloudProvider(hcp *hyperv1.HostedControlPlane) string {
