@@ -6,6 +6,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -23,7 +24,7 @@ type KubeSchedulerParams struct {
 	config.DeploymentConfig `json:",inline"`
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig globalconfig.GlobalConfig) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig globalconfig.GlobalConfig, explicitNonRootSecurityContext bool) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		FeatureGate:             globalConfig.FeatureGate,
 		Scheduler:               globalConfig.Scheduler,
@@ -82,6 +83,14 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.DeploymentConfig.SetMultizoneSpread(schedulerLabels)
 	default:
 		params.Replicas = 1
+	}
+	if explicitNonRootSecurityContext {
+		// iterate over resources and set security context to all the containers
+		securityContextsObj := make(config.SecurityContextSpec)
+		for containerName := range params.DeploymentConfig.Resources {
+			securityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
+		}
+		params.DeploymentConfig.SecurityContexts = securityContextsObj
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params

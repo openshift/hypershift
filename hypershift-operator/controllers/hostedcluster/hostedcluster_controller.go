@@ -127,6 +127,9 @@ type HostedClusterReconciler struct {
 	// Log is a thread-safe logger.
 	Log logr.Logger
 
+	// SetSecurityContext is used to configure Security Context for containers
+	SetSecurityContext bool
+
 	// Clock is used to determine the time in a testable way.
 	Clock clock.Clock
 
@@ -169,8 +172,14 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
 
+	// checking for routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		builder.Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
+	}
+
+	// checking for scc capability
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint) {
+		r.SetSecurityContext = true
 	}
 
 	return builder.Complete(r)
@@ -1113,7 +1122,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	_, err = createOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, capiManagerServiceAccount, capiImage)
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, capiManagerServiceAccount, capiImage, r.SetSecurityContext)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -1182,12 +1191,20 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		// Enforce ServiceAccount.
 		deployment.Spec.Template.Spec.ServiceAccountName = capiProviderServiceAccount.Name
 
+		// set security context
+		if r.SetSecurityContext {
+			deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			}
+		}
+
 		hyperutil.SetColocation(hcluster, deployment)
 		// TODO (alberto): Reconsider enable this back when we face a real need
 		// with no better solution.
 		// hyperutil.SetRestartAnnotation(hc, deployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, deployment)
 		hyperutil.SetDefaultPriorityClass(deployment)
+
 		switch hcluster.Spec.ControllerAvailabilityPolicy {
 		case hyperv1.HighlyAvailable:
 			maxSurge := intstr.FromInt(1)
@@ -1668,6 +1685,14 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				},
 			},
 		}
+
+		// set security context
+		if r.SetSecurityContext {
+			ignitionServerDeployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			}
+		}
+
 		hyperutil.SetColocation(hcluster, ignitionServerDeployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, ignitionServerDeployment)
 		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
@@ -1753,7 +1778,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 		}
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.AvailabilityProberImage)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.AvailabilityProberImage, r.SetSecurityContext)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -2101,7 +2126,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	return nil
 }
 
-func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, capiManagerImage string) error {
+func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, capiManagerImage string, explicitNonRootSecurityContext bool) error {
 	defaultMode := int32(420)
 	capiManagerLabels := map[string]string{
 		"name":                        "cluster-api",
@@ -2196,6 +2221,13 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			},
 		},
 	}
+	// set security context
+	if explicitNonRootSecurityContext {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: k8sutilspointer.Int64Ptr(1001),
+		}
+	}
+
 	hyperutil.SetColocation(hc, deployment)
 	// TODO (alberto): Reconsider enable this back when we face a real need
 	// with no better solution.
@@ -2369,7 +2401,7 @@ func reconcileCAPIProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string, explicitNonRootSecurityContext bool) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -2485,6 +2517,13 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 		port = hc.Spec.Networking.APIServer.Port
 	}
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
+
+	// set security context
+	if explicitNonRootSecurityContext {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: k8sutilspointer.Int64Ptr(1001),
+		}
+	}
 
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
@@ -2915,7 +2954,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		}
 		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.AvailabilityProberImage)
+			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.AvailabilityProberImage, r.SetSecurityContext)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}
@@ -3011,7 +3050,7 @@ func reconcileMachineApproverRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeconfigSecretName string, config *corev1.ConfigMap, machineApproverImage, availabilityProberImage string) error {
+func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeconfigSecretName string, config *corev1.ConfigMap, machineApproverImage, availabilityProberImage string, explicitNonRootSecurityContext bool) error {
 	// TODO: enable leader election when the flag is added in machine-approver
 	args := []string{
 		"--config=/var/run/configmaps/config/config.yaml",
@@ -3100,6 +3139,13 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 		port = hc.Spec.Networking.APIServer.Port
 	}
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
+
+	// set security context
+	if explicitNonRootSecurityContext {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: k8sutilspointer.Int64Ptr(1001),
+		}
+	}
 
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)

@@ -38,6 +38,8 @@ spec:
               name: work
       restartPolicy: OnFailure
       serviceAccountName: user-manifests-bootstrapper
+      securityContext:
+        runAsUser: 1001
       volumes:
         - name: kubeconfig
           secret:

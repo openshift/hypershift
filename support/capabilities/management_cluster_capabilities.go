@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	routev1 "github.com/openshift/api/route/v1"
+	securityv1 "github.com/openshift/api/security/v1"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
@@ -14,6 +15,10 @@ type CapabilityType int
 const (
 	// CapabilityRoute indicates if the management cluster supports routes
 	CapabilityRoute CapabilityType = iota
+
+	// CapabilitySecurityContextConstraint indicates if the management cluster
+	// supports security context constraints
+	CapabilitySecurityContextConstraint
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -66,6 +71,8 @@ func isGroupVersionRegistered(client discovery.ServerResourcesInterface, groupVe
 
 func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterface) (*ManagementClusterCapabilities, error) {
 	discoveredCapabilities := map[CapabilityType]struct{}{}
+
+	// check for route capability
 	hasRoutesCap, err := isGroupVersionRegistered(client, routev1.GroupVersion)
 	if err != nil {
 		return nil, err
@@ -73,5 +80,15 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	if hasRoutesCap {
 		discoveredCapabilities[CapabilityRoute] = struct{}{}
 	}
+
+	// check for Scc capability
+	hasSccCap, err := isGroupVersionRegistered(client, securityv1.GroupVersion)
+	if err != nil {
+		return nil, err
+	}
+	if hasSccCap {
+		discoveredCapabilities[CapabilitySecurityContextConstraint] = struct{}{}
+	}
+
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil
 }

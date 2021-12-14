@@ -43,6 +43,7 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 			},
 		},
 	}
+
 	params.LivenessProbes = config.LivenessProbes{
 		hccContainerMain().Name: {
 			ProbeHandler: corev1.ProbeHandler{
@@ -78,5 +79,6 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
+
 	return params
 }

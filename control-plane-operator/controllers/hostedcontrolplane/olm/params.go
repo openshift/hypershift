@@ -4,6 +4,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	k8sutilspointer "k8s.io/utils/pointer"
 )
 
 var packageServerLabels = map[string]string{
@@ -23,7 +24,7 @@ type OperatorLifecycleManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, releaseVersion string) *OperatorLifecycleManagerParams {
+func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, releaseVersion string, explicitNonRootSecurityContext bool) *OperatorLifecycleManagerParams {
 	params := &OperatorLifecycleManagerParams{
 		CLIImage:                images["cli"],
 		OLMImage:                images["operator-lifecycle-manager"],
@@ -57,6 +58,27 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 		params.PackageServerConfig.SetMultizoneSpread(packageServerLabels)
 	default:
 		params.PackageServerConfig.Replicas = 1
+	}
+	if explicitNonRootSecurityContext {
+		params.DeploymentConfig.SecurityContexts = config.SecurityContextSpec{
+			"catalog-operator": {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			"socks5-proxy": {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			"registry": {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
+		params.PackageServerConfig.SecurityContexts = config.SecurityContextSpec{
+			"socks5-proxy": {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+			"packageserver": {
+				RunAsUser: k8sutilspointer.Int64Ptr(1001),
+			},
+		}
 	}
 
 	return params

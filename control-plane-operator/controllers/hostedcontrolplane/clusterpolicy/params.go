@@ -3,6 +3,7 @@ package clusterpolicy
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -20,7 +21,7 @@ type ClusterPolicyControllerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string) *ClusterPolicyControllerParams {
+func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
 		Image:                   images["cluster-policy-controller"],
 		APIServer:               globalConfig.APIServer,
@@ -50,6 +51,16 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 		params.DeploymentConfig.Replicas = 1
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+
+	if explicitNonRootSecurityContext {
+		// iterate over resources and set security context to all the containers
+		securityContextsObj := make(config.SecurityContextSpec)
+		for containerName := range params.DeploymentConfig.Resources {
+			securityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
+		}
+		params.DeploymentConfig.SecurityContexts = securityContextsObj
+	}
+
 	return params
 }
 
