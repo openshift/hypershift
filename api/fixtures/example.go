@@ -64,12 +64,17 @@ type ExampleOptions struct {
 	EtcdStorageClass                 string
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
+	Agent                            *ExampleAgentOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
 }
 
 type ExampleNoneOptions struct {
+	APIServerAddress string
+}
+
+type ExampleAgentOptions struct {
 	APIServerAddress string
 }
 
@@ -223,43 +228,12 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.NonePlatform,
 		}
-		services = []hyperv1.ServicePublishingStrategyMapping{
-			{
-				Service: hyperv1.APIServer,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.NodePort,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
-			{
-				Service: hyperv1.OAuthServer,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.NodePort,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
-			{
-				Service: hyperv1.OIDC,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.None,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
-			{
-				Service: hyperv1.Konnectivity,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.NodePort,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
-			{
-				Service: hyperv1.Ignition,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.NodePort,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
+		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress)
+	case o.Agent != nil:
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.AgentPlatform,
 		}
+		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Agent.APIServerAddress)
 
 	default:
 		panic("no platform specified")
@@ -374,5 +348,45 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		SSHKey:     sshKeySecret,
 		Cluster:    cluster,
 		NodePool:   nodePool,
+	}
+}
+
+func (o ExampleOptions) getServicePublishingStrategyMappingByAPIServerAddress(APIServerAddress string) []hyperv1.ServicePublishingStrategyMapping {
+	return []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
+		{
+			Service: hyperv1.OIDC,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.None,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
+		{
+			Service: hyperv1.Konnectivity,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
+		{
+			Service: hyperv1.Ignition,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
 	}
 }

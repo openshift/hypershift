@@ -433,6 +433,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"podmonitors"},
 				Verbs:     []string{"get", "list", "watch", "create", "update"},
 			},
+			{
+				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
 		},
 	}
 	return role
