@@ -1,5 +1,5 @@
 /*
-
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha4
+package v1beta1
 
 import (
 	v1 "k8s.io/api/core/v1"
@@ -41,9 +41,8 @@ type IBMPowerVSMachineSpec struct {
 	// SSHKey is the name of the SSH key pair provided to the vsi for authenticating users
 	SSHKey string `json:"sshKey,omitempty"`
 
-	// ImageID is the id of OS image which would be install on the instance.
-	// Example: c57eef35-ea0b-45d7-b864-4b0d4893425b
-	ImageID string `json:"imageID"`
+	// Image is the reference to the Image from which to create the machine instance.
+	Image IBMPowerVSResourceReference `json:"image"`
 
 	// SysType is the System type used to host the vsi
 	SysType string `json:"sysType"`
@@ -57,12 +56,25 @@ type IBMPowerVSMachineSpec struct {
 	// Memory is Amount of memory allocated (in GB)
 	Memory string `json:"memory"`
 
-	// NetworkID is network ID used for the VSI
-	NetworkID string `json:"networkID"`
+	// Network is the reference to the Network to use for this instance.
+	Network IBMPowerVSResourceReference `json:"network"`
 
 	// ProviderID is the unique identifier as specified by the cloud provider.
 	// +optional
 	ProviderID *string `json:"providerID,omitempty"`
+}
+
+// IBMPowerVSResourceReference is a reference to a specific PowerVS resource by ID or Name
+// Only one of ID or Name may be specified. Specifying more than one will result in
+// a validation error.
+type IBMPowerVSResourceReference struct {
+	// ID of resource
+	// +optional
+	ID *string `json:"id,omitempty"`
+
+	// Name of resource
+	// +optional
+	Name *string `json:"name,omitempty"`
 }
 
 // IBMPowerVSMachineStatus defines the observed state of IBMPowerVSMachine
@@ -91,8 +103,9 @@ type IBMPowerVSMachineStatus struct {
 	Fault string `json:"fault,omitempty"`
 }
 
-// +kubebuilder:subresource:status
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+//+kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this IBMPowerVSMachine belongs"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Cluster infrastructure is ready for IBM PowerVS instances"
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.instanceState",description="PowerVS instance state"
@@ -107,7 +120,7 @@ type IBMPowerVSMachine struct {
 	Status IBMPowerVSMachineStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
 // IBMPowerVSMachineList contains a list of IBMPowerVSMachine
 type IBMPowerVSMachineList struct {

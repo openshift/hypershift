@@ -1,5 +1,5 @@
 /*
-
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,11 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha4
+package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1alpha4"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -38,8 +38,8 @@ type IBMPowerVSClusterSpec struct {
 	// ServiceInstanceID is the id of the power cloud instance where the vsi instance will get deployed
 	ServiceInstanceID string `json:"serviceInstanceID"`
 
-	// Network is network ID used for the VSI
-	NetworkID string `json:"networkID"`
+	// Network is the reference to the Network to use for this cluster.
+	Network IBMPowerVSResourceReference `json:"network"`
 
 	// ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
 	// +optional
@@ -53,8 +53,9 @@ type IBMPowerVSClusterStatus struct {
 	Ready bool `json:"ready"`
 }
 
-// +kubebuilder:subresource:status
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+//+kubebuilder:storageversion
 
 // IBMPowerVSCluster is the Schema for the ibmpowervsclusters API
 type IBMPowerVSCluster struct {
@@ -65,7 +66,7 @@ type IBMPowerVSCluster struct {
 	Status IBMPowerVSClusterStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
 // IBMPowerVSClusterList contains a list of IBMPowerVSCluster
 type IBMPowerVSClusterList struct {
