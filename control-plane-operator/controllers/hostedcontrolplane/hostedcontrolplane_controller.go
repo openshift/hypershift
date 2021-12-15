@@ -652,9 +652,10 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile kubeadmin password
 	r.Log.Info("Reconciling kubeadmin password secret")
-	if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane); err != nil {
+	if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane, globalConfig.OAuth == nil); err != nil {
 		return fmt.Errorf("failed to ensure control plane: %w", err)
 	}
+
 	return nil
 }
 
@@ -957,7 +958,10 @@ func (r *HostedControlPlaneReconciler) reconcileClusterIPServiceStatus(ctx conte
 	return svc.Spec.ClusterIP, nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Context, hcp *hyperv1.HostedControlPlane, explicitOauthConfig bool) error {
+	if explicitOauthConfig {
+		return nil
+	}
 	var kubeadminPassword string
 	kubeadminPasswordSecret := common.KubeadminPasswordSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeadminPasswordSecret, func() error {
