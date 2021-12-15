@@ -22,6 +22,8 @@ func NewCreateCommands() *cobra.Command {
 		NetworkType:                    string(hyperv1.OpenShiftSDN),
 		InfrastructureJSON:             "",
 		InfraID:                        "",
+		ServiceCIDR:                    "172.31.0.0/16",
+		PodCIDR:                        "10.132.0.0/14",
 	}
 	cmd := &cobra.Command{
 		Use:          "cluster",
@@ -46,6 +48,8 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
 	cmd.PersistentFlags().StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster. If not specified, infrastructure will be created")
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
+	cmd.PersistentFlags().StringVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network")
+	cmd.PersistentFlags().StringVar(&opts.PodCIDR, "pod-cidr", opts.PodCIDR, "The CIDR of the pod network")
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
