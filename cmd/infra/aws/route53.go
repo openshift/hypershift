@@ -85,35 +85,45 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route
 	}
 	id = cleanZoneID(*res.HostedZone.Id)
 	log.Info("Created private zone", "name", name, "id", id)
+
 	return id, nil
 }
 
 func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client route53iface.Route53API) []error {
 	var errs []error
-	errs = append(errs, o.DestroyPrivateZone(ctx, client, fmt.Sprintf("%s.%s", o.Name, o.BaseDomain)))
-	errs = append(errs, o.DestroyPrivateZone(ctx, client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName)))
 	errs = append(errs, o.CleanupPublicZone(ctx, client))
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyPrivateZone(ctx context.Context, client route53iface.Route53API, name string) error {
-	id, err := lookupZone(ctx, client, name, true)
-	if err != nil {
-		return nil
-	}
-	recordName := o.wildcardRecordName()
-	err = deleteRecord(ctx, client, id, recordName)
-	if err == nil {
-		log.Info("Deleted wildcard record from private zone", "id", id, "name", recordName)
-	}
-	_, err = client.DeleteHostedZoneWithContext(ctx, &route53.DeleteHostedZoneInput{
-		Id: aws.String(id),
-	})
-	if err != nil {
+func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, client route53iface.Route53API, vpcID *string) []error {
+	var output *route53.ListHostedZonesByVPCOutput
+	if err := retryRoute53WithBackoff(ctx, func() (err error) {
+		output, err = client.ListHostedZonesByVPCWithContext(ctx, &route53.ListHostedZonesByVPCInput{VPCId: vpcID, VPCRegion: aws.String(o.Region)})
 		return err
+	}); err != nil {
+		return []error{fmt.Errorf("failed to list hosted zones for vpc %s: %w", *vpcID, err)}
 	}
-	log.Info("Deleted private zone", "id", id, "name", name)
-	return nil
+
+	var errs []error
+	for _, zone := range output.HostedZoneSummaries {
+		recordName := o.wildcardRecordName(*zone.Name)
+		id := cleanZoneID(*zone.HostedZoneId)
+		err := deleteRecord(ctx, client, id, recordName)
+		if err == nil {
+			log.Info("Deleted wildcard record from private zone", "id", id, "name", recordName)
+		}
+		_, err = client.DeleteHostedZoneWithContext(ctx, &route53.DeleteHostedZoneInput{
+			Id: aws.String(id),
+		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete hostedzone %s: %w", *zone.Name, err))
+			continue
+		}
+
+		log.Info("Deleted private zone", "id", id, "name", *zone.Name)
+	}
+
+	return errs
 }
 
 func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client route53iface.Route53API) error {
@@ -122,16 +132,16 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client rout
 	if err != nil {
 		return nil
 	}
-	recordName := o.wildcardRecordName()
-	err = deleteRecord(ctx, client, id, o.wildcardRecordName())
+	recordName := o.wildcardRecordName(name)
+	err = deleteRecord(ctx, client, id, recordName)
 	if err == nil {
 		log.Info("Deleted wildcard record from public zone", "id", id, "name", recordName)
 	}
 	return nil
 }
 
-func (o *DestroyInfraOptions) wildcardRecordName() string {
-	return fmt.Sprintf("*.apps.%s.%s", o.Name, o.BaseDomain)
+func (o *DestroyInfraOptions) wildcardRecordName(zoneName string) string {
+	return fmt.Sprintf("*.apps.%s.%s", strings.Split(zoneName, ".")[0], o.BaseDomain)
 }
 
 func deleteRecord(ctx context.Context, client route53iface.Route53API, id, recordName string) error {
