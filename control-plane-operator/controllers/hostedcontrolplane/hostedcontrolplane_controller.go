@@ -816,7 +816,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	}
 	oauthRoute := manifests.OauthServerRoute(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, oauthRoute, func() error {
-		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, cpoutil.IsPrivateHCP(hcp))
+		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth route: %w", err)
 	}
@@ -2649,14 +2649,7 @@ func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.Hosted
 }
 
 func platformType(hcp *hyperv1.HostedControlPlane) string {
-	switch {
-	case hcp.Spec.Platform.AWS != nil:
-		return "AWS"
-	case hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform:
-		return "IBMCloud"
-	default:
-		return "None"
-	}
+	return string(hcp.Spec.Platform.Type)
 }
 
 func cloudProvider(hcp *hyperv1.HostedControlPlane) string {

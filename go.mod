@@ -18,6 +18,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
 	github.com/openshift/api v0.0.0-20210901140736-d8ed1449662d
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20211214141843-b1cb8da87e73
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.51.1

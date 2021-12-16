@@ -3559,6 +3559,7 @@ PlatformType
 <p>
 Value must be one of:
 &#34;AWS&#34;, 
+&#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
 &#34;None&#34;
 </p>
@@ -3890,6 +3891,7 @@ PlatformType
 <p>
 Value must be one of:
 &#34;AWS&#34;, 
+&#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
 &#34;None&#34;
 </p>
@@ -3942,6 +3944,9 @@ IBMCloudPlatformSpec
 </thead>
 <tbody><tr><td><p>&#34;AWS&#34;</p></td>
 <td><p>AWSPlatform represents Amazon Web Services infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;Agent&#34;</p></td>
+<td><p>AgentPlatform represents user supplied insfrastructure booted with agents.</p>
 </td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>
