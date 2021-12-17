@@ -55,6 +55,8 @@ type ExampleOptions struct {
 	NodePoolReplicas                 int32
 	InfraID                          string
 	ComputeCIDR                      string
+	ServiceCIDR                      string
+	PodCIDR                          string
 	BaseDomain                       string
 	PublicZoneID                     string
 	PrivateZoneID                    string
@@ -270,8 +272,8 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			},
 			Networking: hyperv1.ClusterNetworking{
-				ServiceCIDR: "172.31.0.0/16",
-				PodCIDR:     "10.132.0.0/14",
+				ServiceCIDR: o.ServiceCIDR,
+				PodCIDR:     o.PodCIDR,
 				MachineCIDR: o.ComputeCIDR,
 				NetworkType: o.NetworkType,
 			},

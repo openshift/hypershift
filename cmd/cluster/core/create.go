@@ -45,6 +45,8 @@ type CreateOptions struct {
 	ReleaseImage                     string
 	Render                           bool
 	SSHKeyFile                       string
+	ServiceCIDR                      string
+	PodCIDR                          string
 	NonePlatform                     NonePlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
@@ -134,6 +136,8 @@ func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, erro
 		SSHPrivateKey:                    sshPrivateKey,
 		SSHPublicKey:                     sshKey,
 		EtcdStorageClass:                 opts.EtcdStorageClass,
+		ServiceCIDR:                      opts.ServiceCIDR,
+		PodCIDR:                          opts.PodCIDR,
 	}, nil
 }
 

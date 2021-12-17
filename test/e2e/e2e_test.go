@@ -203,6 +203,8 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			Region:             o.configurableClusterOptions.Region,
 			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
 		},
+		ServiceCIDR: "172.31.0.0/16",
+		PodCIDR:     "10.132.0.0/14",
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 
