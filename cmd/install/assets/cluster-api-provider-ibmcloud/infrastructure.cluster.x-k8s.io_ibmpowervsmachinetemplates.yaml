@@ -16,7 +16,7 @@ spec:
     singular: ibmpowervsmachinetemplate
   scope: Namespaced
   versions:
-  - name: v1alpha4
+  - name: v1beta1
     schema:
       openAPIV3Schema:
         description: IBMPowerVSMachineTemplate is the Schema for the ibmpowervsmachinetemplates
@@ -39,21 +39,38 @@ spec:
               IBMPowerVSMachineTemplate
             properties:
               template:
+                description: IBMPowerVSMachineTemplateResource holds the IBMPowerVSMachine
+                  spec
                 properties:
                   spec:
                     description: IBMPowerVSMachineSpec defines the desired state of
                       IBMPowerVSMachine
                     properties:
-                      imageID:
-                        description: 'ImageID is the id of OS image which would be
-                          install on the instance. Example: c57eef35-ea0b-45d7-b864-4b0d4893425b'
-                        type: string
+                      image:
+                        description: Image is the reference to the Image from which
+                          to create the machine instance.
+                        properties:
+                          id:
+                            description: ID of resource
+                            type: string
+                          name:
+                            description: Name of resource
+                            type: string
+                        type: object
                       memory:
                         description: Memory is Amount of memory allocated (in GB)
                         type: string
-                      networkID:
-                        description: NetworkID is network ID used for the VSI
-                        type: string
+                      network:
+                        description: Network is the reference to the Network to use
+                          for this instance.
+                        properties:
+                          id:
+                            description: ID of resource
+                            type: string
+                          name:
+                            description: Name of resource
+                            type: string
+                        type: object
                       procType:
                         description: 'ProcType is the processor type, e.g: dedicated,
                           shared, capped'
@@ -77,9 +94,9 @@ spec:
                         description: SysType is the System type used to host the vsi
                         type: string
                     required:
-                    - imageID
+                    - image
                     - memory
-                    - networkID
+                    - network
                     - procType
                     - processors
                     - serviceInstanceID

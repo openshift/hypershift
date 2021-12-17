@@ -1,5 +1,5 @@
 /*
-
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha4
+package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +28,7 @@ type IBMPowerVSMachineTemplateSpec struct {
 	Template IBMPowerVSMachineTemplateResource `json:"template"`
 }
 
+// IBMPowerVSMachineTemplateResource holds the IBMPowerVSMachine spec
 type IBMPowerVSMachineTemplateResource struct {
 	Spec IBMPowerVSMachineSpec `json:"spec"`
 }
@@ -38,7 +39,8 @@ type IBMPowerVSMachineTemplateStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
+//+kubebuilder:storageversion
 
 // IBMPowerVSMachineTemplate is the Schema for the ibmpowervsmachinetemplates API
 type IBMPowerVSMachineTemplate struct {
@@ -49,7 +51,7 @@ type IBMPowerVSMachineTemplate struct {
 	Status IBMPowerVSMachineTemplateStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
 // IBMPowerVSMachineTemplateList contains a list of IBMPowerVSMachineTemplate
 type IBMPowerVSMachineTemplateList struct {

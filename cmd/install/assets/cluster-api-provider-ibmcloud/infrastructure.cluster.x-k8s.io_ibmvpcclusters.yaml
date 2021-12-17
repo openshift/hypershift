@@ -27,7 +27,7 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: string
-    name: v1alpha4
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: IBMVPCCluster is the Schema for the ibmvpcclusters API
@@ -82,20 +82,11 @@ spec:
           status:
             description: IBMVPCClusterStatus defines the observed state of IBMVPCCluster
             properties:
-              apiEndpoint:
-                properties:
-                  address:
-                    type: string
-                  floatingIPID:
-                    type: string
-                required:
-                - address
-                - floatingIPID
-                type: object
               ready:
                 description: Bastion Instance `json:"bastion,omitempty"`
                 type: boolean
               subnet:
+                description: Subnet describes a subnet
                 properties:
                   cidr:
                     type: string
@@ -123,6 +114,17 @@ spec:
                 required:
                 - id
                 - name
+                type: object
+              vpcEndpoint:
+                description: VPCEndpoint describes a VPCEndpoint
+                properties:
+                  address:
+                    type: string
+                  floatingIPID:
+                    type: string
+                required:
+                - address
+                - floatingIPID
                 type: object
             required:
             - ready
