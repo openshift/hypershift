@@ -148,6 +148,9 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 	lbName := strings.Split(strings.Split(svc.Status.LoadBalancer.Ingress[0].Hostname, ".")[0], "-")[0]
 	if _, err := r.CreateOrUpdate(ctx, r, awsEndpointService, func() error {
 		awsEndpointService.Spec.NetworkLoadBalancerName = lbName
+		if hcp.Spec.Platform.AWS != nil {
+			awsEndpointService.Spec.ResourceTags = hcp.Spec.Platform.AWS.ResourceTags
+		}
 		return nil
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSEndpointService: %w", err)
@@ -339,6 +342,10 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			VpcId:           aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
 			VpcEndpointType: aws.String(ec2.VpcEndpointTypeInterface),
 			SubnetIds:       []*string{hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID},
+			TagSpecifications: []*ec2.TagSpecification{{
+				ResourceType: aws.String("vpc-endpoint"),
+				Tags:         apiTagToEC2Tag(hcp.Spec.Platform.AWS.ResourceTags),
+			}},
 		}
 		output, err := ec2Client.CreateVpcEndpointWithContext(ctx, input)
 		if err != nil {
@@ -385,6 +392,15 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	awsEndpointService.Status.DNSZoneID = zoneID
 
 	return nil
+}
+
+func apiTagToEC2Tag(in []hyperv1.AWSResourceTag) []*ec2.Tag {
+	result := make([]*ec2.Tag, len(in))
+	for _, val := range in {
+		result = append(result, &ec2.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})
+	}
+
+	return result
 }
 
 func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) (bool, error) {

@@ -2,6 +2,7 @@ package globalconfig
 
 import (
 	"fmt"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -49,6 +50,11 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		}
 		tags := []configv1.AWSResourceTag{}
 		for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
+			// This breaks the AWS CSI driver as it ends up being used there as an extra tag
+			// which makes it fail to start with "Invalid extra tags: Tag key prefix 'kubernetes.io' is reserved".
+			if strings.HasPrefix(tag.Key, "kubernetes.io") {
+				continue
+			}
 			tags = append(tags, configv1.AWSResourceTag{
 				Key:   tag.Key,
 				Value: tag.Value,
