@@ -3,6 +3,7 @@ package ibmcloud
 import (
 	"context"
 	"fmt"
+	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -21,7 +22,9 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
-
+	if hcluster.Spec.Platform.IBMCloud != nil && hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
+		return nil, nil
+	}
 	ibmCluster := &capiibmv1.IBMVPCCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,

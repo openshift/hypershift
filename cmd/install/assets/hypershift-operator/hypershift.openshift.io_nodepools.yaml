@@ -349,6 +349,14 @@ spec:
                     required:
                     - instanceType
                     type: object
+                  ibmcloud:
+                    description: IBMCloud defines IBMCloud specific settings for components
+                    properties:
+                      providerType:
+                        description: ProviderType is a specific supported infrastructure
+                          provider within IBM Cloud.
+                        type: string
+                    type: object
                   type:
                     description: Type specifies the platform name.
                     enum:
