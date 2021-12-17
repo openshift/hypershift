@@ -283,6 +283,9 @@ type NodePoolPlatform struct {
 	// +optional
 	// +immutable
 	AWS *AWSNodePoolPlatform `json:"aws,omitempty"`
+
+	// IBMCloud defines IBMCloud specific settings for components
+	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
 }
 
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating

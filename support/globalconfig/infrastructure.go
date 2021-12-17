@@ -29,6 +29,9 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	infra.Status.EtcdDiscoveryDomain = BaseDomain(hcp)
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
 	infra.Status.Platform = configv1.PlatformType(hcp.Spec.Platform.Type)
+	infra.Status.PlatformStatus = &configv1.PlatformStatus{
+		Type: configv1.PlatformType(hcp.Spec.Platform.Type),
+	}
 
 	switch hcp.Spec.InfrastructureAvailabilityPolicy {
 	case hyperv1.SingleReplica:
@@ -42,8 +45,6 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
-		infra.Status.PlatformStatus = &configv1.PlatformStatus{}
-		infra.Status.PlatformStatus.Type = configv1.AWSPlatformType
 		infra.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{
 			Region: hcp.Spec.Platform.AWS.Region,
 		}
@@ -55,8 +56,5 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			})
 		}
 		infra.Status.PlatformStatus.AWS.ResourceTags = tags
-	case hyperv1.IBMCloudPlatform:
-		infra.Status.PlatformStatus = &configv1.PlatformStatus{}
-		infra.Status.PlatformStatus.Type = configv1.IBMCloudPlatformType
 	}
 }

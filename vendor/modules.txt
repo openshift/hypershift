@@ -201,9 +201,6 @@ github.com/jmespath/go-jmespath
 # github.com/json-iterator/go v1.1.12
 ## explicit; go 1.12
 github.com/json-iterator/go
-# github.com/kubernetes-sigs/cluster-api-provider-ibmcloud v0.0.2-0.20210820075925-77979fb340c7
-## explicit; go 1.16
-github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4
 # github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
@@ -231,7 +228,7 @@ github.com/opencontainers/go-digest
 ## explicit
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/openshift/api v0.0.0-20210901140736-d8ed1449662d
+# github.com/openshift/api v0.0.0-20211215120111-7c47a5f63470
 ## explicit; go 1.16
 github.com/openshift/api/build/v1
 github.com/openshift/api/config/v1
@@ -247,6 +244,9 @@ github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20211214141843-b1cb8da87e73
+## explicit; go 1.16
+github.com/openshift/cluster-api-provider-agent/api/v1alpha1
 # github.com/operator-framework/api v0.10.7
 ## explicit; go 1.16
 github.com/operator-framework/api/pkg/lib/version
@@ -993,9 +993,8 @@ k8s.io/utils/trace
 # sigs.k8s.io/apiserver-network-proxy v0.0.24
 ## explicit; go 1.16
 sigs.k8s.io/apiserver-network-proxy/pkg/util
-# sigs.k8s.io/cluster-api v1.0.1-0.20211111175208-4cc2fce2111a => sigs.k8s.io/cluster-api v1.0.0
+# sigs.k8s.io/cluster-api v1.0.1 => sigs.k8s.io/cluster-api v1.0.0
 ## explicit; go 1.16
-sigs.k8s.io/cluster-api/api/v1alpha4
 sigs.k8s.io/cluster-api/api/v1beta1
 sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3
 sigs.k8s.io/cluster-api/errors
@@ -1014,6 +1013,9 @@ sigs.k8s.io/cluster-api-provider-aws/exp/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/iam/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/pkg/eks
 sigs.k8s.io/cluster-api-provider-aws/pkg/hash
+# sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.0-alpha.1
+## explicit; go 1.16
+sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
 # sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211208212546-f236f0345ad2
 ## explicit; go 1.17
 sigs.k8s.io/controller-runtime

@@ -28,18 +28,6 @@
 
         {{ safe (renderComments .CommentLines) }}
 
-        {{- if eq .Type.Kind "Alias" }}
-          {{- with (constantsOfType .Type) }}
-            <p>
-            Value must be one of:
-              {{- range $i, $v := . -}}
-                {{- if $i }}, {{ end }}
-                {{ typeDisplayName $v }}
-              {{- end }}
-            </p>
-          {{- end }}
-        {{- end }}
-
     {{ if and (eq (.Type.Name.Name) "ObjectMeta") }}
         Refer to the Kubernetes API documentation for the fields of the
         <code>metadata</code> field.

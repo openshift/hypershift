@@ -117,7 +117,7 @@ func NewStartCommand() *cobra.Command {
 			ClientDisableCacheFor: []client.Object{&corev1.Service{}},
 			NewCache: cache.BuilderWithOptions(cache.Options{
 				DefaultSelector:   cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
-				SelectorsByObject: cache.SelectorsByObject{&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", "openshift-ingress-controller")}},
+				SelectorsByObject: cache.SelectorsByObject{&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)}},
 			}),
 		})
 		if err != nil {

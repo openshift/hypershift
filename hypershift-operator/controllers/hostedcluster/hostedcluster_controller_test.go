@@ -1,9 +1,9 @@
 package hostedcluster
 
 import (
-	"github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	"sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"testing"
@@ -751,10 +751,10 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Name:      "cluster1",
 				},
 			},
-			infraCR: &v1alpha4.IBMVPCCluster{
+			infraCR: &capibmv1.IBMVPCCluster{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "IBMVPCCluster",
-					APIVersion: v1alpha4.GroupVersion.String(),
+					APIVersion: capibmv1.GroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster1",
@@ -778,7 +778,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 						Name:       "cluster1",
 					},
 					InfrastructureRef: &corev1.ObjectReference{
-						APIVersion: v1alpha4.GroupVersion.String(),
+						APIVersion: capibmv1.GroupVersion.String(),
 						Kind:       "IBMVPCCluster",
 						Namespace:  "master-cluster1",
 						Name:       "cluster1",

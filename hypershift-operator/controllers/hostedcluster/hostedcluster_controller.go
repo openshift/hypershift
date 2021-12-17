@@ -807,12 +807,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI Cluster resource
-	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
-	_, err = createOrUpdate(ctx, r.Client, capiCluster, func() error {
-		return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
-	})
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+	// In the None platform case, there is no CAPI provider/resources so infraCR is nil
+	if infraCR != nil {
+		capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
+		_, err = createOrUpdate(ctx, r.Client, capiCluster, func() error {
+			return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane kubeconfig if one is reported
@@ -1011,6 +1014,10 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()
+	if hcluster.Spec.Platform.Type == hyperv1.AgentPlatform {
+		// Agent platform uses None platform for the hcp.
+		hcp.Spec.Platform.Type = hyperv1.NonePlatform
+	}
 
 	// always reconcile the release image (facilitates rolling forward)
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
@@ -2289,6 +2296,11 @@ func reconcileCAPIManagerRole(role *rbacv1.Role) error {
 			},
 			Verbs: []string{"*"},
 		},
+		{
+			APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
 	}
 	return nil
 }
@@ -2475,6 +2487,35 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 						},
 						Command: []string{"/usr/bin/cluster-autoscaler"},
 						Args:    args,
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/health-check",
+									Port:   intstr.FromInt(8085),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: 60,
+							PeriodSeconds:       60,
+							SuccessThreshold:    1,
+							FailureThreshold:    5,
+							TimeoutSeconds:      5,
+						},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/health-check",
+									Port:   intstr.FromInt(8085),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: 15,
+							PeriodSeconds:       60,
+							SuccessThreshold:    1,
+							FailureThreshold:    3,
+							TimeoutSeconds:      5,
+						},
+						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8085}},
 					},
 				},
 			},

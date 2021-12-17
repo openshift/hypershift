@@ -13,11 +13,11 @@ require (
 	github.com/go-logr/zapr v1.2.0
 	github.com/google/go-cmp v0.5.6
 	github.com/google/uuid v1.2.0
-	github.com/kubernetes-sigs/cluster-api-provider-ibmcloud v0.0.2-0.20210820075925-77979fb340c7
 	github.com/onsi/gomega v1.17.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
-	github.com/openshift/api v0.0.0-20210901140736-d8ed1449662d
+	github.com/openshift/api v0.0.0-20211215120111-7c47a5f63470
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20211214141843-b1cb8da87e73
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.51.1
@@ -48,8 +48,9 @@ require (
 	k8s.io/kube-scheduler v0.21.4
 	k8s.io/utils v0.0.0-20210930125809-cb0fa318a74b
 	sigs.k8s.io/apiserver-network-proxy v0.0.24
-	sigs.k8s.io/cluster-api v1.0.1-0.20211111175208-4cc2fce2111a
+	sigs.k8s.io/cluster-api v1.0.1
 	sigs.k8s.io/cluster-api-provider-aws v1.1.0
+	sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.0-alpha.1
 	sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211208212546-f236f0345ad2
 	sigs.k8s.io/yaml v1.3.0
 )
