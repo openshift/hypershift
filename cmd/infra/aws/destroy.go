@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
@@ -99,7 +100,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 
 	var errs []error
 	errs = append(errs, o.DestroyInternetGateways(ctx, ec2Client)...)
-	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient)...)
+	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient, route53Client)...)
 	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyDNS(ctx, route53Client)...)
@@ -414,7 +415,7 @@ func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2ifac
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2iface.EC2API, elbclient elbiface.ELBAPI) []error {
+func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2iface.EC2API, elbclient elbiface.ELBAPI, route53client route53iface.Route53API) []error {
 	var errs []error
 	deleteVPC := func(out *ec2.DescribeVpcsOutput, _ bool) bool {
 		for _, vpc := range out.Vpcs {
@@ -425,6 +426,7 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2ifac
 			childErrs = append(childErrs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
 			childErrs = append(childErrs, o.DestroyNATGateways(ctx, ec2client, vpc.VpcId)...)
 			childErrs = append(childErrs, o.DestroySubnets(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyPrivateZones(ctx, route53client, vpc.VpcId)...)
 			if len(childErrs) > 0 {
 				errs = append(errs, childErrs...)
 				continue
@@ -433,7 +435,7 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2ifac
 				VpcId: vpc.VpcId,
 			})
 			if err != nil {
-				errs = append(errs, err)
+				errs = append(errs, fmt.Errorf("failed to delete vpc with id %s: %w", *vpc.VpcId, err))
 			} else {
 				log.Info("Deleted VPC", "id", aws.StringValue(vpc.VpcId))
 			}
