@@ -28,6 +28,18 @@
 
         {{ safe (renderComments .CommentLines) }}
 
+        {{- if and (eq .Type.Kind "Alias") (eq .Type.Name.Package "github.com/openshift/hypershift/api/v1alpha1") }}
+          {{- with (constantsOfType .Type) }}
+            <p>
+            Value must be one of:
+              {{- range $i, $v := . -}}
+                {{- if $i }}, {{ end }}
+                {{ typeDisplayName $v }}
+              {{- end }}
+            </p>
+          {{- end }}
+        {{- end }}
+
     {{ if and (eq (.Type.Name.Name) "ObjectMeta") }}
         Refer to the Kubernetes API documentation for the fields of the
         <code>metadata</code> field.

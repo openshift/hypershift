@@ -41,6 +41,32 @@ spec:
                 description: The name of the NLB for which an Endpoint Service should
                   be configured
                 type: string
+              resourceTags:
+                description: Tags to apply to the EndpointService
+                items:
+                  description: AWSResourceTag is a tag to apply to AWS resources created
+                    for the cluster.
+                  properties:
+                    key:
+                      description: Key is the key of the tag.
+                      maxLength: 128
+                      minLength: 1
+                      pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                      type: string
+                    value:
+                      description: "Value is the value of the tag. \n Some AWS service
+                        do not support empty values. Since tags are added to resources
+                        in many services, the length of the tag value must meet the
+                        requirements of all services."
+                      maxLength: 256
+                      minLength: 1
+                      pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                      type: string
+                  required:
+                  - key
+                  - value
+                  type: object
+                type: array
             type: object
           status:
             description: AWSEndpointServiceStatus defines the observed state of AWSEndpointService
