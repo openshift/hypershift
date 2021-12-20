@@ -929,9 +929,9 @@ github.com/opencontainers/runtime-spec v1.0.3-0.20200929063507-e6143ca7d51d/go.m
 github.com/opencontainers/runtime-tools v0.0.0-20181011054405-1d69bd0f9c39/go.mod h1:r3f7wjNzSs2extwzU3Y+6pKfobzPh+kKFJ3ofN+3nfs=
 github.com/opencontainers/selinux v1.6.0/go.mod h1:VVGKuOLlE7v4PJyT6h7mNWvq1rzqiriPsEqVhc+svHE=
 github.com/opencontainers/selinux v1.8.0/go.mod h1:RScLhm78qiWa2gbVCcGkC7tCGdgk3ogry1nUQF8Evvo=
-github.com/openshift/api v0.0.0-20210901140736-d8ed1449662d h1:2QcWZUp0R+ewJrK2Iuj8WaZikl/KccB2+/LOhB7RhEk=
-github.com/openshift/api v0.0.0-20210901140736-d8ed1449662d/go.mod h1:RsQCVJu4qhUawxxDP7pGlwU3IA4F01wYm3qKEu29Su8=
-github.com/openshift/build-machinery-go v0.0.0-20210712174854-1bb7fd1518d3/go.mod h1:b1BuldmJlbA/xYtdZvKi+7j5YGB44qJUJDZ9zwiNCfE=
+github.com/openshift/api v0.0.0-20211215120111-7c47a5f63470 h1:kYVTSbYsfLxSBnK8Z2ZN+qgAdclXAf2mYVDyHDfxTZ0=
+github.com/openshift/api v0.0.0-20211215120111-7c47a5f63470/go.mod h1:F/eU6jgr6Q2VhMu1mSpMmygxAELd7+BUxs3NHZ25jV4=
+github.com/openshift/build-machinery-go v0.0.0-20211213093930-7e33a7eb4ce3/go.mod h1:b1BuldmJlbA/xYtdZvKi+7j5YGB44qJUJDZ9zwiNCfE=
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20211214141843-b1cb8da87e73 h1:tkGmCZElT9x+D+iDFNkX+/Bc2nwn+Dm2TS9rzPYAD80=
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20211214141843-b1cb8da87e73/go.mod h1:SKABBM8Idpzg3hSwtf7/nPQU6zcRuU3i+IsDxMvQQLk=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
