@@ -3083,6 +3083,36 @@ call IBM Cloud KMS APIs</p>
 </tr>
 </tbody>
 </table>
+###IBMCloudPlatformSpec { #hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>IBMCloudPlatformSpec defines IBMCloud specific settings for components</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>providerType</code></br>
+<em>
+github.com/openshift/api/config/v1.IBMCloudProviderType
+</em>
+</td>
+<td>
+<p>ProviderType is a specific supported infrastructure provider within IBM Cloud.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ImageContentSource { #hypershift.openshift.io/v1alpha1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
@@ -3498,6 +3528,7 @@ PlatformType
 <p>
 Value must be one of:
 &#34;AWS&#34;, 
+&#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
 &#34;None&#34;
 </p>
@@ -3515,6 +3546,19 @@ AWSNodePoolPlatform
 <td>
 <em>(Optional)</em>
 <p>AWS specifies the configuration used when operating on AWS.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 </tbody>
@@ -3816,6 +3860,7 @@ PlatformType
 <p>
 Value must be one of:
 &#34;AWS&#34;, 
+&#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
 &#34;None&#34;
 </p>
@@ -3833,6 +3878,19 @@ AWSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 </tbody>
@@ -3855,6 +3913,9 @@ AWSPlatformSpec
 </thead>
 <tbody><tr><td><p>&#34;AWS&#34;</p></td>
 <td><p>AWSPlatform represents Amazon Web Services infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;Agent&#34;</p></td>
+<td><p>AgentPlatform represents user supplied insfrastructure booted with agents.</p>
 </td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>

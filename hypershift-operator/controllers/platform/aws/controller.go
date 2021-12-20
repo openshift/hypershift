@@ -201,6 +201,10 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		// TODO: we should probably do some sort of automated acceptance check against the VPC ID in the HostedCluster
 		AcceptanceRequired:      aws.Bool(false),
 		NetworkLoadBalancerArns: []*string{lbARN},
+		TagSpecifications: []*ec2.TagSpecification{{
+			ResourceType: aws.String("vpc-endpoint-service"),
+			Tags:         apiTagToEC2Tag(awsEndpointService.Spec.ResourceTags),
+		}},
 	})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
@@ -230,6 +234,15 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	awsEndpointService.Status.EndpointServiceName = serviceName
 
 	return nil
+}
+
+func apiTagToEC2Tag(in []hyperv1.AWSResourceTag) []*ec2.Tag {
+	result := make([]*ec2.Tag, len(in))
+	for _, val := range in {
+		result = append(result, &ec2.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})
+	}
+
+	return result
 }
 
 func findExistingVpcEndpointService(ctx context.Context, ec2Client ec2iface.EC2API, lbARN string) (string, error) {
