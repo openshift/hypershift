@@ -824,7 +824,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	}
 	oauthRoute := manifests.OauthServerRoute(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, oauthRoute, func() error {
-		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, cpoutil.IsPrivateHCP(hcp))
+		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth route: %w", err)
 	}
@@ -923,23 +923,22 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return
 	}
 
-	svc := manifests.KubeAPIServerService(hcp.Namespace)
-
-	if cpoutil.IsPrivateHCP(hcp) {
-		// If private: true, assume nodes will be connecting over the private connection
-		return kas.ReconcilePrivateServiceStatus(hcp.Name)
-	}
-
-	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
-		if apierrors.IsNotFound(err) {
-			err = nil
+	if cpoutil.IsPublicHCP(hcp) {
+		svc := manifests.KubeAPIServerService(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+			if apierrors.IsNotFound(err) {
+				err = nil
+				return
+			}
+			err = fmt.Errorf("failed to get kube apiserver service: %w", err)
 			return
 		}
-		err = fmt.Errorf("failed to get kube apiserver service: %w", err)
-		return
+		p := kas.NewKubeAPIServerServiceParams(hcp)
+		return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort)
+
 	}
-	p := kas.NewKubeAPIServerServiceParams(hcp)
-	return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort)
+
+	return kas.ReconcilePrivateServiceStatus(hcp.Name)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
@@ -1159,7 +1158,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// KAS server secret
 	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kasServerSecret, func() error {
-		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.ServiceCIDR)
+		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.InternalAPIAddress, p.ServiceCIDR)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
@@ -1497,13 +1496,19 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	externalKubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
 	if _, err := r.CreateOrUpdate(ctx, r, externalKubeconfigSecret, func() error {
-		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
+		if cpoutil.IsPublicHCP(hcp) {
+			return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
+		}
+		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalURL(), p.ExternalKubeconfigKey())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
 	}
 
 	bootstrapKubeconfigSecret := manifests.KASBootstrapKubeconfigSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, bootstrapKubeconfigSecret, func() error {
+		if cpoutil.IsPrivateHCP(hcp) {
+			return kas.ReconcileBootstrapKubeconfigSecret(bootstrapKubeconfigSecret, bootstrapClientCertSecret, rootCA, p.OwnerRef, p.InternalURL())
+		}
 		return kas.ReconcileBootstrapKubeconfigSecret(bootstrapKubeconfigSecret, bootstrapClientCertSecret, rootCA, p.OwnerRef, p.ExternalURL())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile bootstrap kubeconfig secret: %w", err)
@@ -2652,14 +2657,7 @@ func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.Hosted
 }
 
 func platformType(hcp *hyperv1.HostedControlPlane) string {
-	switch {
-	case hcp.Spec.Platform.AWS != nil:
-		return "AWS"
-	case hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform:
-		return "IBMCloud"
-	default:
-		return "None"
-	}
+	return string(hcp.Spec.Platform.Type)
 }
 
 func cloudProvider(hcp *hyperv1.HostedControlPlane) string {

@@ -17,11 +17,17 @@ func ReconcileKubeAPIServerServiceMonitor(serviceMonitor *prometheusoperatorv1.S
 	}
 	serviceMonitor.Spec.Endpoints = []prometheusoperatorv1.Endpoint{
 		{
-			BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
-			Interval:        "30s",
-			Scheme:          "https",
-			Port:            "https",
-			Path:            "/metrics",
+			BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
+			TLSConfig: &prometheusoperatorv1.TLSConfig{
+				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+					ServerName: "kubernetes.default.svc",
+				},
+				CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+			},
+			Interval: "30s",
+			Scheme:   "https",
+			Port:     "https",
+			Path:     "/metrics",
 			MetricRelabelConfigs: []*prometheusoperatorv1.RelabelConfig{
 				{
 					Action: "keep",

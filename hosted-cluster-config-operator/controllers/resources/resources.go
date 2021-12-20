@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/registry"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -27,7 +28,6 @@ import (
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/monitoring"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/namespaces"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/rbac"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources/registry"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -166,13 +166,17 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("failed to reconcile rbac: %w", err))
 	}
 
-	log.Info("reconciling registry config")
-	registryConfig := manifests.Registry()
-	if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-		registry.ReconcileRegistryConfig(registryConfig, r.platformType == hyperv1.NonePlatform)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+	// IBMCloud platform should not be constantly reconciled as we allow customers to change initial deployment.
+	// Initial deployment handled by managed service wrapping hypershift
+	if r.platformType != hyperv1.IBMCloudPlatform {
+		log.Info("reconciling registry config")
+		registryConfig := manifests.Registry()
+		if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+			registry.ReconcileRegistryConfig(registryConfig, r.platformType == hyperv1.NonePlatform)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+		}
 	}
 
 	log.Info("reconciling ingress controller")

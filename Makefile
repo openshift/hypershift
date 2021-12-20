@@ -119,7 +119,7 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 .PHONY: cluster-api-provider-ibmcloud
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-ibmcloud/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
 
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
@@ -197,3 +197,13 @@ ci-install-hypershift:
 		--oidc-storage-provider-s3-credentials=/etc/hypershift-pool-aws-credentials/credentials \
 		--oidc-storage-provider-s3-bucket-name=hypershift-ci-oidc \
 		--oidc-storage-provider-s3-region=us-east-1
+
+.PHONY: ci-install-hypershift-private
+ci-install-hypershift-private:
+	bin/hypershift install --hypershift-image $(HYPERSHIFT_RELEASE_LATEST) \
+		--oidc-storage-provider-s3-credentials=/etc/hypershift-pool-aws-credentials/credentials \
+		--oidc-storage-provider-s3-bucket-name=hypershift-ci-oidc \
+		--oidc-storage-provider-s3-region=us-east-1 \
+		--private-platform=AWS \
+		--aws-private-creds=/etc/hypershift-pool-aws-credentials/credentials \
+		--aws-private-region=us-east-1

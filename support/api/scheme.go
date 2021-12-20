@@ -1,7 +1,6 @@
 package api
 
 import (
-	capiibm "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	configv1 "github.com/openshift/api/config/v1"
 	oauthv1 "github.com/openshift/api/oauth/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
@@ -23,6 +22,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 

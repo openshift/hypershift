@@ -114,6 +114,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiaws.AWSMachineTemplate{},
 		&capiaws.AWSCluster{},
 		&hyperv1.HostedControlPlane{},
+		&hyperv1.AWSEndpointService{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	cmd.WithNamespace(controlPlaneNamespace).Run(ctx, resourceList)

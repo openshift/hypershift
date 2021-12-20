@@ -44,6 +44,8 @@ type KubeAPIServerParams struct {
 	AdvertiseAddress     string                       `json:"advertiseAddress"`
 	ExternalAddress      string                       `json:"externalAddress"`
 	ExternalPort         int32                        `json:"externalPort"`
+	InternalAddress      string                       `json:"internalAddress"`
+	InternalPort         int32                        `json:"internalPort"`
 	ExternalOAuthAddress string                       `json:"externalOAuthAddress"`
 	ExternalOAuthPort    int32                        `json:"externalOAuthPort"`
 	EtcdURL              string                       `json:"etcdAddress"`
@@ -72,6 +74,8 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		Scheduler:            globalConfig.Scheduler,
 		ExternalAddress:      hcp.Status.ControlPlaneEndpoint.Host,
 		ExternalPort:         hcp.Status.ControlPlaneEndpoint.Port,
+		InternalAddress:      fmt.Sprintf("api.%s.hypershift.local", hcp.Name),
+		InternalPort:         6443,
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
@@ -325,6 +329,10 @@ func (p *KubeAPIServerParams) AuditPolicyProfile() configv1.AuditProfileType {
 
 func (p *KubeAPIServerParams) ExternalURL() string {
 	return fmt.Sprintf("https://%s:%d", p.ExternalAddress, p.ExternalPort)
+}
+
+func (p *KubeAPIServerParams) InternalURL() string {
+	return fmt.Sprintf("https://%s:%d", p.InternalAddress, p.InternalPort)
 }
 
 func (p *KubeAPIServerParams) ExternalKubeconfigKey() string {
