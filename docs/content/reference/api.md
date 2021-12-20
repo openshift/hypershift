@@ -139,6 +139,11 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies the availability policy applied to
 critical control plane components. The default value is SingleReplica.</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -155,6 +160,11 @@ AvailabilityPolicy
 <p>InfrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
 HighlyAvailable.</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -1143,6 +1153,12 @@ AWSEndpointAccessType
 <em>(Optional)</em>
 <p>EndpointAccess specifies the publishing scope of cluster endpoints. The
 default is Public.</p>
+<p>
+Value must be one of:
+&#34;Private&#34;, 
+&#34;Public&#34;, 
+&#34;PublicAndPrivate&#34;
+</p>
 </td>
 </tr>
 </tbody>
@@ -1577,6 +1593,11 @@ NetworkType
 </td>
 <td>
 <p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<p>
+Value must be one of:
+&#34;Calico&#34;, 
+&#34;OpenShiftSDN&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -1827,6 +1848,11 @@ EtcdManagementType
 </td>
 <td>
 <p>ManagementType defines how the etcd cluster is managed.</p>
+<p>
+Value must be one of:
+&#34;Managed&#34;, 
+&#34;Unmanaged&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2009,6 +2035,11 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies the availability policy applied to
 critical control plane components. The default value is SingleReplica.</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2025,6 +2056,11 @@ AvailabilityPolicy
 <p>InfrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
 HighlyAvailable.</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2400,6 +2436,11 @@ NetworkType
 </td>
 <td>
 <p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<p>
+Value must be one of:
+&#34;Calico&#34;, 
+&#34;OpenShiftSDN&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2486,6 +2527,11 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
 Defaults to SingleReplica when not set</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2502,6 +2548,11 @@ AvailabilityPolicy
 <p>InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
 run on the guest cluster nodes in HA mode
 Defaults to HighlyAvailable when not set</p>
+<p>
+Value must be one of:
+&#34;HighlyAvailable&#34;, 
+&#34;SingleReplica&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -2799,6 +2850,11 @@ IBMCloudKMSAuthType
 </td>
 <td>
 <p>Type defines the IBM Cloud KMS authentication strategy</p>
+<p>
+Value must be one of:
+&#34;Managed&#34;, 
+&#34;Unmanaged&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3160,6 +3216,11 @@ KMSProvider
 </td>
 <td>
 <p>Provider defines the KMS provider</p>
+<p>
+Value must be one of:
+&#34;AWS&#34;, 
+&#34;IBMCloud&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3251,6 +3312,10 @@ ManagedEtcdStorageType
 </td>
 <td>
 <p>Type is the kind of persistent storage implementation to use for etcd.</p>
+<p>
+Value must be one of:
+&#34;PersistentVolume&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3384,6 +3449,11 @@ UpgradeType
 </td>
 <td>
 <p>UpgradeType specifies the type of strategy for handling upgrades.</p>
+<p>
+Value must be one of:
+&#34;InPlace&#34;, 
+&#34;Replace&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3455,6 +3525,13 @@ PlatformType
 </td>
 <td>
 <p>Type specifies the platform name.</p>
+<p>
+Value must be one of:
+&#34;AWS&#34;, 
+&#34;Agent&#34;, 
+&#34;IBMCloud&#34;, 
+&#34;None&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3780,6 +3857,13 @@ PlatformType
 </td>
 <td>
 <p>Type is the type of infrastructure provider for the cluster.</p>
+<p>
+Value must be one of:
+&#34;AWS&#34;, 
+&#34;Agent&#34;, 
+&#34;IBMCloud&#34;, 
+&#34;None&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -3908,6 +3992,11 @@ UpgradeStrategy
 </td>
 <td>
 <p>Strategy is the node replacement strategy for nodes in the pool.</p>
+<p>
+Value must be one of:
+&#34;OnDelete&#34;, 
+&#34;RollingUpdate&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -4024,6 +4113,11 @@ SecretEncryptionType
 </td>
 <td>
 <p>Type defines the type of kube secret encryption being used</p>
+<p>
+Value must be one of:
+&#34;aescbc&#34;, 
+&#34;kms&#34;
+</p>
 </td>
 </tr>
 <tr>
