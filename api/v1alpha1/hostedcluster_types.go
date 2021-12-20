@@ -415,6 +415,15 @@ type PlatformSpec struct {
 	// +optional
 	// +immutable
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
+
+	// IBMCloud defines IBMCloud specific settings for components
+	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
+}
+
+// IBMCloudPlatformSpec defines IBMCloud specific settings for components
+type IBMCloudPlatformSpec struct {
+	// ProviderType is a specific supported infrastructure provider within IBM Cloud.
+	ProviderType configv1.IBMCloudProviderType `json:"providerType,omitempty"`
 }
 
 // AWSCloudProviderConfig specifies AWS networking configuration.

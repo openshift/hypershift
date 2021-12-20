@@ -3083,6 +3083,36 @@ call IBM Cloud KMS APIs</p>
 </tr>
 </tbody>
 </table>
+###IBMCloudPlatformSpec { #hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>IBMCloudPlatformSpec defines IBMCloud specific settings for components</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>providerType</code></br>
+<em>
+github.com/openshift/api/config/v1.IBMCloudProviderType
+</em>
+</td>
+<td>
+<p>ProviderType is a specific supported infrastructure provider within IBM Cloud.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ImageContentSource { #hypershift.openshift.io/v1alpha1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
@@ -3518,6 +3548,19 @@ AWSNodePoolPlatform
 <p>AWS specifies the configuration used when operating on AWS.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###NodePoolSpec { #hypershift.openshift.io/v1alpha1.NodePoolSpec }
@@ -3835,6 +3878,19 @@ AWSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 </tbody>
