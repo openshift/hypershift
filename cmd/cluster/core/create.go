@@ -18,7 +18,8 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -180,7 +181,13 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 		for _, object := range exampleObjects {
 			key := crclient.ObjectKeyFromObject(object)
 			object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
-			if err := client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli")); err != nil {
+			var err error
+			if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
+				err = client.Create(ctx, object)
+			} else {
+				err = client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
+			}
+			if err != nil {
 				return fmt.Errorf("failed to apply object %q: %w", key, err)
 			}
 			log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
@@ -199,7 +206,7 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 	// - NodeInternalIP
 	apiServerAddress := ""
 	kubeClient := kubeclient.NewForConfigOrDie(util.GetConfigOrDie())
-	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, v1.ListOptions{Limit: 1})
+	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1})
 	if err != nil {
 		return "", fmt.Errorf("unable to fetch node objects: %w", err)
 	}
@@ -221,6 +228,19 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 	}
 	log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", apiServerAddress, nodes.Items[0].Name))
 	return apiServerAddress, nil
+}
+
+func Validate(ctx context.Context, opts *CreateOptions) error {
+	if !opts.Render {
+		client := util.GetClientOrDie()
+		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster)
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
+		}
+	}
+
+	return nil
 }
 
 func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApply ApplyPlatformSpecifics) error {
