@@ -471,6 +471,14 @@ spec:
                     - nodePoolManagementCreds
                     - region
                     type: object
+                  ibmcloud:
+                    description: IBMCloud defines IBMCloud specific settings for components
+                    properties:
+                      providerType:
+                        description: ProviderType is a specific supported infrastructure
+                          provider within IBM Cloud.
+                        type: string
+                    type: object
                   type:
                     description: Type is the type of infrastructure provider for the
                       cluster.

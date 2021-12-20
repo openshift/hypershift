@@ -139,11 +139,6 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies the availability policy applied to
 critical control plane components. The default value is SingleReplica.</p>
-<p>
-Value must be one of:
-&#34;HighlyAvailable&#34;, 
-&#34;SingleReplica&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -160,11 +155,6 @@ AvailabilityPolicy
 <p>InfrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
 HighlyAvailable.</p>
-<p>
-Value must be one of:
-&#34;HighlyAvailable&#34;, 
-&#34;SingleReplica&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -1153,12 +1143,6 @@ AWSEndpointAccessType
 <em>(Optional)</em>
 <p>EndpointAccess specifies the publishing scope of cluster endpoints. The
 default is Public.</p>
-<p>
-Value must be one of:
-&#34;Private&#34;, 
-&#34;Public&#34;, 
-&#34;PublicAndPrivate&#34;
-</p>
 </td>
 </tr>
 </tbody>
@@ -1593,11 +1577,6 @@ NetworkType
 </td>
 <td>
 <p>NetworkType specifies the SDN provider used for cluster networking.</p>
-<p>
-Value must be one of:
-&#34;Calico&#34;, 
-&#34;OpenShiftSDN&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -1848,11 +1827,6 @@ EtcdManagementType
 </td>
 <td>
 <p>ManagementType defines how the etcd cluster is managed.</p>
-<p>
-Value must be one of:
-&#34;Managed&#34;, 
-&#34;Unmanaged&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -2035,11 +2009,6 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies the availability policy applied to
 critical control plane components. The default value is SingleReplica.</p>
-<p>
-Value must be one of:
-&#34;HighlyAvailable&#34;, 
-&#34;SingleReplica&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -2056,11 +2025,6 @@ AvailabilityPolicy
 <p>InfrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
 HighlyAvailable.</p>
-<p>
-Value must be one of:
-&#34;HighlyAvailable&#34;, 
-&#34;SingleReplica&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -2436,11 +2400,6 @@ NetworkType
 </td>
 <td>
 <p>NetworkType specifies the SDN provider used for cluster networking.</p>
-<p>
-Value must be one of:
-&#34;Calico&#34;, 
-&#34;OpenShiftSDN&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -2527,11 +2486,6 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
 Defaults to SingleReplica when not set</p>
-<p>
-Value must be one of:
-&#34;HighlyAvailable&#34;, 
-&#34;SingleReplica&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -2548,11 +2502,6 @@ AvailabilityPolicy
 <p>InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
 run on the guest cluster nodes in HA mode
 Defaults to HighlyAvailable when not set</p>
-<p>
-Value must be one of:
-&#34;HighlyAvailable&#34;, 
-&#34;SingleReplica&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -2850,11 +2799,6 @@ IBMCloudKMSAuthType
 </td>
 <td>
 <p>Type defines the IBM Cloud KMS authentication strategy</p>
-<p>
-Value must be one of:
-&#34;Managed&#34;, 
-&#34;Unmanaged&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -3083,6 +3027,36 @@ call IBM Cloud KMS APIs</p>
 </tr>
 </tbody>
 </table>
+###IBMCloudPlatformSpec { #hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>IBMCloudPlatformSpec defines IBMCloud specific settings for components</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>providerType</code></br>
+<em>
+github.com/openshift/api/config/v1.IBMCloudProviderType
+</em>
+</td>
+<td>
+<p>ProviderType is a specific supported infrastructure provider within IBM Cloud.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ImageContentSource { #hypershift.openshift.io/v1alpha1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
@@ -3186,11 +3160,6 @@ KMSProvider
 </td>
 <td>
 <p>Provider defines the KMS provider</p>
-<p>
-Value must be one of:
-&#34;AWS&#34;, 
-&#34;IBMCloud&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -3282,10 +3251,6 @@ ManagedEtcdStorageType
 </td>
 <td>
 <p>Type is the kind of persistent storage implementation to use for etcd.</p>
-<p>
-Value must be one of:
-&#34;PersistentVolume&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -3419,11 +3384,6 @@ UpgradeType
 </td>
 <td>
 <p>UpgradeType specifies the type of strategy for handling upgrades.</p>
-<p>
-Value must be one of:
-&#34;InPlace&#34;, 
-&#34;Replace&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -3495,13 +3455,6 @@ PlatformType
 </td>
 <td>
 <p>Type specifies the platform name.</p>
-<p>
-Value must be one of:
-&#34;AWS&#34;, 
-&#34;Agent&#34;, 
-&#34;IBMCloud&#34;, 
-&#34;None&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -3516,6 +3469,19 @@ AWSNodePoolPlatform
 <td>
 <em>(Optional)</em>
 <p>AWS specifies the configuration used when operating on AWS.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 </tbody>
@@ -3814,13 +3780,6 @@ PlatformType
 </td>
 <td>
 <p>Type is the type of infrastructure provider for the cluster.</p>
-<p>
-Value must be one of:
-&#34;AWS&#34;, 
-&#34;Agent&#34;, 
-&#34;IBMCloud&#34;, 
-&#34;None&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -3835,6 +3794,19 @@ AWSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 </tbody>
@@ -3936,11 +3908,6 @@ UpgradeStrategy
 </td>
 <td>
 <p>Strategy is the node replacement strategy for nodes in the pool.</p>
-<p>
-Value must be one of:
-&#34;OnDelete&#34;, 
-&#34;RollingUpdate&#34;
-</p>
 </td>
 </tr>
 <tr>
@@ -4057,11 +4024,6 @@ SecretEncryptionType
 </td>
 <td>
 <p>Type defines the type of kube secret encryption being used</p>
-<p>
-Value must be one of:
-&#34;aescbc&#34;, 
-&#34;kms&#34;
-</p>
 </td>
 </tr>
 <tr>

@@ -12,16 +12,14 @@ import (
 
 	"github.com/openshift/hypershift/support/capabilities"
 
-	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
-	"sigs.k8s.io/cluster-api/util/annotations"
-
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	"golang.org/x/crypto/bcrypt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -506,20 +504,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
 			r.Log.Info("Configuration is invalid, reconciliation is blocked")
-			return nil
-		}
-	}
-
-	// If the cluster is marked paused, don't do any reconciliation work at all.
-	if cluster, err := util.GetOwnerCluster(ctx, r.Client, hostedControlPlane.ObjectMeta); err != nil {
-		return fmt.Errorf("failed to get owner cluster: %w", err)
-	} else {
-		if cluster == nil {
-			r.Log.Info("Cluster Controller has not yet set OwnerRef")
-			return nil
-		}
-		if annotations.IsPaused(cluster, hostedControlPlane) {
-			r.Log.Info("HostedControlPlane or linked Cluster is marked as paused. Won't reconcile")
 			return nil
 		}
 	}
