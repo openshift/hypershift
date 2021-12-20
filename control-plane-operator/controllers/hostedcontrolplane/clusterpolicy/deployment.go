@@ -71,7 +71,6 @@ func buildOCMContainerMain(image string) func(*corev1.Container) {
 			path.Join(volumeMounts.Path(c.Name, cpcVolumeConfig().Name), configKey),
 			"--kubeconfig",
 			path.Join(volumeMounts.Path(c.Name, cpcVolumeKubeconfig().Name), kas.KubeconfigKey),
-			"--namespace=openshift-kube-controller-manager",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.Env = []corev1.EnvVar{

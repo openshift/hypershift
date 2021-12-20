@@ -1267,14 +1267,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
 	}
 
-	// OAuth server Cert
-	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, oauthServerCert, func() error {
-		return pki.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
-	}
-
 	// MCS Cert
 	machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, machineConfigServerCert, func() error {
@@ -2125,51 +2117,6 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return olm.ReconcilePackageServerWorkerEndpointsManifest(packageServerWorkerEndpoints, p.OwnerRef, packageServerAddress)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile packageserver worker endpoints: %w", err)
-	}
-
-	// Collect Profiles
-	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
-	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
-	if err := r.Create(ctx, collectProfilesConfigMap); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesCronJob, func() error {
-		olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRole, func() error {
-		olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesRoleBinding, func() error {
-		olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
-	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
-	if err := r.Create(ctx, collectProfilesSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
-
-	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesServiceAccount, func() error {
-		olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
 	}
 	return nil
 }

@@ -131,15 +131,6 @@ func OpenShiftOAuthAPIServerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
-func OpenshiftAuthenticatorCertSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openshift-authenticator-cert",
-			Namespace: ns,
-		},
-	}
-}
-
 func OpenShiftControllerManagerCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -230,19 +221,19 @@ func OLMPackageServerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
-func OLMProfileCollectorCertSecret(ns string) *corev1.Secret {
+func OLMOperatorServingCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "olm-profile-collector",
+			Name:      "olm-operator-serving-cert",
 			Namespace: ns,
 		},
 	}
 }
 
-func OLMOperatorServingCertSecret(ns string) *corev1.Secret {
+func OpenshiftAuthenticatorCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "olm-operator-serving-cert",
+			Name:      "openshift-authenticator-cert",
 			Namespace: ns,
 		},
 	}

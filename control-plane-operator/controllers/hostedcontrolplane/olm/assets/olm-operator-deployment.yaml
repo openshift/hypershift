@@ -19,9 +19,6 @@ spec:
         - name: srv-cert
           secret:
             secretName: olm-operator-serving-cert
-        - name: client-ca
-          secret:
-            secretName: pprof-cert
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig
@@ -33,9 +30,6 @@ spec:
           volumeMounts:
             - name: srv-cert
               mountPath: "/srv-cert"
-              readOnly: true
-            - name: client-ca
-              mountPath: "/client-ca"
               readOnly: true
             - mountPath: /etc/openshift/kubeconfig
               name: kubeconfig
@@ -52,23 +46,25 @@ spec:
             - /srv-cert/tls.crt
             - --tls-key
             - /srv-cert/tls.key
-            - --client-ca
-            - /client-ca/tls.crt
           image: OLM_OPERATOR_IMAGE
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8443
+            - containerPort: 8080
+              name: server
+              protocol: TCP
+            - containerPort: 8081
               name: metrics
+              protocol: TCP
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 8443
-              scheme: HTTPS
+              port: 8080
+              scheme: HTTP
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8443
-              scheme: HTTPS
+              port: 8080
+              scheme: HTTP
           terminationMessagePolicy: FallbackToLogsOnError
           env:
             - name: OPERATOR_NAMESPACE

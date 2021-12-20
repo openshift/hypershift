@@ -29,7 +29,6 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	infra.Status.APIServerURL = fmt.Sprintf("https://%s:%d", apiServerAddress, apiServerPort)
 	infra.Status.EtcdDiscoveryDomain = BaseDomain(hcp)
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
-	infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
 	infra.Status.Platform = configv1.PlatformType(hcp.Spec.Platform.Type)
 	infra.Status.PlatformStatus = &configv1.PlatformStatus{
 		Type: configv1.PlatformType(hcp.Spec.Platform.Type),
@@ -38,8 +37,10 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	switch hcp.Spec.InfrastructureAvailabilityPolicy {
 	case hyperv1.SingleReplica:
 		infra.Status.InfrastructureTopology = configv1.SingleReplicaTopologyMode
+		infra.Status.ControlPlaneTopology = configv1.SingleReplicaTopologyMode
 	default:
 		infra.Status.InfrastructureTopology = configv1.HighlyAvailableTopologyMode
+		infra.Status.ControlPlaneTopology = configv1.HighlyAvailableTopologyMode
 	}
 
 	switch hcp.Spec.Platform.Type {
