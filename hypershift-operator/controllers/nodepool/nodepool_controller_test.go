@@ -813,8 +813,13 @@ func TestValidateManagement(t *testing.T) {
 
 // It returns a expected machineTemplateSpecJSON
 // and a template and mutateTemplate able to produce an expected target template.
-func TestMachineTemplateBuilders(t *testing.T) {
+func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool) {
 	g := NewWithT(t)
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
+	r := &NodePoolReconciler{
+		Client:                 c,
+		CreateOrUpdateProvider: upsert.New(false),
+	}
 
 	infraID := "test"
 	ami := "test"
@@ -858,10 +863,34 @@ func TestMachineTemplateBuilders(t *testing.T) {
 		},
 	}
 
+	if preCreateMachineTemplate {
+		preCreatedMachineTemplate := &capiaws.AWSMachineTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nodePool.GetName(),
+				Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name,
+			},
+			Spec: capiaws.AWSMachineTemplateSpec{
+				Template: capiaws.AWSMachineTemplateResource{
+					Spec: capiaws.AWSMachineSpec{
+						AMI: capiaws.AMIReference{
+							ID: k8sutilspointer.StringPtr(ami),
+						},
+						IAMInstanceProfile:   "test-worker-profile",
+						Subnet:               &capiaws.AWSResourceReference{},
+						UncompressedUserData: k8sutilspointer.BoolPtr(true),
+					},
+				},
+			},
+		}
+		err := r.Create(context.Background(), preCreatedMachineTemplate)
+		g.Expect(err).ToNot(HaveOccurred())
+	}
+
 	expectedMachineTemplate := &capiaws.AWSMachineTemplate{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      nodePool.GetName(),
-			Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name,
+			Name:        nodePool.GetName(),
+			Namespace:   manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name,
+			Annotations: map[string]string{nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String()},
 		},
 		Spec: capiaws.AWSMachineTemplateSpec{
 			Template: capiaws.AWSMachineTemplateResource{
@@ -893,11 +922,6 @@ func TestMachineTemplateBuilders(t *testing.T) {
 	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
 
 	// Validate that template and mutateTemplate are able to produce an expected target template.
-	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
-	r := &NodePoolReconciler{
-		Client:                 c,
-		CreateOrUpdateProvider: upsert.New(false),
-	}
 	_, err = r.CreateOrUpdate(context.Background(), r.Client, template, func() error {
 		return mutateTemplate(template)
 	})
@@ -907,4 +931,60 @@ func TestMachineTemplateBuilders(t *testing.T) {
 	r.Client.Get(context.Background(), client.ObjectKeyFromObject(expectedMachineTemplate), gotMachineTemplate)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
+	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.ObjectMeta.Annotations))
+}
+
+func TestMachineTemplateBuilders(t *testing.T) {
+	RunTestMachineTemplateBuilders(t, false)
+}
+
+func TestMachineTemplateBuildersPreexisting(t *testing.T) {
+	RunTestMachineTemplateBuilders(t, true)
+}
+
+func TestListMachineTemplates(t *testing.T) {
+	g := NewWithT(t)
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
+	r := &NodePoolReconciler{
+		Client:                 c,
+		CreateOrUpdateProvider: upsert.New(false),
+	}
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "test",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+	}
+	g.Expect(r.Client.Create(context.Background(), nodePool)).To(BeNil())
+
+	// MachineTemplate with the expected annotation
+	template1 := &capiaws.AWSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "template1",
+			Namespace:   "test",
+			Annotations: map[string]string{nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String()},
+		},
+		Spec: capiaws.AWSMachineTemplateSpec{},
+	}
+	g.Expect(r.Client.Create(context.Background(), template1)).To(BeNil())
+
+	// MachineTemplate without the expected annoation
+	template2 := &capiaws.AWSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "template2",
+			Namespace: "test",
+		},
+		Spec: capiaws.AWSMachineTemplateSpec{},
+	}
+	g.Expect(r.Client.Create(context.Background(), template2)).To(BeNil())
+
+	templates, err := r.listMachineTemplates(nodePool)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(len(templates)).To(Equal(1))
+	g.Expect(templates[0].GetName()).To(Equal("template1"))
 }

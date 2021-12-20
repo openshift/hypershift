@@ -36,7 +36,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -90,6 +92,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
 		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&source.Kind{Type: &agentv1.AgentMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
 		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
@@ -142,13 +145,13 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if !nodePool.DeletionTimestamp.IsZero() {
 		span.AddEvent("Deleting nodePool")
-		awsMachineTemplates, err := r.listAWSMachineTemplates(nodePool)
+		machineTemplates, err := r.listMachineTemplates(nodePool)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to list AWSMachineTemplates: %w", err)
+			return reconcile.Result{}, fmt.Errorf("failed to list MachineTemplates: %w", err)
 		}
-		for k := range awsMachineTemplates {
-			if err := r.Delete(ctx, &awsMachineTemplates[k]); err != nil && !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to delete AWSMachineTemplate: %w", err)
+		for k := range machineTemplates {
+			if err := r.Delete(ctx, machineTemplates[k]); err != nil && !apierrors.IsNotFound(err) {
+				return reconcile.Result{}, fmt.Errorf("failed to delete MachineTemplate: %w", err)
 			}
 		}
 
@@ -1152,20 +1155,50 @@ func (r *NodePoolReconciler) listSecrets(nodePool *hyperv1.NodePool) ([]corev1.S
 	return filtered, nil
 }
 
-func (r *NodePoolReconciler) listAWSMachineTemplates(nodePool *hyperv1.NodePool) ([]capiaws.AWSMachineTemplate, error) {
-	awsMachineTemplateList := &capiaws.AWSMachineTemplateList{}
-	if err := r.List(context.Background(), awsMachineTemplateList); err != nil {
-		return nil, fmt.Errorf("failed to list AWSMachineTemplates: %w", err)
+func (r *NodePoolReconciler) listMachineTemplates(nodePool *hyperv1.NodePool) ([]client.Object, error) {
+	machineTemplateList := &unstructured.UnstructuredList{}
+
+	var gvk schema.GroupVersionKind
+	switch nodePool.Spec.Platform.Type {
+	// Define the desired template type and mutateTemplate function.
+	case hyperv1.AWSPlatform:
+		var err error
+		gvk, err = apiutil.GVKForObject(&capiaws.AWSMachineTemplate{}, api.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	case hyperv1.KubevirtPlatform:
+		var err error
+		gvk, err = apiutil.GVKForObject(&capikubevirt.KubevirtMachineTemplate{}, api.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	case hyperv1.AgentPlatform:
+		var err error
+		gvk, err = apiutil.GVKForObject(&agentv1.AgentMachine{}, api.Scheme)
+		if err != nil {
+			return nil, err
+		}
 	}
-	filtered := []capiaws.AWSMachineTemplate{}
-	for i, AWSMachineTemplate := range awsMachineTemplateList.Items {
-		if AWSMachineTemplate.GetAnnotations() != nil {
-			if annotation, ok := AWSMachineTemplate.GetAnnotations()[nodePoolAnnotation]; ok &&
+
+	machineTemplateList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   gvk.Group,
+		Kind:    gvk.Kind,
+		Version: gvk.Version,
+	})
+	if err := r.List(context.Background(), machineTemplateList); err != nil {
+		return nil, fmt.Errorf("failed to list MachineTemplates: %w", err)
+	}
+	var filtered []client.Object
+	for i, machineTemplate := range machineTemplateList.Items {
+		if machineTemplate.GetAnnotations() != nil {
+			if annotation, ok := machineTemplate.GetAnnotations()[nodePoolAnnotation]; ok &&
 				annotation == client.ObjectKeyFromObject(nodePool).String() {
-				filtered = append(filtered, awsMachineTemplateList.Items[i])
+				filtered = append(filtered, &machineTemplateList.Items[i])
 			}
 		}
 	}
+
 	return filtered, nil
 }
 
@@ -1290,14 +1323,22 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capiaws.AWSMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capiaws.AWSMachineTemplateSpec)
+			if o.Annotations == nil {
+				o.Annotations = make(map[string]string)
+			}
+			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 			return nil
 		}
 	case hyperv1.AgentPlatform:
 		template = &agentv1.AgentMachineTemplate{}
-		machineTemplateSpec = agentMachineTemplateSpec()
+		machineTemplateSpec = agentMachineTemplateSpec(nodePool)
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*agentv1.AgentMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*agentv1.AgentMachineTemplateSpec)
+			if o.Annotations == nil {
+				o.Annotations = make(map[string]string)
+			}
+			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 			return nil
 		}
 	case hyperv1.KubevirtPlatform:
@@ -1306,6 +1347,10 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)
+			if o.Annotations == nil {
+				o.Annotations = make(map[string]string)
+			}
+			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 			return nil
 		}
 	default:

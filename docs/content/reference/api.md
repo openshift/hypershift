@@ -1360,6 +1360,64 @@ This must be provided and cannot be empty.</p>
 </tr>
 </tbody>
 </table>
+###AgentNodePoolPlatform { #hypershift.openshift.io/v1alpha1.AgentNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+<p>AgentNodePoolPlatform specifies the configuration of a NodePool when operating
+on the Agent platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>minCPUs</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MinCPUs specifies the minimum number of CPU cores required.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>minMemoryMiB</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MinMemoryMiB specifies the minimum amount of RAM required, in MiB.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>agentLabelSelector</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#labelselector-v1-meta">
+Kubernetes meta/v1.LabelSelector
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AgentLabelSelector contains labels that must be set on an Agent in order to
+be selected for a Machine.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AgentPlatformSpec { #hypershift.openshift.io/v1alpha1.AgentPlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -3639,6 +3697,20 @@ KubevirtNodePoolPlatform
 <td>
 <em>(Optional)</em>
 <p>Kubevirt specifies the configuration used when operating on KubeVirt platform.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>agent</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AgentNodePoolPlatform">
+AgentNodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Agent specifies the configuration used when using Agent platform.</p>
 </td>
 </tr>
 </tbody>
