@@ -6,10 +6,12 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
+	"time"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -20,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -51,6 +54,7 @@ type CreateOptions struct {
 	NonePlatform                     NonePlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
+	Wait                             bool
 }
 
 type AgentPlatformCreateOptions struct {
@@ -164,7 +168,7 @@ func generateSSHKeys() ([]byte, []byte, error) {
 	return publicBytes, privatePEM, nil
 }
 
-func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, render bool) error {
+func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, render bool, waitForRollout bool) error {
 
 	exampleObjects := exampleOptions.Resources().AsObjects()
 	switch {
@@ -178,6 +182,7 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 		}
 	default:
 		client := util.GetClientOrDie()
+		var hostedCluster *hyperv1.HostedCluster
 		for _, object := range exampleObjects {
 			key := crclient.ObjectKeyFromObject(object)
 			object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
@@ -191,7 +196,26 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 				return fmt.Errorf("failed to apply object %q: %w", key, err)
 			}
 			log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
+			if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
+				hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}
+			}
 		}
+
+		if waitForRollout {
+			log.Info("Waiting for cluster rollout")
+			return wait.PollInfiniteWithContext(ctx, 30*time.Second, func(ctx context.Context) (bool, error) {
+				hostedCluster := hostedCluster.DeepCopy()
+				if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+					return false, fmt.Errorf("failed to get hostedcluster %s: %w", crclient.ObjectKeyFromObject(hostedCluster), err)
+				}
+				rolledOut := len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
+				if !rolledOut {
+					log.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
+				}
+				return rolledOut, nil
+			})
+		}
+
 		return nil
 	}
 	return nil
@@ -244,6 +268,9 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 }
 
 func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApply ApplyPlatformSpecifics) error {
+	if opts.Wait && opts.NodePoolReplicas < 1 {
+		return errors.New("--wait requires --node-pool-replicas > 0")
+	}
 	exampleOptions, err := createCommonFixture(opts)
 	if err != nil {
 		return err
@@ -254,5 +281,5 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 		return err
 	}
 
-	return apply(ctx, exampleOptions, opts.Render)
+	return apply(ctx, exampleOptions, opts.Render, opts.Wait)
 }
