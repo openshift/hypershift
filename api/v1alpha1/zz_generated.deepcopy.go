@@ -1262,6 +1262,13 @@ func (in *NodePoolSpec) DeepCopyInto(out *NodePoolSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.Labels != nil {
+		in, out := &in.Labels, &out.Labels
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	in.Management.DeepCopyInto(&out.Management)
 	if in.AutoScaling != nil {
 		in, out := &in.AutoScaling, &out.AutoScaling

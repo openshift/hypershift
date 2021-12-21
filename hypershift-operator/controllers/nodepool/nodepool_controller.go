@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	configv1 "github.com/openshift/api/config/v1"
 	"hash/fnv"
 	"sort"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -40,6 +40,8 @@ import (
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -65,6 +67,7 @@ const (
 	nodePoolAnnotationCurrentConfig         = "hypershift.openshift.io/nodePoolCurrentConfig"
 	nodePoolAnnotationCurrentConfigVersion  = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationCurrentProviderConfig = "hypershift.openshift.io/nodePoolCurrentProviderConfig"
+	nodePoolAnnotationLastAppliedLabels     = "hypershift.openshift.io/nodePoolLastAppliedLabels"
 	nodePoolCoreIgnitionConfigLabel         = "hypershift.openshift.io/core-ignition-config"
 	TokenSecretReleaseKey                   = "release"
 	TokenSecretTokenKey                     = "token"
@@ -590,7 +593,209 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
+
+	if hcluster.Status.KubeConfig != nil {
+		// Return and wait for next trigger event.
+		return ctrl.Result{}, nil
+	}
+
+	hostedClusterClient, err := clientFromSecret(ctx, r.Client, hcluster.Status.KubeConfig.Name, hcluster.Namespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to build client for the hosted cluster: %w", err)
+	}
+
+	if err := r.syncLabelsToNodes(ctx, r.Client, hostedClusterClient, nodePool, md); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to sync labels: %w", err)
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// clientFromSecret creates a kubernetes client from a secret containing a kubeconfig.
+func clientFromSecret(ctx context.Context, c client.Client, kubeconfigSecretName, kubeconfigSecretNamespace string) (client.Client, error) {
+	var kubeConfigSecret *corev1.Secret
+	key := client.ObjectKey{
+		Namespace: kubeconfigSecretNamespace,
+		Name:      kubeconfigSecretName,
+	}
+	if err := c.Get(ctx, key, kubeConfigSecret); err != nil {
+		return nil, fmt.Errorf("failed to get secret: %w", err)
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeConfigSecret.Data["kubeconfig"])
+	if err != nil {
+		return nil, fmt.Errorf("failed to build rest config: %w", err)
+	}
+
+	mapper, err := apiutil.NewDynamicRESTMapper(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build dynamic rest mapper: %w", err)
+	}
+
+	// Create the client for the remote cluster
+	client, err := client.New(restConfig, client.Options{Scheme: scheme.Scheme, Mapper: mapper})
+	if err != nil {
+		return nil, fmt.Errorf("failed to client: %w", err)
+	}
+
+	return client, nil
+}
+
+// findLabelsToRemove returns a map[string]string containing the keys which are in lastAppliedLabels
+// but not in desiredLabels.
+func findLabelsToRemove(desiredLabels, lastAppliedLabels map[string]string) map[string]string {
+	labelsToRemove := make(map[string]string, len(lastAppliedLabels))
+	for key := range lastAppliedLabels {
+		if _, ok := desiredLabels[key]; !ok {
+			labelsToRemove[key] = ""
+		}
+	}
+
+	return labelsToRemove
+}
+
+// syncLabels returns a map[string]string by taking existingLabels ane ensuring it contains
+// all desiredLabels but not any labelsToRemove.
+func syncLabels(desiredLabels, labelsToRemove, existingLabels map[string]string) map[string]string {
+	if existingLabels == nil {
+		existingLabels = map[string]string{}
+	}
+
+	for key := range labelsToRemove {
+		delete(existingLabels, key)
+	}
+
+	for key, value := range desiredLabels {
+		existingLabels[key] = value
+	}
+
+	return existingLabels
+}
+
+// getLastAppliedLabels unmarshalss the passed json into a map[string]string.
+func getLastAppliedLabels(lastAppliedLabelsJSON string) (map[string]string, error) {
+	if lastAppliedLabelsJSON == "" {
+		return nil, nil
+	}
+
+	lastAppliedLabels := map[string]string{}
+	if err := json.Unmarshal([]byte(lastAppliedLabelsJSON), &lastAppliedLabels); err != nil {
+		return nil, fmt.Errorf("failed to unmarshall labels: %w", err)
+	}
+
+	return lastAppliedLabels, nil
+}
+
+// syncLabelsToNodes syncs nodePool.Spec.Labels with the Nodes Labels for a given NodePool
+// and sets the nodePoolAnnotationLastAppliedLabels annotations with the new values.
+func (r *NodePoolReconciler) syncLabelsToNodes(ctx context.Context, c client.Client, hostedClusterClient client.Client,
+	nodePool *hyperv1.NodePool, machineDeployment *capiv1.MachineDeployment) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	nodes, err := getNodesForMachineDeployment(ctx, c, *machineDeployment)
+	if err != nil {
+		return fmt.Errorf("failed to get Nodes for MachineDeployment: %w", err)
+	}
+
+	lastAppliedLabels, err := getLastAppliedLabels(nodePool.GetAnnotations()[nodePoolAnnotationLastAppliedLabels])
+	if err != nil {
+		return fmt.Errorf("failed to find last applied labels: %w", err)
+	}
+	desiredLabels := nodePool.Spec.Labels
+	labelsToRemove := findLabelsToRemove(desiredLabels, lastAppliedLabels)
+
+	for idx := range nodes {
+		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, nodes[idx], func() error {
+			labels := syncLabels(desiredLabels, labelsToRemove, nodes[idx].Labels)
+			nodes[idx].SetLabels(labels)
+			return nil
+		}); err != nil {
+			return err
+		} else {
+			log.Info("Reconciled labels", "node", nodes[idx].Name, "result", result)
+		}
+	}
+
+	desiredLabelsJSON, err := json.Marshal(desiredLabels)
+	if err != nil {
+		return fmt.Errorf("failed to marshall labels: %w", err)
+	}
+
+	if nodePool.GetAnnotations() == nil {
+		nodePool.SetAnnotations(map[string]string{})
+	}
+	nodePool.GetAnnotations()[nodePoolAnnotationLastAppliedLabels] = string(desiredLabelsJSON)
+	return nil
+}
+
+// getNodesForMachineDeployment returns a slice of Nodes for MachineDeployment.
+func getNodesForMachineDeployment(ctx context.Context, c client.Client, machineDeployment capiv1.MachineDeployment) ([]*corev1.Node, error) {
+	var machineSets []*capiv1.MachineSet
+	machineSets, err := getMachineSetForMachineDeployment(ctx, c, machineDeployment)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MachineSets for MachineDeployment: %w", err)
+	}
+
+	var machines []*capiv1.Machine
+	for idx := range machineSets {
+		machinesForMachineSet, err := getMachinesForMachineSet(ctx, c, *machineSets[idx])
+		if err != nil {
+			return nil, fmt.Errorf("failed to get Machines for MachineSet: %w", err)
+		}
+		machines = append(machines, machinesForMachineSet...)
+	}
+
+	var nodes []*corev1.Node
+	for idx := range machines {
+		if machines[idx].Status.NodeRef != nil {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: machines[idx].Status.NodeRef.Name,
+				},
+			}
+			nodes = append(nodes, node)
+		}
+	}
+
+	return nodes, nil
+}
+
+// getMachineSetForMachineDeployment returns a slice of MachineSets owned by a given MachineDeployment.
+func getMachineSetForMachineDeployment(ctx context.Context, c client.Client, machineDeployment capiv1.MachineDeployment) ([]*capiv1.MachineSet, error) {
+	machineSets := &capiv1.MachineSetList{}
+	if err := c.List(ctx, machineSets, client.InNamespace(machineDeployment.Namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list MachineSetys for MachineDeployment: %w", err)
+	}
+
+	filtered := make([]*capiv1.MachineSet, 0, len(machineSets.Items))
+	for idx := range machineSets.Items {
+		machineSet := &machineSets.Items[idx]
+
+		if metav1.IsControlledBy(machineSet, &machineDeployment) {
+			filtered = append(filtered, machineSet)
+		}
+	}
+
+	return filtered, nil
+}
+
+// getMachinesForMachineSet returns a slice of Machines owned by a given MachineSet.
+func getMachinesForMachineSet(ctx context.Context, c client.Client, machineSet capiv1.MachineSet) ([]*capiv1.Machine, error) {
+	machines := &capiv1.MachineList{}
+	if err := c.List(ctx, machines, client.InNamespace(machineSet.Namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list Machines for MachineSet: %w", err)
+	}
+
+	filtered := make([]*capiv1.Machine, 0, len(machines.Items))
+	for idx := range machines.Items {
+		machine := &machines.Items[idx]
+
+		if metav1.IsControlledBy(machine, &machineSet) {
+			filtered = append(filtered, machine)
+		}
+	}
+
+	return filtered, nil
 }
 
 func (r NodePoolReconciler) reconcileAWSMachineTemplate(ctx context.Context,

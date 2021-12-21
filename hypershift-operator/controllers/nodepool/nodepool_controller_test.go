@@ -2,12 +2,16 @@ package nodepool
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	. "github.com/onsi/gomega"
+	apis "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -802,6 +806,155 @@ func TestValidateManagement(t *testing.T) {
 				return
 			}
 			g.Expect(err).ShouldNot(HaveOccurred())
+		})
+	}
+}
+
+func TestSyncLabelsToNodes(t *testing.T) {
+	g := NewWithT(t)
+	test := "test"
+
+	desiredLabels := map[string]string{
+		"a": "owned",
+		"b": "owned",
+	}
+
+	lastAppliedLabels := map[string]string{
+		"a": "owned",
+		"b": "owned",
+		"c": "owned",
+	}
+	lastAppliedLabelsJSON, err := json.Marshal(lastAppliedLabels)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      test,
+			Namespace: test,
+			Annotations: map[string]string{
+				nodePoolAnnotationLastAppliedLabels: string(lastAppliedLabelsJSON),
+			},
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Labels: desiredLabels,
+		},
+		Status: hyperv1.NodePoolStatus{},
+	}
+
+	machineDeployment := &capiv1.MachineDeployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      test,
+			Namespace: test,
+		},
+	}
+
+	machineSet := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      test,
+			Namespace: test,
+		},
+	}
+	machineSet.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(machineDeployment, schema.GroupVersionKind{
+			Group:   "cluster.x-k8s.io",
+			Version: "v1beta1",
+			Kind:    "MachineDeployment",
+		}),
+	})
+
+	machine := &capiv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      test,
+			Namespace: test,
+		},
+		Status: capiv1.MachineStatus{
+			NodeRef: &corev1.ObjectReference{
+				Kind: "Node",
+				Name: test,
+			},
+		},
+	}
+	machine.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(machineSet, schema.GroupVersionKind{
+			Group:   "cluster.x-k8s.io",
+			Version: "v1beta1",
+			Kind:    "MachineSet",
+		}),
+	})
+
+	testCases := []struct {
+		name     string
+		node     *corev1.Node
+		expected map[string]string
+	}{
+		{
+			name: "Add labels when the Nodes does not have any",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: test,
+				},
+			},
+			expected: desiredLabels,
+		},
+		{
+			name: "Add labels additively when the Nodes already have some",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: test,
+					Labels: map[string]string{
+						"existing": "out-of-band",
+					},
+				},
+			},
+			expected: map[string]string{
+				"existing": "out-of-band",
+				"a":        "owned",
+				"b":        "owned",
+			},
+		},
+		{
+			name: "Drop labels when they are removed from NodePool.spec.labels",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: test,
+					Labels: map[string]string{
+						"c":        "owned",
+						"existing": "out-of-band",
+					},
+				},
+			},
+			expected: map[string]string{
+				"existing": "out-of-band",
+				"a":        "owned",
+				"b":        "owned",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := NodePoolReconciler{
+				Client:                 fake.NewClientBuilder().WithObjects(machineSet, machine).WithScheme(apis.Scheme).Build(),
+				CreateOrUpdateProvider: upsert.New(false),
+			}
+
+			// Clone NodePool to avoid
+			np := nodePool.DeepCopy()
+
+			hostedClusterClient := fake.NewClientBuilder().WithObjects(tc.node).Build()
+			err := r.syncLabelsToNodes(context.Background(), r.Client, hostedClusterClient, np, machineDeployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			freshNode := &corev1.Node{}
+			err = hostedClusterClient.Get(context.Background(), client.ObjectKeyFromObject(tc.node), freshNode)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(freshNode.Labels).To(BeEquivalentTo(tc.expected))
+
+			expectedLastAppliedLabelsJSON, err := json.Marshal(np.Spec.Labels)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(string(expectedLastAppliedLabelsJSON)).To(BeEquivalentTo(np.Annotations[nodePoolAnnotationLastAppliedLabels]))
 		})
 	}
 }

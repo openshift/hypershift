@@ -496,6 +496,19 @@ unset, the default value is 0.</p>
 </tr>
 <tr>
 <td>
+<code>labels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Labels specifies labels that are applied in an additive fashion to the
+Nodes resulting from this NodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>management</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolManagement">
@@ -3631,6 +3644,19 @@ int32
 <em>(Optional)</em>
 <p>NodeCount is the desired number of nodes the pool should maintain. If
 unset, the default value is 0.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>labels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Labels specifies labels that are applied in an additive fashion to the
+Nodes resulting from this NodePool.</p>
 </td>
 </tr>
 <tr>

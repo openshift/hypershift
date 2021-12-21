@@ -85,6 +85,11 @@ type NodePoolSpec struct {
 	// +optional
 	NodeCount *int32 `json:"nodeCount"`
 
+	// Labels specifies labels that are applied in an additive fashion to the
+	// Nodes resulting from this NodePool.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
 	// Management specifies behavior for managing nodes in the pool, such as
 	// upgrade strategies and auto-repair behaviors.
 	Management NodePoolManagement `json:"management"`

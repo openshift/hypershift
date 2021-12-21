@@ -113,6 +113,12 @@ spec:
                       type: string
                   type: object
                 type: array
+              labels:
+                additionalProperties:
+                  type: string
+                description: Labels specifies labels that are applied in an additive
+                  fashion to the Nodes resulting from this NodePool.
+                type: object
               management:
                 description: Management specifies behavior for managing nodes in the
                   pool, such as upgrade strategies and auto-repair behaviors.
