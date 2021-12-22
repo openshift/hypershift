@@ -1059,12 +1059,13 @@ the default service endpoint of specific AWS Services.</p>
 </em>
 </td>
 <td>
-<p>Roles must contain exactly 3 entries representing the locators for roles
+<p>Roles must contain exactly 4 entries representing the locators for roles
 supporting the following OCP services:</p>
 <ul>
 <li>openshift-ingress-operator/cloud-credentials</li>
-<li>openshift-image-registry/installer-cloud-credentials
--openshift-cluster-csi-drivers/ebs-cloud-credentials</li>
+<li>openshift-image-registry/installer-cloud-credentials</li>
+<li>openshift-cluster-csi-drivers/ebs-cloud-credentials</li>
+<li>cloud-network-config-controller/cloud-credentials</li>
 </ul>
 <p>Each role has unique permission requirements whose documentation is TBD.</p>
 <p>TODO(dan): revisit this field; it&rsquo;s really 3 required fields with specific content requirements</p>
