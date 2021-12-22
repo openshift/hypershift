@@ -33,7 +33,7 @@ func TestAutoRepair(t *testing.T) {
 	clusterOpts.NodePoolReplicas = 3
 	clusterOpts.AutoRepair = true
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateAWSCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
 
 	// Get the newly created nodepool
 	nodepool := &hyperv1.NodePool{
