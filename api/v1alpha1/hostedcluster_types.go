@@ -487,12 +487,13 @@ type AWSPlatformSpec struct {
 	// +immutable
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
-	// Roles must contain exactly 3 entries representing the locators for roles
+	// Roles must contain exactly 4 entries representing the locators for roles
 	// supporting the following OCP services:
 	//
 	// - openshift-ingress-operator/cloud-credentials
 	// - openshift-image-registry/installer-cloud-credentials
-	//  -openshift-cluster-csi-drivers/ebs-cloud-credentials
+	// - openshift-cluster-csi-drivers/ebs-cloud-credentials
+	// - cloud-network-config-controller/cloud-credentials
 	//
 	// Each role has unique permission requirements whose documentation is TBD.
 	//
