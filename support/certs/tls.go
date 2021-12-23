@@ -1,6 +1,7 @@
 package certs
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -12,12 +13,16 @@ import (
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
+	"fmt"
 	"math"
 	"math/big"
 	"net"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/pkg/errors"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 )
 
 const (
@@ -81,7 +86,7 @@ func GenerateSignedCertificate(caKey *rsa.PrivateKey, caCert *x509.Certificate,
 	}
 
 	// create a cert
-	cert, err := SignedCertificate(cfg, csr, key, caCert, caKey)
+	cert, err := signedCertificate(cfg, csr, key, caCert, caKey)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to create a signed certificate")
 	}
@@ -129,8 +134,8 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 	return x509.ParseCertificate(certBytes)
 }
 
-// SignedCertificate creates a new X.509 certificate based on a template.
-func SignedCertificate(
+// signedCertificate creates a new X.509 certificate based on a template.
+func signedCertificate(
 	cfg *CertCfg,
 	csr *x509.CertificateRequest,
 	key *rsa.PrivateKey,
@@ -257,4 +262,71 @@ func PemToCertificate(data []byte) (*x509.Certificate, error) {
 
 func Base64(data []byte) string {
 	return base64.StdEncoding.EncodeToString(data)
+}
+
+func parsePemKeypair(key, certificate []byte) (*rsa.PrivateKey, *x509.Certificate, error) {
+	privKey, err := PemToPrivateKey(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	cert, err := PemToCertificate(certificate)
+	if err != nil {
+		return nil, nil, err
+	}
+	rsaPublicKey, ok := cert.PublicKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, nil, fmt.Errorf("certificate does not have a RSA public key but a %T, not supported", cert.PublicKey)
+	}
+
+	// https://cs.opensource.google/go/go/+/refs/tags/go1.17.5:src/crypto/tls/tls.go;drc=860704317e02d699e4e4a24103853c4782d746c1;l=310
+	if rsaPublicKey.N.Cmp(privKey.N) != 0 {
+		return nil, nil, errors.New("private key does not match certificate")
+	}
+
+	return privKey, cert, nil
+}
+
+func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemainingValidity time.Duration) error {
+	_, cert, err := parsePemKeypair(pemKey, pemCertificate)
+	if err != nil {
+		return fmt.Errorf("failed to parse keypair: %w", err)
+	}
+
+	var errs []error
+	stringLessFN := func(a, b string) bool { return a < b }
+
+	dnsNamesDiff := cmp.Diff(cert.DNSNames, cfg.DNSNames, cmpopts.SortSlices(stringLessFN))
+	if dnsNamesDiff != "" {
+		errs = append(errs, fmt.Errorf("actual dns names differ from expected: %s", dnsNamesDiff))
+	}
+
+	extUsageDiff := cmp.Diff(cert.ExtKeyUsage, cfg.ExtKeyUsages, cmpopts.SortSlices(func(a, b x509.ExtKeyUsage) bool { return a < b }))
+	if extUsageDiff != "" {
+		errs = append(errs, fmt.Errorf("actual extended key usages differ from expected: %s", extUsageDiff))
+	}
+
+	ipAddressDiff := cmp.Diff(cert.IPAddresses, cfg.IPAddresses, cmpopts.SortSlices(func(a, b []byte) bool { return bytes.Compare(a, b) == -1 }))
+	if ipAddressDiff != "" {
+		errs = append(errs, fmt.Errorf("actual ip addresses differ from expected: %s", ipAddressDiff))
+	}
+
+	if cert.KeyUsage != cfg.KeyUsages {
+		errs = append(errs, fmt.Errorf("actual key usage %d differs from expected %d", cert.KeyUsage, cfg.KeyUsages))
+	}
+
+	// subjectDiff ignores the "Names" field, as it contains the parsed attributes but is ignored during marshalling.
+	subjectDiff := cmp.Diff(cert.Subject, cfg.Subject, cmpopts.SortSlices(stringLessFN), cmpopts.IgnoreFields(pkix.Name{}, "Names"))
+	if subjectDiff != "" {
+		errs = append(errs, fmt.Errorf("actual subject differs from expected: %s", subjectDiff))
+	}
+
+	if remainingvalidity := time.Until(cert.NotAfter); remainingvalidity < minimumRemainingValidity {
+		errs = append(errs, fmt.Errorf("remaining validity %s is smaller than the minimum remaining validity %s", remainingvalidity, minimumRemainingValidity))
+	}
+
+	if cert.IsCA != cfg.IsCA {
+		errs = append(errs, fmt.Errorf("actual isCA %t does not match expected %t", cert.IsCA, cfg.IsCA))
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
