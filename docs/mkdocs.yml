@@ -35,6 +35,7 @@ nav:
 - 'How-to guides':
   - how-to/index.md
   - how-to/deploy-aws-private-clusters.md
+  - how-to/deploy-infrastructure-operator.md
 - 'Reference':
   - reference/index.md
   - reference/api.md
