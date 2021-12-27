@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	configv1 "github.com/openshift/api/config/v1"
 	"hash/fnv"
 	"sort"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -723,10 +723,6 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 			Labels: map[string]string{
 				resourcesName:           resourcesName,
 				capiv1.ClusterLabelName: CAPIClusterName,
-			},
-			// TODO (alberto): drop/expose this annotation at the nodePool API
-			Annotations: map[string]string{
-				"machine.cluster.x-k8s.io/exclude-node-draining": "true",
 			},
 		},
 

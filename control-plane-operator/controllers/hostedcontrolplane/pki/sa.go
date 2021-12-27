@@ -10,8 +10,7 @@ import (
 )
 
 func ReconcileServiceAccountSigningKeySecret(secret *corev1.Secret, ownerRef config.OwnerRef) error {
-	expectedKeys := []string{ServiceSignerPrivateKey, ServiceSignerPublicKey}
-	if secret != nil && SecretUpToDate(secret, expectedKeys) {
+	if secret != nil && hasKeys(secret, ServiceSignerPrivateKey, ServiceSignerPublicKey) {
 		return nil
 	}
 	ownerRef.ApplyTo(secret)

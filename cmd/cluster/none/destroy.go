@@ -6,18 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/errors"
 )
-
-type DestroyOptions struct {
-	Namespace          string
-	Name               string
-	ClusterGracePeriod time.Duration
-}
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd := &cobra.Command{

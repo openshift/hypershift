@@ -64,9 +64,17 @@ type IgnitionEndpoint struct {
 	// +optional
 	Url string `json:"url,omitempty"`
 
-	// CaCertificate a CA certficate to be used when contacting the URL via https.
+	// CaCertificateReference is a reference to the secret containing CA certificate to be used
+	// when contacting the URL via HTTPS.
 	// +optional
-	CaCertificate string `json:"caCertificate,omitempty"`
+	CaCertificateReference *CaCertificateReference `json:"caCertificateReference,omitempty"`
+}
+
+type CaCertificateReference struct {
+	// Namespace is the namespace of the secret containing the CA certificate.
+	Namespace string `json:"namespace"`
+	// Name is the name of the secret containing the CA certificate.
+	Name string `json:"name"`
 }
 
 // AgentClusterStatus defines the observed state of AgentCluster
