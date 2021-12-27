@@ -57,6 +57,8 @@ you should adjust to your own environment.
           --region $REGION
         ```
 
+* HyperShift supports the Agent platform via [cluster-api-provider-agent](https://github.com/openshift/cluster-api-provider-agent). It requires the Infrastructure Operator to be installed. See instructions [here](https://github.com/openshift/assisted-service/blob/master/docs/user-guide/infrastructure-operator-olm.md).
+
 ## Before you begin
 
 Install HyperShift into the management cluster, specifying the OIDC bucket,
