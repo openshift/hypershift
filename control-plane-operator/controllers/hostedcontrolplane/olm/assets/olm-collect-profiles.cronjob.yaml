@@ -3,7 +3,7 @@ kind: CronJob
 metadata:
   name: olm-collect-profiles
 spec:
-  schedule: "*/15 * * * *"
+  schedule: CRON_SCHEDULE
   jobTemplate:
     spec:
       template:
