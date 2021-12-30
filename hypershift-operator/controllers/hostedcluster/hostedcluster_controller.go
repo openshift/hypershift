@@ -2808,7 +2808,18 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 		// not be terminated until the resources are removed from the API server
 		return false, nil
 	}
-
+	// There are scenarios where CAPI might not be operational e.g None Platform.
+	// We want to ensure the HCP resource is deleted before deleting the Namespace.
+	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
+	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
+	if err := r.Delete(ctx, hcp); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting HostedControlPlane %q in namespace %q: %w", hcp.Name, hcp.Namespace, err)
+		}
+	} else {
+		r.Log.Info("Waiting for Hosted Control Plane deletion", "Name", hcp.Name, "Namespace", hcp.Namespace)
+		return false, nil
+	}
 	r.Log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
