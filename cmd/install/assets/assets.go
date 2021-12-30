@@ -18,6 +18,7 @@ import (
 //go:embed cluster-api-provider-aws/*
 //go:embed cluster-api-provider-ibmcloud/*
 //go:embed cluster-api-provider-kubevirt/*
+//go:embed cluster-api-provider-agent/*
 var crds embed.FS
 
 //go:embed recordingrules/*
