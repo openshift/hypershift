@@ -17,6 +17,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -50,4 +51,5 @@ func init() {
 	kasv1beta1.AddToScheme(Scheme)
 	prometheusoperatorv1.AddToScheme(Scheme)
 	agentv1.AddToScheme(Scheme)
+	capikubevirt.AddToScheme(Scheme)
 }
