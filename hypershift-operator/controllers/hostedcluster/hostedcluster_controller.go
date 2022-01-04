@@ -2825,6 +2825,12 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	if err := r.cleanupOIDCBucketData(ctx, hc); err != nil {
 		return false, err
 	}
+
+	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
+	// we don't error initially because we can not create new content in a namespace that is being deleted.
+	if err := r.Get(ctx, client.ObjectKeyFromObject(ns), ns); err == nil || !apierrors.IsNotFound(err) {
+		return false, err
+	}
 	return true, nil
 }
 
