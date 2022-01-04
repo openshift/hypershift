@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
@@ -11,7 +10,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,16 +26,6 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 		return nil, fmt.Errorf("failed to get control plane ref: %w", err)
 	}
 
-	caSecret := ignitionserver.IgnitionCACertSecret(hcp.Namespace)
-	encodedCACert := ""
-	if err := c.Get(ctx, client.ObjectKeyFromObject(caSecret), caSecret); err == nil {
-		caCertBytes, hasCACert := caSecret.Data[corev1.TLSCertKey]
-		if !hasCACert {
-			return nil, fmt.Errorf("CA Secret is missing tls.crt key")
-		}
-		encodedCACert = base64.StdEncoding.EncodeToString(caCertBytes)
-	}
-
 	agentCluster := &agentv1.AgentCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
@@ -46,7 +34,7 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	}
 
 	_, err := createOrUpdate(ctx, c, agentCluster, func() error {
-		return reconcileAgentCluster(agentCluster, hcluster, hcp, encodedCACert)
+		return reconcileAgentCluster(agentCluster, hcluster, hcp)
 	})
 	if err != nil {
 		return nil, err
@@ -72,13 +60,17 @@ func (Agent) ReconcileSecretEncryption(ctx context.Context, c client.Client, cre
 	return nil
 }
 
-func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, encodedCACert string) error {
+func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	agentCluster.Spec.ReleaseImage = hcp.Spec.ReleaseImage
 	agentCluster.Spec.ClusterName = hcluster.Name
 	agentCluster.Spec.BaseDomain = hcluster.Spec.DNS.BaseDomain
 	agentCluster.Spec.PullSecretRef = &hcp.Spec.PullSecret
-	if hcluster.Status.IgnitionEndpoint != "" && encodedCACert != "" {
-		agentCluster.Spec.IgnitionEndpoint = &agentv1.IgnitionEndpoint{Url: "https://" + hcluster.Status.IgnitionEndpoint + "/ignition", CaCertificate: encodedCACert}
+
+	caSecret := ignitionserver.IgnitionCACertSecret(hcp.Namespace)
+	if hcluster.Status.IgnitionEndpoint != "" {
+		agentCluster.Spec.IgnitionEndpoint = &agentv1.IgnitionEndpoint{
+			Url:                    "https://" + hcluster.Status.IgnitionEndpoint + "/ignition",
+			CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace}}
 	}
 	agentCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
 		Host: hcp.Status.ControlPlaneEndpoint.Host,

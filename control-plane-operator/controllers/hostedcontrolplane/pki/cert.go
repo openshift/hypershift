@@ -35,14 +35,10 @@ func reconcileSignedCertWithAddresses(secret, ca *corev1.Secret, ownerRef config
 
 func reconcileSignedCertWithKeysAndAddresses(secret *corev1.Secret, ca *corev1.Secret, ownerRef config.OwnerRef, cn string, org []string, extUsages []x509.ExtKeyUsage, crtKey, keyKey, caKey string, dnsNames []string, ips []string) error {
 	ownerRef.ApplyTo(secret)
-	if !ValidCA(ca) {
+	if !validCA(ca) {
 		return fmt.Errorf("invalid CA signer secret %s for cert(cn=%s,o=%v)", ca.Name, cn, org)
 	}
-	expectedKeys := []string{crtKey, keyKey, caKey}
 	secret.Type = corev1.SecretTypeOpaque
-	if SignedSecretUpToDate(secret, ca, expectedKeys) {
-		return nil
-	}
 	var ipAddresses []net.IP
 	for _, ip := range ips {
 		address := net.ParseIP(ip)
@@ -52,6 +48,14 @@ func reconcileSignedCertWithKeysAndAddresses(secret *corev1.Secret, ca *corev1.S
 		ipAddresses = append(ipAddresses, address)
 	}
 
+	if !hasCAHash(secret, ca) {
+		annotateWithCA(secret, ca)
+	}
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[caKey] = append([]byte(nil), ca.Data[CASignerCertMapKey]...)
+
 	cfg := &certs.CertCfg{
 		Subject:      pkix.Name{CommonName: cn, Organization: org},
 		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
@@ -60,16 +64,14 @@ func reconcileSignedCertWithKeysAndAddresses(secret *corev1.Secret, ca *corev1.S
 		DNSNames:     dnsNames,
 		IPAddresses:  ipAddresses,
 	}
-	certBytes, keyBytes, caBytes, err := SignCertificate(cfg, ca)
+	if err := certs.ValidateKeyPair(secret.Data[keyKey], secret.Data[crtKey], cfg, 30*certs.ValidityOneDay); err == nil {
+		return nil
+	}
+	certBytes, keyBytes, _, err := signCertificate(cfg, ca)
 	if err != nil {
 		return fmt.Errorf("error signing cert(cn=%s,o=%v): %w", cn, org, err)
 	}
-	if secret.Data == nil {
-		secret.Data = map[string][]byte{}
-	}
 	secret.Data[crtKey] = certBytes
 	secret.Data[keyKey] = keyBytes
-	secret.Data[caKey] = caBytes
-	AnnotateWithCA(secret, ca)
 	return nil
 }

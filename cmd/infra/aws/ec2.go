@@ -2,6 +2,7 @@ package aws
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -15,7 +16,17 @@ import (
 )
 
 const (
-	InvalidNATGatewayError = "InvalidNatGatewayID.NotFound"
+	invalidNATGatewayError = "InvalidNatGatewayID.NotFound"
+	invalidRouteTableID    = "InvalidRouteTableId.NotFound"
+)
+
+var (
+	retryBackoff = wait.Backoff{
+		Steps:    5,
+		Duration: 3 * time.Second,
+		Factor:   3.0,
+		Jitter:   0.1,
+	}
 )
 
 func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
@@ -92,19 +103,29 @@ func (o *CreateInfraOptions) CreateVPCS3Endpoint(client ec2iface.EC2API, vpcID, 
 		log.Info("Found existing s3 VPC endpoint", "id", existingEndpoint)
 		return nil
 	}
-	result, err := client.CreateVpcEndpoint(&ec2.CreateVpcEndpointInput{
-		VpcId:       aws.String(vpcID),
-		ServiceName: aws.String(fmt.Sprintf("com.amazonaws.%s.s3", o.Region)),
-		RouteTableIds: []*string{
-			aws.String(privateRouteTableId),
-			aws.String(publicRouteTableId),
-		},
-		TagSpecifications: o.ec2TagSpecifications("vpc-endpoint", ""),
-	})
-	if err != nil {
+	isRetriable := func(err error) bool {
+		if awsErr, ok := err.(awserr.Error); ok {
+			return strings.EqualFold(awsErr.Code(), invalidRouteTableID)
+		}
+		return false
+	}
+	if err = retry.OnError(retryBackoff, isRetriable, func() error {
+		result, err := client.CreateVpcEndpoint(&ec2.CreateVpcEndpointInput{
+			VpcId:       aws.String(vpcID),
+			ServiceName: aws.String(fmt.Sprintf("com.amazonaws.%s.s3", o.Region)),
+			RouteTableIds: []*string{
+				aws.String(privateRouteTableId),
+				aws.String(publicRouteTableId),
+			},
+			TagSpecifications: o.ec2TagSpecifications("vpc-endpoint", ""),
+		})
+		if err == nil {
+			log.Info("Created s3 VPC endpoint", "id", aws.StringValue(result.VpcEndpoint.VpcEndpointId))
+		}
+		return err
+	}); err != nil {
 		return fmt.Errorf("cannot create VPC S3 endpoint: %w", err)
 	}
-	log.Info("Created s3 VPC endpoint", "id", aws.StringValue(result.VpcEndpoint.VpcEndpointId))
 	return nil
 }
 
@@ -357,17 +378,11 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(client ec2iface.EC2API, vpc
 	if !o.hasNATGatewayRoute(routeTable, natGatewayID) {
 		isRetriable := func(err error) bool {
 			if awsErr, ok := err.(awserr.Error); ok {
-				return awsErr.Code() == InvalidNATGatewayError
+				return strings.EqualFold(awsErr.Code(), invalidNATGatewayError)
 			}
 			return false
 		}
-		backoff := wait.Backoff{
-			Steps:    20,
-			Duration: 3 * time.Second,
-			Factor:   5.0,
-			Jitter:   0.1,
-		}
-		err = retry.OnError(backoff, isRetriable, func() error {
+		err = retry.OnError(retryBackoff, isRetriable, func() error {
 			_, err = client.CreateRoute(&ec2.CreateRouteInput{
 				RouteTableId:         routeTable.RouteTableId,
 				NatGatewayId:         aws.String(natGatewayID),

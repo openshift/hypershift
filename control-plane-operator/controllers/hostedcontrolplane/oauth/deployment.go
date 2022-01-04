@@ -104,7 +104,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 
 func oauthContainerMain() *corev1.Container {
 	return &corev1.Container{
-		Name: "kube-controller-manager",
+		Name: "oauth-server",
 	}
 }
 
