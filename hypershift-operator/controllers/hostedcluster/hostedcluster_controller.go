@@ -899,7 +899,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI provider components
-	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, capiProviderDeploymentSpec); err != nil {
+	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, capiProviderDeploymentSpec, p); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
@@ -1019,7 +1019,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()
-	if hcluster.Spec.Platform.Type == hyperv1.AgentPlatform {
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AgentPlatform, hyperv1.KubevirtPlatform:
 		// Agent platform uses None platform for the hcp.
 		hcp.Spec.Platform.Type = hyperv1.NonePlatform
 	}
@@ -1137,7 +1138,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 // reconcileCAPIProvider orchestrates reconciliation of the CAPI provider
 // components for a given platform.
 func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
-	capiProviderDeploymentSpec *appsv1.DeploymentSpec) error {
+	capiProviderDeploymentSpec *appsv1.DeploymentSpec, p platform.Platform) error {
 	if capiProviderDeploymentSpec == nil {
 		// If there's no capiProviderDeploymentSpec implementation return early.
 		return nil
@@ -1152,7 +1153,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 	// Reconcile CAPI provider role
 	capiProviderRole := clusterapi.CAPIProviderRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiProviderRole, func() error {
-		return reconcileCAPIProviderRole(capiProviderRole)
+		return reconcileCAPIProviderRole(capiProviderRole, p)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi provider role: %w", err)
@@ -2328,8 +2329,8 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 	return nil
 }
 
-func reconcileCAPIProviderRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
+func reconcileCAPIProviderRole(role *rbacv1.Role, p platform.Platform) error {
+	rules := []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{""},
 			Resources: []string{
@@ -2366,6 +2367,10 @@ func reconcileCAPIProviderRole(role *rbacv1.Role) error {
 			Verbs: []string{"*"},
 		},
 	}
+	if platformRules := p.CAPIProviderPolicyRules(); platformRules != nil {
+		rules = append(rules, platformRules...)
+	}
+	role.Rules = rules
 	return nil
 }
 

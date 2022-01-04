@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -366,5 +367,9 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
+	return nil
+}
+
+func (AWS) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }

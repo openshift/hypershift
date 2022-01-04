@@ -8,9 +8,11 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/agent"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -19,6 +21,7 @@ var _ Platform = ibmcloud.IBMCloud{}
 var _ Platform = none.None{}
 var _ Platform = agent.Agent{}
 
+//go:generate mockgen -source=./platform.go -destination=./mock/platform_generated.go -package=mock
 type Platform interface {
 	// ReconcileCAPIInfraCR is called during HostedCluster reconciliation prior to reconciling the CAPI Cluster CR.
 	// Implementations should use the given input and client to create and update the desired state of the
@@ -49,19 +52,26 @@ type Platform interface {
 	ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 		hcluster *hyperv1.HostedCluster,
 		controlPlaneNamespace string) error
+
+	// CAPIProviderPolicyRules responsible to return list of policy rules are required to be used
+	// by the CAPI provider in order to manage the resources by this platform
+	// Return nil if no aditional policy rule is required
+	CAPIProviderPolicyRules() []rbacv1.PolicyRule
 }
 
 func GetPlatform(hcluster *hyperv1.HostedCluster) (Platform, error) {
 	var platform Platform
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		platform = aws.AWS{}
+		platform = &aws.AWS{}
 	case hyperv1.IBMCloudPlatform:
-		platform = ibmcloud.IBMCloud{}
+		platform = &ibmcloud.IBMCloud{}
 	case hyperv1.NonePlatform:
-		platform = none.None{}
+		platform = &none.None{}
 	case hyperv1.AgentPlatform:
-		platform = agent.Agent{}
+		platform = &agent.Agent{}
+	case hyperv1.KubevirtPlatform:
+		platform = &kubevirt.Kubevirt{}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
