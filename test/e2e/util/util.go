@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/test/e2e/util/cluster"
 	awscluster "github.com/openshift/hypershift/test/e2e/util/cluster/aws"
+	kubevirtcluster "github.com/openshift/hypershift/test/e2e/util/cluster/kubevirt"
 	nonecluster "github.com/openshift/hypershift/test/e2e/util/cluster/none"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -39,6 +40,10 @@ import (
 // is required.
 func CreateAWSCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
 	return createCluster(t, ctx, client, awscluster.New(t, opts), artifactDir)
+}
+
+func CreateKubeVirtCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
+	return createCluster(t, ctx, client, kubevirtcluster.New(t, opts), artifactDir)
 }
 
 func CreateNoneCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
