@@ -53,8 +53,7 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
 	if opts.NonePlatform.APIServerAddress == "" {
-		opts.NonePlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx)
-		if err != nil {
+		if opts.NonePlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx); err != nil {
 			return err
 		}
 	}
