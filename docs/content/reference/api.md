@@ -3253,6 +3253,36 @@ AWSKMSSpec
 </tr>
 </tbody>
 </table>
+###KubevirtNodePoolPlatform { #hypershift.openshift.io/v1alpha1.KubevirtNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+<p>KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
+on KubeVirt platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodeTemplate</code></br>
+<em>
+sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1.VirtualMachineTemplateSpec
+</em>
+</td>
+<td>
+<p>NodeTemplate Spec contains the VirtualMachineInstance specification.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ManagedEtcdSpec { #hypershift.openshift.io/v1alpha1.ManagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -3530,6 +3560,7 @@ Value must be one of:
 &#34;AWS&#34;, 
 &#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
+&#34;KubeVirt&#34;, 
 &#34;None&#34;
 </p>
 </td>
@@ -3559,6 +3590,20 @@ IBMCloudPlatformSpec
 </td>
 <td>
 <p>IBMCloud defines IBMCloud specific settings for components</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubevirt</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtNodePoolPlatform">
+KubevirtNodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Kubevirt specifies the configuration used when operating on KubeVirt platform.</p>
 </td>
 </tr>
 </tbody>
@@ -3862,6 +3907,7 @@ Value must be one of:
 &#34;AWS&#34;, 
 &#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
+&#34;KubeVirt&#34;, 
 &#34;None&#34;
 </p>
 </td>
@@ -3919,6 +3965,9 @@ IBMCloudPlatformSpec
 </td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;KubeVirt&#34;</p></td>
+<td><p>KubevirtPlatform represents Kubevirt infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;None&#34;</p></td>
 <td><p>NonePlatform represents user supplied (e.g. bare metal) infrastructure.</p>
