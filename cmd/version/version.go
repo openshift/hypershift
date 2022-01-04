@@ -9,7 +9,7 @@ import (
 var (
 	// TODO: This goes away when control-plane-operator becomes another component
 	// in the OCP payload.
-	HyperShiftImage = "registry.ci.openshift.org/hypershift/hypershift:latest"
+	HyperShiftImage = "registry.ci.openshift.org/ocp/4.10:hypershift"
 )
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
