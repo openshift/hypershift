@@ -13,10 +13,11 @@ import (
 	"strings"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -528,6 +529,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				return ctrl.Result{}, fmt.Errorf("failed to get AgentMachineTemplate: %w", err)
 			}
 		}
+	case hyperv1.KubevirtPlatform:
+		machineTemplate, err = r.reconcileKubevirtMachineTemplate(ctx, nodePool, controlPlaneNamespace)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile KubevirtMachineTemplate: %w", err)
+		}
+		span.AddEvent("reconciled kubevirtmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
 	}
 
 	// non automated infrastructure should not have any machine level cluster-api components

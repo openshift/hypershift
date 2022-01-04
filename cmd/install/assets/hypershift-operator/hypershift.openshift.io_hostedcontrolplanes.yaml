@@ -488,6 +488,7 @@ spec:
                     - None
                     - IBMCloud
                     - Agent
+                    - KubeVirt
                     type: string
                 required:
                 - type

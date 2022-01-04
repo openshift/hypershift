@@ -4,6 +4,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 )
 
 const (
@@ -286,6 +287,19 @@ type NodePoolPlatform struct {
 
 	// IBMCloud defines IBMCloud specific settings for components
 	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
+
+	// Kubevirt specifies the configuration used when operating on KubeVirt platform.
+	//
+	// +optional
+	// +immutable
+	Kubevirt *KubevirtNodePoolPlatform `json:"kubevirt,omitempty"`
+}
+
+// KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
+// on KubeVirt platform.
+type KubevirtNodePoolPlatform struct {
+	// NodeTemplate Spec contains the VirtualMachineInstance specification.
+	NodeTemplate *capikubevirt.VirtualMachineTemplateSpec `json:"nodeTemplate,omitempty"`
 }
 
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating

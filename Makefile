@@ -95,7 +95,7 @@ token-minter:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud api-docs
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt api-docs
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
@@ -120,6 +120,11 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-ibmcloud/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
+
+.PHONY: cluster-api-provider-kubevirt
+cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/cluster-api-provider-kubevirt/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-kubevirt
 
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)

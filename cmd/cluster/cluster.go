@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/spf13/cobra"
 )
@@ -58,6 +59,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(none.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
+	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 
 	return cmd
 }
@@ -85,6 +87,7 @@ func NewDestroyCommands() *cobra.Command {
 	cmd.AddCommand(aws.NewDestroyCommand(opts))
 	cmd.AddCommand(none.NewDestroyCommand(opts))
 	cmd.AddCommand(agent.NewDestroyCommand(opts))
+	cmd.AddCommand(kubevirt.NewDestroyCommand(opts))
 
 	return cmd
 }

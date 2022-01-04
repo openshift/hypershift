@@ -248,12 +248,18 @@ github.com/openshift/api/security/v1
 # github.com/openshift/cluster-api-provider-agent/api v0.0.0-20211222095357-6ae181af9267
 ## explicit; go 1.16
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
+# github.com/openshift/custom-resource-status v0.0.0-20200602122900-c002fd1547ca
+## explicit; go 1.12
+github.com/openshift/custom-resource-status/conditions/v1
 # github.com/operator-framework/api v0.10.7
 ## explicit; go 1.16
 github.com/operator-framework/api/pkg/lib/version
 github.com/operator-framework/api/pkg/operators
 github.com/operator-framework/api/pkg/operators/v1
 github.com/operator-framework/api/pkg/operators/v1alpha1
+# github.com/pborman/uuid v1.2.0
+## explicit
+github.com/pborman/uuid
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
@@ -373,7 +379,7 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/ztest
 go.uber.org/zap/zapcore
 go.uber.org/zap/zaptest
-# golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
+# golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871
 ## explicit; go 1.17
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
@@ -388,7 +394,7 @@ golang.org/x/crypto/internal/subtle
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/net v0.0.0-20211005215030-d2e5035098b3
+# golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
 ## explicit; go 1.17
 golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
@@ -995,6 +1001,17 @@ k8s.io/utils/internal/third_party/forked/golang/net
 k8s.io/utils/net
 k8s.io/utils/pointer
 k8s.io/utils/trace
+# kubevirt.io/api v0.0.0-20211117075245-c94ce62baf5a
+## explicit; go 1.16
+kubevirt.io/api/core
+kubevirt.io/api/core/v1
+# kubevirt.io/containerized-data-importer-api v1.41.0 => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
+## explicit; go 1.16
+kubevirt.io/containerized-data-importer-api/pkg/apis/core
+kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1
+# kubevirt.io/controller-lifecycle-operator-sdk v0.2.1
+## explicit; go 1.14
+kubevirt.io/controller-lifecycle-operator-sdk/pkg/sdk/api
 # sigs.k8s.io/apiserver-network-proxy v0.0.24
 ## explicit; go 1.16
 sigs.k8s.io/apiserver-network-proxy/pkg/util
@@ -1021,6 +1038,9 @@ sigs.k8s.io/cluster-api-provider-aws/pkg/hash
 # sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.0-alpha.1
 ## explicit; go 1.16
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
+# sigs.k8s.io/cluster-api-provider-kubevirt v0.0.0-00010101000000-000000000000 => github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20211223062810-ef64d5ff1cde
+## explicit; go 1.17
+sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
 # sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211208212546-f236f0345ad2
 ## explicit; go 1.17
 sigs.k8s.io/controller-runtime
@@ -1078,5 +1098,7 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
+# kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.24
 # sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.0.0
+# sigs.k8s.io/cluster-api-provider-kubevirt => github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20211223062810-ef64d5ff1cde

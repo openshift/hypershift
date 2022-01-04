@@ -52,6 +52,7 @@ type CreateOptions struct {
 	ServiceCIDR                      string
 	PodCIDR                          string
 	NonePlatform                     NonePlatformCreateOptions
+	KubevirtPlatform                 KubevirtPlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
 	Wait                             bool
@@ -63,6 +64,13 @@ type AgentPlatformCreateOptions struct {
 
 type NonePlatformCreateOptions struct {
 	APIServerAddress string
+}
+
+type KubevirtPlatformCreateOptions struct {
+	APIServerAddress   string
+	Memory             string
+	Cores              uint32
+	ContainerDiskImage string
 }
 
 type AWSPlatformOptions struct {
