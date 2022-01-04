@@ -105,6 +105,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyDNS(ctx, route53Client)...)
 	errs = append(errs, o.DestroyS3Buckets(ctx, s3Client)...)
+	errs = append(errs, o.DestroyVPCEndpointServices(ctx, ec2Client)...)
 
 	return utilerrors.NewAggregate(errs)
 }
@@ -198,6 +199,37 @@ func (o *DestroyInfraOptions) DestroyVPCEndpoints(ctx context.Context, client ec
 	if err != nil {
 		errs = append(errs, err)
 	}
+	return errs
+}
+
+func (o *DestroyInfraOptions) DestroyVPCEndpointServices(ctx context.Context, client ec2iface.EC2API) []error {
+	var errs []error
+	deleteVPCEndpointServices := func(desc *ec2.DescribeVpcEndpointServiceConfigurationsOutput, _ bool) bool {
+		var ids []string
+		for _, cfg := range desc.ServiceConfigurations {
+			ids = append(ids, *cfg.ServiceId)
+		}
+		if len(ids) < 1 {
+			return true
+		}
+		if _, err := client.DeleteVpcEndpointServiceConfigurationsWithContext(ctx, &ec2.DeleteVpcEndpointServiceConfigurationsInput{
+			ServiceIds: aws.StringSlice(ids),
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete vpc endpoint services with ids %v: %w", ids, err))
+		} else {
+			log.Info("Deleted VPC endpoint services", "IDs", ids)
+		}
+
+		return true
+	}
+
+	if err := client.DescribeVpcEndpointServiceConfigurationsPagesWithContext(ctx,
+		&ec2.DescribeVpcEndpointServiceConfigurationsInput{Filters: o.ec2Filters()},
+		deleteVPCEndpointServices,
+	); err != nil {
+		errs = append(errs, err)
+	}
+
 	return errs
 }
 
