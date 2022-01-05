@@ -39,7 +39,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.IAMJSON, "iam-json", opts.AWSPlatform.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "Instance type for AWS instances.")
-	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomain, "base-domain", opts.AWSPlatform.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.AWSPlatform.RootVolumeType, "root-volume-type", opts.AWSPlatform.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeIOPS, "root-volume-iops", opts.AWSPlatform.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeSize, "root-volume-size", opts.AWSPlatform.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
@@ -89,9 +88,9 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to load infra json: %w", err)
 		}
 	}
-	if opts.AWSPlatform.BaseDomain == "" {
+	if opts.BaseDomain == "" {
 		if infra != nil {
-			opts.AWSPlatform.BaseDomain = infra.BaseDomain
+			opts.BaseDomain = infra.BaseDomain
 		} else {
 			return fmt.Errorf("base-domain flag is required if infra-json is not provided")
 		}
@@ -105,7 +104,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			InfraID:            infraID,
 			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
 			Name:               opts.Name,
-			BaseDomain:         opts.AWSPlatform.BaseDomain,
+			BaseDomain:         opts.BaseDomain,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
 		}
 		infra, err = opt.CreateInfra(ctx)
