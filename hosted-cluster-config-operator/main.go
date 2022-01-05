@@ -1,5 +1,16 @@
 package main
 
+/*
+The hosted-cluster-config-operator is responsible for reconciling resources
+that live inside the hosted cluster. It is also responsible for updating
+configuration that lives in the control plane based on the state of hosted
+cluster configuration resources.
+
+The main controller that accomplishes this is the resources controller. This
+is where new reconciliation code should go, unless there is good reason to
+create a separate controller.
+*/
+
 import (
 	"context"
 	"errors"
