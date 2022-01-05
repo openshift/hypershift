@@ -26,6 +26,9 @@ const (
 type AWSEndpointServiceSpec struct {
 	// The name of the NLB for which an Endpoint Service should be configured
 	NetworkLoadBalancerName string `json:"networkLoadBalancerName,omitempty"`
+	// Tags to apply to the EndpointService
+	// +optional
+	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
 
 // AWSEndpointServiceStatus defines the observed state of AWSEndpointService

@@ -16,7 +16,7 @@ spec:
     singular: ibmpowervscluster
   scope: Namespaced
   versions:
-  - name: v1alpha4
+  - name: v1beta1
     schema:
       openAPIV3Schema:
         description: IBMPowerVSCluster is the Schema for the ibmpowervsclusters API
@@ -51,15 +51,23 @@ spec:
                 - host
                 - port
                 type: object
-              networkID:
-                description: Network is network ID used for the VSI
-                type: string
+              network:
+                description: Network is the reference to the Network to use for this
+                  cluster.
+                properties:
+                  id:
+                    description: ID of resource
+                    type: string
+                  name:
+                    description: Name of resource
+                    type: string
+                type: object
               serviceInstanceID:
                 description: ServiceInstanceID is the id of the power cloud instance
                   where the vsi instance will get deployed
                 type: string
             required:
-            - networkID
+            - network
             - serviceInstanceID
             type: object
           status:

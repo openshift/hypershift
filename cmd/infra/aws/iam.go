@@ -249,9 +249,30 @@ const (
 				"ec2:CreateVpcEndpoint",
 				"ec2:DescribeVpcEndpoints",
 				"ec2:DeleteVpcEndpoints",
+				"ec2:CreateTags",
 				"route53:ListHostedZones",
 				"route53:ChangeResourceRecordSets",
 				"route53:ListResourceRecordSets"
+			],
+			"Resource": "*"
+		}
+	]
+}`
+	cloudNetworkConfigControllerPolicy = `{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
+        "ec2:DescribeInstanceTypes",
+        "ec2:UnassignPrivateIpAddresses",
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:UnassignIpv6Addresses",
+        "ec2:AssignIpv6Addresses",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeNetworkInterfaces"
 			],
 			"Resource": "*"
 		}
@@ -373,6 +394,17 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		return nil, err
 	}
 	output.ControlPlaneOperatorRoleARN = arn
+
+	cloudNetworkConfigControllerTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller")
+	arn, err = o.CreateOIDCRole(iamClient, "cloud-network-config-controller", cloudNetworkConfigControllerTrustPolicy, cloudNetworkConfigControllerPolicy)
+	if err != nil {
+		return nil, err
+	}
+	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
+		ARN:       arn,
+		Namespace: "openshift-cloud-network-config-controller",
+		Name:      "cloud-credentials",
+	})
 
 	return output, nil
 }

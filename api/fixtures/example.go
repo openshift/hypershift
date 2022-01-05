@@ -9,6 +9,9 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
+	apiresource "k8s.io/apimachinery/pkg/api/resource"
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -55,6 +58,8 @@ type ExampleOptions struct {
 	NodePoolReplicas                 int32
 	InfraID                          string
 	ComputeCIDR                      string
+	ServiceCIDR                      string
+	PodCIDR                          string
 	BaseDomain                       string
 	PublicZoneID                     string
 	PrivateZoneID                    string
@@ -64,6 +69,8 @@ type ExampleOptions struct {
 	EtcdStorageClass                 string
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
+	Agent                            *ExampleAgentOptions
+	Kubevirt                         *ExampleKubevirtOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
@@ -71,6 +78,17 @@ type ExampleOptions struct {
 
 type ExampleNoneOptions struct {
 	APIServerAddress string
+}
+
+type ExampleAgentOptions struct {
+	APIServerAddress string
+}
+
+type ExampleKubevirtOptions struct {
+	APIServerAddress string
+	Memory           string
+	Cores            uint32
+	Image            string
 }
 
 type ExampleAWSOptions struct {
@@ -223,43 +241,17 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.NonePlatform,
 		}
-		services = []hyperv1.ServicePublishingStrategyMapping{
-			{
-				Service: hyperv1.APIServer,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.NodePort,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
-			{
-				Service: hyperv1.OAuthServer,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.NodePort,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
-			{
-				Service: hyperv1.OIDC,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.None,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
-			{
-				Service: hyperv1.Konnectivity,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.NodePort,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
-			{
-				Service: hyperv1.Ignition,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type:     hyperv1.NodePort,
-					NodePort: &hyperv1.NodePortPublishingStrategy{Address: o.None.APIServerAddress},
-				},
-			},
+		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress)
+	case o.Agent != nil:
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.AgentPlatform,
 		}
+		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Agent.APIServerAddress)
+	case o.Kubevirt != nil:
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.KubevirtPlatform,
+		}
+		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
 
 	default:
 		panic("no platform specified")
@@ -296,8 +288,8 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			},
 			Networking: hyperv1.ClusterNetworking{
-				ServiceCIDR: "172.31.0.0/16",
-				PodCIDR:     "10.132.0.0/14",
+				ServiceCIDR: o.ServiceCIDR,
+				PodCIDR:     o.PodCIDR,
 				MachineCIDR: o.ComputeCIDR,
 				NetworkType: o.NetworkType,
 			},
@@ -364,6 +356,46 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					IOPS: o.AWS.RootVolumeIOPS,
 				},
 			}
+		case hyperv1.KubevirtPlatform:
+			runAlways := kubevirtv1.RunStrategyAlways
+			guestQuantity := apiresource.MustParse(o.Kubevirt.Memory)
+			nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
+				NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
+					Spec: kubevirtv1.VirtualMachineSpec{
+						RunStrategy: &runAlways,
+						Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+							Spec: kubevirtv1.VirtualMachineInstanceSpec{
+								Domain: kubevirtv1.DomainSpec{
+									CPU:    &kubevirtv1.CPU{Cores: o.Kubevirt.Cores},
+									Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
+									Devices: kubevirtv1.Devices{
+										Disks: []kubevirtv1.Disk{
+											{
+												Name: "containervolume",
+												DiskDevice: kubevirtv1.DiskDevice{
+													Disk: &kubevirtv1.DiskTarget{
+														Bus: "virtio",
+													},
+												},
+											},
+										},
+									},
+								},
+								Volumes: []kubevirtv1.Volume{
+									{
+										Name: "containervolume",
+										VolumeSource: kubevirtv1.VolumeSource{
+											ContainerDisk: &kubevirtv1.ContainerDiskSource{
+												Image: o.Kubevirt.Image,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
 		}
 	}
 
@@ -374,5 +406,45 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		SSHKey:     sshKeySecret,
 		Cluster:    cluster,
 		NodePool:   nodePool,
+	}
+}
+
+func (o ExampleOptions) getServicePublishingStrategyMappingByAPIServerAddress(APIServerAddress string) []hyperv1.ServicePublishingStrategyMapping {
+	return []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
+		{
+			Service: hyperv1.OIDC,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.None,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
+		{
+			Service: hyperv1.Konnectivity,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
+		{
+			Service: hyperv1.Ignition,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		},
 	}
 }

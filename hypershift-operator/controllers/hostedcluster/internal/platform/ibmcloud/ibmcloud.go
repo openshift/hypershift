@@ -4,14 +4,16 @@ import (
 	"context"
 	"fmt"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 
-	capiibmv1 "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	capiv1alpha4 "sigs.k8s.io/cluster-api/api/v1alpha4" // Need this dep atm to satisfy IBM provider dep.
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -22,7 +24,9 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
-
+	if hcluster.Spec.Platform.IBMCloud != nil && hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
+		return nil, nil
+	}
 	ibmCluster := &capiibmv1.IBMVPCCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
@@ -37,7 +41,7 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 
 		// Set the values for upper level controller
 		ibmCluster.Status.Ready = true
-		ibmCluster.Spec.ControlPlaneEndpoint = capiv1alpha4.APIEndpoint{
+		ibmCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
 			Host: apiEndpoint.Host,
 			Port: apiEndpoint.Port,
 		}
@@ -100,5 +104,9 @@ func (IBMCloud) ReconcileSecretEncryption(ctx context.Context, c client.Client, 
 			return fmt.Errorf("failed reconciling aescbc backup key: %w", err)
 		}
 	}
+	return nil
+}
+
+func (IBMCloud) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }

@@ -1059,12 +1059,13 @@ the default service endpoint of specific AWS Services.</p>
 </em>
 </td>
 <td>
-<p>Roles must contain exactly 3 entries representing the locators for roles
+<p>Roles must contain exactly 4 entries representing the locators for roles
 supporting the following OCP services:</p>
 <ul>
 <li>openshift-ingress-operator/cloud-credentials</li>
-<li>openshift-image-registry/installer-cloud-credentials
--openshift-cluster-csi-drivers/ebs-cloud-credentials</li>
+<li>openshift-image-registry/installer-cloud-credentials</li>
+<li>openshift-cluster-csi-drivers/ebs-cloud-credentials</li>
+<li>cloud-network-config-controller/cloud-credentials</li>
 </ul>
 <p>Each role has unique permission requirements whose documentation is TBD.</p>
 <p>TODO(dan): revisit this field; it&rsquo;s really 3 required fields with specific content requirements</p>
@@ -3083,6 +3084,36 @@ call IBM Cloud KMS APIs</p>
 </tr>
 </tbody>
 </table>
+###IBMCloudPlatformSpec { #hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>IBMCloudPlatformSpec defines IBMCloud specific settings for components</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>providerType</code></br>
+<em>
+github.com/openshift/api/config/v1.IBMCloudProviderType
+</em>
+</td>
+<td>
+<p>ProviderType is a specific supported infrastructure provider within IBM Cloud.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ImageContentSource { #hypershift.openshift.io/v1alpha1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
@@ -3219,6 +3250,36 @@ AWSKMSSpec
 <td>
 <em>(Optional)</em>
 <p>AWS defines metadata about the configuration of the AWS KMS Secret Encryption provider</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtNodePoolPlatform { #hypershift.openshift.io/v1alpha1.KubevirtNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+<p>KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
+on KubeVirt platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodeTemplate</code></br>
+<em>
+sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1.VirtualMachineTemplateSpec
+</em>
+</td>
+<td>
+<p>NodeTemplate Spec contains the VirtualMachineInstance specification.</p>
 </td>
 </tr>
 </tbody>
@@ -3498,7 +3559,9 @@ PlatformType
 <p>
 Value must be one of:
 &#34;AWS&#34;, 
+&#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
+&#34;KubeVirt&#34;, 
 &#34;None&#34;
 </p>
 </td>
@@ -3515,6 +3578,33 @@ AWSNodePoolPlatform
 <td>
 <em>(Optional)</em>
 <p>AWS specifies the configuration used when operating on AWS.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubevirt</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtNodePoolPlatform">
+KubevirtNodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Kubevirt specifies the configuration used when operating on KubeVirt platform.</p>
 </td>
 </tr>
 </tbody>
@@ -3816,7 +3906,9 @@ PlatformType
 <p>
 Value must be one of:
 &#34;AWS&#34;, 
+&#34;Agent&#34;, 
 &#34;IBMCloud&#34;, 
+&#34;KubeVirt&#34;, 
 &#34;None&#34;
 </p>
 </td>
@@ -3833,6 +3925,19 @@ AWSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ibmcloud</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.IBMCloudPlatformSpec">
+IBMCloudPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>IBMCloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 </tbody>
@@ -3856,8 +3961,14 @@ AWSPlatformSpec
 <tbody><tr><td><p>&#34;AWS&#34;</p></td>
 <td><p>AWSPlatform represents Amazon Web Services infrastructure.</p>
 </td>
+</tr><tr><td><p>&#34;Agent&#34;</p></td>
+<td><p>AgentPlatform represents user supplied insfrastructure booted with agents.</p>
+</td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;KubeVirt&#34;</p></td>
+<td><p>KubevirtPlatform represents Kubevirt infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;None&#34;</p></td>
 <td><p>NonePlatform represents user supplied (e.g. bare metal) infrastructure.</p>

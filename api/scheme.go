@@ -1,11 +1,11 @@
 package api
 
 import (
-	capiibm "github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +16,8 @@ import (
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -48,4 +50,6 @@ func init() {
 	apiextensionsv1.AddToScheme(Scheme)
 	kasv1beta1.AddToScheme(Scheme)
 	prometheusoperatorv1.AddToScheme(Scheme)
+	agentv1.AddToScheme(Scheme)
+	capikubevirt.AddToScheme(Scheme)
 }

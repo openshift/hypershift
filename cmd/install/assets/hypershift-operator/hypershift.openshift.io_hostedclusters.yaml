@@ -503,11 +503,12 @@ spec:
                         maxItems: 25
                         type: array
                       roles:
-                        description: "Roles must contain exactly 3 entries representing
+                        description: "Roles must contain exactly 4 entries representing
                           the locators for roles supporting the following OCP services:
                           \n - openshift-ingress-operator/cloud-credentials - openshift-image-registry/installer-cloud-credentials
-                          \ -openshift-cluster-csi-drivers/ebs-cloud-credentials \n
-                          Each role has unique permission requirements whose documentation
+                          - openshift-cluster-csi-drivers/ebs-cloud-credentials -
+                          cloud-network-config-controller/cloud-credentials \n Each
+                          role has unique permission requirements whose documentation
                           is TBD. \n TODO(dan): revisit this field; it's really 3
                           required fields with specific content requirements"
                         items:
@@ -555,6 +556,14 @@ spec:
                     - nodePoolManagementCreds
                     - region
                     type: object
+                  ibmcloud:
+                    description: IBMCloud defines IBMCloud specific settings for components
+                    properties:
+                      providerType:
+                        description: ProviderType is a specific supported infrastructure
+                          provider within IBM Cloud.
+                        type: string
+                    type: object
                   type:
                     description: Type is the type of infrastructure provider for the
                       cluster.
@@ -562,6 +571,8 @@ spec:
                     - AWS
                     - None
                     - IBMCloud
+                    - Agent
+                    - KubeVirt
                     type: string
                 required:
                 - type
@@ -997,6 +1008,14 @@ spec:
                       description: UpdateHistory is a single attempted update to the
                         cluster.
                       properties:
+                        acceptedRisks:
+                          description: acceptedRisks records risks which were accepted
+                            to initiate the update. For example, it may menition an
+                            Upgradeable=False or missing signature that was overriden
+                            via desiredUpdate.force, or an update that was initiated
+                            despite not being in the availableUpdates set of recommended
+                            update targets.
+                          type: string
                         completionTime:
                           description: completionTime, if set, is when the update
                             was fully applied. The update that is currently being

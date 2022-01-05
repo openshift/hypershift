@@ -18,10 +18,10 @@ spec:
     singular: ibmvpcmachinetemplate
   scope: Namespaced
   versions:
-  - name: v1alpha4
+  - name: v1beta1
     schema:
       openAPIV3Schema:
-        description: IBMVPCMachineTemplate is the Schema for the IBMVPCMachinetemplates
+        description: IBMVPCMachineTemplate is the Schema for the ibmvpcmachinetemplates
           API
         properties:
           apiVersion:

@@ -6,6 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -31,5 +32,9 @@ func (p None) ReconcileCredentials(ctx context.Context, c client.Client, createO
 func (None) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
+	return nil
+}
+
+func (None) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }

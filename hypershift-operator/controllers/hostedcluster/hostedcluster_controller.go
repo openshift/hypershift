@@ -498,6 +498,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Set the infraID as Tag on all created AWS
+	if err := r.reconcileAWSResourceTags(ctx, hcluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Block here if the cluster configuration does not pass validation
 	{
 		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
@@ -816,12 +821,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI Cluster resource
-	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
-	_, err = createOrUpdate(ctx, r.Client, capiCluster, func() error {
-		return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
-	})
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+	// In the None platform case, there is no CAPI provider/resources so infraCR is nil
+	if infraCR != nil {
+		capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
+		_, err = createOrUpdate(ctx, r.Client, capiCluster, func() error {
+			return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+		}
 	}
 
 	// Reconcile the HostedControlPlane kubeconfig if one is reported
@@ -900,7 +908,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI provider components
-	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, capiProviderDeploymentSpec); err != nil {
+	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, capiProviderDeploymentSpec, p); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
@@ -1020,6 +1028,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AgentPlatform, hyperv1.KubevirtPlatform:
+		// Agent platform uses None platform for the hcp.
+		hcp.Spec.Platform.Type = hyperv1.NonePlatform
+	}
 
 	// always reconcile the release image (facilitates rolling forward)
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
@@ -1134,7 +1147,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 // reconcileCAPIProvider orchestrates reconciliation of the CAPI provider
 // components for a given platform.
 func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
-	capiProviderDeploymentSpec *appsv1.DeploymentSpec) error {
+	capiProviderDeploymentSpec *appsv1.DeploymentSpec, p platform.Platform) error {
 	if capiProviderDeploymentSpec == nil {
 		// If there's no capiProviderDeploymentSpec implementation return early.
 		return nil
@@ -1149,7 +1162,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 	// Reconcile CAPI provider role
 	capiProviderRole := clusterapi.CAPIProviderRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiProviderRole, func() error {
-		return reconcileCAPIProviderRole(capiProviderRole)
+		return reconcileCAPIProviderRole(capiProviderRole, p)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi provider role: %w", err)
@@ -2321,6 +2334,11 @@ func reconcileCAPIManagerRole(role *rbacv1.Role) error {
 			},
 			Verbs: []string{"*"},
 		},
+		{
+			APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
 	}
 	return nil
 }
@@ -2343,8 +2361,8 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 	return nil
 }
 
-func reconcileCAPIProviderRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
+func reconcileCAPIProviderRole(role *rbacv1.Role, p platform.Platform) error {
+	rules := []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{""},
 			Resources: []string{
@@ -2381,6 +2399,10 @@ func reconcileCAPIProviderRole(role *rbacv1.Role) error {
 			Verbs: []string{"*"},
 		},
 	}
+	if platformRules := p.CAPIProviderPolicyRules(); platformRules != nil {
+		rules = append(rules, platformRules...)
+	}
+	role.Rules = rules
 	return nil
 }
 
@@ -2507,6 +2529,35 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 						},
 						Command: []string{"/usr/bin/cluster-autoscaler"},
 						Args:    args,
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/health-check",
+									Port:   intstr.FromInt(8085),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: 60,
+							PeriodSeconds:       60,
+							SuccessThreshold:    1,
+							FailureThreshold:    5,
+							TimeoutSeconds:      5,
+						},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/health-check",
+									Port:   intstr.FromInt(8085),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: 15,
+							PeriodSeconds:       60,
+							SuccessThreshold:    1,
+							FailureThreshold:    3,
+							TimeoutSeconds:      5,
+						},
+						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8085}},
 					},
 				},
 			},
@@ -2811,6 +2862,12 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	}
 
 	if err := r.cleanupOIDCBucketData(ctx, hc); err != nil {
+		return false, err
+	}
+
+	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
+	// we don't error initially because we can not create new content in a namespace that is being deleted.
+	if err := r.Get(ctx, client.ObjectKeyFromObject(ns), ns); err == nil || !apierrors.IsNotFound(err) {
 		return false, err
 	}
 	return true, nil
@@ -3284,5 +3341,37 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, hcl
 	}
 
 	r.Log.Info("Successfully deleted the OIDC documents from the S3 bucket")
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	if hcluster.Spec.Platform.AWS == nil {
+		return nil
+	}
+
+	var existing *hyperv1.AWSResourceTag
+	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
+		if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.InfraID {
+			existing = &hcluster.Spec.Platform.AWS.ResourceTags[idx]
+			break
+		}
+	}
+	if existing != nil && existing.Value == "owned" {
+		return nil
+	}
+
+	if existing != nil {
+		existing.Value = "owned"
+	} else {
+		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+			Key:   "kubernetes.io/cluster/" + hcluster.Spec.InfraID,
+			Value: "owned",
+		})
+	}
+
+	if err := r.Client.Update(ctx, hcluster); err != nil {
+		return fmt.Errorf("failed to update AWS resource tags: %w", err)
+	}
+
 	return nil
 }

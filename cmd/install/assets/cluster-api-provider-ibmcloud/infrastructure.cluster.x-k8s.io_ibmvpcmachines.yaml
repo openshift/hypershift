@@ -23,7 +23,7 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: string
-    name: v1alpha4
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: IBMVPCMachine is the Schema for the ibmvpcmachines API

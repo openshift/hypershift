@@ -17,26 +17,18 @@ const (
 	CAHashAnnotation   = "hypershiftlite.openshift.io/ca-hash"
 )
 
-func AnnotateWithCA(secret, ca *corev1.Secret) {
+func annotateWithCA(secret, ca *corev1.Secret) {
 	if secret.Annotations == nil {
 		secret.Annotations = map[string]string{}
 	}
 	secret.Annotations[CAHashAnnotation] = computeCAHash(ca)
 }
 
-func ValidCA(secret *corev1.Secret) bool {
+func validCA(secret *corev1.Secret) bool {
 	return hasKeys(secret, CASignerCertMapKey, CASignerKeyMapKey)
 }
 
-func SecretUpToDate(secret *corev1.Secret, keys []string) bool {
-	return hasKeys(secret, keys...)
-}
-
-func SignedSecretUpToDate(secret, ca *corev1.Secret, keys []string) bool {
-	return SecretUpToDate(secret, keys) && hasCAHash(secret, ca)
-}
-
-func SignCertificate(cfg *certs.CertCfg, ca *corev1.Secret) (crtBytes []byte, keyBytes []byte, caBytes []byte, err error) {
+func signCertificate(cfg *certs.CertCfg, ca *corev1.Secret) (crtBytes []byte, keyBytes []byte, caBytes []byte, err error) {
 	caCert, caKey, err := decodeCA(ca)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to decode CA secret: %w", err)

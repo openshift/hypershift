@@ -1,27 +1,33 @@
 package hostedcluster
 
 import (
-	"github.com/kubernetes-sigs/cluster-api-provider-ibmcloud/api/v1alpha4"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
-	"sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"context"
 	"testing"
 	"time"
+
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	"sigs.k8s.io/cluster-api/api/v1beta1"
 
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var Now = metav1.NewTime(time.Now())
@@ -724,7 +730,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 		capiCluster        *v1beta1.Cluster
 		hostedCluster      *hyperv1.HostedCluster
 		hostedControlPlane *hyperv1.HostedControlPlane
-		infraCR            client.Object
+		infraCR            crclient.Object
 
 		expectedCAPICluster *v1beta1.Cluster
 	}{
@@ -751,10 +757,10 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Name:      "cluster1",
 				},
 			},
-			infraCR: &v1alpha4.IBMVPCCluster{
+			infraCR: &capibmv1.IBMVPCCluster{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "IBMVPCCluster",
-					APIVersion: v1alpha4.GroupVersion.String(),
+					APIVersion: capibmv1.GroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster1",
@@ -778,7 +784,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 						Name:       "cluster1",
 					},
 					InfrastructureRef: &corev1.ObjectReference{
-						APIVersion: v1alpha4.GroupVersion.String(),
+						APIVersion: capibmv1.GroupVersion.String(),
 						Kind:       "IBMVPCCluster",
 						Namespace:  "master-cluster1",
 						Name:       "cluster1",
@@ -855,4 +861,167 @@ func TestReconcileCAPICluster(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileAWSResourceTags(t *testing.T) {
+	testCases := []struct {
+		name     string
+		in       hyperv1.HostedClusterSpec
+		expected hyperv1.HostedClusterSpec
+	}{
+		{
+			name: "Not an aws cluster, no change",
+		},
+		{
+			name: "Tag is added",
+			in: hyperv1.HostedClusterSpec{
+				InfraID: "123",
+				Platform: hyperv1.PlatformSpec{
+					AWS: &hyperv1.AWSPlatformSpec{},
+				},
+			},
+			expected: hyperv1.HostedClusterSpec{
+				InfraID: "123",
+				Platform: hyperv1.PlatformSpec{
+					AWS: &hyperv1.AWSPlatformSpec{
+						ResourceTags: []hyperv1.AWSResourceTag{{
+							Key:   "kubernetes.io/cluster/123",
+							Value: "owned",
+						}},
+					},
+				},
+			},
+		},
+		{
+			name: "Tag already exists, nothing to do",
+			in: hyperv1.HostedClusterSpec{
+				InfraID: "123",
+				Platform: hyperv1.PlatformSpec{
+					AWS: &hyperv1.AWSPlatformSpec{
+						ResourceTags: []hyperv1.AWSResourceTag{{
+							Key:   "kubernetes.io/cluster/123",
+							Value: "owned",
+						}},
+					},
+				},
+			},
+			expected: hyperv1.HostedClusterSpec{
+				InfraID: "123",
+				Platform: hyperv1.PlatformSpec{
+					AWS: &hyperv1.AWSPlatformSpec{
+						ResourceTags: []hyperv1.AWSResourceTag{{
+							Key:   "kubernetes.io/cluster/123",
+							Value: "owned",
+						}},
+					},
+				},
+			},
+		},
+		{
+			name: "Tag already exists with wrong value",
+			in: hyperv1.HostedClusterSpec{
+				InfraID: "123",
+				Platform: hyperv1.PlatformSpec{
+					AWS: &hyperv1.AWSPlatformSpec{
+						ResourceTags: []hyperv1.AWSResourceTag{{
+							Key:   "kubernetes.io/cluster/123",
+							Value: "borked",
+						}},
+					},
+				},
+			},
+			expected: hyperv1.HostedClusterSpec{
+				InfraID: "123",
+				Platform: hyperv1.PlatformSpec{
+					AWS: &hyperv1.AWSPlatformSpec{
+						ResourceTags: []hyperv1.AWSResourceTag{{
+							Key:   "kubernetes.io/cluster/123",
+							Value: "owned",
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "123",
+				},
+				Spec: tc.in,
+			}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cluster).Build()
+			r := &HostedClusterReconciler{
+				Client: client,
+			}
+
+			if err := r.reconcileAWSResourceTags(context.Background(), cluster); err != nil {
+				t.Fatalf("reconcileAWSResourceTags failed: %v", err)
+			}
+
+			reconciledCluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "123"}}
+			if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(reconciledCluster), reconciledCluster); err != nil {
+				t.Fatalf("failed to get cluster after reconcilding it: %v", err)
+			}
+
+			if diff := cmp.Diff(tc.expected, reconciledCluster.Spec); diff != "" {
+				t.Errorf("expected clusterspec differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReconcileCAPIProviderRole(t *testing.T) {
+	p := kubevirt.Kubevirt{}
+	role := &rbacv1.Role{}
+	if err := reconcileCAPIProviderRole(role, p); err != nil {
+		t.Fatalf("reconcileCAPIProviderRole failed: %v", err)
+	}
+	if diff := cmp.Diff(expectedRules(p.CAPIProviderPolicyRules()), role.Rules); diff != "" {
+		t.Errorf("expected rules differs from actual: %s", diff)
+	}
+}
+
+func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
+	baseRules := []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{
+				"events",
+				"secrets",
+				"configmaps",
+			},
+			Verbs: []string{"*"},
+		},
+		{
+			APIGroups: []string{
+				"bootstrap.cluster.x-k8s.io",
+				"controlplane.cluster.x-k8s.io",
+				"infrastructure.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+				"exp.infrastructure.cluster.x-k8s.io",
+				"addons.cluster.x-k8s.io",
+				"exp.cluster.x-k8s.io",
+				"cluster.x-k8s.io",
+			},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"hypershift.openshift.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
+			},
+			Verbs: []string{"*"},
+		},
+	}
+	return append(baseRules, addRules...)
 }

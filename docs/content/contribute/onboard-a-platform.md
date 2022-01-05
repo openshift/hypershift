@@ -21,6 +21,14 @@ The ControlPlane Operator requires the following:
 
 - [Reconcile secret encryption (if your provider supports KMS)](https://github.com/openshift/hypershift/blob/37c45b83f9d453578e05bbd073bcb12437335efd/control-plane-operator/controllers/hostedcontrolplane/kas/deployment.go#L189-L206)
 
+## End to end testing
+
+The end-to-end tests require an implementation of the [Cluster interface](https://github.com/openshift/hypershift/blob/fe6cde3472473f28ac5c95c3d4f6c5785d12ac16/test/e2e/util/cluster/cluster.go#L9-L14).
+As a starting point, check out
+the [None-Platform implementation](https://github.com/openshift/hypershift/blob/fe6cde3472473f28ac5c95c3d4f6c5785d12ac16/test/e2e/util/cluster/none/cluster.go)
+and
+its [basic test](https://github.com/openshift/hypershift/blob/fe6cde3472473f28ac5c95c3d4f6c5785d12ac16/test/e2e/create_cluster_test.go#L60-L87)
+
 ## Supported platforms
 
 - AWS.

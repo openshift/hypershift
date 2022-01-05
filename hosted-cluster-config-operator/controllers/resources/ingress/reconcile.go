@@ -19,7 +19,7 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 		ingressController.Spec.Replicas = &(replicas)
 	}
 	switch platformType {
-	case hyperv1.NonePlatform:
+	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
 		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 			Type: operatorv1.HostNetworkStrategyType,
 		}

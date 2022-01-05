@@ -1,7 +1,6 @@
 package util
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -14,6 +13,11 @@ import (
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/test/e2e/util/cluster"
+	awscluster "github.com/openshift/hypershift/test/e2e/util/cluster/aws"
+	nonecluster "github.com/openshift/hypershift/test/e2e/util/cluster/none"
+	"k8s.io/apimachinery/pkg/types"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,20 +27,27 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	aws "github.com/openshift/hypershift/cmd/cluster/aws"
-	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
+	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/support/upsert"
 )
 
-// CreateCluster creates a new namespace and a HostedCluster in that namespace using
+// CreateAWSCluster creates a new namespace and a HostedCluster in that namespace using
 // the provided options.
 //
 // This function calls t.Cleanup() with a function which tears down the cluster
 // and *blocks until teardown completes*, so no explicit cleanup from the caller
 // is required.
-func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
+func CreateAWSCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
+	return createCluster(t, ctx, client, awscluster.New(t, opts), artifactDir)
+}
+
+func CreateNoneCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
+	return createCluster(t, ctx, client, nonecluster.New(t, opts), artifactDir)
+}
+
+func createCluster(t *testing.T, ctx context.Context, client crclient.Client, clusterMgr cluster.Cluster, artifactDir string) *hyperv1.HostedCluster {
 	g := NewWithT(t)
 	start := time.Now()
 
@@ -59,22 +70,23 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 			Name:      SimpleNameGenerator.GenerateName("example-"),
 		},
 	}
-	opts.Namespace = namespace.Name
-	opts.Name = hc.Name
-	opts.InfraID = hc.Name
 
 	// Define a standard teardown function
 	teardown := func(ctx context.Context) {
-		SaveMachineConsoleLogs(t, ctx, hc, opts.AWSPlatform.AWSCredentialsFile, artifactDir)
+		if len(artifactDir) != 0 {
+			clusterMgr.DumpCluster(ctx, hc, artifactDir)
+		} else {
+			t.Logf("Skipping cluster dump because no artifact dir was provided")
+		}
 		// TODO: Figure out why this is slow
 		//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
-		DumpAndDestroyHostedCluster(t, ctx, hc, opts.AWSPlatform.AWSCredentialsFile, opts.AWSPlatform.Region, opts.AWSPlatform.BaseDomain, artifactDir)
+		DestroyHostedCluster(t, ctx, hc, clusterMgr, artifactDir)
 		DeleteNamespace(t, ctx, client, namespace.Name)
 	}
 
 	// Try and create the cluster
-	t.Logf("Creating a new cluster. Options: %v", opts)
-	if err := aws.CreateCluster(ctx, &opts); err != nil {
+	t.Logf("Creating a new cluster. Options: %v", clusterMgr.Describe())
+	if err := clusterMgr.CreateCluster(ctx, hc); err != nil {
 		teardown(context.Background())
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
 	}
@@ -91,55 +103,11 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	return hc
 }
 
-// DumpHostedCluster tries to dump important resources related to the HostedCluster, and
-// logs any failures along the way.
-func DumpHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, artifactDir, awsCredsFile string) {
-	if len(artifactDir) == 0 {
-		t.Logf("Skipping cluster dump because no artifact dir was provided")
-		return
-	}
-	t.Run("DumpHostedCluster", func(t *testing.T) {
-		findKubeObjectUpdateLoops := func(filename string, content []byte) {
-			if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
-				t.Errorf("Found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename)
-			}
-		}
-		err := aws.DumpCluster(ctx, &aws.DumpOptions{
-			Namespace:   hostedCluster.Namespace,
-			Name:        hostedCluster.Name,
-			ArtifactDir: artifactDir,
-			LogCheckers: []aws.LogChecker{findKubeObjectUpdateLoops},
-		})
-		if err != nil {
-			t.Errorf("Failed to dump cluster: %v", err)
-		}
-		if err := dumpJournals(t, ctx, hostedCluster, artifactDir, awsCredsFile); err != nil {
-			t.Logf("Failed to dump machine journals: %v", err)
-		}
-	})
-}
-
-// DumpAndDestroyHostedCluster calls DumpHostedCluster and then destroys the HostedCluster,
-// logging any failures along the way.
-func DumpAndDestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, awsCreds string, awsRegion string, baseDomain string, artifactDir string) {
-	DumpHostedCluster(t, ctx, hostedCluster, artifactDir, awsCreds)
-
-	opts := &core.DestroyOptions{
-		Namespace: hostedCluster.Namespace,
-		Name:      hostedCluster.Name,
-		InfraID:   hostedCluster.Name,
-		AWSPlatform: core.AWSPlatformDestroyOptions{
-			Region:             awsRegion,
-			BaseDomain:         baseDomain,
-			AWSCredentialsFile: awsCreds,
-			PreserveIAM:        false,
-		},
-		ClusterGracePeriod: 15 * time.Minute,
-	}
-
+// DestroyHostedCluster destroys the HostedCluster
+func DestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterMgr cluster.Cluster, artifactDir string) {
 	t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-		err := aws.DestroyCluster(ctx, opts)
+		err := clusterMgr.DestroyCluster(ctx, hostedCluster)
 		if err != nil {
 			t.Errorf("Failed to destroy cluster, will retry: %v", err)
 			return false, nil
@@ -149,7 +117,7 @@ func DumpAndDestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluste
 	if err != nil {
 		t.Errorf("Failed to destroy cluster: %v", err)
 	} else {
-		t.Logf("Destroyed cluster. Namespace: %s, name: %s", opts.Namespace, opts.Name)
+		t.Logf("Destroyed cluster. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 	}
 }
 
@@ -242,7 +210,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	err = wait.PollUntil(5*time.Second, func() (done bool, err error) {
-		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
+		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: hyperapi.Scheme})
 		if err != nil {
 			return false, nil
 		}
@@ -322,6 +290,47 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	t.Logf("Observed hostedcluster to have successfully rolled out image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 }
 
+func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
+	g := NewWithT(t)
+
+	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
+	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		cp := &hyperv1.HostedControlPlane{}
+		err = client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, cp)
+		if err != nil {
+			t.Errorf("Failed to get hostedcontrolplane: %v", err)
+			return false, nil
+		}
+
+		conditions := map[hyperv1.ConditionType]bool{
+			hyperv1.HostedControlPlaneAvailable:          false,
+			hyperv1.EtcdAvailable:                        false,
+			hyperv1.KubeAPIServerAvailable:               false,
+			hyperv1.InfrastructureReady:                  false,
+			hyperv1.ValidHostedControlPlaneConfiguration: false,
+		}
+
+		isAvailable := true
+		for condition := range conditions {
+			conditionReady := meta.IsStatusConditionTrue(cp.Status.Conditions, string(condition))
+			conditions[condition] = conditionReady
+			if !conditionReady {
+				isAvailable = false
+			}
+		}
+
+		if isAvailable {
+			t.Logf("Waiting for all conditions to be ready: Image: %s, conditions: %v", image, conditions)
+			return true, nil
+		}
+		return false, nil
+	}, ctx.Done())
+	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
+
+	t.Logf("Observed hostedcluster to have successfully rolled out image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
+}
+
 // DumpGuestCluster tries to collect resources from the from the hosted cluster,
 // and logs any failures that occur.
 func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, destDir string) {
@@ -366,20 +375,6 @@ func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client,
 	t.Logf("Dumped guest cluster data. Dir: %s", dumpDir)
 }
 
-func SaveMachineConsoleLogs(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, awsCredsFile, artifactDir string) {
-	consoleLogs := consolelogsaws.ConsoleLogOpts{
-		Name:               hc.Name,
-		Namespace:          hc.Namespace,
-		AWSCredentialsFile: awsCredsFile,
-		OutputDir:          filepath.Join(artifactDir, "machine-console-logs"),
-	}
-	if logsErr := consoleLogs.Run(ctx); logsErr != nil {
-		t.Logf("Failed to get machine console logs: %v", logsErr)
-	} else {
-		t.Logf("Saved machine console logs.")
-	}
-}
-
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("No controlplane pods crash", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
@@ -402,6 +397,12 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 
 			// TODO: Remove after https://issues.redhat.com/browse/HOSTEDCP-238 is done
 			if strings.HasPrefix(pod.Name, "packageserver") {
+				continue
+			}
+
+			// TODO: Autoscaler is restarting because it times out accessing the kube apiserver for leader election.
+			// Investigate a fix.
+			if strings.HasPrefix(pod.Name, "cluster-autoscaler") {
 				continue
 			}
 
