@@ -81,7 +81,7 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 		discoveredCapabilities[CapabilityRoute] = struct{}{}
 	}
 
-	// check for Scc capability
+	// check for scc capability
 	hasSccCap, err := isGroupVersionRegistered(client, securityv1.GroupVersion)
 	if err != nil {
 		return nil, err

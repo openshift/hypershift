@@ -4,7 +4,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/config"
@@ -26,7 +25,7 @@ type KonnectivityParams struct {
 	AgentDeamonSetConfig    config.DeploymentConfig
 }
 
-func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32, explicitNonRootSecurityContext bool) *KonnectivityParams {
+func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32, setSecurityContextNonRoot bool) *KonnectivityParams {
 	p := &KonnectivityParams{
 		KonnectivityServerImage: images["konnectivity-server"],
 		KonnectivityAgentImage:  images["konnectivity-agent"],
@@ -125,28 +124,12 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			SuccessThreshold:    1,
 		},
 	}
-
-	if explicitNonRootSecurityContext {
-		// iterate over resources and set security context to all the containers
-		agentDeamonSecurityContextsObj := make(config.SecurityContextSpec)
-		for containerName := range p.AgentDeamonSetConfig.Resources {
-			agentDeamonSecurityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		}
-		p.AgentDeamonSetConfig.SecurityContexts = agentDeamonSecurityContextsObj
-
-		agentDeploymentSecurityContextsObj := make(config.SecurityContextSpec)
-		for containerName := range p.AgentDeploymentConfig.Resources {
-			agentDeploymentSecurityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		}
-		p.AgentDeploymentConfig.SecurityContexts = agentDeploymentSecurityContextsObj
-
-		serverDeploymentSecurityContextsObj := make(config.SecurityContextSpec)
-		for containerName := range p.ServerDeploymentConfig.Resources {
-			serverDeploymentSecurityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		}
-		p.ServerDeploymentConfig.SecurityContexts = serverDeploymentSecurityContextsObj
-	}
-
+	
+	// non root security context if scc capability is missing
+	p.AgentDeamonSetConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
+	p.AgentDeploymentConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
+	p.ServerDeploymentConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
+	
 	if hcp.Annotations != nil {
 		if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {
 			p.KonnectivityServerImage = hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]

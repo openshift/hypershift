@@ -9,7 +9,6 @@ import (
 	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -71,7 +70,7 @@ type ConfigOverride struct {
 	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, host string, port int32, explicitNonRootSecurityContext bool) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, host string, port int32, setSecurityContextNonRoot bool) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,
@@ -154,14 +153,8 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalco
 		}
 	}
 
-	if explicitNonRootSecurityContext {
-		// iterate over resources and set security context to all the containers
-		securityContextsObj := make(config.SecurityContextSpec)
-		for containerName := range p.DeploymentConfig.Resources {
-			securityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		}
-		p.DeploymentConfig.SecurityContexts = securityContextsObj
-	}
+	p.SetSecurityContextNonRoot = setSecurityContextNonRoot
+
 	return p
 }
 

@@ -4,7 +4,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -41,7 +40,7 @@ type OAuthDeploymentParams struct {
 	OwnerRef                config.OwnerRef
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, setSecurityContextNonRoot bool) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: images["openshift-apiserver"],
 		OAuthAPIServerImage:     images["oauth-apiserver"],
@@ -143,24 +142,9 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 			},
 		},
 	}
-	if explicitNonRootSecurityContext {
-		// OpenShiftAPIServerDeploymentConfig
-		openshiftAPIServerSecurityContextsObj := make(config.SecurityContextSpec)
-		for containerName := range params.OpenShiftAPIServerDeploymentConfig.Resources {
-			openshiftAPIServerSecurityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		}
-		// manually add oasKonnectivityProxyContainer Security Context; does not exist in the Resources object
-		openshiftAPIServerSecurityContextsObj[oasKonnectivityProxyContainer().Name] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		// Update OpenShift API Server Deployment SecurityContexts
-		params.OpenShiftAPIServerDeploymentConfig.SecurityContexts = openshiftAPIServerSecurityContextsObj
 
-		// OpenShiftOAuthAPIServerDeploymentConfig
-		openshiftOAuthAPIServerSecurityContextsObj := make(config.SecurityContextSpec)
-		for containerName := range params.OpenShiftOAuthAPIServerDeploymentConfig.Resources {
-			openshiftOAuthAPIServerSecurityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		}
-		params.OpenShiftOAuthAPIServerDeploymentConfig.SecurityContexts = openshiftOAuthAPIServerSecurityContextsObj
-	}
+	params.OpenShiftAPIServerDeploymentConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
+	params.OpenShiftOAuthAPIServerDeploymentConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
 
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetColocation(hcp)
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)

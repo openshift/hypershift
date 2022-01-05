@@ -22,7 +22,7 @@ type HostedClusterConfigOperatorParams struct {
 	AvailabilityProberImage string
 }
 
-func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, openShiftVersion, kubernetesVersion string) *HostedClusterConfigOperatorParams {
+func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, openShiftVersion, kubernetesVersion string, setSecurityContextNonRoot bool) *HostedClusterConfigOperatorParams {
 	params := &HostedClusterConfigOperatorParams{
 		Image:                   images["hosted-cluster-config-operator"],
 		ReleaseImage:            hcp.Spec.ReleaseImage,
@@ -79,6 +79,7 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
+	params.SetSecurityContextNonRoot = setSecurityContextNonRoot
 
 	return params
 }

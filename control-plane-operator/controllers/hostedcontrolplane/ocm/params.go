@@ -3,7 +3,6 @@ package ocm
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -21,7 +20,7 @@ type OpenShiftControllerManagerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, explicitNonRootSecurityContext bool) *OpenShiftControllerManagerParams {
+func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, setSecurityContextNonRoot bool) *OpenShiftControllerManagerParams {
 	params := &OpenShiftControllerManagerParams{
 		OpenShiftControllerManagerImage: images["openshift-controller-manager"],
 		DockerBuilderImage:              images["docker-builder"],
@@ -51,14 +50,9 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 	default:
 		params.DeploymentConfig.Replicas = 1
 	}
-	if explicitNonRootSecurityContext {
-		// iterate over resources and set security context to all the containers
-		securityContextsObj := make(config.SecurityContextSpec)
-		for containerName := range params.DeploymentConfig.Resources {
-			securityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		}
-		params.DeploymentConfig.SecurityContexts = securityContextsObj
-	}
+
+	params.DeploymentConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
+
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
 }

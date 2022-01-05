@@ -10,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -125,7 +124,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, explicitNonRootSecurityContext bool) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -150,12 +149,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 				ServiceAccountName: manifests.ConfigOperatorServiceAccount("").Name,
 			},
 		},
-	}
-
-	if explicitNonRootSecurityContext {
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: k8sutilspointer.Int64Ptr(1001),
-		}
 	}
 
 	config.ApplyTo(deployment)

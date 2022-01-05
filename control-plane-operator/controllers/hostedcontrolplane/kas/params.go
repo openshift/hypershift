@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -63,7 +62,7 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, explicitNonRootSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, setSecurityContextNonRoot bool) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
 		FeatureGate:          globalConfig.FeatureGate,
@@ -295,14 +294,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.KubeConfigRef = hcp.Spec.KubeConfig
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 
-	if explicitNonRootSecurityContext {
-		// iterate over resources and set security context to all the containers
-		securityContextsObj := make(config.SecurityContextSpec)
-		for containerName := range params.DeploymentConfig.Resources {
-			securityContextsObj[containerName] = corev1.SecurityContext{RunAsUser: k8sutilspointer.Int64Ptr(1001)}
-		}
-		params.DeploymentConfig.SecurityContexts = securityContextsObj
-	}
+	params.SetSecurityContextNonRoot = setSecurityContextNonRoot
 
 	return params
 }
