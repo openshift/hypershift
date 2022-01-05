@@ -75,7 +75,6 @@ const (
 	finalizer                  = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
-	
 )
 
 var (
@@ -86,7 +85,7 @@ var (
 		"kube-apiserver-service.yaml",
 	)
 	// SetSecurityContextNonRoot is set if the management cluster does not have scc capability
-	SetSecurityContextNonRoot	= false
+	SetSecurityContextNonRoot = false
 )
 
 type InfrastructureStatus struct {

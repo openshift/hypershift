@@ -58,7 +58,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 	default:
 		params.PackageServerConfig.Replicas = 1
 	}
-	
+
 	params.DeploymentConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
 	params.PackageServerConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
 

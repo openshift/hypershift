@@ -124,12 +124,12 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			SuccessThreshold:    1,
 		},
 	}
-	
+
 	// non root security context if scc capability is missing
 	p.AgentDeamonSetConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
 	p.AgentDeploymentConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
 	p.ServerDeploymentConfig.SetSecurityContextNonRoot = setSecurityContextNonRoot
-	
+
 	if hcp.Annotations != nil {
 		if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {
 			p.KonnectivityServerImage = hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]
