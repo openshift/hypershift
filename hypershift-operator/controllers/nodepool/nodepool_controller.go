@@ -1005,11 +1005,8 @@ func validateConfigManifest(manifest []byte) error {
 	switch obj := cr.(type) {
 	case *mcfgv1.MachineConfig:
 	case *v1alpha1.ImageContentSourcePolicy:
-	//	TODO (alberto): enable this kinds when they are supported in mcs bootstrap mode
-	// since our mcsIgnitionProvider implementation uses bootstrap mode to render the ignition payload out of an input.
-	// https://github.com/openshift/machine-config-operator/pull/2547
-	//case *mcfgv1.KubeletConfig:
-	//case *mcfgv1.ContainerRuntimeConfig:
+	case *mcfgv1.KubeletConfig:
+	case *mcfgv1.ContainerRuntimeConfig:
 	default:
 		return fmt.Errorf("unsupported config type: %T", obj)
 	}
