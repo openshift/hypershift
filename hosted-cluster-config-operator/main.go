@@ -1,5 +1,16 @@
 package main
 
+/*
+The hosted-cluster-config-operator is responsible for reconciling resources
+that live inside the hosted cluster. It is also responsible for updating
+configuration that lives in the control plane based on the state of hosted
+cluster configuration resources.
+
+The main controller that accomplishes this is the resources controller. This
+is where new reconciliation code should go, unless there is good reason to
+create a separate controller.
+*/
+
 import (
 	"context"
 	"errors"
@@ -19,7 +30,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/kubeadminpwd"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources"
 	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
@@ -45,7 +55,6 @@ func main() {
 
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"controller-manager-ca": cmca.Setup,
-	"kubeadmin-password":    kubeadminpwd.Setup,
 	// TODO: non-essential, can't statically link to operator
 	//"openshift-apiserver":          openshiftapiserver.Setup,
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
@@ -85,6 +94,12 @@ type HostedClusterConfigOperator struct {
 	// KonnectivityPort is the external port of the konnectivity server
 	KonnectivityPort int32
 
+	// OAuthAddress is the external address of the oauth server
+	OAuthAddress string
+
+	// OAuthPort is the external port of the oauth server
+	OAuthPort int32
+
 	initialCA []byte
 
 	platformType string
@@ -121,6 +136,8 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringVar(&cpo.HostedControlPlaneName, "hosted-control-plane", cpo.HostedControlPlaneName, "Name of the hosted control plane that owns this operator")
 	flags.StringVar(&cpo.KonnectivityAddress, "konnectivity-address", cpo.KonnectivityAddress, "Address of external konnectivity endpoint")
 	flags.Int32Var(&cpo.KonnectivityPort, "konnectivity-port", cpo.KonnectivityPort, "Port of external konnectivity endpoint")
+	flags.StringVar(&cpo.OAuthAddress, "oauth-address", cpo.KonnectivityAddress, "Address of external oauth endpoint")
+	flags.Int32Var(&cpo.OAuthPort, "oauth-port", cpo.KonnectivityPort, "Port of external oauth endpoint")
 	return cmd
 }
 
@@ -224,6 +241,8 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		ReleaseProvider:     releaseProvider,
 		KonnectivityAddress: o.KonnectivityAddress,
 		KonnectivityPort:    o.KonnectivityPort,
+		OAuthAddress:        o.OAuthAddress,
+		OAuthPort:           o.OAuthPort,
 	}
 	return operatorConfig.Start(ctx)
 }

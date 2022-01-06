@@ -56,6 +56,8 @@ type HostedClusterConfigOperatorConfig struct {
 	ReleaseProvider              releaseinfo.Provider
 	KonnectivityAddress          string
 	KonnectivityPort             int32
+	OAuthAddress                 string
+	OAuthPort                    int32
 
 	kubeClient kubeclient.Interface
 }

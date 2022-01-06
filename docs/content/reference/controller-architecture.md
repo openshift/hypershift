@@ -203,9 +203,27 @@ The Hosted Cluster Config Operator is versioned in lockstep with a specific OCP 
 
 The Hosted Cluster Config Operator is responsible for:
 
-- Approving CSRs?
 - Reading CAs from the hosted cluster to configure the kube controller manager CA bundle running in the hosted control plane
-- TODO
+- Reconciling resources that live on the hosted cluster:
+    * CRDs created by operators that are absent from the hosted cluster (RequestCount CRD created by cluster-kube-apiserver-operator)
+    * Clearing any user changes to the ClusterVersion resource (all updates should be driven via HostedCluster API)
+    * ClusterOperator stubs for control plane components that run outside.
+    * Global Configuration that is managed via the HostedCluster API
+    * Namespaces that are normally created by operators that are absent from the cluster.
+    * RBAC that is normally created by operators that are absent from the cluster.
+    * Registry configuration
+    * Default ingress controller
+    * Control Plane PKI (kubelet serving CA, control plane signer CA)
+    * Konnectivity Agent
+    * OpenShift APIServer resources (APIServices, Service, Endpoints)
+    * OpenShift OAuth APIServer resources (APIServices, Service, Endpoints)
+    * Monitoring Configuration (set node selector to non-master nodes)
+    * Pull Secret
+    * OAuth serving cert CA
+    * OAuthClients required by the console
+    * Cloud Credential Secrets (contain STS role for components that need cloud access)
+    * OLM CatalogSources
+    * OLM PackageServer resources (APIService, Service, Endpoints)
 
 ## Resource dependency diagram
 
