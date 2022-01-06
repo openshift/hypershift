@@ -5,16 +5,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
 
 var (
 	packageServerDeployment = MustDeployment("assets/packageserver-deployment.yaml")
-	packageServerAPIService = MustAPIService("assets/packageserver-apiservice.yaml")
-	packageServerService    = MustService("assets/packageserver-service-guest.yaml")
-	packageServerEndpoints  = MustEndpoints("assets/packageserver-endpoint-guest.yaml")
 )
 
 func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, apiPort *int32) error {
@@ -38,28 +34,4 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 	dc.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
-}
-
-func ReconcilePackageServerWorkerAPIServiceManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef, ca *corev1.Secret) error {
-	ownerRef.ApplyTo(cm)
-	apiService := packageServerAPIService.DeepCopy()
-	apiService.Spec.CABundle = ca.Data[pki.CASignerCertMapKey]
-	return util.ReconcileWorkerManifest(cm, apiService)
-}
-
-func ReconcilePackageServerWorkerServiceManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(cm)
-	svc := packageServerService.DeepCopy()
-	return util.ReconcileWorkerManifest(cm, svc)
-}
-
-func ReconcilePackageServerWorkerEndpointsManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef, serviceIP string) error {
-	ownerRef.ApplyTo(cm)
-	ep := packageServerEndpoints.DeepCopy()
-	ep.Subsets[0].Addresses = []corev1.EndpointAddress{
-		{
-			IP: serviceIP,
-		},
-	}
-	return util.ReconcileWorkerManifest(cm, ep)
 }

@@ -5,18 +5,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func PullSecret(ns string) *corev1.Secret {
+func RootCASecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pull-secret",
+			Name:      "root-ca",
 			Namespace: ns,
 		},
-	}
-}
-
-func PullSecretTargetNamespaces() []string {
-	return []string{
-		"openshift-config",
-		"openshift",
 	}
 }

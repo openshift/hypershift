@@ -24,6 +24,7 @@ func ReconcileCollectProfilesCronJob(cronJob *batchv1beta1.CronJob, ownerRef con
 			cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args[i] = namespace
 		}
 	}
+	cronJob.Spec.Schedule = generateModularDailyCronSchedule([]byte(cronJob.Namespace))
 }
 
 func ReconcileCollectProfilesConfigMap(configMap *corev1.ConfigMap, ownerRef config.OwnerRef) {

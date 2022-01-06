@@ -44,7 +44,7 @@ func (a *AWS) DestroyCluster(ctx context.Context, hc *hyperv1.HostedCluster) err
 		Name:      hc.Name,
 		InfraID:   a.opts.InfraID,
 		AWSPlatform: core.AWSPlatformDestroyOptions{
-			BaseDomain:         a.opts.AWSPlatform.BaseDomain,
+			BaseDomain:         a.opts.BaseDomain,
 			AWSCredentialsFile: a.opts.AWSPlatform.AWSCredentialsFile,
 			PreserveIAM:        false,
 			Region:             a.opts.AWSPlatform.Region,

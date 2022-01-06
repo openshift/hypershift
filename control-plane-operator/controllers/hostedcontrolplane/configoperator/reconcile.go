@@ -83,6 +83,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			APIGroups: []string{corev1.SchemeGroupVersion.Group},
 			Resources: []string{
 				"secrets",
+				"services",
 			},
 			Verbs: []string{
 				"get",
@@ -124,7 +125,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -139,7 +140,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion, enableCIDebugOutput, platformType, konnectivityAddress, konnectivityPort)),
+					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion, enableCIDebugOutput, platformType, konnectivityAddress, konnectivityPort, oauthAddress, oauthPort)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
@@ -180,7 +181,7 @@ func hccVolumeClusterSignerCA() *corev1.Volume {
 	}
 }
 
-func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32) func(c *corev1.Container) {
+func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
@@ -195,6 +196,8 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 			fmt.Sprintf("--hosted-control-plane=%s", hcpName),
 			fmt.Sprintf("--konnectivity-address=%s", konnectivityAddress),
 			fmt.Sprintf("--konnectivity-port=%d", konnectivityPort),
+			fmt.Sprintf("--oauth-address=%s", oauthAddress),
+			fmt.Sprintf("--oauth-port=%d", oauthPort),
 		}
 		c.Ports = []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}}
 		c.Env = []corev1.EnvVar{

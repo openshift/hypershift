@@ -48,6 +48,12 @@ var cpObjects = []client.Object{
 	fakeIngressCert(),
 	fakePullSecret(),
 	fakeKonnectivityAgentSecret(),
+	fakeRootCASecret(),
+	fakeOpenShiftAPIServerService(),
+	fakeOpenShiftOAuthAPIServerService(),
+	fakeKubeadminPasswordSecret(),
+	fakeOAuthServingCert(),
+	fakePackageServerService(),
 }
 
 type fakeReleaseProvider struct{}
@@ -143,5 +149,44 @@ func fakeKonnectivityAgentSecret() *corev1.Secret {
 		"tls.crt": []byte("12345"),
 		"tls.key": []byte("12345"),
 	}
+	return s
+}
+
+func fakeRootCASecret() *corev1.Secret {
+	s := manifests.RootCASecret("bar")
+	s.Data = map[string][]byte{
+		"ca.crt": []byte("12345"),
+		"ca.key": []byte("12345"),
+	}
+	return s
+}
+
+func fakeOpenShiftAPIServerService() *corev1.Service {
+	s := manifests.OpenShiftAPIServerService("bar")
+	s.Spec.ClusterIP = "1.1.1.1"
+	return s
+}
+
+func fakeOpenShiftOAuthAPIServerService() *corev1.Service {
+	s := manifests.OpenShiftOAuthAPIServerService("bar")
+	s.Spec.ClusterIP = "1.1.1.1"
+	return s
+}
+
+func fakeKubeadminPasswordSecret() *corev1.Secret {
+	s := manifests.KubeadminPasswordSecret("bar")
+	s.Data = map[string][]byte{"password": []byte("test")}
+	return s
+}
+
+func fakeOAuthServingCert() *corev1.Secret {
+	s := manifests.OpenShiftOAuthServerCert("bar")
+	s.Data = map[string][]byte{"tls.crt": []byte("test")}
+	return s
+}
+
+func fakePackageServerService() *corev1.Service {
+	s := manifests.OLMPackageServerControlPlaneService("bar")
+	s.Spec.ClusterIP = "1.1.1.1"
 	return s
 }

@@ -43,6 +43,7 @@ type CreateOptions struct {
 	InfraID                          string
 	Name                             string
 	Namespace                        string
+	BaseDomain                       string
 	NetworkType                      string
 	NodePoolReplicas                 int32
 	PullSecretFile                   string
@@ -76,7 +77,6 @@ type KubevirtPlatformCreateOptions struct {
 type AWSPlatformOptions struct {
 	AWSCredentialsFile string
 	AdditionalTags     []string
-	BaseDomain         string
 	IAMJSON            string
 	InstanceType       string
 	IssuerURL          string
