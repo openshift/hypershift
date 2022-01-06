@@ -185,7 +185,8 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{
-			"/usr/bin/hosted-cluster-config-operator",
+			"/usr/bin/control-plane-operator",
+			"hosted-cluster-config-operator",
 			fmt.Sprintf("--initial-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeRootCA().Name), pki.CASignerCertMapKey)),
 			fmt.Sprintf("--cluster-signer-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeClusterSignerCA().Name), pki.CASignerCertMapKey)),
 			fmt.Sprintf("--target-kubeconfig=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeKubeconfig().Name), kas.KubeconfigKey)),

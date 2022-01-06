@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )

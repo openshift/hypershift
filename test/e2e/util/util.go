@@ -79,8 +79,16 @@ func createCluster(t *testing.T, ctx context.Context, client crclient.Client, cl
 			t.Logf("Skipping cluster dump because no artifact dir was provided")
 		}
 		// TODO: Figure out why this is slow
-		//e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
-		DestroyHostedCluster(t, ctx, hc, clusterMgr, artifactDir)
+		// e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
+		destroyAttempt := 1
+		DestroyHostedCluster(t, ctx, hc, clusterMgr, func() {
+			if len(artifactDir) != 0 {
+				clusterMgr.DumpCluster(ctx, hc, filepath.Join(artifactDir, fmt.Sprintf("post-destroy-%d", destroyAttempt)))
+				destroyAttempt++
+			} else {
+				t.Logf("Skipping cluster dump because no artifact dir was provided")
+			}
+		})
 		DeleteNamespace(t, ctx, client, namespace.Name)
 	}
 
@@ -103,13 +111,17 @@ func createCluster(t *testing.T, ctx context.Context, client crclient.Client, cl
 	return hc
 }
 
-// DestroyHostedCluster destroys the HostedCluster
-func DestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterMgr cluster.Cluster, artifactDir string) {
+// DestroyHostedCluster destroys the HostedCluster. Will retry on failure until
+// the context is done. If destroy fails, the onFailure function is called to
+// give the user an opportunity to perform some additional action before the
+// next retry.
+func DestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterMgr cluster.Cluster, onFailure func()) {
 	t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		err := clusterMgr.DestroyCluster(ctx, hostedCluster)
 		if err != nil {
 			t.Errorf("Failed to destroy cluster, will retry: %v", err)
+			onFailure()
 			return false, nil
 		}
 		return true, nil
