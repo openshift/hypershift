@@ -223,6 +223,7 @@ func NewStartCommand() *cobra.Command {
 			ReleaseProvider:               releaseProvider,
 			HostedAPICache:                apiCacheController.GetCache(),
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
+			EnableCIDebugOutput:           enableCIDebugOutput,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

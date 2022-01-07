@@ -20,9 +20,10 @@ func ImageContentSourcePolicy() *operatorv1alpha1.ImageContentSourcePolicy {
 }
 
 func ReconcileImageContentSourcePolicy(icsp *operatorv1alpha1.ImageContentSourcePolicy, hcp *hyperv1.HostedControlPlane) error {
-	icsp.Labels = map[string]string{
-		"machineconfiguration.openshift.io/role": "worker",
+	if icsp.Labels == nil {
+		icsp.Labels = map[string]string{}
 	}
+	icsp.Labels["machineconfiguration.openshift.io/role"] = "worker"
 	icsp.Spec.RepositoryDigestMirrors = []operatorv1alpha1.RepositoryDigestMirrors{}
 	for _, imageContentSourceEntry := range hcp.Spec.ImageContentSources {
 		icsp.Spec.RepositoryDigestMirrors = append(icsp.Spec.RepositoryDigestMirrors, operatorv1alpha1.RepositoryDigestMirrors{
