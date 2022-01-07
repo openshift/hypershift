@@ -42,9 +42,8 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		FeatureGate: globalConfig.FeatureGate,
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
-		HyperkubeImage: images["hyperkube"],
-		// TODO: HCCO is the Hypershift image which contains the token-minter binary.  Messy though.
-		TokenMinterImage:        images["hosted-cluster-config-operator"],
+		HyperkubeImage:          images["hyperkube"],
+		TokenMinterImage:        images["token-minter"],
 		Port:                    DefaultPort,
 		ServiceCIDR:             hcp.Spec.ServiceCIDR,
 		PodCIDR:                 hcp.Spec.PodCIDR,

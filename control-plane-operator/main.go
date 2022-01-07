@@ -79,6 +79,7 @@ func NewStartCommand() *cobra.Command {
 		hostedClusterConfigOperatorImage string
 		socks5ProxyImage                 string
 		availabilityProberImage          string
+		tokenMinterImage                 string
 		inCluster                        bool
 		enableCIDebugOutput              bool
 		registryOverrides                map[string]string
@@ -93,6 +94,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image. (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&socks5ProxyImage, "socks5-proxy-image", "", "Image to use for socks5-proxy. (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&availabilityProberImage, "availability-prober-image", "", "Image to use for probing apiserver availability. (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&tokenMinterImage, "token-minter-image", "", "Image to use for the token minter. (defaults to match this operator if running in a deployment)")
 	cmd.Flags().BoolVar(&inCluster, "in-cluster", true, "If false, the operator will be assumed to be running outside a kube "+
 		"cluster and will make some internal decisions to ease local development (e.g. using external endpoints where possible"+
 		"to avoid assuming access to the service network)")
@@ -188,6 +190,13 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using availability prober image", "image", availabilityProberImage)
 
+		tokenMinterImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, tokenMinterImage)
+		if err != nil {
+			setupLog.Error(err, fmt.Sprintf("failed to find token minter image: %s", err), "controller", "hosted-control-plane")
+			os.Exit(1)
+		}
+		setupLog.Info("using token minter image", "image", tokenMinterImage)
+
 		releaseProvider := &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.StaticProviderDecorator{
 				Delegate: &releaseinfo.CachedProvider{
@@ -200,6 +209,7 @@ func NewStartCommand() *cobra.Command {
 					"konnectivity-server":            konnectivityServerImage,
 					"konnectivity-agent":             konnectivityAgentImage,
 					"socks5-proxy":                   socks5ProxyImage,
+					"token-minter":                   tokenMinterImage,
 				},
 			},
 			RegistryOverrides: registryOverrides,
