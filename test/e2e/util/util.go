@@ -384,19 +384,9 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// It needs some specific apis, we currently don't have checking for this
-			if strings.HasPrefix(pod.Name, "manifests-bootstrapper") {
-				continue
-			}
-
 			// TODO: This is needed because of an upstream NPD, see e.G. here: https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/486/pull-ci-openshift-hypershift-main-e2e-aws-pooled/1445408206435127296/artifacts/e2e-aws-pooled/test-e2e/artifacts/namespaces/e2e-clusters-slgzn-example-f748r/core/pods/logs/capa-controller-manager-f66fd8977-knt6h-manager-previous.log
 			// remove this exception once upstream is fixed and we have the fix
 			if strings.HasPrefix(pod.Name, "capa-controller-manager") {
-				continue
-			}
-
-			// TODO: Remove after https://issues.redhat.com/browse/HOSTEDCP-238 is done
-			if strings.HasPrefix(pod.Name, "packageserver") {
 				continue
 			}
 
