@@ -1,4 +1,4 @@
-package main
+package hostedclusterconfigoperator
 
 /*
 The hosted-cluster-config-operator is responsible for reconciling resources
@@ -19,22 +19,17 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/cmca"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/openshiftapiservermonitor"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/controllers/resources"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/operator"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/openshiftapiservermonitor"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/spf13/cobra"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 )
 
 const (
@@ -43,23 +38,17 @@ const (
 	konnectivityAgentImage   = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 )
 
-func main() {
-	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
-		o.TimeEncoder = zapcore.RFC3339TimeEncoder
-	}))
-	setupLog := ctrl.Log.WithName("setup")
-	if err := newHostedClusterConfigOperatorCommand().Execute(); err != nil {
-		setupLog.Error(err, "Operator failed")
-	}
+func NewCommand() *cobra.Command {
+	return newHostedClusterConfigOperatorCommand()
 }
 
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"controller-manager-ca": cmca.Setup,
 	// TODO: non-essential, can't statically link to operator
-	//"openshift-apiserver":          openshiftapiserver.Setup,
+	// "openshift-apiserver":          openshiftapiserver.Setup,
 	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
 	// TODO: non-essential, can't statically link to operator
-	//"openshift-controller-manager": openshiftcontrollermanager.Setup,
+	// "openshift-controller-manager": openshiftcontrollermanager.Setup,
 	resources.ControllerName: resources.Setup,
 }
 

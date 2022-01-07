@@ -38,7 +38,7 @@ endif
 
 all: build e2e
 
-build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
+build: ignition-server hypershift-operator control-plane-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
 
 .PHONY: verify
 verify: staticcheck deps api fmt vet promtool
@@ -69,11 +69,6 @@ hypershift-operator:
 .PHONY: control-plane-operator
 control-plane-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-operator ./control-plane-operator
-
-# Build hosted-cluster-config-operator binary
-.PHONY: hosted-cluster-config-operator
-hosted-cluster-config-operator:
-	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hosted-cluster-config-operator ./hosted-cluster-config-operator
 
 # Build konnectivity-socks5-proxy binary
 .PHONY: konnectivity-socks5-proxy
@@ -166,10 +161,9 @@ deps:
 .PHONY: staticcheck
 staticcheck: $(STATICCHECK)
 	$(STATICCHECK) \
-		./control-plane-operator/controllers/... \
+		./control-plane-operator/... \
 		./hypershift-operator/controllers/... \
 		./ignition-server/... \
-		./hosted-cluster-config-operator/... \
 		./cmd/... \
 		./support/certs/... \
 		./support/releaseinfo/... \

@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/hosted-cluster-config-operator/api"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 )
