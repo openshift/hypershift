@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/spf13/cobra"
 )
@@ -33,6 +34,7 @@ func NewCreateCommands() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.PersistentFlags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico or OpenshiftSDN.")
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Path to a pull secret (required)")
@@ -58,6 +60,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(none.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
+	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 
 	return cmd
 }
@@ -85,6 +88,7 @@ func NewDestroyCommands() *cobra.Command {
 	cmd.AddCommand(aws.NewDestroyCommand(opts))
 	cmd.AddCommand(none.NewDestroyCommand(opts))
 	cmd.AddCommand(agent.NewDestroyCommand(opts))
+	cmd.AddCommand(kubevirt.NewDestroyCommand(opts))
 
 	return cmd
 }

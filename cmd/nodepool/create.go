@@ -3,6 +3,7 @@ package nodepool
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,8 +15,11 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/util"
 
+	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 )
 
 type CreateNodePoolOptions struct {
@@ -32,6 +36,9 @@ type CreateNodePoolOptions struct {
 	RootVolumeType  string
 	RootVolumeIOPS  int64
 	RootVolumeSize  int64
+	KubevirtMemory  string
+	KubevirtCPU     uint32
+	KubevirtImage   string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -51,6 +58,10 @@ func NewCreateCommand() *cobra.Command {
 		RootVolumeType: "gp2",
 		RootVolumeSize: 120,
 		RootVolumeIOPS: 0,
+		// TODO (nargaman): Move kubevirt values into platform specific create file
+		KubevirtMemory: "4Gi",
+		KubevirtCPU:    2,
+		KubevirtImage:  "",
 	}
 
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the NodePool")
@@ -68,6 +79,9 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
+	cmd.Flags().StringVar(&opts.KubevirtMemory, "kubevirt-memory", opts.KubevirtMemory, "In KubeVirt platform - the amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
+	cmd.Flags().Uint32Var(&opts.KubevirtCPU, "kubevirt-cpu", opts.KubevirtCPU, "In KubeVirt platform - Cores specifies the number of cores inside the vmi, Must be a value greater or equal 1")
+	cmd.Flags().StringVar(&opts.KubevirtImage, "kubevirt-image", opts.KubevirtImage, "In KubeVirt platform - Image is a reference to docker image with the embedded disk to be used to create the machines")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -167,6 +181,53 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 				Type: o.RootVolumeType,
 				Size: o.RootVolumeSize,
 				IOPS: o.RootVolumeIOPS,
+			},
+		}
+	case hyperv1.KubevirtPlatform:
+		// TODO (nargaman): replace with official container image, after RFE-2501 is completed
+		// As long as there is no official container image
+		// The image must be provided by user
+		// Otherwise it must fail
+		if o.KubevirtImage == "" {
+			return errors.New("the image for the Kubevirt machine must be provided by user (\"--kubevirt-image\" flag")
+		}
+		runAlways := kubevirtv1.RunStrategyAlways
+		guestQuantity := apiresource.MustParse(o.KubevirtMemory)
+		nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
+			NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
+				Spec: kubevirtv1.VirtualMachineSpec{
+					RunStrategy: &runAlways,
+					Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+						Spec: kubevirtv1.VirtualMachineInstanceSpec{
+							Domain: kubevirtv1.DomainSpec{
+								CPU:    &kubevirtv1.CPU{Cores: o.KubevirtCPU},
+								Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
+								Devices: kubevirtv1.Devices{
+									Disks: []kubevirtv1.Disk{
+										{
+											Name: "containervolume",
+											DiskDevice: kubevirtv1.DiskDevice{
+												Disk: &kubevirtv1.DiskTarget{
+													Bus: "virtio",
+												},
+											},
+										},
+									},
+								},
+							},
+							Volumes: []kubevirtv1.Volume{
+								{
+									Name: "containervolume",
+									VolumeSource: kubevirtv1.VolumeSource{
+										ContainerDisk: &kubevirtv1.ContainerDiskSource{
+											Image: o.KubevirtImage,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
 			},
 		}
 	}

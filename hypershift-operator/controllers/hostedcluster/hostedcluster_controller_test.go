@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -18,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
@@ -970,4 +972,56 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileCAPIProviderRole(t *testing.T) {
+	p := kubevirt.Kubevirt{}
+	role := &rbacv1.Role{}
+	if err := reconcileCAPIProviderRole(role, p); err != nil {
+		t.Fatalf("reconcileCAPIProviderRole failed: %v", err)
+	}
+	if diff := cmp.Diff(expectedRules(p.CAPIProviderPolicyRules()), role.Rules); diff != "" {
+		t.Errorf("expected rules differs from actual: %s", diff)
+	}
+}
+
+func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
+	baseRules := []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{
+				"events",
+				"secrets",
+				"configmaps",
+			},
+			Verbs: []string{"*"},
+		},
+		{
+			APIGroups: []string{
+				"bootstrap.cluster.x-k8s.io",
+				"controlplane.cluster.x-k8s.io",
+				"infrastructure.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+				"exp.infrastructure.cluster.x-k8s.io",
+				"addons.cluster.x-k8s.io",
+				"exp.cluster.x-k8s.io",
+				"cluster.x-k8s.io",
+			},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"hypershift.openshift.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
+			},
+			Verbs: []string{"*"},
+		},
+	}
+	return append(baseRules, addRules...)
 }

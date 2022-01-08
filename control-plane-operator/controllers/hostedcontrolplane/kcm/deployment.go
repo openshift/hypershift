@@ -288,7 +288,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),
 		"--use-service-account-credentials=true",
-		"--experimental-cluster-signing-duration=26280h",
+		"--experimental-cluster-signing-duration=17520h",
 	}...)
 	for _, f := range p.FeatureGates() {
 		args = append(args, fmt.Sprintf("--feature-gates=%s", f))

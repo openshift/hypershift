@@ -899,7 +899,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI provider components
-	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, capiProviderDeploymentSpec); err != nil {
+	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, capiProviderDeploymentSpec, p); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
@@ -1019,7 +1019,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()
-	if hcluster.Spec.Platform.Type == hyperv1.AgentPlatform {
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AgentPlatform, hyperv1.KubevirtPlatform:
 		// Agent platform uses None platform for the hcp.
 		hcp.Spec.Platform.Type = hyperv1.NonePlatform
 	}
@@ -1137,7 +1138,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 // reconcileCAPIProvider orchestrates reconciliation of the CAPI provider
 // components for a given platform.
 func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
-	capiProviderDeploymentSpec *appsv1.DeploymentSpec) error {
+	capiProviderDeploymentSpec *appsv1.DeploymentSpec, p platform.Platform) error {
 	if capiProviderDeploymentSpec == nil {
 		// If there's no capiProviderDeploymentSpec implementation return early.
 		return nil
@@ -1152,7 +1153,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 	// Reconcile CAPI provider role
 	capiProviderRole := clusterapi.CAPIProviderRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiProviderRole, func() error {
-		return reconcileCAPIProviderRole(capiProviderRole)
+		return reconcileCAPIProviderRole(capiProviderRole, p)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi provider role: %w", err)
@@ -2328,8 +2329,8 @@ func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.R
 	return nil
 }
 
-func reconcileCAPIProviderRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
+func reconcileCAPIProviderRole(role *rbacv1.Role, p platform.Platform) error {
+	rules := []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{""},
 			Resources: []string{
@@ -2366,6 +2367,10 @@ func reconcileCAPIProviderRole(role *rbacv1.Role) error {
 			Verbs: []string{"*"},
 		},
 	}
+	if platformRules := p.CAPIProviderPolicyRules(); platformRules != nil {
+		rules = append(rules, platformRules...)
+	}
+	role.Rules = rules
 	return nil
 }
 
@@ -2808,7 +2813,18 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 		// not be terminated until the resources are removed from the API server
 		return false, nil
 	}
-
+	// There are scenarios where CAPI might not be operational e.g None Platform.
+	// We want to ensure the HCP resource is deleted before deleting the Namespace.
+	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
+	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
+	if err := r.Delete(ctx, hcp); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting HostedControlPlane %q in namespace %q: %w", hcp.Name, hcp.Namespace, err)
+		}
+	} else {
+		r.Log.Info("Waiting for Hosted Control Plane deletion", "Name", hcp.Name, "Namespace", hcp.Namespace)
+		return false, nil
+	}
 	r.Log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
@@ -2818,6 +2834,12 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	}
 
 	if err := r.cleanupOIDCBucketData(ctx, hc); err != nil {
+		return false, err
+	}
+
+	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
+	// we don't error initially because we can not create new content in a namespace that is being deleted.
+	if err := r.Get(ctx, client.ObjectKeyFromObject(ns), ns); err == nil || !apierrors.IsNotFound(err) {
 		return false, err
 	}
 	return true, nil

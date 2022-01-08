@@ -11,37 +11,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/util"
 )
-
-var (
-	certifiedOperatorsCatalogSource         = MustAsset("assets/catalog-certified-operators-catalogsource.yaml")
-	communityOperatorsCatalogSource         = MustAsset("assets/catalog-community-operators-catalogsource.yaml")
-	redHatMarketplaceOperatorsCatalogSource = MustAsset("assets/catalog-redhat-marketplace-catalogsource.yaml")
-	redHatOperatorsCatalogSource            = MustAsset("assets/catalog-redhat-operators-catalogsource.yaml")
-)
-
-func ReconcileCertifiedOperatorsCatalogSourceWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	return reconcileCatalogSourceWorkerManifest(cm, ownerRef, certifiedOperatorsCatalogSource)
-}
-
-func ReconcileCommunityOperatorsCatalogSourceWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	return reconcileCatalogSourceWorkerManifest(cm, ownerRef, communityOperatorsCatalogSource)
-}
-
-func ReconcileRedHatMarketplaceOperatorsCatalogSourceWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	return reconcileCatalogSourceWorkerManifest(cm, ownerRef, redHatMarketplaceOperatorsCatalogSource)
-}
-
-func ReconcileRedHatOperatorsCatalogSourceWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	return reconcileCatalogSourceWorkerManifest(cm, ownerRef, redHatOperatorsCatalogSource)
-}
-
-func reconcileCatalogSourceWorkerManifest(cm *corev1.ConfigMap, ownerRef config.OwnerRef, catalogSourceBytes []byte) error {
-	ownerRef.ApplyTo(cm)
-	util.ReconcileWorkerManifestString(cm, string(catalogSourceBytes))
-	return nil
-}
 
 var (
 	certifiedCatalogService         = MustService("assets/catalog-certified.service.yaml")

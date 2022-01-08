@@ -38,7 +38,7 @@ endif
 
 all: build e2e
 
-build: ignition-server hypershift-operator control-plane-operator hosted-cluster-config-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
+build: ignition-server hypershift-operator control-plane-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
 
 .PHONY: verify
 verify: staticcheck deps api fmt vet promtool
@@ -70,11 +70,6 @@ hypershift-operator:
 control-plane-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-operator ./control-plane-operator
 
-# Build hosted-cluster-config-operator binary
-.PHONY: hosted-cluster-config-operator
-hosted-cluster-config-operator:
-	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hosted-cluster-config-operator ./hosted-cluster-config-operator
-
 # Build konnectivity-socks5-proxy binary
 .PHONY: konnectivity-socks5-proxy
 konnectivity-socks5-proxy:
@@ -95,7 +90,7 @@ token-minter:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud api-docs
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt api-docs
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
@@ -120,6 +115,11 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-ibmcloud/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
+
+.PHONY: cluster-api-provider-kubevirt
+cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/cluster-api-provider-kubevirt/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-kubevirt
 
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
@@ -161,10 +161,9 @@ deps:
 .PHONY: staticcheck
 staticcheck: $(STATICCHECK)
 	$(STATICCHECK) \
-		./control-plane-operator/controllers/... \
+		./control-plane-operator/... \
 		./hypershift-operator/controllers/... \
 		./ignition-server/... \
-		./hosted-cluster-config-operator/... \
 		./cmd/... \
 		./support/certs/... \
 		./support/releaseinfo/... \

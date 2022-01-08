@@ -43,6 +43,7 @@ type CreateOptions struct {
 	InfraID                          string
 	Name                             string
 	Namespace                        string
+	BaseDomain                       string
 	NetworkType                      string
 	NodePoolReplicas                 int32
 	PullSecretFile                   string
@@ -52,6 +53,7 @@ type CreateOptions struct {
 	ServiceCIDR                      string
 	PodCIDR                          string
 	NonePlatform                     NonePlatformCreateOptions
+	KubevirtPlatform                 KubevirtPlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
 	Wait                             bool
@@ -65,10 +67,16 @@ type NonePlatformCreateOptions struct {
 	APIServerAddress string
 }
 
+type KubevirtPlatformCreateOptions struct {
+	APIServerAddress   string
+	Memory             string
+	Cores              uint32
+	ContainerDiskImage string
+}
+
 type AWSPlatformOptions struct {
 	AWSCredentialsFile string
 	AdditionalTags     []string
-	BaseDomain         string
 	IAMJSON            string
 	InstanceType       string
 	IssuerURL          string
