@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -83,6 +84,9 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 			}, nil
 		},
 		NewCache: cache.BuilderWithOptions(cache.Options{
+			SelectorsByObject: cache.SelectorsByObject{
+				&corev1.Namespace{}: cache.ObjectSelector{Label: labels.Everything()},
+			},
 			DefaultSelector: cache.ObjectSelector{Label: cacheLabelSelector()},
 		}),
 		Scheme: api.Scheme,

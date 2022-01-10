@@ -11,8 +11,10 @@ import (
 	//TODO: Switch to k8s.io/api/batch/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	capiawsv1beta1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,6 +81,8 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 	switch existingTyped := existing.(type) {
 	case *appsv1.Deployment:
 		defaultDeploymentSpec(&existingTyped.Spec, &obj.(*appsv1.Deployment).Spec)
+	case *appsv1.DaemonSet:
+		defaultDaemonSetSpec(&existingTyped.Spec, &obj.(*appsv1.DaemonSet).Spec)
 	case *appsv1.StatefulSet:
 		defaultStatefulSetSpec(&existingTyped.Spec, &obj.(*appsv1.StatefulSet).Spec)
 	case *batchv1beta1.CronJob:
@@ -87,6 +91,8 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 		defaultServiceSpec(&existingTyped.Spec, &obj.(*corev1.Service).Spec)
 	case *routev1.Route:
 		defaultRouteSpec(&existingTyped.Spec, &obj.(*routev1.Route).Spec)
+	case *apiextensionsv1.CustomResourceDefinition:
+		defaultCRDSpec(&existingTyped.Spec, &obj.(*apiextensionsv1.CustomResourceDefinition).Spec)
 	}
 
 	if equality.Semantic.DeepEqual(existing, obj) {
@@ -160,6 +166,9 @@ func defaultServiceSpec(original, mutated *corev1.ServiceSpec) {
 		if mutated.Ports[i].Protocol == "" {
 			mutated.Ports[i].Protocol = original.Ports[i].Protocol
 		}
+		if mutated.Ports[i].TargetPort.String() == "0" {
+			mutated.Ports[i].TargetPort = intstr.FromInt(int(mutated.Ports[i].Port))
+		}
 	}
 	if mutated.SessionAffinity == "" {
 		mutated.SessionAffinity = original.SessionAffinity
@@ -220,6 +229,19 @@ func defaultDeploymentSpec(original, mutated *appsv1.DeploymentSpec) {
 		mutated.RevisionHistoryLimit = original.RevisionHistoryLimit
 	}
 
+	defaultPodSpec(&original.Template.Spec, &mutated.Template.Spec)
+}
+
+func defaultDaemonSetSpec(original, mutated *appsv1.DaemonSetSpec) {
+	if mutated.RevisionHistoryLimit == nil {
+		mutated.RevisionHistoryLimit = original.RevisionHistoryLimit
+	}
+	if mutated.UpdateStrategy.Type == "" {
+		mutated.UpdateStrategy.Type = original.UpdateStrategy.Type
+	}
+	if mutated.UpdateStrategy.RollingUpdate == nil && original.UpdateStrategy.RollingUpdate != nil {
+		mutated.UpdateStrategy.RollingUpdate = original.UpdateStrategy.RollingUpdate
+	}
 	defaultPodSpec(&original.Template.Spec, &mutated.Template.Spec)
 }
 
@@ -387,5 +409,13 @@ func defaultEnv(original, mutated *corev1.EnvVar) {
 func defaultContainerPort(original, mutated *corev1.ContainerPort) {
 	if mutated.Protocol == "" {
 		mutated.Protocol = original.Protocol
+	}
+}
+
+func defaultCRDSpec(original, mutated *apiextensionsv1.CustomResourceDefinitionSpec) {
+	if mutated.Conversion == nil {
+		mutated.Conversion = &apiextensionsv1.CustomResourceConversion{
+			Strategy: apiextensionsv1.NoneConverter,
+		}
 	}
 }

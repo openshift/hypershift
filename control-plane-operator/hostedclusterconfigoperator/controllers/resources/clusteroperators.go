@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	configv1 "github.com/openshift/api/config/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -255,7 +256,13 @@ func (r *reconciler) reconcileClusterOperators(ctx context.Context) error {
 
 func (r *reconciler) clusterOperatorStatus(coInfo ClusterOperatorInfo, currentStatus configv1.ClusterOperatorStatus) configv1.ClusterOperatorStatus {
 	status := configv1.ClusterOperatorStatus{}
-	for key, target := range coInfo.VersionMapping {
+	versionMappingKeys := make([]string, 0, len(coInfo.VersionMapping))
+	for key := range coInfo.VersionMapping {
+		versionMappingKeys = append(versionMappingKeys, key)
+	}
+	sort.Strings(versionMappingKeys)
+	for _, key := range versionMappingKeys {
+		target := coInfo.VersionMapping[key]
 		v, hasVersion := r.versions[target]
 		if !hasVersion {
 			continue
