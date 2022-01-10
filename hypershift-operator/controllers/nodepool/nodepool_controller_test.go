@@ -2,14 +2,19 @@ package nodepool
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	. "github.com/onsi/gomega"
+	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	k8sutilspointer "k8s.io/utils/pointer"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -150,7 +155,7 @@ func TestValidateAutoscaling(t *testing.T) {
 			name: "fails when both nodeCount and autoscaling are set",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
-					NodeCount: pointer.Int32Ptr(1),
+					NodeCount: k8sutilspointer.Int32Ptr(1),
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: 1,
 						Max: 2,
@@ -565,7 +570,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					NodeCount: pointer.Int32Ptr(5),
+					NodeCount: k8sutilspointer.Int32Ptr(5),
 				},
 			},
 			machineDeployment: &capiv1.MachineDeployment{
@@ -595,7 +600,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: pointer.Int32Ptr(3),
+					Replicas: k8sutilspointer.Int32Ptr(3),
 				},
 			},
 			expectReplicas: 3,
@@ -640,7 +645,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: pointer.Int32Ptr(0),
+					Replicas: k8sutilspointer.Int32Ptr(0),
 				},
 			},
 			expectReplicas: 1,
@@ -804,4 +809,102 @@ func TestValidateManagement(t *testing.T) {
 			g.Expect(err).ShouldNot(HaveOccurred())
 		})
 	}
+}
+
+// It returns a expected machineTemplateSpecJSON
+// and a template and mutateTemplate able to produce an expected target template.
+func TestMachineTemplateBuilders(t *testing.T) {
+	g := NewWithT(t)
+
+	infraID := "test"
+	ami := "test"
+	hcluster := &hyperv1.HostedCluster{
+		TypeMeta:   metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{},
+		Spec: hyperv1.HostedClusterSpec{
+			Release: hyperv1.Release{},
+			InfraID: infraID,
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					ResourceTags: nil,
+				},
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{},
+	}
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "test",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Platform: hyperv1.NodePoolPlatform{
+
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					InstanceType:    "",
+					InstanceProfile: "",
+					Subnet:          nil,
+					AMI:             ami,
+					RootVolume: &hyperv1.Volume{
+						Size: 16,
+						Type: "io1",
+						IOPS: 5000,
+					},
+					ResourceTags: nil,
+				},
+			},
+		},
+	}
+
+	expectedMachineTemplate := &capiaws.AWSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nodePool.GetName(),
+			Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name,
+		},
+		Spec: capiaws.AWSMachineTemplateSpec{
+			Template: capiaws.AWSMachineTemplateResource{
+				Spec: capiaws.AWSMachineSpec{
+					AMI: capiaws.AMIReference{
+						ID: k8sutilspointer.StringPtr(ami),
+					},
+					IAMInstanceProfile:   "test-worker-profile",
+					Subnet:               &capiaws.AWSResourceReference{},
+					UncompressedUserData: k8sutilspointer.BoolPtr(true),
+					CloudInit: capiaws.CloudInit{
+						InsecureSkipSecretsManager: true,
+						SecureSecretsBackend:       "secrets-manager",
+					},
+					RootVolume: &capiaws.Volume{
+						Size: 16,
+						Type: "io1",
+						IOPS: 5000,
+					},
+				},
+			},
+		},
+	}
+	expectedMachineTemplateSpecJSON, err := json.Marshal(expectedMachineTemplate.Spec)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
+
+	// Validate that template and mutateTemplate are able to produce an expected target template.
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
+	r := &NodePoolReconciler{
+		Client:                 c,
+		CreateOrUpdateProvider: upsert.New(false),
+	}
+	_, err = r.CreateOrUpdate(context.Background(), r.Client, template, func() error {
+		return mutateTemplate(template)
+	})
+	g.Expect(err).ToNot(HaveOccurred())
+
+	gotMachineTemplate := &capiaws.AWSMachineTemplate{}
+	r.Client.Get(context.Background(), client.ObjectKeyFromObject(expectedMachineTemplate), gotMachineTemplate)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
 }
