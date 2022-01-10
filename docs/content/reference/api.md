@@ -1360,6 +1360,35 @@ This must be provided and cannot be empty.</p>
 </tr>
 </tbody>
 </table>
+###AgentPlatformSpec { #hypershift.openshift.io/v1alpha1.AgentPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>AgentPlatformSpec specifies configuration for agent-based installations.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>agentNamespace</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>AgentNamespace is the namespace where to search for Agents for this cluster</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AvailabilityPolicy { #hypershift.openshift.io/v1alpha1.AvailabilityPolicy }
 <p>
 (<em>Appears on:</em>
@@ -3925,6 +3954,20 @@ AWSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>agent</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AgentPlatformSpec">
+AgentPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Agent specifies configuration for agent-based installations.</p>
 </td>
 </tr>
 <tr>

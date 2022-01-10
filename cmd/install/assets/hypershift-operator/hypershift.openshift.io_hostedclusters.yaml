@@ -363,6 +363,16 @@ spec:
                 description: Platform specifies the underlying infrastructure provider
                   for the cluster and is used to configure platform specific behavior.
                 properties:
+                  agent:
+                    description: Agent specifies configuration for agent-based installations.
+                    properties:
+                      agentNamespace:
+                        description: AgentNamespace is the namespace where to search
+                          for Agents for this cluster
+                        type: string
+                    required:
+                    - agentNamespace
+                    type: object
                   aws:
                     description: AWS specifies configuration for clusters running
                       on Amazon Web Services.
