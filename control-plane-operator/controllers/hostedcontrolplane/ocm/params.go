@@ -11,13 +11,16 @@ import (
 )
 
 type OpenShiftControllerManagerParams struct {
-	OpenShiftControllerManagerImage string              `json:"openshiftControllerManagerImage"`
-	DockerBuilderImage              string              `json:"dockerBuilderImage"`
-	DeployerImage                   string              `json:"deployerImage"`
-	APIServer                       *configv1.APIServer `json:"apiServer"`
+	OpenShiftControllerManagerImage string
+	DockerBuilderImage              string
+	DeployerImage                   string
+	APIServer                       *configv1.APIServer
+	Network                         *configv1.Network
+	Build                           *configv1.Build
+	Image                           *configv1.Image
 
-	DeploymentConfig config.DeploymentConfig `json:"deploymentConfig"`
-	config.OwnerRef  `json:",inline"`
+	DeploymentConfig config.DeploymentConfig
+	config.OwnerRef
 }
 
 func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, setDefaultSecurityContext bool) *OpenShiftControllerManagerParams {
@@ -26,7 +29,11 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 		DockerBuilderImage:              images["docker-builder"],
 		DeployerImage:                   images["deployer"],
 		APIServer:                       globalConfig.APIServer,
+		Network:                         globalConfig.Network,
+		Build:                           globalConfig.Build,
+		Image:                           globalConfig.Image,
 	}
+
 	params.DeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
 			PriorityClass: config.DefaultPriorityClass,

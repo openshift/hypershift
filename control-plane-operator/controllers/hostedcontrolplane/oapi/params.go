@@ -26,6 +26,9 @@ type OpenShiftAPIServerParams struct {
 	ProxyImage                              string `json:"haproxyImage"`
 	AvailabilityProberImage                 string `json:"availabilityProberImage"`
 	Availability                            hyperv1.AvailabilityPolicy
+	Ingress                                 *configv1.Ingress
+	Image                                   *configv1.Image
+	Project                                 *configv1.Project
 }
 
 type OAuthDeploymentParams struct {
@@ -50,6 +53,9 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 		IngressSubDomain:        config.IngressSubdomain(hcp),
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
+		Image:                   globalConfig.Image,
+		Ingress:                 globalConfig.Ingress,
+		Project:                 globalConfig.Project,
 	}
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{

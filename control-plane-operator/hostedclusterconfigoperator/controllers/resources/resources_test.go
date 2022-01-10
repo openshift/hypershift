@@ -11,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -33,8 +34,24 @@ func (c *testClient) Create(ctx context.Context, obj client.Object, opts ...clie
 	return c.Client.Create(ctx, obj, opts...)
 }
 
+var initialObjects = []client.Object{
+	globalconfig.IngressConfig(),
+	globalconfig.ImageConfig(),
+	globalconfig.ProjectConfig(),
+	globalconfig.BuildConfig(),
+}
+
+func shouldNotError(key client.ObjectKey) bool {
+	for _, o := range initialObjects {
+		if client.ObjectKeyFromObject(o).String() == key.String() {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-	if c.randomGetErrors {
+	if c.randomGetErrors && !shouldNotError(key) {
 		if randomSource.Int()%3 == 0 {
 			c.getErrorCount++
 			return fmt.Errorf("random error")
@@ -70,7 +87,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 	var totalCreates int
 	{
 		fakeClient := &testClient{
-			Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).Build(),
 		}
 
 		r := &reconciler{
@@ -93,7 +110,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 	// test with random get errors
 	for i := 0; i < 100; i++ {
 		fakeClient := &testClient{
-			Client:          fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			Client:          fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).Build(),
 			randomGetErrors: true,
 		}
 		r := &reconciler{

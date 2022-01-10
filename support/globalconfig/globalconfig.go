@@ -23,6 +23,8 @@ type GlobalConfig struct {
 	OAuth          *configv1.OAuth
 	Scheduler      *configv1.Scheduler
 	Proxy          *configv1.Proxy
+	Build          *configv1.Build
+	Project        *configv1.Project
 }
 
 func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (GlobalConfig, error) {
@@ -50,8 +52,6 @@ func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (
 			globalConfig.Authentication = obj
 		case *configv1.FeatureGate:
 			globalConfig.FeatureGate = obj
-		case *configv1.Image:
-			globalConfig.Image = obj
 		case *configv1.Ingress:
 			globalConfig.Ingress = obj
 		case *configv1.Network:
