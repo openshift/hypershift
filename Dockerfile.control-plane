@@ -4,7 +4,7 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make control-plane-operator ignition-server hosted-cluster-config-operator konnectivity-socks5-proxy availability-prober token-minter
+RUN make control-plane-operator ignition-server konnectivity-socks5-proxy availability-prober token-minter
 
 FROM registry.ci.openshift.org/ocp/4.10:base
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
