@@ -22,6 +22,8 @@ import (
 type DestroyIAMOptions struct {
 	Region             string
 	AWSCredentialsFile string
+	AWSKey             string
+	AWSSecretKey       string
 	InfraID            string
 }
 
@@ -80,7 +82,7 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	awsSession := awsutil.NewSession("cli-destroy-iam")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
 	iamClient := iam.New(awsSession, awsConfig)
 
 	var err error
