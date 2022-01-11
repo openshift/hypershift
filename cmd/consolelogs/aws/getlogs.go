@@ -76,7 +76,7 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 		return fmt.Errorf("failed to get hostedcluster: %w", err)
 	}
-	infraID := hostedCluster.Spec.InfraID
+	infraID := hostedCluster.Spec.Platform.AWS.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
 	awsSession := awsutil.NewSession("cli-console-logs")
 	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, region)

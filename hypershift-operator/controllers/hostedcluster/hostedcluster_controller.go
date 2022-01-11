@@ -817,7 +817,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the CAPI Cluster resource
 	// In the None platform case, there is no CAPI provider/resources so infraCR is nil
 	if infraCR != nil {
-		capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Spec.InfraID)
+		capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace.Name, hcluster.Name)
 		_, err = createOrUpdate(ctx, r.Client, capiCluster, func() error {
 			return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
 		})
@@ -1001,7 +1001,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.APIPort = hcluster.Spec.Networking.APIServer.Port
 	}
 
-	hcp.Spec.InfraID = hcluster.Spec.InfraID
 	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.Services = hcluster.Spec.Services
 	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
@@ -1754,7 +1753,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 		capiKubeConfigSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: hcp.Namespace,
-				Name:      fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
+				Name:      fmt.Sprintf("%s-kubeconfig", hcluster.Name),
 			},
 		}
 		err = r.Client.Get(ctx, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
@@ -2806,11 +2805,11 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 		}
 	}
 
-	if hc != nil && len(hc.Spec.InfraID) > 0 {
-		r.Log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
+	if hc != nil {
+		r.Log.Info("Deleting Cluster", "clusterName", hc.Name, "clusterNamespace", controlPlaneNamespace)
 		cluster := &capiv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      hc.Spec.InfraID,
+				Name:      hc.Name,
 				Namespace: controlPlaneNamespace,
 			},
 		}
@@ -2821,7 +2820,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 			}
 			// The advancing case is when Delete() returns an error that the cluster is not found
 		} else {
-			r.Log.Info("Waiting for Cluster deletion", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
+			r.Log.Info("Waiting for Cluster deletion", "clusterName", hc.Name, "clusterNamespace", controlPlaneNamespace)
 			return false, nil
 		}
 	}
@@ -3287,7 +3286,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 			ACL:    aws.String("public-read"),
 			Body:   aws.ReadSeekCloser(bytes.NewReader(body)),
 			Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
-			Key:    aws.String(hcluster.Spec.InfraID + path),
+			Key:    aws.String(hcluster.Spec.Platform.AWS.InfraID + path),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to upload %s to the %s s3 bucket: %w", path, r.OIDCStorageProviderS3BucketName, err)
@@ -3316,7 +3315,7 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, hcl
 	var objectsToDelete []*s3.ObjectIdentifier
 	for _, path := range oidcPublicDocumentPaths() {
 		objectsToDelete = append(objectsToDelete, &s3.ObjectIdentifier{
-			Key: aws.String(hcluster.Spec.InfraID + path),
+			Key: aws.String(hcluster.Spec.Platform.AWS.InfraID + path),
 		})
 	}
 
@@ -3343,7 +3342,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 
 	var existing *hyperv1.AWSResourceTag
 	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
-		if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.InfraID {
+		if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.Platform.AWS.InfraID {
 			existing = &hcluster.Spec.Platform.AWS.ResourceTags[idx]
 			break
 		}
@@ -3356,7 +3355,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 		existing.Value = "owned"
 	} else {
 		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
-			Key:   "kubernetes.io/cluster/" + hcluster.Spec.InfraID,
+			Key:   "kubernetes.io/cluster/" + hcluster.Spec.Platform.AWS.InfraID,
 			Value: "owned",
 		})
 	}

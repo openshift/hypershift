@@ -137,7 +137,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
-	md := machineDeployment(nodePool, hcluster.Spec.InfraID, controlPlaneNamespace)
+	md := machineDeployment(nodePool, hcluster.Name, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 
 	if !nodePool.DeletionTimestamp.IsZero() {
@@ -235,7 +235,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// Get HostedCluster deps.
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 	ignEndpoint := hcluster.Status.IgnitionEndpoint
-	infraID := hcluster.Spec.InfraID
 
 	// 1. - Reconcile conditions according to current state of the world.
 
@@ -513,7 +512,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	var machineTemplate client.Object
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		machineTemplate, err = r.reconcileAWSMachineTemplate(ctx, hcluster, nodePool, infraID, ami, controlPlaneNamespace)
+		machineTemplate, err = r.reconcileAWSMachineTemplate(ctx, hcluster, nodePool, hcluster.Spec.Platform.AWS.InfraID, ami, controlPlaneNamespace)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSMachineTemplate: %w", err)
 		}
@@ -551,14 +550,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 		return ctrl.Result{}, nil
 	}
-	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
+	md := machineDeployment(nodePool, hcluster.Name, controlPlaneNamespace)
 	if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
 		return r.reconcileMachineDeployment(
 			log,
 			md, nodePool,
 			userDataSecret,
 			machineTemplate,
-			infraID,
+			hcluster.Name,
 			targetVersion, targetConfigHash, targetConfigVersionHash)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
@@ -570,7 +569,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 	if nodePool.Spec.Management.AutoRepair {
 		if result, err := ctrl.CreateOrUpdate(ctx, r.Client, mhc, func() error {
-			return r.reconcileMachineHealthCheck(mhc, nodePool, infraID)
+			return r.reconcileMachineHealthCheck(mhc, nodePool, hcluster.Name)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineHealthCheck %q: %w",
 				client.ObjectKeyFromObject(mhc).String(), err)

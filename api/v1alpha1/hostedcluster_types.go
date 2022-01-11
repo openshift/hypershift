@@ -79,15 +79,6 @@ type HostedClusterSpec struct {
 	// and InfrastructureAvailabilityPolicy.
 	Release Release `json:"release"`
 
-	// InfraID is a globally unique identifier for the cluster. This identifier
-	// will be used to associate various cloud resources with the HostedCluster
-	// and its associated NodePools.
-	//
-	// TODO(dan): consider moving this to .platform.aws.infraID
-	//
-	// +immutable
-	InfraID string `json:"infraID"`
-
 	// Platform specifies the underlying infrastructure provider for the cluster
 	// and is used to configure platform specific behavior.
 	//
@@ -565,6 +556,13 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:default=Public
 	// +optional
 	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
+
+	// InfraID is a globally unique identifier for the cluster. This identifier
+	// will be used to associate various cloud resources with the HostedCluster
+	// and its associated NodePools.
+	//
+	// +immutable
+	InfraID string `json:"infraID"`
 }
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.

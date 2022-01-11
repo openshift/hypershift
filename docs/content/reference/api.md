@@ -100,20 +100,6 @@ and InfrastructureAvailabilityPolicy.</p>
 </tr>
 <tr>
 <td>
-<code>infraID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>InfraID is a globally unique identifier for the cluster. This identifier
-will be used to associate various cloud resources with the HostedCluster
-and its associated NodePools.</p>
-<p>TODO(dan): consider moving this to .platform.aws.infraID</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>platform</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">
@@ -1162,6 +1148,19 @@ Value must be one of:
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>infraID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>InfraID is a globally unique identifier for the cluster. This identifier
+will be used to associate various cloud resources with the HostedCluster
+and its associated NodePools.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSResourceReference { #hypershift.openshift.io/v1alpha1.AWSResourceReference }
@@ -2022,20 +2021,6 @@ Release
 <p>Updating this field will trigger a rollout of the control plane. The
 behavior of the rollout will be driven by the ControllerAvailabilityPolicy
 and InfrastructureAvailabilityPolicy.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>infraID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>InfraID is a globally unique identifier for the cluster. This identifier
-will be used to associate various cloud resources with the HostedCluster
-and its associated NodePools.</p>
-<p>TODO(dan): consider moving this to .platform.aws.infraID</p>
 </td>
 </tr>
 <tr>

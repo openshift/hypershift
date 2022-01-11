@@ -204,6 +204,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).ControlPlaneOperatorAWSCreds.Name},
 				ResourceTags:              o.AWS.ResourceTags,
 				EndpointAccess:            hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess),
+				InfraID:                   o.InfraID,
 			},
 		}
 		services = []hyperv1.ServicePublishingStrategyMapping{
@@ -298,7 +299,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				NetworkType: o.NetworkType,
 			},
 			Services:   services,
-			InfraID:    o.InfraID,
 			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
 			IssuerURL:  o.IssuerURL,
 			SSHKey:     sshKeyReference,

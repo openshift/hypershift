@@ -875,15 +875,14 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 		{
 			name: "Tag is added",
 			in: hyperv1.HostedClusterSpec{
-				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
-					AWS: &hyperv1.AWSPlatformSpec{},
+					AWS: &hyperv1.AWSPlatformSpec{InfraID: "123"},
 				},
 			},
 			expected: hyperv1.HostedClusterSpec{
-				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
+						InfraID: "123",
 						ResourceTags: []hyperv1.AWSResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "owned",
@@ -895,9 +894,9 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 		{
 			name: "Tag already exists, nothing to do",
 			in: hyperv1.HostedClusterSpec{
-				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
+						InfraID: "123",
 						ResourceTags: []hyperv1.AWSResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "owned",
@@ -906,9 +905,9 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				},
 			},
 			expected: hyperv1.HostedClusterSpec{
-				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
+						InfraID: "123",
 						ResourceTags: []hyperv1.AWSResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "owned",
@@ -920,9 +919,9 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 		{
 			name: "Tag already exists with wrong value",
 			in: hyperv1.HostedClusterSpec{
-				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
+						InfraID: "123",
 						ResourceTags: []hyperv1.AWSResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "borked",
@@ -931,9 +930,9 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				},
 			},
 			expected: hyperv1.HostedClusterSpec{
-				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
+						InfraID: "123",
 						ResourceTags: []hyperv1.AWSResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "owned",

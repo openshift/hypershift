@@ -29,7 +29,7 @@ func (p Kubevirt) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 	kubevirtCluster := &capikubevirt.KubevirtCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      hcluster.Spec.InfraID,
+			Name:      hcluster.Name,
 		},
 	}
 	if _, err := createOrUpdate(ctx, c, kubevirtCluster, func() error {

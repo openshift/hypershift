@@ -97,7 +97,7 @@ func dumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	result, err := ec2Client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
 		Filters: []*ec2.Filter{
 			{
-				Name:   aws.String("tag:kubernetes.io/cluster/" + hc.Spec.InfraID),
+				Name:   aws.String("tag:kubernetes.io/cluster/" + hc.Spec.Platform.AWS.InfraID),
 				Values: []*string{aws.String("owned")},
 			},
 		},
@@ -110,7 +110,7 @@ func dumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		for _, instance := range reservation.Instances {
 			skip := false
 			for _, tag := range instance.Tags {
-				if aws.StringValue(tag.Key) == "Name" && aws.StringValue(tag.Value) == (hc.Spec.InfraID+"-bastion") {
+				if aws.StringValue(tag.Key) == "Name" && aws.StringValue(tag.Value) == (hc.Spec.Platform.AWS.InfraID+"-bastion") {
 					skip = true
 					break
 				}
@@ -123,7 +123,7 @@ func dumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	}
 
 	if len(machineIPs) == 0 {
-		t.Logf("No machines associated with infra id %s were found. Skipping journal dump.", hc.Spec.InfraID)
+		t.Logf("No machines associated with infra id %s were found. Skipping journal dump.", hc.Spec.Platform.AWS.InfraID)
 		return nil
 	}
 

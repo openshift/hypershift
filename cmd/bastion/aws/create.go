@@ -119,7 +119,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 			return "", "", fmt.Errorf("hosted cluster's platform is not AWS")
 		}
 
-		infraID = hostedCluster.Spec.InfraID
+		infraID = hostedCluster.Spec.Platform.AWS.InfraID
 		region = hostedCluster.Spec.Platform.AWS.Region
 		log.Info("Found hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "infraID", infraID, "region", region)
 

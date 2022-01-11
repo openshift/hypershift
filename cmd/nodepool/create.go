@@ -146,7 +146,7 @@ func (o *CreateNodePoolOptions) Run(ctx context.Context) error {
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		if len(o.InstanceProfile) == 0 {
-			o.InstanceProfile = fmt.Sprintf("%s-worker", hcluster.Spec.InfraID)
+			o.InstanceProfile = fmt.Sprintf("%s-worker", hcluster.Spec.Platform.AWS.InfraID)
 		}
 		if len(o.SubnetID) == 0 {
 			if hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {

@@ -20,15 +20,11 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 	kubevirt := Kubevirt{}
 	fakeClient := fake.NewClientBuilder().Build()
 	testNamespace := "testNamespace"
-	hcluster := &hyperv1.HostedCluster{
-		Spec: hyperv1.HostedClusterSpec{
-			InfraID: "testInfraID",
-		},
-	}
+	hcluster := &hyperv1.HostedCluster{}
 	expectedResult := &capikubevirt.KubevirtCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
-			Name:      hcluster.Spec.InfraID,
+			Name:      hcluster.Name,
 			Annotations: map[string]string{
 				hostedClusterAnnotation:    client.ObjectKeyFromObject(hcluster).String(),
 				capiv1.ManagedByAnnotation: "external",

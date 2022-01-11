@@ -365,6 +365,12 @@ spec:
                         - PublicAndPrivate
                         - Private
                         type: string
+                      infraID:
+                        description: InfraID is a globally unique identifier for the
+                          cluster. This identifier will be used to associate various
+                          cloud resources with the HostedCluster and its associated
+                          NodePools.
+                        type: string
                       kubeCloudControllerCreds:
                         description: "KubeCloudControllerCreds is a reference to a
                           secret containing cloud credentials with permissions matching
@@ -478,6 +484,7 @@ spec:
                         type: array
                     required:
                     - controlPlaneOperatorCreds
+                    - infraID
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds
                     - region
