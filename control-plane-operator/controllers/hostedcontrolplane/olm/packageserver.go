@@ -3,6 +3,7 @@ package olm
 import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/config"
@@ -32,6 +33,11 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 		}
 	}
 	dc.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+		o.KubeconfigVolumeName = "kubeconfig"
+		o.RequiredAPIs = []schema.GroupVersionKind{
+			{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "CatalogSource"},
+		}
+	})
 	return nil
 }
