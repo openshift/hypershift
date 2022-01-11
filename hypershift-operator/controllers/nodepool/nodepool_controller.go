@@ -13,10 +13,11 @@ import (
 	"strings"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -528,6 +529,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				return ctrl.Result{}, fmt.Errorf("failed to get AgentMachineTemplate: %w", err)
 			}
 		}
+	case hyperv1.KubevirtPlatform:
+		machineTemplate, err = r.reconcileKubevirtMachineTemplate(ctx, nodePool, controlPlaneNamespace)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile KubevirtMachineTemplate: %w", err)
+		}
+		span.AddEvent("reconciled kubevirtmachinetemplate", trace.WithAttributes(attribute.String("name", machineTemplate.GetName())))
 	}
 
 	// non automated infrastructure should not have any machine level cluster-api components
@@ -998,11 +1005,8 @@ func validateConfigManifest(manifest []byte) error {
 	switch obj := cr.(type) {
 	case *mcfgv1.MachineConfig:
 	case *v1alpha1.ImageContentSourcePolicy:
-	//	TODO (alberto): enable this kinds when they are supported in mcs bootstrap mode
-	// since our mcsIgnitionProvider implementation uses bootstrap mode to render the ignition payload out of an input.
-	// https://github.com/openshift/machine-config-operator/pull/2547
-	//case *mcfgv1.KubeletConfig:
-	//case *mcfgv1.ContainerRuntimeConfig:
+	case *mcfgv1.KubeletConfig:
+	case *mcfgv1.ContainerRuntimeConfig:
 	default:
 		return fmt.Errorf("unsupported config type: %T", obj)
 	}

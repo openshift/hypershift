@@ -23,38 +23,3 @@ func OpenShiftControllerManagerDeployment(ns string) *appsv1.Deployment {
 		},
 	}
 }
-
-func OpenShiftControllerManagerServiceCAWorkerManifest(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-manifest-openshift-controller-manager-service-ca",
-			Namespace: ns,
-		},
-	}
-}
-
-func OpenShiftControllerManagerNamespaceWorkerManifest(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-manifest-openshift-controller-manager-namespace",
-			Namespace: ns,
-		},
-	}
-}
-
-func OpenShiftControllerManagerServiceCA() *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openshift-service-ca",
-			Namespace: "openshift-controller-manager",
-		},
-	}
-}
-
-func OpenShiftControllerManagerNamespace() *corev1.Namespace {
-	return &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "openshift-controller-manager",
-		},
-	}
-}

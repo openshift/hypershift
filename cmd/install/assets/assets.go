@@ -17,6 +17,7 @@ import (
 //go:embed cluster-api/*
 //go:embed cluster-api-provider-aws/*
 //go:embed cluster-api-provider-ibmcloud/*
+//go:embed cluster-api-provider-kubevirt/*
 var crds embed.FS
 
 //go:embed recordingrules/*
@@ -28,11 +29,14 @@ const capiLabel = "cluster.x-k8s.io/v1beta1"
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
 // generation, but for now we're just post-processing at runtime here.
 var capiResources = map[string]string{
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":         "v1beta1",
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":         "v1beta1",
-	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml": "v1beta1",
-	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml": "v1alpha4",
-	"hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml":              "v1alpha1",
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":                   "v1beta1",
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":                   "v1beta1",
+	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml":           "v1beta1",
+	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml":           "v1alpha4",
+	"hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml":                        "v1alpha1",
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtclusters.yaml":         "v1alpha1",
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachines.yaml":         "v1alpha1",
+	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachinetemplates.yaml": "v1alpha1",
 }
 
 func getContents(fs embed.FS, file string) []byte {

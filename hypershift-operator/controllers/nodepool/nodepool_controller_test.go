@@ -419,8 +419,8 @@ spec:
 					},
 				},
 			},
-			expect: "",
-			error:  true,
+			expect: kubeletConfig1,
+			error:  false,
 		},
 		{
 			name: "gets a single valid MachineConfig with a core MachineConfig",

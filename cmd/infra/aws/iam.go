@@ -249,6 +249,7 @@ const (
 				"ec2:CreateVpcEndpoint",
 				"ec2:DescribeVpcEndpoints",
 				"ec2:DeleteVpcEndpoints",
+				"ec2:CreateTags",
 				"route53:ListHostedZones",
 				"route53:ChangeResourceRecordSets",
 				"route53:ListResourceRecordSets"

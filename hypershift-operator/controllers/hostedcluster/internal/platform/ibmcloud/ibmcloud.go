@@ -3,6 +3,7 @@ package ibmcloud
 import (
 	"context"
 	"fmt"
+
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -10,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -102,5 +104,9 @@ func (IBMCloud) ReconcileSecretEncryption(ctx context.Context, c client.Client, 
 			return fmt.Errorf("failed reconciling aescbc backup key: %w", err)
 		}
 	}
+	return nil
+}
+
+func (IBMCloud) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
