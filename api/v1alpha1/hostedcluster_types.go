@@ -419,8 +419,20 @@ type PlatformSpec struct {
 	// +immutable
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
 
+	// Agent specifies configuration for agent-based installations.
+	//
+	// +optional
+	// +immutable
+	Agent *AgentPlatformSpec `json:"agent,omitempty"`
+
 	// IBMCloud defines IBMCloud specific settings for components
 	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
+}
+
+// AgentPlatformSpec specifies configuration for agent-based installations.
+type AgentPlatformSpec struct {
+	// AgentNamespace is the namespace where to search for Agents for this cluster
+	AgentNamespace string `json:"agentNamespace"`
 }
 
 // IBMCloudPlatformSpec defines IBMCloud specific settings for components
