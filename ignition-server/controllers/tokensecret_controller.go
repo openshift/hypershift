@@ -16,7 +16,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
@@ -26,7 +25,6 @@ const (
 	TokenSecretConfigKey  = "config"
 	TokenSecretTokenKey   = "token"
 	TokenSecretAnnotation = "hypershift.openshift.io/ignition-config"
-	finalizer             = "hypershift.openshift.io/finalizer"
 	// Set the ttl 1h above the reconcile resync period so every existing
 	// token Secret has the chance to renew their expiry time on the PayloadStore.Get(token) operation
 	// while the non existing ones get eventually garbageCollected.
@@ -109,44 +107,50 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling")
 
+	// The controller maintains an internal cache of tokens to payloads and the
+	// secrets from which they are derived. Although cache entries have a TTL and
+	// should expire naturally after that time, we also actively purge entries
+	// from the cache if we can detect that a secret with associated tokens has
+	// disappeared. The deletion handling code is just to reconcile the internal
+	// token cache with reality in a more timely fashion than TTL alone.
+	secretDeleted := false
 	tokenSecret := &corev1.Secret{}
 	if err := r.Client.Get(ctx, req.NamespacedName, tokenSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Token Secret not found", "request", req.String())
-			return ctrl.Result{}, nil
+			secretDeleted = true
+		} else {
+			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
-	}
-
-	// If the tokenSecret is not being deleted then ensure the finalizer.
-	if tokenSecret.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(tokenSecret, finalizer) {
-			controllerutil.AddFinalizer(tokenSecret, finalizer)
-			if err := r.Update(ctx, tokenSecret); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to add finalizer: %w", err)
-			}
+	} else {
+		if !tokenSecret.DeletionTimestamp.IsZero() {
+			secretDeleted = true
 		}
 	}
 
-	// If the tokenSecret is being deleted then delete from cache and remove finalizer.
-	if !tokenSecret.DeletionTimestamp.IsZero() {
-		log.Info("Removing token from cache", "tokenSecret", client.ObjectKeyFromObject(tokenSecret))
-		r.PayloadStore.Delete(string(tokenSecret.Data[TokenSecretTokenKey]))
-		if controllerutil.ContainsFinalizer(tokenSecret, finalizer) {
-			controllerutil.RemoveFinalizer(tokenSecret, finalizer)
-			if err := r.Update(ctx, tokenSecret); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+	if secretDeleted {
+		// If the secret was deleted, ensure that any corresponding tokens for that
+		// secret are purged from the cache and return as there's nothing to do.
+		for _, k := range r.PayloadStore.Keys() {
+			v, ok := r.PayloadStore.Get(k)
+			if ok && v.SecretName == req.Name {
+				log.Info("Deleting token for missing secret", "tokenSecret", req.Name)
+				r.PayloadStore.Delete(k)
 			}
 		}
 		return ctrl.Result{}, nil
 	}
 
-	// If the tokenSecret is older than ttl then delete it.
+	// If the tokenSecret is older than ttl then purge its token from the cache
+	// and delete the secret.
 	timeLived := time.Since(tokenSecret.CreationTimestamp.Time)
 	if timeLived >= ttl {
 		log.Info("Deleting expired token", "tokenSecret", client.ObjectKeyFromObject(tokenSecret))
+		r.PayloadStore.Delete(string(tokenSecret.Data[TokenSecretTokenKey]))
 		if err := r.Delete(ctx, tokenSecret); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete tokenSecret: %w", err)
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to delete tokenSecret: %w", err)
+			}
 		}
 		return ctrl.Result{}, nil
 	}
@@ -171,7 +175,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	log.Info("IgnitionProvider generated payload")
-	r.PayloadStore.Set(token, payload)
+	r.PayloadStore.Set(token, CacheValue{Payload: payload, SecretName: tokenSecret.Name})
 	return ctrl.Result{RequeueAfter: ttl - timeLived}, nil
 }
 
