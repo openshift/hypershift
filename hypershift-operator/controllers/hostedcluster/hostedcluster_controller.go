@@ -124,6 +124,9 @@ type HostedClusterReconciler struct {
 	// TokenMinterImage is the image used to deploy the token minter init containers.
 	TokenMinterImage string
 
+	// SocksProxyImage is the image used to deploy the socks proxy service.
+	SocksProxyImage string
+
 	// Log is a thread-safe logger.
 	Log logr.Logger
 
@@ -1291,7 +1294,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1776,6 +1779,19 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 	return nil
 }
 
+// getControlPlaneOperatorImage resolves the appropriate control plane operator
+// image based on the following order of precedence (from most to least
+// preferred):
+//
+// 1. The image specified by the ControlPlaneOperatorImageAnnotation on the
+//    HostedCluster resource itself
+// 2. The hypershift image specified in the release payload indicated by the
+//    HostedCluster's release field
+// 3. The hypershift-operator's own image for release versions 4.9 and 4.10
+// 4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
+//    version 4.8
+//
+// If no image can be found according to these rules, an error is returned.
 func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
 	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
 		return val, nil
@@ -1788,6 +1804,11 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	if err != nil {
 		return "", err
 	}
+
+	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
+		return hypershiftImage, nil
+	}
+
 	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
 	pullSpec := "registry.ci.openshift.org/hypershift/hypershift"
 	switch versionMajMin {
@@ -1800,7 +1821,7 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	}
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
@@ -1820,7 +1841,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				Containers: []corev1.Container{
 					{
 						Name:            "control-plane-operator",
-						Image:           image,
+						Image:           cpoImage,
 						ImagePullPolicy: corev1.PullAlways,
 						Env: []corev1.EnvVar{
 							{
@@ -1837,8 +1858,14 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							RunAsUser: k8sutilspointer.Int64Ptr(1000),
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
-						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator", "--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput), fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine)},
-						Ports:   []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
+						Args: []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator",
+							"--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
+							fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine),
+							"--socks5-proxy-image", socksImage,
+							"--availability-prober-image", proberImage,
+							"--token-minter-image", minterImage,
+						},
+						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
@@ -1919,7 +1946,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			})
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 			Name:            "token-minter",
-			Image:           image,
+			Image:           minterImage,
 			ImagePullPolicy: corev1.PullAlways,
 			Command:         []string{"/usr/bin/token-minter"},
 			Args: []string{
