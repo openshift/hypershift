@@ -11,4 +11,4 @@ reviewers:
 - ironcladlou
 - sjenning
 - alvaroaleman
-component: ibm-roks-toolkit
+component: hypershift
