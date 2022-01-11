@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,7 +25,7 @@ import (
 const GroupName = "kubescheduler.config.k8s.io"
 
 // SchemeGroupVersion is group version used to register these objects
-var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1beta1"}
+var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1beta2"}
 
 var (
 	// SchemeBuilder is the scheme builder with scheme init functions to run for this API package
@@ -40,13 +40,9 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&KubeSchedulerConfiguration{},
 		&DefaultPreemptionArgs{},
 		&InterPodAffinityArgs{},
-		&NodeLabelArgs{},
+		&NodeResourcesBalancedAllocationArgs{},
 		&NodeResourcesFitArgs{},
 		&PodTopologySpreadArgs{},
-		&RequestedToCapacityRatioArgs{},
-		&ServiceAffinityArgs{},
-		&NodeResourcesLeastAllocatedArgs{},
-		&NodeResourcesMostAllocatedArgs{},
 		&VolumeBindingArgs{},
 		&NodeAffinityArgs{},
 	)

@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	"bytes"
@@ -23,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	componentbaseconfigv1alpha1 "k8s.io/component-base/config/v1alpha1"
-	v1 "k8s.io/kube-scheduler/config/v1"
 	"sigs.k8s.io/yaml"
 )
 
@@ -53,11 +52,12 @@ type KubeSchedulerConfiguration struct {
 	// ClientConnection specifies the kubeconfig file and client connection
 	// settings for the proxy server to use when communicating with the apiserver.
 	ClientConnection componentbaseconfigv1alpha1.ClientConnectionConfiguration `json:"clientConnection"`
-	// HealthzBindAddress is the IP address and port for the health check server to serve on,
-	// defaulting to 0.0.0.0:10251
+
+	// Note: Both HealthzBindAddress and MetricsBindAddress fields are deprecated.
+	// Only empty address or port 0 is allowed. Anything else will fail validation.
+	// HealthzBindAddress is the IP address and port for the health check server to serve on.
 	HealthzBindAddress *string `json:"healthzBindAddress,omitempty"`
-	// MetricsBindAddress is the IP address and port for the metrics server to
-	// serve on, defaulting to 0.0.0.0:10251.
+	// MetricsBindAddress is the IP address and port for the metrics server to serve on.
 	MetricsBindAddress *string `json:"metricsBindAddress,omitempty"`
 
 	// DebuggingConfiguration holds configuration for Debugging related features
@@ -158,45 +158,50 @@ type KubeSchedulerProfile struct {
 // be invoked before default plugins, default plugins must be disabled and re-enabled here in desired order.
 type Plugins struct {
 	// QueueSort is a list of plugins that should be invoked when sorting pods in the scheduling queue.
-	QueueSort *PluginSet `json:"queueSort,omitempty"`
+	QueueSort PluginSet `json:"queueSort,omitempty"`
 
 	// PreFilter is a list of plugins that should be invoked at "PreFilter" extension point of the scheduling framework.
-	PreFilter *PluginSet `json:"preFilter,omitempty"`
+	PreFilter PluginSet `json:"preFilter,omitempty"`
 
 	// Filter is a list of plugins that should be invoked when filtering out nodes that cannot run the Pod.
-	Filter *PluginSet `json:"filter,omitempty"`
+	Filter PluginSet `json:"filter,omitempty"`
 
-	// PostFilter is a list of plugins that are invoked after filtering phase, no matter whether filtering succeeds or not.
-	PostFilter *PluginSet `json:"postFilter,omitempty"`
+	// PostFilter is a list of plugins that are invoked after filtering phase, but only when no feasible nodes were found for the pod.
+	PostFilter PluginSet `json:"postFilter,omitempty"`
 
 	// PreScore is a list of plugins that are invoked before scoring.
-	PreScore *PluginSet `json:"preScore,omitempty"`
+	PreScore PluginSet `json:"preScore,omitempty"`
 
 	// Score is a list of plugins that should be invoked when ranking nodes that have passed the filtering phase.
-	Score *PluginSet `json:"score,omitempty"`
+	Score PluginSet `json:"score,omitempty"`
 
 	// Reserve is a list of plugins invoked when reserving/unreserving resources
 	// after a node is assigned to run the pod.
-	Reserve *PluginSet `json:"reserve,omitempty"`
+	Reserve PluginSet `json:"reserve,omitempty"`
 
 	// Permit is a list of plugins that control binding of a Pod. These plugins can prevent or delay binding of a Pod.
-	Permit *PluginSet `json:"permit,omitempty"`
+	Permit PluginSet `json:"permit,omitempty"`
 
 	// PreBind is a list of plugins that should be invoked before a pod is bound.
-	PreBind *PluginSet `json:"preBind,omitempty"`
+	PreBind PluginSet `json:"preBind,omitempty"`
 
 	// Bind is a list of plugins that should be invoked at "Bind" extension point of the scheduling framework.
 	// The scheduler call these plugins in order. Scheduler skips the rest of these plugins as soon as one returns success.
-	Bind *PluginSet `json:"bind,omitempty"`
+	Bind PluginSet `json:"bind,omitempty"`
 
 	// PostBind is a list of plugins that should be invoked after a pod is successfully bound.
-	PostBind *PluginSet `json:"postBind,omitempty"`
+	PostBind PluginSet `json:"postBind,omitempty"`
+
+	// MultiPoint is a simplified config section to enable plugins for all valid extension points.
+	MultiPoint PluginSet `json:"multiPoint,omitempty"`
 }
 
 // PluginSet specifies enabled and disabled plugins for an extension point.
 // If an array is empty, missing, or nil, default plugins at that extension point will be used.
 type PluginSet struct {
 	// Enabled specifies plugins that should be enabled in addition to default plugins.
+	// If the default plugin is also configured in the scheduler config file, the weight of plugin will
+	// be overridden accordingly.
 	// These are called after default plugins and in the same order specified here.
 	// +listType=atomic
 	Enabled []Plugin `json:"enabled,omitempty"`
@@ -284,7 +289,7 @@ type Extender struct {
 	// EnableHTTPS specifies whether https should be used to communicate with the extender
 	EnableHTTPS bool `json:"enableHTTPS,omitempty"`
 	// TLSConfig specifies the transport layer security config
-	TLSConfig *v1.ExtenderTLSConfig `json:"tlsConfig,omitempty"`
+	TLSConfig *ExtenderTLSConfig `json:"tlsConfig,omitempty"`
 	// HTTPTimeout specifies the timeout duration for a call to the extender. Filter timeout fails the scheduling of the pod. Prioritize
 	// timeout is ignored, k8s/other extenders priorities are used to select the node.
 	HTTPTimeout metav1.Duration `json:"httpTimeout,omitempty"`
@@ -302,8 +307,45 @@ type Extender struct {
 	//   will skip checking the resource in predicates.
 	// +optional
 	// +listType=atomic
-	ManagedResources []v1.ExtenderManagedResource `json:"managedResources,omitempty"`
+	ManagedResources []ExtenderManagedResource `json:"managedResources,omitempty"`
 	// Ignorable specifies if the extender is ignorable, i.e. scheduling should not
 	// fail when the extender returns an error or is not reachable.
 	Ignorable bool `json:"ignorable,omitempty"`
+}
+
+// ExtenderManagedResource describes the arguments of extended resources
+// managed by an extender.
+type ExtenderManagedResource struct {
+	// Name is the extended resource name.
+	Name string `json:"name"`
+	// IgnoredByScheduler indicates whether kube-scheduler should ignore this
+	// resource when applying predicates.
+	IgnoredByScheduler bool `json:"ignoredByScheduler,omitempty"`
+}
+
+// ExtenderTLSConfig contains settings to enable TLS with extender
+type ExtenderTLSConfig struct {
+	// Server should be accessed without verifying the TLS certificate. For testing only.
+	Insecure bool `json:"insecure,omitempty"`
+	// ServerName is passed to the server for SNI and is used in the client to check server
+	// certificates against. If ServerName is empty, the hostname used to contact the
+	// server is used.
+	ServerName string `json:"serverName,omitempty"`
+
+	// Server requires TLS client certificate authentication
+	CertFile string `json:"certFile,omitempty"`
+	// Server requires TLS client certificate authentication
+	KeyFile string `json:"keyFile,omitempty"`
+	// Trusted root certificates for server
+	CAFile string `json:"caFile,omitempty"`
+
+	// CertData holds PEM-encoded bytes (typically read from a client certificate file).
+	// CertData takes precedence over CertFile
+	CertData []byte `json:"certData,omitempty"`
+	// KeyData holds PEM-encoded bytes (typically read from a client certificate key file).
+	// KeyData takes precedence over KeyFile
+	KeyData []byte `json:"keyData,omitempty"`
+	// CAData holds PEM-encoded bytes (typically read from a root certificates bundle).
+	// CAData takes precedence over CAFile
+	CAData []byte `json:"caData,omitempty"`
 }
