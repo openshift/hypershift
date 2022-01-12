@@ -80,16 +80,29 @@ func createCluster(t *testing.T, ctx context.Context, client crclient.Client, cl
 		}
 		// TODO: Figure out why this is slow
 		// e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
+
+		// If destroying the hostedcluster fails, dump the current cluster state after
+		// each attempt to help debug teardown lifecycle issues.
+		testName := strings.ReplaceAll(t.Name(), "/", "_")
 		destroyAttempt := 1
 		DestroyHostedCluster(t, ctx, hc, clusterMgr, func() {
 			if len(artifactDir) != 0 {
-				clusterMgr.DumpCluster(ctx, hc, filepath.Join(artifactDir, fmt.Sprintf("post-destroy-%d", destroyAttempt)))
+				clusterMgr.DumpCluster(ctx, hc, filepath.Join(artifactDir, testName, fmt.Sprintf("destroy-hostedcluster-%d", destroyAttempt)))
 				destroyAttempt++
 			} else {
 				t.Logf("Skipping cluster dump because no artifact dir was provided")
 			}
 		})
-		DeleteNamespace(t, ctx, client, namespace.Name)
+		// If the hostedcluster was successfully destroyed and finalized, any further
+		// delay in cleaning up the test namespace could be indicative of a resource
+		// finalization bug. Give this namespace teardown a reasonable time to complete
+		// and then dump resources to help debug.
+		deleteTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
+		defer cancel()
+		DeleteNamespace(t, deleteTimeout, client, namespace.Name)
+		if t.Failed() {
+			clusterMgr.DumpCluster(ctx, hc, filepath.Join(artifactDir, testName, "delete-test-namespace"))
+		}
 	}
 
 	// Try and create the cluster
@@ -155,7 +168,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	}
 
 	t.Logf("Waiting for namespace to be finalized. Namespace: %s", namespace)
-	err = wait.PollInfinite(1*time.Second, func() (done bool, err error) {
+	err = wait.PollImmediateUntil(5*time.Second, func() (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(ns), ns); err != nil {
 			if errors.IsNotFound(err) {
@@ -165,9 +178,9 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 			return false, nil
 		}
 		return false, nil
-	})
+	}, ctx.Done())
 	if err != nil {
-		t.Errorf("Namespace was not finalized: %v", err)
+		t.Errorf("Namespace still exists after deletion timeout: %v", err)
 	} else {
 		t.Logf("Deleted namespace: %s", namespace)
 	}
