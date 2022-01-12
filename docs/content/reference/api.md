@@ -895,7 +895,7 @@ string
 </em>
 </td>
 <td>
-<p>InstanceType is an ec2 instance type for node instances (e.g. m4-large).</p>
+<p>InstanceType is an ec2 instance type for node instances (e.g. m5.large).</p>
 </td>
 </tr>
 <tr>
