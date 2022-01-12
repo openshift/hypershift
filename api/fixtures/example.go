@@ -9,9 +9,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
-	apiresource "k8s.io/apimachinery/pkg/api/resource"
-	kubevirtv1 "kubevirt.io/api/core/v1"
-	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -25,7 +22,6 @@ type ExampleResources struct {
 	Resources  Resources
 	SSHKey     *corev1.Secret
 	Cluster    *hyperv1.HostedCluster
-	NodePool   *hyperv1.NodePool
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
@@ -41,9 +37,6 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
 	}
-	if o.NodePool != nil {
-		objects = append(objects, o.NodePool)
-	}
 	return objects
 }
 
@@ -55,7 +48,6 @@ type ExampleOptions struct {
 	IssuerURL                        string
 	SSHPublicKey                     []byte
 	SSHPrivateKey                    []byte
-	NodePoolReplicas                 int32
 	InfraID                          string
 	ComputeCIDR                      string
 	ServiceCIDR                      string
@@ -65,7 +57,6 @@ type ExampleOptions struct {
 	PrivateZoneID                    string
 	Annotations                      map[string]string
 	FIPS                             bool
-	AutoRepair                       bool
 	EtcdStorageClass                 string
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
@@ -87,9 +78,6 @@ type ExampleAgentOptions struct {
 
 type ExampleKubevirtOptions struct {
 	APIServerAddress string
-	Memory           string
-	Cores            uint32
-	Image            string
 }
 
 type ExampleAWSOptions struct {
@@ -97,16 +85,10 @@ type ExampleAWSOptions struct {
 	Zone                        string
 	VPCID                       string
 	SubnetID                    string
-	SecurityGroupID             string
-	InstanceProfile             string
-	InstanceType                string
 	Roles                       []hyperv1.AWSRoleCredentials
 	KubeCloudControllerRoleARN  string
 	NodePoolManagementRoleARN   string
 	ControlPlaneOperatorRoleARN string
-	RootVolumeSize              int64
-	RootVolumeType              string
-	RootVolumeIOPS              int64
 	ResourceTags                []hyperv1.AWSResourceTag
 	EndpointAccess              string
 }
@@ -314,102 +296,12 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		},
 	}
 
-	var nodePool *hyperv1.NodePool
-	if o.NodePoolReplicas > -1 {
-		nodePool = &hyperv1.NodePool{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "NodePool",
-				APIVersion: hyperv1.GroupVersion.String(),
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace.Name,
-				Name:      o.Name,
-			},
-			Spec: hyperv1.NodePoolSpec{
-				Management: hyperv1.NodePoolManagement{
-					AutoRepair:  o.AutoRepair,
-					UpgradeType: hyperv1.UpgradeTypeReplace,
-				},
-				NodeCount:   &o.NodePoolReplicas,
-				ClusterName: o.Name,
-				Release: hyperv1.Release{
-					Image: o.ReleaseImage,
-				},
-				Platform: hyperv1.NodePoolPlatform{
-					Type: cluster.Spec.Platform.Type,
-				},
-			},
-		}
-
-		switch nodePool.Spec.Platform.Type {
-		case hyperv1.AWSPlatform:
-			nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
-				InstanceType:    o.AWS.InstanceType,
-				InstanceProfile: o.AWS.InstanceProfile,
-				Subnet: &hyperv1.AWSResourceReference{
-					ID: &o.AWS.SubnetID,
-				},
-				SecurityGroups: []hyperv1.AWSResourceReference{
-					{
-						ID: &o.AWS.SecurityGroupID,
-					},
-				},
-				RootVolume: &hyperv1.Volume{
-					Size: o.AWS.RootVolumeSize,
-					Type: o.AWS.RootVolumeType,
-					IOPS: o.AWS.RootVolumeIOPS,
-				},
-			}
-		case hyperv1.KubevirtPlatform:
-			runAlways := kubevirtv1.RunStrategyAlways
-			guestQuantity := apiresource.MustParse(o.Kubevirt.Memory)
-			nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
-				NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
-					Spec: kubevirtv1.VirtualMachineSpec{
-						RunStrategy: &runAlways,
-						Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-							Spec: kubevirtv1.VirtualMachineInstanceSpec{
-								Domain: kubevirtv1.DomainSpec{
-									CPU:    &kubevirtv1.CPU{Cores: o.Kubevirt.Cores},
-									Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
-									Devices: kubevirtv1.Devices{
-										Disks: []kubevirtv1.Disk{
-											{
-												Name: "containervolume",
-												DiskDevice: kubevirtv1.DiskDevice{
-													Disk: &kubevirtv1.DiskTarget{
-														Bus: "virtio",
-													},
-												},
-											},
-										},
-									},
-								},
-								Volumes: []kubevirtv1.Volume{
-									{
-										Name: "containervolume",
-										VolumeSource: kubevirtv1.VolumeSource{
-											ContainerDisk: &kubevirtv1.ContainerDiskSource{
-												Image: o.Kubevirt.Image,
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			}
-		}
-	}
-
 	return &ExampleResources{
 		Namespace:  namespace,
 		PullSecret: pullSecret,
 		Resources:  resources,
 		SSHKey:     sshKeySecret,
 		Cluster:    cluster,
-		NodePool:   nodePool,
 	}
 }
 

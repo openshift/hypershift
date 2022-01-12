@@ -2,16 +2,15 @@ package kubevirt
 
 import (
 	"context"
+	"errors"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/spf13/cobra"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/nodepool/core"
 )
 
 type KubevirtPlatformCreateOptions struct {
@@ -20,16 +19,11 @@ type KubevirtPlatformCreateOptions struct {
 	ContainerDiskImage string
 }
 
-func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+func NewKubevirtPlatformCreateOptions(cmd *cobra.Command) *KubevirtPlatformCreateOptions {
 	platformOpts := &KubevirtPlatformCreateOptions{
 		Memory:             "4Gi",
 		Cores:              2,
 		ContainerDiskImage: "",
-	}
-	cmd := &cobra.Command{
-		Use:          "kubevirt",
-		Short:        "Creates basic functional NodePool resources for KubeVirt platform",
-		SilenceUsage: true,
 	}
 
 	cmd.Flags().StringVar(&platformOpts.Memory, "memory", platformOpts.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
@@ -42,13 +36,19 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	// Otherwise it must fail
 	cmd.MarkFlagRequired("containerdisk")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := coreOpts.CreateNodePool(cmd.Context(), platformOpts); err != nil {
-			log.Error(err, "Failed to create nodepool")
-			return err
-		}
-		return nil
+	return platformOpts
+}
+
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "kubevirt",
+		Short:        "Creates basic functional NodePool resources for KubeVirt platform",
+		SilenceUsage: true,
 	}
+
+	platformOpts := NewKubevirtPlatformCreateOptions(cmd)
+
+	cmd.RunE = coreOpts.CreateExecFunc(platformOpts)
 
 	return cmd
 }
@@ -98,4 +98,11 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 
 func (o *KubevirtPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.KubevirtPlatform
+}
+
+func (o *KubevirtPlatformCreateOptions) Validate() error {
+	if o.Cores < 1 {
+		return errors.New("the number of cores inside the machine must be a value greater or equal 1")
+	}
+	return nil
 }

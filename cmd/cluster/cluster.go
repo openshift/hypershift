@@ -11,7 +11,14 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
+	nodepoolcore "github.com/openshift/hypershift/cmd/nodepool/core"
 )
+
+// The following lines are needed in order to validate that any platform implementing PlatformOptions satisfy the interface
+var _ core.CreateClusterPlatformOptions = &aws.AWSPlatformOptions{}
+var _ core.CreateClusterPlatformOptions = &kubevirt.KubevirtPlatformCreateOptions{}
+var _ core.CreateClusterPlatformOptions = &agent.AgentPlatformCreateOptions{}
+var _ core.CreateClusterPlatformOptions = &none.NonePlatformCreateOptions{}
 
 func NewCreateCommands() *cobra.Command {
 	opts := &core.CreateOptions{
@@ -22,7 +29,6 @@ func NewCreateCommands() *cobra.Command {
 		ControlPlaneAvailabilityPolicy: "SingleReplica",
 		Render:                         false,
 		NetworkType:                    string(hyperv1.OpenShiftSDN),
-		InfrastructureJSON:             "",
 		InfraID:                        "",
 		ServiceCIDR:                    "172.31.0.0/16",
 		PodCIDR:                        "10.132.0.0/14",
@@ -45,19 +51,18 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying")
 	cmd.PersistentFlags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "Override the default image used to deploy the control plane operator")
 	cmd.PersistentFlags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Path to an SSH key file")
-	cmd.PersistentFlags().Int32Var(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If >-1, create a default NodePool with this many replicas")
 	cmd.PersistentFlags().StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
 	cmd.PersistentFlags().BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster")
-	cmd.PersistentFlags().BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine autorepair with machine health checks")
 	cmd.PersistentFlags().StringVar(&opts.InfrastructureAvailabilityPolicy, "infra-availability-policy", opts.InfrastructureAvailabilityPolicy, "Availability policy for infrastructure services in guest cluster. Supported options: SingleReplica, HighlyAvailable")
 	cmd.PersistentFlags().BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
 	cmd.PersistentFlags().StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
-	cmd.PersistentFlags().StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster. If not specified, infrastructure will be created")
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	cmd.PersistentFlags().StringVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network")
 	cmd.PersistentFlags().StringVar(&opts.PodCIDR, "pod-cidr", opts.PodCIDR, "The CIDR of the pod network")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
+
+	opts.CreateNodePoolOptions = nodepoolcore.NewCreateNodePoolOptions(cmd, -1)
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 

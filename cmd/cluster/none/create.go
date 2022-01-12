@@ -4,12 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	nodepoolcore "github.com/openshift/hypershift/cmd/nodepool/core"
+	nodepoolnone "github.com/openshift/hypershift/cmd/nodepool/none"
+	"github.com/spf13/cobra"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
+
+type NonePlatformCreateOptions struct {
+	APIServerAddress string
+	NodePoolOptions  *nodepoolnone.NonePlatformCreateOptions
+}
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -18,56 +24,45 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.NonePlatform = core.NonePlatformCreateOptions{
+	platformOpts := &NonePlatformCreateOptions{
 		APIServerAddress: "",
 	}
 
-	cmd.Flags().StringVar(&opts.NonePlatform.APIServerAddress, "external-api-server-address", opts.NonePlatform.APIServerAddress, "The external API Server Address when using platform none")
+	cmd.Flags().StringVar(&platformOpts.APIServerAddress, "external-api-server-address", platformOpts.APIServerAddress, "The external API Server Address when using platform none")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if opts.Timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-			defer cancel()
-		}
+	platformOpts.NodePoolOptions = nodepoolnone.NewNonePlatformCreateOptions(cmd)
 
-		if err := CreateCluster(ctx, opts); err != nil {
-			log.Error(err, "Failed to create cluster")
-			return err
-		}
-		return nil
-	}
+	cmd.RunE = opts.CreateExecFunc(platformOpts)
 
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	if err := core.Validate(ctx, opts); err != nil {
-		return err
-	}
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
-}
-
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	if opts.NonePlatform.APIServerAddress == "" {
-		if opts.NonePlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx); err != nil {
+func (o *NonePlatformCreateOptions) ApplyPlatformSpecifics(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, name, infraID, baseDomain string) (err error) {
+	if o.APIServerAddress == "" {
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx); err != nil {
 			return err
 		}
 	}
 
-	infraID := opts.InfraID
 	if len(infraID) == 0 {
-		infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
+		infraID = fmt.Sprintf("%s-%s", name, utilrand.String(5))
 	}
 	exampleOptions.InfraID = infraID
-	exampleOptions.BaseDomain = opts.BaseDomain
+	exampleOptions.BaseDomain = baseDomain
 	if exampleOptions.BaseDomain == "" {
 		exampleOptions.BaseDomain = "example.com"
 	}
 
 	exampleOptions.None = &apifixtures.ExampleNoneOptions{
-		APIServerAddress: opts.NonePlatform.APIServerAddress,
+		APIServerAddress: o.APIServerAddress,
 	}
 	return nil
+}
+
+func (o *NonePlatformCreateOptions) NodePoolPlatformOptions() nodepoolcore.PlatformOptions {
+	return o.NodePoolOptions
+}
+
+func (o *NonePlatformCreateOptions) Validate() error {
+	return o.NodePoolOptions.Validate()
 }
