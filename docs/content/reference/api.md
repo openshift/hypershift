@@ -906,7 +906,7 @@ string
 </em>
 </td>
 <td>
-<p>InstanceProfile is TODO</p>
+<p>InstanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.</p>
 </td>
 </tr>
 <tr>
