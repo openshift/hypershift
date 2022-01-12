@@ -15,13 +15,17 @@ package hostedcluster
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -53,6 +57,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
+	"gopkg.in/square/go-jose.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -63,8 +68,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1" // Need this dep atm to satisfy IBM provider dep.
@@ -3203,10 +3207,81 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	return nil
 }
 
-const oidcDocumentsFinalizer = "hypershift.io/aws-oidc-discovery"
+const (
+	oidcDocumentsFinalizer         = "hypershift.io/aws-oidc-discovery"
+	serviceAccountSigningKeySecret = "sa-signing-key"
+	serviceSignerPublicKey         = "service-account.pub"
+	jwksURI                        = "/openid/v1/jwks"
+	discoveryTemplate              = `{
+	"issuer": "%s",
+	"jwks_uri": "%s%s",
+	"response_types_supported": [
+		"id_token"
+	],
+	"subject_types_supported": [
+		"public"
+	],
+	"id_token_signing_alg_values_supported": [
+		"RS256"
+	]
+}`
+)
 
-func oidcPublicDocumentPaths() []string {
-	return []string{"/.well-known/openid-configuration", "/openid/v1/jwks"}
+type oidcGeneratorParams struct {
+	issuerURL string
+	pubKey    []byte
+}
+
+type oidcDocumentGeneratorFunc func(params oidcGeneratorParams) (io.ReadSeeker, error)
+
+func generateConfigurationDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
+	return strings.NewReader(fmt.Sprintf(discoveryTemplate, params.issuerURL, params.issuerURL, jwksURI)), nil
+}
+
+type KeyResponse struct {
+	Keys []jose.JSONWebKey `json:"keys"`
+}
+
+func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
+	block, _ := pem.Decode(params.pubKey)
+	if block == nil || block.Type != "RSA PUBLIC KEY" {
+		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key")
+	}
+	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("public key is not RSA")
+	}
+
+	hasher := crypto.SHA256.New()
+	hasher.Write(block.Bytes)
+	hash := hasher.Sum(nil)
+	kid := base64.RawURLEncoding.EncodeToString(hash)
+
+	var keys []jose.JSONWebKey
+	keys = append(keys, jose.JSONWebKey{
+		Key:       rsaPubKey,
+		KeyID:     kid,
+		Algorithm: string(jose.RS256),
+		Use:       "sig",
+	})
+
+	jwks, err := json.MarshalIndent(KeyResponse{Keys: keys}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	return bytes.NewReader(jwks), nil
+}
+
+func oidcDocumentGenerators() map[string]oidcDocumentGeneratorFunc {
+	return map[string]oidcDocumentGeneratorFunc{
+		"/.well-known/openid-configuration": generateConfigurationDocument,
+		jwksURI:                             generateJWKSDocument,
+	}
 }
 
 func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
@@ -3224,68 +3299,33 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		return errors.New("hypershift wasn't configured with a S3 bucket or credentials, this makes it unable to set up OIDC for AWS clusters. Please install hypershift with the --aws-oidc-bucket-name, --aws-oidc-bucket-region and --aws-oidc-bucket-creds-file flags set. The bucket must pre-exist and the credentials must be authorized to write into it")
 	}
 
-	if apiAvailableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.KubeAPIServerAvailable)); apiAvailableCondition == nil || apiAvailableCondition.Status != metav1.ConditionTrue {
-		return nil
-	}
-	src := &corev1.Secret{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hcp.Namespace,
-			Name:      "service-network-admin-kubeconfig",
+			Name:      serviceAccountSigningKeySecret,
 		},
 	}
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src); err != nil {
-		return fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(secret), secret); err != nil {
+		return fmt.Errorf("failed to get controlplane service account signing key %q: %w", client.ObjectKeyFromObject(secret), err)
 	}
-	cfg, err := clientcmd.RESTConfigFromKubeConfig(src.Data["kubeconfig"])
-	if err != nil {
-		return fmt.Errorf("failed to deserialize the kubeconfig: %w", err)
+
+	if !sets.StringKeySet(secret.Data).HasAll(serviceSignerPublicKey) {
+		return fmt.Errorf("controlplane service account signing key secret %q missing required key %s", client.ObjectKeyFromObject(secret), serviceSignerPublicKey)
 	}
-	cfg.Host = strings.Replace(cfg.Host, "kube-apiserver", fmt.Sprintf("kube-apiserver.%s.svc", hcp.Namespace), 1)
-	// Impersonate the serviceaccounts groups as a guardrail to bugs in our code
-	// as we end up writing this into a public location.
-	// The perms for this are bound through the system:service-account-issuer-discovery
-	// clusterrolebinding which is managed by the KAS itself.
-	cfg.Impersonate.Groups = []string{"system:serviceaccounts"}
-	cfg.Impersonate.UserName = "iHaveToBeSubmittedButDontActuallyExist"
 
-	transport, err := rest.TransportFor(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to construct transport for cfg: %w", err)
+	params := oidcGeneratorParams{
+		issuerURL: hcp.Spec.IssuerURL,
+		pubKey:    secret.Data[serviceSignerPublicKey],
 	}
-	client := &http.Client{Transport: transport}
 
-	for _, path := range oidcPublicDocumentPaths() {
-		requestURL := cfg.Host + path
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	for path, generator := range oidcDocumentGenerators() {
+		bodyReader, err := generator(params)
 		if err != nil {
-			return fmt.Errorf("failed to construct request for %s: %w", requestURL, err)
+			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("failed to do request for %s: %w", requestURL, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := ioutil.ReadAll(resp.Body)
-			return fmt.Errorf("request to %s returned with unexpected status code %d. Response body: %s", requestURL, resp.StatusCode, string(body))
-		}
-
-		// In theory we should be able to pass resp.Body
-		// as the Body argument to PutObject as that takes
-		// an io.Reader. In practice doing so results in
-		// `NotImplemented: A header you provided implies functionality that is not implemented`
-		// which apparently happens when there is no body:
-		// https://github.com/aws/aws-sdk-js/issues/15#issuecomment-11666580
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to read body: %w", err)
-		}
-
 		_, err = r.S3Client.PutObject(&s3.PutObjectInput{
 			ACL:    aws.String("public-read"),
-			Body:   aws.ReadSeekCloser(bytes.NewReader(body)),
+			Body:   bodyReader,
 			Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
 			Key:    aws.String(hcluster.Spec.InfraID + path),
 		})
@@ -3314,7 +3354,7 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, hcl
 	}
 
 	var objectsToDelete []*s3.ObjectIdentifier
-	for _, path := range oidcPublicDocumentPaths() {
+	for path := range oidcDocumentGenerators() {
 		objectsToDelete = append(objectsToDelete, &s3.ObjectIdentifier{
 			Key: aws.String(hcluster.Spec.InfraID + path),
 		})
