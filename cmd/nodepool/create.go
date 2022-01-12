@@ -55,7 +55,7 @@ func NewCreateCommand() *cobra.Command {
 		NodeCount:      2,
 		ReleaseImage:   "",
 		InstanceType:   "m4.large",
-		RootVolumeType: "gp2",
+		RootVolumeType: "gp3",
 		RootVolumeSize: 120,
 		RootVolumeIOPS: 0,
 		// TODO (nargaman): Move kubevirt values into platform specific create file
@@ -76,8 +76,8 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 
-	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
-	cmd.Flags().Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
+	cmd.Flags().StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
+	cmd.Flags().Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 	cmd.Flags().StringVar(&opts.KubevirtMemory, "kubevirt-memory", opts.KubevirtMemory, "In KubeVirt platform - the amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
 	cmd.Flags().Uint32Var(&opts.KubevirtCPU, "kubevirt-cpu", opts.KubevirtCPU, "In KubeVirt platform - Cores specifies the number of cores inside the vmi, Must be a value greater or equal 1")

@@ -14,7 +14,7 @@ import (
 
 const (
 	EC2VolumeDefaultSize int64  = 16
-	EC2VolumeDefaultType string = "gp2"
+	EC2VolumeDefaultType string = "gp3"
 )
 
 func machineDeployment(nodePool *hyperv1.NodePool, clusterName string, controlPlaneNamespace string) *capiv1.MachineDeployment {
