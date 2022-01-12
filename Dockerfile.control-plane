@@ -10,3 +10,5 @@ FROM registry.ci.openshift.org/ocp/4.10:base
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
 
 ENTRYPOINT /usr/bin/control-plane-operator
+
+LABEL io.openshift.release.operator=true
