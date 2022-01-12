@@ -41,7 +41,7 @@ all: build e2e
 build: ignition-server hypershift-operator control-plane-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
 
 .PHONY: verify
-verify: staticcheck deps api fmt vet promtool
+verify: staticcheck deps api fmt vet promtool api-docs
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	$(eval STATUS = $(shell git status -s))
