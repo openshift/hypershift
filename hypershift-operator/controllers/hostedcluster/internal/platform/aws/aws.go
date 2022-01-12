@@ -54,6 +54,10 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 }
 
 func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
+	providerImage := imageCAPA
+	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIProviderAWSImage]; ok {
+		providerImage = override
+	}
 	defaultMode := int32(420)
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
@@ -104,7 +108,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMi
 				Containers: []corev1.Container{
 					{
 						Name:            "manager",
-						Image:           imageCAPA,
+						Image:           providerImage,
 						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{
