@@ -8,7 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	componentbasev1 "k8s.io/component-base/config/v1alpha1"
-	schedulerv1 "k8s.io/kube-scheduler/config/v1beta1"
+	schedulerv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -34,10 +34,10 @@ func ReconcileConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef) error {
 
 func generateConfig() (string, error) {
 	kubeConfigPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeKubeconfig().Name), kas.KubeconfigKey)
-	config := schedulerv1.KubeSchedulerConfiguration{
+	config := schedulerv1beta2.KubeSchedulerConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KubeSchedulerConfiguration",
-			APIVersion: schedulerv1.SchemeGroupVersion.String(),
+			APIVersion: schedulerv1beta2.SchemeGroupVersion.String(),
 		},
 		ClientConnection: componentbasev1.ClientConnectionConfiguration{
 			Kubeconfig: kubeConfigPath,
