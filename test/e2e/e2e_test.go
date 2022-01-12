@@ -198,7 +198,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		AWSPlatform: core.AWSPlatformOptions{
 			InstanceType:       "m4.large",
 			RootVolumeSize:     64,
-			RootVolumeType:     "gp2",
+			RootVolumeType:     "gp3",
 			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
 			Region:             o.configurableClusterOptions.Region,
 			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
