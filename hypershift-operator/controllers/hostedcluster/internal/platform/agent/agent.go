@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	//TODO Pin to specific release
+	// TODO Pin to specific release
 	imageCAPAgent = "quay.io/edge-infrastructure/cluster-api-provider-agent:latest"
 )
 
@@ -54,6 +54,10 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 }
 
 func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
+	providerImage := imageCAPAgent
+	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAgentProviderImage]; ok {
+		providerImage = override
+	}
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Template: corev1.PodTemplateSpec{
@@ -62,7 +66,7 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, token
 				Containers: []corev1.Container{
 					{
 						Name:  "manager",
-						Image: imageCAPAgent,
+						Image: providerImage,
 						Env: []corev1.EnvVar{
 							{
 								Name: "MY_NAMESPACE",
@@ -119,7 +123,7 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, token
 	return deploymentSpec, nil
 }
 
-//TODO add a new method to Platform interface?
+// TODO add a new method to Platform interface?
 func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
