@@ -37,7 +37,7 @@ const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, setDefaultSecurityContext bool) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
 		FeatureGate: globalConfig.FeatureGate,
 		// TODO: Come up with sane defaults for scheduling APIServer pods
@@ -109,6 +109,9 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	default:
 		params.Replicas = 1
 	}
+
+	params.SetDefaultSecurityContext = setDefaultSecurityContext
+
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
 }

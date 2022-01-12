@@ -6,6 +6,7 @@ import (
 
 	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	securityv1 "github.com/openshift/api/security/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -101,28 +102,44 @@ func TestIsGroupVersionRegistered(t *testing.T) {
 func TestDetectManagementCapabilities(t *testing.T) {
 
 	testCases := []struct {
-		name         string
-		client       discovery.ServerResourcesInterface
-		groupVersion schema.GroupVersion
-		resultErr    error
-		isRegistered bool
-		shouldError  bool
+		name           string
+		client         discovery.ServerResourcesInterface
+		capabilityType CapabilityType
+		resultErr      error
+		isRegistered   bool
+		shouldError    bool
 	}{
 		{
-			name:         "should return false if routes are not registered",
-			client:       newFailableFakeDiscoveryClient(nil, hyperv1.GroupVersion, imagev1.GroupVersion),
-			groupVersion: routev1.GroupVersion,
-			resultErr:    nil,
-			isRegistered: false,
-			shouldError:  false,
+			name:           "should return false if routes are not registered",
+			client:         newFailableFakeDiscoveryClient(nil, hyperv1.GroupVersion, imagev1.GroupVersion),
+			capabilityType: CapabilityRoute,
+			resultErr:      nil,
+			isRegistered:   false,
+			shouldError:    false,
 		},
 		{
-			name:         "should return true if are not registered",
-			client:       newFailableFakeDiscoveryClient(nil, hyperv1.GroupVersion, routev1.GroupVersion),
-			groupVersion: routev1.GroupVersion,
-			resultErr:    nil,
-			isRegistered: true,
-			shouldError:  false,
+			name:           "should return true if routes are registered",
+			client:         newFailableFakeDiscoveryClient(nil, hyperv1.GroupVersion, routev1.GroupVersion),
+			capabilityType: CapabilityRoute,
+			resultErr:      nil,
+			isRegistered:   true,
+			shouldError:    false,
+		},
+		{
+			name:           "should return false if security is not registered",
+			client:         newFailableFakeDiscoveryClient(nil, hyperv1.GroupVersion, imagev1.GroupVersion),
+			capabilityType: CapabilitySecurityContextConstraint,
+			resultErr:      nil,
+			isRegistered:   false,
+			shouldError:    false,
+		},
+		{
+			name:           "should return true if security is registered",
+			client:         newFailableFakeDiscoveryClient(nil, hyperv1.GroupVersion, securityv1.GroupVersion),
+			capabilityType: CapabilitySecurityContextConstraint,
+			resultErr:      nil,
+			isRegistered:   true,
+			shouldError:    false,
 		},
 		{
 			name: "should fail on arbitrary errors",
@@ -130,7 +147,6 @@ func TestDetectManagementCapabilities(t *testing.T) {
 				fmt.Errorf("ups"),
 				routev1.GroupVersion,
 			),
-			groupVersion: routev1.GroupVersion,
 			resultErr:    fmt.Errorf("ups"),
 			isRegistered: false,
 			shouldError:  true,
@@ -143,7 +159,7 @@ func TestDetectManagementCapabilities(t *testing.T) {
 			if tc.shouldError {
 				g.Expect(err).To(Equal(tc.resultErr))
 			} else {
-				g.Expect(got.Has(CapabilityRoute)).To(Equal(tc.isRegistered))
+				g.Expect(got.Has(tc.capabilityType)).To(Equal(tc.isRegistered))
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 		})

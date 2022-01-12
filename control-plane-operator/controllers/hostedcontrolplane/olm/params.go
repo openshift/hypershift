@@ -23,7 +23,7 @@ type OperatorLifecycleManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, releaseVersion string) *OperatorLifecycleManagerParams {
+func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, releaseVersion string, setDefaultSecurityContext bool) *OperatorLifecycleManagerParams {
 	params := &OperatorLifecycleManagerParams{
 		CLIImage:                images["cli"],
 		OLMImage:                images["operator-lifecycle-manager"],
@@ -58,6 +58,9 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 	default:
 		params.PackageServerConfig.Replicas = 1
 	}
+
+	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+	params.PackageServerConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return params
 }
