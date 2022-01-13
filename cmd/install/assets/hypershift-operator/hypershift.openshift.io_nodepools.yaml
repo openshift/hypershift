@@ -210,7 +210,9 @@ spec:
                           release payload image.
                         type: string
                       instanceProfile:
-                        description: InstanceProfile is TODO
+                        description: InstanceProfile is the AWS EC2 instance profile,
+                          which is a container for an IAM role that the EC2 instance
+                          uses.
                         type: string
                       instanceType:
                         description: InstanceType is an ec2 instance type for node
