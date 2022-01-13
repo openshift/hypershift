@@ -28,7 +28,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AWSPlatform = core.AWSPlatformOptions{
 		AWSCredentialsFile: "",
 		Region:             "us-east-1",
-		InstanceType:       "m4.large",
+		InstanceType:       "m5.large",
 		RootVolumeType:     "gp3",
 		RootVolumeSize:     120,
 		RootVolumeIOPS:     0,

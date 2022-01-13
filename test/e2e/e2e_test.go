@@ -196,7 +196,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
 		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
 		AWSPlatform: core.AWSPlatformOptions{
-			InstanceType:       "m4.large",
+			InstanceType:       "m5.large",
 			RootVolumeSize:     64,
 			RootVolumeType:     "gp3",
 			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,

@@ -54,7 +54,7 @@ func NewCreateCommand() *cobra.Command {
 		ClusterName:    "example",
 		NodeCount:      2,
 		ReleaseImage:   "",
-		InstanceType:   "m4.large",
+		InstanceType:   "m5.large",
 		RootVolumeType: "gp3",
 		RootVolumeSize: 120,
 		RootVolumeIOPS: 0,

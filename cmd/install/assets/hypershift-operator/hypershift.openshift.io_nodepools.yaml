@@ -216,7 +216,7 @@ spec:
                         type: string
                       instanceType:
                         description: InstanceType is an ec2 instance type for node
-                          instances (e.g. m4-large).
+                          instances (e.g. m5.large).
                         type: string
                       resourceTags:
                         description: "ResourceTags is an optional list of additional
