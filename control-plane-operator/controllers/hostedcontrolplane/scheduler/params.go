@@ -23,7 +23,7 @@ type KubeSchedulerParams struct {
 	config.DeploymentConfig `json:",inline"`
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig globalconfig.GlobalConfig) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig globalconfig.GlobalConfig, setDefaultSecurityContext bool) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		FeatureGate:             globalConfig.FeatureGate,
 		Scheduler:               globalConfig.Scheduler,
@@ -83,6 +83,9 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	default:
 		params.Replicas = 1
 	}
+
+	params.SetDefaultSecurityContext = setDefaultSecurityContext
+
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
 }

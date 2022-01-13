@@ -203,7 +203,7 @@ func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort 
 					},
 				},
 				SecurityContext: &corev1.SecurityContext{
-					RunAsUser: pointer.Int64Ptr(1001),
+					RunAsUser: pointer.Int64Ptr(config.DefaultSecurityContextUser),
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
