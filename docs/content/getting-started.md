@@ -79,6 +79,7 @@ Create a new cluster, specifying the domain of the public zone provided in the
 [Prerequisites](#prerequisites):
 
 ```shell linenums="1"
+REGION=us-east-1
 CLUSTER_NAME=example
 BASE_DOMAIN=example.com
 AWS_CREDS="$HOME/.aws/credentials"
@@ -89,7 +90,8 @@ hypershift create cluster aws \
 --node-pool-replicas=3 \
 --base-domain $BASE_DOMAIN \
 --pull-secret $PULL_SECRET \
---aws-creds $AWS_CREDS
+--aws-creds $AWS_CREDS \
+--region $REGION
 ```
 
 !!! important
