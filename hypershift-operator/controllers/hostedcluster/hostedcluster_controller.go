@@ -213,19 +213,17 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Look up the HostedCluster instance to reconcile
 	hcluster := &hyperv1.HostedCluster{}
-	isMissing := false
 	err := r.Get(ctx, req.NamespacedName, hcluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			isMissing = true
-		} else {
-			return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
+			r.Log.Error(err, "hostedcluster not found, aborting reconcile", "name", req.NamespacedName)
+			return ctrl.Result{}, nil
 		}
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 
-	// If deleted or missing, clean up and return early.
-	// TODO: This should be incorporated with status/reconcile
-	if isMissing || !hcluster.DeletionTimestamp.IsZero() {
+	// If deleted, clean up and return early.
+	if !hcluster.DeletionTimestamp.IsZero() {
 		// Keep trying to delete until we know it's safe to finalize.
 		completed, err := r.delete(ctx, req, hcluster)
 		if err != nil {
