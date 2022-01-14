@@ -46,9 +46,6 @@ func TestReconcile(t *testing.T) {
 					Annotations: map[string]string{
 						TokenSecretAnnotation: "true",
 					},
-					Finalizers: []string{
-						finalizer,
-					},
 					CreationTimestamp: metav1.Now(),
 				},
 				Immutable: nil,
@@ -74,25 +71,18 @@ func TestReconcile(t *testing.T) {
 				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), gotSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 
-				// Validate that secret is not intended to be deleted.
-				g.Expect(gotSecret.GetDeletionTimestamp().IsZero()).To(BeTrue())
-
 				// Validate that payload was stored in the cache.
 				token := gotSecret.Data[TokenSecretTokenKey]
 				value, found := r.PayloadStore.Get(string(token))
 				g.Expect(found).To(BeTrue())
-				g.Expect(value).To(BeEquivalentTo(fakePayload))
+				g.Expect(value.Payload).To(BeEquivalentTo(fakePayload))
+				g.Expect(value.SecretName).To(BeEquivalentTo(secret.GetName()))
 
 				// Delete the secret.
-				err = r.Client.Delete(ctx, gotSecret)
+				err = r.Client.Delete(ctx, secret)
 				g.Expect(err).ToNot(HaveOccurred())
 
-				// Reconcile here should delete the payload from the cache
-				// and remove the finalizer.
-				_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(gotSecret)})
-				g.Expect(err).ToNot(HaveOccurred())
-
-				// Validate the finalizer was removed and the CR is deleted.
+				// Validate the secret is really gone.
 				gotSecret = &corev1.Secret{}
 				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), gotSecret)
 				g.Expect(err).To(HaveOccurred())
@@ -100,10 +90,14 @@ func TestReconcile(t *testing.T) {
 					t.Errorf("expected notFound error, got: %v", err)
 				}
 
+				// Reconcile here should delete the payload from the cache.
+				_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(secret)})
+				g.Expect(err).ToNot(HaveOccurred())
+
 				// Validate that payload was deleted from the cache.
 				value, found = r.PayloadStore.Get(string(token))
 				g.Expect(found).To(BeFalse())
-				g.Expect(value).To(BeEquivalentTo(""))
+				g.Expect(value.Payload).To(BeEquivalentTo(""))
 			},
 		},
 		{
@@ -114,9 +108,6 @@ func TestReconcile(t *testing.T) {
 					Namespace: "test",
 					Annotations: map[string]string{
 						TokenSecretAnnotation: "true",
-					},
-					Finalizers: []string{
-						finalizer,
 					},
 					CreationTimestamp: metav1.NewTime(metav1.Now().Add(-ttl - 1*time.Hour)),
 				},
@@ -135,30 +126,25 @@ func TestReconcile(t *testing.T) {
 					PayloadStore:     NewPayloadStore(),
 				}
 				g := NewWithT(t)
-				_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(secret)})
-				g.Expect(err).ToNot(HaveOccurred())
 
 				// Get the secret.
 				gotSecret := &corev1.Secret{}
 				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), gotSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 
-				// Validate that secret is intended to be deleted.
-				g.Expect(gotSecret.GetDeletionTimestamp().IsZero()).To(BeFalse())
-
 				// Manually set the token in the cache.
 				token := gotSecret.Data[TokenSecretTokenKey]
-				r.PayloadStore.Set(string(token), []byte(fakePayload))
+				r.PayloadStore.Set(string(token), CacheValue{SecretName: secret.GetName(), Payload: []byte(fakePayload)})
 				value, found := r.PayloadStore.Get(string(token))
 				g.Expect(found).To(BeTrue())
-				g.Expect(value).To(BeEquivalentTo(fakePayload))
+				g.Expect(value.Payload).To(BeEquivalentTo(fakePayload))
+				g.Expect(value.SecretName).To(BeEquivalentTo(secret.GetName()))
 
-				// Reconcile here should delete the payload from the cache
-				// and remove the finalizer.
+				// Reconcile here should delete the payload from the cache.
 				_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(secret)})
 				g.Expect(err).ToNot(HaveOccurred())
 
-				// Validate the finalizer was removed and the CR is deleted.
+				// Validate the secret is really deleted.
 				gotSecret = &corev1.Secret{}
 				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), gotSecret)
 				g.Expect(err).To(HaveOccurred())
@@ -170,7 +156,7 @@ func TestReconcile(t *testing.T) {
 				token = gotSecret.Data[TokenSecretTokenKey]
 				value, found = r.PayloadStore.Get(string(token))
 				g.Expect(found).To(BeFalse())
-				g.Expect(value).To(BeEquivalentTo(""))
+				g.Expect(value.Payload).To(BeEquivalentTo(""))
 			},
 		},
 	}

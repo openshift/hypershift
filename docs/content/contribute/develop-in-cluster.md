@@ -44,7 +44,7 @@ to replace `<password>` with your actual `kubeadmin` password.
 
 ```shell linenums="1"
 oc login -u kubeadmin -p <password>
-oc registry login --skip-check --to=$HOME/.docker/config.json
+oc registry login --to=$HOME/.docker/config.json --skip-check --registry $(oc get routes --namespace openshift-image-registry default-route -o jsonpath='{.spec.host}')
 ```
 
 Finally, configure OCP to allow any authenticated user to pull images from the

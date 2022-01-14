@@ -37,14 +37,13 @@ const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, setDefaultSecurityContext bool) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
 		FeatureGate: globalConfig.FeatureGate,
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
-		HyperkubeImage: images["hyperkube"],
-		// TODO: HCCO is the Hypershift image which contains the token-minter binary.  Messy though.
-		TokenMinterImage:        images["hosted-cluster-config-operator"],
+		HyperkubeImage:          images["hyperkube"],
+		TokenMinterImage:        images["token-minter"],
 		Port:                    DefaultPort,
 		ServiceCIDR:             hcp.Spec.ServiceCIDR,
 		PodCIDR:                 hcp.Spec.PodCIDR,
@@ -110,6 +109,9 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	default:
 		params.Replicas = 1
 	}
+
+	params.SetDefaultSecurityContext = setDefaultSecurityContext
+
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
 }

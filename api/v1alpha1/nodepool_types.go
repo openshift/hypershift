@@ -305,10 +305,10 @@ type KubevirtNodePoolPlatform struct {
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating
 // on AWS.
 type AWSNodePoolPlatform struct {
-	// InstanceType is an ec2 instance type for node instances (e.g. m4-large).
+	// InstanceType is an ec2 instance type for node instances (e.g. m5.large).
 	InstanceType string `json:"instanceType"`
 
-	// InstanceProfile is TODO
+	// InstanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.
 	InstanceProfile string `json:"instanceProfile,omitempty"`
 
 	// Subnet is the subnet to use for node instances.

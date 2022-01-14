@@ -61,6 +61,7 @@ type CreateOptions struct {
 
 type AgentPlatformCreateOptions struct {
 	APIServerAddress string
+	AgentNamespace   string
 }
 
 type NonePlatformCreateOptions struct {
@@ -196,6 +197,7 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 			object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
 			var err error
 			if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
+				hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}
 				err = client.Create(ctx, object)
 			} else {
 				err = client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
@@ -204,9 +206,6 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 				return fmt.Errorf("failed to apply object %q: %w", key, err)
 			}
 			log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
-			if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
-				hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}
-			}
 		}
 
 		if waitForRollout {

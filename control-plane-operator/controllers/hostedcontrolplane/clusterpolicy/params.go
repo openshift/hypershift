@@ -20,7 +20,7 @@ type ClusterPolicyControllerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string) *ClusterPolicyControllerParams {
+func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, setDefaultSecurityContext bool) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
 		Image:                   images["cluster-policy-controller"],
 		APIServer:               globalConfig.APIServer,
@@ -50,6 +50,9 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 		params.DeploymentConfig.Replicas = 1
 	}
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+
+	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+
 	return params
 }
 

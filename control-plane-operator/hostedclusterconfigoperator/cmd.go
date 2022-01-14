@@ -28,8 +28,10 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const (
@@ -183,6 +185,9 @@ func (o *HostedClusterConfigOperator) Complete() error {
 }
 
 func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}))
 	versions := map[string]string{
 		"release":    o.ReleaseVersion,
 		"kubernetes": o.KubernetesVersion,

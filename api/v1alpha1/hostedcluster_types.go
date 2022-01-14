@@ -38,7 +38,7 @@ const (
 	ClusterAPIManagerImage = "hypershift.openshift.io/capi-manager-image"
 	// ClusterAutoscalerImage is an annotation that allows the specification of the cluster autoscaler image.
 	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
-	//no images can be pulled from registries outside of IBM Cloud's official regional registries
+	// no images can be pulled from registries outside of IBM Cloud's official regional registries
 	ClusterAutoscalerImage = "hypershift.openshift.io/cluster-autoscaler-image"
 	// AWSKMSProviderImage is an annotation that allows the specification of the AWS kms provider image.
 	// Upstream code located at: https://github.com/kubernetes-sigs/aws-encryption-provider
@@ -48,6 +48,18 @@ const (
 	// PortierisImageAnnotation is an annotation that allows the specification of the portieries component
 	// (performs container image verification).
 	PortierisImageAnnotation = "hypershift.openshift.io/portieris-image"
+
+	// ClusterAPIProviderAWSImage overrides the CAPI AWS provider image to use for
+	// a HostedControlPlane.
+	ClusterAPIProviderAWSImage = "hypershift.openshift.io/capi-provider-aws-image"
+
+	// ClusterAPIKubeVirtProviderImage overrides the CAPI KubeVirt provider image to use for
+	// a HostedControlPlane.
+	ClusterAPIKubeVirtProviderImage = "hypershift.openshift.io/capi-provider-kubevirt-image"
+
+	// ClusterAPIAgentProviderImage overrides the CAPI Agent provider image to use for
+	// a HostedControlPlane.
+	ClusterAPIAgentProviderImage = "hypershift.openshift.io/capi-provider-agent-image"
 
 	// AESCBCKeySecretKey defines the Kubernetes secret key name that contains the aescbc encryption key
 	// in the AESCBC secret encryption strategy
@@ -419,8 +431,20 @@ type PlatformSpec struct {
 	// +immutable
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
 
+	// Agent specifies configuration for agent-based installations.
+	//
+	// +optional
+	// +immutable
+	Agent *AgentPlatformSpec `json:"agent,omitempty"`
+
 	// IBMCloud defines IBMCloud specific settings for components
 	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
+}
+
+// AgentPlatformSpec specifies configuration for agent-based installations.
+type AgentPlatformSpec struct {
+	// AgentNamespace is the namespace where to search for Agents for this cluster
+	AgentNamespace string `json:"agentNamespace"`
 }
 
 // IBMCloudPlatformSpec defines IBMCloud specific settings for components

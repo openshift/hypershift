@@ -5,19 +5,21 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 )
 
 type DeploymentConfig struct {
-	Replicas              int                   `json:"replicas"`
-	Scheduling            Scheduling            `json:"scheduling"`
-	AdditionalLabels      AdditionalLabels      `json:"additionalLabels"`
-	AdditionalAnnotations AdditionalAnnotations `json:"additionalAnnotations"`
-	SecurityContexts      SecurityContextSpec   `json:"securityContexts"`
-	LivenessProbes        LivenessProbes        `json:"livenessProbes"`
-	ReadinessProbes       ReadinessProbes       `json:"readinessProbes"`
-	Resources             ResourcesSpec         `json:"resources"`
+	Replicas                  int                   `json:"replicas"`
+	Scheduling                Scheduling            `json:"scheduling"`
+	AdditionalLabels          AdditionalLabels      `json:"additionalLabels"`
+	AdditionalAnnotations     AdditionalAnnotations `json:"additionalAnnotations"`
+	SecurityContexts          SecurityContextSpec   `json:"securityContexts"`
+	SetDefaultSecurityContext bool                  `json:"setDefaultSecurityContext"`
+	LivenessProbes            LivenessProbes        `json:"livenessProbes"`
+	ReadinessProbes           ReadinessProbes       `json:"readinessProbes"`
+	Resources                 ResourcesSpec         `json:"resources"`
 }
 
 func (c *DeploymentConfig) SetRestartAnnotation(objectMetadata metav1.ObjectMeta) {
@@ -174,6 +176,14 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 		deployment.Spec.Strategy.RollingUpdate.MaxSurge = &maxSurge
 		deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &maxUnavailable
 	}
+
+	// set default security context for pod
+	if c.SetDefaultSecurityContext {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: pointer.Int64(DefaultSecurityContextUser),
+		}
+	}
+
 	c.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&deployment.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)

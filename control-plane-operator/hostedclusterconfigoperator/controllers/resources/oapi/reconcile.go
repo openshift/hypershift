@@ -5,6 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	"k8s.io/utils/pointer"
 )
 
 const (
@@ -22,6 +23,7 @@ func ReconcileAPIService(apiService *apiregistrationv1.APIService, svc *corev1.S
 		Service: &apiregistrationv1.ServiceReference{
 			Name:      svc.Name,
 			Namespace: svc.Namespace,
+			Port:      pointer.Int32(443),
 		},
 		VersionPriority: 15,
 	}

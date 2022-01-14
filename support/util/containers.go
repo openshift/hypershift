@@ -1,9 +1,11 @@
 package util
 
 import (
+	"fmt"
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func BuildContainer(container *corev1.Container, buildFn func(*corev1.Container)) corev1.Container {
@@ -15,7 +17,11 @@ func BuildContainer(container *corev1.Container, buildFn func(*corev1.Container)
 // image in the release image.
 const AvailabilityProberImageName = "availability-prober"
 
-func AvailabilityProber(target string, image string, spec *corev1.PodSpec) {
+func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...AvailabilityProberOpt) {
+	opts := AvailabilityProberOpts{}
+	for _, opt := range o {
+		opt(&opts)
+	}
 	availabilityProberContainer := corev1.Container{
 		Name:            "availability-prober",
 		Image:           image,
@@ -26,6 +32,16 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec) {
 			target,
 		},
 	}
+	if opts.KubeconfigVolumeName != "" {
+		availabilityProberContainer.VolumeMounts = append(availabilityProberContainer.VolumeMounts, corev1.VolumeMount{
+			Name:      opts.KubeconfigVolumeName,
+			MountPath: "/var/kubeconfig",
+		})
+		availabilityProberContainer.Command = append(availabilityProberContainer.Command, "--kubeconfig=/var/kubeconfig/kubeconfig")
+		for _, api := range opts.RequiredAPIs {
+			availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--required-api=%s,%s,%s", api.Group, api.Version, api.Kind))
+		}
+	}
 	if len(spec.InitContainers) == 0 || spec.InitContainers[0].Name != "availability-prober" {
 		spec.InitContainers = append([]corev1.Container{{}}, spec.InitContainers...)
 	}
@@ -33,3 +49,10 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec) {
 		spec.InitContainers[0] = availabilityProberContainer
 	}
 }
+
+type AvailabilityProberOpts struct {
+	KubeconfigVolumeName string
+	RequiredAPIs         []schema.GroupVersionKind
+}
+
+type AvailabilityProberOpt func(*AvailabilityProberOpts)

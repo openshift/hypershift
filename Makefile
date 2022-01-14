@@ -41,7 +41,7 @@ all: build e2e
 build: ignition-server hypershift-operator control-plane-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
 
 .PHONY: verify
-verify: staticcheck deps api fmt vet promtool
+verify: staticcheck deps api fmt vet promtool api-docs
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	$(eval STATUS = $(shell git status -s))
@@ -90,7 +90,7 @@ token-minter:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt api-docs
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent api-docs
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
@@ -120,6 +120,11 @@ cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-kubevirt/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-kubevirt
+
+.PHONY: cluster-api-provider-agent
+cluster-api-provider-agent: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/cluster-api-provider-agent/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/openshift/cluster-api-provider-agent/api/v1alpha1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-agent
 
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)

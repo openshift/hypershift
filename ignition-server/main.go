@@ -175,14 +175,14 @@ func run(ctx context.Context, opts Options) error {
 			return
 		}
 
-		payload, ok := payloadStore.Get(string(decodedToken))
+		value, ok := payloadStore.Get(string(decodedToken))
 		if !ok {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write(payload)
+		w.Write(value.Payload)
 	})
 
 	server := http.Server{
