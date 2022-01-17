@@ -100,9 +100,9 @@ func TestAWSMachineTemplate(t *testing.T) {
 			if tc.nodePool.Platform.AWS == nil {
 				tc.nodePool.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
 			}
-			result, _ := AWSMachineTemplate("testi", amiName, &hyperv1.HostedCluster{Spec: tc.cluster}, &hyperv1.NodePool{Spec: tc.nodePool}, "test")
-			if !equality.Semantic.DeepEqual(tc.expected.Spec, result.Spec) {
-				t.Errorf(cmp.Diff(tc.expected.Spec, result.Spec))
+			result := awsMachineTemplateSpec("testi", amiName, &hyperv1.HostedCluster{Spec: tc.cluster}, &hyperv1.NodePool{Spec: tc.nodePool})
+			if !equality.Semantic.DeepEqual(&tc.expected.Spec, result) {
+				t.Errorf(cmp.Diff(tc.expected.Spec, result))
 			}
 		})
 	}
