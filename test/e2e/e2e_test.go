@@ -187,7 +187,7 @@ type configurableClusterOptions struct {
 
 func (o *options) DefaultClusterOptions() core.CreateOptions {
 	createOption := core.CreateOptions{
-		ReleaseImage:              o.PreviousReleaseImage,
+		ReleaseImage:              o.LatestReleaseImage,
 		GenerateSSH:               true,
 		SSHKeyFile:                "",
 		NodePoolReplicas:          2,

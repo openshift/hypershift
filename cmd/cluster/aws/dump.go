@@ -193,9 +193,9 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
-	err := cmd.Run()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Error(err, "error running inspect command")
+		log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
 	}
 }
 
@@ -256,7 +256,7 @@ func outputLog(ctx context.Context, fileName string, req *restclient.Request, sk
 	b, err := req.DoRaw(ctx)
 	if err != nil {
 		if !skipLogErr {
-			log.Error(err, "Failed to get pod log", "req", req.URL().String())
+			log.Info("Failed to get pod log", "req", req.URL().String(), "error", err.Error())
 		}
 		return
 	}
