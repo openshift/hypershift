@@ -28,15 +28,14 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.MarkFlagRequired("agent-namespace")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
 		go func() {
 			<-sigs
-			cancel()
+			opts.Cancel()
 		}()
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		if err := CreateCluster(opts.Ctx, opts); err != nil {
 			log.Error(err, "Failed to create cluster")
 			os.Exit(1)
 		}

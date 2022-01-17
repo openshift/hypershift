@@ -57,6 +57,25 @@ type CreateOptions struct {
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
 	Wait                             bool
+	Timeout                          time.Duration
+	Ctx                              context.Context
+	cancel                           context.CancelFunc
+}
+
+func (opts *CreateOptions) CreateContext() {
+	if opts.Ctx == nil {
+		if opts.Wait && opts.Timeout > 0 {
+			opts.Ctx, opts.cancel = context.WithTimeout(context.Background(), opts.Timeout)
+		} else {
+			opts.Ctx, opts.cancel = context.WithCancel(context.Background())
+		}
+	}
+}
+
+func (opts CreateOptions) Cancel() {
+	if opts.cancel != nil {
+		opts.cancel()
+	}
 }
 
 type AgentPlatformCreateOptions struct {
@@ -275,6 +294,8 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 }
 
 func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApply ApplyPlatformSpecifics) error {
+	defer opts.Cancel()
+
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return errors.New("--wait requires --node-pool-replicas > 0")
 	}
