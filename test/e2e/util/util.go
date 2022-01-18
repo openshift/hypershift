@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -100,7 +99,7 @@ func createCluster(t *testing.T, ctx context.Context, client crclient.Client, cl
 		deleteTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
 		defer cancel()
 		DeleteNamespace(t, deleteTimeout, client, namespace.Name)
-		if t.Failed() {
+		if t.Failed() && len(artifactDir) != 0 {
 			clusterMgr.DumpCluster(ctx, hc, filepath.Join(artifactDir, testName, "delete-test-namespace"))
 		}
 	}
@@ -235,7 +234,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	err = wait.PollUntil(5*time.Second, func() (done bool, err error) {
-		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: hyperapi.Scheme})
+		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 		if err != nil {
 			return false, nil
 		}
