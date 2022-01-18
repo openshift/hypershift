@@ -129,6 +129,9 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			InfraID:            infra.InfraID,
 			IssuerURL:          opts.AWSPlatform.IssuerURL,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
+			PrivateZoneID:      infra.PrivateZoneID,
+			PublicZoneID:       infra.PublicZoneID,
+			LocalZoneID:        infra.LocalZoneID,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
