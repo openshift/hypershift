@@ -206,22 +206,26 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 			panic(err)
 		}
 	}
-	operatorOIDCProviderS3Secret := assets.HyperShiftOperatorOIDCProviderS3Secret{
-		Namespace:                      operatorNamespace,
-		OIDCStorageProviderS3CredBytes: oidcStorageProviderS3CredBytes,
-	}.Build()
+	var operatorOIDCProviderS3Config *assets.HyperShiftOperatorOIDCProviderS3Secret
+	if opts.OIDCStorageProviderS3BucketName != "" {
+		operatorOIDCProviderS3Config = &assets.HyperShiftOperatorOIDCProviderS3Secret{
+			Namespace:                       operatorNamespace,
+			OIDCStorageProviderS3CredBytes:  oidcStorageProviderS3CredBytes,
+			OIDCStorageProviderS3BucketName: opts.OIDCStorageProviderS3BucketName,
+			OIDCStorageProviderS3Region:     opts.OIDCStorageProviderS3Region,
+		}
+	}
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
-		Namespace:                       operatorNamespace,
-		OperatorImage:                   opts.HyperShiftImage,
-		ServiceAccount:                  operatorServiceAccount,
-		Replicas:                        opts.HyperShiftOperatorReplicas,
-		EnableOCPClusterMonitoring:      opts.EnableOCPClusterMonitoring,
-		EnableCIDebugOutput:             opts.EnableCIDebugOutput,
-		PrivatePlatform:                 opts.PrivatePlatform,
-		AWSPrivateRegion:                opts.AWSPrivateRegion,
-		AWSPrivateCreds:                 opts.AWSPrivateCreds,
-		OIDCStorageProviderS3BucketName: opts.OIDCStorageProviderS3BucketName,
-		OIDCStorageProviderS3Region:     opts.OIDCStorageProviderS3Region,
+		Namespace:                   operatorNamespace,
+		OperatorImage:               opts.HyperShiftImage,
+		ServiceAccount:              operatorServiceAccount,
+		Replicas:                    opts.HyperShiftOperatorReplicas,
+		EnableOCPClusterMonitoring:  opts.EnableOCPClusterMonitoring,
+		EnableCIDebugOutput:         opts.EnableCIDebugOutput,
+		PrivatePlatform:             opts.PrivatePlatform,
+		AWSPrivateRegion:            opts.AWSPrivateRegion,
+		AWSPrivateCreds:             opts.AWSPrivateCreds,
+		OIDCStorageProviderS3Config: operatorOIDCProviderS3Config,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
@@ -284,7 +288,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	objects = append(objects, serviceMonitor)
 	objects = append(objects, recordingRule)
 	if opts.OIDCStorageProviderS3BucketName != "" {
-		objects = append(objects, operatorOIDCProviderS3Secret)
+		objects = append(objects, operatorOIDCProviderS3Config.Build())
 		objects = append(objects, assets.OIDCStorageProviderS3ConfigMap(opts.OIDCStorageProviderS3BucketName, opts.OIDCStorageProviderS3Region))
 	}
 	return objects, nil
