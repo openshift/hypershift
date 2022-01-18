@@ -191,8 +191,6 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	}
 	allArgs = append(allArgs, cmdArgs...)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
