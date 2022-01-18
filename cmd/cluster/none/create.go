@@ -62,11 +62,10 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
 	}
 	exampleOptions.InfraID = infraID
-
-	// TODO: We are inconsistent atm as DNS basedomain input is required and platform agnostic at the HostedCluster API level.
-	// However In the CLI input is only exposed in AWS and not required atm. This should either be core input and required for
-	// every platform or the field in the API should be optional if there's platform which don't need it.
-	exampleOptions.BaseDomain = "example.com"
+	exampleOptions.BaseDomain = opts.BaseDomain
+	if exampleOptions.BaseDomain == "" {
+		exampleOptions.BaseDomain = "example.com"
+	}
 
 	exampleOptions.None = &apifixtures.ExampleNoneOptions{
 		APIServerAddress: opts.NonePlatform.APIServerAddress,
