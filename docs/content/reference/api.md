@@ -1734,6 +1734,11 @@ has been created for the specified NLB in the management VPC</p>
 </td>
 </tr><tr><td><p>&#34;ClusterVersionFailing&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ClusterVersionSucceeding&#34;</p></td>
+<td><p>ClusterVersionSucceeding indicates the current status of the desired release
+version of the HostedCluster as indicated by the Failing condition in the
+underlying cluster&rsquo;s ClusterVersion.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>

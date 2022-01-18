@@ -289,6 +289,39 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
 	}
 
+	// Set the ClusterVersionSucceeding based on the hostedcontrolplane
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ClusterVersionSucceeding),
+			Status:             metav1.ConditionUnknown,
+			Reason:             "ClusterVersionStatusUnknown",
+			ObservedGeneration: hcluster.Generation,
+		}
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+			}
+		} else {
+			failingCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing))
+			if failingCond != nil {
+				switch failingCond.Status {
+				case metav1.ConditionTrue:
+					condition.Status = metav1.ConditionFalse
+					condition.Reason = failingCond.Reason
+					condition.Message = failingCond.Message
+				case metav1.ConditionFalse:
+					condition.Status = metav1.ConditionTrue
+					condition.Reason = failingCond.Reason
+					condition.Message = ""
+				}
+			}
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
 	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
 	// provide clear status to the user on the resource without having to look at operator logs.
 	{
