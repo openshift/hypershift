@@ -46,8 +46,8 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   "/healthz",
-					Port:   intstr.FromInt(10251),
-					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(schedulerSecurePort),
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
 			InitialDelaySeconds: 60,
@@ -62,8 +62,8 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path:   "/healthz",
-					Port:   intstr.FromInt(10251),
-					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(schedulerSecurePort),
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
 			InitialDelaySeconds: 15,

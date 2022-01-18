@@ -17,6 +17,10 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	schedulerSecurePort = 10259
+)
+
 var (
 	volumeMounts = util.PodVolumeMounts{
 		schedulerContainerMain().Name: {
@@ -86,7 +90,7 @@ func buildSchedulerContainerMain(image, namespace string, featureGates []string,
 		c.Args = []string{
 			fmt.Sprintf("--config=%s", configPath),
 			fmt.Sprintf("--cert-dir=%s", certWorkDir),
-			"--port=0",
+			fmt.Sprintf("--secure-port=%d", schedulerSecurePort),
 			fmt.Sprintf("--authentication-kubeconfig=%s", kubeConfigPath),
 			fmt.Sprintf("--authorization-kubeconfig=%s", kubeConfigPath),
 			"-v=2",
