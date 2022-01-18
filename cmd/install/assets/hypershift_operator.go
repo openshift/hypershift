@@ -46,6 +46,8 @@ const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
 	awsCredsSecretKey             = "credentials"
+	oidcProviderS3SecretBucketKey = "bucket"
+	oidcProviderS3SecretRegionKey = "region"
 )
 
 func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
@@ -66,8 +68,10 @@ func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 }
 
 type HyperShiftOperatorOIDCProviderS3Secret struct {
-	Namespace                      *corev1.Namespace
-	OIDCStorageProviderS3CredBytes []byte
+	Namespace                       *corev1.Namespace
+	OIDCStorageProviderS3CredBytes  []byte
+	OIDCStorageProviderS3BucketName string
+	OIDCStorageProviderS3Region     string
 }
 
 func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
@@ -81,24 +85,25 @@ func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
 			Namespace: o.Namespace.Name,
 		},
 		Data: map[string][]byte{
-			awsCredsSecretKey: o.OIDCStorageProviderS3CredBytes,
+			awsCredsSecretKey:             o.OIDCStorageProviderS3CredBytes,
+			oidcProviderS3SecretBucketKey: []byte(o.OIDCStorageProviderS3BucketName),
+			oidcProviderS3SecretRegionKey: []byte(o.OIDCStorageProviderS3Region),
 		},
 	}
 	return secret
 }
 
 type HyperShiftOperatorDeployment struct {
-	Namespace                       *corev1.Namespace
-	OperatorImage                   string
-	ServiceAccount                  *corev1.ServiceAccount
-	Replicas                        int32
-	EnableOCPClusterMonitoring      bool
-	EnableCIDebugOutput             bool
-	PrivatePlatform                 string
-	AWSPrivateCreds                 string
-	AWSPrivateRegion                string
-	OIDCStorageProviderS3BucketName string
-	OIDCStorageProviderS3Region     string
+	Namespace                   *corev1.Namespace
+	OperatorImage               string
+	ServiceAccount              *corev1.ServiceAccount
+	Replicas                    int32
+	EnableOCPClusterMonitoring  bool
+	EnableCIDebugOutput         bool
+	PrivatePlatform             string
+	AWSPrivateCreds             string
+	AWSPrivateRegion            string
+	OIDCStorageProviderS3Config *HyperShiftOperatorOIDCProviderS3Secret
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -113,11 +118,21 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	}
 	var oidcVolumeMount []corev1.VolumeMount
 	var oidcVolumeCred []corev1.Volume
+	var envVars = []corev1.EnvVar{
+		{
+			Name: "MY_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+	}
 
-	if o.OIDCStorageProviderS3BucketName != "" {
+	if o.OIDCStorageProviderS3Config != nil {
 		args = append(args,
-			"--oidc-storage-provider-s3-bucket-name="+o.OIDCStorageProviderS3BucketName,
-			"--oidc-storage-provider-s3-region="+o.OIDCStorageProviderS3Region,
+			"--oidc-storage-provider-s3-bucket-name=$(MY_OIDC_BUCKET)",
+			"--oidc-storage-provider-s3-region=$(MY_OIDC_REGION)",
 			"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+awsCredsSecretKey,
 		)
 		oidcVolumeMount = []corev1.VolumeMount{
@@ -136,6 +151,26 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		}
+		envVars = append(envVars,
+			corev1.EnvVar{
+				Name: "MY_OIDC_BUCKET",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: oidcProviderS3CredsSecretName},
+						Key:                  oidcProviderS3SecretBucketKey,
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "MY_OIDC_REGION",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: oidcProviderS3CredsSecretName},
+						Key:                  oidcProviderS3SecretRegionKey,
+					},
+				},
+			},
+		)
 	}
 
 	deployment := &appsv1.Deployment{
@@ -173,18 +208,9 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							},
 							Image:           o.OperatorImage,
 							ImagePullPolicy: corev1.PullAlways,
-							Env: []corev1.EnvVar{
-								{
-									Name: "MY_NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-							},
-							Command: []string{"/usr/bin/hypershift-operator"},
-							Args:    args,
+							Env:             envVars,
+							Command:         []string{"/usr/bin/hypershift-operator"},
+							Args:            args,
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
