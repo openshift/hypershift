@@ -132,7 +132,8 @@ NODEPOOL_NAME=${CLUSTER_NAME}-work
 INSTANCE_TYPE=m5.2xlarge
 NODEPOOL_REPLICAS=2
 
-hypershift create nodepool --cluster-name $CLUSTER_NAME \
+hypershift create nodepool aws \
+  --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
   --node-count $NODEPOOL_REPLICAS \
   --instance-type $INSTANCE_TYPE
