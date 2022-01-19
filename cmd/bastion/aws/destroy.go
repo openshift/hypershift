@@ -3,9 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -48,26 +45,19 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagFilename("aws-creds")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			log.Error(err, "Invalid arguments")
 			cmd.Usage()
-			return
+			return nil
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := opts.Run(ctx); err != nil {
+		if err := opts.Run(cmd.Context()); err != nil {
 			log.Error(err, "Failed to create bastion")
-			os.Exit(1)
+			return err
 		} else {
 			log.Info("Successfully destroyed bastion")
 		}
+		return nil
 	}
 
 	return cmd

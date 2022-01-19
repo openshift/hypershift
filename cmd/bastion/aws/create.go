@@ -4,17 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"os"
-	"os/signal"
 	"regexp"
-	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/spf13/cobra"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -61,26 +57,20 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagFilename("ssh-key-file")
 	cmd.MarkFlagFilename("aws-creds")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			log.Error(err, "Invalid arguments")
 			cmd.Usage()
-			return
+			return nil
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
 
-		if instanceID, publicIP, err := opts.Run(ctx); err != nil {
+		if instanceID, publicIP, err := opts.Run(cmd.Context()); err != nil {
 			log.Error(err, "Failed to create bastion")
-			os.Exit(1)
+			return err
 		} else {
 			log.Info("Successfully created bastion", "id", instanceID, "publicIP", publicIP)
 		}
+		return nil
 	}
 	return cmd
 }

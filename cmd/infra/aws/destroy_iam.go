@@ -3,10 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -48,15 +45,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("infra-id")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := opts.DestroyIAM(ctx); err != nil {
+		if err := opts.DestroyIAM(cmd.Context()); err != nil {
 			return err
 		}
 		log.Info("Successfully destroyed IAM infra")

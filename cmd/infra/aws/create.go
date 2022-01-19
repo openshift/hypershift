@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/route53"
@@ -78,20 +76,13 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("base-domain")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := opts.Run(ctx); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := opts.Run(cmd.Context()); err != nil {
 			log.Error(err, "Failed to create infrastructure")
-			os.Exit(1)
+			return err
 		}
 		log.Info("Successfully created infrastructure")
+		return nil
 	}
 
 	return cmd

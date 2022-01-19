@@ -5,17 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
-	"os/signal"
-	"syscall"
+
+	"github.com/spf13/cobra"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -47,24 +45,19 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 	cmd.MarkFlagRequired("aws-creds")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
 		if opts.Timeout > 0 {
-			ctx, cancel = context.WithTimeout(context.Background(), opts.Timeout)
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+			defer cancel()
 		}
-		defer cancel()
-
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
 
 		if err := CreateCluster(ctx, opts); err != nil {
 			log.Error(err, "Failed to create cluster")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd

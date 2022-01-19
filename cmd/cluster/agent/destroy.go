@@ -2,14 +2,12 @@ package agent
 
 import (
 	"context"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/none"
-	"github.com/spf13/cobra"
 )
 
 type DestroyOptions struct {
@@ -25,19 +23,13 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := DestroyCluster(ctx, opts); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := DestroyCluster(cmd.Context(), opts); err != nil {
 			log.Error(err, "Failed to destroy cluster")
-			os.Exit(1)
+			return err
 		}
+
+		return nil
 	}
 
 	return cmd

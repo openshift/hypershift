@@ -13,11 +13,6 @@ import (
 	"strings"
 	"time"
 
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
-	hyperapi "github.com/openshift/hypershift/support/api"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,6 +20,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/cmd/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 )
 
 // ApplyPlatformSpecifics can be used to create platform specific values as well as enriching the fixure with additional values

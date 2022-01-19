@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
@@ -84,19 +82,12 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("oidc-bucket-name")
 	cmd.MarkFlagRequired("oidc-bucket-region")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := opts.Run(ctx, util.GetClientOrDie()); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := opts.Run(cmd.Context(), util.GetClientOrDie()); err != nil {
 			log.Error(err, "Failed to create infrastructure")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd

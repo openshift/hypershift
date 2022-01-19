@@ -20,22 +20,18 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/spf13/cobra"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
-
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Options struct {
@@ -101,14 +97,6 @@ func NewCommand() *cobra.Command {
 			return err
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
 		switch {
 		case opts.Development:
 			opts.HyperShiftOperatorReplicas = 0
@@ -125,7 +113,7 @@ func NewCommand() *cobra.Command {
 		case opts.Render:
 			render(objects)
 		default:
-			err := apply(ctx, objects)
+			err := apply(cmd.Context(), objects)
 			if err != nil {
 				return err
 			}
