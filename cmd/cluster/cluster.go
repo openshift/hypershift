@@ -59,8 +59,6 @@ func NewCreateCommands() *cobra.Command {
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
-	opts.CreateContext()
-
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(none.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
