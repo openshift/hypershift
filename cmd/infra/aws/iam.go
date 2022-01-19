@@ -16,22 +16,6 @@ import (
 )
 
 const (
-	ingressPermPolicy = `{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"elasticloadbalancing:DescribeLoadBalancers",
-				"route53:ListHostedZones",
-				"route53:ChangeResourceRecordSets",
-				"tag:GetResources"
-			],
-			"Resource": "*"
-		}
-	]
-}`
-
 	imageRegistryPermPolicy = `{
 	"Version": "2012-10-17",
 	"Statement": [
@@ -240,24 +224,6 @@ const (
   ]
 }`
 
-	controlPlaneOperatorPolicy = `{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"ec2:CreateVpcEndpoint",
-				"ec2:DescribeVpcEndpoints",
-				"ec2:DeleteVpcEndpoints",
-				"ec2:CreateTags",
-				"route53:ListHostedZones",
-				"route53:ChangeResourceRecordSets",
-				"route53:ListResourceRecordSets"
-			],
-			"Resource": "*"
-		}
-	]
-}`
 	cloudNetworkConfigControllerPolicy = `{
 	"Version": "2012-10-17",
 	"Statement": [
@@ -279,6 +245,70 @@ const (
 	]
 }`
 )
+
+func ingressPermPolicy(publicZone, privateZone string) string {
+	publicZone = ensureHostedZonePrefix(publicZone)
+	privateZone = ensureHostedZonePrefix(privateZone)
+	return fmt.Sprintf(`{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"elasticloadbalancing:DescribeLoadBalancers",
+				"tag:GetResources",
+				"route53:ListHostedZones"
+			],
+			"Resource": "*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"route53:ChangeResourceRecordSets"
+			],
+			"Resource": [
+				"arn:aws:route53:::%s",
+				"arn:aws:route53:::%s"
+			]
+		}
+	]
+}`, publicZone, privateZone)
+}
+
+func controlPlaneOperatorPolicy(hostedZone string) string {
+	hostedZone = ensureHostedZonePrefix(hostedZone)
+	return fmt.Sprintf(`{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"ec2:CreateVpcEndpoint",
+				"ec2:DescribeVpcEndpoints",
+				"ec2:DeleteVpcEndpoints",
+				"ec2:CreateTags",
+				"route53:ListHostedZones"
+			],
+			"Resource": "*"
+		},
+		{
+			"Effect": "Allow",
+			"Action": [
+				"route53:ChangeResourceRecordSets",
+				"route53:ListResourceRecordSets"
+			],
+			"Resource": "arn:aws:route53:::%s"
+		}
+	]
+}`, hostedZone)
+}
+
+func ensureHostedZonePrefix(hostedZone string) string {
+	if !strings.HasPrefix(hostedZone, "hostedzone/") {
+		hostedZone = "hostedzone/" + hostedZone
+	}
+	return hostedZone
+}
 
 type KeyResponse struct {
 	Keys []jose.JSONWebKey `json:"keys"`
@@ -340,7 +370,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
 	ingressTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-ingress-operator:ingress-operator")
-	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", ingressTrustPolicy, ingressPermPolicy)
+	arn, err := o.CreateOIDCRole(iamClient, "openshift-ingress", ingressTrustPolicy, ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID))
 	if err != nil {
 		return nil, err
 	}
@@ -389,7 +419,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	output.NodePoolManagementRoleARN = arn
 
 	controlPlaneOperatorTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:control-plane-operator")
-	arn, err = o.CreateOIDCRole(iamClient, "control-plane-operator", controlPlaneOperatorTrustPolicy, controlPlaneOperatorPolicy)
+	arn, err = o.CreateOIDCRole(iamClient, "control-plane-operator", controlPlaneOperatorTrustPolicy, controlPlaneOperatorPolicy(o.LocalZoneID))
 	if err != nil {
 		return nil, err
 	}

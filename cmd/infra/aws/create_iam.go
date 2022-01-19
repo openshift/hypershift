@@ -27,6 +27,9 @@ type CreateIAMOptions struct {
 	AWSCredentialsFile              string
 	OIDCStorageProviderS3BucketName string
 	OIDCStorageProviderS3Region     string
+	PublicZoneID                    string
+	PrivateZoneID                   string
+	LocalZoneID                     string
 	InfraID                         string
 	IssuerURL                       string
 	OutputFile                      string
@@ -66,10 +69,16 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "The region of the bucket in which the OIDC discovery document is stored")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra should be created")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
+	cmd.Flags().StringVar(&opts.PublicZoneID, "public-zone-id", opts.PublicZoneID, "The id of the clusters public route53 zone")
+	cmd.Flags().StringVar(&opts.PrivateZoneID, "private-zone-id", opts.PrivateZoneID, "The id of the cluters private route53 zone")
+	cmd.Flags().StringVar(&opts.LocalZoneID, "local-zone-id", opts.LocalZoneID, "The id of the clusters local route53 zone")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("infra-id")
+	cmd.MarkFlagRequired("public-zone-id")
+	cmd.MarkFlagRequired("private-zone-id")
+	cmd.MarkFlagRequired("local-zone-id")
 	cmd.MarkFlagRequired("oidc-bucket-name")
 	cmd.MarkFlagRequired("oidc-bucket-region")
 
