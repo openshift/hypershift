@@ -28,8 +28,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AWSPlatform = core.AWSPlatformOptions{
 		AWSCredentialsFile: "",
 		Region:             "us-east-1",
-		InstanceType:       "m4.large",
-		RootVolumeType:     "gp2",
+		InstanceType:       "m5.large",
+		RootVolumeType:     "gp3",
 		RootVolumeSize:     120,
 		RootVolumeIOPS:     0,
 		EndpointAccess:     string(hyperv1.Public),
@@ -39,7 +39,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.IAMJSON, "iam-json", opts.AWSPlatform.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "Instance type for AWS instances.")
-	cmd.Flags().StringVar(&opts.AWSPlatform.RootVolumeType, "root-volume-type", opts.AWSPlatform.RootVolumeType, "The type of the root volume (e.g. gp2, io1) for machines in the NodePool")
+	cmd.Flags().StringVar(&opts.AWSPlatform.RootVolumeType, "root-volume-type", opts.AWSPlatform.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeIOPS, "root-volume-iops", opts.AWSPlatform.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeSize, "root-volume-size", opts.AWSPlatform.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.AdditionalTags, "additional-tags", opts.AWSPlatform.AdditionalTags, "Additional tags to set on AWS resources")

@@ -112,6 +112,10 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 		},
 	}
 	if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+		if apierrors.IsNotFound(err) {
+			r.log.Info("service not found")
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -337,28 +341,47 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		if !hasAWSConfig(&hcp.Spec.Platform) {
 			return fmt.Errorf("AWS platform information not provided in HostedControlPlane")
 		}
-		input := &ec2.CreateVpcEndpointInput{
-			ServiceName:     aws.String(serviceName),
-			VpcId:           aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
-			VpcEndpointType: aws.String(ec2.VpcEndpointTypeInterface),
-			SubnetIds:       []*string{hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID},
-			TagSpecifications: []*ec2.TagSpecification{{
-				ResourceType: aws.String("vpc-endpoint"),
-				Tags:         apiTagToEC2Tag(hcp.Spec.Platform.AWS.ResourceTags),
-			}},
-		}
-		output, err := ec2Client.CreateVpcEndpointWithContext(ctx, input)
+
+		// Verify there is not already an Endpoint that we can adopt
+		// This can happen if we have a stale status on AWSEndpointService or encoutered
+		// an error updating the AWSEndpointService on the previous reconcile
+		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
+			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
+		})
 		if err != nil {
 			return err
 		}
-		if output == nil || output.VpcEndpoint == nil {
-			return fmt.Errorf("CreateVpcEndpointWithContext output is nil")
-		}
+		if len(output.VpcEndpoints) != 0 {
+			endpointID = *output.VpcEndpoints[0].VpcEndpointId
+			log.Info("endpoint already exists, adopting", "endpointID", endpointID)
+			awsEndpointService.Status.EndpointID = endpointID
+			endpointDNSEntries = output.VpcEndpoints[0].DnsEntries
+		} else {
+			log.Info("endpoint does not already exist")
+			// Create the Endpoint
+			input := &ec2.CreateVpcEndpointInput{
+				ServiceName:     aws.String(serviceName),
+				VpcId:           aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
+				VpcEndpointType: aws.String(ec2.VpcEndpointTypeInterface),
+				SubnetIds:       []*string{hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID},
+				TagSpecifications: []*ec2.TagSpecification{{
+					ResourceType: aws.String("vpc-endpoint"),
+					Tags:         apiTagToEC2Tag(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
+				}},
+			}
+			output, err := ec2Client.CreateVpcEndpointWithContext(ctx, input)
+			if err != nil {
+				return err
+			}
+			if output == nil || output.VpcEndpoint == nil {
+				return fmt.Errorf("CreateVpcEndpointWithContext output is nil")
+			}
 
-		endpointID = *output.VpcEndpoint.VpcEndpointId
-		log.Info("endpoint created", "endpointID", endpointID)
-		awsEndpointService.Status.EndpointID = endpointID
-		endpointDNSEntries = output.VpcEndpoint.DnsEntries
+			endpointID = *output.VpcEndpoint.VpcEndpointId
+			log.Info("endpoint created", "endpointID", endpointID)
+			awsEndpointService.Status.EndpointID = endpointID
+			endpointDNSEntries = output.VpcEndpoint.DnsEntries
+		}
 	}
 
 	if len(endpointDNSEntries) == 0 {
@@ -394,11 +417,22 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	return nil
 }
 
-func apiTagToEC2Tag(in []hyperv1.AWSResourceTag) []*ec2.Tag {
+func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []*ec2.Tag {
 	result := make([]*ec2.Tag, len(in))
 	for _, val := range in {
 		result = append(result, &ec2.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})
 	}
+	result = append(result, &ec2.Tag{Key: aws.String("AWSEndpointService"), Value: aws.String(name)})
+
+	return result
+}
+
+func apiTagToEC2Filter(name string, in []hyperv1.AWSResourceTag) []*ec2.Filter {
+	result := make([]*ec2.Filter, len(in))
+	for _, val := range in {
+		result = append(result, &ec2.Filter{Name: aws.String("tag:" + val.Key), Values: aws.StringSlice([]string{val.Value})})
+	}
+	result = append(result, &ec2.Filter{Name: aws.String("tag:AWSEndpointService"), Values: aws.StringSlice([]string{name})})
 
 	return result
 }

@@ -15,12 +15,17 @@ type ExpiringCache struct {
 	sync.RWMutex
 }
 
+type CacheValue struct {
+	Payload    []byte
+	SecretName string
+}
+
 type entry struct {
-	value  []byte
+	value  CacheValue
 	expiry time.Time
 }
 
-func (c *ExpiringCache) Get(key string) (value []byte, ok bool) {
+func (c *ExpiringCache) Get(key string) (value CacheValue, ok bool) {
 	c.RLock()
 	defer c.RUnlock()
 
@@ -28,7 +33,7 @@ func (c *ExpiringCache) Get(key string) (value []byte, ok bool) {
 
 	result, ok := c.cache[key]
 	if !ok {
-		return nil, false
+		return CacheValue{}, false
 	}
 
 	// Renew expiring time everytime time we Get.
@@ -36,7 +41,7 @@ func (c *ExpiringCache) Get(key string) (value []byte, ok bool) {
 	return result.value, ok
 }
 
-func (c *ExpiringCache) Set(key string, value []byte) {
+func (c *ExpiringCache) Set(key string, value CacheValue) {
 	c.Lock()
 	defer c.Unlock()
 
@@ -51,6 +56,17 @@ func (c *ExpiringCache) Delete(key string) {
 	c.Lock()
 	defer c.Unlock()
 	delete(c.cache, key)
+}
+
+func (c *ExpiringCache) Keys() []string {
+	c.RLock()
+	defer c.RUnlock()
+
+	var keys []string
+	for k := range c.cache {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func (c *ExpiringCache) garbageCollect() {

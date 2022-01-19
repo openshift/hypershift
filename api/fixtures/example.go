@@ -82,6 +82,7 @@ type ExampleNoneOptions struct {
 
 type ExampleAgentOptions struct {
 	APIServerAddress string
+	AgentNamespace   string
 }
 
 type ExampleKubevirtOptions struct {
@@ -245,6 +246,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	case o.Agent != nil:
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AgentPlatform,
+			Agent: &hyperv1.AgentPlatformSpec{
+				AgentNamespace: o.Agent.AgentNamespace,
+			},
 		}
 		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Agent.APIServerAddress)
 	case o.Kubevirt != nil:

@@ -15,13 +15,17 @@ package hostedcluster
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -45,6 +49,7 @@ import (
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -53,6 +58,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
+	"gopkg.in/square/go-jose.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -63,8 +69,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1" // Need this dep atm to satisfy IBM provider dep.
@@ -124,8 +129,14 @@ type HostedClusterReconciler struct {
 	// TokenMinterImage is the image used to deploy the token minter init containers.
 	TokenMinterImage string
 
+	// SocksProxyImage is the image used to deploy the socks proxy service.
+	SocksProxyImage string
+
 	// Log is a thread-safe logger.
 	Log logr.Logger
+
+	// SetDefaultSecurityContext is used to configure Security Context for containers
+	SetDefaultSecurityContext bool
 
 	// Clock is used to determine the time in a testable way.
 	Clock clock.Clock
@@ -169,9 +180,15 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
 
+	// Watch based on Routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		builder.Watches(&source.Kind{Type: &routev1.Route{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
 	}
+
+	// Set based on SCC capability
+	// When SCC is available (OpenShift), the container's security context and UID range is automatically set
+	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
+	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
 	return builder.Complete(r)
 }
@@ -1126,7 +1143,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	_, err = createOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, capiManagerServiceAccount, capiImage)
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, capiManagerServiceAccount, capiImage, r.SetDefaultSecurityContext)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -1195,12 +1212,20 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		// Enforce ServiceAccount.
 		deployment.Spec.Template.Spec.ServiceAccountName = capiProviderServiceAccount.Name
 
+		// set security context
+		if r.SetDefaultSecurityContext {
+			deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+				RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
+			}
+		}
+
 		hyperutil.SetColocation(hcluster, deployment)
 		// TODO (alberto): Reconsider enable this back when we face a real need
 		// with no better solution.
 		// hyperutil.SetRestartAnnotation(hc, deployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, deployment)
 		hyperutil.SetDefaultPriorityClass(deployment)
+
 		switch hcluster.Spec.ControllerAvailabilityPolicy {
 		case hyperv1.HighlyAvailable:
 			maxSurge := intstr.FromInt(1)
@@ -1291,7 +1316,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1681,6 +1706,14 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				},
 			},
 		}
+
+		// set security context
+		if r.SetDefaultSecurityContext {
+			ignitionServerDeployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+				RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
+			}
+		}
+
 		hyperutil.SetColocation(hcluster, ignitionServerDeployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, ignitionServerDeployment)
 		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
@@ -1766,7 +1799,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 		}
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.AvailabilityProberImage)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, r.AvailabilityProberImage, r.SetDefaultSecurityContext)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -1776,6 +1809,19 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 	return nil
 }
 
+// getControlPlaneOperatorImage resolves the appropriate control plane operator
+// image based on the following order of precedence (from most to least
+// preferred):
+//
+// 1. The image specified by the ControlPlaneOperatorImageAnnotation on the
+//    HostedCluster resource itself
+// 2. The hypershift image specified in the release payload indicated by the
+//    HostedCluster's release field
+// 3. The hypershift-operator's own image for release versions 4.9 and 4.10
+// 4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
+//    version 4.8
+//
+// If no image can be found according to these rules, an error is returned.
 func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
 	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
 		return val, nil
@@ -1788,6 +1834,11 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	if err != nil {
 		return "", err
 	}
+
+	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
+		return hypershiftImage, nil
+	}
+
 	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
 	pullSpec := "registry.ci.openshift.org/hypershift/hypershift"
 	switch versionMajMin {
@@ -1800,7 +1851,7 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	}
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, image string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
@@ -1820,7 +1871,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				Containers: []corev1.Container{
 					{
 						Name:            "control-plane-operator",
-						Image:           image,
+						Image:           cpoImage,
 						ImagePullPolicy: corev1.PullAlways,
 						Env: []corev1.EnvVar{
 							{
@@ -1837,8 +1888,14 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							RunAsUser: k8sutilspointer.Int64Ptr(1000),
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
-						Args:    []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator", "--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput), fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine)},
-						Ports:   []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
+						Args: []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator",
+							"--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
+							fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine),
+							"--socks5-proxy-image", socksImage,
+							"--availability-prober-image", proberImage,
+							"--token-minter-image", minterImage,
+						},
+						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
@@ -1919,7 +1976,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			})
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 			Name:            "token-minter",
-			Image:           image,
+			Image:           minterImage,
 			ImagePullPolicy: corev1.PullAlways,
 			Command:         []string{"/usr/bin/token-minter"},
 			Args: []string{
@@ -2114,7 +2171,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	return nil
 }
 
-func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, capiManagerImage string) error {
+func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
 	defaultMode := int32(420)
 	capiManagerLabels := map[string]string{
 		"name":                        "cluster-api",
@@ -2209,6 +2266,13 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			},
 		},
 	}
+	// set security context
+	if setDefaultSecurityContext {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
+		}
+	}
+
 	hyperutil.SetColocation(hc, deployment)
 	// TODO (alberto): Reconsider enable this back when we face a real need
 	// with no better solution.
@@ -2391,7 +2455,7 @@ func reconcileCAPIProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string, setDefaultSecurityContext bool) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -2536,6 +2600,13 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 		port = hc.Spec.Networking.APIServer.Port
 	}
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
+
+	// set security context
+	if setDefaultSecurityContext {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
+		}
+	}
 
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
@@ -2983,7 +3054,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		}
 		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.AvailabilityProberImage)
+			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.AvailabilityProberImage, r.SetDefaultSecurityContext)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}
@@ -3079,7 +3150,7 @@ func reconcileMachineApproverRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeconfigSecretName string, config *corev1.ConfigMap, machineApproverImage, availabilityProberImage string) error {
+func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeconfigSecretName string, cm *corev1.ConfigMap, machineApproverImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
 	// TODO: enable leader election when the flag is added in machine-approver
 	args := []string{
 		"--config=/var/run/configmaps/config/config.yaml",
@@ -3127,7 +3198,7 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 						VolumeSource: corev1.VolumeSource{
 							ConfigMap: &corev1.ConfigMapVolumeSource{
 								LocalObjectReference: corev1.LocalObjectReference{
-									Name: config.Name,
+									Name: cm.Name,
 								},
 								Optional:    k8sutilspointer.BoolPtr(true),
 								DefaultMode: k8sutilspointer.Int32Ptr(440),
@@ -3169,6 +3240,13 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	}
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
 
+	// set security context
+	if setDefaultSecurityContext {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
+		}
+	}
+
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
@@ -3176,10 +3254,81 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	return nil
 }
 
-const oidcDocumentsFinalizer = "hypershift.io/aws-oidc-discovery"
+const (
+	oidcDocumentsFinalizer         = "hypershift.io/aws-oidc-discovery"
+	serviceAccountSigningKeySecret = "sa-signing-key"
+	serviceSignerPublicKey         = "service-account.pub"
+	jwksURI                        = "/openid/v1/jwks"
+	discoveryTemplate              = `{
+	"issuer": "%s",
+	"jwks_uri": "%s%s",
+	"response_types_supported": [
+		"id_token"
+	],
+	"subject_types_supported": [
+		"public"
+	],
+	"id_token_signing_alg_values_supported": [
+		"RS256"
+	]
+}`
+)
 
-func oidcPublicDocumentPaths() []string {
-	return []string{"/.well-known/openid-configuration", "/openid/v1/jwks"}
+type oidcGeneratorParams struct {
+	issuerURL string
+	pubKey    []byte
+}
+
+type oidcDocumentGeneratorFunc func(params oidcGeneratorParams) (io.ReadSeeker, error)
+
+func generateConfigurationDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
+	return strings.NewReader(fmt.Sprintf(discoveryTemplate, params.issuerURL, params.issuerURL, jwksURI)), nil
+}
+
+type KeyResponse struct {
+	Keys []jose.JSONWebKey `json:"keys"`
+}
+
+func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
+	block, _ := pem.Decode(params.pubKey)
+	if block == nil || block.Type != "RSA PUBLIC KEY" {
+		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key")
+	}
+	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("public key is not RSA")
+	}
+
+	hasher := crypto.SHA256.New()
+	hasher.Write(block.Bytes)
+	hash := hasher.Sum(nil)
+	kid := base64.RawURLEncoding.EncodeToString(hash)
+
+	var keys []jose.JSONWebKey
+	keys = append(keys, jose.JSONWebKey{
+		Key:       rsaPubKey,
+		KeyID:     kid,
+		Algorithm: string(jose.RS256),
+		Use:       "sig",
+	})
+
+	jwks, err := json.MarshalIndent(KeyResponse{Keys: keys}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	return bytes.NewReader(jwks), nil
+}
+
+func oidcDocumentGenerators() map[string]oidcDocumentGeneratorFunc {
+	return map[string]oidcDocumentGeneratorFunc{
+		"/.well-known/openid-configuration": generateConfigurationDocument,
+		jwksURI:                             generateJWKSDocument,
+	}
 }
 
 func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
@@ -3197,68 +3346,33 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		return errors.New("hypershift wasn't configured with a S3 bucket or credentials, this makes it unable to set up OIDC for AWS clusters. Please install hypershift with the --aws-oidc-bucket-name, --aws-oidc-bucket-region and --aws-oidc-bucket-creds-file flags set. The bucket must pre-exist and the credentials must be authorized to write into it")
 	}
 
-	if apiAvailableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.KubeAPIServerAvailable)); apiAvailableCondition == nil || apiAvailableCondition.Status != metav1.ConditionTrue {
-		return nil
-	}
-	src := &corev1.Secret{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hcp.Namespace,
-			Name:      "service-network-admin-kubeconfig",
+			Name:      serviceAccountSigningKeySecret,
 		},
 	}
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src); err != nil {
-		return fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(secret), secret); err != nil {
+		return fmt.Errorf("failed to get controlplane service account signing key %q: %w", client.ObjectKeyFromObject(secret), err)
 	}
-	cfg, err := clientcmd.RESTConfigFromKubeConfig(src.Data["kubeconfig"])
-	if err != nil {
-		return fmt.Errorf("failed to deserialize the kubeconfig: %w", err)
+
+	if !sets.StringKeySet(secret.Data).HasAll(serviceSignerPublicKey) {
+		return fmt.Errorf("controlplane service account signing key secret %q missing required key %s", client.ObjectKeyFromObject(secret), serviceSignerPublicKey)
 	}
-	cfg.Host = strings.Replace(cfg.Host, "kube-apiserver", fmt.Sprintf("kube-apiserver.%s.svc", hcp.Namespace), 1)
-	// Impersonate the serviceaccounts groups as a guardrail to bugs in our code
-	// as we end up writing this into a public location.
-	// The perms for this are bound through the system:service-account-issuer-discovery
-	// clusterrolebinding which is managed by the KAS itself.
-	cfg.Impersonate.Groups = []string{"system:serviceaccounts"}
-	cfg.Impersonate.UserName = "iHaveToBeSubmittedButDontActuallyExist"
 
-	transport, err := rest.TransportFor(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to construct transport for cfg: %w", err)
+	params := oidcGeneratorParams{
+		issuerURL: hcp.Spec.IssuerURL,
+		pubKey:    secret.Data[serviceSignerPublicKey],
 	}
-	client := &http.Client{Transport: transport}
 
-	for _, path := range oidcPublicDocumentPaths() {
-		requestURL := cfg.Host + path
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	for path, generator := range oidcDocumentGenerators() {
+		bodyReader, err := generator(params)
 		if err != nil {
-			return fmt.Errorf("failed to construct request for %s: %w", requestURL, err)
+			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("failed to do request for %s: %w", requestURL, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := ioutil.ReadAll(resp.Body)
-			return fmt.Errorf("request to %s returned with unexpected status code %d. Response body: %s", requestURL, resp.StatusCode, string(body))
-		}
-
-		// In theory we should be able to pass resp.Body
-		// as the Body argument to PutObject as that takes
-		// an io.Reader. In practice doing so results in
-		// `NotImplemented: A header you provided implies functionality that is not implemented`
-		// which apparently happens when there is no body:
-		// https://github.com/aws/aws-sdk-js/issues/15#issuecomment-11666580
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to read body: %w", err)
-		}
-
 		_, err = r.S3Client.PutObject(&s3.PutObjectInput{
 			ACL:    aws.String("public-read"),
-			Body:   aws.ReadSeekCloser(bytes.NewReader(body)),
+			Body:   bodyReader,
 			Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
 			Key:    aws.String(hcluster.Spec.InfraID + path),
 		})
@@ -3287,7 +3401,7 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, hcl
 	}
 
 	var objectsToDelete []*s3.ObjectIdentifier
-	for _, path := range oidcPublicDocumentPaths() {
+	for path := range oidcDocumentGenerators() {
 		objectsToDelete = append(objectsToDelete, &s3.ObjectIdentifier{
 			Key: aws.String(hcluster.Spec.InfraID + path),
 		})

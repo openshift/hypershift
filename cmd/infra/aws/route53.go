@@ -106,10 +106,18 @@ func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, client ro
 
 	var errs []error
 	for _, zone := range output.HostedZoneSummaries {
-		recordName := o.wildcardRecordName(*zone.Name)
+		recordName := "*.apps." + strings.TrimSuffix(*zone.Name, ".")
 		id := cleanZoneID(*zone.HostedZoneId)
+		log.Info("deleting wildcard record from private zone", "id", id, "name", recordName)
 		err := deleteRecord(ctx, client, id, recordName)
-		if err == nil {
+		if err != nil {
+			if !isRoute53RecordNotFoundErr(err) {
+				errs = append(errs, fmt.Errorf("failed to delete wildcard record from private zone %s: %w", id, err))
+				continue
+			} else {
+				log.Info("Wildcard record not found in private zone")
+			}
+		} else {
 			log.Info("Deleted wildcard record from private zone", "id", id, "name", recordName)
 		}
 		_, err = client.DeleteHostedZoneWithContext(ctx, &route53.DeleteHostedZoneInput{
@@ -132,16 +140,18 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client rout
 	if err != nil {
 		return nil
 	}
-	recordName := o.wildcardRecordName(name)
+	recordName := fmt.Sprintf("*.apps.%s.%s", o.Name, o.BaseDomain)
 	err = deleteRecord(ctx, client, id, recordName)
-	if err == nil {
+	if err != nil {
+		if !isRoute53RecordNotFoundErr(err) {
+			return fmt.Errorf("failed to delete wildcard record from public zone %s: %w", id, err)
+		}
+		log.Info("Wildcard record not found in public zone")
+
+	} else {
 		log.Info("Deleted wildcard record from public zone", "id", id, "name", recordName)
 	}
 	return nil
-}
-
-func (o *DestroyInfraOptions) wildcardRecordName(zoneName string) string {
-	return fmt.Sprintf("*.apps.%s.%s", strings.Split(zoneName, ".")[0], o.BaseDomain)
 }
 
 func deleteRecord(ctx context.Context, client route53iface.Route53API, id, recordName string) error {
@@ -250,4 +260,12 @@ func retryRoute53WithBackoff(ctx context.Context, fn func() error) error {
 	}
 	// TODO: inspect the error for throttling details?
 	return retry.OnError(backoff, retriable, fn)
+}
+
+func isRoute53RecordNotFoundErr(err error) bool {
+	if err != nil && strings.Contains(err.Error(), "record not found") {
+		return true
+	}
+
+	return false
 }

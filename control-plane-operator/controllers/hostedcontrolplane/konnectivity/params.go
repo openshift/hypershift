@@ -25,7 +25,7 @@ type KonnectivityParams struct {
 	AgentDeamonSetConfig    config.DeploymentConfig
 }
 
-func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32) *KonnectivityParams {
+func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
 	p := &KonnectivityParams{
 		KonnectivityServerImage: images["konnectivity-server"],
 		KonnectivityAgentImage:  images["konnectivity-agent"],
@@ -124,6 +124,12 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			SuccessThreshold:    1,
 		},
 	}
+
+	// non root security context if scc capability is missing
+	p.AgentDeamonSetConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+	p.AgentDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+	p.ServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+
 	if hcp.Annotations != nil {
 		if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {
 			p.KonnectivityServerImage = hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]

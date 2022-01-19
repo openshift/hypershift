@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
@@ -19,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -327,7 +329,7 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	}
 
 	log.Info("reconciling cloud credential secrets")
-	errs = append(errs, r.reconcileCloudCredentialSecrets(ctx, hcp)...)
+	errs = append(errs, r.reconcileCloudCredentialSecrets(ctx, hcp, log)...)
 
 	log.Info("reconciling openshift controller manager service ca bundle")
 	ocmServiceCA := manifests.OpenShiftControllerManagerServiceCA()
@@ -696,12 +698,22 @@ role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 `
 
-func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
+func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) []error {
 	var errs []error
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		for _, role := range hcp.Spec.Platform.AWS.Roles {
 			secret := manifests.AWSCloudCredsSecret(role)
+			ns := &corev1.Namespace{}
+			err := r.client.Get(ctx, client.ObjectKey{Name: secret.Namespace}, ns)
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					log.Info("WARNING: cannot sync cloud credential secret because namespace does not exist", "secret", client.ObjectKeyFromObject(secret))
+				} else {
+					errs = append(errs, err)
+				}
+				continue
+			}
 			if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
 				credentials := fmt.Sprintf(awsCredentialsTemplate, role.ARN)
 				secret.Data = map[string][]byte{"credentials": []byte(credentials)}

@@ -57,6 +57,10 @@ func reconcileKubevirtCluster(kubevirtCluster *capikubevirt.KubevirtCluster, hcl
 }
 
 func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
+	providerImage := imageCAPK
+	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIKubeVirtProviderImage]; ok {
+		providerImage = override
+	}
 	defaultMode := int32(420)
 	return &appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
@@ -83,7 +87,7 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, to
 				Containers: []corev1.Container{
 					{
 						Name:            "manager",
-						Image:           imageCAPK,
+						Image:           providerImage,
 						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{

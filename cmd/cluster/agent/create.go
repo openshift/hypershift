@@ -20,7 +20,12 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.AgentPlatform = core.AgentPlatformCreateOptions{}
+	opts.AgentPlatform = core.AgentPlatformCreateOptions{
+		AgentNamespace: "",
+	}
+
+	cmd.Flags().StringVar(&opts.AgentPlatform.AgentNamespace, "agent-namespace", opts.AgentPlatform.AgentNamespace, "The namespace in which to search for Agents")
+	cmd.MarkFlagRequired("agent-namespace")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -65,6 +70,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 	exampleOptions.Agent = &apifixtures.ExampleAgentOptions{
 		APIServerAddress: opts.AgentPlatform.APIServerAddress,
+		AgentNamespace:   opts.AgentPlatform.AgentNamespace,
 	}
 	return nil
 }

@@ -16,7 +16,7 @@ type CVOParams struct {
 	DeploymentConfig config.DeploymentConfig
 }
 
-func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *CVOParams {
+func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *CVOParams {
 	p := &CVOParams{
 		CLIImage: images["cli"],
 		Image:    hcp.Spec.ReleaseImage,
@@ -41,5 +41,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *CV
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	p.DeploymentConfig.Replicas = 1
+	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+
 	return p
 }

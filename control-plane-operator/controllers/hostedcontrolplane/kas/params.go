@@ -64,7 +64,7 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
 		FeatureGate:          globalConfig.FeatureGate,
@@ -86,7 +86,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			HyperKube:             images["hyperkube"],
 			CLI:                   images["cli"],
 			ClusterConfigOperator: images["cluster-config-operator"],
-			TokenMinterImage:      images["hosted-cluster-config-operator"],
+			TokenMinterImage:      images["token-minter"],
 		},
 	}
 	if hcp.Spec.APIAdvertiseAddress != nil {
@@ -297,6 +297,9 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	params.KubeConfigRef = hcp.Spec.KubeConfig
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+
+	params.SetDefaultSecurityContext = setDefaultSecurityContext
+
 	return params
 }
 

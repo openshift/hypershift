@@ -895,7 +895,7 @@ string
 </em>
 </td>
 <td>
-<p>InstanceType is an ec2 instance type for node instances (e.g. m4-large).</p>
+<p>InstanceType is an ec2 instance type for node instances (e.g. m5.large).</p>
 </td>
 </tr>
 <tr>
@@ -906,7 +906,7 @@ string
 </em>
 </td>
 <td>
-<p>InstanceProfile is TODO</p>
+<p>InstanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.</p>
 </td>
 </tr>
 <tr>
@@ -1356,6 +1356,35 @@ string
 <p>URL is fully qualified URI with scheme https, that overrides the default generated
 endpoint for a client.
 This must be provided and cannot be empty.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AgentPlatformSpec { #hypershift.openshift.io/v1alpha1.AgentPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>AgentPlatformSpec specifies configuration for agent-based installations.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>agentNamespace</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>AgentNamespace is the namespace where to search for Agents for this cluster</p>
 </td>
 </tr>
 </tbody>
@@ -3925,6 +3954,20 @@ AWSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>agent</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AgentPlatformSpec">
+AgentPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Agent specifies configuration for agent-based installations.</p>
 </td>
 </tr>
 <tr>
