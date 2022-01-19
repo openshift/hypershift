@@ -46,6 +46,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/machineapprover"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
@@ -61,6 +62,7 @@ import (
 	"gopkg.in/square/go-jose.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -176,6 +178,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		Watches(&source.Kind{Type: &capiv1.Cluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &appsv1.Deployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		Watches(&source.Kind{Type: &prometheusoperatorv1.PodMonitor{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
+		Watches(&source.Kind{Type: &networkingv1.NetworkPolicy{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
@@ -975,6 +978,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
+	}
+
+	// Reconcile the network policies
+	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
 	// Reconcile the AWS OIDC discovery
@@ -3094,6 +3102,36 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 	return nil
 }
 
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+
+	// Reconcile openshift-ingress Network Policy
+	policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileOpenshiftIngressNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile network policy: %w", err)
+	}
+
+	// Reconcile same-namespace Network Policy
+	policy = networkpolicy.SameNamespaceNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileSameNamespaceNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile network policy: %w", err)
+	}
+
+	// Reconcile KAS Network Policy
+	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileKASNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile network policy: %w", err)
+	}
+
+	return nil
+}
+
 func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedCluster) error {
 	for _, svc := range hc.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -3310,6 +3348,63 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
+	return nil
+}
+
+func reconcileOpenshiftIngressNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"network.openshift.io/policy-group": "ingress",
+						},
+					},
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector: &metav1.LabelSelector{},
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(6443)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "kube-apiserver",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	return nil
 }
 
