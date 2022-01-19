@@ -282,7 +282,6 @@ type NodePoolPlatform struct {
 	// AWS specifies the configuration used when operating on AWS.
 	//
 	// +optional
-	// +immutable
 	AWS *AWSNodePoolPlatform `json:"aws,omitempty"`
 
 	// IBMCloud defines IBMCloud specific settings for components
@@ -291,8 +290,12 @@ type NodePoolPlatform struct {
 	// Kubevirt specifies the configuration used when operating on KubeVirt platform.
 	//
 	// +optional
-	// +immutable
 	Kubevirt *KubevirtNodePoolPlatform `json:"kubevirt,omitempty"`
+
+	// Agent specifies the configuration used when using Agent platform.
+	//
+	// +optional
+	Agent *AgentNodePoolPlatform `json:"agent,omitempty"`
 }
 
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
@@ -394,4 +397,21 @@ type Volume struct {
 	//
 	// +optional
 	IOPS int64 `json:"iops,omitempty"`
+}
+
+// AgentNodePoolPlatform specifies the configuration of a NodePool when operating
+// on the Agent platform.
+type AgentNodePoolPlatform struct {
+	// MinCPUs specifies the minimum number of CPU cores required.
+	// +optional
+	MinCPUs int32 `json:"minCPUs,omitempty"`
+
+	// MinMemoryMiB specifies the minimum amount of RAM required, in MiB.
+	// +optional
+	MinMemoryMiB int32 `json:"minMemoryMiB,omitempty"`
+
+	// AgentLabelSelector contains labels that must be set on an Agent in order to
+	// be selected for a Machine.
+	// +optional
+	AgentLabelSelector *metav1.LabelSelector `json:"agentLabelSelector,omitempty"`
 }

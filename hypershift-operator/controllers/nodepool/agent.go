@@ -2,12 +2,19 @@ package nodepool
 
 import (
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
-func agentMachineTemplateSpec() *agentv1.AgentMachineTemplateSpec {
+func agentMachineTemplateSpec(nodePool *hyperv1.NodePool) *agentv1.AgentMachineTemplateSpec {
+	spec := agentv1.AgentMachineSpec{}
+	if nodePool.Spec.Platform.Agent != nil {
+		spec.MinCPUs = nodePool.Spec.Platform.Agent.MinCPUs
+		spec.MinMemoryMiB = nodePool.Spec.Platform.Agent.MinMemoryMiB
+		spec.AgentLabelSelector = nodePool.Spec.Platform.Agent.AgentLabelSelector
+	}
 	return &agentv1.AgentMachineTemplateSpec{
 		Template: agentv1.AgentMachineTemplateResource{
-			Spec: agentv1.AgentMachineSpec{},
+			Spec: spec,
 		},
 	}
 }
