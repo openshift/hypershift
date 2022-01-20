@@ -391,6 +391,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"*"},
 			},
 			{
+				APIGroups: []string{"networking.k8s.io"},
+				Resources: []string{"networkpolicies"},
+				Verbs:     []string{"*"},
+			},
+			{
 				APIGroups: []string{
 					"bootstrap.cluster.x-k8s.io",
 					"controlplane.cluster.x-k8s.io",
