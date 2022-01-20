@@ -7,12 +7,11 @@ import (
 	"testing"
 	"time"
 
-	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	corev1 "k8s.io/api/core/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,14 +72,6 @@ var cpObjects = []client.Object{
 	fakePackageServerService(),
 }
 
-type fakeReleaseProvider struct{}
-
-func (*fakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
-	return &releaseinfo.ReleaseImage{
-		ImageStream: &imageapi.ImageStream{},
-	}, nil
-}
-
 func TestReconcileErrorHandling(t *testing.T) {
 
 	// get initial number of creates with no get errors
@@ -98,7 +89,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
-			releaseProvider:        &fakeReleaseProvider{},
+			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
@@ -121,7 +112,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
-			releaseProvider:        &fakeReleaseProvider{},
+			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 		}
 		r.Reconcile(context.Background(), controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
