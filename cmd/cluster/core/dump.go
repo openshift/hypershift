@@ -63,8 +63,8 @@ func NewDumpCommand() *cobra.Command {
 		ctx := context.Background()
 		if err := DumpCluster(ctx, opts); err != nil {
 			log.Error(err, "Error")
+			os.Exit(1)
 		}
-		os.Exit(1)
 	}
 	return cmd
 }
