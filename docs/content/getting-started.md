@@ -20,7 +20,7 @@ you should adjust to your own environment.
 
     Install it using Go 1.17+:
        ```shell
-       go install github.com/openshift/hypershift@latest
+       go get -u github.com/openshift/hypershift@latest
        ```
 
 * Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
