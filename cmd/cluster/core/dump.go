@@ -1,4 +1,4 @@
-package aws
+package core
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/util"
@@ -32,6 +33,9 @@ type DumpOptions struct {
 	// LogCheckers is a list of functions that will
 	// get run over all raw logs if set.
 	LogCheckers []LogChecker
+	// AgentNamespace is the namespace where Agents
+	// are located, when using the agent platform.
+	AgentNamespace string
 }
 
 func NewDumpCommand() *cobra.Command {
@@ -42,14 +46,16 @@ func NewDumpCommand() *cobra.Command {
 	}
 
 	opts := &DumpOptions{
-		Namespace:   "clusters",
-		Name:        "example",
-		ArtifactDir: "",
+		Namespace:      "clusters",
+		Name:           "example",
+		ArtifactDir:    "",
+		AgentNamespace: "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
+	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 
 	cmd.MarkFlagRequired("artifact-dir")
 
@@ -81,8 +87,9 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		}
 	}
 	cmd := OCAdmInspect{
-		oc:          ocCommand,
-		artifactDir: opts.ArtifactDir,
+		oc:             ocCommand,
+		artifactDir:    opts.ArtifactDir,
+		agentNamespace: opts.AgentNamespace,
 	}
 	objectNames := make([]string, 0, len(nodePools)+1)
 	objectNames = append(objectNames, typedName(&hyperv1.HostedCluster{}, opts.Name))
@@ -110,16 +117,24 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiv1.MachineDeployment{},
 		&capiv1.Machine{},
 		&capiv1.MachineSet{},
+		&hyperv1.HostedControlPlane{},
 		&capiaws.AWSMachine{},
 		&capiaws.AWSMachineTemplate{},
 		&capiaws.AWSCluster{},
-		&hyperv1.HostedControlPlane{},
 		&hyperv1.AWSEndpointService{},
+		&agentv1.AgentMachine{},
+		&agentv1.AgentMachineTemplate{},
+		&agentv1.AgentCluster{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
+	// Additional Agent platform resources
+	resourceList += ",clusterdeployment.hive.openshift.io,agentclusterinstall.extensions.hive.openshift.io"
 	cmd.WithNamespace(controlPlaneNamespace).Run(ctx, resourceList)
 	cmd.WithNamespace(opts.Namespace).Run(ctx, resourceList)
 	cmd.WithNamespace("hypershift").Run(ctx, resourceList)
+	if opts.AgentNamespace != "" {
+		cmd.WithNamespace(opts.AgentNamespace).Run(ctx, "agent.agent-install.openshift.io,infraenv.agent-install.openshift.io")
+	}
 
 	podList := &corev1.PodList{}
 	if err = c.List(ctx, podList, client.InNamespace(controlPlaneNamespace)); err != nil {
@@ -169,10 +184,11 @@ func DumpGuestCluster(ctx context.Context, kubeconfig string, destDir string) er
 }
 
 type OCAdmInspect struct {
-	oc          string
-	artifactDir string
-	namespace   string
-	kubeconfig  string
+	oc             string
+	artifactDir    string
+	namespace      string
+	kubeconfig     string
+	agentNamespace string
 }
 
 func (i *OCAdmInspect) WithNamespace(namespace string) *OCAdmInspect {

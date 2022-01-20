@@ -28,7 +28,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
@@ -392,7 +391,7 @@ func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client,
 
 	dumpDir := filepath.Join(destDir, "hostedcluster-"+hostedCluster.Name)
 	t.Logf("Dumping guest cluster. Namespace: %s, name: %s, dest: %s", hostedCluster.Namespace, hostedCluster.Name, dumpDir)
-	if err := aws.DumpGuestCluster(ctx, kubeconfigFile.Name(), dumpDir); err != nil {
+	if err := core.DumpGuestCluster(ctx, kubeconfigFile.Name(), dumpDir); err != nil {
 		t.Errorf("Failed to dump guest cluster: %v", err)
 		return
 	}
