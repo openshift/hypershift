@@ -1,18 +1,24 @@
 package ingressoperator
 
 import (
-	appsv1 "k8s.io/api/apps/v1"
-
+	"fmt"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilpointer "k8s.io/utils/pointer"
+)
+
+const (
+	ingressOperatorContainerName = "ingress-operator"
+	ingressOperatorMetricsPort   = 60000
 )
 
 type Params struct {
@@ -39,6 +45,38 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	p.DeploymentConfig.Replicas = 1
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+	p.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		ingressOperatorContainerName: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/metrics",
+					Port:   intstr.FromInt(ingressOperatorMetricsPort),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    3,
+			TimeoutSeconds:      5,
+		},
+	}
+	p.DeploymentConfig.LivenessProbes = config.LivenessProbes{
+		ingressOperatorContainerName: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/metrics",
+					Port:   intstr.FromInt(ingressOperatorMetricsPort),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 60,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    5,
+			TimeoutSeconds:      5,
+		},
+	}
 
 	return p
 }
@@ -69,6 +107,8 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 				"$(CANARY_IMAGE)",
 				"--release-version",
 				"$(RELEASE_VERSION)",
+				"--metrics-listen-addr",
+				fmt.Sprintf("0.0.0.0:%d", ingressOperatorMetricsPort),
 			},
 			Env: []corev1.EnvVar{
 				{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
@@ -76,7 +116,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 				{Name: "CANARY_IMAGE", Value: params.IngressOperatorImage},
 				{Name: "KUBECONFIG", Value: "/etc/kubernetes/kubeconfig"},
 			},
-			Name:            "ingress-operator",
+			Name:            ingressOperatorContainerName,
 			Image:           params.IngressOperatorImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
