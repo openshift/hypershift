@@ -3258,6 +3258,34 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/metrics",
+									Port:   intstr.FromInt(9191),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: int32(60),
+							PeriodSeconds:       int32(60),
+							SuccessThreshold:    int32(1),
+							FailureThreshold:    int32(5),
+							TimeoutSeconds:      int32(5),
+						},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/metrics",
+									Port:   intstr.FromInt(9191),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: int32(15),
+							PeriodSeconds:       int32(60),
+							SuccessThreshold:    int32(1),
+							FailureThreshold:    int32(3),
+							TimeoutSeconds:      int32(5),
+						},
 						Command: []string{"/usr/bin/machine-approver"},
 						Args:    args,
 					},
