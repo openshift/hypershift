@@ -20,6 +20,11 @@ type Provider interface {
 	Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error)
 }
 
+type ProviderWithRegistryOverrides interface {
+	Provider
+	GetRegistryOverrides() map[string]string
+}
+
 // ReleaseImage wraps an ImageStream with some utilities that help the user
 // discover constituent component image information.
 type ReleaseImage struct {

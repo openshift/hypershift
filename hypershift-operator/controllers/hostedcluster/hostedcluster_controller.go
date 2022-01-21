@@ -37,6 +37,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -75,6 +76,8 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1" // Need this dep atm to satisfy IBM provider dep.
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -112,7 +115,7 @@ type HostedClusterReconciler struct {
 	client.Client
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
-	ManagementClusterCapabilities *capabilities.ManagementClusterCapabilities
+	ManagementClusterCapabilities capabilities.CapabiltyChecker
 
 	// HypershiftOperatorImage is the image used to deploy the control plane operator if
 	// 1) There is no hypershift.openshift.io/control-plane-operator-image annotation on the HostedCluster and
@@ -123,7 +126,7 @@ type HostedClusterReconciler struct {
 	AvailabilityProberImage string
 
 	// releaseProvider looks up the OCP version for the release images in HostedClusters
-	ReleaseProvider releaseinfo.Provider
+	ReleaseProvider releaseinfo.ProviderWithRegistryOverrides
 
 	// IgnitionServerImage is the image used to deploy the ignition server.
 	IgnitionServerImage string
@@ -170,15 +173,12 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// are annotated as being associated with a hostedcluster (using an annotation).
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
-		Watches(&source.Kind{Type: &capiawsv1.AWSCluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &hyperv1.HostedControlPlane{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &capiv1.Cluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &appsv1.Deployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &prometheusoperatorv1.PodMonitor{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &networkingv1.NetworkPolicy{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
+	for _, managedResource := range managedResources() {
+		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
+	}
 
 	// Watch based on Routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -191,6 +191,31 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
 	return builder.Complete(r)
+}
+
+// managedResources are all the resources that are managed as childresources for a HostedCluster
+func managedResources() []client.Object {
+	return []client.Object{
+		&capiawsv1.AWSCluster{},
+		&hyperv1.HostedControlPlane{},
+		&capiv1.Cluster{},
+		&appsv1.Deployment{},
+		&prometheusoperatorv1.PodMonitor{},
+		&networkingv1.NetworkPolicy{},
+		&rbacv1.ClusterRole{},
+		&rbacv1.ClusterRoleBinding{},
+		&rbacv1.Role{},
+		&rbacv1.RoleBinding{},
+		&corev1.ConfigMap{},
+		&corev1.Secret{},
+		&corev1.Namespace{},
+		&corev1.ServiceAccount{},
+		&corev1.Service{},
+		&routev1.Route{},
+		&agentv1.AgentCluster{},
+		&capiibmv1.IBMVPCCluster{},
+		&capikubevirt.KubevirtCluster{},
+	}
 }
 
 // serviceFirstNodePortAvailable checks if the first port in a service has a node port available. Utilized to
@@ -546,12 +571,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	{
 		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
-			log.Info("Configuration is invalid, reconciliation is blocked")
+			log.Info("Configuration is invalid, reconciliation is blocked", "message", validConfig.Message)
 			return ctrl.Result{}, nil
 		}
 		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
 		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
-			log.Info("Hosted Cluster is not supported by operator configuration, reconciliation is blocked")
+			log.Info("Hosted Cluster is not supported by operator configuration, reconciliation is blocked", "message", supportedHostedCluster.Message)
 			return ctrl.Result{}, nil
 		}
 	}
@@ -1352,7 +1377,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1695,7 +1720,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 								"start",
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
-								"--registry-overrides", convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides),
+								"--registry-overrides", convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()),
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
