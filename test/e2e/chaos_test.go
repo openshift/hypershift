@@ -1,3 +1,4 @@
+//go:build e2e
 // +build e2e
 
 package e2e
@@ -38,7 +39,7 @@ func TestHAEtcdChaos(t *testing.T) {
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
 
-	cluster := e2eutil.CreateAWSCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
 
 	t.Run("KillRandomMembers", testKillRandomMembers(ctx, client, cluster))
 	t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
@@ -59,7 +60,7 @@ func TestEtcdChaos(t *testing.T) {
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.NodePoolReplicas = 0
 
-	cluster := e2eutil.CreateAWSCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
 
 	t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
 }

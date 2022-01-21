@@ -13,15 +13,10 @@ import (
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/test/e2e/util/cluster"
-	awscluster "github.com/openshift/hypershift/test/e2e/util/cluster/aws"
-	kubevirtcluster "github.com/openshift/hypershift/test/e2e/util/cluster/kubevirt"
-	nonecluster "github.com/openshift/hypershift/test/e2e/util/cluster/none"
-	"k8s.io/apimachinery/pkg/types"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -32,126 +27,9 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
-// CreateAWSCluster creates a new namespace and a HostedCluster in that namespace using
-// the provided options.
-//
-// This function calls t.Cleanup() with a function which tears down the cluster
-// and *blocks until teardown completes*, so no explicit cleanup from the caller
-// is required.
-func CreateAWSCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
-	return createCluster(t, ctx, client, awscluster.New(t, opts), artifactDir)
-}
-
-func CreateKubeVirtCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
-	return createCluster(t, ctx, client, kubevirtcluster.New(t, opts), artifactDir)
-}
-
-func CreateNoneCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
-	return createCluster(t, ctx, client, nonecluster.New(t, opts), artifactDir)
-}
-
-func createCluster(t *testing.T, ctx context.Context, client crclient.Client, clusterMgr cluster.Cluster, artifactDir string) *hyperv1.HostedCluster {
-	g := NewWithT(t)
-	start := time.Now()
-
-	// Set up a namespace to contain the hostedcluster
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: SimpleNameGenerator.GenerateName("e2e-clusters-"),
-			Labels: map[string]string{
-				"hypershift-e2e-component": "hostedclusters-namespace",
-			},
-		},
-	}
-	err := client.Create(ctx, namespace)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to create namespace")
-
-	// Define the hostedcluster and adjust options to match it
-	hc := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace.Name,
-			Name:      SimpleNameGenerator.GenerateName("example-"),
-		},
-	}
-
-	// Define a standard teardown function
-	teardown := func(ctx context.Context) {
-		if len(artifactDir) != 0 {
-			clusterMgr.DumpCluster(ctx, hc, artifactDir)
-		} else {
-			t.Logf("Skipping cluster dump because no artifact dir was provided")
-		}
-		// TODO: Figure out why this is slow
-		// e2eutil.DumpGuestCluster(context.Background(), client, hostedCluster, globalOpts.ArtifactDir)
-
-		// If destroying the hostedcluster fails, dump the current cluster state after
-		// each attempt to help debug teardown lifecycle issues.
-		testName := strings.ReplaceAll(t.Name(), "/", "_")
-		destroyAttempt := 1
-		DestroyHostedCluster(t, ctx, hc, clusterMgr, func() {
-			if len(artifactDir) != 0 {
-				clusterMgr.DumpCluster(ctx, hc, filepath.Join(artifactDir, testName, fmt.Sprintf("destroy-hostedcluster-%d", destroyAttempt)))
-				destroyAttempt++
-			} else {
-				t.Logf("Skipping cluster dump because no artifact dir was provided")
-			}
-		})
-		// If the hostedcluster was successfully destroyed and finalized, any further
-		// delay in cleaning up the test namespace could be indicative of a resource
-		// finalization bug. Give this namespace teardown a reasonable time to complete
-		// and then dump resources to help debug.
-		deleteTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
-		defer cancel()
-		DeleteNamespace(t, deleteTimeout, client, namespace.Name)
-		if t.Failed() && len(artifactDir) != 0 {
-			clusterMgr.DumpCluster(ctx, hc, filepath.Join(artifactDir, testName, "delete-test-namespace"))
-		}
-	}
-
-	// Try and create the cluster
-	t.Logf("Creating a new cluster. Options: %v", clusterMgr.Describe())
-	if err := clusterMgr.CreateCluster(ctx, hc); err != nil {
-		teardown(context.Background())
-		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
-	}
-
-	// Assert we can retrieve the cluster that was created
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(hc), hc); err != nil {
-		teardown(context.Background())
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-	}
-
-	t.Logf("Successfully created hostedcluster %s/%s in %s", hc.Namespace, hc.Name, time.Since(start).Round(time.Second))
-	t.Cleanup(func() { teardown(context.Background()) })
-
-	return hc
-}
-
-// DestroyHostedCluster destroys the HostedCluster. Will retry on failure until
-// the context is done. If destroy fails, the onFailure function is called to
-// give the user an opportunity to perform some additional action before the
-// next retry.
-func DestroyHostedCluster(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterMgr cluster.Cluster, onFailure func()) {
-	t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
-	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-		err := clusterMgr.DestroyCluster(ctx, hostedCluster)
-		if err != nil {
-			t.Errorf("Failed to destroy cluster, will retry: %v", err)
-			onFailure()
-			return false, nil
-		}
-		return true, nil
-	}, ctx.Done())
-	if err != nil {
-		t.Errorf("Failed to destroy cluster: %v", err)
-	} else {
-		t.Logf("Destroyed cluster. Namespace: %s, name: %s", hostedCluster.Namespace, hostedCluster.Name)
-	}
-}
-
 // DeleteNamespace deletes and finalizes the given namespace, logging any failures
 // along the way.
-func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, namespace string) {
+func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, namespace string) error {
 	t.Logf("Deleting namespace: %s", namespace)
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
@@ -160,14 +38,13 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 			if errors.IsNotFound(err) {
 				return true, nil
 			}
-			t.Errorf("Failed to delete namespace: %s, will retry: %v", namespace, err)
+			t.Logf("Failed to delete namespace: %s, will retry: %v", namespace, err)
 			return false, nil
 		}
 		return true, nil
 	}, ctx.Done())
 	if err != nil {
-		t.Errorf("Failed to delete namespace: %v", err)
-		return
+		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
 	t.Logf("Waiting for namespace to be finalized. Namespace: %s", namespace)
@@ -177,16 +54,16 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 			if errors.IsNotFound(err) {
 				return true, nil
 			}
-			t.Errorf("Failed to get namespace: %s. %v", namespace, err)
+			t.Logf("Failed to get namespace: %s. %v", namespace, err)
 			return false, nil
 		}
 		return false, nil
 	}, ctx.Done())
 	if err != nil {
-		t.Errorf("Namespace still exists after deletion timeout: %v", err)
-	} else {
-		t.Logf("Deleted namespace: %s", namespace)
+		return fmt.Errorf("namespace still exists after deletion timeout: %v", err)
 	}
+	t.Logf("Deleted namespace: %s", namespace)
+	return nil
 }
 
 func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {

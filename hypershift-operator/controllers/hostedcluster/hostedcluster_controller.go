@@ -2921,6 +2921,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	if len(awsEndpointServiceList.Items) != 0 {
 		// The CPO puts a finalizer on AWSEndpointService resources and should
 		// not be terminated until the resources are removed from the API server
+		log.Info("Waiting for AWS endpoint service list to be empty")
 		return false, nil
 	}
 	// There are scenarios where CAPI might not be operational e.g None Platform.
@@ -2944,13 +2945,13 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	}
 
 	if err := r.cleanupOIDCBucketData(ctx, log, hc); err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to clean up OIDC bucket data: %w", err)
 	}
 
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
 	if err := r.Get(ctx, client.ObjectKeyFromObject(ns), ns); err == nil || !apierrors.IsNotFound(err) {
-		return false, err
+		return false, fmt.Errorf("failed to get namespace: %w", err)
 	}
 	return true, nil
 }
