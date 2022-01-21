@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/test/e2e/util/cluster"
 	awscluster "github.com/openshift/hypershift/test/e2e/util/cluster/aws"
+	kubevirtcluster "github.com/openshift/hypershift/test/e2e/util/cluster/kubevirt"
 	nonecluster "github.com/openshift/hypershift/test/e2e/util/cluster/none"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -27,9 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
@@ -41,6 +40,10 @@ import (
 // is required.
 func CreateAWSCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
 	return createCluster(t, ctx, client, awscluster.New(t, opts), artifactDir)
+}
+
+func CreateKubeVirtCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
+	return createCluster(t, ctx, client, kubevirtcluster.New(t, opts), artifactDir)
 }
 
 func CreateNoneCluster(t *testing.T, ctx context.Context, client crclient.Client, opts core.CreateOptions, artifactDir string) *hyperv1.HostedCluster {
@@ -100,7 +103,7 @@ func createCluster(t *testing.T, ctx context.Context, client crclient.Client, cl
 		deleteTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
 		defer cancel()
 		DeleteNamespace(t, deleteTimeout, client, namespace.Name)
-		if t.Failed() {
+		if t.Failed() && len(artifactDir) != 0 {
 			clusterMgr.DumpCluster(ctx, hc, filepath.Join(artifactDir, testName, "delete-test-namespace"))
 		}
 	}
@@ -235,7 +238,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	err = wait.PollUntil(5*time.Second, func() (done bool, err error) {
-		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: hyperapi.Scheme})
+		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 		if err != nil {
 			return false, nil
 		}
@@ -393,7 +396,7 @@ func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client,
 
 	dumpDir := filepath.Join(destDir, "hostedcluster-"+hostedCluster.Name)
 	t.Logf("Dumping guest cluster. Namespace: %s, name: %s, dest: %s", hostedCluster.Namespace, hostedCluster.Name, dumpDir)
-	if err := aws.DumpGuestCluster(ctx, kubeconfigFile.Name(), dumpDir); err != nil {
+	if err := core.DumpGuestCluster(ctx, kubeconfigFile.Name(), dumpDir); err != nil {
 		t.Errorf("Failed to dump guest cluster: %v", err)
 		return
 	}

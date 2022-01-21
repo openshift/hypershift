@@ -957,6 +957,11 @@ const (
 	// is running on a management cluster outside AWS or is not configured with AWS
 	// credentials, the HostedCluster is not supported.
 	SupportedHostedCluster ConditionType = "SupportedHostedCluster"
+
+	// ClusterVersionSucceeding indicates the current status of the desired release
+	// version of the HostedCluster as indicated by the Failing condition in the
+	// underlying cluster's ClusterVersion.
+	ClusterVersionSucceeding ConditionType = "ClusterVersionSucceeding"
 )
 
 const (

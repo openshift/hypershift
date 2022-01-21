@@ -2,7 +2,6 @@ package globalconfig
 
 import (
 	"fmt"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -18,14 +17,18 @@ func IngressConfig() *configv1.Ingress {
 }
 
 func ReconcileIngressConfig(cfg *configv1.Ingress, hcp *hyperv1.HostedControlPlane, globalConfig GlobalConfig) {
-	cfg.Spec.Domain = IngressDomain(hcp)
+	cfg.Spec.Domain = IngressDomain(hcp, globalConfig.Ingress)
 	if globalConfig.Ingress != nil {
-		// For now only the AppsDomain is configurable through the HCP configuration
-		// field. As needed, we can enable other parts of the spec.
-		cfg.Spec.AppsDomain = globalConfig.Ingress.Spec.AppsDomain
+		cfg.Spec = globalConfig.Ingress.Spec
 	}
 }
 
-func IngressDomain(hcp *hyperv1.HostedControlPlane) string {
+func IngressDomain(hcp *hyperv1.HostedControlPlane, ingressConfig *configv1.Ingress) string {
+	if ingressConfig != nil {
+		if len(ingressConfig.Spec.AppsDomain) > 0 {
+			return ingressConfig.Spec.AppsDomain
+		}
+		return ingressConfig.Spec.Domain
+	}
 	return fmt.Sprintf("apps.%s", BaseDomain(hcp))
 }

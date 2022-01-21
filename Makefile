@@ -174,6 +174,7 @@ staticcheck: $(STATICCHECK)
 		./support/releaseinfo/... \
 		./support/upsert/... \
 		./konnectivity-socks5-proxy/... \
+		./contrib/... \
 		./availability-prober/...
 
 # Build the docker image with official golang image

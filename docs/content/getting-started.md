@@ -20,7 +20,7 @@ you should adjust to your own environment.
 
     Install it using Go 1.17+:
        ```shell
-       go install github.com/openshift/hypershift@latest
+       go get -u github.com/openshift/hypershift@latest
        ```
 
 * Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
@@ -132,7 +132,8 @@ NODEPOOL_NAME=${CLUSTER_NAME}-work
 INSTANCE_TYPE=m5.2xlarge
 NODEPOOL_REPLICAS=2
 
-hypershift create nodepool --cluster-name $CLUSTER_NAME \
+hypershift create nodepool aws \
+  --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
   --node-count $NODEPOOL_REPLICAS \
   --instance-type $INSTANCE_TYPE

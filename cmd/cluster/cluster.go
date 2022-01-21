@@ -26,6 +26,7 @@ func NewCreateCommands() *cobra.Command {
 		ServiceCIDR:                    "172.31.0.0/16",
 		PodCIDR:                        "10.132.0.0/14",
 		Wait:                           false,
+		Timeout:                        0,
 	}
 	cmd := &cobra.Command{
 		Use:          "cluster",
@@ -54,6 +55,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network")
 	cmd.PersistentFlags().StringVar(&opts.PodCIDR, "pod-cidr", opts.PodCIDR, "The CIDR of the pod network")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
+	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 

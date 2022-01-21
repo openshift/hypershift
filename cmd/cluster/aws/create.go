@@ -49,6 +49,11 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
+		if opts.Timeout > 0 {
+			ctx, cancel = context.WithTimeout(context.Background(), opts.Timeout)
+		}
+		defer cancel()
+
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
 		go func() {
@@ -130,6 +135,9 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			InfraID:            infra.InfraID,
 			IssuerURL:          opts.AWSPlatform.IssuerURL,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
+			PrivateZoneID:      infra.PrivateZoneID,
+			PublicZoneID:       infra.PublicZoneID,
+			LocalZoneID:        infra.LocalZoneID,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {

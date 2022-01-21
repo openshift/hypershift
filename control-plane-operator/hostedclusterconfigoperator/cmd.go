@@ -22,7 +22,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/openshiftapiservermonitor"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -45,12 +44,7 @@ func NewCommand() *cobra.Command {
 }
 
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
-	"controller-manager-ca": cmca.Setup,
-	// TODO: non-essential, can't statically link to operator
-	// "openshift-apiserver":          openshiftapiserver.Setup,
-	"openshift-apiserver-monitor": openshiftapiservermonitor.Setup,
-	// TODO: non-essential, can't statically link to operator
-	// "openshift-controller-manager": openshiftcontrollermanager.Setup,
+	"controller-manager-ca":  cmca.Setup,
 	resources.ControllerName: resources.Setup,
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,11 +12,8 @@ import (
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -31,6 +29,8 @@ type options struct {
 	kubeconfigSecretNamespace string
 	oneshot                   bool
 }
+
+const ErrorRetryPeriod = 10 * time.Second
 
 func main() {
 	var opts options
@@ -65,55 +65,63 @@ func main() {
 		os.Exit(1) // second signal. Exit directly.
 	}()
 
-	expirationTimestamp := mintToken(ctx, opts)
-
 	if opts.oneshot {
-		return
+		_, err := mintToken(ctx, opts)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		os.Exit(0)
 	}
 
+	var renewDuration time.Duration
 	for {
-		renewDuration := renewDuration(expirationTimestamp)
-		fmt.Println("renew delay set for", renewDuration.String())
 		select {
 		case <-time.After(renewDuration):
-			expirationTimestamp = mintToken(ctx, opts)
+			log.Println("minting token")
+			expirationTimestamp, err := mintToken(ctx, opts)
+			if err != nil {
+				log.Println("error minting token, will retry in", ErrorRetryPeriod.String(), err)
+				renewDuration = ErrorRetryPeriod
+			} else {
+				renewDuration = renewDurationFromExpiration(expirationTimestamp)
+				log.Println("renew delay set for", renewDuration.String())
+			}
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func renewDuration(expirationTimestamp metav1.Time) time.Duration {
+func renewDurationFromExpiration(expirationTimestamp metav1.Time) time.Duration {
 	// kubelet waits until 80% of valid time has passed to renew
 	// https://github.com/kubernetes/kubernetes/blob/047a6b9f861b2cc9dd2eea77da752ac398e7546f/pkg/kubelet/token/token_manager.go#L186
 	return time.Duration(time.Until(expirationTimestamp.Time).Nanoseconds() * 80 / 100)
 }
 
-func mintToken(ctx context.Context, opts options) metav1.Time {
+func mintToken(ctx context.Context, opts options) (metav1.Time, error) {
 	var restConfig *rest.Config
 	if opts.kubeconfigSecretName != "" && opts.kubeconfigSecretNamespace != "" {
 		config, err := rest.InClusterConfig()
 		if err != nil {
-			panic(err)
+			return metav1.Time{}, fmt.Errorf("failed to get kubeconfig: %w", err)
 		}
-		kubeClient := kubernetes.NewForConfigOrDie(config)
-		if err := wait.PollImmediate(time.Second*5, time.Minute*2, func() (done bool, err error) {
-			secret, err := kubeClient.CoreV1().Secrets(opts.kubeconfigSecretNamespace).Get(ctx, opts.kubeconfigSecretName, metav1.GetOptions{})
-			if err != nil {
-				fmt.Println("Unable to get kubeconfig secret, retrying in 5s:", err)
-				return false, nil
-			}
-			kubeconfigBytes, ok := secret.Data["kubeconfig"]
-			if !ok {
-				return false, fmt.Errorf("kubeconfig secret does not have a kubeconfig key")
-			}
-			restConfig, err = clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
-			if err != nil {
-				return false, fmt.Errorf("invalid kubeconfig: %w", err)
-			}
-			return true, nil
-		}); err != nil {
-			panic(err)
+		kubeClient, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			return metav1.Time{}, fmt.Errorf("failed to make kube client: %w", err)
+		}
+		apiContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		secret, err := kubeClient.CoreV1().Secrets(opts.kubeconfigSecretNamespace).Get(apiContext, opts.kubeconfigSecretName, metav1.GetOptions{})
+		if err != nil {
+			return metav1.Time{}, fmt.Errorf("failed to get kubeconfig secret: %w", err)
+		}
+		kubeconfigBytes, ok := secret.Data["kubeconfig"]
+		if !ok {
+			return metav1.Time{}, fmt.Errorf("kubeconfig secret does not have a kubeconfig key")
+		}
+		restConfig, err = clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
+		if err != nil {
+			return metav1.Time{}, fmt.Errorf("invalid kubeconfig: %w", err)
 		}
 	} else {
 		loadingRules := clientcmd.ClientConfigLoadingRules{ExplicitPath: opts.kubeconfigPath}
@@ -121,31 +129,30 @@ func mintToken(ctx context.Context, opts options) metav1.Time {
 		var err error
 		restConfig, err = clientConfig.ClientConfig()
 		if err != nil {
-			panic(err)
+			return metav1.Time{}, fmt.Errorf("failed to get client config: %w", err)
 		}
 	}
 
 	clientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
-		panic(err)
+		return metav1.Time{}, fmt.Errorf("failed to get guest kube client: %w", err)
 	}
 
 	// Get the service account
-	var serviceAccount *corev1.ServiceAccount
-	err = wait.PollImmediate(time.Second*5, time.Minute*2, func() (done bool, err error) {
-		serviceAccount, err = clientset.CoreV1().ServiceAccounts(opts.serviceAccountNamespace).Get(ctx, opts.serviceAccountName, metav1.GetOptions{})
-		if err == nil {
-			return true, nil
+	apiContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	serviceAccountExists := false
+	serviceAccount, err := clientset.CoreV1().ServiceAccounts(opts.serviceAccountNamespace).Get(apiContext, opts.serviceAccountName, metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return metav1.Time{}, fmt.Errorf("failed to get serviceaccount: %w", err)
 		}
-		if apierrors.IsNotFound(err) {
-			return true, err
-		}
-		fmt.Println("Unable to get service account, retrying in 5s:", err)
-		return false, nil
-	})
+	} else {
+		serviceAccountExists = true
+	}
 
-	if !apierrors.IsNotFound(err) {
-		fmt.Println("Found existing service account", serviceAccount.GetName())
+	if serviceAccountExists {
+		log.Println("Found existing service account", serviceAccount.GetName())
 	} else {
 		serviceAccount = &corev1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
@@ -153,18 +160,18 @@ func mintToken(ctx context.Context, opts options) metav1.Time {
 			},
 		}
 		// Create the service account
-		err = wait.PollImmediate(time.Second*5, time.Minute*2, func() (done bool, err error) {
-			if serviceAccount, err = clientset.CoreV1().ServiceAccounts(opts.serviceAccountNamespace).Create(ctx, serviceAccount, metav1.CreateOptions{}); err != nil {
-				fmt.Println("Unable to create service account, retry in 10s:", err)
-				return false, nil
-			}
-			return true, nil
-		})
+		apiContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		serviceAccount, err = clientset.CoreV1().ServiceAccounts(opts.serviceAccountNamespace).Create(apiContext, serviceAccount, metav1.CreateOptions{})
 		if err != nil {
-			fmt.Println("Unable to create service account:", err)
-			panic(err)
+			if apierrors.IsAlreadyExists(err) {
+				log.Println("Service account already exists", serviceAccount.GetName())
+			} else {
+				return metav1.Time{}, fmt.Errorf("failed to create serviceaccount: %w", err)
+			}
+		} else {
+			log.Println("Created service account", serviceAccount.GetName())
 		}
-		fmt.Println("Created service account", serviceAccount.GetName())
 	}
 
 	treq := &authenticationv1.TokenRequest{
@@ -174,32 +181,29 @@ func mintToken(ctx context.Context, opts options) metav1.Time {
 	}
 
 	// Create the service account token
-	var token *authenticationv1.TokenRequest
-	err = wait.PollImmediate(time.Second*5, time.Minute*2, func() (done bool, err error) {
-		if ctx.Err() != nil {
-			return false, ctx.Err()
-		}
-		if token, err = clientset.CoreV1().ServiceAccounts(serviceAccount.GetNamespace()).CreateToken(ctx, serviceAccount.GetName(), treq, metav1.CreateOptions{}); err != nil {
-			fmt.Println("Unable to create service account token, retry in 10s:", err)
-			return false, nil
-		}
-		return true, nil
-	})
+	apiContext, cancel = context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	token, err := clientset.CoreV1().ServiceAccounts(serviceAccount.GetNamespace()).CreateToken(apiContext, serviceAccount.GetName(), treq, metav1.CreateOptions{})
 	if err != nil {
-		fmt.Printf("Unable to create service account token: %v", err)
-		panic(err)
+		if apierrors.IsAlreadyExists(err) {
+			log.Println("Token already exists", token.GetName())
+		} else {
+			return metav1.Time{}, fmt.Errorf("failed to create token: %w", err)
+		}
+	} else {
+		log.Println("Created service account token for service account", serviceAccount.GetName())
 	}
-
-	fmt.Println("Created service account token for service account", serviceAccount.GetName())
 
 	// Write token to file
 	f, err := os.Create(opts.tokenFile)
 	if err != nil {
-		panic(err)
+		return metav1.Time{}, fmt.Errorf("failed to create token file: %w", err)
 	}
 	defer f.Close()
-	f.WriteString(token.Status.Token)
+	if _, err := f.WriteString(token.Status.Token); err != nil {
+		return metav1.Time{}, fmt.Errorf("failed to write token file: %w", err)
+	}
 
-	fmt.Println("Successfully wrote token to", opts.tokenFile)
-	return token.Status.ExpirationTimestamp
+	log.Println("Successfully wrote token to", opts.tokenFile)
+	return token.Status.ExpirationTimestamp, nil
 }

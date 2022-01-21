@@ -15,7 +15,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 	testCases := []struct {
 		name     string
 		nodePool *hyperv1.NodePool
-		expected capikubevirt.KubevirtMachineTemplateSpec
+		expected *capikubevirt.KubevirtMachineTemplateSpec
 	}{
 		{
 			name: "happy flow",
@@ -36,7 +36,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				},
 			},
 
-			expected: capikubevirt.KubevirtMachineTemplateSpec{
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "testimage"),
@@ -47,9 +47,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, _ := kubevirtMachineTemplate(tc.nodePool, "testNamespace")
-			if !equality.Semantic.DeepEqual(tc.expected, result.Spec) {
-				t.Errorf(cmp.Diff(tc.expected, result.Spec))
+			result := kubevirtMachineTemplateSpec(tc.nodePool)
+			if !equality.Semantic.DeepEqual(tc.expected, result) {
+				t.Errorf(cmp.Diff(tc.expected, result))
 			}
 		})
 	}

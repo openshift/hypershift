@@ -79,11 +79,11 @@ func DumpHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.HostedClus
 				t.Errorf("Found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename)
 			}
 		}
-		err := aws.DumpCluster(ctx, &aws.DumpOptions{
+		err := core.DumpCluster(ctx, &core.DumpOptions{
 			Namespace:   hc.Namespace,
 			Name:        hc.Name,
 			ArtifactDir: artifactDir,
-			LogCheckers: []aws.LogChecker{findKubeObjectUpdateLoops},
+			LogCheckers: []core.LogChecker{findKubeObjectUpdateLoops},
 		})
 		if err != nil {
 			t.Errorf("Failed to dump cluster: %v", err)

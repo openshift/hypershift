@@ -26,6 +26,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 	t.Logf("Starting control plane upgrade test. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 
 	hostedCluster := e2eutil.CreateAWSCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
 
