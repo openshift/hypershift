@@ -100,12 +100,12 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 
 	var errs []error
 	errs = append(errs, o.DestroyInternetGateways(ctx, ec2Client)...)
-	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient, route53Client)...)
 	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyDNS(ctx, route53Client)...)
 	errs = append(errs, o.DestroyS3Buckets(ctx, s3Client)...)
 	errs = append(errs, o.DestroyVPCEndpointServices(ctx, ec2Client)...)
+	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient, route53Client)...)
 
 	return utilerrors.NewAggregate(errs)
 }
