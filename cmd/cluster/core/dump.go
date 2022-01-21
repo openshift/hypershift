@@ -127,8 +127,10 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&agentv1.AgentCluster{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
-	// Additional Agent platform resources
-	resourceList += ",clusterdeployment.hive.openshift.io,agentclusterinstall.extensions.hive.openshift.io"
+	if opts.AgentNamespace != "" {
+		// Additional Agent platform resources
+		resourceList += ",clusterdeployment.hive.openshift.io,agentclusterinstall.extensions.hive.openshift.io"
+	}
 	cmd.WithNamespace(controlPlaneNamespace).Run(ctx, resourceList)
 	cmd.WithNamespace(opts.Namespace).Run(ctx, resourceList)
 	cmd.WithNamespace("hypershift").Run(ctx, resourceList)
