@@ -8,11 +8,10 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -171,8 +170,8 @@ const (
 
 type AWSEndpointServiceReconciler struct {
 	client.Client
-	ec2Client     ec2iface.EC2API
-	route53Client route53iface.Route53API
+	ec2Client     *ec2.Client
+	route53Client *route53.Client
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -189,13 +188,13 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	r.Client = mgr.GetClient()
 
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
-	awsSession := awsutil.NewSession("control-plane-operator")
-	awsConfig := aws.NewConfig()
-	r.ec2Client = ec2.New(awsSession, awsConfig)
-	route53Config := aws.NewConfig()
+	awsConfig, err := awsutil.NewV2Config("control-plane-operator")
+	if err != nil {
+		return fmt.Errorf("failed to load aws config: %w", err)
+	}
+	r.ec2Client = ec2.NewFromConfig(awsConfig)
 	// Hardcode region for route53 config
-	route53Config.Region = aws.String("us-east-1")
-	r.route53Client = route53.New(awsSession, route53Config)
+	r.route53Client = route53.NewFromConfig(awsConfig, func(o *route53.Options) { o.Region = "us-east-1" })
 
 	return nil
 }
@@ -231,7 +230,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			// If we previously removed our finalizer, don't delete again and return early
 			return ctrl.Result{}, nil
 		}
-		completed, err := r.delete(ctx, awsEndpointService, r.ec2Client, r.route53Client)
+		completed, err := r.delete(ctx, awsEndpointService)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
 		}
@@ -313,7 +312,7 @@ func hasAWSConfig(platform *hyperv1.PlatformSpec) bool {
 		platform.AWS.CloudProviderConfig.Subnet != nil && platform.AWS.CloudProviderConfig.Subnet.ID != nil
 }
 
-func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) error {
+func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client *ec2.Client, route53Client *route53.Client) error {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("logger not found: %w", err)
@@ -321,11 +320,11 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	serviceName := awsEndpointService.Status.EndpointServiceName
 
 	endpointID := awsEndpointService.Status.EndpointID
-	var endpointDNSEntries []*ec2.DnsEntry
+	var endpointDNSEntries []ec2types.DnsEntry
 	if endpointID != "" {
 		// check if Endpoint exists in AWS
-		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
-			VpcEndpointIds: []*string{aws.String(endpointID)},
+		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
+			VpcEndpointIds: []string{endpointID},
 		})
 		if err != nil {
 			return err
@@ -345,7 +344,7 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		// Verify there is not already an Endpoint that we can adopt
 		// This can happen if we have a stale status on AWSEndpointService or encoutered
 		// an error updating the AWSEndpointService on the previous reconcile
-		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
+		output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
 			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
 		})
 		if err != nil {
@@ -362,14 +361,14 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			input := &ec2.CreateVpcEndpointInput{
 				ServiceName:     aws.String(serviceName),
 				VpcId:           aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
-				VpcEndpointType: aws.String(ec2.VpcEndpointTypeInterface),
-				SubnetIds:       []*string{hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID},
-				TagSpecifications: []*ec2.TagSpecification{{
-					ResourceType: aws.String("vpc-endpoint"),
+				VpcEndpointType: ec2types.VpcEndpointTypeInterface,
+				SubnetIds:       []string{*hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID},
+				TagSpecifications: []ec2types.TagSpecification{{
+					ResourceType: ec2types.ResourceTypeVpcEndpoint,
 					Tags:         apiTagToEC2Tag(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
 				}},
 			}
-			output, err := ec2Client.CreateVpcEndpointWithContext(ctx, input)
+			output, err := ec2Client.CreateVpcEndpoint(ctx, input)
 			if err != nil {
 				return err
 			}
@@ -417,27 +416,27 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	return nil
 }
 
-func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []*ec2.Tag {
-	result := make([]*ec2.Tag, len(in))
+func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []ec2types.Tag {
+	result := make([]ec2types.Tag, len(in))
 	for _, val := range in {
-		result = append(result, &ec2.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})
+		result = append(result, ec2types.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})
 	}
-	result = append(result, &ec2.Tag{Key: aws.String("AWSEndpointService"), Value: aws.String(name)})
+	result = append(result, ec2types.Tag{Key: aws.String("AWSEndpointService"), Value: aws.String(name)})
 
 	return result
 }
 
-func apiTagToEC2Filter(name string, in []hyperv1.AWSResourceTag) []*ec2.Filter {
-	result := make([]*ec2.Filter, len(in))
+func apiTagToEC2Filter(name string, in []hyperv1.AWSResourceTag) []ec2types.Filter {
+	result := make([]ec2types.Filter, len(in))
 	for _, val := range in {
-		result = append(result, &ec2.Filter{Name: aws.String("tag:" + val.Key), Values: aws.StringSlice([]string{val.Value})})
+		result = append(result, ec2types.Filter{Name: aws.String("tag:" + val.Key), Values: []string{val.Value}})
 	}
-	result = append(result, &ec2.Filter{Name: aws.String("tag:AWSEndpointService"), Values: aws.StringSlice([]string{name})})
+	result = append(result, ec2types.Filter{Name: aws.String("tag:AWSEndpointService"), Values: []string{name}})
 
 	return result
 }
 
-func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) (bool, error) {
+func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService) (bool, error) {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return false, fmt.Errorf("logger not found: %w", err)
@@ -445,8 +444,8 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	endpointID := awsEndpointService.Status.EndpointID
 	if endpointID != "" {
-		if _, err := ec2Client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
-			VpcEndpointIds: []*string{aws.String(endpointID)},
+		if _, err := r.ec2Client.DeleteVpcEndpoints(ctx, &ec2.DeleteVpcEndpointsInput{
+			VpcEndpointIds: []string{endpointID},
 		}); err != nil {
 			return false, err
 		}
@@ -459,12 +458,12 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		return false, err
 	}
 	if fqdn != "" && zoneID != "" {
-		record, err := findRecord(ctx, route53Client, zoneID, fqdn)
+		record, err := findRecord(ctx, r.route53Client, zoneID, fqdn)
 		if err != nil {
 			return false, err
 		}
 		if record != nil {
-			err = deleteRecord(ctx, route53Client, zoneID, record)
+			err = deleteRecord(ctx, r.route53Client, zoneID, record)
 			if err != nil {
 				return false, err
 			}

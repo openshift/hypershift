@@ -1,13 +1,18 @@
 package util
 
 import (
+	"context"
 	"time"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	smiddleware "github.com/aws/smithy-go/middleware"
 )
 
 func NewSession(agent string) *session.Session {
@@ -17,6 +22,10 @@ func NewSession(agent string) *session.Session {
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", agent),
 	})
 	return awsSession
+}
+
+func NewV2Config(agent string) (awsv2.Config, error) {
+	return config.LoadDefaultConfig(context.Background(), config.WithAPIOptions([]func(*smiddleware.Stack) error{middleware.AddUserAgentKeyValue("openshift.io/hypershift", agent)}))
 }
 
 func NewConfig(credentialsFile, region string) *aws.Config {
