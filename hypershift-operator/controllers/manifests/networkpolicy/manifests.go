@@ -31,3 +31,12 @@ func KASNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 		},
 	}
 }
+
+func OpenshiftMonitoringNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "openshift-monitoring",
+		},
+	}
+}

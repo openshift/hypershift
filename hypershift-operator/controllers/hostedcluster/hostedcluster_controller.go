@@ -3110,7 +3110,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileOpenshiftIngressNetworkPolicy(policy, hcluster)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile network policy: %w", err)
+		return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
 	}
 
 	// Reconcile same-namespace Network Policy
@@ -3118,7 +3118,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileSameNamespaceNetworkPolicy(policy, hcluster)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile network policy: %w", err)
+		return fmt.Errorf("failed to reconcile same namespace network policy: %w", err)
 	}
 
 	// Reconcile KAS Network Policy
@@ -3126,7 +3126,15 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileKASNetworkPolicy(policy, hcluster)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile network policy: %w", err)
+		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
+	}
+
+	// Reconcile openshift-monitoring Network Policy
+	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
 
 	return nil
@@ -3404,6 +3412,25 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 			"app": "kube-apiserver",
 		},
 	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"network.openshift.io/policy-group": "monitoring",
+						},
+					},
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	return nil
 }
