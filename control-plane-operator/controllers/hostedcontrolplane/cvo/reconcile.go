@@ -214,8 +214,8 @@ func buildCVOContainerMain(image string) func(c *corev1.Container) {
 				Value: volumeMounts.Path(c.Name, cvoVolumePayload().Name),
 			},
 			{
-				Name:  "CLUSTER_PROFILE",
-				Value: "ibm-cloud-managed",
+				Name:  "EXCLUDE_MANIFESTS",
+				Value: "internal-openshift-hosted",
 			},
 			{
 				Name: "NODE_NAME",
