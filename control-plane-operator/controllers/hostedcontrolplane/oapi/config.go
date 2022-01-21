@@ -23,7 +23,7 @@ const (
 	defaultInternalRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 )
 
-func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, ingressConfig *configv1.Ingress, projectConfig *configv1.Project) error {
+func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, projectConfig *configv1.Project) error {
 	ownerRef.ApplyTo(cm)
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
@@ -34,7 +34,7 @@ func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, in
 			return fmt.Errorf("failed to read existing config: %w", err)
 		}
 	}
-	reconcileConfigObject(openshiftAPIServerConfig, etcdURL, ingressDomain, minTLSVersion, cipherSuites, imageConfig, ingressConfig, projectConfig)
+	reconcileConfigObject(openshiftAPIServerConfig, etcdURL, ingressDomain, minTLSVersion, cipherSuites, imageConfig, projectConfig)
 	serializedConfig, err := util.SerializeResource(openshiftAPIServerConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift apiserver config: %w", err)
@@ -43,7 +43,7 @@ func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, in
 	return nil
 }
 
-func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, ingressConfig *configv1.Ingress, projectConfig *configv1.Project) {
+func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, projectConfig *configv1.Project) {
 	cfg.TypeMeta = metav1.TypeMeta{
 		Kind:       "OpenShiftAPIServerConfig",
 		APIVersion: openshiftcpv1.GroupVersion.String(),
@@ -88,18 +88,7 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 	cfg.ImagePolicyConfig.AllowedRegistriesForImport = allowedRegistries
 
 	// Routing config
-	var routingDomain string
-	if ingressConfig != nil {
-		routingDomain = ingressConfig.Spec.Domain
-		if len(ingressConfig.Spec.AppsDomain) > 0 {
-			routingDomain = ingressConfig.Spec.AppsDomain
-		}
-	}
-	cfg.RoutingConfig.Subdomain = routingDomain
-	if cfg.RoutingConfig.Subdomain == "" {
-		// default to calculated ingress domain if none specified in config
-		cfg.RoutingConfig.Subdomain = ingressDomain
-	}
+	cfg.RoutingConfig.Subdomain = ingressDomain
 
 	// Project config
 	cfg.ProjectConfig.ProjectRequestMessage = projectConfig.Spec.ProjectRequestMessage

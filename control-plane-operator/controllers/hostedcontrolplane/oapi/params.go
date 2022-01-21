@@ -50,7 +50,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 		ProxyImage:              images["socks5-proxy"],
 		APIServer:               globalConfig.APIServer,
 		ServiceAccountIssuerURL: hcp.Spec.IssuerURL,
-		IngressSubDomain:        config.IngressSubdomain(hcp),
+		IngressSubDomain:        globalconfig.IngressDomain(hcp, globalConfig.Ingress),
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		Image:                   globalConfig.Image,

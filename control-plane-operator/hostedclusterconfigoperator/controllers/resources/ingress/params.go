@@ -11,13 +11,13 @@ type IngressParams struct {
 	PlatformType     hyperv1.PlatformType
 }
 
-func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
+func NewIngressParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig) *IngressParams {
 	var replicas int32 = 2
 	if hcp.Spec.InfrastructureAvailabilityPolicy == hyperv1.SingleReplica {
 		replicas = 1
 	}
 	return &IngressParams{
-		IngressSubdomain: globalconfig.IngressDomain(hcp),
+		IngressSubdomain: globalconfig.IngressDomain(hcp, globalConfig.Ingress),
 		Replicas:         replicas,
 		PlatformType:     hcp.Spec.Platform.Type,
 	}
