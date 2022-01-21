@@ -203,7 +203,7 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	}
 
 	log.Info("reconciling ingress controller")
-	if err := r.reconcileIngressController(ctx, hcp); err != nil {
+	if err := r.reconcileIngressController(ctx, hcp, globalConfig); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
 	}
 
@@ -523,9 +523,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig) error {
 	var errs []error
-	p := ingress.NewIngressParams(hcp)
+	p := ingress.NewIngressParams(hcp, globalConfig)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
 		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas)
