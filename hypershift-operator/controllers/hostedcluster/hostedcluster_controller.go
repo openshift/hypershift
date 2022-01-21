@@ -3108,7 +3108,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	// Reconcile openshift-ingress Network Policy
 	policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftIngressNetworkPolicy(policy, hcluster)
+		return reconcileOpenshiftIngressNetworkPolicy(policy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile network policy: %w", err)
 	}
@@ -3116,7 +3116,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	// Reconcile same-namespace Network Policy
 	policy = networkpolicy.SameNamespaceNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileSameNamespaceNetworkPolicy(policy, hcluster)
+		return reconcileSameNamespaceNetworkPolicy(policy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile network policy: %w", err)
 	}
@@ -3351,7 +3351,7 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	return nil
 }
 
-func reconcileOpenshiftIngressNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileOpenshiftIngressNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{
@@ -3370,7 +3370,7 @@ func reconcileOpenshiftIngressNetworkPolicy(policy *networkingv1.NetworkPolicy, 
 	return nil
 }
 
-func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{
@@ -3387,6 +3387,9 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 
 func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(6443)
+	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
+		port = intstr.FromInt(int(*hcluster.Spec.Networking.APIServer.Port))
+	}
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
