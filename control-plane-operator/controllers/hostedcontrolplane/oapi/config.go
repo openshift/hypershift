@@ -1,7 +1,6 @@
 package oapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"path"
 
@@ -13,27 +12,30 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 const (
 	openshiftAPIServerConfigKey     = "config.yaml"
+	configNamespace                 = "openshift-config"
 	defaultInternalRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 )
 
-func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string) error {
+func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, ingressConfig *configv1.Ingress, projectConfig *configv1.Project) error {
 	ownerRef.ApplyTo(cm)
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
 	openshiftAPIServerConfig := &openshiftcpv1.OpenShiftAPIServerConfig{}
-	if configBytes, exist := cm.Data[openshiftAPIServerConfigKey]; exist {
-		if err := json.Unmarshal([]byte(configBytes), openshiftAPIServerConfig); err != nil {
+	if configStr, exist := cm.Data[openshiftAPIServerConfigKey]; exist {
+		if err := util.DeserializeResource(configStr, openshiftAPIServerConfig, api.Scheme); err != nil {
 			return fmt.Errorf("failed to read existing config: %w", err)
 		}
 	}
-	reconcileConfigObject(openshiftAPIServerConfig, etcdURL, ingressDomain, minTLSVersion, cipherSuites)
-	serializedConfig, err := json.Marshal(openshiftAPIServerConfig)
+	reconcileConfigObject(openshiftAPIServerConfig, etcdURL, ingressDomain, minTLSVersion, cipherSuites, imageConfig, ingressConfig, projectConfig)
+	serializedConfig, err := util.SerializeResource(openshiftAPIServerConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift apiserver config: %w", err)
 	}
@@ -41,7 +43,7 @@ func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, in
 	return nil
 }
 
-func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string) {
+func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, ingressConfig *configv1.Ingress, projectConfig *configv1.Project) {
 	cfg.TypeMeta = metav1.TypeMeta{
 		Kind:       "OpenShiftAPIServerConfig",
 		APIVersion: openshiftcpv1.GroupVersion.String(),
@@ -70,12 +72,41 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 		},
 	}
 
+	// Image policy config
+	cfg.ImagePolicyConfig.InternalRegistryHostname = imageConfig.Status.InternalRegistryHostname
+	cfg.ImagePolicyConfig.ExternalRegistryHostnames = imageConfig.Status.ExternalRegistryHostnames
 	if cfg.ImagePolicyConfig.InternalRegistryHostname == "" {
 		cfg.ImagePolicyConfig.InternalRegistryHostname = defaultInternalRegistryHostname
 	}
+	var allowedRegistries openshiftcpv1.AllowedRegistries
+	for _, location := range imageConfig.Spec.AllowedRegistriesForImport {
+		allowedRegistries = append(allowedRegistries, openshiftcpv1.RegistryLocation{
+			DomainName: location.DomainName,
+			Insecure:   location.Insecure,
+		})
+	}
+	cfg.ImagePolicyConfig.AllowedRegistriesForImport = allowedRegistries
 
-	cfg.RoutingConfig = openshiftcpv1.RoutingConfig{
-		Subdomain: ingressDomain,
+	// Routing config
+	var routingDomain string
+	if ingressConfig != nil {
+		routingDomain = ingressConfig.Spec.Domain
+		if len(ingressConfig.Spec.AppsDomain) > 0 {
+			routingDomain = ingressConfig.Spec.AppsDomain
+		}
+	}
+	cfg.RoutingConfig.Subdomain = routingDomain
+	if cfg.RoutingConfig.Subdomain == "" {
+		// default to calculated ingress domain if none specified in config
+		cfg.RoutingConfig.Subdomain = ingressDomain
+	}
+
+	// Project config
+	cfg.ProjectConfig.ProjectRequestMessage = projectConfig.Spec.ProjectRequestMessage
+	if len(projectConfig.Spec.ProjectRequestTemplate.Name) > 0 {
+		cfg.ProjectConfig.ProjectRequestTemplate = configNamespace + "/" + projectConfig.Spec.ProjectRequestTemplate.Name
+	} else {
+		cfg.ProjectConfig.ProjectRequestTemplate = ""
 	}
 
 	cfg.StorageConfig = configv1.EtcdStorageConfig{

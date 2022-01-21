@@ -68,6 +68,24 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			},
 		},
 		{
+			// Access to the finalizers subresource is required by the
+			// hosted-cluster-config-operator due to an OpenShift requirement
+			// that setting an owner of a resource requires write access
+			// to the finalizers of the owner resource. The hcco sets the
+			// hosted control plane as the owner of configmaps that contain
+			// observed global configuration from the guest cluster.
+			APIGroups: []string{hyperv1.GroupVersion.Group},
+			Resources: []string{
+				"hostedcontrolplanes/finalizers",
+			},
+			Verbs: []string{
+				"get",
+				"update",
+				"patch",
+				"delete",
+			},
+		},
+		{
 			APIGroups: []string{coordinationv1.SchemeGroupVersion.Group},
 			Resources: []string{
 				"leases",

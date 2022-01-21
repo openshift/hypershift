@@ -20,9 +20,7 @@ func IngressConfig() *configv1.Ingress {
 func ReconcileIngressConfig(cfg *configv1.Ingress, hcp *hyperv1.HostedControlPlane, globalConfig GlobalConfig) {
 	cfg.Spec.Domain = IngressDomain(hcp)
 	if globalConfig.Ingress != nil {
-		// For now only the AppsDomain is configurable through the HCP configuration
-		// field. As needed, we can enable other parts of the spec.
-		cfg.Spec.AppsDomain = globalConfig.Ingress.Spec.AppsDomain
+		cfg.Spec = globalConfig.Ingress.Spec
 	}
 }
 

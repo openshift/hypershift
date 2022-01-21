@@ -37,6 +37,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/rbac"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -46,6 +47,7 @@ import (
 const (
 	ControllerName       = "resources"
 	SecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
+	observedConfigKey    = "config"
 )
 
 type reconciler struct {
@@ -109,6 +111,9 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.Ingress{},
 		&configv1.Network{},
 		&configv1.Proxy{},
+		&configv1.Build{},
+		&configv1.Image{},
+		&configv1.Project{},
 		&appsv1.DaemonSet{},
 		&configv1.ClusterOperator{},
 		&configv1.ClusterVersion{},
@@ -122,7 +127,6 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	if err := c.Watch(source.NewKindWithCache(&hyperv1.HostedControlPlane{}, opts.CPCluster.GetCache()), eventHandler()); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
-
 	return nil
 }
 
@@ -345,6 +349,9 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 
 	log.Info("reconciling olm resources")
 	errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+
+	log.Info("reconciling observed configuration")
+	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 
 	return errors.NewAggregate(errs)
 }
@@ -797,4 +804,59 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	}
 
 	return errs
+}
+
+func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
+	var errs []error
+	configs := []struct {
+		name       string
+		source     client.Object
+		observedCM *corev1.ConfigMap
+	}{
+		{
+			source:     globalconfig.ImageConfig(),
+			observedCM: globalconfig.ObservedImageConfig(hcp.Namespace),
+		},
+		{
+			source:     globalconfig.BuildConfig(),
+			observedCM: globalconfig.ObservedBuildConfig(hcp.Namespace),
+		},
+		{
+			source:     globalconfig.ProjectConfig(),
+			observedCM: globalconfig.ObservedProjectConfig(hcp.Namespace),
+		},
+	}
+
+	ownerRef := config.OwnerRefFrom(hcp)
+	for _, cfg := range configs {
+		err := func() error {
+			sourceConfig := cfg.source
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(sourceConfig), sourceConfig); err != nil {
+				if apierrors.IsNotFound(err) {
+					sourceConfig = nil
+				} else {
+					return fmt.Errorf("cannot get config (%s): %w", sourceConfig.GetName(), err)
+				}
+			}
+			observedConfig := cfg.observedCM
+			if sourceConfig == nil {
+				if err := r.cpClient.Delete(ctx, observedConfig); err != nil && !apierrors.IsNotFound(err) {
+					return fmt.Errorf("cannot delete observed config: %w", err)
+				}
+				return nil
+			}
+			if _, err := r.CreateOrUpdate(ctx, r.cpClient, observedConfig, func() error {
+				ownerRef.ApplyTo(observedConfig)
+				return globalconfig.ReconcileObservedConfig(observedConfig, sourceConfig)
+			}); err != nil {
+				return err
+			}
+			return nil
+		}()
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+
 }

@@ -22,6 +22,10 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	configHashAnnotation = "openshift-apiserver.hypershift.openshift.io/config-hash"
+)
+
 var (
 	volumeMounts = util.PodVolumeMounts{
 		oasTrustAnchorGenerator().Name: {
@@ -55,8 +59,14 @@ func openShiftAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
+
+	configBytes, ok := config.Data[openshiftAPIServerConfigKey]
+	if !ok {
+		return fmt.Errorf("openshift apiserver configuration is not expected to be empty")
+	}
+	configHash := util.ComputeHash(configBytes)
 
 	maxUnavailable := intstr.FromInt(1)
 	maxSurge := intstr.FromInt(3)
@@ -75,6 +85,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	etcdUrlData, err := url.Parse(etcdURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse etcd url: %w", err)
+	}
+	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
+		configHashAnnotation: configHash,
 	}
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
@@ -109,7 +122,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
 
-	config.ApplyTo(deployment)
+	deploymentConfig.ApplyTo(deployment)
 
 	return nil
 }
