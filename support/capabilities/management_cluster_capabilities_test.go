@@ -16,6 +16,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+var _ CapabiltyChecker = &ManagementClusterCapabilities{}
+
 func TestIsGroupVersionRegistered(t *testing.T) {
 
 	testCases := []struct {

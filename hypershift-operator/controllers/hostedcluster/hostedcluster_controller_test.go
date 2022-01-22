@@ -2,11 +2,17 @@ package hostedcluster
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/upsert"
+	"go.opentelemetry.io/otel"
+	"go.uber.org/zap/zapcore"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	"sigs.k8s.io/cluster-api/api/v1beta1"
@@ -22,12 +28,16 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var Now = metav1.NewTime(time.Now())
@@ -1024,4 +1034,122 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 		},
 	}
 	return append(baseRules, addRules...)
+}
+
+func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
+
+	hostedClusters := []*hyperv1.HostedCluster{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "agent"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type:  hyperv1.AgentPlatform,
+					Agent: &hyperv1.AgentPlatformSpec{},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: "secret"},
+						NodePoolManagementCreds:   corev1.LocalObjectReference{Name: "secret"},
+						ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: "secret"},
+						EndpointAccess:            hyperv1.Public,
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "none"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.NonePlatform,
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "ibm"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type:     hyperv1.IBMCloudPlatform,
+					IBMCloud: &hyperv1.IBMCloudPlatformSpec{},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "kubevirt"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.KubevirtPlatform,
+				},
+			},
+		},
+	}
+
+	objects := []crclient.Object{
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "secret",
+			},
+			Data: map[string][]byte{
+				"credentials":       []byte("creds"),
+				".dockerconfigjson": []byte("{}"),
+			},
+		},
+	}
+	for _, cluster := range hostedClusters {
+		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+			{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+			{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+			{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+			{Service: hyperv1.OIDC, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.None}},
+			{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+		}
+		cluster.Spec.PullSecret = corev1.LocalObjectReference{Name: "secret"}
+		cluster.Spec.InfraID = "infra-id"
+		objects = append(objects, cluster)
+	}
+
+	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
+	r := &HostedClusterReconciler{
+		Client:                        client,
+		tracer:                        otel.Tracer(("")),
+		Clock:                         clock.RealClock{},
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+	}
+
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
+		o.TimeEncoder = zapcore.RFC3339TimeEncoder
+	}))
+
+	for _, hc := range hostedClusters {
+		if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}); err != nil {
+			t.Fatalf("Reconcile failed: %v", err)
+		}
+	}
+	watchedResources := sets.String{}
+	for _, resource := range managedResources() {
+		watchedResources.Insert(fmt.Sprintf("%T", resource))
+	}
+	if diff := cmp.Diff(client.createdTypes.List(), watchedResources.List()); diff != "" {
+		t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
+	}
+}
+
+type createTypeTrackingClient struct {
+	crclient.Client
+	createdTypes sets.String
+}
+
+func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Object, opts ...crclient.CreateOption) error {
+	if c.createdTypes == nil {
+		c.createdTypes = sets.String{}
+	}
+	c.createdTypes.Insert(fmt.Sprintf("%T", obj))
+	return c.Client.Create(ctx, obj, opts...)
 }

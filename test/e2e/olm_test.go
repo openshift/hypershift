@@ -1,3 +1,4 @@
+//go:build e2e
 // +build e2e
 
 package e2e
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -44,7 +46,7 @@ func TestOLM(t *testing.T) {
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.NodePoolReplicas = 1
-	cluster := e2eutil.CreateAWSCluster(t, ctx, client, clusterOpts, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
 
 	// Get guest client
 	t.Logf("Waiting for guest client to become available")

@@ -10,6 +10,10 @@ import (
 	"k8s.io/client-go/discovery"
 )
 
+type CapabiltyChecker interface {
+	Has(capabilities ...CapabilityType) bool
+}
+
 type CapabilityType int
 
 const (

@@ -1,4 +1,4 @@
-package aws
+package dump
 
 import (
 	"context"
@@ -25,12 +25,11 @@ import (
 //go:embed copy-machine-journals.sh
 var copyJournalsScript []byte
 
-func dumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, artifactDir, awsCreds string) error {
-
+func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, artifactDir, awsCreds string) error {
 	// Write out private ssh key
 	secretName := hc.Spec.SSHKey.Name
 	if len(secretName) == 0 {
-		return fmt.Errorf("No SSH secret specified for cluster, cannot dump journals")
+		return fmt.Errorf("no SSH secret specified for cluster, cannot dump journals")
 	}
 	sshKeySecret := &corev1.Secret{}
 	sshKeySecret.Name = secretName
@@ -41,7 +40,7 @@ func dumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	}
 	privateKey, exists := sshKeySecret.Data["id_rsa"]
 	if !exists {
-		return fmt.Errorf("Cannot find SSH private key in SSH key secret %s/%s", sshKeySecret.Namespace, sshKeySecret.Name)
+		return fmt.Errorf("cannot find SSH private key in SSH key secret %s/%s", sshKeySecret.Namespace, sshKeySecret.Name)
 	}
 	privateSSHKeyDir, err := ioutil.TempDir("", "")
 	if err != nil {
