@@ -1,6 +1,7 @@
 package manifests
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -30,6 +31,15 @@ func IngressCert(ns string) *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ingress-crt",
 			Namespace: ns,
+		},
+	}
+}
+
+func InClusterIngressOperator() *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ingress-operator",
+			Namespace: "openshift-ingress-operator",
 		},
 	}
 }

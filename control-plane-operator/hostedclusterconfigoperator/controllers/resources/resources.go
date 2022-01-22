@@ -207,6 +207,13 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
 	}
 
+	// 4.9+ only ensure in-cluster ingress operator deployment is removed
+	log.Info("ensure legacy in-cluster ingress operator deployment removed")
+	err = r.client.Delete(ctx, manifests.InClusterIngressOperator())
+	if err != nil && !apierrors.IsNotFound(err) {
+		errs = append(errs, fmt.Errorf("failed to remove incluster ingress operator deployment: %w", err))
+	}
+
 	log.Info("reconciling kube control plane signer secret")
 	kubeControlPlaneSignerSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
