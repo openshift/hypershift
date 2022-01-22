@@ -1179,6 +1179,10 @@ func (r *NodePoolReconciler) listMachineTemplates(nodePool *hyperv1.NodePool) ([
 		if err != nil {
 			return nil, err
 		}
+	default:
+		// need a default path that returns a value that does not cause the hypershift operator to crash
+		// if no explicit machineTemplate is defined safe to assume none exist
+		return nil, nil
 	}
 
 	machineTemplateList.SetGroupVersionKind(schema.GroupVersionKind{
