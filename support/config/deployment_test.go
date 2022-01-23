@@ -29,6 +29,26 @@ func TestSetRestartAnnotation(t *testing.T) {
 	}
 }
 
+func TestSetReleaseImageAnnotation(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{}
+	hcp.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.8.26-x86_64"
+	hcp.Annotations = map[string]string{
+		hyperv1.ReleaseImageAnnotation: hcp.Spec.ReleaseImage,
+	}
+	cfg := &DeploymentConfig{}
+	cfg.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
+	if cfg.AdditionalAnnotations == nil {
+		t.Fatalf("Expecting additional annotations to be set")
+	}
+	value, isPresent := cfg.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation]
+	if !isPresent {
+		t.Fatalf("Expected restart date annotation is not present")
+	}
+	if value != hcp.Spec.ReleaseImage {
+		t.Fatalf("Expected annotation value not set")
+	}
+}
+
 func TestSetMultizoneSpread(t *testing.T) {
 	labels := map[string]string{
 		"app":                         "etcd",
