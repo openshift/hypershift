@@ -37,9 +37,10 @@ func TestHAEtcdChaos(t *testing.T) {
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
-	clusterOpts.NodePoolReplicas = 0
+	clusterOpts.CreateNodePoolOptions.NodeCount = 0
+	awsOpts := globalOpts.DefaultAWSClusterOptions()
 
-	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, hyperv1.AWSPlatform, awsOpts, globalOpts.ArtifactDir)
 
 	t.Run("KillRandomMembers", testKillRandomMembers(ctx, client, cluster))
 	t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
@@ -58,9 +59,10 @@ func TestEtcdChaos(t *testing.T) {
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
-	clusterOpts.NodePoolReplicas = 0
+	clusterOpts.CreateNodePoolOptions.NodeCount = 0
+	awsOpts := globalOpts.DefaultAWSClusterOptions()
 
-	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, hyperv1.AWSPlatform, awsOpts, globalOpts.ArtifactDir)
 
 	t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
 }

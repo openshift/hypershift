@@ -30,10 +30,11 @@ func TestAutoRepair(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
-	clusterOpts.NodePoolReplicas = 3
-	clusterOpts.AutoRepair = true
+	awsOpts := globalOpts.DefaultAWSClusterOptions()
+	clusterOpts.CreateNodePoolOptions.NodeCount = 3
+	clusterOpts.CreateNodePoolOptions.AutoRepair = true
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, hyperv1.AWSPlatform, awsOpts, globalOpts.ArtifactDir)
 
 	// Get the newly created nodepool
 	nodepool := &hyperv1.NodePool{
@@ -61,7 +62,7 @@ func TestAutoRepair(t *testing.T) {
 	g.Expect(len(awsSpec)).NotTo(BeZero())
 	instanceID := awsSpec[strings.LastIndex(awsSpec, "/")+1:]
 	t.Logf("Terminating AWS instance: %s", instanceID)
-	ec2client := ec2Client(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+	ec2client := ec2Client(awsOpts.AWSCredentialsFile, awsOpts.Region)
 	_, err = ec2client.TerminateInstances(&ec2.TerminateInstancesInput{
 		InstanceIds: []*string{aws.String(instanceID)},
 	})

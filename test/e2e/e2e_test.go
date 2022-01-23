@@ -20,7 +20,14 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
+	"github.com/openshift/hypershift/cmd/cluster/none"
+	nodepoolaws "github.com/openshift/hypershift/cmd/nodepool/aws"
+	nodepoolcore "github.com/openshift/hypershift/cmd/nodepool/core"
+	nodepoolkubevirt "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
+	nodepoolnone "github.com/openshift/hypershift/cmd/nodepool/none"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -189,35 +196,52 @@ type configurableClusterOptions struct {
 	NodePoolReplicas           int
 }
 
-func (o *options) DefaultClusterOptions() core.CreateOptions {
-	createOption := core.CreateOptions{
-		ReleaseImage:              o.LatestReleaseImage,
-		GenerateSSH:               true,
-		SSHKeyFile:                "",
-		NodePoolReplicas:          int32(o.configurableClusterOptions.NodePoolReplicas),
-		NetworkType:               string(hyperv1.OpenShiftSDN),
-		BaseDomain:                o.configurableClusterOptions.BaseDomain,
-		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
-		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
-		AWSPlatform: core.AWSPlatformOptions{
-			InstanceType:       "m5.large",
-			RootVolumeSize:     64,
-			RootVolumeType:     "gp3",
-			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
-			Region:             o.configurableClusterOptions.Region,
-			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
+func (o *options) DefaultAWSClusterOptions() *aws.AWSPlatformOptions {
+	opts := &aws.AWSPlatformOptions{
+		AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
+		Region:             o.configurableClusterOptions.Region,
+		EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
+		NodePoolOptions: &nodepoolaws.AWSPlatformCreateOptions{
+			InstanceType:   "m5.large",
+			RootVolumeSize: 64,
+			RootVolumeType: "gp3",
 		},
-		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
+	}
+	opts.AdditionalTags = append(opts.AdditionalTags, o.additionalTags...)
+	return opts
+}
+
+func (o *options) DefaultKubevirtClusterOptions() *kubevirt.KubevirtPlatformCreateOptions {
+	return &kubevirt.KubevirtPlatformCreateOptions{
+		NodePoolOptions: &nodepoolkubevirt.KubevirtPlatformCreateOptions{
 			ContainerDiskImage: o.configurableClusterOptions.KubeVirtContainerDiskImage,
 			Cores:              2,
 			Memory:             "4Gi",
 		},
-		ServiceCIDR: "172.31.0.0/16",
-		PodCIDR:     "10.132.0.0/14",
 	}
-	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
+}
 
-	return createOption
+func (o *options) DefaultNoneClusterOptions() *none.NonePlatformCreateOptions {
+	return &none.NonePlatformCreateOptions{
+		NodePoolOptions: &nodepoolnone.NonePlatformCreateOptions{},
+	}
+}
+
+func (o *options) DefaultClusterOptions() *core.CreateOptions {
+	return &core.CreateOptions{
+		ReleaseImage:              o.LatestReleaseImage,
+		GenerateSSH:               true,
+		SSHKeyFile:                "",
+		NetworkType:               string(hyperv1.OpenShiftSDN),
+		BaseDomain:                o.configurableClusterOptions.BaseDomain,
+		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
+		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
+		ServiceCIDR:               "172.31.0.0/16",
+		PodCIDR:                   "10.132.0.0/14",
+		CreateNodePoolOptions: &nodepoolcore.CreateNodePoolOptions{
+			NodeCount: int32(o.configurableClusterOptions.NodePoolReplicas),
+		},
+	}
 }
 
 // Complete is intended to be called after flags have been bound and sets

@@ -27,8 +27,9 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
+	awsOpts := globalOpts.DefaultAWSClusterOptions()
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, hyperv1.AWSPlatform, awsOpts, globalOpts.ArtifactDir)
 
 	// Get the newly created nodepool
 	nodepool := &hyperv1.NodePool{

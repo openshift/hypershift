@@ -29,8 +29,9 @@ func TestAutoscaling(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
+	awsOpts := globalOpts.DefaultAWSClusterOptions()
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, hyperv1.AWSPlatform, awsOpts, globalOpts.ArtifactDir)
 
 	// Get the newly created nodepool
 	nodepool := &hyperv1.NodePool{

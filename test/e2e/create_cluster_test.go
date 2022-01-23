@@ -40,7 +40,8 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 	client := e2eutil.GetClientOrDie()
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.KubevirtPlatform, globalOpts.ArtifactDir)
+	kubevirtOpts := globalOpts.DefaultKubevirtClusterOptions()
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, hyperv1.KubevirtPlatform, kubevirtOpts, globalOpts.ArtifactDir)
 
 	waitForHostedClusterAvailable := func() {
 		start := time.Now()
@@ -106,8 +107,9 @@ func TestNoneCreateCluster(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.ControlPlaneAvailabilityPolicy = "SingleReplica"
+	noneOpts := globalOpts.DefaultNoneClusterOptions()
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, clusterOpts, hyperv1.NonePlatform, noneOpts, globalOpts.ArtifactDir)
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
