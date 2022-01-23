@@ -176,7 +176,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
-	for _, managedResource := range managedResources() {
+	for _, managedResource := range r.managedResources() {
 		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
 	}
 
@@ -194,8 +194,8 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 }
 
 // managedResources are all the resources that are managed as childresources for a HostedCluster
-func managedResources() []client.Object {
-	return []client.Object{
+func (r *HostedClusterReconciler) managedResources() []client.Object {
+	managedResources := []client.Object{
 		&capiawsv1.AWSCluster{},
 		&hyperv1.HostedControlPlane{},
 		&capiv1.Cluster{},
@@ -211,11 +211,15 @@ func managedResources() []client.Object {
 		&corev1.Namespace{},
 		&corev1.ServiceAccount{},
 		&corev1.Service{},
-		&routev1.Route{},
 		&agentv1.AgentCluster{},
 		&capiibmv1.IBMVPCCluster{},
 		&capikubevirt.KubevirtCluster{},
 	}
+	// Watch based on Routes capability
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		managedResources = append(managedResources, &routev1.Route{})
+	}
+	return managedResources
 }
 
 // serviceFirstNodePortAvailable checks if the first port in a service has a node port available. Utilized to
