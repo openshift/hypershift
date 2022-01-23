@@ -3,6 +3,7 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	routev1 "github.com/openshift/api/route/v1"
 	"testing"
 	"time"
 
@@ -1133,6 +1134,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		}
 	}
 	watchedResources := sets.String{}
+	watchedResources.Insert(fmt.Sprintf("%T", &routev1.Route{}))
 	for _, resource := range managedResources() {
 		watchedResources.Insert(fmt.Sprintf("%T", resource))
 	}

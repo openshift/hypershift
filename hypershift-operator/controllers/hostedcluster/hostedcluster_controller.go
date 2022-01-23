@@ -211,7 +211,6 @@ func managedResources() []client.Object {
 		&corev1.Namespace{},
 		&corev1.ServiceAccount{},
 		&corev1.Service{},
-		&routev1.Route{},
 		&agentv1.AgentCluster{},
 		&capiibmv1.IBMVPCCluster{},
 		&capikubevirt.KubevirtCluster{},
