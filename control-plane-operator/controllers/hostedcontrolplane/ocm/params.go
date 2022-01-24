@@ -49,6 +49,7 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, global
 	}
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
