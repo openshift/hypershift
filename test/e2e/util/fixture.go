@@ -99,36 +99,30 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 // is that these dumps are critical to our ability to debug issues in CI, and so
 // we want to treat diagnostic dump failures as high priority bugs to resolve.
 func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) {
+	dumpCluster := newClusterDumper(hc, opts, artifactDir)
+
 	// First, do a dump of the cluster before tearing it down
-	if len(artifactDir) != 0 {
-		t.Run("DumpCluster", func(t *testing.T) {
-			err := dumpCluster(ctx, t, hc, opts, artifactDir)
-			if err != nil {
-				t.Errorf("Failed to dump cluster: %v", err)
-			}
-		})
-	} else {
-		t.Logf("Skipping cluster dump because no artifact dir was provided")
-	}
+	t.Run("PreTeardownClusterDump", func(t *testing.T) {
+		err := dumpCluster(ctx, t)
+		if err != nil {
+			t.Errorf("Failed to dump cluster: %v", err)
+		}
+	})
 
 	// TODO: DumpGuestCluster was taking far too long and so was disabled. This needs revisited.
 
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
 	// the current cluster to help debug teardown lifecycle issues.
-	t.Run("DestroyCluster", func(t *testing.T) {
+	destroyAttempt := 1
+	t.Run(fmt.Sprintf("DestroyCluster_%d", destroyAttempt), func(t *testing.T) {
 		t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
-		testName := strings.ReplaceAll(t.Name(), "/", "_")
-		destroyAttempt := 1
 		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 			err := destroyCluster(ctx, hc, opts)
 			if err != nil {
 				t.Logf("Failed to destroy cluster, will retry: %v", err)
-				if len(artifactDir) > 0 {
-					dumpPath := filepath.Join(artifactDir, testName, fmt.Sprintf("destroy-hostedcluster-%d", destroyAttempt))
-					err := dumpCluster(ctx, t, hc, opts, dumpPath)
-					if err != nil {
-						t.Logf("Failed to dump cluster during destroy; this is nonfatal: %v", err)
-					}
+				err := dumpCluster(ctx, t)
+				if err != nil {
+					t.Logf("Failed to dump cluster during destroy; this is nonfatal: %v", err)
 				}
 				destroyAttempt++
 				return false, nil
@@ -155,11 +149,9 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		err := DeleteNamespace(t, deleteTimeout, client, hc.Name)
 		if err != nil {
 			t.Errorf("Failed to delete test namespace: %v", err)
-			if len(artifactDir) > 0 {
-				err := dumpCluster(ctx, t, hc, opts, artifactDir)
-				if err != nil {
-					t.Errorf("Failed to dump cluster: %v", err)
-				}
+			err := dumpCluster(ctx, t)
+			if err != nil {
+				t.Errorf("Failed to dump cluster: %v", err)
 			}
 		}
 	})
@@ -227,32 +219,42 @@ func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *
 	}
 }
 
-// dumpCluster dumps important diagnostic data for a cluster based on the
-// cluster's platform.
-func dumpCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactsDir string) error {
-	switch hc.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		var dumpErrors []error
-		err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsFile, artifactsDir)
-		if err != nil {
-			t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
+// newClusterDumper returns a function that dumps important diagnostic data for
+// a cluster based on the cluster's platform. The output directory will be named
+// according to the test name. So, the returned dump function should be called
+// at most once per unique test name.
+func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) func(ctx context.Context, t *testing.T) error {
+	return func(ctx context.Context, t *testing.T) error {
+		if len(artifactDir) == 0 {
+			t.Logf("Skipping cluster dump because no artifact directory was provided")
+			return nil
 		}
-		err = dump.DumpHostedCluster(ctx, hc, artifactsDir)
-		if err != nil {
-			dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
+		dumpDir := filepath.Join(artifactDir, strings.ReplaceAll(t.Name(), "/", "_"))
+
+		switch hc.Spec.Platform.Type {
+		case hyperv1.AWSPlatform:
+			var dumpErrors []error
+			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsFile, dumpDir)
+			if err != nil {
+				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
+			}
+			err = dump.DumpHostedCluster(ctx, hc, dumpDir)
+			if err != nil {
+				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
+			}
+			err = dump.DumpJournals(t, ctx, hc, dumpDir, opts.AWSPlatform.AWSCredentialsFile)
+			if err != nil {
+				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
+			}
+			return utilerrors.NewAggregate(dumpErrors)
+		case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
+			err := dump.DumpHostedCluster(ctx, hc, dumpDir)
+			if err != nil {
+				return fmt.Errorf("failed to dump hosted cluster: %w", err)
+			}
+			return nil
+		default:
+			return fmt.Errorf("unsupported cluster platform")
 		}
-		err = dump.DumpJournals(t, ctx, hc, artifactsDir, opts.AWSPlatform.AWSCredentialsFile)
-		if err != nil {
-			t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
-		}
-		return utilerrors.NewAggregate(dumpErrors)
-	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
-		err := dump.DumpHostedCluster(ctx, hc, artifactsDir)
-		if err != nil {
-			return fmt.Errorf("failed to dump hosted cluster: %w", err)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported cluster platform")
 	}
 }
