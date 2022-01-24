@@ -393,8 +393,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		Name:      "installer-cloud-credentials",
 	})
 
-	csiTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator")
-	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-operator", csiTrustPolicy, awsEBSCSIPermPolicy)
+	csiTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-controller-sa")
+	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-controller", csiTrustPolicy, awsEBSCSIPermPolicy)
 	if err != nil {
 		return nil, err
 	}
