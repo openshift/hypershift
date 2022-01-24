@@ -33,6 +33,11 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
+		if opts.Timeout > 0 {
+			ctx, cancel = context.WithTimeout(context.Background(), opts.Timeout)
+		}
+		defer cancel()
+
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT)
 		go func() {

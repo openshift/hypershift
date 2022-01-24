@@ -9,7 +9,11 @@ import (
 )
 
 const (
-	OpenShiftServicePort = 443
+	OpenShiftServicePort        = 443
+	openshiftAPIServerConfigKey = "config.yaml"
+	configNamespace             = "openshift-config"
+	configHashAnnotation        = "openshift-apiserver.hypershift.openshift.io/config-hash"
+	crdPresentAnnotation        = "openshift-apiserver.hypershift.openshift.io/rolebindingrestrictions-present"
 )
 
 func ReconcileAPIService(apiService *apiregistrationv1.APIService, svc *corev1.Service, ca *corev1.Secret, group string) {

@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
@@ -418,24 +419,24 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err != nil {
 			r.Log.Error(err, "failed to look up release image metadata")
 			return ctrl.Result{}, err
+		}
+
+		timeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		var clusterVersion configv1.ClusterVersion
+		if err := r.HostedAPICache.Get(timeout, client.ObjectKey{Name: "version"}, &clusterVersion); err != nil {
+			r.Log.Info("failed to get clusterversion, can't determine image version rollout status", "error", err)
 		} else {
-			timeout, cancel := context.WithTimeout(ctx, 2*time.Second)
-			defer cancel()
-			var clusterVersion configv1.ClusterVersion
-			if err := r.HostedAPICache.Get(timeout, client.ObjectKey{Name: "version"}, &clusterVersion); err != nil {
-				r.Log.Info("failed to get clusterversion, can't determine image version rollout status", "error", err)
-			} else {
-				versionHistory := clusterVersion.Status.History
-				if len(versionHistory) > 0 &&
-					versionHistory[0].Version == releaseImage.Version() &&
-					versionHistory[0].State == configv1.CompletedUpdate {
-					// Rollout to the desired release image version is complete, so record
-					// that fact on the HCP status.
-					now := metav1.NewTime(time.Now())
-					hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
-					hostedControlPlane.Status.Version = releaseImage.Version()
-					hostedControlPlane.Status.LastReleaseImageTransitionTime = &now
-				}
+			versionHistory := clusterVersion.Status.History
+			if len(versionHistory) > 0 &&
+				versionHistory[0].Version == releaseImage.Version() &&
+				versionHistory[0].State == configv1.CompletedUpdate {
+				// Rollout to the desired release image version is complete, so record
+				// that fact on the HCP status.
+				now := metav1.NewTime(time.Now())
+				hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
+				hostedControlPlane.Status.Version = releaseImage.Version()
+				hostedControlPlane.Status.LastReleaseImageTransitionTime = &now
 			}
 		}
 	}
@@ -535,6 +536,10 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	if err != nil {
 		return fmt.Errorf("failed to parse global config: %w", err)
 	}
+	r.Log.Info("Looking up observed configuration")
+	if err := globalconfig.ReadObservedConfig(ctx, r.Client, &globalConfig, hostedControlPlane.Namespace); err != nil {
+		return fmt.Errorf("failed to read observed global config: %w", err)
+	}
 
 	// Reconcile etcd
 	r.Log.Info("Reconciling Etcd")
@@ -612,6 +617,11 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
 
+	r.Log.Info("Reconciling IngressOperator")
+	if err := r.reconcileIngressOperator(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
+	}
+
 	// Reconcile private IngressController
 	if cpoutil.IsPrivateHCP(hostedControlPlane) {
 		r.Log.Info("Reconciling private IngressController")
@@ -646,9 +656,10 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile kubeadmin password
 	r.Log.Info("Reconciling kubeadmin password secret")
-	if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane); err != nil {
+	if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane, globalConfig.OAuth == nil); err != nil {
 		return fmt.Errorf("failed to ensure control plane: %w", err)
 	}
+
 	return nil
 }
 
@@ -951,7 +962,10 @@ func (r *HostedControlPlaneReconciler) reconcileClusterIPServiceStatus(ctx conte
 	return svc.Spec.ClusterIP, nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Context, hcp *hyperv1.HostedControlPlane, explicitOauthConfig bool) error {
+	if explicitOauthConfig {
+		return nil
+	}
 	var kubeadminPassword string
 	kubeadminPasswordSecret := common.KubeadminPasswordSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeadminPasswordSecret, func() error {
@@ -1137,6 +1151,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
+	}
+
+	// OAuth server Cert
+	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, oauthServerCert, func() error {
+		return pki.ReconcileOAuthServerCert(oauthServerCert, rootCASecret, p.OwnerRef, p.ExternalOauthAddress)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
 	}
 
 	// MCS Cert
@@ -1541,10 +1563,9 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, globalConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
-
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, oapicfg, func() error {
-		return oapi.ReconcileConfig(oapicfg, p.OwnerRef, p.EtcdURL, p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites())
+		return oapi.ReconcileConfig(oapicfg, p.OwnerRef, p.EtcdURL, p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver config: %w", err)
 	}
@@ -1567,7 +1588,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 
 	deployment := manifests.OpenShiftAPIServerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, hcp.Spec.APIPort)
+		return oapi.ReconcileDeployment(deployment, p.OwnerRef, oapicfg, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, hcp.Spec.APIPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
@@ -1576,7 +1597,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, globalConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
-
 	auditCfg := manifests.OpenShiftOAuthAPIServerAuditConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, auditCfg, func() error {
 		return oapi.ReconcileAuditConfig(auditCfg, p.OwnerRef)
@@ -1665,17 +1685,16 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
 	p := ocm.NewOpenShiftControllerManagerParams(hcp, globalConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
-
 	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, config, func() error {
-		return ocm.ReconcileOpenShiftControllerManagerConfig(config, p.OwnerRef, p.DeployerImage, p.DockerBuilderImage, p.MinTLSVersion(), p.CipherSuites())
+		return ocm.ReconcileOpenShiftControllerManagerConfig(config, p.OwnerRef, p.DeployerImage, p.DockerBuilderImage, p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Build, p.Network)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
 	}
 
 	deployment := manifests.OpenShiftControllerManagerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return ocm.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftControllerManagerImage, p.DeploymentConfig)
+		return ocm.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftControllerManagerImage, config, p.DeploymentConfig)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager deployment: %w", err)
 	}
@@ -1711,6 +1730,45 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := ingressoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	kubeconfig := manifests.IngressOperatorKubeconfig(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, kubeconfig, func() error {
+		return r.reconcileIngressOperatorKubeconfig(ctx, kubeconfig, hcp)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ingressoperator kubeconfig: %w", err)
+	}
+
+	deployment := manifests.IngressOperatorDeployment(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
+		ingressoperator.ReconcileDeployment(deployment, p, hcp.Spec.APIPort)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ingressoperator deployment: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileIngressOperatorKubeconfig(ctx context.Context, s *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
+	rootCASecret := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
+		return err
+	}
+	if err := pki.ReconcileIngressOperatorClientCertSecret(s, rootCASecret, config.OwnerRefFrom(hcp)); err != nil {
+		return err
+	}
+
+	// TODO: This duplicates logic from the kas params. We should simply write the default into the HCP instead
+	apiServerPort := int32(config.DefaultAPIServerPort)
+	if hcp.Spec.APIPort != nil {
+		apiServerPort = *hcp.Spec.APIPort
+	}
+
+	return kas.ReconcileIngressOperatorKubeconfigSecret(s, rootCASecret, config.OwnerRefFrom(hcp), apiServerPort)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, packageServerAddress string) error {

@@ -37,6 +37,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -46,6 +47,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/machineapprover"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
@@ -61,6 +63,7 @@ import (
 	"gopkg.in/square/go-jose.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -73,6 +76,8 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1" // Need this dep atm to satisfy IBM provider dep.
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -110,7 +115,7 @@ type HostedClusterReconciler struct {
 	client.Client
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
-	ManagementClusterCapabilities *capabilities.ManagementClusterCapabilities
+	ManagementClusterCapabilities capabilities.CapabiltyChecker
 
 	// HypershiftOperatorImage is the image used to deploy the control plane operator if
 	// 1) There is no hypershift.openshift.io/control-plane-operator-image annotation on the HostedCluster and
@@ -121,7 +126,7 @@ type HostedClusterReconciler struct {
 	AvailabilityProberImage string
 
 	// releaseProvider looks up the OCP version for the release images in HostedClusters
-	ReleaseProvider releaseinfo.Provider
+	ReleaseProvider releaseinfo.ProviderWithRegistryOverrides
 
 	// IgnitionServerImage is the image used to deploy the ignition server.
 	IgnitionServerImage string
@@ -131,9 +136,6 @@ type HostedClusterReconciler struct {
 
 	// SocksProxyImage is the image used to deploy the socks proxy service.
 	SocksProxyImage string
-
-	// Log is a thread-safe logger.
-	Log logr.Logger
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
@@ -171,14 +173,12 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// are annotated as being associated with a hostedcluster (using an annotation).
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
-		Watches(&source.Kind{Type: &capiawsv1.AWSCluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &hyperv1.HostedControlPlane{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &capiv1.Cluster{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &appsv1.Deployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
-		Watches(&source.Kind{Type: &prometheusoperatorv1.PodMonitor{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
+	for _, managedResource := range managedResources() {
+		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
+	}
 
 	// Watch based on Routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -191,6 +191,31 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
 	return builder.Complete(r)
+}
+
+// managedResources are all the resources that are managed as childresources for a HostedCluster
+func managedResources() []client.Object {
+	return []client.Object{
+		&capiawsv1.AWSCluster{},
+		&hyperv1.HostedControlPlane{},
+		&capiv1.Cluster{},
+		&appsv1.Deployment{},
+		&prometheusoperatorv1.PodMonitor{},
+		&networkingv1.NetworkPolicy{},
+		&rbacv1.ClusterRole{},
+		&rbacv1.ClusterRoleBinding{},
+		&rbacv1.Role{},
+		&rbacv1.RoleBinding{},
+		&corev1.ConfigMap{},
+		&corev1.Secret{},
+		&corev1.Namespace{},
+		&corev1.ServiceAccount{},
+		&corev1.Service{},
+		&routev1.Route{},
+		&agentv1.AgentCluster{},
+		&capiibmv1.IBMVPCCluster{},
+		&capikubevirt.KubevirtCluster{},
+	}
 }
 
 // serviceFirstNodePortAvailable checks if the first port in a service has a node port available. Utilized to
@@ -208,41 +233,39 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	ctx, span = r.tracer.Start(ctx, "reconcile")
 	defer span.End()
 
-	r.Log = ctrl.LoggerFrom(ctx)
-	r.Log.Info("reconciling")
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("reconciling")
 
 	// Look up the HostedCluster instance to reconcile
 	hcluster := &hyperv1.HostedCluster{}
-	isMissing := false
 	err := r.Get(ctx, req.NamespacedName, hcluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			isMissing = true
-		} else {
-			return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
+			log.Error(err, "hostedcluster not found, aborting reconcile", "name", req.NamespacedName)
+			return ctrl.Result{}, nil
 		}
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 
-	// If deleted or missing, clean up and return early.
-	// TODO: This should be incorporated with status/reconcile
-	if isMissing || !hcluster.DeletionTimestamp.IsZero() {
+	// If deleted, clean up and return early.
+	if !hcluster.DeletionTimestamp.IsZero() {
 		// Keep trying to delete until we know it's safe to finalize.
 		completed, err := r.delete(ctx, req, hcluster)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete cluster: %w", err)
 		}
 		if !completed {
-			r.Log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
+			log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
 			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
 		}
-		r.Log.Info("finished deleting hostedcluster", "name", req.NamespacedName)
+		log.Info("finished deleting hostedcluster", "name", req.NamespacedName)
 		// Now we can remove the finalizer.
 		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
 			controllerutil.RemoveFinalizer(hcluster, finalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
-			r.Log.Info("hostedcluster was finalized", "name", req.NamespacedName)
+			log.Info("hostedcluster was finalized", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, nil
@@ -289,6 +312,39 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 		hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
+	}
+
+	// Set the ClusterVersionSucceeding based on the hostedcontrolplane
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ClusterVersionSucceeding),
+			Status:             metav1.ConditionUnknown,
+			Reason:             "ClusterVersionStatusUnknown",
+			ObservedGeneration: hcluster.Generation,
+		}
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+			}
+		} else {
+			failingCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing))
+			if failingCond != nil {
+				switch failingCond.Status {
+				case metav1.ConditionTrue:
+					condition.Status = metav1.ConditionFalse
+					condition.Reason = failingCond.Reason
+					condition.Message = failingCond.Message
+				case metav1.ConditionFalse:
+					condition.Status = metav1.ConditionTrue
+					condition.Reason = failingCond.Reason
+					condition.Message = ""
+				}
+			}
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
 	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
@@ -402,7 +458,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if serviceStrategy == nil {
 			// We don't return the error here as reconciling won't solve the input problem.
 			// An update event will trigger reconciliation.
-			r.Log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
+			log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
 			return ctrl.Result{}, nil
 		}
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -421,7 +477,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			if serviceStrategy.NodePort == nil {
 				// We don't return the error here as reconciling won't solve the input problem.
 				// An update event will trigger reconciliation.
-				r.Log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
+				log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
 				return ctrl.Result{}, nil
 			}
 			ignitionService := ignitionserver.Service(controlPlaneNamespace.GetName())
@@ -436,7 +492,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		default:
 			// We don't return the error here as reconciling won't solve the input problem.
 			// An update event will trigger reconciliation.
-			r.Log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
+			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
 			return ctrl.Result{}, nil
 		}
 	}
@@ -515,12 +571,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	{
 		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
-			r.Log.Info("Configuration is invalid, reconciliation is blocked")
+			log.Info("Configuration is invalid, reconciliation is blocked", "message", validConfig.Message)
 			return ctrl.Result{}, nil
 		}
 		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
 		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
-			r.Log.Info("Hosted Cluster is not supported by operator configuration, reconciliation is blocked")
+			log.Info("Hosted Cluster is not supported by operator configuration, reconciliation is blocked", "message", supportedHostedCluster.Message)
 			return ctrl.Result{}, nil
 		}
 	}
@@ -582,11 +638,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane Secret Encryption Info
 	if hcluster.Spec.SecretEncryption != nil {
-		r.Log.Info("Reconciling secret encryption configuration")
+		log.Info("Reconciling secret encryption configuration")
 		switch hcluster.Spec.SecretEncryption.Type {
 		case hyperv1.AESCBC:
 			if hcluster.Spec.SecretEncryption.AESCBC == nil || len(hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name) == 0 {
-				r.Log.Error(fmt.Errorf("aescbc metadata  is nil"), "")
+				log.Error(fmt.Errorf("aescbc metadata  is nil"), "")
 				// don't return error here as reconciling won't fix input error
 				return ctrl.Result{}, nil
 			}
@@ -595,7 +651,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, fmt.Errorf("failed to get active aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name, err)
 			}
 			if _, ok := src.Data[hyperv1.AESCBCKeySecretKey]; !ok {
-				r.Log.Error(fmt.Errorf("no key field %s specified for aescbc active key secret", hyperv1.AESCBCKeySecretKey), "")
+				log.Error(fmt.Errorf("no key field %s specified for aescbc active key secret", hyperv1.AESCBCKeySecretKey), "")
 				// don't return error here as reconciling won't fix input error
 				return ctrl.Result{}, nil
 			}
@@ -622,7 +678,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					return ctrl.Result{}, fmt.Errorf("failed to get backup aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name, err)
 				}
 				if _, ok := src.Data[hyperv1.AESCBCKeySecretKey]; !ok {
-					r.Log.Error(fmt.Errorf("no key field %s specified for aescbc backup key secret", hyperv1.AESCBCKeySecretKey), "")
+					log.Error(fmt.Errorf("no key field %s specified for aescbc backup key secret", hyperv1.AESCBCKeySecretKey), "")
 					// don't return error here as reconciling won't fix input error
 					return ctrl.Result{}, nil
 				}
@@ -646,7 +702,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		case hyperv1.KMS:
 			if hcluster.Spec.SecretEncryption.KMS == nil {
-				r.Log.Error(fmt.Errorf("kms metadata nil"), "")
+				log.Error(fmt.Errorf("kms metadata nil"), "")
 				// don't return error here as reconciling won't fix input error
 				return ctrl.Result{}, nil
 			}
@@ -656,7 +712,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, err
 			}
 		default:
-			r.Log.Error(fmt.Errorf("unsupported encryption type %s", hcluster.Spec.SecretEncryption.Type), "")
+			log.Error(fmt.Errorf("unsupported encryption type %s", hcluster.Spec.SecretEncryption.Type), "")
 			// don't return error here as reconciling won't fix input error
 			return ctrl.Result{}, nil
 		}
@@ -748,7 +804,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed reconciling etcd client secret: %w", err)
 		} else {
-			r.Log.Info("reconciled etcd client mtls secret to control plane namespace", "result", result)
+			log.Info("reconciled etcd client mtls secret to control plane namespace", "result", result)
 		}
 	}
 
@@ -946,15 +1002,20 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 	}
 
+	// Reconcile the network policies
+	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
+	}
+
 	// Reconcile the AWS OIDC discovery
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		if err := r.reconcileAWSOIDCDocuments(ctx, hcluster, hcp); err != nil {
+		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile the AWS OIDC documents: %w", err)
 		}
 	}
 
-	r.Log.Info("successfully reconciled")
+	log.Info("successfully reconciled")
 	return ctrl.Result{}, nil
 }
 
@@ -1316,7 +1377,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1404,6 +1465,8 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 	ctx, span = r.tracer.Start(ctx, "reconcile-ignition-server")
 	defer span.End()
 
+	log := ctrl.LoggerFrom(ctx)
+
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
@@ -1459,7 +1522,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 
 		// The route must be admitted and assigned a host before we can generate certs
 		if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
-			r.Log.Info("ignition server reconciliation waiting for ignition server route to be assigned a host value")
+			log.Info("ignition server reconciliation waiting for ignition server route to be assigned a host value")
 			return nil
 		}
 		ignitionServerAddress = ignitionServerRoute.Status.Ingress[0].Host
@@ -1498,7 +1561,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return fmt.Errorf("failed to reconcile ignition ca cert: %w", err)
 	} else {
 		span.AddEvent("reconciled ignition CA cert secret", trace.WithAttributes(attribute.String("result", string(result))))
-		r.Log.Info("reconciled ignition CA cert secret", "result", result)
+		log.Info("reconciled ignition CA cert secret", "result", result)
 	}
 
 	// Reconcile a ignition serving certificate issued by the generated root CA. We
@@ -1540,7 +1603,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return fmt.Errorf("failed to reconcile ignition serving cert: %w", err)
 	} else {
 		span.AddEvent("reconciled ignition serving cert secret", trace.WithAttributes(attribute.String("result", string(result))))
-		r.Log.Info("reconciled ignition serving cert secret", "result", result)
+		log.Info("reconciled ignition serving cert secret", "result", result)
 	}
 
 	role := ignitionserver.Role(controlPlaneNamespace.Name)
@@ -1657,7 +1720,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 								"start",
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
-								"--registry-overrides", convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.(*releaseinfo.RegistryMirrorProviderDecorator).RegistryOverrides),
+								"--registry-overrides", convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()),
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
@@ -2838,6 +2901,7 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 
 func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, hc *hyperv1.HostedCluster) (bool, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(req.Namespace, req.Name).Name
+	log := ctrl.LoggerFrom(ctx)
 
 	nodePools, err := r.listNodePools(req.Namespace, req.Name)
 	if err != nil {
@@ -2851,7 +2915,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	}
 
 	if hc != nil && len(hc.Spec.InfraID) > 0 {
-		r.Log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
+		log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
 		cluster := &capiv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      hc.Spec.InfraID,
@@ -2865,7 +2929,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 			}
 			// The advancing case is when Delete() returns an error that the cluster is not found
 		} else {
-			r.Log.Info("Waiting for Cluster deletion", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
+			log.Info("Waiting for Cluster deletion", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
 			return false, nil
 		}
 	}
@@ -2882,6 +2946,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 	if len(awsEndpointServiceList.Items) != 0 {
 		// The CPO puts a finalizer on AWSEndpointService resources and should
 		// not be terminated until the resources are removed from the API server
+		log.Info("Waiting for AWS endpoint service list to be empty")
 		return false, nil
 	}
 	// There are scenarios where CAPI might not be operational e.g None Platform.
@@ -2893,10 +2958,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 			return false, fmt.Errorf("error deleting HostedControlPlane %q in namespace %q: %w", hcp.Name, hcp.Namespace, err)
 		}
 	} else {
-		r.Log.Info("Waiting for Hosted Control Plane deletion", "Name", hcp.Name, "Namespace", hcp.Namespace)
+		log.Info("Waiting for Hosted Control Plane deletion", "Name", hcp.Name, "Namespace", hcp.Namespace)
 		return false, nil
 	}
-	r.Log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)
+	log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
 	}
@@ -2904,14 +2969,14 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 		return false, fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
-	if err := r.cleanupOIDCBucketData(ctx, hc); err != nil {
-		return false, err
+	if err := r.cleanupOIDCBucketData(ctx, log, hc); err != nil {
+		return false, fmt.Errorf("failed to clean up OIDC bucket data: %w", err)
 	}
 
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
 	if err := r.Get(ctx, client.ObjectKeyFromObject(ns), ns); err == nil || !apierrors.IsNotFound(err) {
-		return false, err
+		return false, fmt.Errorf("failed to get namespace: %w", err)
 	}
 	return true, nil
 }
@@ -3058,6 +3123,44 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}
+	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+
+	// Reconcile openshift-ingress Network Policy
+	policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileOpenshiftIngressNetworkPolicy(policy)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
+	}
+
+	// Reconcile same-namespace Network Policy
+	policy = networkpolicy.SameNamespaceNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileSameNamespaceNetworkPolicy(policy)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile same namespace network policy: %w", err)
+	}
+
+	// Reconcile KAS Network Policy
+	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileKASNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
+	}
+
+	// Reconcile openshift-monitoring Network Policy
+	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
+	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
 
 	return nil
@@ -3227,6 +3330,34 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/metrics",
+									Port:   intstr.FromInt(9191),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: int32(60),
+							PeriodSeconds:       int32(60),
+							SuccessThreshold:    int32(1),
+							FailureThreshold:    int32(5),
+							TimeoutSeconds:      int32(5),
+						},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/metrics",
+									Port:   intstr.FromInt(9191),
+									Scheme: corev1.URISchemeHTTP,
+								},
+							},
+							InitialDelaySeconds: int32(15),
+							PeriodSeconds:       int32(60),
+							SuccessThreshold:    int32(1),
+							FailureThreshold:    int32(3),
+							TimeoutSeconds:      int32(5),
+						},
 						Command: []string{"/usr/bin/machine-approver"},
 						Args:    args,
 					},
@@ -3251,6 +3382,85 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
+	return nil
+}
+
+func reconcileOpenshiftIngressNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"network.openshift.io/policy-group": "ingress",
+						},
+					},
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector: &metav1.LabelSelector{},
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(6443)
+	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
+		port = intstr.FromInt(int(*hcluster.Spec.Networking.APIServer.Port))
+	}
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "kube-apiserver",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"network.openshift.io/policy-group": "monitoring",
+						},
+					},
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	return nil
 }
 
@@ -3331,7 +3541,7 @@ func oidcDocumentGenerators() map[string]oidcDocumentGeneratorFunc {
 	}
 }
 
-func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	if hcp.Status.KubeConfig == nil {
 		return nil
 	}
@@ -3386,12 +3596,12 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		return fmt.Errorf("failed to update the hosted cluster after adding the %s finalizer: %w", oidcDocumentsFinalizer, err)
 	}
 
-	r.Log.Info("Successfully uploaded the OIDC documents to the S3 bucket")
+	log.Info("Successfully uploaded the OIDC documents to the S3 bucket")
 
 	return nil
 }
 
-func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster) error {
 	if !controllerutil.ContainsFinalizer(hcluster, oidcDocumentsFinalizer) {
 		return nil
 	}
@@ -3419,7 +3629,7 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, hcl
 		return fmt.Errorf("failed to update hostedcluster after removing %s finalizer: %w", oidcDocumentsFinalizer, err)
 	}
 
-	r.Log.Info("Successfully deleted the OIDC documents from the S3 bucket")
+	log.Info("Successfully deleted the OIDC documents from the S3 bucket")
 	return nil
 }
 

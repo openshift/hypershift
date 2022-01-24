@@ -29,6 +29,12 @@ func ReconcileServiceCAPIKubeconfigSecret(secret, cert, ca *corev1.Secret, owner
 	return reconcileKubeconfig(secret, cert, ca, svcURL, "value", "capi", ownerRef)
 }
 
+func ReconcileIngressOperatorKubeconfigSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, apiServerPort int32) error {
+	svcURL := InClusterKASURL(secret.Namespace, apiServerPort)
+	// The secret that holds the kubeconfig and the one that holds the certs are the same
+	return reconcileKubeconfig(secret, secret, ca, svcURL, "", "ingress-operator", ownerRef)
+}
+
 func InClusterKASURL(namespace string, apiServerPort int32) string {
 	return fmt.Sprintf("https://%s:%d", manifests.KASService(namespace).Name, apiServerPort)
 }

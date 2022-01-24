@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	imageapi "github.com/openshift/api/image/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/globalconfig"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	corev1 "k8s.io/api/core/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,8 +33,24 @@ func (c *testClient) Create(ctx context.Context, obj client.Object, opts ...clie
 	return c.Client.Create(ctx, obj, opts...)
 }
 
+var initialObjects = []client.Object{
+	globalconfig.IngressConfig(),
+	globalconfig.ImageConfig(),
+	globalconfig.ProjectConfig(),
+	globalconfig.BuildConfig(),
+}
+
+func shouldNotError(key client.ObjectKey) bool {
+	for _, o := range initialObjects {
+		if client.ObjectKeyFromObject(o).String() == key.String() {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-	if c.randomGetErrors {
+	if c.randomGetErrors && !shouldNotError(key) {
 		if randomSource.Int()%3 == 0 {
 			c.getErrorCount++
 			return fmt.Errorf("random error")
@@ -56,21 +72,13 @@ var cpObjects = []client.Object{
 	fakePackageServerService(),
 }
 
-type fakeReleaseProvider struct{}
-
-func (*fakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
-	return &releaseinfo.ReleaseImage{
-		ImageStream: &imageapi.ImageStream{},
-	}, nil
-}
-
 func TestReconcileErrorHandling(t *testing.T) {
 
 	// get initial number of creates with no get errors
 	var totalCreates int
 	{
 		fakeClient := &testClient{
-			Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).Build(),
 		}
 
 		r := &reconciler{
@@ -81,7 +89,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
-			releaseProvider:        &fakeReleaseProvider{},
+			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
@@ -93,7 +101,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 	// test with random get errors
 	for i := 0; i < 100; i++ {
 		fakeClient := &testClient{
-			Client:          fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			Client:          fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).Build(),
 			randomGetErrors: true,
 		}
 		r := &reconciler{
@@ -104,7 +112,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
-			releaseProvider:        &fakeReleaseProvider{},
+			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 		}
 		r.Reconcile(context.Background(), controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {

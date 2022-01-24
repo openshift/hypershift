@@ -40,6 +40,7 @@ type CreateInfraOutput struct {
 	BaseDomain      string `json:"baseDomain"`
 	PublicZoneID    string `json:"publicZoneID"`
 	PrivateZoneID   string `json:"privateZoneID"`
+	LocalZoneID     string `json:"localZoneID"`
 }
 
 const (
@@ -189,7 +190,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
-	_, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
+	result.LocalZoneID, err = o.CreatePrivateZone(ctx, route53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
 	if err != nil {
 		return nil, err
 	}

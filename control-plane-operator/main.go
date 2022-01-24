@@ -75,6 +75,7 @@ func NewStartCommand() *cobra.Command {
 		namespace                        string
 		deploymentName                   string
 		metricsAddr                      string
+		healthProbeAddr                  string
 		enableLeaderElection             bool
 		hostedClusterConfigOperatorImage string
 		socks5ProxyImage                 string
@@ -88,6 +89,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "control-plane-operator", "The name of the deployment of this operator")
 	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0.0.0.0:8080", "The address the metric endpoint binds to.")
+	cmd.Flags().StringVar(&healthProbeAddr, "health-probe-addr", "0.0.0.0:6060", "The address for the health probe endpoint.")
 	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -115,7 +117,7 @@ func NewStartCommand() *cobra.Command {
 			Port:                   9443,
 			LeaderElection:         enableLeaderElection,
 			LeaderElectionID:       "b2ed43cb.hypershift.openshift.io",
-			HealthProbeBindAddress: ":6060",
+			HealthProbeBindAddress: healthProbeAddr,
 			// We manage a service outside the HCP namespace, but we don't want to scope the cache for all objects
 			// to both namespaces so just read from the API.
 			ClientDisableCacheFor: []client.Object{&corev1.Service{}},

@@ -1,6 +1,7 @@
 package ocm
 
 import (
+	"fmt"
 	"path"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -12,6 +13,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+)
+
+const (
+	configHashAnnotation = "openshift-controller-manager.hypershift.openshift.io/config-hash"
 )
 
 var (
@@ -27,7 +32,13 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig) error {
+	configBytes, ok := config.Data[configKey]
+	if !ok {
+		return fmt.Errorf("openshift apiserver configuration is not expected to be empty")
+	}
+	configHash := util.ComputeHash(configBytes)
+
 	maxSurge := intstr.FromInt(1)
 	maxUnavailable := intstr.FromInt(0)
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
@@ -39,6 +50,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MatchLabels: openShiftControllerManagerLabels,
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftControllerManagerLabels
+	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
+		configHashAnnotation: configHash,
+	}
 	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(ocmContainerMain(), buildOCMContainerMain(image)),

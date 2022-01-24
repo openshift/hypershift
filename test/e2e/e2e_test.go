@@ -56,6 +56,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
+	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "container disk image to use for kubevirt nodes")
+	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas in the cluster's node pool")
 	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
 	flag.StringVar(&globalOpts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
@@ -177,20 +179,22 @@ type options struct {
 }
 
 type configurableClusterOptions struct {
-	AWSCredentialsFile        string
-	Region                    string
-	PullSecretFile            string
-	BaseDomain                string
-	ControlPlaneOperatorImage string
-	AWSEndpointAccess         string
+	AWSCredentialsFile         string
+	Region                     string
+	PullSecretFile             string
+	BaseDomain                 string
+	ControlPlaneOperatorImage  string
+	AWSEndpointAccess          string
+	KubeVirtContainerDiskImage string
+	NodePoolReplicas           int
 }
 
 func (o *options) DefaultClusterOptions() core.CreateOptions {
 	createOption := core.CreateOptions{
-		ReleaseImage:              o.PreviousReleaseImage,
+		ReleaseImage:              o.LatestReleaseImage,
 		GenerateSSH:               true,
 		SSHKeyFile:                "",
-		NodePoolReplicas:          2,
+		NodePoolReplicas:          int32(o.configurableClusterOptions.NodePoolReplicas),
 		NetworkType:               string(hyperv1.OpenShiftSDN),
 		BaseDomain:                o.configurableClusterOptions.BaseDomain,
 		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
@@ -202,6 +206,11 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
 			Region:             o.configurableClusterOptions.Region,
 			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
+		},
+		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
+			ContainerDiskImage: o.configurableClusterOptions.KubeVirtContainerDiskImage,
+			Cores:              2,
+			Memory:             "4Gi",
 		},
 		ServiceCIDR: "172.31.0.0/16",
 		PodCIDR:     "10.132.0.0/14",

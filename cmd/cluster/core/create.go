@@ -57,6 +57,7 @@ type CreateOptions struct {
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
 	Wait                             bool
+	Timeout                          time.Duration
 }
 
 type AgentPlatformCreateOptions struct {

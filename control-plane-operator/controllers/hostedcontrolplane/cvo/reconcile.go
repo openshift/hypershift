@@ -66,6 +66,7 @@ var (
 		"0000_50_operator-marketplace_09_operator.yaml",
 		"0000_50_operator-marketplace_10_clusteroperator.yaml",
 		"0000_50_operator-marketplace_11_service_monitor.yaml",
+		"0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml",
 
 		// TODO: Remove these when cluster profiles annotations are fixed
 		// for cco and auth  operators
@@ -213,8 +214,8 @@ func buildCVOContainerMain(image string) func(c *corev1.Container) {
 				Value: volumeMounts.Path(c.Name, cvoVolumePayload().Name),
 			},
 			{
-				Name:  "CLUSTER_PROFILE",
-				Value: "ibm-cloud-managed",
+				Name:  "EXCLUDE_MANIFESTS",
+				Value: "internal-openshift-hosted",
 			},
 			{
 				Name: "NODE_NAME",

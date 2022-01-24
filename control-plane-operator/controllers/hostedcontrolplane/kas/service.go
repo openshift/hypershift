@@ -23,6 +23,9 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(apiServerPort)
+	svc.ObjectMeta.Annotations = map[string]string{
+		"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+	}
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if isPublic {

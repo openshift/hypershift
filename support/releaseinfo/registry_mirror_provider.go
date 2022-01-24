@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-var _ Provider = (*RegistryMirrorProviderDecorator)(nil)
+var _ ProviderWithRegistryOverrides = (*RegistryMirrorProviderDecorator)(nil)
 
 // RegistryMirrorProviderDecorator decorates another Provider to add user-specified
 // component name to image mappings. The Lookup implementation will first
@@ -37,4 +37,8 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 		}
 	}
 	return releaseImage, nil
+}
+
+func (p *RegistryMirrorProviderDecorator) GetRegistryOverrides() map[string]string {
+	return p.RegistryOverrides
 }
