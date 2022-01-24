@@ -1133,7 +1133,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		}
 	}
 	watchedResources := sets.String{}
-	for _, resource := range managedResources() {
+	for _, resource := range r.managedResources() {
 		watchedResources.Insert(fmt.Sprintf("%T", resource))
 	}
 	if diff := cmp.Diff(client.createdTypes.List(), watchedResources.List()); diff != "" {
