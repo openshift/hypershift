@@ -656,7 +656,8 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile kubeadmin password
 	r.Log.Info("Reconciling kubeadmin password secret")
-	if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane, globalConfig.OAuth == nil); err != nil {
+	explicitOauthConfig := globalConfig.OAuth != nil
+	if err := r.reconcileKubeadminPassword(ctx, hostedControlPlane, explicitOauthConfig); err != nil {
 		return fmt.Errorf("failed to ensure control plane: %w", err)
 	}
 
