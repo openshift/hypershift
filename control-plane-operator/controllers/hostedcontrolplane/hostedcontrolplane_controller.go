@@ -39,7 +39,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
@@ -615,11 +614,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reonciling Cluster Version Operator")
 	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
-	}
-
-	r.Log.Info("Reconciling IngressOperator")
-	if err := r.reconcileIngressOperator(ctx, hostedControlPlane, releaseImage); err != nil {
-		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
 	}
 
 	// Reconcile private IngressController
@@ -1730,45 +1724,6 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
 	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	p := ingressoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
-
-	kubeconfig := manifests.IngressOperatorKubeconfig(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, kubeconfig, func() error {
-		return r.reconcileIngressOperatorKubeconfig(ctx, kubeconfig, hcp)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ingressoperator kubeconfig: %w", err)
-	}
-
-	deployment := manifests.IngressOperatorDeployment(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		ingressoperator.ReconcileDeployment(deployment, p, hcp.Spec.APIPort)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ingressoperator deployment: %w", err)
-	}
-
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileIngressOperatorKubeconfig(ctx context.Context, s *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
-	rootCASecret := manifests.RootCASecret(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
-		return err
-	}
-	if err := pki.ReconcileIngressOperatorClientCertSecret(s, rootCASecret, config.OwnerRefFrom(hcp)); err != nil {
-		return err
-	}
-
-	// TODO: This duplicates logic from the kas params. We should simply write the default into the HCP instead
-	apiServerPort := int32(config.DefaultAPIServerPort)
-	if hcp.Spec.APIPort != nil {
-		apiServerPort = *hcp.Spec.APIPort
-	}
-
-	return kas.ReconcileIngressOperatorKubeconfigSecret(s, rootCASecret, config.OwnerRefFrom(hcp), apiServerPort)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, packageServerAddress string) error {
