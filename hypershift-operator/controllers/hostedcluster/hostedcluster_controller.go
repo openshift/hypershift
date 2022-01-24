@@ -3160,7 +3160,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// Reconcile openshift-monitoring Network Policy
-	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
+	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
 	}); err != nil {
