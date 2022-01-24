@@ -128,7 +128,7 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	if err = o.DestroyOIDCRole(iamClient, "openshift-image-registry"); err != nil {
 		return err
 	}
-	if err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-operator"); err != nil {
+	if err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-controller"); err != nil {
 		return err
 	}
 	if err = o.DestroyOIDCRole(iamClient, "cloud-controller"); err != nil {
