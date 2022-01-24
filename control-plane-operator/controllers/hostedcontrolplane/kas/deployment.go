@@ -91,6 +91,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	secretEncryptionData *hyperv1.SecretEncryptionSpec,
 	aesCBCActiveKey []byte,
 	aesCBCBackupKey []byte,
+	etcdMgmtType hyperv1.EtcdManagementType,
 ) error {
 
 	configBytes, ok := config.Data[KubeAPIServerConfigKey]
@@ -171,6 +172,15 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 		},
 	}
+
+	// With managed etcd, we should wait for the known etcd client service name to
+	// at least resolve before starting up to avoid futile connection attempts and
+	// pod crashing. For unmanaged, make no assumptions.
+	if etcdMgmtType == hyperv1.Managed {
+		deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers,
+			util.BuildContainer(kasContainerWaitForEtcd(), buildKASContainerWaitForEtcd(images.CLI, deployment.Namespace)))
+	}
+
 	if len(images.Portieris) > 0 {
 		applyPortieriesConfig(&deployment.Spec.Template.Spec, images.Portieris)
 	}
@@ -209,7 +219,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				return err
 			}
 		default:
-			//nothing needed to be done
+			// nothing needed to be done
 		}
 	}
 	deploymentConfig.ApplyTo(deployment)
@@ -265,6 +275,28 @@ func buildKASContainerApplyBootstrap(image string) func(c *corev1.Container) {
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+	}
+}
+
+func kasContainerWaitForEtcd() *corev1.Container {
+	return &corev1.Container{
+		Name: "wait-for-etcd",
+	}
+}
+
+func buildKASContainerWaitForEtcd(image string, namespace string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{
+			"/bin/bash",
+		}
+		c.Args = []string{
+			"-c",
+			waitForEtcdScript(namespace),
+		}
 	}
 }
 
@@ -591,6 +623,13 @@ while true; do
 done
 `
 	return fmt.Sprintf(script, workDir)
+}
+
+func waitForEtcdScript(namespace string) string {
+	var script = `#!/bin/sh
+while ! nslookup etcd-client.%s.svc; do sleep 1; done
+`
+	return fmt.Sprintf(script, namespace)
 }
 
 func applyNamedCertificateMounts(certs []configv1.APIServerNamedServingCert, spec *corev1.PodSpec) {
