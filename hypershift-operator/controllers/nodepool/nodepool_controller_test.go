@@ -942,7 +942,7 @@ func TestMachineTemplateBuildersPreexisting(t *testing.T) {
 	RunTestMachineTemplateBuilders(t, true)
 }
 
-func TestListMachineTemplates(t *testing.T) {
+func TestListMachineTemplatesAWS(t *testing.T) {
 	g := NewWithT(t)
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
@@ -987,4 +987,29 @@ func TestListMachineTemplates(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(len(templates)).To(Equal(1))
 	g.Expect(templates[0].GetName()).To(Equal("template1"))
+}
+
+func TestListMachineTemplatesIBMCloud(t *testing.T) {
+	g := NewWithT(t)
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
+	r := &NodePoolReconciler{
+		Client:                 c,
+		CreateOrUpdateProvider: upsert.New(false),
+	}
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "test",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.IBMCloudPlatform,
+			},
+		},
+	}
+	g.Expect(r.Client.Create(context.Background(), nodePool)).To(BeNil())
+
+	templates, err := r.listMachineTemplates(nodePool)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(len(templates)).To(Equal(0))
 }
