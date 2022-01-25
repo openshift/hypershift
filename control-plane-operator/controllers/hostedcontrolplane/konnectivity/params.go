@@ -95,7 +95,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.AgentDeploymentConfig.SetMultizoneSpread(konnectivityAgentLabels())
 	p.AgentDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.AgentDeamonSetConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
+	p.AgentDeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	p.AgentDeploymentConfig.SetColocation(hcp)
 	p.AgentDeploymentConfig.SetControlPlaneIsolation(hcp)
 
