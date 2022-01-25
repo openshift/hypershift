@@ -16,4 +16,4 @@ As a management cluster operator you can leverage the following Node labels and 
 - Pods for a Hosted Cluster prefer to be scheduled into control-plane Nodes.
 - Pods for a Hosted Cluster prefer to be scheduled into their own cluster Nodes. 
 
-If the `ControllerAvailabilityPolicy` is `HighlyAvailable` Pods for each Deployment within a Hosted Cluster will prefer to be scheduled across different failure domains.
+If the `ControllerAvailabilityPolicy` is `HighlyAvailable` Pods for each Deployment within a Hosted Cluster will require to be scheduled across different failure domains by setting `topology.kubernetes.io/zone` as the topology key.
