@@ -36,6 +36,7 @@ nav:
   - how-to/index.md
   - how-to/deploy-aws-private-clusters.md
   - how-to/oauth.md
+  - how-to/distribute-hosted-cluster-workloads.md
 - 'Reference':
   - reference/index.md
   - reference/api.md
