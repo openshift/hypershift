@@ -103,9 +103,9 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
-		o.TimeEncoder = zapcore.RFC3339TimeEncoder
-	}))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "ignition-server-manager"
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
