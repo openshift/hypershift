@@ -266,10 +266,12 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 func Validate(ctx context.Context, opts *CreateOptions) error {
 	if !opts.Render {
 		client := util.GetClientOrDie()
+		// Validate HostedCluster with this name doesn't exists in the namespace
 		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
-		err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster)
-		if !apierrors.IsNotFound(err) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
 			return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
+		} else if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
 		}
 	}
 
