@@ -3,10 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
@@ -46,19 +42,12 @@ func NewCreateCommand(coreOpts core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeIOPS, "root-volume-iops", platformOpts.RootVolumeIOPS, "The iops of the root volume for machines in the NodePool")
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := coreOpts.CreateNodePool(ctx, platformOpts); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := coreOpts.CreateNodePool(cmd.Context(), platformOpts); err != nil {
 			log.Error(err, "Failed to create nodepool")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd

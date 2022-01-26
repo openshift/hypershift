@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -59,19 +57,12 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A hostedcluster name")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := render(ctx, opts); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := render(cmd.Context(), opts); err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)
-			os.Exit(2)
+			return err
 		}
+		return nil
 	}
 
 	return cmd

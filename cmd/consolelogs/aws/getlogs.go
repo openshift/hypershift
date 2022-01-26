@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -52,20 +50,13 @@ func NewCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("output-dir")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := opts.Run(ctx); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := opts.Run(cmd.Context()); err != nil {
 			log.Error(err, "Failed to get console logs")
-			os.Exit(1)
+			return err
 		}
 		log.Info("Successfully retrieved console logs")
+		return nil
 	}
 
 	return cmd

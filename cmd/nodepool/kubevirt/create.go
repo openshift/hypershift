@@ -2,18 +2,15 @@ package kubevirt
 
 import (
 	"context"
-	"os"
-	"os/signal"
-	"syscall"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/spf13/cobra"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/nodepool/core"
 )
 
 type KubevirtPlatformCreateOptions struct {
@@ -44,25 +41,18 @@ func NewCreateCommand(coreOpts core.CreateNodePoolOptions) *cobra.Command {
 	// Otherwise it must fail
 	cmd.MarkFlagRequired("containerdisk")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := coreOpts.CreateNodePool(ctx, platformOpts); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := coreOpts.CreateNodePool(cmd.Context(), platformOpts); err != nil {
 			log.Error(err, "Failed to create nodepool")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd
 }
 
-func (o KubevirtPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
+func (o KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
 	runAlways := kubevirtv1.RunStrategyAlways
 	guestQuantity := apiresource.MustParse(o.Memory)
 	nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
