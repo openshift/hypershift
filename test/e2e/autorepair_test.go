@@ -85,6 +85,6 @@ func TestAutoRepair(t *testing.T) {
 
 func ec2Client(awsCredsFile, region string) *ec2.EC2 {
 	awsSession := awsutil.NewSession("e2e-autorepair")
-	awsConfig := awsutil.NewConfig(awsCredsFile, region)
+	awsConfig := awsutil.NewConfig(awsCredsFile, "", "", region)
 	return ec2.New(awsSession, awsConfig)
 }

@@ -25,6 +25,8 @@ import (
 type CreateIAMOptions struct {
 	Region                          string
 	AWSCredentialsFile              string
+	AWSKey                          string
+	AWSSecretKey                    string
 	OIDCStorageProviderS3BucketName string
 	OIDCStorageProviderS3Region     string
 	PublicZoneID                    string
@@ -143,10 +145,10 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 
 	var errs []error
 	if o.OIDCStorageProviderS3BucketName == "" {
-		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from cluster and wasn't excplicitly passed either"))
+		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from the cluster's ConfigMap in 'kube-public' and wasn't excplicitly passed either"))
 	}
 	if o.OIDCStorageProviderS3Region == "" {
-		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-region could not be discovered from cluster and wasn't explicitly passed either"))
+		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-region could not be discovered from cluster's  ConfigMap in 'kube-public' and wasn't explicitly passed either"))
 	}
 	if err := utilerrors.NewAggregate(errs); err != nil {
 		return nil, err
@@ -156,7 +158,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
 	awsSession := awsutil.NewSession("cli-create-iam")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
 	iamClient := iam.New(awsSession, awsConfig)
 
 	results, err := o.CreateOIDCResources(iamClient)

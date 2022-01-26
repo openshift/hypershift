@@ -32,6 +32,8 @@ type CreateBastionOpts struct {
 	Region             string
 	SSHKeyFile         string
 	AWSCredentialsFile string
+	AWSKey             string
+	AWSSecretKey       string
 	Wait               bool
 }
 
@@ -148,7 +150,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 	}
 
 	awsSession := awsutil.NewSession("cli-create-bastion")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, region)
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
 	ec2Client := ec2.New(awsSession, awsConfig)
 
 	// Ensure security group exists

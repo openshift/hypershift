@@ -25,6 +25,8 @@ type DestroyBastionOpts struct {
 	InfraID            string
 	Region             string
 	AWSCredentialsFile string
+	AWSKey             string
+	AWSSecretKey       string
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -112,7 +114,7 @@ func (o *DestroyBastionOpts) Run(ctx context.Context) error {
 	}
 
 	awsSession := awsutil.NewSession("cli-destroy-bastion")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, region)
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
 	ec2Client := ec2.New(awsSession, awsConfig)
 
 	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
