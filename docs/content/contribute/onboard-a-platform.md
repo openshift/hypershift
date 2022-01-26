@@ -7,7 +7,7 @@ title: Onboard a platform
 A Platform represents a series of assumptions and choices that HyperShift makes about the environment where it's running, e.g AWS, IBMCloud, Kubevirt.
 The implementation of a new platform crosses multiple controllers.
 
-The HostedCluster controller requires an implementation of the [Platform interface](hypershift-operator/controllers/hostedcluster/internal/platform) to shim a particular CAPI implementation and manage required cloud credentials.
+The HostedCluster controller requires an implementation of the [Platform interface](https://github.com/openshift/hypershift/tree/main/hypershift-operator/controllers/hostedcluster/internal/platform) to shim a particular CAPI implementation and manage required cloud credentials.
 
 The NodePool controller requires an implementation of the [machine template reconciliation](https://github.com/openshift/hypershift/blob/58cabbac00c541b55c7e7925fe7e46f0a55b5ceb/hypershift-operator/controllers/nodepool/nodepool_controller.go#L496).
 
