@@ -2,6 +2,7 @@ package kubevirt
 
 import (
 	"context"
+
 	"github.com/spf13/cobra"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -19,8 +20,8 @@ type KubevirtPlatformCreateOptions struct {
 	ContainerDiskImage string
 }
 
-func NewCreateCommand(coreOpts core.CreateNodePoolOptions) *cobra.Command {
-	platformOpts := KubevirtPlatformCreateOptions{
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+	platformOpts := &KubevirtPlatformCreateOptions{
 		Memory:             "4Gi",
 		Cores:              2,
 		ContainerDiskImage: "",
@@ -52,7 +53,7 @@ func NewCreateCommand(coreOpts core.CreateNodePoolOptions) *cobra.Command {
 	return cmd
 }
 
-func (o KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
+func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
 	runAlways := kubevirtv1.RunStrategyAlways
 	guestQuantity := apiresource.MustParse(o.Memory)
 	nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
@@ -95,6 +96,6 @@ func (o KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePoo
 	return nil
 }
 
-func (o KubevirtPlatformCreateOptions) Type() hyperv1.PlatformType {
+func (o *KubevirtPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.KubevirtPlatform
 }

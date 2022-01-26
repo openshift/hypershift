@@ -21,8 +21,8 @@ type AWSPlatformCreateOptions struct {
 	RootVolumeSize  int64
 }
 
-func NewCreateCommand(coreOpts core.CreateNodePoolOptions) *cobra.Command {
-	platformOpts := AWSPlatformCreateOptions{
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+	platformOpts := &AWSPlatformCreateOptions{
 		InstanceType:   "m5.large",
 		RootVolumeType: "gp3",
 		RootVolumeSize: 120,
@@ -53,7 +53,7 @@ func NewCreateCommand(coreOpts core.CreateNodePoolOptions) *cobra.Command {
 	return cmd
 }
 
-func (o AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
+func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
 	if len(o.InstanceProfile) == 0 {
 		o.InstanceProfile = fmt.Sprintf("%s-worker", hcluster.Spec.InfraID)
 	}
@@ -95,6 +95,6 @@ func (o AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *
 	return nil
 }
 
-func (o AWSPlatformCreateOptions) Type() hyperv1.PlatformType {
+func (o *AWSPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.AWSPlatform
 }
