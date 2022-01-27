@@ -40,3 +40,30 @@ func OpenshiftMonitoringNetworkPolicy(namespace string) *networkingv1.NetworkPol
 		},
 	}
 }
+
+func NodePortOauthNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "nodeport-oauth",
+		},
+	}
+}
+
+func NodePortIgnitionNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "nodeport-ignition",
+		},
+	}
+}
+
+func NodePortKonnectivityNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "nodeport-konnectivity",
+		},
+	}
+}
