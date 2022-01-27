@@ -38,6 +38,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -81,6 +82,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -2215,6 +2217,10 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	if !cluster.CreationTimestamp.IsZero() {
 		return nil
 	}
+	infraCRGVK, err := apiutil.GVKForObject(infraCR, api.Scheme)
+	if err != nil {
+		return fmt.Errorf("failed to get gvk for %T: %w", infraCR, err)
+	}
 
 	cluster.Annotations = map[string]string{
 		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
@@ -2228,8 +2234,8 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 			Name:       hcp.Name,
 		},
 		InfrastructureRef: &corev1.ObjectReference{
-			APIVersion: infraCR.GetObjectKind().GroupVersionKind().GroupVersion().String(),
-			Kind:       infraCR.GetObjectKind().GroupVersionKind().Kind,
+			APIVersion: infraCRGVK.GroupVersion().String(),
+			Kind:       infraCRGVK.Kind,
 			Namespace:  infraCR.GetNamespace(),
 			Name:       infraCR.GetName(),
 		},

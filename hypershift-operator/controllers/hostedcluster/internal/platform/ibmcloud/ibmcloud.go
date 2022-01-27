@@ -50,12 +50,6 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 	if err != nil {
 		return nil, err
 	}
-	// reconciliation strips TypeMeta. We repopulate the static values since they are necessary for
-	// downstream reconciliation of the CAPI Cluster resource.
-	ibmCluster.TypeMeta = metav1.TypeMeta{
-		Kind:       "IBMVPCCluster",
-		APIVersion: capiibmv1.GroupVersion.String(),
-	}
 	return ibmCluster, nil
 }
 

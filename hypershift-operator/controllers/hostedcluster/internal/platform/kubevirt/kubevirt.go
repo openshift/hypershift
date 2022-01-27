@@ -38,10 +38,6 @@ func (p Kubevirt) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 	}); err != nil {
 		return nil, err
 	}
-	kubevirtCluster.TypeMeta = metav1.TypeMeta{
-		Kind:       "KubevirtCluster",
-		APIVersion: capikubevirt.GroupVersion.String(),
-	}
 
 	return kubevirtCluster, nil
 }

@@ -50,13 +50,6 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 		return nil, err
 	}
 
-	// reconciliation strips TypeMeta. We repopulate the static values since they are necessary for
-	// downstream reconciliation of the CAPI Cluster resource.
-	agentCluster.TypeMeta = metav1.TypeMeta{
-		Kind:       "AgentCluster",
-		APIVersion: agentv1.GroupVersion.String(),
-	}
-
 	return agentCluster, nil
 }
 
