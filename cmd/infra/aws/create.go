@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/spf13/cobra"
@@ -21,32 +23,37 @@ type CreateInfraOptions struct {
 	AWSSecretKey       string
 	Name               string
 	BaseDomain         string
+	Zones              []string
 	OutputFile         string
 	AdditionalTags     []string
 
 	additionalEC2Tags []*ec2.Tag
 }
 
+type CreateInfraOutputZone struct {
+	Name     string `json:"name"`
+	SubnetID string `json:"subnetID"`
+}
+
 type CreateInfraOutput struct {
-	Region          string `json:"region"`
-	Zone            string `json:"zone"`
-	InfraID         string `json:"infraID"`
-	ComputeCIDR     string `json:"computeCIDR"`
-	VPCID           string `json:"vpcID"`
-	PrivateSubnetID string `json:"privateSubnetID"`
-	PublicSubnetID  string `json:"publicSubnetID"`
-	SecurityGroupID string `json:"securityGroupID"`
-	Name            string `json:"Name"`
-	BaseDomain      string `json:"baseDomain"`
-	PublicZoneID    string `json:"publicZoneID"`
-	PrivateZoneID   string `json:"privateZoneID"`
-	LocalZoneID     string `json:"localZoneID"`
+	Region          string                   `json:"region"`
+	Zone            string                   `json:"zone"`
+	InfraID         string                   `json:"infraID"`
+	ComputeCIDR     string                   `json:"computeCIDR"`
+	VPCID           string                   `json:"vpcID"`
+	Zones           []*CreateInfraOutputZone `json:"zones"`
+	SecurityGroupID string                   `json:"securityGroupID"`
+	Name            string                   `json:"Name"`
+	BaseDomain      string                   `json:"baseDomain"`
+	PublicZoneID    string                   `json:"publicZoneID"`
+	PrivateZoneID   string                   `json:"privateZoneID"`
+	LocalZoneID     string                   `json:"localZoneID"`
 }
 
 const (
-	DefaultCIDRBlock  = "10.0.0.0/16"
-	PrivateSubnetCIDR = "10.0.128.0/20"
-	PublicSubnetCIDR  = "10.0.0.0/20"
+	DefaultCIDRBlock      = "10.0.0.0/16"
+	basePrivateSubnetCIDR = "10.0.128.0/20"
+	basePublicSubnetCIDR  = "10.0.0.0/20"
 
 	clusterTagValue         = "owned"
 	hypershiftLocalZoneName = "hypershift.local"
@@ -71,6 +78,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
+	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availablity zones in which NodePool can be created")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
@@ -131,10 +139,15 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 		Name:        o.Name,
 		BaseDomain:  o.BaseDomain,
 	}
-	result.Zone, err = o.firstZone(ec2Client)
-	if err != nil {
-		return nil, err
+	if len(o.Zones) == 0 {
+		zone, err := o.firstZone(ec2Client)
+		if err != nil {
+			return nil, err
+		}
+		o.Zones = append(o.Zones, zone)
 	}
+
+	// VPC resources
 	result.VPCID, err = o.createVPC(ec2Client)
 	if err != nil {
 		return nil, err
@@ -142,19 +155,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err = o.CreateDHCPOptions(ec2Client, result.VPCID); err != nil {
 		return nil, err
 	}
-	result.PrivateSubnetID, err = o.CreatePrivateSubnet(ec2Client, result.VPCID, result.Zone)
-	if err != nil {
-		return nil, err
-	}
-	result.PublicSubnetID, err = o.CreatePublicSubnet(ec2Client, result.VPCID, result.Zone)
-	if err != nil {
-		return nil, err
-	}
 	igwID, err := o.CreateInternetGateway(ec2Client, result.VPCID)
-	if err != nil {
-		return nil, err
-	}
-	natGatewayID, err := o.CreateNATGateway(ec2Client, result.PublicSubnetID, result.Zone)
 	if err != nil {
 		return nil, err
 	}
@@ -162,15 +163,51 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
-	privateRouteTable, err := o.CreatePrivateRouteTable(ec2Client, result.VPCID, natGatewayID, result.PrivateSubnetID, result.Zone)
+
+	// Per zone resources
+	var endpointRouteTableIds []*string
+	var publicSubnetIDs []string
+	_, privateNetwork, err := net.ParseCIDR(basePrivateSubnetCIDR)
 	if err != nil {
 		return nil, err
 	}
-	publicRouteTable, err := o.CreatePublicRouteTable(ec2Client, result.VPCID, igwID, result.PublicSubnetID, result.Zone)
+	_, publicNetwork, err := net.ParseCIDR(basePublicSubnetCIDR)
 	if err != nil {
 		return nil, err
 	}
-	err = o.CreateVPCS3Endpoint(ec2Client, result.VPCID, privateRouteTable, publicRouteTable)
+	for _, zone := range o.Zones {
+		privateSubnetID, err := o.CreatePrivateSubnet(ec2Client, result.VPCID, zone, privateNetwork.String())
+		if err != nil {
+			return nil, err
+		}
+		publicSubnetID, err := o.CreatePublicSubnet(ec2Client, result.VPCID, zone, publicNetwork.String())
+		if err != nil {
+			return nil, err
+		}
+		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
+		natGatewayID, err := o.CreateNATGateway(ec2Client, publicSubnetID, zone)
+		if err != nil {
+			return nil, err
+		}
+		privateRouteTable, err := o.CreatePrivateRouteTable(ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
+		if err != nil {
+			return nil, err
+		}
+		endpointRouteTableIds = append(endpointRouteTableIds, aws.String(privateRouteTable))
+		result.Zones = append(result.Zones, &CreateInfraOutputZone{
+			Name:     zone,
+			SubnetID: privateSubnetID,
+		})
+		// increment each subnet by /20
+		privateNetwork.IP[2] = privateNetwork.IP[2] + 16
+		publicNetwork.IP[2] = publicNetwork.IP[2] + 16
+	}
+	publicRouteTable, err := o.CreatePublicRouteTable(ec2Client, result.VPCID, igwID, publicSubnetIDs)
+	if err != nil {
+		return nil, err
+	}
+	endpointRouteTableIds = append(endpointRouteTableIds, aws.String(publicRouteTable))
+	err = o.CreateVPCS3Endpoint(ec2Client, result.VPCID, endpointRouteTableIds)
 	if err != nil {
 		return nil, err
 	}
@@ -186,5 +223,6 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	if err != nil {
 		return nil, err
 	}
+
 	return result, nil
 }
