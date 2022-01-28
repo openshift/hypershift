@@ -72,6 +72,8 @@ var (
 		// for cco and auth  operators
 		"0000_50_cloud-credential-operator_01-operator-config.yaml",
 		"0000_50_cluster-authentication-operator_02_config.cr.yaml",
+		"0000_26_cloud-controller-manager-operator_12_clusteroperator.yaml",
+		"0000_26_cloud-controller-manager-operator_11_deployment.yaml",
 	}
 )
 
