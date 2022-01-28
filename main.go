@@ -17,12 +17,15 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
-	consolelogs "github.com/openshift/hypershift/cmd/consolelogs"
+	"github.com/openshift/hypershift/cmd/consolelogs"
 	createcmd "github.com/openshift/hypershift/cmd/create"
 	destroycmd "github.com/openshift/hypershift/cmd/destroy"
 	dumpcmd "github.com/openshift/hypershift/cmd/dump"
@@ -31,20 +34,35 @@ import (
 
 func main() {
 	cmd := &cobra.Command{
-		Use:          "hypershift",
-		SilenceUsage: true,
+		Use:              "hypershift",
+		SilenceUsage:     true,
+		TraverseChildren: true,
+
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
 			os.Exit(1)
 		},
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	defer cancel()
+
 	cmd.AddCommand(installcmd.NewCommand())
 	cmd.AddCommand(createcmd.NewCommand())
 	cmd.AddCommand(destroycmd.NewCommand())
 	cmd.AddCommand(dumpcmd.NewCommand())
 	cmd.AddCommand(consolelogs.NewCommand())
 
-	if err := cmd.Execute(); err != nil {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT)
+	go func() {
+		<-sigs
+		fmt.Fprintln(os.Stderr, "\nAborted...")
+		cancel()
+	}()
+
+	if err := cmd.ExecuteContext(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}

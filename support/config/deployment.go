@@ -31,6 +31,13 @@ func (c *DeploymentConfig) SetRestartAnnotation(objectMetadata metav1.ObjectMeta
 	}
 }
 
+func (c *DeploymentConfig) SetReleaseImageAnnotation(releaseImage string) {
+	if c.AdditionalAnnotations == nil {
+		c.AdditionalAnnotations = make(AdditionalAnnotations)
+	}
+	c.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation] = releaseImage
+}
+
 func (c *DeploymentConfig) SetMultizoneSpread(labels map[string]string) {
 	if c.Scheduling.Affinity == nil {
 		c.Scheduling.Affinity = &corev1.Affinity{}

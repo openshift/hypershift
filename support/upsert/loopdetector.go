@@ -19,9 +19,9 @@ func newUpdateLoopDetector() *updateLoopDetector {
 	return &updateLoopDetector{
 		hasNoOpUpdate:    sets.String{},
 		updateEventCount: map[string]int{},
-		log: zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
-			o.TimeEncoder = zapcore.RFC3339TimeEncoder
-		}),
+		log: zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+			o.EncodeTime = zapcore.RFC3339TimeEncoder
+		})),
 	}
 }
 

@@ -91,9 +91,9 @@ type StartOptions struct {
 }
 
 func NewStartCommand() *cobra.Command {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
-		o.TimeEncoder = zapcore.RFC3339TimeEncoder
-	}))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
 
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -249,7 +249,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket")
-		awsConfig := awsutil.NewConfig(opts.OIDCStorageProviderS3Credentials, opts.OIDCStorageProviderS3Region)
+		awsConfig := awsutil.NewConfig(opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
 		s3Client := s3.New(awsSession, awsConfig)
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName

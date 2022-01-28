@@ -17,7 +17,7 @@ require (
 	github.com/onsi/gomega v1.17.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
-	github.com/openshift/api v0.0.0-20211215120111-7c47a5f63470
+	github.com/openshift/api v0.0.0-20220124143425-d74727069f6f
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20211222095357-6ae181af9267
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1

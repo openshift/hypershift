@@ -34,10 +34,6 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 				capiv1.ManagedByAnnotation: "external",
 			},
 		},
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "KubevirtCluster",
-			APIVersion: capikubevirt.GroupVersion.String(),
-		},
 		Status: capikubevirt.KubevirtClusterStatus{
 			Ready: true,
 		},

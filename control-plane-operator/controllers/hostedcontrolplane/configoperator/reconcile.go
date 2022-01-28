@@ -2,6 +2,7 @@ package configoperator
 
 import (
 	"fmt"
+	"k8s.io/utils/pointer"
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -133,7 +134,7 @@ var (
 	volumeMounts = util.PodVolumeMounts{
 		hccContainerMain().Name: util.ContainerVolumeMounts{
 			hccVolumeKubeconfig().Name:      "/etc/kubernetes/kubeconfig",
-			hccVolumeRootCA().Name:          "/etc/kubernetes/root-ca",
+			hccVolumeCombinedCA().Name:      "/etc/kubernetes/combined-ca",
 			hccVolumeClusterSignerCA().Name: "/etc/kubernetes/cluster-signer-ca",
 		},
 	}
@@ -162,7 +163,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
-					util.BuildVolume(hccVolumeRootCA(), buildHCCVolumeRootCA),
+					util.BuildVolume(hccVolumeCombinedCA(), buildHCCVolumeCombinedCA),
 					util.BuildVolume(hccVolumeClusterSignerCA(), buildHCCClusterSignerCA),
 				},
 				ServiceAccountName: manifests.ConfigOperatorServiceAccount("").Name,
@@ -186,9 +187,9 @@ func hccVolumeKubeconfig() *corev1.Volume {
 	}
 }
 
-func hccVolumeRootCA() *corev1.Volume {
+func hccVolumeCombinedCA() *corev1.Volume {
 	return &corev1.Volume{
-		Name: "root-ca",
+		Name: "combined-ca",
 	}
 }
 
@@ -205,7 +206,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
 			"hosted-cluster-config-operator",
-			fmt.Sprintf("--initial-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeRootCA().Name), pki.CASignerCertMapKey)),
+			fmt.Sprintf("--initial-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeCombinedCA().Name), pki.CASignerCertMapKey)),
 			fmt.Sprintf("--cluster-signer-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeClusterSignerCA().Name), pki.CASignerCertMapKey)),
 			fmt.Sprintf("--target-kubeconfig=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeKubeconfig().Name), kas.KubeconfigKey)),
 			"--namespace", "$(POD_NAMESPACE)",
@@ -246,10 +247,10 @@ func buildHCCVolumeKubeconfig(v *corev1.Volume) {
 	}
 }
 
-func buildHCCVolumeRootCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.RootCASecret("").Name,
-	}
+func buildHCCVolumeCombinedCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
+	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
 }
 
 func buildHCCClusterSignerCA(v *corev1.Volume) {

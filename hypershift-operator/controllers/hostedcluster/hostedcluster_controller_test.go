@@ -1123,9 +1123,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 	}
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
-		o.TimeEncoder = zapcore.RFC3339TimeEncoder
-	}))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
 
 	for _, hc := range hostedClusters {
 		if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}); err != nil {
@@ -1133,7 +1133,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		}
 	}
 	watchedResources := sets.String{}
-	for _, resource := range managedResources() {
+	for _, resource := range r.managedResources() {
 		watchedResources.Insert(fmt.Sprintf("%T", resource))
 	}
 	if diff := cmp.Diff(client.createdTypes.List(), watchedResources.List()); diff != "" {
