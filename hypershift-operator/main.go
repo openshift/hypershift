@@ -50,6 +50,7 @@ import (
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -308,6 +309,16 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{}))
 
+	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
+	// directly reads from the api.
+	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
+		CacheReader: mgr.GetAPIReader(),
+		Client:      mgr.GetClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to construct api reading client: %w", err)
+	}
+
 	// If it exsists, block default ingress controller from admitting HCP private routes
 	ic := &operatorv1.IngressController{
 		ObjectMeta: metav1.ObjectMeta{
@@ -315,8 +326,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Namespace: "openshift-ingress-operator",
 		},
 	}
-	if err := mgr.GetClient().Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
-		if _, err := controllerutil.CreateOrUpdate(ctx, mgr.GetClient(), ic, func() error {
+	if err := apiReadingClient.Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
+		if _, err := controllerutil.CreateOrUpdate(ctx, apiReadingClient, ic, func() error {
 			if ic.Spec.RouteSelector == nil {
 				ic.Spec.RouteSelector = &metav1.LabelSelector{}
 			}
