@@ -11,7 +11,6 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/upsert"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/zap/zapcore"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -1116,7 +1115,6 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
 	r := &HostedClusterReconciler{
 		Client:                        client,
-		tracer:                        otel.Tracer(("")),
 		Clock:                         clock.RealClock{},
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
