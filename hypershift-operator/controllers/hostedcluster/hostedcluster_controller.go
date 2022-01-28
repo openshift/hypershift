@@ -38,6 +38,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -81,6 +82,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -176,7 +178,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
-	for _, managedResource := range managedResources() {
+	for _, managedResource := range r.managedResources() {
 		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
 	}
 
@@ -194,8 +196,8 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 }
 
 // managedResources are all the resources that are managed as childresources for a HostedCluster
-func managedResources() []client.Object {
-	return []client.Object{
+func (r *HostedClusterReconciler) managedResources() []client.Object {
+	managedResources := []client.Object{
 		&capiawsv1.AWSCluster{},
 		&hyperv1.HostedControlPlane{},
 		&capiv1.Cluster{},
@@ -211,11 +213,15 @@ func managedResources() []client.Object {
 		&corev1.Namespace{},
 		&corev1.ServiceAccount{},
 		&corev1.Service{},
-		&routev1.Route{},
 		&agentv1.AgentCluster{},
 		&capiibmv1.IBMVPCCluster{},
 		&capikubevirt.KubevirtCluster{},
 	}
+	// Watch based on Routes capability
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		managedResources = append(managedResources, &routev1.Route{})
+	}
+	return managedResources
 }
 
 // serviceFirstNodePortAvailable checks if the first port in a service has a node port available. Utilized to
@@ -2211,6 +2217,10 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	if !cluster.CreationTimestamp.IsZero() {
 		return nil
 	}
+	infraCRGVK, err := apiutil.GVKForObject(infraCR, api.Scheme)
+	if err != nil {
+		return fmt.Errorf("failed to get gvk for %T: %w", infraCR, err)
+	}
 
 	cluster.Annotations = map[string]string{
 		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
@@ -2224,8 +2234,8 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 			Name:       hcp.Name,
 		},
 		InfrastructureRef: &corev1.ObjectReference{
-			APIVersion: infraCR.GetObjectKind().GroupVersionKind().GroupVersion().String(),
-			Kind:       infraCR.GetObjectKind().GroupVersionKind().Kind,
+			APIVersion: infraCRGVK.GroupVersion().String(),
+			Kind:       infraCRGVK.Kind,
 			Namespace:  infraCR.GetNamespace(),
 			Name:       infraCR.GetName(),
 		},
@@ -3156,11 +3166,46 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// Reconcile openshift-monitoring Network Policy
-	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
+	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
+	}
+
+	for _, svc := range hcluster.Spec.Services {
+		switch svc.Service {
+		case hyperv1.OAuthServer:
+			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
+				// Reconcile nodeport-oauth Network Policy
+				policy = networkpolicy.NodePortOauthNetworkPolicy(controlPlaneNamespaceName)
+				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+					return reconcileNodePortOauthNetworkPolicy(policy, hcluster)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile oauth server nodeport network policy: %w", err)
+				}
+			}
+		case hyperv1.Ignition:
+			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
+				// Reconcile nodeport-ignition Network Policy
+				policy = networkpolicy.NodePortIgnitionNetworkPolicy(controlPlaneNamespaceName)
+				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+					return reconcileNodePortIgnitionNetworkPolicy(policy, hcluster)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
+				}
+			}
+		case hyperv1.Konnectivity:
+			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
+				// Reconcile nodeport-konnectivity Network Policy
+				policy = networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
+				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+					return reconcileNodePortKonnectivityNetworkPolicy(policy, hcluster)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
+				}
+			}
+		}
 	}
 
 	return nil
@@ -3439,6 +3484,75 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "kube-apiserver",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(6443)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "oauth-openshift",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(9090)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "ignition-server",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(8091)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "konnectivity-server",
 		},
 	}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}

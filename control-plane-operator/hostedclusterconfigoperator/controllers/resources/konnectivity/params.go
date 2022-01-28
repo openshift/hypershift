@@ -57,5 +57,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	if _, ok := hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
 		p.Image = hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]
 	}
+	p.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
+	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	return p
 }

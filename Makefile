@@ -130,6 +130,10 @@ cluster-api-provider-agent: $(CONTROLLER_GEN)
 api-docs: $(GENAPIDOCS)
 	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
 
+.PHONY: app-sre-saas-template
+app-sre-saas-template: hypershift
+	hack/app-sre/generate-saas-template.sh bin/hypershift
+
 # Run tests
 .PHONY: test
 test: build

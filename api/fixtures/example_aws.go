@@ -5,8 +5,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ Resources = &ExampleAWSResources{}
-
 type ExampleAWSResources struct {
 	KubeCloudControllerAWSCreds  *corev1.Secret
 	NodePoolManagementAWSCreds   *corev1.Secret

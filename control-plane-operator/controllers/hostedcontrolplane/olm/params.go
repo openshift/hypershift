@@ -41,6 +41,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 	}
 	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 
 	params.PackageServerConfig = config.DeploymentConfig{
@@ -50,6 +51,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 	}
 	params.PackageServerConfig.SetColocation(hcp)
 	params.PackageServerConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.PackageServerConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	params.PackageServerConfig.SetControlPlaneIsolation(hcp)
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:

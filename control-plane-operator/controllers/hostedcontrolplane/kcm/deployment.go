@@ -27,7 +27,7 @@ var (
 	volumeMounts = util.PodVolumeMounts{
 		kcmContainerMain().Name: {
 			kcmVolumeConfig().Name:        "/etc/kubernetes/config",
-			kcmVolumeRootCA().Name:        "/etc/kubernetes/certs/root-ca",
+			kcmVolumeCombinedCA().Name:    "/etc/kubernetes/certs/combined-ca",
 			kcmVolumeWorkLogs().Name:      "/var/log/kube-controller-manager",
 			kcmVolumeKubeconfig().Name:    "/etc/kubernetes/secrets/svc-kubeconfig",
 			kcmVolumeCertDir().Name:       "/var/run/kubernetes",
@@ -86,7 +86,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(kcmVolumeConfig(), buildKCMVolumeConfig),
-			util.BuildVolume(kcmVolumeRootCA(), buildKCMVolumeRootCA),
+			util.BuildVolume(kcmVolumeCombinedCA(), buildKCMVolumeCombinedCA),
 			util.BuildVolume(kcmVolumeWorkLogs(), buildKCMVolumeWorkLogs),
 			util.BuildVolume(kcmVolumeKubeconfig(), buildKCMVolumeKubeconfig),
 			util.BuildVolume(kcmVolumeClusterSigner(), buildKCMVolumeClusterSigner),
@@ -137,16 +137,16 @@ func buildKCMVolumeConfig(v *corev1.Volume) {
 	}
 }
 
-func kcmVolumeRootCA() *corev1.Volume {
+func kcmVolumeCombinedCA() *corev1.Volume {
 	return &corev1.Volume{
-		Name: "root-ca",
+		Name: "combined-ca",
 	}
 }
 
-func buildKCMVolumeRootCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.RootCASecret("").Name,
-	}
+func buildKCMVolumeCombinedCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
+	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 }
 
 func kcmVolumeWorkLogs() *corev1.Volume {
@@ -283,7 +283,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--leader-elect=true",
 		"--leader-elect-retry-period=3s",
 		"--port=0",
-		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, pki.CASignerCertMapKey)),
+		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeCombinedCA().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),

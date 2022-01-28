@@ -3,9 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -25,6 +22,8 @@ type DestroyBastionOpts struct {
 	InfraID            string
 	Region             string
 	AWSCredentialsFile string
+	AWSKey             string
+	AWSSecretKey       string
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -46,26 +45,19 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagFilename("aws-creds")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			log.Error(err, "Invalid arguments")
 			cmd.Usage()
-			return
+			return nil
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := opts.Run(ctx); err != nil {
+		if err := opts.Run(cmd.Context()); err != nil {
 			log.Error(err, "Failed to create bastion")
-			os.Exit(1)
+			return err
 		} else {
 			log.Info("Successfully destroyed bastion")
 		}
+		return nil
 	}
 
 	return cmd
@@ -112,7 +104,7 @@ func (o *DestroyBastionOpts) Run(ctx context.Context) error {
 	}
 
 	awsSession := awsutil.NewSession("cli-destroy-bastion")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, region)
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
 	ec2Client := ec2.New(awsSession, awsConfig)
 
 	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {

@@ -15,14 +15,10 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type Resources interface {
-	AsObjects() []crclient.Object
-}
-
 type ExampleResources struct {
 	Namespace  *corev1.Namespace
 	PullSecret *corev1.Secret
-	Resources  Resources
+	Resources  []crclient.Object
 	SSHKey     *corev1.Secret
 	Cluster    *hyperv1.HostedCluster
 	NodePool   *hyperv1.NodePool
@@ -34,10 +30,7 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 		o.PullSecret,
 		o.Cluster,
 	}
-	if o.Resources != nil {
-		resourceObjects := o.Resources.AsObjects()
-		objects = append(objects, resourceObjects...)
-	}
+	objects = append(objects, o.Resources...)
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
 	}
@@ -159,7 +152,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	}
 
 	var platformSpec hyperv1.PlatformSpec
-	var resources Resources
+	var resources []crclient.Object
 	var services []hyperv1.ServicePublishingStrategyMapping
 
 	switch {
@@ -182,11 +175,12 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
-		resources = &ExampleAWSResources{
+		awsResources := &ExampleAWSResources{
 			buildAWSCreds(o.Name+"-cloud-ctrl-creds", o.AWS.KubeCloudControllerRoleARN),
 			buildAWSCreds(o.Name+"-node-mgmt-creds", o.AWS.NodePoolManagementRoleARN),
 			buildAWSCreds(o.Name+"-cpo-creds", o.AWS.ControlPlaneOperatorRoleARN),
 		}
+		resources = awsResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
 			AWS: &hyperv1.AWSPlatformSpec{
@@ -199,9 +193,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					},
 					Zone: o.AWS.Zone,
 				},
-				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).KubeCloudControllerAWSCreds.Name},
-				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).NodePoolManagementAWSCreds.Name},
-				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: resources.(*ExampleAWSResources).ControlPlaneOperatorAWSCreds.Name},
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: awsResources.KubeCloudControllerAWSCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: awsResources.NodePoolManagementAWSCreds.Name},
+				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: awsResources.ControlPlaneOperatorAWSCreds.Name},
 				ResourceTags:              o.AWS.ResourceTags,
 				EndpointAccess:            hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess),
 			},

@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
@@ -25,6 +23,8 @@ import (
 type CreateIAMOptions struct {
 	Region                          string
 	AWSCredentialsFile              string
+	AWSKey                          string
+	AWSSecretKey                    string
 	OIDCStorageProviderS3BucketName string
 	OIDCStorageProviderS3Region     string
 	PublicZoneID                    string
@@ -82,19 +82,12 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("oidc-bucket-name")
 	cmd.MarkFlagRequired("oidc-bucket-region")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := opts.Run(ctx, util.GetClientOrDie()); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := opts.Run(cmd.Context(), util.GetClientOrDie()); err != nil {
 			log.Error(err, "Failed to create infrastructure")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd
@@ -143,10 +136,10 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 
 	var errs []error
 	if o.OIDCStorageProviderS3BucketName == "" {
-		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from cluster and wasn't excplicitly passed either"))
+		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from the cluster's ConfigMap in 'kube-public' and wasn't excplicitly passed either"))
 	}
 	if o.OIDCStorageProviderS3Region == "" {
-		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-region could not be discovered from cluster and wasn't explicitly passed either"))
+		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-region could not be discovered from cluster's  ConfigMap in 'kube-public' and wasn't explicitly passed either"))
 	}
 	if err := utilerrors.NewAggregate(errs); err != nil {
 		return nil, err
@@ -156,7 +149,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
 	awsSession := awsutil.NewSession("cli-create-iam")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
 	iamClient := iam.New(awsSession, awsConfig)
 
 	results, err := o.CreateOIDCResources(iamClient)

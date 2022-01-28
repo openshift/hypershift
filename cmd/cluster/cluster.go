@@ -3,13 +3,14 @@ package cluster
 import (
 	"time"
 
+	"github.com/spf13/cobra"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
-	"github.com/spf13/cobra"
 )
 
 func NewCreateCommands() *cobra.Command {
@@ -33,6 +34,7 @@ func NewCreateCommands() *cobra.Command {
 		Short:        "Creates basic functional HostedCluster resources",
 		SilenceUsage: true,
 	}
+
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")

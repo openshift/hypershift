@@ -3,14 +3,12 @@ package aws
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
+
+	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
-	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/errors"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
@@ -33,19 +31,13 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	cmd.MarkFlagRequired("aws-creds")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := DestroyCluster(ctx, opts); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := DestroyCluster(cmd.Context(), opts); err != nil {
 			log.Error(err, "Failed to destroy cluster")
-			os.Exit(1)
+			return err
 		}
+
+		return nil
 	}
 
 	return cmd

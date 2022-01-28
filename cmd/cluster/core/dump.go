@@ -11,10 +11,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
-	hyperapi "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -24,6 +20,11 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	hyperapi "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
 type DumpOptions struct {
@@ -59,12 +60,12 @@ func NewDumpCommand() *cobra.Command {
 
 	cmd.MarkFlagRequired("artifact-dir")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx := context.Background()
-		if err := DumpCluster(ctx, opts); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := DumpCluster(cmd.Context(), opts); err != nil {
 			log.Error(err, "Error")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 	return cmd
 }

@@ -3,10 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
@@ -25,8 +21,8 @@ type AWSPlatformCreateOptions struct {
 	RootVolumeSize  int64
 }
 
-func NewCreateCommand(coreOpts core.CreateNodePoolOptions) *cobra.Command {
-	platformOpts := AWSPlatformCreateOptions{
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+	platformOpts := &AWSPlatformCreateOptions{
 		InstanceType:   "m5.large",
 		RootVolumeType: "gp3",
 		RootVolumeSize: 120,
@@ -46,25 +42,18 @@ func NewCreateCommand(coreOpts core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeIOPS, "root-volume-iops", platformOpts.RootVolumeIOPS, "The iops of the root volume for machines in the NodePool")
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := coreOpts.CreateNodePool(ctx, platformOpts); err != nil {
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := coreOpts.CreateNodePool(cmd.Context(), platformOpts); err != nil {
 			log.Error(err, "Failed to create nodepool")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd
 }
 
-func (o AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
+func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
 	if len(o.InstanceProfile) == 0 {
 		o.InstanceProfile = fmt.Sprintf("%s-worker", hcluster.Spec.InfraID)
 	}
@@ -106,6 +95,6 @@ func (o AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *
 	return nil
 }
 
-func (o AWSPlatformCreateOptions) Type() hyperv1.PlatformType {
+func (o *AWSPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.AWSPlatform
 }

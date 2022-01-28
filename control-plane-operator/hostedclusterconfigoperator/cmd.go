@@ -179,9 +179,9 @@ func (o *HostedClusterConfigOperator) Complete() error {
 }
 
 func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(), func(o *zap.Options) {
-		o.TimeEncoder = zapcore.RFC3339TimeEncoder
-	}))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
 	versions := map[string]string{
 		"release":    o.ReleaseVersion,
 		"kubernetes": o.KubernetesVersion,

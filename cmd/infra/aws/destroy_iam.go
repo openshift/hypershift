@@ -3,10 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -22,6 +19,8 @@ import (
 type DestroyIAMOptions struct {
 	Region             string
 	AWSCredentialsFile string
+	AWSKey             string
+	AWSSecretKey       string
 	InfraID            string
 }
 
@@ -46,15 +45,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("infra-id")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := opts.DestroyIAM(ctx); err != nil {
+		if err := opts.DestroyIAM(cmd.Context()); err != nil {
 			return err
 		}
 		log.Info("Successfully destroyed IAM infra")
@@ -80,7 +71,7 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	awsSession := awsutil.NewSession("cli-destroy-iam")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.Region)
+	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
 	iamClient := iam.New(awsSession, awsConfig)
 
 	var err error
@@ -128,7 +119,7 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	if err = o.DestroyOIDCRole(iamClient, "openshift-image-registry"); err != nil {
 		return err
 	}
-	if err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-operator"); err != nil {
+	if err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-controller"); err != nil {
 		return err
 	}
 	if err = o.DestroyOIDCRole(iamClient, "cloud-controller"); err != nil {
