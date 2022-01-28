@@ -35,13 +35,6 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpgrpc"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/semconv"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -78,7 +71,6 @@ type StartOptions struct {
 	MetricsAddr                      string
 	EnableLeaderElection             bool
 	IgnitionServerImage              string
-	OpenTelemetryEndpoint            string
 	EnableOCPClusterMonitoring       bool
 	EnableCIDebugOutput              bool
 	ControlPlaneOperatorImage        string
@@ -109,7 +101,6 @@ func NewStartCommand() *cobra.Command {
 		EnableLeaderElection:             false,
 		ControlPlaneOperatorImage:        "",
 		IgnitionServerImage:              "",
-		OpenTelemetryEndpoint:            "",
 		RegistryOverrides:                map[string]string{},
 		PrivatePlatform:                  string(hyperv1.NonePlatform),
 		OIDCStorageProviderS3Region:      "us-east-1",
@@ -127,7 +118,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.SocksProxyImage, "socks-proxy-image", opts.SocksProxyImage, "Image for the SOCKS proxy (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.TokenMinterImage, "token-minter-image", opts.TokenMinterImage, "Image for the token minter image (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
-	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
@@ -284,31 +274,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			return fmt.Errorf("unable to create controller: %w", err)
 		}
 	}
-
-	// Configure OpenTelemetry
-	var tracerOpts []sdktrace.TracerProviderOption
-	tracerOpts = append(tracerOpts, sdktrace.WithResource(resource.NewWithAttributes(
-		semconv.ServiceNameKey.String("hypershift-operator"),
-	)))
-
-	// Export to an OTLP endpoint if specified
-	if len(opts.OpenTelemetryEndpoint) > 0 {
-		exporter, err := otlp.NewExporter(ctx,
-			otlpgrpc.NewDriver(
-				otlpgrpc.WithEndpoint("localhost:4317"),
-				otlpgrpc.WithInsecure(),
-			))
-		if err != nil {
-			return fmt.Errorf("failed to initialize export pipeline: %w", err)
-		}
-		tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
-	}
-
-	tp := sdktrace.NewTracerProvider(tracerOpts...)
-	defer func() { _ = tp.Shutdown(ctx) }()
-
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{}))
 
 	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
 	// directly reads from the api.

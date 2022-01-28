@@ -28,10 +28,6 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/baggage"
-	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -80,8 +76,6 @@ type NodePoolReconciler struct {
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
 
-	tracer trace.Tracer
-
 	upsert.CreateOrUpdateProvider
 }
 
@@ -106,18 +100,11 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
-	r.tracer = otel.Tracer("nodepool-controller")
 
 	return nil
 }
 
 func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	ctx = baggage.ContextWithValues(ctx,
-		attribute.String("request", req.String()),
-	)
-	var span trace.Span
-	ctx, span = r.tracer.Start(ctx, "reconcile")
-	defer span.End()
 
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling")
@@ -144,7 +131,6 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 
 	if !nodePool.DeletionTimestamp.IsZero() {
-		span.AddEvent("Deleting nodePool")
 		machineTemplates, err := r.listMachineTemplates(nodePool)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to list MachineTemplates: %w", err)
@@ -181,7 +167,6 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 		}
 		log.Info("Deleted nodePool")
-		span.AddEvent("Finished deleting nodePool")
 		return ctrl.Result{}, nil
 	}
 
@@ -210,7 +195,6 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return result, err
 	}
 
-	span.AddEvent("Updating nodePool")
 	if err := patchHelper.Patch(ctx, nodePool); err != nil {
 		log.Error(err, "failed to patch")
 		return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)
@@ -222,10 +206,6 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-
-	var span trace.Span
-	ctx, span = r.tracer.Start(ctx, "update")
-	defer span.End()
 
 	// HostedCluster owns NodePools. This should ensure orphan NodePools are garbage collected when cascading deleting.
 	nodePool.OwnerReferences = util.EnsureOwnerRef(nodePool.OwnerReferences, metav1.OwnerReference{
@@ -489,7 +469,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
 	} else {
 		log.Info("Reconciled token Secret", "result", result)
-		span.AddEvent("reconciled token Secret", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	tokenBytes, hasToken := tokenSecret.Data[TokenSecretTokenKey]
@@ -505,7 +484,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	} else {
 		log.Info("Reconciled userData Secret", "result", result)
-		span.AddEvent("reconciled ignition user data secret", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	// Store new template hash.
@@ -539,7 +517,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	} else {
 		log.Info("Reconciled Machine template", "result", result)
-		span.AddEvent("reconciled machinetemplate", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
@@ -556,7 +533,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			client.ObjectKeyFromObject(md).String(), err)
 	} else {
 		log.Info("Reconciled MachineDeployment", "result", result)
-		span.AddEvent("reconciled machinedeployment", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
@@ -568,7 +544,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				client.ObjectKeyFromObject(mhc).String(), err)
 		} else {
 			log.Info("Reconciled MachineHealthCheck", "result", result)
-			span.AddEvent("reconciled machinehealthchecks", trace.WithAttributes(attribute.String("result", string(result))))
 		}
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
@@ -579,8 +554,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	} else {
 		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
-		} else {
-			span.AddEvent("deleted machinehealthcheck", trace.WithAttributes(attribute.String("name", mhc.Name)))
 		}
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
@@ -972,8 +945,6 @@ func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster 
 		return nil, fmt.Errorf("pull secret %s/%s missing %q key", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
 	}
 	ReleaseImage, err := func(ctx context.Context) (*releaseinfo.ReleaseImage, error) {
-		ctx, span := r.tracer.Start(ctx, "image-lookup")
-		defer span.End()
 		lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
 		defer lookupCancel()
 		img, err := r.ReleaseProvider.Lookup(lookupCtx, releaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
