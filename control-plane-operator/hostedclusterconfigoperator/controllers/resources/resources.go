@@ -326,6 +326,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
 	}
 
+	log.Info("reconciling user cert CA bundle")
+	if err := r.reconcileUserCertCABundle(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile user cert CA bundle: %w", err))
+	}
+
 	log.Info("reconciling oauth browser client")
 	oauthBrowserClient := manifests.OAuthServerBrowserClient()
 	if _, err := r.CreateOrUpdate(ctx, r.client, oauthBrowserClient, func() error {
@@ -716,6 +721,23 @@ func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp 
 		return oauth.ReconcileOAuthServerCertCABundle(caBundle, oauthServingCert)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth server cert ca bundle: %w", err)
+	}
+	return nil
+}
+
+func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		cpUserCAConfigMap := manifests.ControlPlaneUserCABundle(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpUserCAConfigMap), cpUserCAConfigMap); err != nil {
+			return fmt.Errorf("cannot get AdditionalTrustBundle ConfigMap: %w", err)
+		}
+		userCAConfigMap := manifests.UserCABundle()
+		if _, err := r.CreateOrUpdate(ctx, r.client, userCAConfigMap, func() error {
+			userCAConfigMap.Data = cpUserCAConfigMap.Data
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile the %s ConfigMap: %w", client.ObjectKeyFromObject(userCAConfigMap), err)
+		}
 	}
 	return nil
 }
