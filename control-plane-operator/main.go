@@ -61,8 +61,8 @@ func main() {
 
 const (
 	// TODO: Include konnectivity image in release payload
-	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
-	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+	konnectivityServerImage = "us.icr.io/armada-master/rh-apiserver-network-proxy:a357810d35c9a17cddfed664282e2731cc3ecaae"
+	konnectivityAgentImage  = "us.icr.io/armada-master/rh-apiserver-network-proxy:a357810d35c9a17cddfed664282e2731cc3ecaae"
 )
 
 func NewStartCommand() *cobra.Command {
