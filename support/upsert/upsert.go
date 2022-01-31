@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	capiawsv1beta1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -27,7 +28,7 @@ type CreateOrUpdateProvider interface {
 	CreateOrUpdate(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error)
 }
 
-var withStatusSubresource = sets.NewString(fmt.Sprintf("%T", &capiawsv1beta1.AWSCluster{}), fmt.Sprintf("%T", &configv1.ClusterOperator{}))
+var withStatusSubresource = sets.NewString(fmt.Sprintf("%T", &capiawsv1beta1.AWSCluster{}), fmt.Sprintf("%T", &configv1.ClusterOperator{}), fmt.Sprintf("%T", &capikubevirt.KubevirtCluster{}))
 
 func hasStatusSubResource(o crclient.Object) bool {
 	return withStatusSubresource.Has(fmt.Sprintf("%T", o))
