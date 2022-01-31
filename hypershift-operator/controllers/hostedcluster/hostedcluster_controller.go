@@ -2159,6 +2159,13 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Resources: []string{"poddisruptionbudgets"},
 			Verbs:     []string{"*"},
 		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
+			},
+			Verbs: []string{"*"},
+		},
 	}
 	return nil
 }
