@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/support/capabilities"
@@ -163,6 +164,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.Update(ctx, hostedControlPlane); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
+	}
+
+	// return early if the release image on the hostedControlPlane doesn't match the major.minor version
+	// your build is compatible for
+	if !strings.Contains(hostedControlPlane.Spec.ReleaseImage, "4.9") {
+		r.Log.Info("Release image does not match verison control-plane-operator is built to manage. Noping",
+			"releaseImage", hostedControlPlane.Spec.ReleaseImage,
+			"compatibleVersion", "4.9")
+		return ctrl.Result{}, nil
 	}
 
 	// Reconcile global configuration validation status
