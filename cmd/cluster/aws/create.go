@@ -36,6 +36,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.AWSPlatform.IAMJSON, "iam-json", opts.AWSPlatform.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Region to use for AWS infrastructure.")
+	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availablity zones in which NodePools will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "Instance type for AWS instances.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.RootVolumeType, "root-volume-type", opts.AWSPlatform.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeIOPS, "root-volume-iops", opts.AWSPlatform.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
@@ -104,6 +105,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
+			Zones:              opts.AWSPlatform.Zones,
 		}
 		infra, err = opt.CreateInfra(ctx)
 		if err != nil {
@@ -153,12 +155,17 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.PublicZoneID = infra.PublicZoneID
 	exampleOptions.InfraID = infraID
-
+	var zones []apifixtures.ExampleAWSOptionsZones
+	for _, outputZone := range infra.Zones {
+		zones = append(zones, apifixtures.ExampleAWSOptionsZones{
+			Name:     outputZone.Name,
+			SubnetID: &outputZone.SubnetID,
+		})
+	}
 	exampleOptions.AWS = &apifixtures.ExampleAWSOptions{
 		Region:                      infra.Region,
-		Zone:                        infra.Zone,
+		Zones:                       zones,
 		VPCID:                       infra.VPCID,
-		SubnetID:                    infra.PrivateSubnetID,
 		SecurityGroupID:             infra.SecurityGroupID,
 		InstanceProfile:             iamInfo.ProfileName,
 		InstanceType:                opts.AWSPlatform.InstanceType,

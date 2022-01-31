@@ -54,6 +54,7 @@ func init() {
 func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
 	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
+	flag.StringVar(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zone", "us-east-1a", "AWS zone for clusters")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "container disk image to use for kubevirt nodes")
@@ -181,6 +182,7 @@ type options struct {
 type configurableClusterOptions struct {
 	AWSCredentialsFile         string
 	Region                     string
+	Zone                       string
 	PullSecretFile             string
 	BaseDomain                 string
 	ControlPlaneOperatorImage  string
@@ -206,6 +208,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
 			Region:             o.configurableClusterOptions.Region,
 			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
+			Zones:              []string{o.configurableClusterOptions.Zone},
 		},
 		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
 			ContainerDiskImage: o.configurableClusterOptions.KubeVirtContainerDiskImage,

@@ -34,7 +34,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 	nodepool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedCluster.Namespace,
-			Name:      hostedCluster.Name,
+			Name:      e2eutil.NodePoolName(hostedCluster.Name, clusterOpts.AWSPlatform.Zones[0]),
 		},
 	}
 	err := client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
