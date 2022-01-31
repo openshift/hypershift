@@ -1753,7 +1753,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
 			}
 		}
-
+		hyperutil.SetRestartAnnotation(hcluster, ignitionServerDeployment)
 		hyperutil.SetColocation(hcluster, ignitionServerDeployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, ignitionServerDeployment)
 		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
@@ -2323,9 +2323,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	}
 
 	hyperutil.SetColocation(hc, deployment)
-	// TODO (alberto): Reconsider enable this back when we face a real need
-	// with no better solution.
-	// hyperutil.SetRestartAnnotation(hc, deployment)
+	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
 	switch hc.Spec.ControllerAvailabilityPolicy {
