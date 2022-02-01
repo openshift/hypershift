@@ -167,7 +167,7 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		})
 		if err != nil {
 			if awsErr, ok := err.(awserr.Error); ok {
-				return errors.New(awsErr.Message())
+				return errors.New(awsErr.Code())
 			}
 			return err
 		}
@@ -187,7 +187,7 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
-			return errors.New(awsErr.Message())
+			return errors.New(awsErr.Code())
 		}
 		return err
 	}
@@ -223,10 +223,10 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 				serviceName, err = findExistingVpcEndpointService(ctx, ec2Client, *lbARN)
 				if err != nil {
 					log.Info("existing endpoint service not found, adoption failed", "err", err)
-					return errors.New(awsErr.Message())
+					return errors.New(awsErr.Code())
 				}
 			} else {
-				return errors.New(awsErr.Message())
+				return errors.New(awsErr.Code())
 			}
 		}
 		if len(serviceName) == 0 {
@@ -256,7 +256,7 @@ func findExistingVpcEndpointService(ctx context.Context, ec2Client ec2iface.EC2A
 	output, err := ec2Client.DescribeVpcEndpointServiceConfigurationsWithContext(ctx, &ec2.DescribeVpcEndpointServiceConfigurationsInput{})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
-			return "", errors.New(awsErr.Message())
+			return "", errors.New(awsErr.Code())
 		}
 		return "", err
 	}
@@ -295,7 +295,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	})
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
-			return false, errors.New(awsErr.Message())
+			return false, errors.New(awsErr.Code())
 		}
 		return false, err
 	}
