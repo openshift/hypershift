@@ -71,7 +71,7 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 	nodepool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedCluster.Namespace,
-			Name:      e2eutil.NodePoolName(hostedCluster.Name, clusterOpts.AWSPlatform.Zones[0]),
+			Name:      hostedCluster.Name,
 		},
 	}
 	err := client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
