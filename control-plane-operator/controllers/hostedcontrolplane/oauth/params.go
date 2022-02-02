@@ -48,6 +48,7 @@ type OAuthConfigParams struct {
 	ExternalHost             string
 	ExternalPort             int32
 	ServingCert              *corev1.Secret
+	NamedCertificates        []configv1.APIServerNamedServingCert
 	CipherSuites             []string
 	MinTLSVersion            string
 	IdentityProviders        []configv1.IdentityProvider
@@ -159,6 +160,14 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalco
 	return p
 }
 
+func (p *OAuthServerParams) NamedCertificates() []configv1.APIServerNamedServingCert {
+	if p.APIServer != nil {
+		return p.APIServer.Spec.ServingCerts.NamedCertificates
+	} else {
+		return nil
+	}
+}
+
 func (p *OAuthServerParams) IdentityProviders() []configv1.IdentityProvider {
 	if p.OAuth != nil {
 		return p.OAuth.Spec.IdentityProviders
@@ -200,6 +209,7 @@ func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfi
 		AccessTokenMaxAgeSeconds: p.AccessTokenMaxAgeSeconds(),
 		OauthConfigOverrides:     p.OauthConfigOverrides,
 		LoginURLOverride:         p.LoginURLOverride,
+		NamedCertificates:        p.NamedCertificates(),
 	}
 }
 
