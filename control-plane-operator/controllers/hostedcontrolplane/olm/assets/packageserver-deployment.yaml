@@ -62,7 +62,7 @@ spec:
         image: OLM_OPERATOR_IMAGE
         imagePullPolicy: IfNotPresent
         livenessProbe:
-          failureThreshold: 3
+          failureThreshold: 10
           httpGet:
             path: /healthz
             port: 5443
