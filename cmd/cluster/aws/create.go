@@ -13,6 +13,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 )
 
@@ -55,7 +56,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}
 
 		if err := CreateCluster(ctx, opts); err != nil {
-			log.Error(err, "Failed to create cluster")
+			log.Log.Error(err, "Failed to create cluster")
 			return err
 		}
 		return nil

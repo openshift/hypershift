@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 type DestroyIAMOptions struct {
@@ -48,7 +49,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 		if err := opts.DestroyIAM(cmd.Context()); err != nil {
 			return err
 		}
-		log.Info("Successfully destroyed IAM infra")
+		log.Log.Info("Successfully destroyed IAM infra")
 		return nil
 	}
 
@@ -62,7 +63,7 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 			if !awsutil.IsErrorRetryable(err) {
 				return false, err
 			}
-			log.Info("WARNING: error during destroy, will retry", "error", err.Error())
+			log.Log.Info("WARNING: error during destroy, will retry", "error", err.Error())
 			return false, nil
 		}
 		return true, nil
@@ -100,15 +101,15 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 			if err != nil {
 				if aerr, ok := err.(awserr.Error); ok {
 					if aerr.Code() != iam.ErrCodeNoSuchEntityException {
-						log.Error(aerr, "Error deleting OIDC provider", "providerARN", provider.Arn)
+						log.Log.Error(aerr, "Error deleting OIDC provider", "providerARN", provider.Arn)
 						return aerr
 					}
 				} else {
-					log.Error(err, "Error deleting OIDC provider", "providerARN", provider.Arn)
+					log.Log.Error(err, "Error deleting OIDC provider", "providerARN", provider.Arn)
 					return err
 				}
 			} else {
-				log.Info("Deleted OIDC provider", "providerARN", provider.Arn)
+				log.Log.Info("Deleted OIDC provider", "providerARN", provider.Arn)
 			}
 			break
 		}
@@ -148,15 +149,15 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() != iam.ErrCodeNoSuchEntityException {
-				log.Error(aerr, "Error deleting role policy", "role", roleName)
+				log.Log.Error(aerr, "Error deleting role policy", "role", roleName)
 				return aerr
 			}
 		} else {
-			log.Error(err, "Error deleting role policy", "role", roleName)
+			log.Log.Error(err, "Error deleting role policy", "role", roleName)
 			return err
 		}
 	} else {
-		log.Info("Deleted role policy", "role", roleName)
+		log.Log.Info("Deleted role policy", "role", roleName)
 	}
 
 	_, err = client.DeleteRole(&iam.DeleteRoleInput{
@@ -165,15 +166,15 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() != iam.ErrCodeNoSuchEntityException {
-				log.Error(aerr, "Error deleting role", "role", roleName)
+				log.Log.Error(aerr, "Error deleting role", "role", roleName)
 				return aerr
 			}
 		} else {
-			log.Error(err, "Error deleting role", "role", roleName)
+			log.Log.Error(err, "Error deleting role", "role", roleName)
 			return err
 		}
 	} else {
-		log.Info("Deleted role", "role", roleName)
+		log.Log.Info("Deleted role", "role", roleName)
 	}
 	return nil
 }
@@ -193,7 +194,7 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 			if err != nil {
 				return fmt.Errorf("cannot remove role %s from instance profile %s: %w", aws.StringValue(role.RoleName), profileName, err)
 			}
-			log.Info("Removed role from instance profile", "profile", profileName, "role", aws.StringValue(role.RoleName))
+			log.Log.Info("Removed role from instance profile", "profile", profileName, "role", aws.StringValue(role.RoleName))
 		}
 		_, err := client.DeleteInstanceProfile(&iam.DeleteInstanceProfileInput{
 			InstanceProfileName: aws.String(profileName),
@@ -201,7 +202,7 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 		if err != nil {
 			return fmt.Errorf("cannot delete instance profile %s: %w", profileName, err)
 		}
-		log.Info("Deleted instance profile", "profile", profileName)
+		log.Log.Info("Deleted instance profile", "profile", profileName)
 	}
 	roleName := fmt.Sprintf("%s-role", profileName)
 	policyName := fmt.Sprintf("%s-policy", profileName)
@@ -222,7 +223,7 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 			if err != nil {
 				return fmt.Errorf("cannot delete role policy %s from role %s: %w", policyName, roleName, err)
 			}
-			log.Info("Deleted role policy", "role", roleName, "policy", policyName)
+			log.Log.Info("Deleted role policy", "role", roleName, "policy", policyName)
 		}
 		_, err = client.DeleteRole(&iam.DeleteRoleInput{
 			RoleName: aws.String(roleName),
@@ -230,7 +231,7 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 		if err != nil {
 			return fmt.Errorf("cannot delete role %s: %w", roleName, err)
 		}
-		log.Info("Deleted role", "role", roleName)
+		log.Log.Info("Deleted role", "role", roleName)
 	}
 	return nil
 }
