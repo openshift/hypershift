@@ -22,6 +22,9 @@ func DumpHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster, artifactD
 		if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
 			allErrors = append(allErrors, fmt.Errorf("found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename))
 		}
+		if bytes.Contains(content, []byte(upsert.LoopDetectorTooManyUpdatesWarningMessage)) {
+			allErrors = append(allErrors, fmt.Errorf("found %s messages in file %s", upsert.LoopDetectorTooManyUpdatesWarningMessage, filename))
+		}
 	}
 	err := core.DumpCluster(ctx, &core.DumpOptions{
 		Namespace:   hc.Namespace,

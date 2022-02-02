@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,16 +24,24 @@ func newUpdateLoopDetector() *updateLoopDetector {
 	}
 }
 
-// LoopDetectorWarningMessage is logged whenever we detect multiple updates of the same object
-// without observering a no-op update.
-const LoopDetectorWarningMessage = "WARNING: Object got updated more than one time without a no-op update, this indicates hypershift incorrectly reverting defaulted values"
+const (
+	// LoopDetectorWarningMessage is logged whenever we detect multiple updates of the same object
+	// without observering a no-op update.
+	LoopDetectorWarningMessage = "WARNING: Object got updated more than one time without a no-op update, this indicates hypershift incorrectly reverting defaulted values"
 
-// If an object got updated more than once a no-op update, we assume it is a bug in our
-// code. This is a heuristic that currently happens to work out but might need adjustment
-// in the future.
-// Once we did a no-op update, we will ignore the object because we assume that if we have
-// a bug in the defaulting, we will end up always updating.
-const updateLoopThreshold = 2
+	// If an object got updated more than once without a no-op update, we assume it is a bug in our
+	// code. This is a heuristic that currently happens to work out but might need adjustment
+	// in the future.
+	// Once we did a no-op update, we will ignore the object because we assume that if we have
+	// a bug in the defaulting, we will end up always updating.
+	updateLoopThreshold = 2
+
+	// LoopDetectorTooManyUpdatesWarningMessage is printed if the total number of updates for an object is too high.
+	LoopDetectorTooManyUpdatesWarningMessage = "WARNING: Object got updated more than 50 times, this indicates a race with another component"
+
+	// totalPerObjectUpdateThreshold is the threshold of updates we expect to never exceed. It is chosen as an arbitrary high-ish number.
+	totalPerObjectUpdateThreshold = 50
+)
 
 type updateLoopDetector struct {
 	hasNoOpUpdate    sets.String
@@ -59,20 +66,21 @@ func (uld *updateLoopDetector) recordActualUpdate(original, modified runtime.Obj
 	hasNoOpUpdate := uld.hasNoOpUpdate.Has(cacheKey)
 	uld.lock.RUnlock()
 
-	if hasNoOpUpdate {
-		return
-	}
-
 	uld.lock.Lock()
 	uld.updateEventCount[cacheKey]++
 	updateEventCount := uld.updateEventCount[cacheKey]
 	uld.lock.Unlock()
 
-	if updateEventCount < updateLoopThreshold {
+	if updateEventCount > totalPerObjectUpdateThreshold {
+		diff := cmp.Diff(original, modified)
+		uld.log.Info(LoopDetectorTooManyUpdatesWarningMessage, "type", fmt.Sprintf("%T", modified), "name", key.String(), "diff", diff, "updateCount", updateEventCount)
+		return
+	}
+
+	if hasNoOpUpdate || updateEventCount < updateLoopThreshold {
 		return
 	}
 
 	diff := cmp.Diff(original, modified)
-	semanticDeepEqual := equality.Semantic.DeepEqual(original, modified)
-	uld.log.Info(LoopDetectorWarningMessage, "type", fmt.Sprintf("%T", modified), "name", key.String(), "diff", diff, "semanticDeepEqual", semanticDeepEqual, "updateCount", updateEventCount)
+	uld.log.Info(LoopDetectorWarningMessage, "type", fmt.Sprintf("%T", modified), "name", key.String(), "diff", diff, "updateCount", updateEventCount)
 }
