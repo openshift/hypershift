@@ -226,6 +226,12 @@ type HostedClusterSpec struct {
 	// +immutable
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
+	// AdditionalTrustBundle is a reference to a ConfigMap containing a
+	// PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
+	//
+	// +optional
+	AdditionalTrustBundle *corev1.LocalObjectReference `json:"additionalTrustBundle,omitempty"`
+
 	// SecretEncryption specifies a Kubernetes secret encryption strategy for the
 	// control plane.
 	//

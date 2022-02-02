@@ -68,6 +68,16 @@ spec:
           spec:
             description: Spec is the desired behavior of the HostedCluster.
             properties:
+              additionalTrustBundle:
+                description: AdditionalTrustBundle is a reference to a ConfigMap containing
+                  a PEM-encoded X.509 certificate bundle that will be added to the
+                  hosted controlplane and nodes
+                properties:
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                type: object
               auditWebhook:
                 description: "AuditWebhook contains metadata for configuring an audit
                   webhook endpoint for a cluster to process cluster audit events.
