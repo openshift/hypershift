@@ -2,6 +2,7 @@ package awsprivatelink
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/route53"
@@ -318,7 +320,11 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	if err != nil {
 		return fmt.Errorf("logger not found: %w", err)
 	}
-	serviceName := awsEndpointService.Status.EndpointServiceName
+
+	if len(awsEndpointService.Status.EndpointServiceName) == 0 {
+		log.Info("endpoint service name is not set, ignoring", "name", awsEndpointService.Name)
+		return nil
+	}
 
 	endpointID := awsEndpointService.Status.EndpointID
 	var endpointDNSEntries []*ec2.DnsEntry
@@ -328,12 +334,22 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			VpcEndpointIds: []*string{aws.String(endpointID)},
 		})
 		if err != nil {
+			if awsErr, ok := err.(awserr.Error); ok {
+				if awsErr.Code() == "InvalidVpcEndpointId.NotFound" {
+					// clear the EndpointID so a new Endpoint is created on the requeue
+					awsEndpointService.Status.EndpointID = ""
+					return fmt.Errorf("endpoint with id %s not found, resetting status", endpointID)
+				} else {
+					return errors.New(awsErr.Message())
+				}
+			}
 			return err
 		}
 		if len(output.VpcEndpoints) == 0 {
+			// This should not happen but just in case
 			// clear the EndpointID so a new Endpoint is created on the requeue
 			awsEndpointService.Status.EndpointID = ""
-			return fmt.Errorf("endpoint %s not found, resetting status", serviceName)
+			return fmt.Errorf("endpoint with id %s not found, resetting status", endpointID)
 		}
 		log.Info("endpoint exists", "endpointID", endpointID)
 		endpointDNSEntries = output.VpcEndpoints[0].DnsEntries
@@ -349,6 +365,9 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
 		})
 		if err != nil {
+			if awsErr, ok := err.(awserr.Error); ok {
+				return errors.New(awsErr.Message())
+			}
 			return err
 		}
 		if len(output.VpcEndpoints) != 0 {
@@ -360,7 +379,7 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			log.Info("endpoint does not already exist")
 			// Create the Endpoint
 			input := &ec2.CreateVpcEndpointInput{
-				ServiceName:     aws.String(serviceName),
+				ServiceName:     aws.String(awsEndpointService.Status.EndpointServiceName),
 				VpcId:           aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
 				VpcEndpointType: aws.String(ec2.VpcEndpointTypeInterface),
 				SubnetIds:       []*string{hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID},
@@ -371,6 +390,9 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			}
 			output, err := ec2Client.CreateVpcEndpointWithContext(ctx, input)
 			if err != nil {
+				if awsErr, ok := err.(awserr.Error); ok {
+					return errors.New(awsErr.Message())
+				}
 				return err
 			}
 			if output == nil || output.VpcEndpoint == nil {

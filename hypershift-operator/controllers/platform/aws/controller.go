@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -165,6 +166,9 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			},
 		})
 		if err != nil {
+			if awsErr, ok := err.(awserr.Error); ok {
+				return errors.New(awsErr.Message())
+			}
 			return err
 		}
 		if len(output.ServiceConfigurations) == 0 {
@@ -182,15 +186,18 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		Names: []*string{aws.String(lbName)},
 	})
 	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			return errors.New(awsErr.Message())
+		}
 		return err
 	}
 	if len(output.LoadBalancers) == 0 {
-		return fmt.Errorf("NLB %s not found", lbName)
+		return fmt.Errorf("load balancer %s not found", lbName)
 	}
 	lb := output.LoadBalancers[0]
 	lbARN := lb.LoadBalancerArn
 	if lbARN == nil {
-		return fmt.Errorf("NLB ARN is nil")
+		return fmt.Errorf("load balancer ARN is nil")
 	}
 	if lb.State == nil || *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
 		return fmt.Errorf("load balancer %s is not yet active", *lbARN)
@@ -216,10 +223,10 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 				serviceName, err = findExistingVpcEndpointService(ctx, ec2Client, *lbARN)
 				if err != nil {
 					log.Info("existing endpoint service not found, adoption failed", "err", err)
-					return awsErr
+					return errors.New(awsErr.Message())
 				}
 			} else {
-				return awsErr
+				return errors.New(awsErr.Message())
 			}
 		}
 		if len(serviceName) == 0 {
@@ -248,6 +255,9 @@ func apiTagToEC2Tag(in []hyperv1.AWSResourceTag) []*ec2.Tag {
 func findExistingVpcEndpointService(ctx context.Context, ec2Client ec2iface.EC2API, lbARN string) (string, error) {
 	output, err := ec2Client.DescribeVpcEndpointServiceConfigurationsWithContext(ctx, &ec2.DescribeVpcEndpointServiceConfigurationsInput{})
 	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			return "", errors.New(awsErr.Message())
+		}
 		return "", err
 	}
 	if len(output.ServiceConfigurations) == 0 {
@@ -260,7 +270,7 @@ func findExistingVpcEndpointService(ctx context.Context, ec2Client ec2iface.EC2A
 			}
 		}
 	}
-	return "", fmt.Errorf("no endpoint service found with LB ARN %s", lbARN)
+	return "", fmt.Errorf("no endpoint service found with load balancer ARN %s", lbARN)
 }
 
 func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService) (bool, error) {
@@ -284,6 +294,9 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		ServiceIds: []*string{aws.String(serviceID)},
 	})
 	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			return false, errors.New(awsErr.Message())
+		}
 		return false, err
 	}
 	if output != nil && len(output.Unsuccessful) != 0 && output.Unsuccessful[0].Error != nil {
