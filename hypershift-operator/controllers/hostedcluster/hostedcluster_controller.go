@@ -826,6 +826,31 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile the HostedControlPlane AdditionalTrustBundle ConfigMap by resolving the source reference
+	// from the HostedCluster and syncing the CM in the control plane namespace.
+	if hcluster.Spec.AdditionalTrustBundle != nil {
+		var src corev1.ConfigMap
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.AdditionalTrustBundle.Name}, &src)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster AdditionalTrustBundle ConfigMap %s: %w", hcluster.Spec.AdditionalTrustBundle.Name, err)
+		}
+		dest := controlplaneoperator.UserCABundle(controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["ca-bundle.crt"]
+			if !srcHasData {
+				return fmt.Errorf("hostedcluster configmap %q must have a ca-bundle.crt key", src.Name)
+			}
+			if dest.Data == nil {
+				dest.Data = map[string]string{}
+			}
+			dest.Data["ca-bundle.crt"] = srcData
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle: %w", err)
+		}
+	}
+
 	// Reconcile etcd client MTLS secret if the control plane is using an unmanaged etcd cluster
 	if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		unmanagedEtcdTLSClientSecret := &corev1.Secret{
@@ -1164,6 +1189,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	if hcluster.Spec.ImageContentSources != nil {
 		hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
+	}
+	if hcluster.Spec.AdditionalTrustBundle != nil {
+		hcp.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: controlplaneoperator.UserCABundle(hcp.Namespace).Name}
 	}
 	if hcluster.Spec.SecretEncryption != nil {
 		hcp.Spec.SecretEncryption = hcluster.Spec.SecretEncryption.DeepCopy()
