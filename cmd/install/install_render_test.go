@@ -48,7 +48,7 @@ func VerifyTemplateParameterPresent(template map[string]interface{}, paramName s
 }
 
 func TestMultiDocYamlRendering(t *testing.T) {
-	out, err := ExecuteTestCommand([]string{"render", "--format", "yaml"})
+	out, err := ExecuteTestCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,27 +65,7 @@ func TestMultiDocYamlRendering(t *testing.T) {
 }
 
 func TestTemplateYamlRendering(t *testing.T) {
-	template, err := ExecuteTemplateYamlGenerationCommand([]string{"render", "--format", "yaml", "--template"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, ok := template["objects"]; !ok {
-		t.Fatal("objects missing in template")
-	}
-	objects := template["objects"].([]interface{})
-	if len(objects) == 0 {
-		t.Fatal("no objects found in template")
-	}
-	for _, param := range []string{"OPERATOR_REPLICAS", "OPERATOR_IMG", "IMAGE_TAG", "NAMESPACE"} {
-		if !VerifyTemplateParameterPresent(template, param) {
-			t.Fatal("expected parameter", param, "not found")
-		}
-	}
-}
-
-func TestTemplateYamlRenderingWithOIDC(t *testing.T) {
-	template, err := ExecuteTemplateYamlGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "render", "--format", "yaml", "--template"})
+	template, err := ExecuteTemplateYamlGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "yaml", "--template"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,8 +79,8 @@ func TestTemplateYamlRenderingWithOIDC(t *testing.T) {
 	}
 	params := []string{
 		"OPERATOR_REPLICAS", "OPERATOR_IMG", "IMAGE_TAG", "NAMESPACE",
-		"OIDC_S3_BUCKET", "OIDC_S3_REGION", "OIDC_S3_ACCESS_KEY_ID",
-		"OIDC_S3_SECRET_ACCESS_KEY",
+		"OIDC_S3_NAME", "OIDC_S3_REGION", "OIDC_S3_CREDS_SECRET",
+		"OIDC_S3_CREDS_SECRET_KEY",
 	}
 	for _, param := range params {
 		if !VerifyTemplateParameterPresent(template, param) {
@@ -122,7 +102,7 @@ func ExecuteJsonGenerationCommand(args []string) (map[string]interface{}, error)
 }
 
 func TestJsonListRendering(t *testing.T) {
-	doc, err := ExecuteJsonGenerationCommand([]string{"render", "--format", "json"})
+	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +117,7 @@ func TestJsonListRendering(t *testing.T) {
 }
 
 func TestJsonTemplateRendering(t *testing.T) {
-	doc, err := ExecuteJsonGenerationCommand([]string{"render", "--format", "json", "--template"})
+	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json", "--template"})
 	if err != nil {
 		t.Fatal(err)
 	}

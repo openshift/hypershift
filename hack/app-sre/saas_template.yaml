@@ -3,6 +3,374 @@ kind: Template
 metadata:
   name: hypershift-operator-template
 objects:
+- apiVersion: scheduling.k8s.io/v1
+  description: This priority class should be used for hypershift control plane pods
+    not critical to serving the API.
+  kind: PriorityClass
+  metadata:
+    creationTimestamp: null
+    name: hypershift-control-plane
+  value: 100000000
+- apiVersion: scheduling.k8s.io/v1
+  description: This priority class should be used for hypershift etcd pods.
+  kind: PriorityClass
+  metadata:
+    creationTimestamp: null
+    name: hypershift-etcd
+  value: 100002000
+- apiVersion: scheduling.k8s.io/v1
+  description: This priority class should be used for hypershift control plane pods
+    critical to serving the API.
+  kind: PriorityClass
+  metadata:
+    creationTimestamp: null
+    name: hypershift-api-critical
+  value: 100001000
+- apiVersion: v1
+  kind: Namespace
+  metadata:
+    creationTimestamp: null
+    name: ${NAMESPACE}
+  spec: {}
+  status: {}
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    creationTimestamp: null
+    name: operator
+    namespace: ${NAMESPACE}
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+  rules:
+  - apiGroups:
+    - hypershift.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - config.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - apiextensions.k8s.io
+    resources:
+    - customresourcedefinitions
+    verbs:
+    - '*'
+  - apiGroups:
+    - networking.k8s.io
+    resources:
+    - networkpolicies
+    verbs:
+    - '*'
+  - apiGroups:
+    - bootstrap.cluster.x-k8s.io
+    - controlplane.cluster.x-k8s.io
+    - infrastructure.cluster.x-k8s.io
+    - machines.cluster.x-k8s.io
+    - exp.infrastructure.cluster.x-k8s.io
+    - addons.cluster.x-k8s.io
+    - exp.cluster.x-k8s.io
+    - cluster.x-k8s.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - operator.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - route.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - security.openshift.io
+    resources:
+    - securitycontextconstraints
+    verbs:
+    - '*'
+  - apiGroups:
+    - rbac.authorization.k8s.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - ""
+    resources:
+    - events
+    - configmaps
+    - pods
+    - pods/log
+    - secrets
+    - nodes
+    - namespaces
+    - serviceaccounts
+    - services
+    verbs:
+    - '*'
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - '*'
+  - apiGroups:
+    - etcd.database.coreos.com
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - machine.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - monitoring.coreos.com
+    resources:
+    - podmonitors
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+  - apiGroups:
+    - capi-provider.agent-install.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: hypershift-operator
+  subjects:
+  - kind: ServiceAccount
+    name: operator
+    namespace: ${NAMESPACE}
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+    namespace: ${NAMESPACE}
+  rules:
+  - apiGroups:
+    - coordination.k8s.io
+    resources:
+    - leases
+    verbs:
+    - '*'
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+    namespace: ${NAMESPACE}
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: hypershift-operator
+  subjects:
+  - kind: ServiceAccount
+    name: operator
+    namespace: ${NAMESPACE}
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    creationTimestamp: null
+    name: operator
+    namespace: ${NAMESPACE}
+  spec:
+    replicas: ${OPERATOR_REPLICAS}
+    selector:
+      matchLabels:
+        name: operator
+    strategy: {}
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: operator
+          hypershift.openshift.io/operator-component: operator
+          name: operator
+      spec:
+        containers:
+        - args:
+          - run
+          - --namespace=$(MY_NAMESPACE)
+          - --deployment-name=operator
+          - --metrics-addr=:9000
+          - --enable-ocp-cluster-monitoring=false
+          - --enable-ci-debug-output=false
+          - --private-platform=None
+          - --oidc-storage-provider-s3-bucket-name=${OIDC_S3_NAME}
+          - --oidc-storage-provider-s3-region=${OIDC_S3_REGION}
+          - --oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/${OIDC_S3_CREDS_SECRET_KEY}
+          command:
+          - /usr/bin/hypershift-operator
+          env:
+          - name: MY_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          image: ${OPERATOR_IMG}:${IMAGE_TAG}
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /metrics
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: operator
+          ports:
+          - containerPort: 9000
+            name: metrics
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 60
+            successThreshold: 1
+            timeoutSeconds: 5
+          resources: {}
+          securityContext:
+            runAsUser: 1000
+          volumeMounts:
+          - mountPath: /etc/oidc-storage-provider-s3-creds
+            name: oidc-storage-provider-s3-creds
+        serviceAccountName: operator
+        volumes:
+        - name: oidc-storage-provider-s3-creds
+          secret:
+            secretName: ${OIDC_S3_CREDS_SECRET}
+  status: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    creationTimestamp: null
+    labels:
+      name: operator
+    name: operator
+    namespace: ${NAMESPACE}
+  spec:
+    ports:
+    - name: metrics
+      port: 9393
+      protocol: TCP
+      targetPort: metrics
+    selector:
+      name: operator
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata:
+    creationTimestamp: null
+    name: prometheus
+    namespace: ${NAMESPACE}
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - services
+    - endpoints
+    - pods
+    verbs:
+    - get
+    - list
+    - watch
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    creationTimestamp: null
+    name: prometheus
+    namespace: ${NAMESPACE}
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: prometheus
+  subjects:
+  - kind: ServiceAccount
+    name: prometheus-user-workload
+    namespace: openshift-user-workload-monitoring
+- apiVersion: monitoring.coreos.com/v1
+  kind: ServiceMonitor
+  metadata:
+    creationTimestamp: null
+    name: operator
+    namespace: ${NAMESPACE}
+  spec:
+    endpoints:
+    - bearerTokenSecret:
+        key: ""
+      interval: 30s
+      port: metrics
+    jobLabel: component
+    namespaceSelector: {}
+    selector:
+      matchLabels:
+        name: operator
+- apiVersion: monitoring.coreos.com/v1
+  kind: PrometheusRule
+  metadata:
+    creationTimestamp: null
+    name: metrics
+    namespace: ${NAMESPACE}
+  spec:
+    groups:
+    - interval: 30s
+      name: hypershift.rules
+      rules:
+      - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
+          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:controlplane:component_api_requests_total
+      - expr: sum by (app, namespace) ( sum(container_memory_usage_bytes{container!="POD",container!=""})
+          by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:controlplane:component_memory_usage
+      - expr: avg by (app, namespace) ( sum( rate( container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
+          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") ) / count by (app, namespace) ( sum( rate(
+          container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
+          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:controlplane:component_cpu_usage_seconds
+      - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
+          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:operator:component_api_requests_total
 - apiVersion: apiextensions.k8s.io/v1
   kind: CustomResourceDefinition
   metadata:
@@ -24252,418 +24620,18 @@ objects:
       plural: ""
     conditions: []
     storedVersions: []
-- apiVersion: scheduling.k8s.io/v1
-  description: This priority class should be used for hypershift control plane pods
-    not critical to serving the API.
-  kind: PriorityClass
-  metadata:
-    creationTimestamp: null
-    name: hypershift-control-plane
-  value: 100000000
-- apiVersion: scheduling.k8s.io/v1
-  description: This priority class should be used for hypershift control plane pods
-    critical to serving the API.
-  kind: PriorityClass
-  metadata:
-    creationTimestamp: null
-    name: hypershift-api-critical
-  value: 100001000
-- apiVersion: scheduling.k8s.io/v1
-  description: This priority class should be used for hypershift etcd pods.
-  kind: PriorityClass
-  metadata:
-    creationTimestamp: null
-    name: hypershift-etcd
-  value: 100002000
-- apiVersion: v1
-  kind: Namespace
-  metadata:
-    creationTimestamp: null
-    name: hypershift
-  spec: {}
-  status: {}
-- apiVersion: v1
-  kind: ServiceAccount
-  metadata:
-    creationTimestamp: null
-    name: operator
-    namespace: ${NAMESPACE}
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: ClusterRole
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator
-  rules:
-  - apiGroups:
-    - hypershift.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - config.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - get
-    - list
-    - watch
-  - apiGroups:
-    - apiextensions.k8s.io
-    resources:
-    - customresourcedefinitions
-    verbs:
-    - '*'
-  - apiGroups:
-    - networking.k8s.io
-    resources:
-    - networkpolicies
-    verbs:
-    - '*'
-  - apiGroups:
-    - bootstrap.cluster.x-k8s.io
-    - controlplane.cluster.x-k8s.io
-    - infrastructure.cluster.x-k8s.io
-    - machines.cluster.x-k8s.io
-    - exp.infrastructure.cluster.x-k8s.io
-    - addons.cluster.x-k8s.io
-    - exp.cluster.x-k8s.io
-    - cluster.x-k8s.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - operator.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - route.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - security.openshift.io
-    resources:
-    - securitycontextconstraints
-    verbs:
-    - '*'
-  - apiGroups:
-    - rbac.authorization.k8s.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - ""
-    resources:
-    - events
-    - configmaps
-    - pods
-    - pods/log
-    - secrets
-    - nodes
-    - namespaces
-    - serviceaccounts
-    - services
-    verbs:
-    - '*'
-  - apiGroups:
-    - apps
-    resources:
-    - deployments
-    verbs:
-    - '*'
-  - apiGroups:
-    - etcd.database.coreos.com
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - machine.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - monitoring.coreos.com
-    resources:
-    - podmonitors
-    verbs:
-    - get
-    - list
-    - watch
-    - create
-    - update
-  - apiGroups:
-    - capi-provider.agent-install.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: ClusterRoleBinding
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator
-  roleRef:
-    apiGroup: rbac.authorization.k8s.io
-    kind: ClusterRole
-    name: hypershift-operator
-  subjects:
-  - kind: ServiceAccount
-    name: operator
-    namespace: hypershift
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: Role
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator
-    namespace: ${NAMESPACE}
-  rules:
-  - apiGroups:
-    - coordination.k8s.io
-    resources:
-    - leases
-    verbs:
-    - '*'
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: RoleBinding
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator
-    namespace: ${NAMESPACE}
-  roleRef:
-    apiGroup: rbac.authorization.k8s.io
-    kind: Role
-    name: hypershift-operator
-  subjects:
-  - kind: ServiceAccount
-    name: operator
-    namespace: hypershift
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    creationTimestamp: null
-    name: operator
-    namespace: ${NAMESPACE}
-  spec:
-    replicas: ${OPERATOR_REPLICAS}
-    selector:
-      matchLabels:
-        name: operator
-    strategy: {}
-    template:
-      metadata:
-        creationTimestamp: null
-        labels:
-          app: operator
-          hypershift.openshift.io/operator-component: operator
-          name: operator
-      spec:
-        containers:
-        - args:
-          - run
-          - --namespace=$(MY_NAMESPACE)
-          - --deployment-name=operator
-          - --metrics-addr=:9000
-          - --enable-ocp-cluster-monitoring=false
-          - --enable-ci-debug-output=false
-          - --private-platform=None
-          - --oidc-storage-provider-s3-bucket-name=$(MY_OIDC_BUCKET)
-          - --oidc-storage-provider-s3-region=$(MY_OIDC_REGION)
-          - --oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials
-          command:
-          - /usr/bin/hypershift-operator
-          env:
-          - name: MY_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
-          - name: MY_OIDC_BUCKET
-            valueFrom:
-              secretKeyRef:
-                key: bucket
-                name: hypershift-operator-oidc-provider-s3-credentials
-          - name: MY_OIDC_REGION
-            valueFrom:
-              secretKeyRef:
-                key: region
-                name: hypershift-operator-oidc-provider-s3-credentials
-          image: ${OPERATOR_IMG}:${IMAGE_TAG}
-          imagePullPolicy: Always
-          livenessProbe:
-            failureThreshold: 5
-            httpGet:
-              path: /metrics
-              port: 9000
-              scheme: HTTP
-            initialDelaySeconds: 60
-            periodSeconds: 60
-            successThreshold: 1
-            timeoutSeconds: 5
-          name: operator
-          ports:
-          - containerPort: 9000
-            name: metrics
-            protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            httpGet:
-              path: /metrics
-              port: 9000
-              scheme: HTTP
-            initialDelaySeconds: 15
-            periodSeconds: 60
-            successThreshold: 1
-            timeoutSeconds: 5
-          resources: {}
-          securityContext:
-            runAsUser: 1000
-          volumeMounts:
-          - mountPath: /etc/oidc-storage-provider-s3-creds
-            name: oidc-storage-provider-s3-creds
-        serviceAccountName: operator
-        volumes:
-        - name: oidc-storage-provider-s3-creds
-          secret:
-            secretName: hypershift-operator-oidc-provider-s3-credentials
-  status: {}
-- apiVersion: v1
-  kind: Service
-  metadata:
-    creationTimestamp: null
-    labels:
-      name: operator
-    name: operator
-    namespace: ${NAMESPACE}
-  spec:
-    ports:
-    - name: metrics
-      port: 9393
-      protocol: TCP
-      targetPort: metrics
-    selector:
-      name: operator
-    type: ClusterIP
-  status:
-    loadBalancer: {}
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: Role
-  metadata:
-    creationTimestamp: null
-    name: prometheus
-    namespace: ${NAMESPACE}
-  rules:
-  - apiGroups:
-    - ""
-    resources:
-    - services
-    - endpoints
-    - pods
-    verbs:
-    - get
-    - list
-    - watch
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: RoleBinding
-  metadata:
-    creationTimestamp: null
-    name: prometheus
-    namespace: ${NAMESPACE}
-  roleRef:
-    apiGroup: rbac.authorization.k8s.io
-    kind: Role
-    name: prometheus
-  subjects:
-  - kind: ServiceAccount
-    name: prometheus-user-workload
-    namespace: openshift-user-workload-monitoring
-- apiVersion: monitoring.coreos.com/v1
-  kind: ServiceMonitor
-  metadata:
-    creationTimestamp: null
-    name: operator
-    namespace: ${NAMESPACE}
-  spec:
-    endpoints:
-    - bearerTokenSecret:
-        key: ""
-      interval: 30s
-      port: metrics
-    jobLabel: component
-    namespaceSelector: {}
-    selector:
-      matchLabels:
-        name: operator
-- apiVersion: monitoring.coreos.com/v1
-  kind: PrometheusRule
-  metadata:
-    creationTimestamp: null
-    name: metrics
-    namespace: ${NAMESPACE}
-  spec:
-    groups:
-    - interval: 30s
-      name: hypershift.rules
-      rules:
-      - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
-          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
-          "app", "$1", "label_app", "(.*)") )
-        record: hypershift:controlplane:component_api_requests_total
-      - expr: sum by (app, namespace) ( sum(container_memory_usage_bytes{container!="POD",container!=""})
-          by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
-          "app", "$1", "label_app", "(.*)") )
-        record: hypershift:controlplane:component_memory_usage
-      - expr: avg by (app, namespace) ( sum( rate( container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
-          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
-          "app", "$1", "label_app", "(.*)") ) / count by (app, namespace) ( sum( rate(
-          container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
-          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
-          "app", "$1", "label_app", "(.*)") )
-        record: hypershift:controlplane:component_cpu_usage_seconds
-      - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
-          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""},
-          "app", "$1", "label_app", "(.*)") )
-        record: hypershift:operator:component_api_requests_total
-- apiVersion: v1
-  kind: Secret
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator-oidc-provider-s3-credentials
-    namespace: ${NAMESPACE}
-  stringData:
-    bucket: ${OIDC_S3_BUCKET}
-    credentials: |
-      [default]
-      aws_access_key_id = ${OIDC_S3_ACCESS_KEY_ID}
-      aws_secret_access_key = ${OIDC_S3_SECRET_ACCESS_KEY}
-    region: ${OIDC_S3_REGION}
-- apiVersion: v1
-  data:
-    name: ${OIDC_S3_BUCKET}
-    region: ${OIDC_S3_REGION}
-  kind: ConfigMap
-  metadata:
-    creationTimestamp: null
-    name: oidc-storage-provider-s3-config
-    namespace: kube-public
 parameters:
-- name: OPERATOR_REPLICAS
-  value: "1"
 - name: OPERATOR_IMG
   value: quay.io/hypershift/hypershift-operator
 - name: IMAGE_TAG
   value: latest
 - name: NAMESPACE
   value: hypershift
-- name: OIDC_S3_BUCKET
-  value: bucket
+- name: OIDC_S3_NAME
 - name: OIDC_S3_REGION
-  value: ""
-- name: OIDC_S3_ACCESS_KEY_ID
-- name: OIDC_S3_SECRET_ACCESS_KEY
+- name: OIDC_S3_CREDS_SECRET
+  value: oidc-s3-creds
+- name: OIDC_S3_CREDS_SECRET_KEY
+  value: credentials
+- name: OPERATOR_REPLICAS
+  value: "1"

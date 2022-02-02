@@ -1,9 +1,9 @@
 package install
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/cmd/version"
@@ -16,6 +16,15 @@ import (
 var (
 	RenderFormatYaml = "yaml"
 	RenderFormatJson = "json"
+
+	TemplateParamHyperShiftImage      = "OPERATOR_IMG"
+	TemplateParamHyperShiftImageTag   = "IMAGE_TAG"
+	TemplateParamNamespace            = "NAMESPACE"
+	TemplateParamOIDCS3Name           = "OIDC_S3_NAME"
+	TemplateParamOIDCS3Region         = "OIDC_S3_REGION"
+	TemplateParamOIDCS3CredsSecret    = "OIDC_S3_CREDS_SECRET"
+	TemplateParamOIDCS3CredsSecretKey = "OIDC_S3_CREDS_SECRET_KEY"
+	TemplateParamOperatorReplicas     = "OPERATOR_REPLICAS"
 )
 
 func NewRenderCommand(opts *Options) *cobra.Command {
@@ -29,21 +38,24 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Format, "format", RenderFormatYaml, fmt.Sprintf("Output format for the manifests, supports %s and %s", RenderFormatYaml, RenderFormatJson))
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := opts.ValidateRender(); err != nil {
+		var err error
+		if err = opts.ValidateRender(); err != nil {
 			return err
 		}
 
-		objects, err := hyperShiftOperatorManifests(*opts)
-		if err != nil {
-			return err
-		}
+		var objects []crclient.Object
 
 		if opts.Template {
-			templateObject, err := wrapManifestsInTemplate(objects, opts)
+			templateObject, err := hyperShiftOperatorTemplateManifest(opts)
 			if err != nil {
 				return err
 			}
 			objects = []crclient.Object{templateObject}
+		} else {
+			objects, err = hyperShiftOperatorManifests(*opts)
+			if err != nil {
+				return err
+			}
 		}
 
 		err = render(objects, opts.Format, cmd.OutOrStdout())
@@ -65,46 +77,63 @@ func (o *Options) ValidateRender() error {
 		return fmt.Errorf("--format must be %s or %s", RenderFormatYaml, RenderFormatJson)
 	}
 
+	if o.OIDCStorageProviderS3BucketName != "" && o.OIDCStorageProviderS3CredentialsSecret == "" {
+		return errors.New("when --oidc-storage-provider-s3-bucket-name is present also --oidc-storage-provider-s3-secret must be specified")
+	}
+
 	return nil
 }
 
-func wrapManifestsInTemplate(objects []crclient.Object, opts *Options) (crclient.Object, error) {
-	// patch objects
-	patches := []ObjectPatch{
-		{Kind: "Deployment", Name: "operator", Path: []string{"spec"}, Field: "replicas", Value: "${OPERATOR_REPLICAS}"},
-		{Kind: "Deployment", Name: "operator", Path: []string{"spec", "template", "spec", "containers", "name=operator"}, Field: "image", Value: "${OPERATOR_IMG}:${IMAGE_TAG}"},
-		{Namespace: opts.Namespace, Path: []string{"metadata"}, Field: "namespace", Value: "${NAMESPACE}"},
-	}
-	templateParameters := []map[string]string{
-		{"name": "OPERATOR_REPLICAS", "value": "1"},
-		{"name": "OPERATOR_IMG", "value": version.HypershiftImageBase},
-		{"name": "IMAGE_TAG", "value": version.HypershiftImageTag},
-		{"name": "NAMESPACE", "value": opts.Namespace},
-	}
+func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) {
+	templateParameters := []map[string]string{}
+
+	// image parameter
+	templateParameters = append(
+		templateParameters,
+		map[string]string{"name": TemplateParamHyperShiftImage, "value": version.HypershiftImageBase},
+		map[string]string{"name": TemplateParamHyperShiftImageTag, "value": version.HypershiftImageTag},
+	)
+	opts.HyperShiftImage = fmt.Sprintf("${%s}:${%s}", TemplateParamHyperShiftImage, TemplateParamHyperShiftImageTag)
+
+	// namespace parameter
+	templateParameters = append(
+		templateParameters,
+		map[string]string{"name": TemplateParamNamespace, "value": opts.Namespace},
+	)
+	opts.Namespace = fmt.Sprintf("${%s}", TemplateParamNamespace)
+
+	// oidc S3 parameter
 	if opts.OIDCStorageProviderS3BucketName != "" {
-		patches = append(
-			patches,
-			ObjectPatch{Kind: "Secret", Name: "hypershift-operator-oidc-provider-s3-credentials", Path: []string{"stringData"}, Field: "bucket", Value: "${OIDC_S3_BUCKET}"},
-			ObjectPatch{Kind: "Secret", Name: "hypershift-operator-oidc-provider-s3-credentials", Path: []string{"stringData"}, Field: "region", Value: "${OIDC_S3_REGION}"},
-			ObjectPatch{Kind: "Secret", Name: "hypershift-operator-oidc-provider-s3-credentials", Path: []string{"stringData"}, Field: "credentials", Value: "[default]\naws_access_key_id = ${OIDC_S3_ACCESS_KEY_ID}\naws_secret_access_key = ${OIDC_S3_SECRET_ACCESS_KEY}\n"},
-			ObjectPatch{Kind: "ConfigMap", Name: "oidc-storage-provider-s3-config", Path: []string{"data"}, Field: "name", Value: "${OIDC_S3_BUCKET}"},
-			ObjectPatch{Kind: "ConfigMap", Name: "oidc-storage-provider-s3-config", Path: []string{"data"}, Field: "region", Value: "${OIDC_S3_REGION}"},
-		)
 		templateParameters = append(
 			templateParameters,
-			map[string]string{"name": "OIDC_S3_BUCKET", "value": opts.OIDCStorageProviderS3BucketName},
-			map[string]string{"name": "OIDC_S3_REGION", "value": opts.OIDCStorageProviderS3Region},
-			map[string]string{"name": "OIDC_S3_ACCESS_KEY_ID"},
-			map[string]string{"name": "OIDC_S3_SECRET_ACCESS_KEY"},
+			map[string]string{"name": TemplateParamOIDCS3Name},
+			map[string]string{"name": TemplateParamOIDCS3Region},
+			map[string]string{"name": TemplateParamOIDCS3CredsSecret, "value": opts.OIDCStorageProviderS3CredentialsSecret},
+			map[string]string{"name": TemplateParamOIDCS3CredsSecretKey, "value": opts.OIDCStorageProviderS3CredentialsSecretKey},
 		)
+		opts.OIDCStorageProviderS3BucketName = fmt.Sprintf("${%s}", TemplateParamOIDCS3Name)
+		opts.OIDCStorageProviderS3Region = fmt.Sprintf("${%s}", TemplateParamOIDCS3Region)
+		opts.OIDCStorageProviderS3CredentialsSecret = fmt.Sprintf("${%s}", TemplateParamOIDCS3CredsSecret)
+		opts.OIDCStorageProviderS3CredentialsSecretKey = fmt.Sprintf("${%s}", TemplateParamOIDCS3CredsSecretKey)
 	}
-	patchedObjects := make([]crclient.Object, len(objects))
-	for i, obj := range objects {
-		patched, err := patchObject(obj, patches)
-		if err != nil {
-			return nil, err
-		}
-		patchedObjects[i] = patched
+
+	// create manifests
+	objects, err := hyperShiftOperatorManifests(*opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// patch those manifests, where the template parameter placeholder was not injectable with opts (e.g. type mistmatch)
+	patches := []ObjectPatch{
+		{Kind: "Deployment", Name: "operator", Path: []string{"spec", "replicas"}, Value: fmt.Sprintf("${%s}", TemplateParamOperatorReplicas)},
+	}
+	templateParameters = append(
+		templateParameters,
+		map[string]string{"name": TemplateParamOperatorReplicas, "value": "1"},
+	)
+	patchedObjects, err := applyPatchesToObjects(objects, patches)
+	if err != nil {
+		return nil, err
 	}
 
 	// wrap into template
@@ -122,68 +151,22 @@ func wrapManifestsInTemplate(objects []crclient.Object, opts *Options) (crclient
 	return template, nil
 }
 
-func patchObject(object crclient.Object, patches []ObjectPatch) (crclient.Object, error) {
-	content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
-	if err != nil {
-		return nil, err
-	}
-	u := &unstructured.Unstructured{Object: content}
-	for _, k := range patches {
-		if k.CanBeAppliedTo(object) {
-			nested, found := resolveNestedMap(u.Object, k.Path)
-			if !found {
-				return nil, fmt.Errorf("can't resolve patch path %s", k.Path)
-			}
-			nested[k.Field] = k.Value
+func applyPatchesToObjects(objects []crclient.Object, patches []ObjectPatch) ([]crclient.Object, error) {
+	patchedObjects := make([]crclient.Object, len(objects))
+	for i, obj := range objects {
+		content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+		if err != nil {
+			return nil, err
 		}
-	}
-	return u, nil
-}
-
-func resolveNestedMap(obj map[string]interface{}, path []string) (map[string]interface{}, bool) {
-	var val interface{} = obj
-
-	for _, field := range path {
-		if val == nil {
-			return nil, false
+		patchedObject := &unstructured.Unstructured{Object: content}
+		for _, p := range patches {
+			if p.CanBeAppliedTo(patchedObject) {
+				unstructured.SetNestedField(patchedObject.Object, p.Value, p.Path...)
+			}
 		}
-		if m, ok := val.(map[string]interface{}); ok {
-			// current location is a map, so go one step down
-			val, ok = m[field]
-			if !ok {
-				return nil, false
-			}
-		} else if list, ok := val.([]interface{}); ok {
-			// current location is a list, so find the element that
-			// matches field=value
-			f, v, _ := splitFilterPathElement(field)
-			foundInList := false
-			for _, e := range list {
-				if (e.(map[string]interface{}))[f] == v {
-					foundInList = true
-					val = e
-				}
-			}
-			if !foundInList {
-				return nil, false
-			}
-		} else {
-			return nil, false
-		}
+		patchedObjects[i] = patchedObject
 	}
-	if nestedMap, ok := val.(map[string]interface{}); ok {
-		return nestedMap, true
-	} else {
-		return nil, true
-	}
-}
-
-func splitFilterPathElement(p string) (string, string, error) {
-	parts := strings.SplitN(p, "=", 2)
-	if len(parts) == 1 {
-		return "", "", fmt.Errorf("filter must match field=value format")
-	}
-	return parts[0], parts[1], nil
+	return patchedObjects, nil
 }
 
 func render(objects []crclient.Object, format string, out io.Writer) error {
@@ -226,12 +209,10 @@ func render(objects []crclient.Object, format string, out io.Writer) error {
 }
 
 type ObjectPatch struct {
-	Kind      string
-	Name      string
-	Namespace string
-	Path      []string
-	Field     string
-	Value     string
+	Kind  string
+	Name  string
+	Path  []string
+	Value string
 }
 
 func (p *ObjectPatch) CanBeAppliedTo(obj crclient.Object) bool {
@@ -239,9 +220,6 @@ func (p *ObjectPatch) CanBeAppliedTo(obj crclient.Object) bool {
 		return false
 	}
 	if p.Name != "" && p.Name != obj.GetName() {
-		return false
-	}
-	if p.Namespace != "" && p.Namespace != obj.GetNamespace() {
 		return false
 	}
 	return true
