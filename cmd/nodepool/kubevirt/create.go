@@ -10,7 +10,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 )
 
@@ -42,13 +41,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	// Otherwise it must fail
 	cmd.MarkFlagRequired("containerdisk")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := coreOpts.CreateNodePool(cmd.Context(), platformOpts); err != nil {
-			log.Error(err, "Failed to create nodepool")
-			return err
-		}
-		return nil
-	}
+	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
 	return cmd
 }
