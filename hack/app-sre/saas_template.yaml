@@ -203,7 +203,7 @@ objects:
     name: operator
     namespace: ${NAMESPACE}
   spec:
-    replicas: ${OPERATOR_REPLICAS}
+    replicas: ${{OPERATOR_REPLICAS}}
     selector:
       matchLabels:
         name: operator
