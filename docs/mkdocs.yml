@@ -43,6 +43,7 @@ nav:
   - how-to/oauth.md
   - how-to/agent-platform.md
   - how-to/create-azure-cluster.md
+  - how-to/kubevirt-platform.md
 - 'Reference':
   - reference/index.md
   - reference/api.md
