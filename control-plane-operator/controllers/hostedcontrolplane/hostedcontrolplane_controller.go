@@ -2143,7 +2143,16 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret: %w", err)
 	}
-	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, globalConfig)
+
+	var userCA *corev1.ConfigMap
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		userCA = manifests.UserCAConfigMap(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(userCA), userCA); err != nil {
+			return fmt.Errorf("failed to get user ca: %w", err)
+		}
+	}
+
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, userCA, globalConfig)
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
