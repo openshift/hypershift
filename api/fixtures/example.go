@@ -21,7 +21,7 @@ type ExampleResources struct {
 	Resources  []crclient.Object
 	SSHKey     *corev1.Secret
 	Cluster    *hyperv1.HostedCluster
-	NodePool   *hyperv1.NodePool
+	NodePools  []*hyperv1.NodePool
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
@@ -34,8 +34,8 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
 	}
-	if o.NodePool != nil {
-		objects = append(objects, o.NodePool)
+	for _, nodePool := range o.NodePools {
+		objects = append(objects, nodePool)
 	}
 	return objects
 }
@@ -85,11 +85,15 @@ type ExampleKubevirtOptions struct {
 	Image            string
 }
 
+type ExampleAWSOptionsZones struct {
+	Name     string
+	SubnetID *string
+}
+
 type ExampleAWSOptions struct {
 	Region                      string
-	Zone                        string
+	Zones                       []ExampleAWSOptionsZones
 	VPCID                       string
-	SubnetID                    string
 	SecurityGroupID             string
 	InstanceProfile             string
 	InstanceType                string
@@ -189,9 +193,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
 					VPC: o.AWS.VPCID,
 					Subnet: &hyperv1.AWSResourceReference{
-						ID: &o.AWS.SubnetID,
+						ID: o.AWS.Zones[0].SubnetID,
 					},
-					Zone: o.AWS.Zone,
+					Zone: o.AWS.Zones[0].Name,
 				},
 				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: awsResources.KubeCloudControllerAWSCreds.Name},
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: awsResources.NodePoolManagementAWSCreds.Name},
@@ -308,16 +312,26 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		},
 	}
 
-	var nodePool *hyperv1.NodePool
-	if o.NodePoolReplicas > -1 {
-		nodePool = &hyperv1.NodePool{
+	if o.NodePoolReplicas <= -1 {
+		return &ExampleResources{
+			Namespace:  namespace,
+			PullSecret: pullSecret,
+			Resources:  resources,
+			SSHKey:     sshKeySecret,
+			Cluster:    cluster,
+			NodePools:  []*hyperv1.NodePool{},
+		}
+	}
+
+	defaultNodePool := func(name string) *hyperv1.NodePool {
+		return &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "NodePool",
 				APIVersion: hyperv1.GroupVersion.String(),
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: namespace.Name,
-				Name:      o.Name,
+				Name:      name,
 			},
 			Spec: hyperv1.NodePoolSpec{
 				Management: hyperv1.NodePoolManagement{
@@ -334,14 +348,18 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			},
 		}
+	}
 
-		switch nodePool.Spec.Platform.Type {
-		case hyperv1.AWSPlatform:
+	var nodePools []*hyperv1.NodePool
+	switch cluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		for _, zone := range o.AWS.Zones {
+			nodePool := defaultNodePool(fmt.Sprintf("%s-%s", cluster.Name, zone.Name))
 			nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
 				InstanceType:    o.AWS.InstanceType,
 				InstanceProfile: o.AWS.InstanceProfile,
 				Subnet: &hyperv1.AWSResourceReference{
-					ID: &o.AWS.SubnetID,
+					ID: zone.SubnetID,
 				},
 				SecurityGroups: []hyperv1.AWSResourceReference{
 					{
@@ -354,38 +372,40 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					IOPS: o.AWS.RootVolumeIOPS,
 				},
 			}
-		case hyperv1.KubevirtPlatform:
-			runAlways := kubevirtv1.RunStrategyAlways
-			guestQuantity := apiresource.MustParse(o.Kubevirt.Memory)
-			nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
-				NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
-					Spec: kubevirtv1.VirtualMachineSpec{
-						RunStrategy: &runAlways,
-						Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-							Spec: kubevirtv1.VirtualMachineInstanceSpec{
-								Domain: kubevirtv1.DomainSpec{
-									CPU:    &kubevirtv1.CPU{Cores: o.Kubevirt.Cores},
-									Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
-									Devices: kubevirtv1.Devices{
-										Disks: []kubevirtv1.Disk{
-											{
-												Name: "containervolume",
-												DiskDevice: kubevirtv1.DiskDevice{
-													Disk: &kubevirtv1.DiskTarget{
-														Bus: "virtio",
-													},
+			nodePools = append(nodePools, nodePool)
+		}
+	case hyperv1.KubevirtPlatform:
+		nodePool := defaultNodePool(cluster.Name)
+		runAlways := kubevirtv1.RunStrategyAlways
+		guestQuantity := apiresource.MustParse(o.Kubevirt.Memory)
+		nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
+			NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
+				Spec: kubevirtv1.VirtualMachineSpec{
+					RunStrategy: &runAlways,
+					Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+						Spec: kubevirtv1.VirtualMachineInstanceSpec{
+							Domain: kubevirtv1.DomainSpec{
+								CPU:    &kubevirtv1.CPU{Cores: o.Kubevirt.Cores},
+								Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
+								Devices: kubevirtv1.Devices{
+									Disks: []kubevirtv1.Disk{
+										{
+											Name: "containervolume",
+											DiskDevice: kubevirtv1.DiskDevice{
+												Disk: &kubevirtv1.DiskTarget{
+													Bus: "virtio",
 												},
 											},
 										},
 									},
 								},
-								Volumes: []kubevirtv1.Volume{
-									{
-										Name: "containervolume",
-										VolumeSource: kubevirtv1.VolumeSource{
-											ContainerDisk: &kubevirtv1.ContainerDiskSource{
-												Image: o.Kubevirt.Image,
-											},
+							},
+							Volumes: []kubevirtv1.Volume{
+								{
+									Name: "containervolume",
+									VolumeSource: kubevirtv1.VolumeSource{
+										ContainerDisk: &kubevirtv1.ContainerDiskSource{
+											Image: o.Kubevirt.Image,
 										},
 									},
 								},
@@ -393,8 +413,13 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 						},
 					},
 				},
-			}
+			},
 		}
+		nodePools = append(nodePools, nodePool)
+	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
+		nodePools = append(nodePools, defaultNodePool(cluster.Name))
+	default:
+		panic("Unsupported platform")
 	}
 
 	return &ExampleResources{
@@ -403,7 +428,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		Resources:  resources,
 		SSHKey:     sshKeySecret,
 		Cluster:    cluster,
-		NodePool:   nodePool,
+		NodePools:  nodePools,
 	}
 }
 

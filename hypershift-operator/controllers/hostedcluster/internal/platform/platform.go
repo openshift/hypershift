@@ -20,8 +20,8 @@ var _ Platform = aws.AWS{}
 var _ Platform = ibmcloud.IBMCloud{}
 var _ Platform = none.None{}
 var _ Platform = agent.Agent{}
+var _ Platform = kubevirt.Kubevirt{}
 
-//go:generate mockgen -source=./platform.go -destination=./mock/platform_generated.go -package=mock
 type Platform interface {
 	// ReconcileCAPIInfraCR is called during HostedCluster reconciliation prior to reconciling the CAPI Cluster CR.
 	// Implementations should use the given input and client to create and update the desired state of the

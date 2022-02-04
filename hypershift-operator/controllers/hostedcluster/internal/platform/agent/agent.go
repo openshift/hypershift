@@ -22,7 +22,8 @@ import (
 
 const (
 	// TODO Pin to specific release
-	imageCAPAgent = "quay.io/edge-infrastructure/cluster-api-provider-agent:latest"
+	imageCAPAgent       = "quay.io/edge-infrastructure/cluster-api-provider-agent:latest"
+	credentialsRBACName = "cluster-api-agent"
 )
 
 type Agent struct{}
@@ -131,7 +132,7 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hcluster.Spec.Platform.Agent.AgentNamespace,
-			Name:      "agent-cluster-api",
+			Name:      credentialsRBACName,
 		},
 	}
 	_, err := createOrUpdate(ctx, c, role, func() error {
@@ -151,7 +152,7 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hcluster.Spec.Platform.Agent.AgentNamespace,
-			Name:      "cluster-api",
+			Name:      credentialsRBACName,
 		},
 	}
 	_, err = createOrUpdate(ctx, c, roleBinding, func() error {
@@ -165,7 +166,7 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 		roleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
-			Name:     "agent-cluster-api",
+			Name:     credentialsRBACName,
 		}
 		return nil
 	})

@@ -99,14 +99,6 @@ fi
 # build the image
 make RUNTIME="$CONTAINER_ENGINE" IMG="$IMG" docker-build
 
-# verify if saas-template is up to date
-$DIR/generate-saas-template.sh "${CONTAINER_ENGINE} run --rm --entrypoint /usr/bin/hypershift ${IMG}"
-if [[ `git status --porcelain` ]]; then
-  echo "hack/app-sre/saas_template.yaml is not uptodate"
-  echo "make sure to run 'make app-sre-saas-template' and commit the changes"
-  exit 1
-fi
-
 # push the image
 ${CONTAINER_ENGINE} push ${IMG}
 
