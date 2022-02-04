@@ -18,7 +18,7 @@ spec:
         kubernetes.io/os: linux
       containers:
         - name: registry
-          image: registry.redhat.io/redhat/certified-operator-index:v4.9
+          image: registry.redhat.io/redhat/certified-operator-index:v4.10
           imagePullPolicy: Always
           ports:
             - containerPort: 50051
