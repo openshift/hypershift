@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -64,6 +65,7 @@ type reconciler struct {
 	oauthAddress              string
 	oauthPort                 int32
 	versions                  map[string]string
+	activeImage               string
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -93,6 +95,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		oauthAddress:              opts.OAuthAddress,
 		oauthPort:                 opts.OAuthPort,
 		versions:                  opts.Versions,
+		activeImage:               opts.ActiveImage,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -143,6 +146,14 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		return fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
 	}
 
+	expectedImage, err := controllers.GetExpectedOperatorImage(ctx, r.cpClient, r.releaseProvider, hcp)
+	if err != nil {
+		return fmt.Errorf("failed to get expected image: %w", err)
+	}
+	if expectedImage != r.activeImage {
+		log.Info("No-oping until recreated with expected image", "activeImage", r.activeImage, "expectedImage", expectedImage)
+		return nil
+	}
 	globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hcp.Spec.Configuration)
 	if err != nil {
 		return fmt.Errorf("failed to parse global config for control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)

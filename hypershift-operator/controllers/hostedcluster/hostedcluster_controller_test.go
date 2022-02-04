@@ -41,6 +41,8 @@ import (
 var Now = metav1.NewTime(time.Now())
 var Later = metav1.NewTime(Now.Add(5 * time.Minute))
 
+const activeImage = "myimage:latest"
+
 func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	// TODO: the spec/status comparison of control plane is a weak check; the
 	// conditions should give us more information about e.g. whether that
@@ -67,6 +69,10 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 			},
 			ControlPlane: hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ActiveHypershiftOperatorImage: activeImage,
+					}},
 				Spec:   hyperv1.HostedControlPlaneSpec{},
 				Status: hyperv1.HostedControlPlaneStatus{},
 			},
@@ -89,9 +95,12 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 			},
 			ControlPlane: hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status:     hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
+				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now,
+					Annotations: map[string]string{
+						hyperv1.ActiveHypershiftOperatorImage: activeImage,
+					}},
+				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
+				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
 			},
 			ExpectedImage: "b",
 		},
@@ -113,9 +122,11 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 			},
 			ControlPlane: hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status:     hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
+				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now, Annotations: map[string]string{
+					hyperv1.ActiveHypershiftOperatorImage: activeImage,
+				}},
+				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
+				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
 			},
 			ExpectedImage: "b",
 		},
@@ -124,7 +135,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster)
+			err := reconcileHostedControlPlane(updated, &test.Cluster, activeImage)
 			if err != nil {
 				t.Error(err)
 			}
@@ -467,7 +478,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, activeImage)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

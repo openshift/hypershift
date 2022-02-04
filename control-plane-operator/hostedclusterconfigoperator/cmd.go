@@ -16,7 +16,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/openshift/hypershift/support/util"
 	"io/ioutil"
+	"k8s.io/client-go/kubernetes"
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -37,6 +39,10 @@ const (
 	defaultReleaseVersion    = "0.0.1-snapshot"
 	defaultKubernetesVersion = "0.0.1-snapshot-kubernetes"
 	konnectivityAgentImage   = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+)
+
+var (
+	setupLog = ctrl.Log.WithName("setup")
 )
 
 func NewCommand() *cobra.Command {
@@ -208,6 +214,16 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 			"konnectivity-agent": konnectivityAgentImage,
 		},
 	}
+	kubeClient, err := kubernetes.NewForConfig(cpConfig)
+	if err != nil {
+		setupLog.Error(err, "unable to create kube client")
+		os.Exit(1)
+	}
+	activeImage, err := util.LookupActiveContainerImage(context.TODO(), kubeClient.CoreV1().Pods(o.Namespace), os.Getenv("POD_NAME"), "hosted-cluster-config-operator")
+	if err != nil {
+		setupLog.Error(err, "unable to detect active pod image")
+		os.Exit(1)
+	}
 	operatorConfig := &operator.HostedClusterConfigOperatorConfig{
 		TargetCreateOrUpdateProvider: &operator.LabelEnforcingUpsertProvider{
 			Upstream:  upsert.New(o.enableCIDebugOutput),
@@ -231,6 +247,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		KonnectivityPort:    o.KonnectivityPort,
 		OAuthAddress:        o.OAuthAddress,
 		OAuthPort:           o.OAuthPort,
+		ActiveImage:         activeImage,
 	}
 	return operatorConfig.Start(ctx)
 }

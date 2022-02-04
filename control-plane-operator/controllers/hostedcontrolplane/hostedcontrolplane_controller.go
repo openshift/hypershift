@@ -99,6 +99,7 @@ type HostedControlPlaneReconciler struct {
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
 	EnableCIDebugOutput bool
+	ActiveImage         string
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -163,6 +164,24 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.Update(ctx, hostedControlPlane); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
+	}
+
+	// Determine if active control plane operator image matches the expected release image payload. If it doesn't
+	// need to no-op until the operator is recreated and at the matching version
+	if _, ok := hostedControlPlane.Annotations[hyperv1.ActiveHypershiftOperatorImage]; !ok {
+		return ctrl.Result{}, fmt.Errorf("active hypershift operator image annotation not present")
+	}
+	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup pull secret: %w", err)
+	}
+	expectedImage, err := cpoutil.GetHypershiftComponentImage(ctx, hostedControlPlane.Annotations, hostedControlPlane.Spec.ReleaseImage, r.ReleaseProvider, hostedControlPlane.Annotations[hyperv1.ActiveHypershiftOperatorImage], pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup expected image: %w", err)
+	}
+	if expectedImage != r.ActiveImage {
+		r.Log.Info("No-oping until component is recreated with proper image", "expectedImage", expectedImage, "activeImage", r.ActiveImage)
+		return ctrl.Result{}, nil
 	}
 
 	// Reconcile global configuration validation status

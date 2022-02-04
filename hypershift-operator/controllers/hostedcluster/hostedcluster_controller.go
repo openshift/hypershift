@@ -33,7 +33,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -857,7 +856,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the HostedControlPlane
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster)
+		return reconcileHostedControlPlane(hcp, hcluster, r.HypershiftOperatorImage)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -1027,7 +1026,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage string) error {
 	// Always initialize the HostedControlPlane with an image matching
 	// the HostedCluster.
 	if hcp.ObjectMeta.CreationTimestamp.IsZero() {
@@ -1041,6 +1040,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	// These annotations are copied from the HostedCluster
 	mirroredAnnotations := []string{
 		hyperv1.DisablePKIReconciliationAnnotation,
+		hyperv1.ControlPlaneOperatorImageAnnotation,
 		hyperv1.OauthLoginURLOverrideAnnotation,
 		hyperv1.KonnectivityAgentImageAnnotation,
 		hyperv1.KonnectivityServerImageAnnotation,
@@ -1063,6 +1063,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 			hcp.Annotations[key] = val
 		}
 	}
+	hcp.Annotations[hyperv1.ActiveHypershiftOperatorImage] = hypershiftOperatorImage
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
@@ -1377,7 +1378,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	if !ok {
 		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	controlPlaneOperatorImage, err := getControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := util.GetHypershiftComponentImage(ctx, hcluster.Annotations, hcluster.Spec.Release.Image, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return err
 	}
@@ -1861,48 +1862,6 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 	return nil
 }
 
-// getControlPlaneOperatorImage resolves the appropriate control plane operator
-// image based on the following order of precedence (from most to least
-// preferred):
-//
-// 1. The image specified by the ControlPlaneOperatorImageAnnotation on the
-//    HostedCluster resource itself
-// 2. The hypershift image specified in the release payload indicated by the
-//    HostedCluster's release field
-// 3. The hypershift-operator's own image for release versions 4.9 and 4.10
-// 4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
-//    version 4.8
-//
-// If no image can be found according to these rules, an error is returned.
-func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
-	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
-		return val, nil
-	}
-	releaseInfo, err := releaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecret)
-	if err != nil {
-		return "", err
-	}
-	version, err := semver.Parse(releaseInfo.Version())
-	if err != nil {
-		return "", err
-	}
-
-	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
-		return hypershiftImage, nil
-	}
-
-	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
-	pullSpec := "registry.ci.openshift.org/hypershift/hypershift"
-	switch versionMajMin {
-	case "4.9", "4.10":
-		return hypershiftOperatorImage, nil
-	case "4.8":
-		return fmt.Sprintf("%s:%s", pullSpec, versionMajMin), nil
-	default:
-		return "", fmt.Errorf("unsupported release image with version %s", versionMajMin)
-	}
-}
-
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -1931,6 +1890,14 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 								ValueFrom: &corev1.EnvVarSource{
 									FieldRef: &corev1.ObjectFieldSelector{
 										FieldPath: "metadata.namespace",
+									},
+								},
+							},
+							{
+								Name: "POD_NAME",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.name",
 									},
 								},
 							},

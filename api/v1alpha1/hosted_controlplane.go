@@ -10,6 +10,10 @@ func init() {
 	SchemeBuilder.Register(&HostedControlPlaneList{})
 }
 
+// ActiveHypershiftOperatorImage is a annotation that specifies the active hypershift operator image managing the associated
+// hostedCluster resource.
+const ActiveHypershiftOperatorImage = "hypershift.openshift.io/active-hypershift-operator-image"
+
 // HostedControlPlane defines the desired state of HostedControlPlane
 // +kubebuilder:resource:path=hostedcontrolplanes,shortName=hcp;hcps,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion

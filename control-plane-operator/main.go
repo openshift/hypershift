@@ -154,7 +154,11 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to detect cluster capabilities")
 			os.Exit(1)
 		}
-
+		activeImage, err := util.LookupActiveContainerImage(context.TODO(), kubeClient.CoreV1().Pods(namespace), os.Getenv("POD_NAME"), "control-plane-operator")
+		if err != nil {
+			setupLog.Error(err, "unable to detect active pod image")
+			os.Exit(1)
+		}
 		lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name, userSpecifiedImage string) (string, error) {
 			if len(userSpecifiedImage) > 0 {
 				setupLog.Info("using image from arguments", "image", userSpecifiedImage)
@@ -238,6 +242,7 @@ func NewStartCommand() *cobra.Command {
 			HostedAPICache:                apiCacheController.GetCache(),
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
 			EnableCIDebugOutput:           enableCIDebugOutput,
+			ActiveImage:                   activeImage,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
