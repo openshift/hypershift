@@ -103,8 +103,8 @@ func NewStartCommand() *cobra.Command {
 		IgnitionServerImage:              "",
 		RegistryOverrides:                map[string]string{},
 		PrivatePlatform:                  string(hyperv1.NonePlatform),
-		OIDCStorageProviderS3Region:      "us-east-1",
-		OIDCStorageProviderS3Credentials: "/etc/oidc-storage-provider-s3-creds/credentials",
+		OIDCStorageProviderS3Region:      "",
+		OIDCStorageProviderS3Credentials: "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")

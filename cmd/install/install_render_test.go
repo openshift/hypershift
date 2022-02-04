@@ -48,7 +48,7 @@ func VerifyTemplateParameterPresent(template map[string]interface{}, paramName s
 }
 
 func TestMultiDocYamlRendering(t *testing.T) {
-	out, err := ExecuteTestCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "yaml"})
+	out, err := ExecuteTestCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-bucket-name", "mybucket", "render", "--format", "yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestMultiDocYamlRendering(t *testing.T) {
 }
 
 func TestTemplateYamlRendering(t *testing.T) {
-	template, err := ExecuteTemplateYamlGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "yaml", "--template"})
+	template, err := ExecuteTemplateYamlGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "yaml", "--template"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func ExecuteJsonGenerationCommand(args []string) (map[string]interface{}, error)
 }
 
 func TestJsonListRendering(t *testing.T) {
-	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json"})
+	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestJsonListRendering(t *testing.T) {
 }
 
 func TestJsonTemplateRendering(t *testing.T) {
-	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json", "--template"})
+	doc, err := ExecuteJsonGenerationCommand([]string{"--oidc-storage-provider-s3-bucket-name", "bucket", "--oidc-storage-provider-s3-region", "us-east-1", "--oidc-storage-provider-s3-secret", "secret", "render", "--format", "json", "--template"})
 	if err != nil {
 		t.Fatal(err)
 	}
