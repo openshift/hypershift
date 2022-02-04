@@ -54,6 +54,10 @@ nav:
     - how-to/kubevirt/create-kubevirt-cluster.md
   - 'None':
     - how-to/none/create-none-cluster.md
+  - 'PowerVS':
+    - how-to/powervs/create-cluster-powervs.md
+    - how-to/powervs/create-infra-powervs-separately.md
+    - how-to/powervs/prerequisites-and-env-guide.md
 - 'Reference':
   - reference/index.md
   - reference/api.md

@@ -30,6 +30,7 @@ type DestroyOptions struct {
 	Namespace          string
 	AWSPlatform        AWSPlatformDestroyOptions
 	AzurePlatform      AzurePlatformDestroyOptions
+	PowerVSPlatform    PowerVSPlatformDestroyOptions
 	InfraID            string
 }
 
@@ -43,6 +44,13 @@ type AWSPlatformDestroyOptions struct {
 type AzurePlatformDestroyOptions struct {
 	CredentialsFile string
 	Location        string
+}
+
+type PowerVSPlatformDestroyOptions struct {
+	ResourceGroup string
+	Region        string
+	Zone          string
+	VPCRegion     string
 }
 
 func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {

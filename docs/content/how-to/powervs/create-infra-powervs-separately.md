@@ -15,20 +15,9 @@ In order to do this, you need to:
 1. [Create PowerVS infrastructure](#creating-the-powervs-infra) 
 2. [Create cluster](#creating-the-cluster)
 
-### Setting up IBM Cloud Authentication
-Authenticate IBM Cloud Clients by setting the `IBMCLOUD_API_KEY` environment var to your API Key.
-
-### Setting custom endpoints for IBM Cloud services
-Set the following environment var to set the custom endpoint.
-```
-IBMCLOUD_POWER_API_ENDPOINT - to setup PowerVS custom endpoint
-IBMCLOUD_VPC_API_ENDPOINT - to setup VPC custom endpoint
-IBMCLOUD_PLATFORM_API_ENDPOINT - to setup platform services custom endpoint
-```
-
 ## Creating the PowerVS infra
 
-Set up the [authentication](#setting-up-ibm-cloud-authentication) by following this section
+Please see [prerequisites](./prerequisites-and-env-guide.md/#prerequisites) before setting up the infra
 
 Use the `hypershift create infra powervs` command:
 
@@ -39,6 +28,16 @@ Use the `hypershift create infra powervs` command:
         --powervs-zone POWERVS_ZONE \
         --vpc-region VPC_REGION \
         --output-file OUTPUT_INFRA_FILE
+
+E.g.:
+
+      ./bin/hypershift create infra powervs --base-domain scnl-ibm.com \
+      --resource-group hypershift-resource-group \
+      --infra-id example \
+      --powervs-region tok \
+      --powervs-zone tok04 \
+      --vpc-region jp-tok \
+      --output-file infra.json
 
 where
 
@@ -55,6 +54,8 @@ where
 
 Running this command should result in the following resources getting created:
 
+### PowerVS Cluster Infra Resources 
+
 * 1 VPC with Subnet
 * 1 PowerVS Cloud Instance
 * 1 DHCP Service
@@ -64,4 +65,16 @@ Running this command should result in the following resources getting created:
 
 ## Creating the Cluster
 
-TODO
+Once you have the `OUTPUT_INFRA_FILE` generated, can pass this file `hypershift create cluster powervs` to this command with `--infra-json` flag
+Running the below command set up the cluster on infra created separately
+
+E.g.:
+
+      ./bin/hypershift create cluster powervs --base-domain scnl-ibm.com \
+      --resource-group hypershift-resource-group \
+      --infra-id example \
+      --pull-secret ./pull-secret \
+      --region tok --zone tok04 \
+      --vpc-region jp-tok \
+      --node-pool-replicas=2 \
+      --infra-json infra.json

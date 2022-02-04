@@ -132,6 +132,7 @@ type Infra struct {
 	CisDomainID              string            `json:"cisDomainID"`
 	ResourceGroupID          string            `json:"resourceGroupID"`
 	PowerVSCloudInstanceID   string            `json:"powerVSCloudInstanceID"`
+	PowerVSDhcpSubnet        string            `json:"powerVSDhcpSubnet"`
 	PowerVSDhcpSubnetID      string            `json:"powerVSDhcpSubnetID"`
 	PowerVSDhcpID            string            `json:"powerVSDhcpID"`
 	PowerVSCloudConnectionID string            `json:"powerVSCloudConnectionID"`
@@ -989,6 +990,7 @@ func (infra *Infra) setupPowerVSDhcp(options *CreateInfraOptions, session *ibmpi
 	if dhcpServer != nil {
 		infra.PowerVSDhcpID = *dhcpServer.ID
 		if *dhcpServer.Status == dhcpServiceActiveState && dhcpServer.Network != nil {
+			infra.PowerVSDhcpSubnet = *dhcpServer.Network.Name
 			infra.PowerVSDhcpSubnetID = *dhcpServer.Network.ID
 		}
 		infra.Stats.DhcpService.Status = *dhcpServer.Status
