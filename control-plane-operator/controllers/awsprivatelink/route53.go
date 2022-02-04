@@ -61,7 +61,7 @@ func createRecord(ctx context.Context, client route53iface.Route53API, zondID, n
 
 	_, err := client.ChangeResourceRecordSetsWithContext(ctx, input)
 	if awsErr, ok := err.(awserr.Error); ok {
-		return errors.New(awsErr.Message())
+		return errors.New(awsErr.Code())
 	}
 	return err
 }

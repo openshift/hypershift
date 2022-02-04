@@ -111,6 +111,15 @@ type NodePoolSpec struct {
 	//
 	// +kubebuilder:validation:Optional
 	Config []v1.LocalObjectReference `json:"config,omitempty"`
+
+	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+	// The default value is 0, meaning that the node can be drained without any time limitations.
+	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
+	// TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
+	// the purpose of the change. In future we plan to propagate this field in-place.
+	// https://github.com/kubernetes-sigs/cluster-api/issues/5880
+	// +optional
+	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.

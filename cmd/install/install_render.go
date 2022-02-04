@@ -125,7 +125,7 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 
 	// patch those manifests, where the template parameter placeholder was not injectable with opts (e.g. type mistmatch)
 	patches := []ObjectPatch{
-		{Kind: "Deployment", Name: "operator", Path: []string{"spec", "replicas"}, Value: fmt.Sprintf("${%s}", TemplateParamOperatorReplicas)},
+		{Kind: "Deployment", Name: "operator", Path: []string{"spec", "replicas"}, Value: fmt.Sprintf("${{%s}}", TemplateParamOperatorReplicas)},
 	}
 	templateParameters = append(
 		templateParameters,

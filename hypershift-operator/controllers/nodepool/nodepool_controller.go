@@ -668,7 +668,8 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 				Name:       machineTemplateCR.GetName(),
 			},
 			// Keep current version for later check.
-			Version: machineDeployment.Spec.Template.Spec.Version,
+			Version:          machineDeployment.Spec.Template.Spec.Version,
+			NodeDrainTimeout: nodePool.Spec.NodeDrainTimeout,
 		},
 	}
 
