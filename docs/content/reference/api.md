@@ -544,6 +544,25 @@ MachineConfig in bootstrap mode atm. See:
 <a href="https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119">https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119</a></p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nodeDrainTimeout</code></br>
+<em>
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+The default value is 0, meaning that the node can be drained without any time limitations.
+NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
+TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
+the purpose of the change. In future we plan to propagate this field in-place.
+<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a></p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -3833,6 +3852,25 @@ JSON or YAML of a serialized MachineConfig.</p>
 KubeletConfig and ContainerRuntimeConfig but MCO only supports
 MachineConfig in bootstrap mode atm. See:
 <a href="https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119">https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodeDrainTimeout</code></br>
+<em>
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+The default value is 0, meaning that the node can be drained without any time limitations.
+NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
+TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
+the purpose of the change. In future we plan to propagate this field in-place.
+<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a></p>
 </td>
 </tr>
 </tbody>
