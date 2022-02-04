@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/powervs"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -71,6 +72,8 @@ func GetPlatform(hcluster *hyperv1.HostedCluster, controlplaneOperatorImage stri
 		platform = &kubevirt.Kubevirt{}
 	case hyperv1.AzurePlatform:
 		platform = &azure.Azure{}
+	case hyperv1.PowerVSPlatform:
+		platform = &powervs.PowerVS{}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}

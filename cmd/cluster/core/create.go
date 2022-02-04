@@ -61,8 +61,27 @@ type CreateOptions struct {
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
 	AzurePlatform                    AzurePlatformOptions
+	PowerVSPlatform                  PowerVSPlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
+}
+
+type PowerVSPlatformOptions struct {
+	APIKey                 string
+	ResourceGroup          string
+	PowerVSRegion          string
+	PowerVSZone            string
+	PowerVSCloudInstanceID string
+	PowerVSCloudConnection string
+	VpcRegion              string
+	Vpc                    string
+	VpcSubnet              string
+
+	// nodepool related options
+	SysType    string
+	ProcType   string
+	Processors string
+	Memory     string
 }
 
 type AgentPlatformCreateOptions struct {

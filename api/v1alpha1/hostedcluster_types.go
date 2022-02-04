@@ -475,7 +475,7 @@ const (
 
 // PlatformType is a specific supported infrastructure provider.
 //
-// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure
+// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS
 type PlatformType string
 
 const (
@@ -496,6 +496,9 @@ const (
 
 	// AzurePlatform represents Azure infrastructure.
 	AzurePlatform PlatformType = "Azure"
+
+	// PowerVSPlatform represents PowerVS infrastructure.
+	PowerVSPlatform PlatformType = "PowerVS"
 )
 
 // PlatformSpec specifies the underlying infrastructure provider for the cluster
@@ -524,6 +527,12 @@ type PlatformSpec struct {
 
 	// Azure defines azure specific settings
 	Azure *AzurePlatformSpec `json:"azure,omitempty"`
+
+	// IBMCloud defines IBMCloud specific settings for components
+	//
+	// +optional
+	// +immutable
+	PowerVS *PowerVSPlatformSpec `json:"powervs,omitempty"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
@@ -536,6 +545,111 @@ type AgentPlatformSpec struct {
 type IBMCloudPlatformSpec struct {
 	// ProviderType is a specific supported infrastructure provider within IBM Cloud.
 	ProviderType configv1.IBMCloudProviderType `json:"providerType,omitempty"`
+}
+
+// PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components
+type PowerVSPlatformSpec struct {
+	// ResourceGroup is the IBMCloud Resource Group in which the cluster resides. If not
+	// specified then default resource group of the account will be used.
+	//
+	// +immutable
+	ResourceGroup string `json:"resourceGroup,omitempty"`
+
+	// Region is the IBMCloud region in which the cluster resides. This configures the
+	// OCP control plane cloud integrations, and is used by NodePool to resolve
+	// the correct boot image for a given release.
+	//
+	// +immutable
+	Region string `json:"region"`
+
+	// Zone is the availability zone where control plane cloud resources are
+	// created.
+	//
+	// +immutable
+	Zone string `json:"zone,omitempty"`
+
+	// Subnet is the subnet to use for control plane cloud resources.
+	//
+	// +optional
+	Subnet *PowerVSResourceReference `json:"subnet,omitempty"`
+
+	// ServiceInstanceID is the ServiceInstance to use for control plane cloud resources.
+	ServiceInstanceID string `json:"serviceInstanceID,omitempty"`
+
+	// VPC specifies IBM Cloud PowerVS Load Balancing configuration for the control
+	// plane.
+	//
+	// +immutable
+	VPC *PowerVSVPC `json:"vpc,omitempty"`
+
+	// KubeCloudControllerCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the cloud controller policy. The
+	// secret should have exactly one key, `credentials`, whose value is an AWS
+	// credentials file.
+	//
+	// TODO(dan): document the "cloud controller policy"
+	//
+	// +immutable
+	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
+
+	// NodePoolManagementCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the node pool management policy. The
+	// secret should have exactly one key, `credentials`, whose value is an AWS
+	// credentials file.
+	//
+	// TODO(dan): document the "node pool management policy"
+	//
+	// +immutable
+	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
+
+	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the control-plane-operator policy.
+	// The secret should have exactly one key, `credentials`, whose value is
+	// an AWS credentials file.
+	//
+	// TODO(dan): document the "control plane operator policy"
+	//
+	// +immutable
+	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
+}
+
+// PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control
+// plane.
+type PowerVSVPC struct {
+	// Name for VPC to used for all the service load balancer.
+	// +immutable
+	Name string `json:"name"`
+
+	// Region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
+	// into the OCP cluster.
+	//
+	// +immutable
+	Region string `json:"region"`
+
+	// Zone is the availability zone where load balancer cloud resources are
+	// created.
+	//
+	// +immutable
+	// +optional
+	Zone string `json:"zone,omitempty"`
+
+	// Subnet is the subnet to use for load balancer.
+	//
+	// +optional
+	Subnet string `json:"subnet,omitempty"`
+}
+
+// PowerVSResourceReference is a reference to a specific IBMCloud PowerVS resource by ID, or Name.
+// Only one of ID, or Name may be specified. Specifying more than one will result in
+// a validation error.
+type PowerVSResourceReference struct {
+	// ID of resource
+	// +optional
+	ID *string `json:"id,omitempty"`
+
+	// Name of resource
+	// +optional
+	Name *string `json:"name,omitempty"`
 }
 
 // AWSCloudProviderConfig specifies AWS networking configuration.
