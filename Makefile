@@ -41,7 +41,7 @@ all: build e2e
 build: ignition-server hypershift-operator control-plane-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
 
 .PHONY: verify
-verify: staticcheck deps api fmt vet promtool api-docs
+verify: staticcheck deps api fmt vet promtool api-docs app-sre-saas-template
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	$(eval STATUS = $(shell git status -s))
@@ -132,7 +132,14 @@ api-docs: $(GENAPIDOCS)
 
 .PHONY: app-sre-saas-template
 app-sre-saas-template: hypershift
-	hack/app-sre/generate-saas-template.sh bin/hypershift
+	bin/hypershift install \
+		--oidc-storage-provider-s3-bucket-name=bucket \
+		--oidc-storage-provider-s3-secret=oidc-s3-creds \
+		--oidc-storage-provider-s3-region=us-east-1 \
+		--oidc-storage-provider-s3-secret-key=credentials \
+		--enable-ocp-cluster-monitoring=false \
+		--enable-ci-debug-output=false \
+		render --template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
 
 # Run tests
 .PHONY: test

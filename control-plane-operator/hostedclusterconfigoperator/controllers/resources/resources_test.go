@@ -3,6 +3,10 @@ package resources
 import (
 	"context"
 	"fmt"
+	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"math/rand"
 	"testing"
 	"time"
@@ -197,4 +201,88 @@ func fakePackageServerService() *corev1.Service {
 	s := manifests.OLMPackageServerControlPlaneService("bar")
 	s.Spec.ClusterIP = "1.1.1.1"
 	return s
+}
+
+func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
+	testNamespace := "master-cluster1"
+	testHCPName := "cluster1"
+	tests := map[string]struct {
+		inputHCP                                 *hyperv1.HostedControlPlane
+		inputObjects                             []client.Object
+		expectedOauthServerAnnotations           []string
+		expectKubeadminPasswordHashSecretToExist bool
+	}{
+		"when kubeadminPasswordSecret exists the oauth server is annotated and the hash secret is created": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: manifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
+					Data: map[string][]byte{
+						"password": []byte(`adminpass`),
+					},
+				},
+				&appsv1.Deployment{
+					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+				},
+			},
+			expectedOauthServerAnnotations: []string{
+				SecretHashAnnotation,
+			},
+			expectKubeadminPasswordHashSecretToExist: true,
+		},
+		"when kubeadminPasswordSecret doesn't exist the oauth server is not annotated and the hash secret is not created": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				&appsv1.Deployment{
+					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+				},
+			},
+			expectedOauthServerAnnotations:           nil,
+			expectKubeadminPasswordHashSecretToExist: false,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
+				hcpName:                testHCPName,
+				hcpNamespace:           testNamespace,
+			}
+			err := r.reconcileKubeadminPasswordHashSecret(context.Background(), test.inputHCP)
+			g.Expect(err).To(BeNil())
+			if test.expectKubeadminPasswordHashSecretToExist {
+				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
+				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
+				g.Expect(err).To(BeNil())
+				g.Expect(len(actualKubeAdminSecret.Data["kubeadmin"]) > 0).To(BeTrue())
+			} else {
+				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
+				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
+				g.Expect(errors.IsNotFound(err)).To(BeTrue())
+			}
+			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
+			err = r.cpClient.Get(context.TODO(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
+			g.Expect(err).To(BeNil())
+			if test.expectedOauthServerAnnotations == nil {
+				g.Expect(actualOauthDeployment.Spec.Template.Annotations).To(BeNil())
+			} else {
+				for _, annotation := range test.expectedOauthServerAnnotations {
+					g.Expect(len(actualOauthDeployment.Spec.Template.Annotations[annotation]) > 0).To(BeTrue())
+				}
+			}
+		})
+	}
 }

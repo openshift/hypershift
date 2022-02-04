@@ -661,6 +661,10 @@ func (r *reconciler) reconcileOpenshiftOAuthAPIServerEndpoints(ctx context.Conte
 func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			// kubeAdminPasswordHash will not exist when a user specifies an explicit oauth config
+			return nil
+		}
 		return fmt.Errorf("failed to get kubeadmin password secret: %w", err)
 	}
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()

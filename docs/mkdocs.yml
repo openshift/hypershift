@@ -34,9 +34,11 @@ nav:
 - 'Getting started': getting-started.md
 - 'How-to guides':
   - how-to/index.md
+  - how-to/create-infra-iam-separately.md
   - how-to/deploy-aws-private-clusters.md
   - how-to/oauth.md
   - how-to/distribute-hosted-cluster-workloads.md
+  - how-to/restart-control-plane-components.md
 - 'Reference':
   - reference/index.md
   - reference/api.md

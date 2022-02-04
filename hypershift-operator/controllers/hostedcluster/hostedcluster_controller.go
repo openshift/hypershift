@@ -27,6 +27,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,11 +58,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/baggage"
-	"go.opentelemetry.io/otel/trace"
-	"gopkg.in/square/go-jose.v2"
+	jose "gopkg.in/square/go-jose.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -145,8 +142,6 @@ type HostedClusterReconciler struct {
 	// Clock is used to determine the time in a testable way.
 	Clock clock.Clock
 
-	tracer trace.Tracer
-
 	EnableOCPClusterMonitoring bool
 
 	createOrUpdate func(reconcile.Request) upsert.CreateOrUpdateFN
@@ -167,7 +162,6 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		r.Clock = clock.RealClock{}
 	}
 	r.createOrUpdate = createOrUpdateWithAnnotationFactory(createOrUpdate)
-	r.tracer = otel.Tracer("hostedcluster-controller")
 	// Set up watches for resource types the controller manages. The list basically
 	// tracks types of the resources in the clusterapi, controlplaneoperator, and
 	// ignitionserver manifests packages. Since we're receiving watch events across
@@ -181,6 +175,15 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	for _, managedResource := range r.managedResources() {
 		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
 	}
+
+	// TODO (alberto): drop this once this is fixed upstream https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2864.
+	builder.Watches(&source.Kind{Type: &hyperv1.NodePool{}}, handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
+		nodePool, ok := obj.(*hyperv1.NodePool)
+		if !ok {
+			return []reconcile.Request{}
+		}
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: nodePool.GetNamespace(), Name: nodePool.Spec.ClusterName}}}
+	}))
 
 	// Watch based on Routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -232,12 +235,6 @@ func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 }
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	ctx = baggage.ContextWithValues(ctx,
-		attribute.String("request", req.String()),
-	)
-	var span trace.Span
-	ctx, span = r.tracer.Start(ctx, "reconcile")
-	defer span.End()
 
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling")
@@ -544,7 +541,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
-		span.AddEvent("updated ignition endpoint condition", trace.WithAttributes(attribute.String(newCondition.Type, string(newCondition.Status))))
 	}
 
 	// Persist status updates
@@ -874,6 +870,10 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		controlPlaneNamespace.Name,
 		hcp.Status.ControlPlaneEndpoint)
 	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name, controlPlaneNamespace.Name); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -1467,9 +1467,6 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 }
 
 func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
-	var span trace.Span
-	ctx, span = r.tracer.Start(ctx, "reconcile-ignition-server")
-	defer span.End()
 
 	log := ctrl.LoggerFrom(ctx)
 
@@ -1485,19 +1482,17 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 	}
 	// Reconcile service
 	ignitionServerService := ignitionserver.Service(controlPlaneNamespace.Name)
-	if result, err := createOrUpdate(ctx, r.Client, ignitionServerService, func() error {
+	if _, err := createOrUpdate(ctx, r.Client, ignitionServerService, func() error {
 		return reconcileIgnitionServerService(ignitionServerService, serviceStrategy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition service: %w", err)
-	} else {
-		span.AddEvent("reconciled ignition server service", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 	var ignitionServerAddress string
 	switch serviceStrategy.Type {
 	case hyperv1.Route:
 		// Reconcile route
 		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.Name)
-		if result, err := createOrUpdate(ctx, r.Client, ignitionServerRoute, func() error {
+		if _, err := createOrUpdate(ctx, r.Client, ignitionServerRoute, func() error {
 			if ignitionServerRoute.Annotations == nil {
 				ignitionServerRoute.Annotations = map[string]string{}
 			}
@@ -1522,8 +1517,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition route: %w", err)
-		} else {
-			span.AddEvent("reconciled ignition server route", trace.WithAttributes(attribute.String("result", string(result))))
 		}
 
 		// The route must be admitted and assigned a host before we can generate certs
@@ -1566,7 +1559,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition ca cert: %w", err)
 	} else {
-		span.AddEvent("reconciled ignition CA cert secret", trace.WithAttributes(attribute.String("result", string(result))))
 		log.Info("reconciled ignition CA cert secret", "result", result)
 	}
 
@@ -1608,12 +1600,11 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition serving cert: %w", err)
 	} else {
-		span.AddEvent("reconciled ignition serving cert secret", trace.WithAttributes(attribute.String("result", string(result))))
 		log.Info("reconciled ignition serving cert secret", "result", result)
 	}
 
 	role := ignitionserver.Role(controlPlaneNamespace.Name)
-	if result, err := createOrUpdate(ctx, r.Client, role, func() error {
+	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
 		role.Rules = []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{""},
@@ -1635,19 +1626,15 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition role: %w", err)
-	} else {
-		span.AddEvent("reconciled ignition server role", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	sa := ignitionserver.ServiceAccount(controlPlaneNamespace.Name)
-	if result, err := createOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
+	if _, err := createOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
-	} else {
-		span.AddEvent("reconciled ignition ServiceAccount", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	roleBinding := ignitionserver.RoleBinding(controlPlaneNamespace.Name)
-	if result, err := createOrUpdate(ctx, r.Client, roleBinding, func() error {
+	if _, err := createOrUpdate(ctx, r.Client, roleBinding, func() error {
 		roleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
@@ -1664,13 +1651,11 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition RoleBinding: %w", err)
-	} else {
-		span.AddEvent("reconciled ignition RoleBinding", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	// Reconcile deployment
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
-	if result, err := createOrUpdate(ctx, r.Client, ignitionServerDeployment, func() error {
+	if _, err := createOrUpdate(ctx, r.Client, ignitionServerDeployment, func() error {
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
@@ -1782,7 +1767,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
 			}
 		}
-
+		hyperutil.SetRestartAnnotation(hcluster, ignitionServerDeployment)
 		hyperutil.SetColocation(hcluster, ignitionServerDeployment)
 		hyperutil.SetControlPlaneIsolation(hcluster, ignitionServerDeployment)
 		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
@@ -1804,8 +1789,6 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
-	} else {
-		span.AddEvent("reconciled ignition server deployment", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	return nil
@@ -2190,6 +2173,13 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Resources: []string{"poddisruptionbudgets"},
 			Verbs:     []string{"*"},
 		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
+			},
+			Verbs: []string{"*"},
+		},
 	}
 	return nil
 }
@@ -2347,9 +2337,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	}
 
 	hyperutil.SetColocation(hc, deployment)
-	// TODO (alberto): Reconsider enable this back when we face a real need
-	// with no better solution.
-	// hyperutil.SetRestartAnnotation(hc, deployment)
+	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
 	switch hc.Spec.ControllerAvailabilityPolicy {
@@ -3005,9 +2993,6 @@ func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
 }
 
 func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
-	var span trace.Span
-	ctx, span = r.tracer.Start(ctx, "reconcile-machine-config-server")
-	defer span.End()
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err != nil {
@@ -3016,12 +3001,10 @@ func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Conte
 
 	// Reconcile service
 	mcsService := ignitionserver.MCSService(controlPlaneNamespace.Name)
-	if result, err := createOrUpdate(ctx, r.Client, mcsService, func() error {
+	if _, err := createOrUpdate(ctx, r.Client, mcsService, func() error {
 		return reconcileMachineConfigServerService(mcsService)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine config server service: %w", err)
-	} else {
-		span.AddEvent("reconciled machine config server service", trace.WithAttributes(attribute.String("result", string(result))))
 	}
 
 	return nil
@@ -3774,6 +3757,60 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 
 	if err := r.Client.Update(ctx, hcluster); err != nil {
 		return fmt.Errorf("failed to update AWS resource tags: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
+	infraCR client.Object, namespace, clusterName, hcpNamespace string) error {
+
+	nodePools, err := r.listNodePools(namespace, clusterName)
+	if err != nil {
+		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", clusterName, err)
+	}
+	subnetIDs := []string{}
+	for _, nodePool := range nodePools {
+		if nodePool.Spec.Platform.AWS != nil &&
+			nodePool.Spec.Platform.AWS.Subnet != nil &&
+			nodePool.Spec.Platform.AWS.Subnet.ID != nil {
+			subnetIDs = append(subnetIDs, *nodePool.Spec.Platform.AWS.Subnet.ID)
+		}
+	}
+	// Sort for stable update detection (is this needed?)
+	sort.Strings(subnetIDs)
+
+	// Reconcile subnet IDs in AWSCluster
+	// TODO (alberto): drop this once this is fixed upstream https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2864.
+	awsInfraCR, ok := infraCR.(*capiawsv1.AWSCluster)
+	if !ok {
+		return nil
+	}
+	subnets := capiawsv1.Subnets{}
+	for _, subnetID := range subnetIDs {
+		subnets = append(subnets, capiawsv1.SubnetSpec{ID: subnetID})
+	}
+	_, err = createOrUpdate(ctx, r.Client, awsInfraCR, func() error {
+		awsInfraCR.Spec.NetworkSpec.Subnets = subnets
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
+	}
+
+	// Reconcile subnet IDs in AWSEndpointService CRs
+	awsEndpointServiceList := hyperv1.AWSEndpointServiceList{}
+	if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
+		return fmt.Errorf("failed to list AWSEndpointServices in namespace %s: %w", hcpNamespace, err)
+	}
+	for _, eps := range awsEndpointServiceList.Items {
+		_, err = createOrUpdate(ctx, r.Client, &eps, func() error {
+			eps.Spec.SubnetIDs = subnetIDs
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile subnetIDs for AWSEndpointService %s: %w", eps.Name, err)
+		}
 	}
 
 	return nil

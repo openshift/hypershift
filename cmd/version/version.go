@@ -2,12 +2,15 @@ package version
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 )
 
 var (
-	HyperShiftImage = "quay.io/hypershift/hypershift-operator:latest"
+	HypershiftImageBase = "quay.io/hypershift/hypershift-operator"
+	HypershiftImageTag  = "latest"
+	HyperShiftImage     = fmt.Sprintf("%s:%s", HypershiftImageBase, HypershiftImageTag)
 )
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services

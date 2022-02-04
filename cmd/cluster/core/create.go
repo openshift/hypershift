@@ -90,6 +90,7 @@ type AWSPlatformOptions struct {
 	RootVolumeSize     int64
 	RootVolumeType     string
 	EndpointAccess     string
+	Zones              []string
 }
 
 func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {

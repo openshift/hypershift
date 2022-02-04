@@ -335,20 +335,6 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 
 		if hcluster.Spec.Platform.AWS.CloudProviderConfig != nil {
 			awsCluster.Spec.NetworkSpec.VPC.ID = hcluster.Spec.Platform.AWS.CloudProviderConfig.VPC
-
-			// TODO: This https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2728
-			// broke our assumption in CAPA 0.7 for externally managed infrastructure.
-			// This effectively limit our ability to span NodePools across multiple subnets.
-			// In a follow up we need to either enable upstream back to support arbitrary subnets IDs
-			// in the awsMachine CR or possibly expose a slice of available subnets for NodePools in hcluster.Spec.Platform.AWS.
-			if hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet != nil &&
-				hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
-				awsCluster.Spec.NetworkSpec.Subnets = []capiawsv1.SubnetSpec{
-					{
-						ID: *hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID,
-					},
-				}
-			}
 		}
 
 		if len(hcluster.Spec.Platform.AWS.ResourceTags) > 0 {

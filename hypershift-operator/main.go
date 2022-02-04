@@ -35,14 +35,8 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpgrpc"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/semconv"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
@@ -50,6 +44,7 @@ import (
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -76,7 +71,6 @@ type StartOptions struct {
 	MetricsAddr                      string
 	EnableLeaderElection             bool
 	IgnitionServerImage              string
-	OpenTelemetryEndpoint            string
 	EnableOCPClusterMonitoring       bool
 	EnableCIDebugOutput              bool
 	ControlPlaneOperatorImage        string
@@ -107,11 +101,10 @@ func NewStartCommand() *cobra.Command {
 		EnableLeaderElection:             false,
 		ControlPlaneOperatorImage:        "",
 		IgnitionServerImage:              "",
-		OpenTelemetryEndpoint:            "",
 		RegistryOverrides:                map[string]string{},
 		PrivatePlatform:                  string(hyperv1.NonePlatform),
-		OIDCStorageProviderS3Region:      "us-east-1",
-		OIDCStorageProviderS3Credentials: "/etc/oidc-storage-provider-s3-creds/credentials",
+		OIDCStorageProviderS3Region:      "",
+		OIDCStorageProviderS3Credentials: "",
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
@@ -125,7 +118,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.SocksProxyImage, "socks-proxy-image", opts.SocksProxyImage, "Image for the SOCKS proxy (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.TokenMinterImage, "token-minter-image", opts.TokenMinterImage, "Image for the token minter image (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
-	cmd.Flags().StringVar(&opts.OpenTelemetryEndpoint, "otlp-endpoint", opts.OpenTelemetryEndpoint, "An OpenTelemetry collector endpoint (e.g. localhost:4317). If specified, OTLP traces will be exported to this endpoint.")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
@@ -283,30 +275,15 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	// Configure OpenTelemetry
-	var tracerOpts []sdktrace.TracerProviderOption
-	tracerOpts = append(tracerOpts, sdktrace.WithResource(resource.NewWithAttributes(
-		semconv.ServiceNameKey.String("hypershift-operator"),
-	)))
-
-	// Export to an OTLP endpoint if specified
-	if len(opts.OpenTelemetryEndpoint) > 0 {
-		exporter, err := otlp.NewExporter(ctx,
-			otlpgrpc.NewDriver(
-				otlpgrpc.WithEndpoint("localhost:4317"),
-				otlpgrpc.WithInsecure(),
-			))
-		if err != nil {
-			return fmt.Errorf("failed to initialize export pipeline: %w", err)
-		}
-		tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
+	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
+	// directly reads from the api.
+	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
+		CacheReader: mgr.GetAPIReader(),
+		Client:      mgr.GetClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to construct api reading client: %w", err)
 	}
-
-	tp := sdktrace.NewTracerProvider(tracerOpts...)
-	defer func() { _ = tp.Shutdown(ctx) }()
-
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{}))
 
 	// If it exsists, block default ingress controller from admitting HCP private routes
 	ic := &operatorv1.IngressController{
@@ -315,8 +292,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Namespace: "openshift-ingress-operator",
 		},
 	}
-	if err := mgr.GetClient().Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
-		if _, err := controllerutil.CreateOrUpdate(ctx, mgr.GetClient(), ic, func() error {
+	if err := apiReadingClient.Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
+		if _, err := controllerutil.CreateOrUpdate(ctx, apiReadingClient, ic, func() error {
 			if ic.Spec.RouteSelector == nil {
 				ic.Spec.RouteSelector = &metav1.LabelSelector{}
 			}
@@ -339,6 +316,22 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
 		}
 		log.Info("reconciled default ingress controller")
+	}
+
+	if opts.OIDCStorageProviderS3BucketName != "" {
+		oidcStorageProviderS3ConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "kube-public", Name: "oidc-storage-provider-s3-config"},
+		}
+		if _, err := controllerutil.CreateOrUpdate(ctx, apiReadingClient, oidcStorageProviderS3ConfigMap, func() error {
+			if oidcStorageProviderS3ConfigMap.Data == nil {
+				oidcStorageProviderS3ConfigMap.Data = map[string]string{}
+			}
+			oidcStorageProviderS3ConfigMap.Data["name"] = opts.OIDCStorageProviderS3BucketName
+			oidcStorageProviderS3ConfigMap.Data["region"] = opts.OIDCStorageProviderS3Region
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile the %s configmap: %w", crclient.ObjectKeyFromObject(oidcStorageProviderS3ConfigMap), err)
+		}
 	}
 
 	if err := setupMetrics(mgr); err != nil {

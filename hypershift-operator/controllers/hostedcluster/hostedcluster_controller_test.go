@@ -6,24 +6,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/upsert"
-	"go.opentelemetry.io/otel"
-	"go.uber.org/zap/zapcore"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
-	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
-	"sigs.k8s.io/cluster-api/api/v1beta1"
-
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/upsert"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -33,6 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	"sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1116,7 +1114,6 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
 	r := &HostedClusterReconciler{
 		Client:                        client,
-		tracer:                        otel.Tracer(("")),
 		Clock:                         clock.RealClock{},
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
@@ -1152,4 +1149,100 @@ func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Obje
 	}
 	c.createdTypes.Insert(fmt.Sprintf("%T", obj))
 	return c.Client.Create(ctx, obj, opts...)
+}
+
+func TestReconcileAWSSubnets(t *testing.T) {
+	g := NewGomegaWithT(t)
+	hcNamespace := "test"
+	hcName := "test"
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: hcNamespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcName,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					Subnet: &hyperv1.AWSResourceReference{
+						ID: pointer.StringPtr("1"),
+					},
+				},
+			},
+		},
+	}
+
+	nodePool2 := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test2",
+			Namespace: hcNamespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcName,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					Subnet: &hyperv1.AWSResourceReference{
+						ID: pointer.StringPtr("2"),
+					},
+				},
+			},
+		},
+	}
+
+	infraCRName := "test"
+	hcpNamespace := "hcp"
+	infraCR := &capiawsv1.AWSCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      infraCRName,
+			Namespace: hcpNamespace,
+		},
+		Spec: capiawsv1.AWSClusterSpec{},
+	}
+
+	epsName := "test"
+	awsEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      epsName,
+			Namespace: hcpNamespace,
+		},
+		Spec: hyperv1.AWSEndpointServiceSpec{},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2, awsEndpointService).Build()
+	r := &HostedClusterReconciler{
+		Client:         client,
+		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+	}
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}
+	createOrUpdate := r.createOrUpdate(req)
+
+	err := r.reconcileAWSSubnets(context.Background(), createOrUpdate, infraCR, req.Namespace, req.Name, hcpNamespace)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	freshInfraCR := &capiawsv1.AWSCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      infraCRName,
+			Namespace: hcpNamespace,
+		}}
+	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshInfraCR), freshInfraCR)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(freshInfraCR.Spec.NetworkSpec.Subnets).To(BeEquivalentTo([]capiawsv1.SubnetSpec{
+		{
+			ID: "1",
+		},
+		{
+			ID: "2",
+		},
+	}))
+
+	freshAWSEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      epsName,
+			Namespace: hcpNamespace,
+		}}
+	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshAWSEndpointService), freshAWSEndpointService)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(freshAWSEndpointService.Spec.SubnetIDs).To(BeEquivalentTo([]string{"1", "2"}))
 }

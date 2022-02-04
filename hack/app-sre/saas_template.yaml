@@ -1,8 +1,376 @@
 apiVersion: v1
 kind: Template
 metadata:
-  name: hypershift-saas-template
+  name: hypershift-operator-template
 objects:
+- apiVersion: scheduling.k8s.io/v1
+  description: This priority class should be used for hypershift control plane pods
+    not critical to serving the API.
+  kind: PriorityClass
+  metadata:
+    creationTimestamp: null
+    name: hypershift-control-plane
+  value: 100000000
+- apiVersion: scheduling.k8s.io/v1
+  description: This priority class should be used for hypershift etcd pods.
+  kind: PriorityClass
+  metadata:
+    creationTimestamp: null
+    name: hypershift-etcd
+  value: 100002000
+- apiVersion: scheduling.k8s.io/v1
+  description: This priority class should be used for hypershift control plane pods
+    critical to serving the API.
+  kind: PriorityClass
+  metadata:
+    creationTimestamp: null
+    name: hypershift-api-critical
+  value: 100001000
+- apiVersion: v1
+  kind: Namespace
+  metadata:
+    creationTimestamp: null
+    name: ${NAMESPACE}
+  spec: {}
+  status: {}
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    creationTimestamp: null
+    name: operator
+    namespace: ${NAMESPACE}
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+  rules:
+  - apiGroups:
+    - hypershift.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - config.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - apiextensions.k8s.io
+    resources:
+    - customresourcedefinitions
+    verbs:
+    - '*'
+  - apiGroups:
+    - networking.k8s.io
+    resources:
+    - networkpolicies
+    verbs:
+    - '*'
+  - apiGroups:
+    - bootstrap.cluster.x-k8s.io
+    - controlplane.cluster.x-k8s.io
+    - infrastructure.cluster.x-k8s.io
+    - machines.cluster.x-k8s.io
+    - exp.infrastructure.cluster.x-k8s.io
+    - addons.cluster.x-k8s.io
+    - exp.cluster.x-k8s.io
+    - cluster.x-k8s.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - operator.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - route.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - security.openshift.io
+    resources:
+    - securitycontextconstraints
+    verbs:
+    - '*'
+  - apiGroups:
+    - rbac.authorization.k8s.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - ""
+    resources:
+    - events
+    - configmaps
+    - pods
+    - pods/log
+    - secrets
+    - nodes
+    - namespaces
+    - serviceaccounts
+    - services
+    verbs:
+    - '*'
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - '*'
+  - apiGroups:
+    - etcd.database.coreos.com
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - machine.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - monitoring.coreos.com
+    resources:
+    - podmonitors
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+  - apiGroups:
+    - capi-provider.agent-install.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: hypershift-operator
+  subjects:
+  - kind: ServiceAccount
+    name: operator
+    namespace: ${NAMESPACE}
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+    namespace: ${NAMESPACE}
+  rules:
+  - apiGroups:
+    - coordination.k8s.io
+    resources:
+    - leases
+    verbs:
+    - '*'
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+    namespace: ${NAMESPACE}
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: hypershift-operator
+  subjects:
+  - kind: ServiceAccount
+    name: operator
+    namespace: ${NAMESPACE}
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    creationTimestamp: null
+    name: operator
+    namespace: ${NAMESPACE}
+  spec:
+    replicas: ${{OPERATOR_REPLICAS}}
+    selector:
+      matchLabels:
+        name: operator
+    strategy: {}
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: operator
+          hypershift.openshift.io/operator-component: operator
+          name: operator
+      spec:
+        containers:
+        - args:
+          - run
+          - --namespace=$(MY_NAMESPACE)
+          - --deployment-name=operator
+          - --metrics-addr=:9000
+          - --enable-ocp-cluster-monitoring=false
+          - --enable-ci-debug-output=false
+          - --private-platform=None
+          - --oidc-storage-provider-s3-bucket-name=${OIDC_S3_NAME}
+          - --oidc-storage-provider-s3-region=${OIDC_S3_REGION}
+          - --oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/${OIDC_S3_CREDS_SECRET_KEY}
+          command:
+          - /usr/bin/hypershift-operator
+          env:
+          - name: MY_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          image: ${OPERATOR_IMG}:${IMAGE_TAG}
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /metrics
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: operator
+          ports:
+          - containerPort: 9000
+            name: metrics
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 60
+            successThreshold: 1
+            timeoutSeconds: 5
+          resources: {}
+          securityContext:
+            runAsUser: 1000
+          volumeMounts:
+          - mountPath: /etc/oidc-storage-provider-s3-creds
+            name: oidc-storage-provider-s3-creds
+        serviceAccountName: operator
+        volumes:
+        - name: oidc-storage-provider-s3-creds
+          secret:
+            secretName: ${OIDC_S3_CREDS_SECRET}
+  status: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    creationTimestamp: null
+    labels:
+      name: operator
+    name: operator
+    namespace: ${NAMESPACE}
+  spec:
+    ports:
+    - name: metrics
+      port: 9393
+      protocol: TCP
+      targetPort: metrics
+    selector:
+      name: operator
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata:
+    creationTimestamp: null
+    name: prometheus
+    namespace: ${NAMESPACE}
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - services
+    - endpoints
+    - pods
+    verbs:
+    - get
+    - list
+    - watch
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    creationTimestamp: null
+    name: prometheus
+    namespace: ${NAMESPACE}
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: prometheus
+  subjects:
+  - kind: ServiceAccount
+    name: prometheus-user-workload
+    namespace: openshift-user-workload-monitoring
+- apiVersion: monitoring.coreos.com/v1
+  kind: ServiceMonitor
+  metadata:
+    creationTimestamp: null
+    name: operator
+    namespace: ${NAMESPACE}
+  spec:
+    endpoints:
+    - bearerTokenSecret:
+        key: ""
+      interval: 30s
+      port: metrics
+    jobLabel: component
+    namespaceSelector: {}
+    selector:
+      matchLabels:
+        name: operator
+- apiVersion: monitoring.coreos.com/v1
+  kind: PrometheusRule
+  metadata:
+    creationTimestamp: null
+    name: metrics
+    namespace: ${NAMESPACE}
+  spec:
+    groups:
+    - interval: 30s
+      name: hypershift.rules
+      rules:
+      - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
+          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:controlplane:component_api_requests_total
+      - expr: sum by (app, namespace) ( sum(container_memory_usage_bytes{container!="POD",container!=""})
+          by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:controlplane:component_memory_usage
+      - expr: avg by (app, namespace) ( sum( rate( container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
+          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") ) / count by (app, namespace) ( sum( rate(
+          container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
+          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:controlplane:component_cpu_usage_seconds
+      - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
+          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:operator:component_api_requests_total
 - apiVersion: apiextensions.k8s.io/v1
   kind: CustomResourceDefinition
   metadata:
@@ -113,8 +481,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -304,8 +672,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -360,10 +728,10 @@ objects:
                     holds the details for provisioning the Control Plane for the Cluster.
                   properties:
                     machineInfrastructure:
-                      description: "MachineTemplate defines the metadata and infrastructure\
-                        \ information for control plane machines. \n This field is\
-                        \ supported if and only if the control plane provider template\
-                        \ referenced above is Machine based and supports setting replicas."
+                      description: "MachineTemplate defines the metadata and infrastructure
+                        information for control plane machines. \n This field is supported
+                        if and only if the control plane provider template referenced
+                        above is Machine based and supports setting replicas."
                       properties:
                         ref:
                           description: Ref is a required reference to a custom resource
@@ -408,11 +776,11 @@ objects:
                       - ref
                       type: object
                     metadata:
-                      description: "Metadata is the metadata applied to the machines\
-                        \ of the ControlPlane. At runtime this metadata is merged\
-                        \ with the corresponding metadata from the topology. \n This\
-                        \ field is supported if and only if the control plane provider\
-                        \ template referenced is Machine based."
+                      description: "Metadata is the metadata applied to the machines
+                        of the ControlPlane. At runtime this metadata is merged with
+                        the corresponding metadata from the topology. \n This field
+                        is supported if and only if the control plane provider template
+                        referenced is Machine based."
                       properties:
                         annotations:
                           additionalProperties:
@@ -696,8 +1064,8 @@ objects:
       subresources: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -897,12 +1265,12 @@ objects:
                       description: ControlPlane describes the cluster control plane.
                       properties:
                         metadata:
-                          description: "Metadata is the metadata applied to the machines\
-                            \ of the ControlPlane. At runtime this metadata is merged\
-                            \ with the corresponding metadata from the ClusterClass.\
-                            \ \n This field is supported if and only if the control\
-                            \ plane provider template referenced in the ClusterClass\
-                            \ is Machine based."
+                          description: "Metadata is the metadata applied to the machines
+                            of the ControlPlane. At runtime this metadata is merged
+                            with the corresponding metadata from the ClusterClass.
+                            \n This field is supported if and only if the control
+                            plane provider template referenced in the ClusterClass
+                            is Machine based."
                           properties:
                             annotations:
                               additionalProperties:
@@ -1119,8 +1487,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -1371,9 +1739,9 @@ objects:
                         More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status'
                       properties:
                         bootstrap:
-                          description: "Bootstrap is a reference to a local struct\
-                            \ which encapsulates fields to configure the Machine\u2019\
-                            s bootstrapping mechanism."
+                          description: Bootstrap is a reference to a local struct
+                            which encapsulates fields to configure the Machine’s bootstrapping
+                            mechanism.
                           properties:
                             configRef:
                               description: ConfigRef is a reference to a bootstrap
@@ -1618,8 +1986,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -1705,12 +2073,12 @@ objects:
                     this feature, set the value explicitly to 0.
                   type: string
                 remediationTemplate:
-                  description: "RemediationTemplate is a reference to a remediation\
-                    \ template provided by an infrastructure provider. \n This field\
-                    \ is completely optional, when filled, the MachineHealthCheck\
-                    \ controller creates a new object from the template referenced\
-                    \ and hands off remediation of the machine to a controller that\
-                    \ lives outside of Cluster API."
+                  description: "RemediationTemplate is a reference to a remediation
+                    template provided by an infrastructure provider. \n This field
+                    is completely optional, when filled, the MachineHealthCheck controller
+                    creates a new object from the template referenced and hands off
+                    remediation of the machine to a controller that lives outside
+                    of Cluster API."
                   properties:
                     apiVersion:
                       description: API version of the referent.
@@ -1917,8 +2285,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -2043,9 +2411,9 @@ objects:
                         More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status'
                       properties:
                         bootstrap:
-                          description: "Bootstrap is a reference to a local struct\
-                            \ which encapsulates fields to configure the Machine\u2019\
-                            s bootstrapping mechanism."
+                          description: Bootstrap is a reference to a local struct
+                            which encapsulates fields to configure the Machine’s bootstrapping
+                            mechanism.
                           properties:
                             configRef:
                               description: ConfigRef is a reference to a bootstrap
@@ -2361,8 +2729,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -2432,8 +2800,8 @@ objects:
               description: MachineSpec defines the desired state of Machine.
               properties:
                 bootstrap:
-                  description: "Bootstrap is a reference to a local struct which encapsulates\
-                    \ fields to configure the Machine\u2019s bootstrapping mechanism."
+                  description: Bootstrap is a reference to a local struct which encapsulates
+                    fields to configure the Machine’s bootstrapping mechanism.
                   properties:
                     configRef:
                       description: ConfigRef is a reference to a bootstrap provider-specific
@@ -2632,36 +3000,36 @@ objects:
                     type: object
                   type: array
                 failureMessage:
-                  description: "FailureMessage will be set in the event that there\
-                    \ is a terminal problem reconciling the Machine and will contain\
-                    \ a more verbose string suitable for logging and human consumption.\
-                    \ \n This field should not be set for transitive errors that a\
-                    \ controller faces that are expected to be fixed automatically\
-                    \ over time (like service outages), but instead indicate that\
-                    \ something is fundamentally wrong with the Machine's spec or\
-                    \ the configuration of the controller, and that manual intervention\
-                    \ is required. Examples of terminal errors would be invalid combinations\
-                    \ of settings in the spec, values that are unsupported by the\
-                    \ controller, or the responsible controller itself being critically\
-                    \ misconfigured. \n Any transient errors that occur during the\
-                    \ reconciliation of Machines can be added as events to the Machine\
-                    \ object and/or logged in the controller's output."
+                  description: "FailureMessage will be set in the event that there
+                    is a terminal problem reconciling the Machine and will contain
+                    a more verbose string suitable for logging and human consumption.
+                    \n This field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
                   type: string
                 failureReason:
-                  description: "FailureReason will be set in the event that there\
-                    \ is a terminal problem reconciling the Machine and will contain\
-                    \ a succinct value suitable for machine interpretation. \n This\
-                    \ field should not be set for transitive errors that a controller\
-                    \ faces that are expected to be fixed automatically over time\
-                    \ (like service outages), but instead indicate that something\
-                    \ is fundamentally wrong with the Machine's spec or the configuration\
-                    \ of the controller, and that manual intervention is required.\
-                    \ Examples of terminal errors would be invalid combinations of\
-                    \ settings in the spec, values that are unsupported by the controller,\
-                    \ or the responsible controller itself being critically misconfigured.\
-                    \ \n Any transient errors that occur during the reconciliation\
-                    \ of Machines can be added as events to the Machine object and/or\
-                    \ logged in the controller's output."
+                  description: "FailureReason will be set in the event that there
+                    is a terminal problem reconciling the Machine and will contain
+                    a succinct value suitable for machine interpretation. \n This
+                    field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
                   type: string
                 infrastructureReady:
                   description: InfrastructureReady is the state of the infrastructure
@@ -2779,8 +3147,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -2954,9 +3322,9 @@ objects:
                         More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status'
                       properties:
                         bootstrap:
-                          description: "Bootstrap is a reference to a local struct\
-                            \ which encapsulates fields to configure the Machine\u2019\
-                            s bootstrapping mechanism."
+                          description: Bootstrap is a reference to a local struct
+                            which encapsulates fields to configure the Machine’s bootstrapping
+                            mechanism.
                           properties:
                             configRef:
                               description: ConfigRef is a reference to a bootstrap
@@ -3155,23 +3523,22 @@ objects:
                 failureMessage:
                   type: string
                 failureReason:
-                  description: "In the event that there is a terminal problem reconciling\
-                    \ the replicas, both FailureReason and FailureMessage will be\
-                    \ set. FailureReason will be populated with a succinct value suitable\
-                    \ for machine interpretation, while FailureMessage will contain\
-                    \ a more verbose string suitable for logging and human consumption.\
-                    \ \n These fields should not be set for transitive errors that\
-                    \ a controller faces that are expected to be fixed automatically\
-                    \ over time (like service outages), but instead indicate that\
-                    \ something is fundamentally wrong with the MachineTemplate's\
-                    \ spec or the configuration of the machine controller, and that\
-                    \ manual intervention is required. Examples of terminal errors\
-                    \ would be invalid combinations of settings in the spec, values\
-                    \ that are unsupported by the machine controller, or the responsible\
-                    \ machine controller itself being critically misconfigured. \n\
-                    \ Any transient errors that occur during the reconciliation of\
-                    \ Machines can be added as events to the MachineSet object and/or\
-                    \ logged in the controller's output."
+                  description: "In the event that there is a terminal problem reconciling
+                    the replicas, both FailureReason and FailureMessage will be set.
+                    FailureReason will be populated with a succinct value suitable
+                    for machine interpretation, while FailureMessage will contain
+                    a more verbose string suitable for logging and human consumption.
+                    \n These fields should not be set for transitive errors that a
+                    controller faces that are expected to be fixed automatically over
+                    time (like service outages), but instead indicate that something
+                    is fundamentally wrong with the MachineTemplate's spec or the
+                    configuration of the machine controller, and that manual intervention
+                    is required. Examples of terminal errors would be invalid combinations
+                    of settings in the spec, values that are unsupported by the machine
+                    controller, or the responsible machine controller itself being
+                    critically misconfigured. \n Any transient errors that occur during
+                    the reconciliation of Machines can be added as events to the MachineSet
+                    object and/or logged in the controller's output."
                   type: string
                 fullyLabeledReplicas:
                   description: The number of replicas that have labels matching the
@@ -3211,8 +3578,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -3415,8 +3782,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -3599,36 +3966,36 @@ objects:
                     type: object
                   type: array
                 failureMessage:
-                  description: "FailureMessage will be set in the event that there\
-                    \ is a terminal problem reconciling the Machine and will contain\
-                    \ a more verbose string suitable for logging and human consumption.\
-                    \ \n This field should not be set for transitive errors that a\
-                    \ controller faces that are expected to be fixed automatically\
-                    \ over time (like service outages), but instead indicate that\
-                    \ something is fundamentally wrong with the Machine's spec or\
-                    \ the configuration of the controller, and that manual intervention\
-                    \ is required. Examples of terminal errors would be invalid combinations\
-                    \ of settings in the spec, values that are unsupported by the\
-                    \ controller, or the responsible controller itself being critically\
-                    \ misconfigured. \n Any transient errors that occur during the\
-                    \ reconciliation of Machines can be added as events to the Machine\
-                    \ object and/or logged in the controller's output."
+                  description: "FailureMessage will be set in the event that there
+                    is a terminal problem reconciling the Machine and will contain
+                    a more verbose string suitable for logging and human consumption.
+                    \n This field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
                   type: string
                 failureReason:
-                  description: "FailureReason will be set in the event that there\
-                    \ is a terminal problem reconciling the Machine and will contain\
-                    \ a succinct value suitable for machine interpretation. \n This\
-                    \ field should not be set for transitive errors that a controller\
-                    \ faces that are expected to be fixed automatically over time\
-                    \ (like service outages), but instead indicate that something\
-                    \ is fundamentally wrong with the Machine's spec or the configuration\
-                    \ of the controller, and that manual intervention is required.\
-                    \ Examples of terminal errors would be invalid combinations of\
-                    \ settings in the spec, values that are unsupported by the controller,\
-                    \ or the responsible controller itself being critically misconfigured.\
-                    \ \n Any transient errors that occur during the reconciliation\
-                    \ of Machines can be added as events to the Machine object and/or\
-                    \ logged in the controller's output."
+                  description: "FailureReason will be set in the event that there
+                    is a terminal problem reconciling the Machine and will contain
+                    a succinct value suitable for machine interpretation. \n This
+                    field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
                   type: string
                 ready:
                   description: Ready is true when the provider resource is ready.
@@ -3641,8 +4008,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -3770,8 +4137,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -3887,8 +4254,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -4063,8 +4430,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -4200,14 +4567,14 @@ objects:
                         type: string
                       type: array
                     crossZoneLoadBalancing:
-                      description: "CrossZoneLoadBalancing enables the classic ELB\
-                        \ cross availability zone balancing. \n With cross-zone load\
-                        \ balancing, each load balancer node for your Classic Load\
-                        \ Balancer distributes requests evenly across the registered\
-                        \ instances in all enabled Availability Zones. If cross-zone\
-                        \ load balancing is disabled, each load balancer node distributes\
-                        \ requests evenly across the registered instances in its Availability\
-                        \ Zone only. \n Defaults to false."
+                      description: "CrossZoneLoadBalancing enables the classic ELB
+                        cross availability zone balancing. \n With cross-zone load
+                        balancing, each load balancer node for your Classic Load Balancer
+                        distributes requests evenly across the registered instances
+                        in all enabled Availability Zones. If cross-zone load balancing
+                        is disabled, each load balancer node distributes requests
+                        evenly across the registered instances in its Availability
+                        Zone only. \n Defaults to false."
                       type: boolean
                     name:
                       description: Name sets the name of the classic ELB load balancer.
@@ -4876,8 +5243,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -5001,8 +5368,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -5144,15 +5511,15 @@ objects:
                                 type: string
                               type: array
                             crossZoneLoadBalancing:
-                              description: "CrossZoneLoadBalancing enables the classic\
-                                \ ELB cross availability zone balancing. \n With cross-zone\
-                                \ load balancing, each load balancer node for your\
-                                \ Classic Load Balancer distributes requests evenly\
-                                \ across the registered instances in all enabled Availability\
-                                \ Zones. If cross-zone load balancing is disabled,\
-                                \ each load balancer node distributes requests evenly\
-                                \ across the registered instances in its Availability\
-                                \ Zone only. \n Defaults to false."
+                              description: "CrossZoneLoadBalancing enables the classic
+                                ELB cross availability zone balancing. \n With cross-zone
+                                load balancing, each load balancer node for your Classic
+                                Load Balancer distributes requests evenly across the
+                                registered instances in all enabled Availability Zones.
+                                If cross-zone load balancing is disabled, each load
+                                balancer node distributes requests evenly across the
+                                registered instances in its Availability Zone only.
+                                \n Defaults to false."
                               type: boolean
                             name:
                               description: Name sets the name of the classic ELB load
@@ -5386,8 +5753,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -5543,38 +5910,36 @@ objects:
                     type: object
                   type: array
                 failureMessage:
-                  description: "FailureMessage will be set in the event that there\
-                    \ is a terminal problem reconciling the FargateProfile and will\
-                    \ contain a more verbose string suitable for logging and human\
-                    \ consumption. \n This field should not be set for transitive\
-                    \ errors that a controller faces that are expected to be fixed\
-                    \ automatically over time (like service outages), but instead\
-                    \ indicate that something is fundamentally wrong with the FargateProfile's\
-                    \ spec or the configuration of the controller, and that manual\
-                    \ intervention is required. Examples of terminal errors would\
-                    \ be invalid combinations of settings in the spec, values that\
-                    \ are unsupported by the controller, or the responsible controller\
-                    \ itself being critically misconfigured. \n Any transient errors\
-                    \ that occur during the reconciliation of FargateProfiles can\
-                    \ be added as events to the FargateProfile object and/or logged\
-                    \ in the controller's output."
+                  description: "FailureMessage will be set in the event that there
+                    is a terminal problem reconciling the FargateProfile and will
+                    contain a more verbose string suitable for logging and human consumption.
+                    \n This field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the FargateProfile's spec or the configuration of the
+                    controller, and that manual intervention is required. Examples
+                    of terminal errors would be invalid combinations of settings in
+                    the spec, values that are unsupported by the controller, or the
+                    responsible controller itself being critically misconfigured.
+                    \n Any transient errors that occur during the reconciliation of
+                    FargateProfiles can be added as events to the FargateProfile object
+                    and/or logged in the controller's output."
                   type: string
                 failureReason:
-                  description: "FailureReason will be set in the event that there\
-                    \ is a terminal problem reconciling the FargateProfile and will\
-                    \ contain a succinct value suitable for machine interpretation.\
-                    \ \n This field should not be set for transitive errors that a\
-                    \ controller faces that are expected to be fixed automatically\
-                    \ over time (like service outages), but instead indicate that\
-                    \ something is fundamentally wrong with the FargateProfile's spec\
-                    \ or the configuration of the controller, and that manual intervention\
-                    \ is required. Examples of terminal errors would be invalid combinations\
-                    \ of settings in the spec, values that are unsupported by the\
-                    \ controller, or the responsible controller itself being critically\
-                    \ misconfigured. \n Any transient errors that occur during the\
-                    \ reconciliation of FargateProfiles can be added as events to\
-                    \ the FargateProfile object and/or logged in the controller's\
-                    \ output."
+                  description: "FailureReason will be set in the event that there
+                    is a terminal problem reconciling the FargateProfile and will
+                    contain a succinct value suitable for machine interpretation.
+                    \n This field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the FargateProfile's spec or the configuration of the
+                    controller, and that manual intervention is required. Examples
+                    of terminal errors would be invalid combinations of settings in
+                    the spec, values that are unsupported by the controller, or the
+                    responsible controller itself being critically misconfigured.
+                    \n Any transient errors that occur during the reconciliation of
+                    FargateProfiles can be added as events to the FargateProfile object
+                    and/or logged in the controller's output."
                   type: string
                 ready:
                   default: false
@@ -5590,8 +5955,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -6020,36 +6385,36 @@ objects:
                     type: object
                   type: array
                 failureMessage:
-                  description: "FailureMessage will be set in the event that there\
-                    \ is a terminal problem reconciling the Machine and will contain\
-                    \ a more verbose string suitable for logging and human consumption.\
-                    \ \n This field should not be set for transitive errors that a\
-                    \ controller faces that are expected to be fixed automatically\
-                    \ over time (like service outages), but instead indicate that\
-                    \ something is fundamentally wrong with the Machine's spec or\
-                    \ the configuration of the controller, and that manual intervention\
-                    \ is required. Examples of terminal errors would be invalid combinations\
-                    \ of settings in the spec, values that are unsupported by the\
-                    \ controller, or the responsible controller itself being critically\
-                    \ misconfigured. \n Any transient errors that occur during the\
-                    \ reconciliation of Machines can be added as events to the Machine\
-                    \ object and/or logged in the controller's output."
+                  description: "FailureMessage will be set in the event that there
+                    is a terminal problem reconciling the Machine and will contain
+                    a more verbose string suitable for logging and human consumption.
+                    \n This field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
                   type: string
                 failureReason:
-                  description: "FailureReason will be set in the event that there\
-                    \ is a terminal problem reconciling the Machine and will contain\
-                    \ a succinct value suitable for machine interpretation. \n This\
-                    \ field should not be set for transitive errors that a controller\
-                    \ faces that are expected to be fixed automatically over time\
-                    \ (like service outages), but instead indicate that something\
-                    \ is fundamentally wrong with the Machine's spec or the configuration\
-                    \ of the controller, and that manual intervention is required.\
-                    \ Examples of terminal errors would be invalid combinations of\
-                    \ settings in the spec, values that are unsupported by the controller,\
-                    \ or the responsible controller itself being critically misconfigured.\
-                    \ \n Any transient errors that occur during the reconciliation\
-                    \ of Machines can be added as events to the Machine object and/or\
-                    \ logged in the controller's output."
+                  description: "FailureReason will be set in the event that there
+                    is a terminal problem reconciling the Machine and will contain
+                    a succinct value suitable for machine interpretation. \n This
+                    field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
                   type: string
                 instances:
                   description: Instances contains the status for each instance in
@@ -6086,8 +6451,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -6527,36 +6892,36 @@ objects:
                     type: object
                   type: array
                 failureMessage:
-                  description: "FailureMessage will be set in the event that there\
-                    \ is a terminal problem reconciling the Machine and will contain\
-                    \ a more verbose string suitable for logging and human consumption.\
-                    \ \n This field should not be set for transitive errors that a\
-                    \ controller faces that are expected to be fixed automatically\
-                    \ over time (like service outages), but instead indicate that\
-                    \ something is fundamentally wrong with the Machine's spec or\
-                    \ the configuration of the controller, and that manual intervention\
-                    \ is required. Examples of terminal errors would be invalid combinations\
-                    \ of settings in the spec, values that are unsupported by the\
-                    \ controller, or the responsible controller itself being critically\
-                    \ misconfigured. \n Any transient errors that occur during the\
-                    \ reconciliation of Machines can be added as events to the Machine\
-                    \ object and/or logged in the controller's output."
+                  description: "FailureMessage will be set in the event that there
+                    is a terminal problem reconciling the Machine and will contain
+                    a more verbose string suitable for logging and human consumption.
+                    \n This field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
                   type: string
                 failureReason:
-                  description: "FailureReason will be set in the event that there\
-                    \ is a terminal problem reconciling the Machine and will contain\
-                    \ a succinct value suitable for machine interpretation. \n This\
-                    \ field should not be set for transitive errors that a controller\
-                    \ faces that are expected to be fixed automatically over time\
-                    \ (like service outages), but instead indicate that something\
-                    \ is fundamentally wrong with the Machine's spec or the configuration\
-                    \ of the controller, and that manual intervention is required.\
-                    \ Examples of terminal errors would be invalid combinations of\
-                    \ settings in the spec, values that are unsupported by the controller,\
-                    \ or the responsible controller itself being critically misconfigured.\
-                    \ \n Any transient errors that occur during the reconciliation\
-                    \ of Machines can be added as events to the Machine object and/or\
-                    \ logged in the controller's output."
+                  description: "FailureReason will be set in the event that there
+                    is a terminal problem reconciling the Machine and will contain
+                    a succinct value suitable for machine interpretation. \n This
+                    field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
                   type: string
                 instanceState:
                   description: InstanceState is the state of the AWS instance for
@@ -6580,8 +6945,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -6987,8 +7352,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -7230,36 +7595,36 @@ objects:
                     type: object
                   type: array
                 failureMessage:
-                  description: "FailureMessage will be set in the event that there\
-                    \ is a terminal problem reconciling the MachinePool and will contain\
-                    \ a more verbose string suitable for logging and human consumption.\
-                    \ \n This field should not be set for transitive errors that a\
-                    \ controller faces that are expected to be fixed automatically\
-                    \ over time (like service outages), but instead indicate that\
-                    \ something is fundamentally wrong with the MachinePool's spec\
-                    \ or the configuration of the controller, and that manual intervention\
-                    \ is required. Examples of terminal errors would be invalid combinations\
-                    \ of settings in the spec, values that are unsupported by the\
-                    \ controller, or the responsible controller itself being critically\
-                    \ misconfigured. \n Any transient errors that occur during the\
-                    \ reconciliation of MachinePools can be added as events to the\
-                    \ MachinePool object and/or logged in the controller's output."
+                  description: "FailureMessage will be set in the event that there
+                    is a terminal problem reconciling the MachinePool and will contain
+                    a more verbose string suitable for logging and human consumption.
+                    \n This field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the MachinePool's spec or the configuration of the
+                    controller, and that manual intervention is required. Examples
+                    of terminal errors would be invalid combinations of settings in
+                    the spec, values that are unsupported by the controller, or the
+                    responsible controller itself being critically misconfigured.
+                    \n Any transient errors that occur during the reconciliation of
+                    MachinePools can be added as events to the MachinePool object
+                    and/or logged in the controller's output."
                   type: string
                 failureReason:
-                  description: "FailureReason will be set in the event that there\
-                    \ is a terminal problem reconciling the MachinePool and will contain\
-                    \ a succinct value suitable for machine interpretation. \n This\
-                    \ field should not be set for transitive errors that a controller\
-                    \ faces that are expected to be fixed automatically over time\
-                    \ (like service outages), but instead indicate that something\
-                    \ is fundamentally wrong with the Machine's spec or the configuration\
-                    \ of the controller, and that manual intervention is required.\
-                    \ Examples of terminal errors would be invalid combinations of\
-                    \ settings in the spec, values that are unsupported by the controller,\
-                    \ or the responsible controller itself being critically misconfigured.\
-                    \ \n Any transient errors that occur during the reconciliation\
-                    \ of MachinePools can be added as events to the MachinePool object\
-                    \ and/or logged in the controller's output."
+                  description: "FailureReason will be set in the event that there
+                    is a terminal problem reconciling the MachinePool and will contain
+                    a succinct value suitable for machine interpretation. \n This
+                    field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of MachinePools can
+                    be added as events to the MachinePool object and/or logged in
+                    the controller's output."
                   type: string
                 ready:
                   default: false
@@ -7280,8 +7645,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -7374,8 +7739,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -7533,8 +7898,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -7656,8 +8021,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -7799,8 +8164,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -7864,9 +8229,9 @@ objects:
                       type: string
                   type: object
                 profile:
-                  description: "Profile indicates the flavor of instance. Example:\
-                    \ bx2-8x32\tmeans 8 vCPUs\t32 GB RAM\t16 Gbps TODO: add a reference\
-                    \ link of profile"
+                  description: "Profile indicates the flavor of instance. Example:
+                    bx2-8x32\tmeans 8 vCPUs\t32 GB RAM\t16 Gbps TODO: add a reference
+                    link of profile"
                   type: string
                 providerID:
                   description: ProviderID is the unique identifier as specified by
@@ -7926,8 +8291,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -7997,9 +8362,9 @@ objects:
                               type: string
                           type: object
                         profile:
-                          description: "Profile indicates the flavor of instance.\
-                            \ Example: bx2-8x32\tmeans 8 vCPUs\t32 GB RAM\t16 Gbps\
-                            \ TODO: add a reference link of profile"
+                          description: "Profile indicates the flavor of instance.
+                            Example: bx2-8x32\tmeans 8 vCPUs\t32 GB RAM\t16 Gbps TODO:
+                            add a reference link of profile"
                           type: string
                         providerID:
                           description: ProviderID is the unique identifier as specified
@@ -8033,8 +8398,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -8263,8 +8628,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -10279,10 +10644,10 @@ objects:
                                                   type: string
                                               type: object
                                             hyperv:
-                                              description: "Hyperv (Hypervclock) -\
-                                                \ lets guests read the host\u2019\
-                                                s wall clock time (paravirtualized).\
-                                                \ For windows guests."
+                                              description: Hyperv (Hypervclock) -
+                                                lets guests read the host’s wall clock
+                                                time (paravirtualized). For windows
+                                                guests.
                                               properties:
                                                 present:
                                                   description: Enabled set to false
@@ -10292,10 +10657,10 @@ objects:
                                                   type: boolean
                                               type: object
                                             kvm:
-                                              description: "KVM \t(KVM clock) - lets\
-                                                \ guests read the host\u2019s wall\
-                                                \ clock time (paravirtualized). For\
-                                                \ linux guests."
+                                              description: "KVM \t(KVM clock) - lets
+                                                guests read the host’s wall clock
+                                                time (paravirtualized). For linux
+                                                guests."
                                               properties:
                                                 present:
                                                   description: Enabled set to false
@@ -12343,8 +12708,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -14694,10 +15059,10 @@ objects:
                                                           type: string
                                                       type: object
                                                     hyperv:
-                                                      description: "Hyperv (Hypervclock)\
-                                                        \ - lets guests read the host\u2019\
-                                                        s wall clock time (paravirtualized).\
-                                                        \ For windows guests."
+                                                      description: Hyperv (Hypervclock)
+                                                        - lets guests read the host’s
+                                                        wall clock time (paravirtualized).
+                                                        For windows guests.
                                                       properties:
                                                         present:
                                                           description: Enabled set
@@ -14708,10 +15073,10 @@ objects:
                                                           type: boolean
                                                       type: object
                                                     kvm:
-                                                      description: "KVM \t(KVM clock)\
-                                                        \ - lets guests read the host\u2019\
-                                                        s wall clock time (paravirtualized).\
-                                                        \ For linux guests."
+                                                      description: "KVM \t(KVM clock)
+                                                        - lets guests read the host’s
+                                                        wall clock time (paravirtualized).
+                                                        For linux guests."
                                                       properties:
                                                         present:
                                                           description: Enabled set
@@ -16919,8 +17284,8 @@ objects:
       storage: true
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -16978,10 +17343,10 @@ objects:
                         pattern: ^[0-9A-Za-z_.:/=+-@]+$
                         type: string
                       value:
-                        description: "Value is the value of the tag. \n Some AWS service\
-                          \ do not support empty values. Since tags are added to resources\
-                          \ in many services, the length of the tag value must meet\
-                          \ the requirements of all services."
+                        description: "Value is the value of the tag. \n Some AWS service
+                          do not support empty values. Since tags are added to resources
+                          in many services, the length of the tag value must meet
+                          the requirements of all services."
                         maxLength: 256
                         minLength: 1
                         pattern: ^[0-9A-Za-z_.:/=+-@]+$
@@ -16991,29 +17356,34 @@ objects:
                     - value
                     type: object
                   type: array
+                subnetIDs:
+                  description: SubnetIDs is the list of subnet IDs to which guest
+                    nodes can attach
+                  items:
+                    type: string
+                  type: array
               type: object
             status:
               description: AWSEndpointServiceStatus defines the observed state of
                 AWSEndpointService
               properties:
                 conditions:
-                  description: "Conditions contains details for the current state\
-                    \ of the Endpoint Service request If there is an error processing\
-                    \ the request e.g. the NLB doesn't exist, then the Available condition\
-                    \ will be false, reason AWSErrorReason, and the error reported\
-                    \ in the message. \n Current condition types are: \"Available\""
+                  description: "Conditions contains details for the current state
+                    of the Endpoint Service request If there is an error processing
+                    the request e.g. the NLB doesn't exist, then the Available condition
+                    will be false, reason AWSErrorReason, and the error reported in
+                    the message. \n Current condition types are: \"Available\""
                   items:
-                    description: "Condition contains details for one aspect of the\
-                      \ current state of this API Resource. --- This struct is intended\
-                      \ for direct use as an array at the field path .status.conditions.\
-                      \  For example, type FooStatus struct{     // Represents the\
-                      \ observations of a foo's current state.     // Known .status.conditions.type\
-                      \ are: \"Available\", \"Progressing\", and \"Degraded\"    \
-                      \ // +patchMergeKey=type     // +patchStrategy=merge     //\
-                      \ +listType=map     // +listMapKey=type     Conditions []metav1.Condition\
-                      \ `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"\
-                      type\" protobuf:\"bytes,1,rep,name=conditions\"` \n     // other\
-                      \ fields }"
+                    description: "Condition contains details for one aspect of the
+                      current state of this API Resource. --- This struct is intended
+                      for direct use as an array at the field path .status.conditions.
+                      \ For example, type FooStatus struct{     // Represents the
+                      observations of a foo's current state.     // Known .status.conditions.type
+                      are: \"Available\", \"Progressing\", and \"Degraded\"     //
+                      +patchMergeKey=type     // +patchStrategy=merge     // +listType=map
+                      \    // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                      patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
+                      \n     // other fields }"
                     properties:
                       lastTransitionTime:
                         description: lastTransitionTime is the last time the condition
@@ -17051,8 +17421,8 @@ objects:
                         description: status of the condition, one of True, False,
                           Unknown.
                         enum:
-                        - 'True'
-                        - 'False'
+                        - "True"
+                        - "False"
                         - Unknown
                         type: string
                       type:
@@ -17097,8 +17467,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -17167,14 +17537,14 @@ objects:
               description: Spec is the desired behavior of the HostedCluster.
               properties:
                 auditWebhook:
-                  description: "AuditWebhook contains metadata for configuring an\
-                    \ audit webhook endpoint for a cluster to process cluster audit\
-                    \ events. It references a secret that contains the webhook information\
-                    \ for the audit webhook endpoint. It is a secret because if the\
-                    \ endpoint has mTLS the kubeconfig will contain client keys. The\
-                    \ kubeconfig needs to be stored in the secret with a secret key\
-                    \ name that corresponds to the constant AuditWebhookKubeconfigKey.\
-                    \ \n This field is currently only supported on the IBMCloud platform."
+                  description: "AuditWebhook contains metadata for configuring an
+                    audit webhook endpoint for a cluster to process cluster audit
+                    events. It references a secret that contains the webhook information
+                    for the audit webhook endpoint. It is a secret because if the
+                    endpoint has mTLS the kubeconfig will contain client keys. The
+                    kubeconfig needs to be stored in the secret with a secret key
+                    name that corresponds to the constant AuditWebhookKubeconfigKey.
+                    \n This field is currently only supported on the IBMCloud platform."
                   properties:
                     name:
                       description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -17190,7 +17560,7 @@ objects:
                         for node provisioning before considering the provisioning
                         to be unsuccessful, expressed as a Go duration string. The
                         default is 15 minutes.
-                      pattern: "^([0-9]+(\\.[0-9]+)?(ns|us|\xB5s|ms|s|m|h))+$"
+                      pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
                       type: string
                     maxNodesTotal:
                       description: MaxNodesTotal is the maximum allowable number of
@@ -17207,11 +17577,10 @@ objects:
                       minimum: 0
                       type: integer
                     podPriorityThreshold:
-                      description: "PodPriorityThreshold enables users to schedule\
-                        \ \"best-effort\" pods, which shouldn't trigger autoscaler\
-                        \ actions, but only run when there are spare resources available.\
-                        \ The default is -10. \n See the following for more details:\
-                        \ https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption"
+                      description: "PodPriorityThreshold enables users to schedule
+                        \"best-effort\" pods, which shouldn't trigger autoscaler actions,
+                        but only run when there are spare resources available. The
+                        default is -10. \n See the following for more details: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption"
                       format: int32
                       type: integer
                   type: object
@@ -17311,9 +17680,9 @@ objects:
                                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                   x-kubernetes-int-or-string: true
                                 storageClassName:
-                                  description: "StorageClassName is the StorageClass\
-                                    \ of the data volume for each etcd member. \n\
-                                    \ See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1."
+                                  description: "StorageClassName is the StorageClass
+                                    of the data volume for each etcd member. \n See
+                                    https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1."
                                   type: string
                               type: object
                             type:
@@ -17341,9 +17710,9 @@ objects:
                         cluster.
                       properties:
                         endpoint:
-                          description: "Endpoint is the full etcd cluster client endpoint\
-                            \ URL. For example: \n     https://etcd-client:2379 \n\
-                            \ If the URL uses an HTTPS scheme, the TLS field is required."
+                          description: "Endpoint is the full etcd cluster client endpoint
+                            URL. For example: \n     https://etcd-client:2379 \n If
+                            the URL uses an HTTPS scheme, the TLS field is required."
                           pattern: ^https://
                           type: string
                         tls:
@@ -17351,12 +17720,12 @@ objects:
                             client endpoints.
                           properties:
                             clientSecret:
-                              description: "ClientSecret refers to a secret for client\
-                                \ mTLS authentication with the etcd cluster. It may\
-                                \ have the following key/value pairs: \n     etcd-client-ca.crt:\
-                                \ Certificate Authority value     etcd-client.crt:\
-                                \ Client certificate value     etcd-client.key: Client\
-                                \ certificate key value"
+                              description: "ClientSecret refers to a secret for client
+                                mTLS authentication with the etcd cluster. It may
+                                have the following key/value pairs: \n     etcd-client-ca.crt:
+                                Certificate Authority value     etcd-client.crt: Client
+                                certificate value     etcd-client.key: Client certificate
+                                key value"
                               properties:
                                 name:
                                   description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -17405,10 +17774,10 @@ objects:
                     type: object
                   type: array
                 infraID:
-                  description: "InfraID is a globally unique identifier for the cluster.\
-                    \ This identifier will be used to associate various cloud resources\
-                    \ with the HostedCluster and its associated NodePools. \n TODO(dan):\
-                    \ consider moving this to .platform.aws.infraID"
+                  description: "InfraID is a globally unique identifier for the cluster.
+                    This identifier will be used to associate various cloud resources
+                    with the HostedCluster and its associated NodePools. \n TODO(dan):
+                    consider moving this to .platform.aws.infraID"
                   type: string
                 infrastructureAvailabilityPolicy:
                   description: InfrastructureAvailabilityPolicy specifies the availability
@@ -17487,9 +17856,9 @@ objects:
                         on Amazon Web Services.
                       properties:
                         cloudProviderConfig:
-                          description: "CloudProviderConfig specifies AWS networking\
-                            \ configuration for the control plane. \n TODO(dan): should\
-                            \ this be named AWSNetworkConfig?"
+                          description: "CloudProviderConfig specifies AWS networking
+                            configuration for the control plane. \n TODO(dan): should
+                            this be named AWSNetworkConfig?"
                           properties:
                             subnet:
                               description: Subnet is the subnet to use for control
@@ -17537,12 +17906,12 @@ objects:
                           - vpc
                           type: object
                         controlPlaneOperatorCreds:
-                          description: "ControlPlaneOperatorCreds is a reference to\
-                            \ a secret containing cloud credentials with permissions\
-                            \ matching the control-plane-operator policy. The secret\
-                            \ should have exactly one key, `credentials`, whose value\
-                            \ is an AWS credentials file. \n TODO(dan): document the\
-                            \ \"control plane operator policy\""
+                          description: "ControlPlaneOperatorCreds is a reference to
+                            a secret containing cloud credentials with permissions
+                            matching the control-plane-operator policy. The secret
+                            should have exactly one key, `credentials`, whose value
+                            is an AWS credentials file. \n TODO(dan): document the
+                            \"control plane operator policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -17559,12 +17928,12 @@ objects:
                           - Private
                           type: string
                         kubeCloudControllerCreds:
-                          description: "KubeCloudControllerCreds is a reference to\
-                            \ a secret containing cloud credentials with permissions\
-                            \ matching the cloud controller policy. The secret should\
-                            \ have exactly one key, `credentials`, whose value is\
-                            \ an AWS credentials file. \n TODO(dan): document the\
-                            \ \"cloud controller policy\""
+                          description: "KubeCloudControllerCreds is a reference to
+                            a secret containing cloud credentials with permissions
+                            matching the cloud controller policy. The secret should
+                            have exactly one key, `credentials`, whose value is an
+                            AWS credentials file. \n TODO(dan): document the \"cloud
+                            controller policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -17572,12 +17941,12 @@ objects:
                               type: string
                           type: object
                         nodePoolManagementCreds:
-                          description: "NodePoolManagementCreds is a reference to\
-                            \ a secret containing cloud credentials with permissions\
-                            \ matching the node pool management policy. The secret\
-                            \ should have exactly one key, `credentials`, whose value\
-                            \ is an AWS credentials file. \n TODO(dan): document the\
-                            \ \"node pool management policy\""
+                          description: "NodePoolManagementCreds is a reference to
+                            a secret containing cloud credentials with permissions
+                            matching the node pool management policy. The secret should
+                            have exactly one key, `credentials`, whose value is an
+                            AWS credentials file. \n TODO(dan): document the \"node
+                            pool management policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -17608,11 +17977,11 @@ objects:
                                 pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                 type: string
                               value:
-                                description: "Value is the value of the tag. \n Some\
-                                  \ AWS service do not support empty values. Since\
-                                  \ tags are added to resources in many services,\
-                                  \ the length of the tag value must meet the requirements\
-                                  \ of all services."
+                                description: "Value is the value of the tag. \n Some
+                                  AWS service do not support empty values. Since tags
+                                  are added to resources in many services, the length
+                                  of the tag value must meet the requirements of all
+                                  services."
                                 maxLength: 256
                                 minLength: 1
                                 pattern: ^[0-9A-Za-z_.:/=+-@]+$
@@ -17624,16 +17993,14 @@ objects:
                           maxItems: 25
                           type: array
                         roles:
-                          description: "Roles must contain exactly 4 entries representing\
-                            \ the locators for roles supporting the following OCP\
-                            \ services: \n - openshift-ingress-operator/cloud-credentials\
-                            \ - openshift-image-registry/installer-cloud-credentials\
-                            \ - openshift-cluster-csi-drivers/ebs-cloud-credentials\
-                            \ - cloud-network-config-controller/cloud-credentials\
-                            \ \n Each role has unique permission requirements whose\
-                            \ documentation is TBD. \n TODO(dan): revisit this field;\
-                            \ it's really 3 required fields with specific content\
-                            \ requirements"
+                          description: "Roles must contain exactly 4 entries representing
+                            the locators for roles supporting the following OCP services:
+                            \n - openshift-ingress-operator/cloud-credentials - openshift-image-registry/installer-cloud-credentials
+                            - openshift-cluster-csi-drivers/ebs-cloud-credentials
+                            - cloud-network-config-controller/cloud-credentials \n
+                            Each role has unique permission requirements whose documentation
+                            is TBD. \n TODO(dan): revisit this field; it's really
+                            3 required fields with specific content requirements"
                           items:
                             properties:
                               arn:
@@ -17649,10 +18016,10 @@ objects:
                             type: object
                           type: array
                         serviceEndpoints:
-                          description: "ServiceEndpoints specifies optional custom\
-                            \ endpoints which will override the default service endpoint\
-                            \ of specific AWS Services. \n There must be only one\
-                            \ ServiceEndpoint for a given service name."
+                          description: "ServiceEndpoints specifies optional custom
+                            endpoints which will override the default service endpoint
+                            of specific AWS Services. \n There must be only one ServiceEndpoint
+                            for a given service name."
                           items:
                             description: AWSServiceEndpoint stores the configuration
                               for services to override existing defaults of AWS Services.
@@ -17713,10 +18080,10 @@ objects:
                       type: string
                   type: object
                 release:
-                  description: "Release specifies the desired OCP release payload\
-                    \ for the hosted cluster. \n Updating this field will trigger\
-                    \ a rollout of the control plane. The behavior of the rollout\
-                    \ will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy."
+                  description: "Release specifies the desired OCP release payload
+                    for the hosted cluster. \n Updating this field will trigger a
+                    rollout of the control plane. The behavior of the rollout will
+                    be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy."
                   properties:
                     image:
                       description: Image is the image pullspec of an OCP release payload
@@ -17929,10 +18296,10 @@ objects:
                   - type
                   type: object
                 services:
-                  description: "Services specifies how individual control plane services\
-                    \ are published from the hosting cluster of the control plane.\
-                    \ \n If a given service is not present in this list, it will be\
-                    \ exposed publicly by default."
+                  description: "Services specifies how individual control plane services
+                    are published from the hosting cluster of the control plane. \n
+                    If a given service is not present in this list, it will be exposed
+                    publicly by default."
                   items:
                     description: ServicePublishingStrategyMapping specifies how individual
                       control plane services are published from the hosting cluster
@@ -18014,17 +18381,16 @@ objects:
                   description: Conditions represents the latest available observations
                     of a control plane's current state.
                   items:
-                    description: "Condition contains details for one aspect of the\
-                      \ current state of this API Resource. --- This struct is intended\
-                      \ for direct use as an array at the field path .status.conditions.\
-                      \  For example, type FooStatus struct{     // Represents the\
-                      \ observations of a foo's current state.     // Known .status.conditions.type\
-                      \ are: \"Available\", \"Progressing\", and \"Degraded\"    \
-                      \ // +patchMergeKey=type     // +patchStrategy=merge     //\
-                      \ +listType=map     // +listMapKey=type     Conditions []metav1.Condition\
-                      \ `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"\
-                      type\" protobuf:\"bytes,1,rep,name=conditions\"` \n     // other\
-                      \ fields }"
+                    description: "Condition contains details for one aspect of the
+                      current state of this API Resource. --- This struct is intended
+                      for direct use as an array at the field path .status.conditions.
+                      \ For example, type FooStatus struct{     // Represents the
+                      observations of a foo's current state.     // Known .status.conditions.type
+                      are: \"Available\", \"Progressing\", and \"Degraded\"     //
+                      +patchMergeKey=type     // +patchStrategy=merge     // +listType=map
+                      \    // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                      patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
+                      \n     // other fields }"
                     properties:
                       lastTransitionTime:
                         description: lastTransitionTime is the last time the condition
@@ -18062,8 +18428,8 @@ objects:
                         description: status of the condition, one of True, False,
                           Unknown.
                         enum:
-                        - 'True'
-                        - 'False'
+                        - "True"
+                        - "False"
                         - Unknown
                         type: string
                       type:
@@ -18213,8 +18579,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -18377,9 +18743,9 @@ objects:
                                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                   x-kubernetes-int-or-string: true
                                 storageClassName:
-                                  description: "StorageClassName is the StorageClass\
-                                    \ of the data volume for each etcd member. \n\
-                                    \ See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1."
+                                  description: "StorageClassName is the StorageClass
+                                    of the data volume for each etcd member. \n See
+                                    https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1."
                                   type: string
                               type: object
                             type:
@@ -18407,9 +18773,9 @@ objects:
                         cluster.
                       properties:
                         endpoint:
-                          description: "Endpoint is the full etcd cluster client endpoint\
-                            \ URL. For example: \n     https://etcd-client:2379 \n\
-                            \ If the URL uses an HTTPS scheme, the TLS field is required."
+                          description: "Endpoint is the full etcd cluster client endpoint
+                            URL. For example: \n     https://etcd-client:2379 \n If
+                            the URL uses an HTTPS scheme, the TLS field is required."
                           pattern: ^https://
                           type: string
                         tls:
@@ -18417,12 +18783,12 @@ objects:
                             client endpoints.
                           properties:
                             clientSecret:
-                              description: "ClientSecret refers to a secret for client\
-                                \ mTLS authentication with the etcd cluster. It may\
-                                \ have the following key/value pairs: \n     etcd-client-ca.crt:\
-                                \ Certificate Authority value     etcd-client.crt:\
-                                \ Client certificate value     etcd-client.key: Client\
-                                \ certificate key value"
+                              description: "ClientSecret refers to a secret for client
+                                mTLS authentication with the etcd cluster. It may
+                                have the following key/value pairs: \n     etcd-client-ca.crt:
+                                Certificate Authority value     etcd-client.crt: Client
+                                certificate value     etcd-client.key: Client certificate
+                                key value"
                               properties:
                                 name:
                                   description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -18518,9 +18884,9 @@ objects:
                         on Amazon Web Services.
                       properties:
                         cloudProviderConfig:
-                          description: "CloudProviderConfig specifies AWS networking\
-                            \ configuration for the control plane. \n TODO(dan): should\
-                            \ this be named AWSNetworkConfig?"
+                          description: "CloudProviderConfig specifies AWS networking
+                            configuration for the control plane. \n TODO(dan): should
+                            this be named AWSNetworkConfig?"
                           properties:
                             subnet:
                               description: Subnet is the subnet to use for control
@@ -18568,12 +18934,12 @@ objects:
                           - vpc
                           type: object
                         controlPlaneOperatorCreds:
-                          description: "ControlPlaneOperatorCreds is a reference to\
-                            \ a secret containing cloud credentials with permissions\
-                            \ matching the control-plane-operator policy. The secret\
-                            \ should have exactly one key, `credentials`, whose value\
-                            \ is an AWS credentials file. \n TODO(dan): document the\
-                            \ \"control plane operator policy\""
+                          description: "ControlPlaneOperatorCreds is a reference to
+                            a secret containing cloud credentials with permissions
+                            matching the control-plane-operator policy. The secret
+                            should have exactly one key, `credentials`, whose value
+                            is an AWS credentials file. \n TODO(dan): document the
+                            \"control plane operator policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -18590,12 +18956,12 @@ objects:
                           - Private
                           type: string
                         kubeCloudControllerCreds:
-                          description: "KubeCloudControllerCreds is a reference to\
-                            \ a secret containing cloud credentials with permissions\
-                            \ matching the cloud controller policy. The secret should\
-                            \ have exactly one key, `credentials`, whose value is\
-                            \ an AWS credentials file. \n TODO(dan): document the\
-                            \ \"cloud controller policy\""
+                          description: "KubeCloudControllerCreds is a reference to
+                            a secret containing cloud credentials with permissions
+                            matching the cloud controller policy. The secret should
+                            have exactly one key, `credentials`, whose value is an
+                            AWS credentials file. \n TODO(dan): document the \"cloud
+                            controller policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -18603,12 +18969,12 @@ objects:
                               type: string
                           type: object
                         nodePoolManagementCreds:
-                          description: "NodePoolManagementCreds is a reference to\
-                            \ a secret containing cloud credentials with permissions\
-                            \ matching the node pool management policy. The secret\
-                            \ should have exactly one key, `credentials`, whose value\
-                            \ is an AWS credentials file. \n TODO(dan): document the\
-                            \ \"node pool management policy\""
+                          description: "NodePoolManagementCreds is a reference to
+                            a secret containing cloud credentials with permissions
+                            matching the node pool management policy. The secret should
+                            have exactly one key, `credentials`, whose value is an
+                            AWS credentials file. \n TODO(dan): document the \"node
+                            pool management policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -18639,11 +19005,11 @@ objects:
                                 pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                 type: string
                               value:
-                                description: "Value is the value of the tag. \n Some\
-                                  \ AWS service do not support empty values. Since\
-                                  \ tags are added to resources in many services,\
-                                  \ the length of the tag value must meet the requirements\
-                                  \ of all services."
+                                description: "Value is the value of the tag. \n Some
+                                  AWS service do not support empty values. Since tags
+                                  are added to resources in many services, the length
+                                  of the tag value must meet the requirements of all
+                                  services."
                                 maxLength: 256
                                 minLength: 1
                                 pattern: ^[0-9A-Za-z_.:/=+-@]+$
@@ -18655,16 +19021,14 @@ objects:
                           maxItems: 25
                           type: array
                         roles:
-                          description: "Roles must contain exactly 4 entries representing\
-                            \ the locators for roles supporting the following OCP\
-                            \ services: \n - openshift-ingress-operator/cloud-credentials\
-                            \ - openshift-image-registry/installer-cloud-credentials\
-                            \ - openshift-cluster-csi-drivers/ebs-cloud-credentials\
-                            \ - cloud-network-config-controller/cloud-credentials\
-                            \ \n Each role has unique permission requirements whose\
-                            \ documentation is TBD. \n TODO(dan): revisit this field;\
-                            \ it's really 3 required fields with specific content\
-                            \ requirements"
+                          description: "Roles must contain exactly 4 entries representing
+                            the locators for roles supporting the following OCP services:
+                            \n - openshift-ingress-operator/cloud-credentials - openshift-image-registry/installer-cloud-credentials
+                            - openshift-cluster-csi-drivers/ebs-cloud-credentials
+                            - cloud-network-config-controller/cloud-credentials \n
+                            Each role has unique permission requirements whose documentation
+                            is TBD. \n TODO(dan): revisit this field; it's really
+                            3 required fields with specific content requirements"
                           items:
                             properties:
                               arn:
@@ -18680,10 +19044,10 @@ objects:
                             type: object
                           type: array
                         serviceEndpoints:
-                          description: "ServiceEndpoints specifies optional custom\
-                            \ endpoints which will override the default service endpoint\
-                            \ of specific AWS Services. \n There must be only one\
-                            \ ServiceEndpoint for a given service name."
+                          description: "ServiceEndpoints specifies optional custom
+                            endpoints which will override the default service endpoint
+                            of specific AWS Services. \n There must be only one ServiceEndpoint
+                            for a given service name."
                           items:
                             description: AWSServiceEndpoint stores the configuration
                               for services to override existing defaults of AWS Services.
@@ -19039,17 +19403,16 @@ objects:
                     state of the HostedControlPlane. Current condition types are:
                     "Available"'
                   items:
-                    description: "Condition contains details for one aspect of the\
-                      \ current state of this API Resource. --- This struct is intended\
-                      \ for direct use as an array at the field path .status.conditions.\
-                      \  For example, type FooStatus struct{     // Represents the\
-                      \ observations of a foo's current state.     // Known .status.conditions.type\
-                      \ are: \"Available\", \"Progressing\", and \"Degraded\"    \
-                      \ // +patchMergeKey=type     // +patchStrategy=merge     //\
-                      \ +listType=map     // +listMapKey=type     Conditions []metav1.Condition\
-                      \ `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"\
-                      type\" protobuf:\"bytes,1,rep,name=conditions\"` \n     // other\
-                      \ fields }"
+                    description: "Condition contains details for one aspect of the
+                      current state of this API Resource. --- This struct is intended
+                      for direct use as an array at the field path .status.conditions.
+                      \ For example, type FooStatus struct{     // Represents the
+                      observations of a foo's current state.     // Known .status.conditions.type
+                      are: \"Available\", \"Progressing\", and \"Degraded\"     //
+                      +patchMergeKey=type     // +patchStrategy=merge     // +listType=map
+                      \    // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                      patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
+                      \n     // other fields }"
                     properties:
                       lastTransitionTime:
                         description: lastTransitionTime is the last time the condition
@@ -19087,8 +19450,8 @@ objects:
                         description: status of the condition, one of True, False,
                           Unknown.
                         enum:
-                        - 'True'
-                        - 'False'
+                        - "True"
+                        - "False"
                         - Unknown
                         type: string
                       type:
@@ -19189,8 +19552,8 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
 - apiVersion: apiextensions.k8s.io/v1
@@ -19244,9 +19607,9 @@ objects:
       name: v1alpha1
       schema:
         openAPIV3Schema:
-          description: "NodePool is a scalable set of worker nodes attached to a HostedCluster.\
-            \ NodePool machine architectures are uniform within a given pool, and\
-            \ are independent of the control plane\u2019s underlying machine architecture."
+          description: NodePool is a scalable set of worker nodes attached to a HostedCluster.
+            NodePool machine architectures are uniform within a given pool, and are
+            independent of the control plane’s underlying machine architecture.
           properties:
             apiVersion:
               description: 'APIVersion defines the versioned schema of this representation
@@ -19285,19 +19648,19 @@ objects:
                   - min
                   type: object
                 clusterName:
-                  description: "ClusterName is the name of the HostedCluster this\
-                    \ NodePool belongs to. \n TODO(dan): Should this be a LocalObjectReference?"
+                  description: "ClusterName is the name of the HostedCluster this
+                    NodePool belongs to. \n TODO(dan): Should this be a LocalObjectReference?"
                   type: string
                 config:
-                  description: "Config is a list of references to ConfigMaps containing\
-                    \ serialized MachineConfig resources to be injected into the ignition\
-                    \ configurations of nodes in the NodePool. The MachineConfig API\
-                    \ schema is defined here: \n https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172\
-                    \ \n Each ConfigMap must have a single key named \"config\" whose\
-                    \ value is the JSON or YAML of a serialized MachineConfig. \n\
-                    \ TODO (alberto): this ConfigMaps are meant to contain MachineConfig,\
-                    \ KubeletConfig and ContainerRuntimeConfig but MCO only supports\
-                    \ MachineConfig in bootstrap mode atm. See: https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119"
+                  description: "Config is a list of references to ConfigMaps containing
+                    serialized MachineConfig resources to be injected into the ignition
+                    configurations of nodes in the NodePool. The MachineConfig API
+                    schema is defined here: \n https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172
+                    \n Each ConfigMap must have a single key named \"config\" whose
+                    value is the JSON or YAML of a serialized MachineConfig. \n TODO
+                    (alberto): this ConfigMaps are meant to contain MachineConfig,
+                    KubeletConfig and ContainerRuntimeConfig but MCO only supports
+                    MachineConfig in bootstrap mode atm. See: https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119"
                   items:
                     description: LocalObjectReference contains enough information
                       to let you locate the referenced object inside the same namespace.
@@ -19336,38 +19699,38 @@ objects:
                               anyOf:
                               - type: integer
                               - type: string
-                              description: "MaxSurge is the maximum number of nodes\
-                                \ that can be provisioned above the desired number\
-                                \ of nodes. \n Value can be an absolute number (ex:\
-                                \ 5) or a percentage of desired nodes (ex: 10%). \n\
-                                \ Absolute number is calculated from percentage by\
-                                \ rounding up. \n This can not be 0 if MaxUnavailable\
-                                \ is 0. \n Defaults to 1. \n Example: when this is\
-                                \ set to 30%, new nodes can be provisioned immediately\
-                                \ when the rolling update starts, such that the total\
-                                \ number of old and new nodes do not exceed 130% of\
-                                \ desired nodes. Once old nodes have been deleted,\
-                                \ new nodes can be provisioned, ensuring that total\
-                                \ number of nodes running at any time during the update\
-                                \ is at most 130% of desired nodes."
+                              description: "MaxSurge is the maximum number of nodes
+                                that can be provisioned above the desired number of
+                                nodes. \n Value can be an absolute number (ex: 5)
+                                or a percentage of desired nodes (ex: 10%). \n Absolute
+                                number is calculated from percentage by rounding up.
+                                \n This can not be 0 if MaxUnavailable is 0. \n Defaults
+                                to 1. \n Example: when this is set to 30%, new nodes
+                                can be provisioned immediately when the rolling update
+                                starts, such that the total number of old and new
+                                nodes do not exceed 130% of desired nodes. Once old
+                                nodes have been deleted, new nodes can be provisioned,
+                                ensuring that total number of nodes running at any
+                                time during the update is at most 130% of desired
+                                nodes."
                               x-kubernetes-int-or-string: true
                             maxUnavailable:
                               anyOf:
                               - type: integer
                               - type: string
-                              description: "MaxUnavailable is the maximum number of\
-                                \ nodes that can be unavailable during the update.\
-                                \ \n Value can be an absolute number (ex: 5) or a\
-                                \ percentage of desired nodes (ex: 10%). \n Absolute\
-                                \ number is calculated from percentage by rounding\
-                                \ down. \n This can not be 0 if MaxSurge is 0. \n\
-                                \ Defaults to 0. \n Example: when this is set to 30%,\
-                                \ old nodes can be deleted down to 70% of desired\
-                                \ nodes immediately when the rolling update starts.\
-                                \ Once new nodes are ready, more old nodes be deleted,\
-                                \ followed by provisioning new nodes, ensuring that\
-                                \ the total number of nodes available at all times\
-                                \ during the update is at least 70% of desired nodes."
+                              description: "MaxUnavailable is the maximum number of
+                                nodes that can be unavailable during the update. \n
+                                Value can be an absolute number (ex: 5) or a percentage
+                                of desired nodes (ex: 10%). \n Absolute number is
+                                calculated from percentage by rounding down. \n This
+                                can not be 0 if MaxSurge is 0. \n Defaults to 0. \n
+                                Example: when this is set to 30%, old nodes can be
+                                deleted down to 70% of desired nodes immediately when
+                                the rolling update starts. Once new nodes are ready,
+                                more old nodes be deleted, followed by provisioning
+                                new nodes, ensuring that the total number of nodes
+                                available at all times during the update is at least
+                                70% of desired nodes."
                               x-kubernetes-int-or-string: true
                           type: object
                         strategy:
@@ -19393,6 +19756,15 @@ objects:
                     maintain. If unset, the default value is 0.
                   format: int32
                   type: integer
+                nodeDrainTimeout:
+                  description: 'NodeDrainTimeout is the total amount of time that
+                    the controller will spend on draining a node. The default value
+                    is 0, meaning that the node can be drained without any time limitations.
+                    NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
+                    TODO (alberto): Today changing this field will trigger a recreate
+                    rolling update, which kind of defeats the purpose of the change.
+                    In future we plan to propagate this field in-place. https://github.com/kubernetes-sigs/cluster-api/issues/5880'
+                  type: string
                 platform:
                   description: Platform specifies the underlying infrastructure provider
                     for the NodePool and is used to configure platform specific behavior.
@@ -19477,14 +19849,14 @@ objects:
                             instances (e.g. m5.large).
                           type: string
                         resourceTags:
-                          description: "ResourceTags is an optional list of additional\
-                            \ tags to apply to AWS node instances. \n These will be\
-                            \ merged with HostedCluster scoped tags, and HostedCluster\
-                            \ tags take precedence in case of conflicts. \n See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html\
-                            \ for information on tagging AWS resources. AWS supports\
-                            \ a maximum of 50 tags per resource. OpenShift reserves\
-                            \ 25 tags for its use, leaving 25 tags available for the\
-                            \ user."
+                          description: "ResourceTags is an optional list of additional
+                            tags to apply to AWS node instances. \n These will be
+                            merged with HostedCluster scoped tags, and HostedCluster
+                            tags take precedence in case of conflicts. \n See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html
+                            for information on tagging AWS resources. AWS supports
+                            a maximum of 50 tags per resource. OpenShift reserves
+                            25 tags for its use, leaving 25 tags available for the
+                            user."
                           items:
                             description: AWSResourceTag is a tag to apply to AWS resources
                               created for the cluster.
@@ -19496,11 +19868,11 @@ objects:
                                 pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                 type: string
                               value:
-                                description: "Value is the value of the tag. \n Some\
-                                  \ AWS service do not support empty values. Since\
-                                  \ tags are added to resources in many services,\
-                                  \ the length of the tag value must meet the requirements\
-                                  \ of all services."
+                                description: "Value is the value of the tag. \n Some
+                                  AWS service do not support empty values. Since tags
+                                  are added to resources in many services, the length
+                                  of the tag value must meet the requirements of all
+                                  services."
                                 maxLength: 256
                                 minLength: 1
                                 pattern: ^[0-9A-Za-z_.:/=+-@]+$
@@ -19521,9 +19893,9 @@ objects:
                               format: int64
                               type: integer
                             size:
-                              description: "Size specifies size (in Gi) of the storage\
-                                \ device. \n Must be greater than the image snapshot\
-                                \ size or 8 (whichever is greater)."
+                              description: "Size specifies size (in Gi) of the storage
+                                device. \n Must be greater than the image snapshot
+                                size or 8 (whichever is greater)."
                               format: int64
                               minimum: 8
                               type: integer
@@ -21916,10 +22288,10 @@ objects:
                                                           type: string
                                                       type: object
                                                     hyperv:
-                                                      description: "Hyperv (Hypervclock)\
-                                                        \ - lets guests read the host\u2019\
-                                                        s wall clock time (paravirtualized).\
-                                                        \ For windows guests."
+                                                      description: Hyperv (Hypervclock)
+                                                        - lets guests read the host’s
+                                                        wall clock time (paravirtualized).
+                                                        For windows guests.
                                                       properties:
                                                         present:
                                                           description: Enabled set
@@ -21930,10 +22302,10 @@ objects:
                                                           type: boolean
                                                       type: object
                                                     kvm:
-                                                      description: "KVM \t(KVM clock)\
-                                                        \ - lets guests read the host\u2019\
-                                                        s wall clock time (paravirtualized).\
-                                                        \ For linux guests."
+                                                      description: "KVM \t(KVM clock)
+                                                        - lets guests read the host’s
+                                                        wall clock time (paravirtualized).
+                                                        For linux guests."
                                                       properties:
                                                         present:
                                                           description: Enabled set
@@ -24169,17 +24541,16 @@ objects:
                   description: Conditions represents the latest available observations
                     of the node pool's current state.
                   items:
-                    description: "Condition contains details for one aspect of the\
-                      \ current state of this API Resource. --- This struct is intended\
-                      \ for direct use as an array at the field path .status.conditions.\
-                      \  For example, type FooStatus struct{     // Represents the\
-                      \ observations of a foo's current state.     // Known .status.conditions.type\
-                      \ are: \"Available\", \"Progressing\", and \"Degraded\"    \
-                      \ // +patchMergeKey=type     // +patchStrategy=merge     //\
-                      \ +listType=map     // +listMapKey=type     Conditions []metav1.Condition\
-                      \ `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"\
-                      type\" protobuf:\"bytes,1,rep,name=conditions\"` \n     // other\
-                      \ fields }"
+                    description: "Condition contains details for one aspect of the
+                      current state of this API Resource. --- This struct is intended
+                      for direct use as an array at the field path .status.conditions.
+                      \ For example, type FooStatus struct{     // Represents the
+                      observations of a foo's current state.     // Known .status.conditions.type
+                      are: \"Available\", \"Progressing\", and \"Degraded\"     //
+                      +patchMergeKey=type     // +patchStrategy=merge     // +listType=map
+                      \    // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                      patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
+                      \n     // other fields }"
                     properties:
                       lastTransitionTime:
                         description: lastTransitionTime is the last time the condition
@@ -24217,8 +24588,8 @@ objects:
                         description: status of the condition, one of True, False,
                           Unknown.
                         enum:
-                        - 'True'
-                        - 'False'
+                        - "True"
+                        - "False"
                         - Unknown
                         type: string
                       type:
@@ -24260,410 +24631,22 @@ objects:
         status: {}
   status:
     acceptedNames:
-      kind: ''
-      plural: ''
+      kind: ""
+      plural: ""
     conditions: []
     storedVersions: []
-- apiVersion: scheduling.k8s.io/v1
-  description: This priority class should be used for hypershift control plane pods
-    not critical to serving the API.
-  kind: PriorityClass
-  metadata:
-    creationTimestamp: null
-    name: hypershift-control-plane
-  value: 100000000
-- apiVersion: scheduling.k8s.io/v1
-  description: This priority class should be used for hypershift control plane pods
-    critical to serving the API.
-  kind: PriorityClass
-  metadata:
-    creationTimestamp: null
-    name: hypershift-api-critical
-  value: 100001000
-- apiVersion: scheduling.k8s.io/v1
-  description: This priority class should be used for hypershift etcd pods.
-  kind: PriorityClass
-  metadata:
-    creationTimestamp: null
-    name: hypershift-etcd
-  value: 100002000
-- apiVersion: v1
-  kind: Namespace
-  metadata:
-    creationTimestamp: null
-    name: hypershift
-  spec: {}
-  status: {}
-- apiVersion: v1
-  kind: ServiceAccount
-  metadata:
-    creationTimestamp: null
-    name: operator
-    namespace: hypershift
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: ClusterRole
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator
-  rules:
-  - apiGroups:
-    - hypershift.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - config.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - get
-    - list
-    - watch
-  - apiGroups:
-    - apiextensions.k8s.io
-    resources:
-    - customresourcedefinitions
-    verbs:
-    - '*'
-  - apiGroups:
-    - networking.k8s.io
-    resources:
-    - networkpolicies
-    verbs:
-    - '*'
-  - apiGroups:
-    - bootstrap.cluster.x-k8s.io
-    - controlplane.cluster.x-k8s.io
-    - infrastructure.cluster.x-k8s.io
-    - machines.cluster.x-k8s.io
-    - exp.infrastructure.cluster.x-k8s.io
-    - addons.cluster.x-k8s.io
-    - exp.cluster.x-k8s.io
-    - cluster.x-k8s.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - operator.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - route.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - security.openshift.io
-    resources:
-    - securitycontextconstraints
-    verbs:
-    - '*'
-  - apiGroups:
-    - rbac.authorization.k8s.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - ''
-    resources:
-    - events
-    - configmaps
-    - pods
-    - pods/log
-    - secrets
-    - nodes
-    - namespaces
-    - serviceaccounts
-    - services
-    verbs:
-    - '*'
-  - apiGroups:
-    - apps
-    resources:
-    - deployments
-    verbs:
-    - '*'
-  - apiGroups:
-    - etcd.database.coreos.com
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - machine.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-  - apiGroups:
-    - monitoring.coreos.com
-    resources:
-    - podmonitors
-    verbs:
-    - get
-    - list
-    - watch
-    - create
-    - update
-  - apiGroups:
-    - capi-provider.agent-install.openshift.io
-    resources:
-    - '*'
-    verbs:
-    - '*'
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: ClusterRoleBinding
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator
-  roleRef:
-    apiGroup: rbac.authorization.k8s.io
-    kind: ClusterRole
-    name: hypershift-operator
-  subjects:
-  - kind: ServiceAccount
-    name: operator
-    namespace: hypershift
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: Role
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator
-    namespace: hypershift
-  rules:
-  - apiGroups:
-    - coordination.k8s.io
-    resources:
-    - leases
-    verbs:
-    - '*'
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: RoleBinding
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator
-    namespace: hypershift
-  roleRef:
-    apiGroup: rbac.authorization.k8s.io
-    kind: Role
-    name: hypershift-operator
-  subjects:
-  - kind: ServiceAccount
-    name: operator
-    namespace: hypershift
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    creationTimestamp: null
-    name: operator
-    namespace: hypershift
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        name: operator
-    strategy: {}
-    template:
-      metadata:
-        creationTimestamp: null
-        labels:
-          app: operator
-          hypershift.openshift.io/operator-component: operator
-          name: operator
-      spec:
-        containers:
-        - args:
-          - run
-          - --namespace=$(MY_NAMESPACE)
-          - --deployment-name=operator
-          - --metrics-addr=:9000
-          - --enable-ocp-cluster-monitoring=false
-          - --enable-ci-debug-output=false
-          - --private-platform=None
-          - --oidc-storage-provider-s3-bucket-name=$(MY_OIDC_BUCKET)
-          - --oidc-storage-provider-s3-region=$(MY_OIDC_REGION)
-          - --oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials
-          command:
-          - /usr/bin/hypershift-operator
-          env:
-          - name: MY_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
-          - name: MY_OIDC_BUCKET
-            valueFrom:
-              secretKeyRef:
-                key: bucket
-                name: hypershift-operator-oidc-provider-s3-credentials
-          - name: MY_OIDC_REGION
-            valueFrom:
-              secretKeyRef:
-                key: region
-                name: hypershift-operator-oidc-provider-s3-credentials
-          image: ${REGISTRY_IMG}:${IMAGE_TAG}
-          imagePullPolicy: Always
-          livenessProbe:
-            failureThreshold: 5
-            httpGet:
-              path: /metrics
-              port: 9000
-              scheme: HTTP
-            initialDelaySeconds: 60
-            periodSeconds: 60
-            successThreshold: 1
-            timeoutSeconds: 5
-          name: operator
-          ports:
-          - containerPort: 9000
-            name: metrics
-            protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            httpGet:
-              path: /metrics
-              port: 9000
-              scheme: HTTP
-            initialDelaySeconds: 15
-            periodSeconds: 60
-            successThreshold: 1
-            timeoutSeconds: 5
-          resources: {}
-          securityContext:
-            runAsUser: 1000
-          volumeMounts:
-          - mountPath: /etc/oidc-storage-provider-s3-creds
-            name: oidc-storage-provider-s3-creds
-        serviceAccountName: operator
-        volumes:
-        - name: oidc-storage-provider-s3-creds
-          secret:
-            secretName: hypershift-operator-oidc-provider-s3-credentials
-  status: {}
-- apiVersion: v1
-  kind: Service
-  metadata:
-    creationTimestamp: null
-    labels:
-      name: operator
-    name: operator
-    namespace: hypershift
-  spec:
-    ports:
-    - name: metrics
-      port: 9393
-      protocol: TCP
-      targetPort: metrics
-    selector:
-      name: operator
-    type: ClusterIP
-  status:
-    loadBalancer: {}
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: Role
-  metadata:
-    creationTimestamp: null
-    name: prometheus
-    namespace: hypershift
-  rules:
-  - apiGroups:
-    - ''
-    resources:
-    - services
-    - endpoints
-    - pods
-    verbs:
-    - get
-    - list
-    - watch
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: RoleBinding
-  metadata:
-    creationTimestamp: null
-    name: prometheus
-    namespace: hypershift
-  roleRef:
-    apiGroup: rbac.authorization.k8s.io
-    kind: Role
-    name: prometheus
-  subjects:
-  - kind: ServiceAccount
-    name: prometheus-user-workload
-    namespace: openshift-user-workload-monitoring
-- apiVersion: monitoring.coreos.com/v1
-  kind: ServiceMonitor
-  metadata:
-    creationTimestamp: null
-    name: operator
-    namespace: hypershift
-  spec:
-    endpoints:
-    - bearerTokenSecret:
-        key: ''
-      interval: 30s
-      port: metrics
-    jobLabel: component
-    namespaceSelector: {}
-    selector:
-      matchLabels:
-        name: operator
-- apiVersion: monitoring.coreos.com/v1
-  kind: PrometheusRule
-  metadata:
-    creationTimestamp: null
-    name: metrics
-    namespace: hypershift
-  spec:
-    groups:
-    - interval: 30s
-      name: hypershift.rules
-      rules:
-      - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
-          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
-          "app", "$1", "label_app", "(.*)") )
-        record: hypershift:controlplane:component_api_requests_total
-      - expr: sum by (app, namespace) ( sum(container_memory_usage_bytes{container!="POD",container!=""})
-          by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
-          "app", "$1", "label_app", "(.*)") )
-        record: hypershift:controlplane:component_memory_usage
-      - expr: avg by (app, namespace) ( sum( rate( container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
-          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
-          "app", "$1", "label_app", "(.*)") ) / count by (app, namespace) ( sum( rate(
-          container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
-          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
-          "app", "$1", "label_app", "(.*)") )
-        record: hypershift:controlplane:component_cpu_usage_seconds
-      - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
-          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""},
-          "app", "$1", "label_app", "(.*)") )
-        record: hypershift:operator:component_api_requests_total
-- apiVersion: v1
-  data:
-    bucket: YnVja2V0
-    credentials: null
-    region: ''
-  kind: Secret
-  metadata:
-    creationTimestamp: null
-    name: hypershift-operator-oidc-provider-s3-credentials
-    namespace: hypershift
-- apiVersion: v1
-  data:
-    name: bucket
-    region: ''
-  kind: ConfigMap
-  metadata:
-    creationTimestamp: null
-    name: oidc-storage-provider-s3-config
-    namespace: kube-public
-- null
 parameters:
-- name: REGISTRY_IMG
-  value: quay.io/app-sre/hypershift-operator
+- name: OPERATOR_IMG
+  value: quay.io/hypershift/hypershift-operator
 - name: IMAGE_TAG
   value: latest
+- name: NAMESPACE
+  value: hypershift
+- name: OIDC_S3_NAME
+- name: OIDC_S3_REGION
+- name: OIDC_S3_CREDS_SECRET
+  value: oidc-s3-creds
+- name: OIDC_S3_CREDS_SECRET_KEY
+  value: credentials
+- name: OPERATOR_REPLICAS
+  value: "1"
