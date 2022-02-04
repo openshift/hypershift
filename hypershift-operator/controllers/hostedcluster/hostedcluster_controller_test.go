@@ -1192,16 +1192,25 @@ func TestReconcileAWSSubnets(t *testing.T) {
 	}
 
 	infraCRName := "test"
-	infraCRNamespace := "hcp"
+	hcpNamespace := "hcp"
 	infraCR := &capiawsv1.AWSCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      infraCRName,
-			Namespace: infraCRNamespace,
+			Namespace: hcpNamespace,
 		},
 		Spec: capiawsv1.AWSClusterSpec{},
 	}
 
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
+	epsName := "test"
+	awsEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      epsName,
+			Namespace: hcpNamespace,
+		},
+		Spec: hyperv1.AWSEndpointServiceSpec{},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2, awsEndpointService).Build()
 	r := &HostedClusterReconciler{
 		Client:         client,
 		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
@@ -1209,13 +1218,13 @@ func TestReconcileAWSSubnets(t *testing.T) {
 	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}
 	createOrUpdate := r.createOrUpdate(req)
 
-	err := r.reconcileAWSSubnets(context.Background(), createOrUpdate, infraCR, req.Namespace, req.Name)
+	err := r.reconcileAWSSubnets(context.Background(), createOrUpdate, infraCR, req.Namespace, req.Name, hcpNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	freshInfraCR := &capiawsv1.AWSCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      infraCRName,
-			Namespace: infraCRNamespace,
+			Namespace: hcpNamespace,
 		}}
 	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshInfraCR), freshInfraCR)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -1227,4 +1236,13 @@ func TestReconcileAWSSubnets(t *testing.T) {
 			ID: "2",
 		},
 	}))
+
+	freshAWSEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      epsName,
+			Namespace: hcpNamespace,
+		}}
+	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshAWSEndpointService), freshAWSEndpointService)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(freshAWSEndpointService.Spec.SubnetIDs).To(BeEquivalentTo([]string{"1", "2"}))
 }

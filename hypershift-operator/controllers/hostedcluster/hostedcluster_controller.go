@@ -27,6 +27,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -181,7 +182,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		if !ok {
 			return []reconcile.Request{}
 		}
-		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: nodePool.GetNamespace(), Name: nodePool.ClusterName}}}
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: nodePool.GetNamespace(), Name: nodePool.Spec.ClusterName}}}
 	}))
 
 	// Watch based on Routes capability
@@ -872,8 +873,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// TODO (alberto): drop this once this is fixed upstream https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2864.
-	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name); err != nil {
+	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name, controlPlaneNamespace.Name); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -3763,26 +3763,32 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 }
 
 func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
-	infraCR client.Object, namespace, clusterName string) error {
-	awsInfraCR, ok := infraCR.(*capiawsv1.AWSCluster)
-	if !ok {
-		return nil
-	}
+	infraCR client.Object, namespace, clusterName, hcpNamespace string) error {
 
 	nodePools, err := r.listNodePools(namespace, clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", clusterName, err)
 	}
-	subnets := capiawsv1.Subnets{}
+	subnetIDs := []string{}
 	for _, nodePool := range nodePools {
 		if nodePool.Spec.Platform.AWS != nil &&
 			nodePool.Spec.Platform.AWS.Subnet != nil &&
 			nodePool.Spec.Platform.AWS.Subnet.ID != nil {
-			subnet := capiawsv1.SubnetSpec{
-				ID: *nodePool.Spec.Platform.AWS.Subnet.ID,
-			}
-			subnets = append(subnets, subnet)
+			subnetIDs = append(subnetIDs, *nodePool.Spec.Platform.AWS.Subnet.ID)
 		}
+	}
+	// Sort for stable update detection (is this needed?)
+	sort.Strings(subnetIDs)
+
+	// Reconcile subnet IDs in AWSCluster
+	// TODO (alberto): drop this once this is fixed upstream https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2864.
+	awsInfraCR, ok := infraCR.(*capiawsv1.AWSCluster)
+	if !ok {
+		return nil
+	}
+	subnets := capiawsv1.Subnets{}
+	for _, subnetID := range subnetIDs {
+		subnets = append(subnets, capiawsv1.SubnetSpec{ID: subnetID})
 	}
 	_, err = createOrUpdate(ctx, r.Client, awsInfraCR, func() error {
 		awsInfraCR.Spec.NetworkSpec.Subnets = subnets
@@ -3791,5 +3797,21 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	if err != nil {
 		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
 	}
+
+	// Reconcile subnet IDs in AWSEndpointService CRs
+	awsEndpointServiceList := hyperv1.AWSEndpointServiceList{}
+	if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
+		return fmt.Errorf("failed to list AWSEndpointServices in namespace %s: %w", hcpNamespace, err)
+	}
+	for _, eps := range awsEndpointServiceList.Items {
+		_, err = createOrUpdate(ctx, r.Client, &eps, func() error {
+			eps.Spec.SubnetIDs = subnetIDs
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile subnetIDs for AWSEndpointService %s: %w", eps.Name, err)
+		}
+	}
+
 	return nil
 }

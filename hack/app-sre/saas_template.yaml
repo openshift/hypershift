@@ -17356,6 +17356,12 @@ objects:
                     - value
                     type: object
                   type: array
+                subnetIDs:
+                  description: SubnetIDs is the list of subnet IDs to which guest
+                    nodes can attach
+                  items:
+                    type: string
+                  type: array
               type: object
             status:
               description: AWSEndpointServiceStatus defines the observed state of
