@@ -135,6 +135,8 @@ app-sre-saas-template: hypershift
 	bin/hypershift install \
 		--oidc-storage-provider-s3-bucket-name=bucket \
 		--oidc-storage-provider-s3-secret=oidc-s3-creds \
+		--oidc-storage-provider-s3-region=us-east-1 \
+		--oidc-storage-provider-s3-secret-key=credentials \
 		--enable-ocp-cluster-monitoring=false \
 		--enable-ci-debug-output=false \
 		render --template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
