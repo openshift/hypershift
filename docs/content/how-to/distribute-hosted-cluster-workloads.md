@@ -24,6 +24,7 @@ If the `ControllerAvailabilityPolicy` is `HighlyAvailable` Pods for each Deploym
 
 HyperShift leverages PriorityClasses for driving Priority and Preemption of their managed Pods.
 It will install three high priority classes in a management cluster with the following order of priority from highest to lowest:
+
 - `hypershift-etcd`: Pods for etcd.
 - `hypershift-api-critical`: Pods that are required for API calls and resource admission to succeed. This includes pods like kube-apiserver, aggregated API servers, and webhooks.
 - `hypershift-control-plane`: pods in the HyperShift Control Plane that are not API critical but still need elevated priority. E.g Cluster Version Operator.
