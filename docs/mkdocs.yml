@@ -35,6 +35,7 @@ nav:
 - 'How-to guides':
   - how-to/index.md
   - how-to/create-infra-iam-separately.md
+  - how-to/create-aws-hosted-cluster-multiple-zones.md
   - how-to/deploy-aws-private-clusters.md
   - how-to/oauth.md
   - how-to/distribute-hosted-cluster-workloads.md
