@@ -9,23 +9,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
-)
-
-const (
-	// EtcdPriorityClass is for etcd pods.
-	EtcdPriorityClass = "hypershift-etcd"
-
-	// APICriticalPriorityClass is for pods that are required for API calls and
-	// resource admission to succeed. This includes pods like kube-apiserver,
-	// aggregated API servers, and webhooks.
-	APICriticalPriorityClass = "hypershift-api-critical"
-
-	// DefaultPriorityClass is for pods in the Hypershift control plane that are
-	// not API critical but still need elevated priority.
-	DefaultPriorityClass = "hypershift-control-plane"
 )
 
 type HyperShiftNamespace struct {
@@ -58,8 +45,8 @@ type HyperShiftOperatorCredentialsSecret struct {
 
 const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
-	awsCredsSecretKey             = "credentials"
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
+	awsCredsSecretKey             = "credentials"
 )
 
 func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
@@ -82,7 +69,6 @@ func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 type HyperShiftOperatorOIDCProviderS3Secret struct {
 	Namespace                      *corev1.Namespace
 	OIDCStorageProviderS3CredBytes []byte
-	CredsKey                       string
 }
 
 func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
@@ -96,26 +82,24 @@ func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
 			Namespace: o.Namespace.Name,
 		},
 		Data: map[string][]byte{
-			o.CredsKey: o.OIDCStorageProviderS3CredBytes,
+			awsCredsSecretKey: o.OIDCStorageProviderS3CredBytes,
 		},
 	}
 	return secret
 }
 
 type HyperShiftOperatorDeployment struct {
-	Namespace                      *corev1.Namespace
-	OperatorImage                  string
-	ServiceAccount                 *corev1.ServiceAccount
-	Replicas                       int32
-	EnableOCPClusterMonitoring     bool
-	EnableCIDebugOutput            bool
-	PrivatePlatform                string
-	AWSPrivateCreds                string
-	AWSPrivateRegion               string
-	OIDCBucketName                 string
-	OIDCBucketRegion               string
-	OIDCStorageProviderS3Secret    *corev1.Secret
-	OIDCStorageProviderS3SecretKey string
+	Namespace                       *corev1.Namespace
+	OperatorImage                   string
+	ServiceAccount                  *corev1.ServiceAccount
+	Replicas                        int32
+	EnableOCPClusterMonitoring      bool
+	EnableCIDebugOutput             bool
+	PrivatePlatform                 string
+	AWSPrivateCreds                 string
+	AWSPrivateRegion                string
+	OIDCStorageProviderS3BucketName string
+	OIDCStorageProviderS3Region     string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -130,37 +114,29 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	}
 	var oidcVolumeMount []corev1.VolumeMount
 	var oidcVolumeCred []corev1.Volume
-	var envVars = []corev1.EnvVar{
-		{
-			Name: "MY_NAMESPACE",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.namespace",
-				},
-			},
-		},
-	}
 
-	args = append(args,
-		"--oidc-storage-provider-s3-bucket-name="+o.OIDCBucketName,
-		"--oidc-storage-provider-s3-region="+o.OIDCBucketRegion,
-		"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+o.OIDCStorageProviderS3SecretKey,
-	)
-	oidcVolumeMount = []corev1.VolumeMount{
-		{
-			Name:      "oidc-storage-provider-s3-creds",
-			MountPath: "/etc/oidc-storage-provider-s3-creds",
-		},
-	}
-	oidcVolumeCred = []corev1.Volume{
-		{
-			Name: "oidc-storage-provider-s3-creds",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: o.OIDCStorageProviderS3Secret.Name,
+	if o.OIDCStorageProviderS3BucketName != "" {
+		args = append(args,
+			"--oidc-storage-provider-s3-bucket-name="+o.OIDCStorageProviderS3BucketName,
+			"--oidc-storage-provider-s3-region="+o.OIDCStorageProviderS3Region,
+			"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+awsCredsSecretKey,
+		)
+		oidcVolumeMount = []corev1.VolumeMount{
+			{
+				Name:      "oidc-storage-provider-s3-creds",
+				MountPath: "/etc/oidc-storage-provider-s3-creds",
+			},
+		}
+		oidcVolumeCred = []corev1.Volume{
+			{
+				Name: "oidc-storage-provider-s3-creds",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: oidcProviderS3CredsSecretName,
+					},
 				},
 			},
-		},
+		}
 	}
 
 	deployment := &appsv1.Deployment{
@@ -198,9 +174,18 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							},
 							Image:           o.OperatorImage,
 							ImagePullPolicy: corev1.PullAlways,
-							Env:             envVars,
-							Command:         []string{"/usr/bin/hypershift-operator"},
-							Args:            args,
+							Env: []corev1.EnvVar{
+								{
+									Name: "MY_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
+							Command: []string{"/usr/bin/hypershift-operator"},
+							Args:    args,
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
@@ -228,6 +213,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								SuccessThreshold:    int32(1),
 								FailureThreshold:    int32(3),
 								TimeoutSeconds:      int32(5),
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("157286400"),
+									corev1.ResourceCPU:    resource.MustParse(".01"),
+								},
 							},
 							Ports: []corev1.ContainerPort{
 								{
@@ -378,11 +369,6 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"apiextensions.k8s.io"},
 				Resources: []string{"customresourcedefinitions"},
-				Verbs:     []string{"*"},
-			},
-			{
-				APIGroups: []string{"networking.k8s.io"},
-				Resources: []string{"networkpolicies"},
 				Verbs:     []string{"*"},
 			},
 			{
@@ -561,7 +547,7 @@ func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass
 			APIVersion: schedulingv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: DefaultPriorityClass,
+			Name: "hypershift-control-plane",
 		},
 		Value:         100000000,
 		GlobalDefault: false,
@@ -578,7 +564,7 @@ func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass 
 			APIVersion: schedulingv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: APICriticalPriorityClass,
+			Name: "hypershift-api-critical",
 		},
 		Value:         100001000,
 		GlobalDefault: false,
@@ -595,7 +581,7 @@ func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
 			APIVersion: schedulingv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: EtcdPriorityClass,
+			Name: "hypershift-etcd",
 		},
 		Value:         100002000,
 		GlobalDefault: false,
@@ -716,4 +702,21 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 
 	rule.Spec = recordingRuleSpec()
 	return rule
+}
+
+func OIDCStorageProviderS3ConfigMap(bucketName, bucketRegion string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-public",
+			Name:      "oidc-storage-provider-s3-config",
+		},
+		Data: map[string]string{
+			"name":   bucketName,
+			"region": bucketRegion,
+		},
+	}
 }
