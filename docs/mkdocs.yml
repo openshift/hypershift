@@ -40,6 +40,7 @@ nav:
   - how-to/oauth.md
   - how-to/distribute-hosted-cluster-workloads.md
   - how-to/restart-control-plane-components.md
+  - how-to/agent-platform.md
 - 'Reference':
   - reference/index.md
   - reference/api.md
