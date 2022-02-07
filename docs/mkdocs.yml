@@ -43,7 +43,7 @@ nav:
 - 'Reference':
   - reference/index.md
   - reference/api.md
-  - reference/concepts.md
+  - reference/concepts-and-personas.md
   - reference/controller-architecture.md
 - 'Contribute':
   - contribute/index.md
