@@ -34,7 +34,7 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
 	if err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
-		return nil, fmt.Errorf("failed to get control plane ref: %w", err)
+		return nil, fmt.Errorf("AAAA failed to get control plane ref: %w", err)
 	}
 
 	agentCluster := &agentv1.AgentCluster{
