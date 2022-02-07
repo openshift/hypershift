@@ -36,15 +36,6 @@ spec:
           spec:
             description: AgentClusterSpec defines the desired state of AgentCluster
             properties:
-              baseDomain:
-                description: BaseDomain is the base domain to which the cluster should
-                  belong.
-                type: string
-              clusterName:
-                description: ClusterName is the friendly name of the cluster. It is
-                  used for subdomains, some resource tagging, and other instances
-                  where a friendly name for the cluster is useful.
-                type: string
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint represents the endpoint used to
                   communicate with the control plane.
@@ -85,22 +76,6 @@ spec:
                     description: Url store the URL of the custom ignition endpoint.
                     type: string
                 type: object
-              pullSecretRef:
-                description: PullSecretRef is the reference to the secret to use when
-                  pulling images.
-                properties:
-                  name:
-                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                      TODO: Add other useful fields. apiVersion, kind, uid?'
-                    type: string
-                type: object
-              releaseImage:
-                description: ReleaseImage is the image used when installing the cluster
-                type: string
-            required:
-            - baseDomain
-            - clusterName
-            - releaseImage
             type: object
           status:
             description: AgentClusterStatus defines the observed state of AgentCluster

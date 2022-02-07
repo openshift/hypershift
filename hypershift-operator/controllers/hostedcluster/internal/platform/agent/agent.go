@@ -203,11 +203,6 @@ func (Agent) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 }
 
 func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
-	agentCluster.Spec.ReleaseImage = hcp.Spec.ReleaseImage
-	agentCluster.Spec.ClusterName = hcluster.Name
-	agentCluster.Spec.BaseDomain = hcluster.Spec.DNS.BaseDomain
-	agentCluster.Spec.PullSecretRef = &hcp.Spec.PullSecret
-
 	caSecret := ignitionserver.IgnitionCACertSecret(hcp.Namespace)
 	if hcluster.Status.IgnitionEndpoint != "" {
 		agentCluster.Spec.IgnitionEndpoint = &agentv1.IgnitionEndpoint{
