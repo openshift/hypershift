@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 const (
@@ -74,8 +75,9 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 		GenericAPIServerConfig: configv1.GenericAPIServerConfig{
 			ServingInfo: configv1.HTTPServingInfo{
 				ServingInfo: configv1.ServingInfo{
-					BindAddress: fmt.Sprintf("0.0.0.0:%d", OAuthServerPort),
-					BindNetwork: "tcp",
+					BindAddress:       fmt.Sprintf("0.0.0.0:%d", OAuthServerPort),
+					BindNetwork:       "tcp",
+					NamedCertificates: globalconfig.GetConfigNamedCertificates(params.NamedCertificates, oauthNamedCertificateMountPathPrefix),
 					CertInfo: configv1.CertInfo{
 						CertFile: cpath(oauthVolumeServingCert().Name, corev1.TLSCertKey),
 						KeyFile:  cpath(oauthVolumeServingCert().Name, corev1.TLSPrivateKeyKey),
