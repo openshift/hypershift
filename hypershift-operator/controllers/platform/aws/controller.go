@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -27,6 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -42,9 +47,38 @@ type AWSEndpointServiceReconciler struct {
 	elbv2Client elbv2iface.ELBV2API
 }
 
+func mapNodePoolToAWSEndpointServicesFunc(c client.Client) func(obj client.Object) []reconcile.Request {
+	return func(obj client.Object) []reconcile.Request {
+		nodePool, ok := obj.(*hyperv1.NodePool)
+		if !ok {
+			return []reconcile.Request{}
+		}
+
+		// This is a pretty fragile but without a client or context with which to list the
+		// AWSEndpointServices and no way to return and error from here, hardcoding the known
+		// names of the potential AWSEndpointServices (won't exist if Public) is a way to do it.
+		hcpNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, nodePool.Spec.ClusterName)
+		return []reconcile.Request{
+			{
+				NamespacedName: types.NamespacedName{
+					Namespace: hcpNamespace,
+					Name:      "kube-apiserver-private",
+				},
+			},
+			{
+				NamespacedName: types.NamespacedName{
+					Namespace: hcpNamespace,
+					Name:      fmt.Sprintf("router-%s", hcpNamespace),
+				},
+			},
+		}
+	}
+}
+
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
+		Watches(&source.Kind{Type: &hyperv1.NodePool{}}, handler.EnqueueRequestsFromMapFunc(mapNodePoolToAWSEndpointServicesFunc(r))).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
@@ -116,8 +150,24 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	hcps := &hyperv1.HostedControlPlaneList{}
+	hcpNamespace := awsEndpointService.Namespace
+	if err := r.List(ctx, hcps, client.InNamespace(hcpNamespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list HostedControlPlanes in namespace %s: %w", hcpNamespace, err)
+	}
+	if len(hcps.Items) != 1 {
+		return ctrl.Result{}, fmt.Errorf("unexpected number of HostedControlPlanes in namespace %s: expected 1, got %d", hcpNamespace, len(hcps.Items))
+	}
+	hcp := hcps.Items[0]
+	hostedClusterName := hcp.Name
+	nodePoolNamespace := strings.TrimSuffix(hcp.Namespace, fmt.Sprintf("-%s", hcp.Name))
+	subnetIDs, err := listSubnetIDs(ctx, r, hostedClusterName, nodePoolNamespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list subnetIDs: %w", err)
+	}
+
 	// Reconcile the AWSEndpointService
-	if err = reconcileAWSEndpointService(ctx, awsEndpointService, r.ec2Client, r.elbv2Client); err != nil {
+	if err = reconcileAWSEndpointService(ctx, awsEndpointService, subnetIDs, r.ec2Client, r.elbv2Client); err != nil {
 		meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
 			Type:    string(hyperv1.AWSEndpointServiceAvailable),
 			Status:  metav1.ConditionFalse,
@@ -128,7 +178,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, err
 		}
 		// Most likely cause of error here is the NLB is not yet active.  This can take ~2m so
-		// a longer requeue time is warranted.  The ratelimits AWS calls and updates to the CR.
+		// a longer requeue time is warranted.  This ratelimits AWS calls and updates to the CR.
 		log.Info("reconcilation failed, retrying in 20s", "err", err)
 		return ctrl.Result{RequeueAfter: lbNotActiveRequeueDuration}, nil
 	}
@@ -148,11 +198,45 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{}, nil
 }
 
-func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, elbv2Client elbv2iface.ELBV2API) error {
+func listNodePools(ctx context.Context, c client.Client, nodePoolNamespace string, clusterName string) ([]hyperv1.NodePool, error) {
+	nodePoolList := &hyperv1.NodePoolList{}
+	if err := c.List(ctx, nodePoolList, &client.ListOptions{Namespace: nodePoolNamespace}); err != nil {
+		return nil, fmt.Errorf("failed to list NodePools in namespace %s for cluster %s : %w", nodePoolNamespace, clusterName, err)
+	}
+	filtered := []hyperv1.NodePool{}
+	for i, nodePool := range nodePoolList.Items {
+		if nodePool.Spec.ClusterName == clusterName {
+			filtered = append(filtered, nodePoolList.Items[i])
+		}
+	}
+	return filtered, nil
+}
+
+func listSubnetIDs(ctx context.Context, c client.Client, clusterName, nodePoolNamespace string) ([]string, error) {
+	nodePools, err := listNodePools(ctx, c, nodePoolNamespace, clusterName)
+	if err != nil {
+		return nil, err
+	}
+	subnetIDs := []string{}
+	for _, nodePool := range nodePools {
+		if nodePool.Spec.Platform.AWS != nil &&
+			nodePool.Spec.Platform.AWS.Subnet != nil &&
+			nodePool.Spec.Platform.AWS.Subnet.ID != nil {
+			subnetIDs = append(subnetIDs, *nodePool.Spec.Platform.AWS.Subnet.ID)
+		}
+	}
+	sort.Strings(subnetIDs)
+	return subnetIDs, nil
+}
+
+func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, subnetIDs []string, ec2Client ec2iface.EC2API, elbv2Client elbv2iface.ELBV2API) error {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("no logger found: %w", err)
 	}
+
+	// reconcile subnetIDs from node pools
+	awsEndpointService.Spec.SubnetIDs = subnetIDs
 
 	serviceName := awsEndpointService.Status.EndpointServiceName
 	if len(serviceName) != 0 {
