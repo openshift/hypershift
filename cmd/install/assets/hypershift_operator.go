@@ -240,8 +240,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("157286400"),
-									corev1.ResourceCPU:    resource.MustParse(".01"),
+									corev1.ResourceMemory: resource.MustParse("150Mi"),
+									corev1.ResourceCPU:    resource.MustParse("10m"),
 								},
 							},
 							VolumeMounts: oidcVolumeMount,
