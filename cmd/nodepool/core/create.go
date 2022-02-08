@@ -34,7 +34,7 @@ type PlatformOptions interface {
 func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := o.CreateNodePool(cmd.Context(), platformOpts); err != nil {
-			log.Error(err, "Failed to create nodepool")
+			log.Log.Error(err, "Failed to create nodepool")
 			return err
 		}
 		return nil

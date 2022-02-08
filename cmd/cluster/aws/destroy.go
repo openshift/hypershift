@@ -9,6 +9,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
@@ -33,7 +34,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := DestroyCluster(cmd.Context(), opts); err != nil {
-			log.Error(err, "Failed to destroy cluster")
+			log.Log.Error(err, "Failed to destroy cluster")
 			return err
 		}
 
@@ -48,7 +49,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	baseDomain := o.AWSPlatform.BaseDomain
 	region := o.AWSPlatform.Region
 
-	log.Info("Destroying infrastructure", "infraID", infraID)
+	log.Log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
 		Region:             region,
 		InfraID:            infraID,
@@ -61,7 +62,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	}
 
 	if !o.AWSPlatform.PreserveIAM {
-		log.Info("Destroying IAM", "infraID", infraID)
+		log.Log.Info("Destroying IAM", "infraID", infraID)
 		destroyOpts := awsinfra.DestroyIAMOptions{
 			Region:             region,
 			AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,

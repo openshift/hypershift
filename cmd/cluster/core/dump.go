@@ -23,6 +23,7 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
@@ -62,7 +63,7 @@ func NewDumpCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := DumpCluster(cmd.Context(), opts); err != nil {
-			log.Error(err, "Error")
+			log.Log.Error(err, "Error")
 			return err
 		}
 		return nil
@@ -79,7 +80,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	c := util.GetClientOrDie()
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
-		log.Error(err, "Cannot list nodepools")
+		log.Log.Error(err, "Cannot list nodepools")
 	}
 	nodePools := []*hyperv1.NodePool{}
 	for i := range allNodePools.Items {
@@ -141,11 +142,11 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	podList := &corev1.PodList{}
 	if err = c.List(ctx, podList, client.InNamespace(controlPlaneNamespace)); err != nil {
-		log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
+		log.Log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
 	}
 	hypershiftNSPodList := &corev1.PodList{}
 	if err := c.List(ctx, hypershiftNSPodList, client.InNamespace("hypershift")); err != nil {
-		log.Error(err, "Failed to list pods in hypershift namespace")
+		log.Log.Error(err, "Failed to list pods in hypershift namespace")
 	}
 	podList.Items = append(podList.Items, hypershiftNSPodList.Items...)
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
@@ -212,7 +213,7 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
+		log.Log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
 	}
 }
 
@@ -251,7 +252,7 @@ func outputLogs(ctx context.Context, c kubeclient.Interface, artifactDir string,
 	for _, pod := range podList.Items {
 		dir := filepath.Join(artifactDir, "namespaces", pod.Namespace, "core", "pods", "logs")
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Error(err, "Cannot create directory", "directory", dir)
+			log.Log.Error(err, "Cannot create directory", "directory", dir)
 			continue
 		}
 		for _, container := range pod.Spec.InitContainers {
@@ -273,7 +274,7 @@ func outputLog(ctx context.Context, fileName string, req *restclient.Request, sk
 	b, err := req.DoRaw(ctx)
 	if err != nil {
 		if !skipLogErr {
-			log.Info("Failed to get pod log", "req", req.URL().String(), "error", err.Error())
+			log.Log.Info("Failed to get pod log", "req", req.URL().String(), "error", err.Error())
 		}
 		return
 	}
@@ -281,6 +282,6 @@ func outputLog(ctx context.Context, fileName string, req *restclient.Request, sk
 		c(fileName, b)
 	}
 	if err := ioutil.WriteFile(fileName, b, 0644); err != nil {
-		log.Error(err, "Failed to write file", "file", fileName)
+		log.Log.Error(err, "Failed to write file", "file", fileName)
 	}
 }
