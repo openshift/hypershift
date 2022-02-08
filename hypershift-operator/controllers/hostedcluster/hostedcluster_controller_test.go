@@ -1201,16 +1201,7 @@ func TestReconcileAWSSubnets(t *testing.T) {
 		Spec: capiawsv1.AWSClusterSpec{},
 	}
 
-	epsName := "test"
-	awsEndpointService := &hyperv1.AWSEndpointService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      epsName,
-			Namespace: hcpNamespace,
-		},
-		Spec: hyperv1.AWSEndpointServiceSpec{},
-	}
-
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2, awsEndpointService).Build()
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
 	r := &HostedClusterReconciler{
 		Client:         client,
 		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
@@ -1236,13 +1227,4 @@ func TestReconcileAWSSubnets(t *testing.T) {
 			ID: "2",
 		},
 	}))
-
-	freshAWSEndpointService := &hyperv1.AWSEndpointService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      epsName,
-			Namespace: hcpNamespace,
-		}}
-	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshAWSEndpointService), freshAWSEndpointService)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(freshAWSEndpointService.Spec.SubnetIDs).To(BeEquivalentTo([]string{"1", "2"}))
 }
