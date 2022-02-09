@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -26,8 +27,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -37,6 +41,10 @@ const (
 	defaultReleaseVersion    = "0.0.1-snapshot"
 	defaultKubernetesVersion = "0.0.1-snapshot-kubernetes"
 	konnectivityAgentImage   = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+)
+
+var (
+	setupLog = ctrl.Log.WithName("setup")
 )
 
 func NewCommand() *cobra.Command {
@@ -208,6 +216,19 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 			"konnectivity-agent": konnectivityAgentImage,
 		},
 	}
+	podResource := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace,
+			Name:      os.Getenv("POD_NAME"),
+		},
+	}
+	lookupContext, lookupContextCancel := context.WithTimeout(ctx, 60*time.Second)
+	activeImage, err := util.LookupActiveContainerImage(lookupContext, cpCluster.GetAPIReader(), podResource, "hosted-cluster-config-operator")
+	lookupContextCancel()
+	if err != nil {
+		setupLog.Error(err, "unable to detect active pod image")
+		os.Exit(1)
+	}
 	operatorConfig := &operator.HostedClusterConfigOperatorConfig{
 		TargetCreateOrUpdateProvider: &operator.LabelEnforcingUpsertProvider{
 			Upstream:  upsert.New(o.enableCIDebugOutput),
@@ -231,6 +252,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		KonnectivityPort:    o.KonnectivityPort,
 		OAuthAddress:        o.OAuthAddress,
 		OAuthPort:           o.OAuthPort,
+		ActiveImage:         activeImage,
 	}
 	return operatorConfig.Start(ctx)
 }
