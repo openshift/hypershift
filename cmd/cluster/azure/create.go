@@ -1,0 +1,109 @@
+package azure
+
+import (
+	"context"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"os/signal"
+	"syscall"
+
+	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	"github.com/openshift/hypershift/cmd/cluster/core"
+	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/spf13/cobra"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/yaml"
+)
+
+func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "azure",
+		Short:        "Creates basic functional HostedCluster resources on Azure",
+		SilenceUsage: true,
+	}
+
+	opts.AzurePlatform.Location = "eastus"
+	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
+	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
+	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
+	cmd.Flags().StringVar(&opts.AzurePlatform.InstanceType, "instance-type", opts.AzurePlatform.InstanceType, "The instance type to use for nodes")
+
+	cmd.MarkFlagRequired("azure-creds")
+
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		ctx, cancel := context.WithCancel(context.Background())
+		if opts.Timeout > 0 {
+			ctx, cancel = context.WithTimeout(context.Background(), opts.Timeout)
+		}
+		defer cancel()
+
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+		}()
+
+		if err := CreateCluster(ctx, opts); err != nil {
+			log.Log.Error(err, "Failed to create cluster")
+			os.Exit(1)
+		}
+	}
+
+	return cmd
+}
+
+func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
+	if err := core.Validate(ctx, opts); err != nil {
+		return err
+	}
+	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
+}
+
+func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) error {
+	var infra *azureinfra.CreateInfraOutput
+	var err error
+	if opts.InfrastructureJSON != "" {
+		rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
+		if err != nil {
+			return fmt.Errorf("failed to read infra json file: %w", err)
+		}
+		if err := yaml.Unmarshal(rawInfra, &infra); err != nil {
+			return fmt.Errorf("failed to deserialize infra json file: %w", err)
+		}
+	} else {
+		infraID := fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
+		infra, err = (&azureinfra.CreateInfraOptions{
+			Name:            opts.Name,
+			Location:        opts.AzurePlatform.Location,
+			InfraID:         infraID,
+			CredentialsFile: opts.AzurePlatform.CredentialsFile,
+		}).Run(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create infra: %w", err)
+		}
+	}
+
+	exampleOptions.InfraID = infra.InfraID
+	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
+		Location:          infra.Location,
+		ResourceGroupName: infra.ResourceGroupName,
+		VnetName:          infra.VnetName,
+		VnetID:            infra.VNetID,
+		BootImageID:       infra.BootImageID,
+		MachineIdentityID: infra.MachineIdentityID,
+		InstanceType:      opts.AzurePlatform.InstanceType,
+		SecurityGroupName: infra.SecurityGroupName,
+	}
+
+	azureCredsRaw, err := ioutil.ReadFile(opts.AzurePlatform.CredentialsFile)
+	if err != nil {
+		return fmt.Errorf("failed to read --azure-creds file %s: %w", opts.AzurePlatform.CredentialsFile, err)
+	}
+	if err := yaml.Unmarshal(azureCredsRaw, &exampleOptions.Azure.Creds); err != nil {
+		return fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
+	}
+	return nil
+}

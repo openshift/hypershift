@@ -41,6 +41,7 @@ nav:
   - how-to/distribute-hosted-cluster-workloads.md
   - how-to/restart-control-plane-components.md
   - how-to/agent-platform.md
+  - how-to/create-azure-cluster.md
 - 'Reference':
   - reference/index.md
   - reference/api.md

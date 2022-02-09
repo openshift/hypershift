@@ -1,9 +1,53 @@
 # cloud.google.com/go v0.93.3
 ## explicit; go 1.11
 cloud.google.com/go/compute/metadata
+# github.com/Azure/azure-sdk-for-go v61.4.0+incompatible
+## explicit
+github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-04-01/compute
+github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute
+github.com/Azure/azure-sdk-for-go/services/msi/mgmt/2018-11-30/msi
+github.com/Azure/azure-sdk-for-go/services/network/mgmt/2021-05-01/network
+github.com/Azure/azure-sdk-for-go/services/preview/authorization/mgmt/2020-04-01-preview/authorization
+github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-10-01/resources
+github.com/Azure/azure-sdk-for-go/services/storage/mgmt/2021-04-01/storage
+github.com/Azure/azure-sdk-for-go/version
+# github.com/Azure/go-autorest v14.2.0+incompatible
+## explicit
+github.com/Azure/go-autorest
+# github.com/Azure/go-autorest/autorest v0.11.24
+## explicit; go 1.15
+github.com/Azure/go-autorest/autorest
+github.com/Azure/go-autorest/autorest/azure
+# github.com/Azure/go-autorest/autorest/adal v0.9.18
+## explicit; go 1.15
+github.com/Azure/go-autorest/autorest/adal
+# github.com/Azure/go-autorest/autorest/azure/auth v0.5.11
+## explicit; go 1.15
+github.com/Azure/go-autorest/autorest/azure/auth
+# github.com/Azure/go-autorest/autorest/azure/cli v0.4.5
+## explicit; go 1.15
+github.com/Azure/go-autorest/autorest/azure/cli
+# github.com/Azure/go-autorest/autorest/date v0.3.0
+## explicit; go 1.12
+github.com/Azure/go-autorest/autorest/date
+# github.com/Azure/go-autorest/autorest/to v0.4.0
+## explicit; go 1.12
+github.com/Azure/go-autorest/autorest/to
+# github.com/Azure/go-autorest/autorest/validation v0.3.1
+## explicit; go 1.12
+github.com/Azure/go-autorest/autorest/validation
+# github.com/Azure/go-autorest/logger v0.2.1
+## explicit; go 1.12
+github.com/Azure/go-autorest/logger
+# github.com/Azure/go-autorest/tracing v0.6.0
+## explicit; go 1.12
+github.com/Azure/go-autorest/tracing
 # github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 ## explicit
 github.com/armon/go-socks5
+# github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d
+## explicit; go 1.13
+github.com/asaskevich/govalidator
 # github.com/aws/aws-sdk-go v1.40.56
 ## explicit; go 1.11
 github.com/aws/aws-sdk-go/aws
@@ -103,6 +147,9 @@ github.com/coreos/vcontext/tree
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
+# github.com/dimchansky/utfbom v1.1.1
+## explicit
+github.com/dimchansky/utfbom
 # github.com/docker/distribution v2.7.1+incompatible
 ## explicit
 github.com/docker/distribution
@@ -143,10 +190,16 @@ github.com/go-logr/zapr
 # github.com/gobuffalo/flect v0.2.3
 ## explicit; go 1.13
 github.com/gobuffalo/flect
+# github.com/gofrs/uuid v4.2.0+incompatible
+## explicit
+github.com/gofrs/uuid
 # github.com/gogo/protobuf v1.3.2
 ## explicit; go 1.15
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
+# github.com/golang-jwt/jwt/v4 v4.2.0
+## explicit; go 1.15
+github.com/golang-jwt/jwt/v4
 # github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 ## explicit
 github.com/golang/groupcache/lru
@@ -169,7 +222,7 @@ github.com/google/go-cmp/cmp/internal/value
 ## explicit; go 1.12
 github.com/google/gofuzz
 github.com/google/gofuzz/bytesource
-# github.com/google/uuid v1.2.0
+# github.com/google/uuid v1.3.0
 ## explicit
 github.com/google/uuid
 # github.com/googleapis/gnostic v0.5.5
@@ -181,6 +234,9 @@ github.com/googleapis/gnostic/openapiv2
 # github.com/gorilla/mux v1.8.0
 ## explicit; go 1.12
 github.com/gorilla/mux
+# github.com/hashicorp/go-uuid v1.0.1
+## explicit
+github.com/hashicorp/go-uuid
 # github.com/imdario/mergo v0.3.12
 ## explicit; go 1.13
 github.com/imdario/mergo
@@ -196,6 +252,9 @@ github.com/json-iterator/go
 # github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
+# github.com/mitchellh/go-homedir v1.1.0
+## explicit
+github.com/mitchellh/go-homedir
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 ## explicit
 github.com/modern-go/concurrent
@@ -286,6 +345,12 @@ github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.5
 ## explicit; go 1.12
 github.com/spf13/pflag
+# github.com/tombuildsstuff/giovanni v0.18.0
+## explicit; go 1.13
+github.com/tombuildsstuff/giovanni/storage/2019-12-12/blob/blobs
+github.com/tombuildsstuff/giovanni/storage/internal/endpoints
+github.com/tombuildsstuff/giovanni/storage/internal/metadata
+github.com/tombuildsstuff/giovanni/version
 # github.com/vincent-petithory/dataurl v0.0.0-20191104211930-d1553a71de50
 ## explicit
 github.com/vincent-petithory/dataurl
@@ -305,7 +370,7 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/ztest
 go.uber.org/zap/zapcore
 go.uber.org/zap/zaptest
-# golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871
+# golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3
 ## explicit; go 1.17
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
@@ -318,6 +383,8 @@ golang.org/x/crypto/ed25519/internal/edwards25519
 golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/internal/subtle
 golang.org/x/crypto/pbkdf2
+golang.org/x/crypto/pkcs12
+golang.org/x/crypto/pkcs12/internal/rc2
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 # golang.org/x/net v0.0.0-20211209124913-491a49abca63
@@ -828,7 +895,7 @@ kubevirt.io/controller-lifecycle-operator-sdk/pkg/sdk/api
 # sigs.k8s.io/apiserver-network-proxy v0.0.24
 ## explicit; go 1.16
 sigs.k8s.io/apiserver-network-proxy/pkg/util
-# sigs.k8s.io/cluster-api v1.0.1 => sigs.k8s.io/cluster-api v1.0.0
+# sigs.k8s.io/cluster-api v1.0.2 => sigs.k8s.io/cluster-api v1.0.0
 ## explicit; go 1.16
 sigs.k8s.io/cluster-api/api/v1beta1
 sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3
@@ -848,6 +915,10 @@ sigs.k8s.io/cluster-api-provider-aws/exp/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/iam/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/pkg/eks
 sigs.k8s.io/cluster-api-provider-aws/pkg/hash
+# sigs.k8s.io/cluster-api-provider-azure v1.1.1
+## explicit; go 1.16
+sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
+sigs.k8s.io/cluster-api-provider-azure/util/ssh
 # sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.0-alpha.1
 ## explicit; go 1.16
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1

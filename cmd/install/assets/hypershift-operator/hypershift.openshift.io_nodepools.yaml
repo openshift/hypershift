@@ -421,6 +421,16 @@ spec:
                     required:
                     - instanceType
                     type: object
+                  azure:
+                    properties:
+                      imageID:
+                        type: string
+                      vmsize:
+                        type: string
+                    required:
+                    - imageID
+                    - vmsize
+                    type: object
                   ibmcloud:
                     description: IBMCloud defines IBMCloud specific settings for components
                     properties:
@@ -4763,6 +4773,7 @@ spec:
                     - IBMCloud
                     - Agent
                     - KubeVirt
+                    - Azure
                     type: string
                 required:
                 - type

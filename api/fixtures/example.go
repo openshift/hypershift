@@ -64,6 +64,7 @@ type ExampleOptions struct {
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
 	Kubevirt                         *ExampleKubevirtOptions
+	Azure                            *ExampleAzureOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
@@ -106,6 +107,27 @@ type ExampleAWSOptions struct {
 	RootVolumeIOPS              int64
 	ResourceTags                []hyperv1.AWSResourceTag
 	EndpointAccess              string
+}
+
+type ExampleAzureOptions struct {
+	Creds             AzureCreds
+	Location          string
+	ResourceGroupName string
+	VnetName          string
+	VnetID            string
+	BootImageID       string
+	MachineIdentityID string
+	InstanceType      string
+	SecurityGroupName string
+}
+
+// TODO: This format is made up by using the env var keys as keys.
+// Is there any kind of official file format for this?
+type AzureCreds struct {
+	SubscriptionID string `json:"AZURE_SUBSCRIPTION_ID"`
+	TenantID       string `json:"AZURE_TENANT_ID"`
+	ClientID       string `json:"AZURE_CLIENT_ID"`
+	ClientSecret   string `json:"AZURE_CLIENT_SECRET"`
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -254,6 +276,64 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			Type: hyperv1.KubevirtPlatform,
 		}
 		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
+	case o.Azure != nil:
+		credentialSecret := &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "v1",
+				Kind:       "Secret",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      o.Name + "-cloud-credentials",
+				Namespace: namespace.Name,
+			},
+			Data: map[string][]byte{
+				"AZURE_SUBSCRIPTION_ID": []byte(o.Azure.Creds.SubscriptionID),
+				"AZURE_TENANT_ID":       []byte(o.Azure.Creds.TenantID),
+				"AZURE_CLIENT_ID":       []byte(o.Azure.Creds.ClientID),
+				"AZURE_CLIENT_SECRET":   []byte(o.Azure.Creds.ClientSecret),
+			},
+		}
+		resources = append(resources, credentialSecret)
+
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.AzurePlatform,
+			Azure: &hyperv1.AzurePlatformSpec{
+				Credentials:       corev1.LocalObjectReference{Name: credentialSecret.Name},
+				Location:          o.Azure.Location,
+				ResourceGroupName: o.Azure.ResourceGroupName,
+				VnetName:          o.Azure.VnetName,
+				VnetID:            o.Azure.VnetID,
+				SubscriptionID:    o.Azure.Creds.SubscriptionID,
+				MachineIdentityID: o.Azure.MachineIdentityID,
+				SecurityGroupName: o.Azure.SecurityGroupName,
+			},
+		}
+		services = []hyperv1.ServicePublishingStrategyMapping{
+			{
+				Service: hyperv1.APIServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.LoadBalancer,
+				},
+			},
+			{
+				Service: hyperv1.OAuthServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Konnectivity,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+		}
 
 	default:
 		panic("no platform specified")
@@ -418,6 +498,13 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		nodePools = append(nodePools, nodePool)
 	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
 		nodePools = append(nodePools, defaultNodePool(cluster.Name))
+	case hyperv1.AzurePlatform:
+		nodePool := defaultNodePool(cluster.Name)
+		nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+			VMSize:  o.Azure.InstanceType,
+			ImageID: o.Azure.BootImageID,
+		}
+		nodePools = append(nodePools, nodePool)
 	default:
 		panic("Unsupported platform")
 	}

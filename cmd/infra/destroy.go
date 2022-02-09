@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/infra/azure"
 )
 
 func NewDestroyCommand() *cobra.Command {
@@ -14,6 +15,7 @@ func NewDestroyCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(aws.NewDestroyCommand())
+	cmd.AddCommand(azure.NewDestroyCommand())
 
 	return cmd
 }
