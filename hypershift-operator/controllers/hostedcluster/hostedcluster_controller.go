@@ -3797,21 +3797,5 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	if err != nil {
 		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
 	}
-
-	// Reconcile subnet IDs in AWSEndpointService CRs
-	awsEndpointServiceList := hyperv1.AWSEndpointServiceList{}
-	if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
-		return fmt.Errorf("failed to list AWSEndpointServices in namespace %s: %w", hcpNamespace, err)
-	}
-	for _, eps := range awsEndpointServiceList.Items {
-		_, err = createOrUpdate(ctx, r.Client, &eps, func() error {
-			eps.Spec.SubnetIDs = subnetIDs
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to reconcile subnetIDs for AWSEndpointService %s: %w", eps.Name, err)
-		}
-	}
-
 	return nil
 }

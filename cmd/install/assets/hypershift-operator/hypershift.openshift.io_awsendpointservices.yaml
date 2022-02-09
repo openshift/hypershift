@@ -73,6 +73,8 @@ spec:
                 items:
                   type: string
                 type: array
+            required:
+            - networkLoadBalancerName
             type: object
           status:
             description: AWSEndpointServiceStatus defines the observed state of AWSEndpointService
