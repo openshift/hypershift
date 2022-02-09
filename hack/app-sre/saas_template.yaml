@@ -262,7 +262,10 @@ objects:
             periodSeconds: 60
             successThreshold: 1
             timeoutSeconds: 5
-          resources: {}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 150Mi
           securityContext:
             runAsUser: 1000
           volumeMounts:

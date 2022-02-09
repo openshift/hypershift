@@ -1976,6 +1976,12 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							FailureThreshold:    3,
 							TimeoutSeconds:      5,
 						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("44Mi"),
+								corev1.ResourceCPU:    resource.MustParse("1m"),
+							},
+						},
 					},
 				},
 			},
