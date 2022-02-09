@@ -18,6 +18,10 @@ func createOrUpdateWithAnnotationFactory(upstream upsert.CreateOrUpdateProvider)
 				if err := f(); err != nil {
 					return err
 				}
+				if obj.GetNamespace() == "" {
+					// don't tag cluster scoped resources
+					return nil
+				}
 				annotations := obj.GetAnnotations()
 				if annotations == nil {
 					annotations = map[string]string{}
