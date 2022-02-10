@@ -1882,13 +1882,10 @@ func getControlPlaneOperatorImage(ctx context.Context, objectAnnotations map[str
 		return hypershiftImage, nil
 	}
 
-	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
-	switch versionMajMin {
-	case "4.9", "4.10":
-		return hypershiftOperatorImage, nil
-	default:
-		return "", fmt.Errorf("unsupported release image with version %s", versionMajMin)
+	if version.Minor < 9 {
+		return "", fmt.Errorf("unsupported release image with version %s", version.String())
 	}
+	return hypershiftOperatorImage, nil
 }
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
