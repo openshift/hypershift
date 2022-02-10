@@ -7,7 +7,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/types"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -59,9 +58,19 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 		}
 	}
 	if len(o.SecurityGroupID) == 0 {
-		defaultNodePool := &hyperv1.NodePool{}
-		if err := client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Name}, defaultNodePool); err != nil {
+		nodePoolList := &hyperv1.NodePoolList{}
+		if err := client.List(ctx, nodePoolList, &crclient.ListOptions{Namespace: hcluster.Namespace}); err != nil {
 			return fmt.Errorf("security group ID was not specified and cannot be determined from default nodepool: %v", err)
+		}
+		var defaultNodePool *hyperv1.NodePool
+		for i, nodePool := range nodePoolList.Items {
+			if nodePool.Spec.ClusterName == hcluster.Name {
+				defaultNodePool = &nodePoolList.Items[i]
+				break
+			}
+		}
+		if defaultNodePool == nil {
+			return fmt.Errorf("--securitygroup-id flag is required when there are no existing nodepools")
 		}
 		if defaultNodePool.Spec.Platform.AWS == nil || len(defaultNodePool.Spec.Platform.AWS.SecurityGroups) == 0 ||
 			defaultNodePool.Spec.Platform.AWS.SecurityGroups[0].ID == nil {
