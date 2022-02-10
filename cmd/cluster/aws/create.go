@@ -44,6 +44,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeSize, "root-volume-size", opts.AWSPlatform.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.AdditionalTags, "additional-tags", opts.AWSPlatform.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().StringVar(&opts.AWSPlatform.EndpointAccess, "endpoint-access", opts.AWSPlatform.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
+	cmd.Flags().StringVar(&opts.AWSPlatform.EtcdKMSKeyARN, "kms-key-arn", opts.AWSPlatform.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 
 	cmd.MarkFlagRequired("aws-creds")
 
@@ -134,6 +135,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			PrivateZoneID:      infra.PrivateZoneID,
 			PublicZoneID:       infra.PublicZoneID,
 			LocalZoneID:        infra.LocalZoneID,
+			KMSKeyARN:          opts.AWSPlatform.EtcdKMSKeyARN,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
@@ -174,6 +176,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		KubeCloudControllerRoleARN:  iamInfo.KubeCloudControllerRoleARN,
 		NodePoolManagementRoleARN:   iamInfo.NodePoolManagementRoleARN,
 		ControlPlaneOperatorRoleARN: iamInfo.ControlPlaneOperatorRoleARN,
+		KMSProviderRoleARN:          iamInfo.KMSProviderRoleARN,
+		KMSKeyARN:                   iamInfo.KMSKeyARN,
 		RootVolumeSize:              opts.AWSPlatform.RootVolumeSize,
 		RootVolumeType:              opts.AWSPlatform.RootVolumeType,
 		RootVolumeIOPS:              opts.AWSPlatform.RootVolumeIOPS,

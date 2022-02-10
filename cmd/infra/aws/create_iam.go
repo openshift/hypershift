@@ -35,6 +35,7 @@ type CreateIAMOptions struct {
 	InfraID                         string
 	IssuerURL                       string
 	OutputFile                      string
+	KMSKeyARN                       string
 	AdditionalTags                  []string
 
 	additionalIAMTags []*iam.Tag
@@ -46,10 +47,12 @@ type CreateIAMOutput struct {
 	InfraID     string                       `json:"infraID"`
 	IssuerURL   string                       `json:"issuerURL"`
 	Roles       []hyperv1.AWSRoleCredentials `json:"roles"`
+	KMSKeyARN   string                       `json:"kmsKeyARN"`
 
 	KubeCloudControllerRoleARN  string `json:"kubeCloudControllerRoleARN"`
 	NodePoolManagementRoleARN   string `json:"nodePoolManagementRoleARN"`
 	ControlPlaneOperatorRoleARN string `json:"controlPlaneOperatorRoleARN"`
+	KMSProviderRoleARN          string `json:"kmsProviderRoleARN"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -74,6 +77,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.PublicZoneID, "public-zone-id", opts.PublicZoneID, "The id of the clusters public route53 zone")
 	cmd.Flags().StringVar(&opts.PrivateZoneID, "private-zone-id", opts.PrivateZoneID, "The id of the cluters private route53 zone")
 	cmd.Flags().StringVar(&opts.LocalZoneID, "local-zone-id", opts.LocalZoneID, "The id of the clusters local route53 zone")
+	cmd.Flags().StringVar(&opts.KMSKeyARN, "kms-key-arn", opts.KMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 
 	cmd.MarkFlagRequired("aws-creds")
@@ -162,6 +166,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 	profileName := DefaultProfileName(o.InfraID)
 	results.ProfileName = profileName
+	results.KMSKeyARN = o.KMSKeyARN
 	err = o.CreateWorkerInstanceProfile(iamClient, profileName)
 	if err != nil {
 		return nil, err

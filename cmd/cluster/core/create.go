@@ -92,6 +92,7 @@ type AWSPlatformOptions struct {
 	RootVolumeType     string
 	EndpointAccess     string
 	Zones              []string
+	EtcdKMSKeyARN      string
 }
 
 func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {

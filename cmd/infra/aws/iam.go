@@ -305,6 +305,25 @@ func controlPlaneOperatorPolicy(hostedZone string) string {
 }`, hostedZone)
 }
 
+func kmsProviderPolicy(kmsKeyARN string) string {
+	return fmt.Sprintf(`{
+	"Version": "2012-10-17",
+	"Statement": [
+    	{
+			"Effect": "Allow",
+			"Action": [
+				"kms:Encrypt",
+				"kms:Decrypt",
+				"kms:ReEncrypt*",
+				"kms:GenerateDataKey*",
+				"kms:DescribeKey"
+			],
+			"Resource": %q
+		}
+	]
+}`, kmsKeyARN)
+}
+
 func ensureHostedZonePrefix(hostedZone string) string {
 	if !strings.HasPrefix(hostedZone, "hostedzone/") {
 		hostedZone = "hostedzone/" + hostedZone
@@ -426,6 +445,15 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 		return nil, err
 	}
 	output.ControlPlaneOperatorRoleARN = arn
+
+	if len(o.KMSKeyARN) > 0 {
+		kmsProviderTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kms-provider")
+		arn, err = o.CreateOIDCRole(iamClient, "kms-provider", kmsProviderTrustPolicy, kmsProviderPolicy(o.KMSKeyARN))
+		if err != nil {
+			return nil, err
+		}
+		output.KMSProviderRoleARN = arn
+	}
 
 	cloudNetworkConfigControllerTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller")
 	arn, err = o.CreateOIDCRole(iamClient, "cloud-network-config-controller", cloudNetworkConfigControllerTrustPolicy, cloudNetworkConfigControllerPolicy)
