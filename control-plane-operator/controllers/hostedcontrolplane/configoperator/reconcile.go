@@ -229,6 +229,14 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 				},
 			},
 			{
+				Name: "POD_NAME",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.name",
+					},
+				},
+			},
+			{
 				Name:  "OPENSHIFT_RELEASE_VERSION",
 				Value: openShiftVersion,
 			},
