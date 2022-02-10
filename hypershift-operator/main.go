@@ -98,7 +98,7 @@ func NewStartCommand() *cobra.Command {
 		Namespace:                        "hypershift",
 		DeploymentName:                   "operator",
 		MetricsAddr:                      "0",
-		EnableLeaderElection:             false,
+		EnableLeaderElection:             true,
 		ControlPlaneOperatorImage:        "",
 		IgnitionServerImage:              "",
 		RegistryOverrides:                map[string]string{},
@@ -142,12 +142,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "hypershift-operator-manager"
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:                     hyperapi.Scheme,
-		MetricsBindAddress:         opts.MetricsAddr,
-		Port:                       9443,
-		LeaderElection:             opts.EnableLeaderElection,
-		LeaderElectionID:           "hypershift-operator-leader-elect",
-		LeaderElectionResourceLock: "leases",
+		Scheme:                        hyperapi.Scheme,
+		MetricsBindAddress:            opts.MetricsAddr,
+		Port:                          9443,
+		LeaderElection:                opts.EnableLeaderElection,
+		LeaderElectionID:              "hypershift-operator-leader-elect",
+		LeaderElectionResourceLock:    "leases",
+		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
