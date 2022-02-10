@@ -16,72 +16,108 @@ import (
 )
 
 func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
-
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: "clusters", Name: "example"}}
+	annotationValue := req.String()
 	testCases := []struct {
 		name     string
-		mutateFN func(m *metav1.ObjectMeta) controllerutil.MutateFn
-		verify   func(*testing.T, *corev1.ConfigMap)
+		obj      crclient.Object
+		expected crclient.Object
+		mutateFN func(crclient.Object) controllerutil.MutateFn
 	}{
 		{
 			name: "No annotations",
-			mutateFN: func(m *metav1.ObjectMeta) controllerutil.MutateFn {
+			obj: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "bar",
+				},
+			},
+			mutateFN: func(_ crclient.Object) controllerutil.MutateFn {
 				return func() error { return nil }
+			},
+			expected: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "bar",
+					Annotations: map[string]string{
+						hostedClusterAnnotation: annotationValue,
+					},
+				},
 			},
 		},
 		{
 			name: "Existing annotations are kept",
-			mutateFN: func(m *metav1.ObjectMeta) controllerutil.MutateFn {
+			obj: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "bar",
+				},
+			},
+			mutateFN: func(o crclient.Object) controllerutil.MutateFn {
 				return func() error {
-					m.Annotations = map[string]string{
+					o.SetAnnotations(map[string]string{
 						"foo": "bar",
-					}
+					})
 					return nil
 				}
 			},
-			verify: func(t *testing.T, cm *corev1.ConfigMap) {
-				if cm.Annotations["foo"] != "bar" {
-					t.Errorf("expected 'foo' annotation to be kept, but it's gone. Annotations: %+v", cm.Annotations)
-				}
+			expected: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "bar",
+					Annotations: map[string]string{
+						hostedClusterAnnotation: annotationValue,
+						"foo":                   "bar",
+					},
+				},
+			},
+		},
+		{
+			name: "Do not annotate cluster scoped resources",
+			obj: &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo",
+				},
+			},
+			mutateFN: func(_ crclient.Object) controllerutil.MutateFn {
+				return func() error { return nil }
+			},
+			expected: &corev1.Namespace{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Namespace",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo",
+				},
 			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			obj := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "foo",
-				},
-			}
-
-			// expectedObj is the original object + mutateFN + the annotation
-			expectedObj := obj.DeepCopy()
-			tc.mutateFN(&expectedObj.ObjectMeta)()
-			if expectedObj.Annotations == nil {
-				expectedObj.Annotations = map[string]string{}
-			}
-			expectedObj.Annotations[hostedClusterAnnotation] = "/foo"
-
+			obj := tc.obj
 			client := fake.NewClientBuilder().WithObjects(obj).Build()
 			providerFactory := createOrUpdateWithAnnotationFactory(upsert.New(false))
-			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: obj.Namespace, Name: obj.Name}}
-
-			if _, err := providerFactory(req)(context.Background(), client, obj, tc.mutateFN(&obj.ObjectMeta)); err != nil {
+			if _, err := providerFactory(req)(context.Background(), client, obj, tc.mutateFN(obj)); err != nil {
 				t.Fatalf("CreateOrUpdate failed: %v", err)
 			}
 
-			actual := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "foo"}}
-			if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(actual), actual); err != nil {
+			if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(obj), obj); err != nil {
 				t.Fatalf("failed to get object from client after running CreateOrUpdate: %v", err)
 			}
-			actual.ResourceVersion = ""
-			actual.TypeMeta = metav1.TypeMeta{}
-			if diff := cmp.Diff(actual, expectedObj); diff != "" {
+			actualMeta := obj.(metav1.Object)
+			actualMeta.SetResourceVersion("")
+			if diff := cmp.Diff(tc.expected, obj); diff != "" {
 				t.Errorf("actual differs from expected: %v", diff)
-			}
-
-			if tc.verify != nil {
-				tc.verify(t, actual)
 			}
 		})
 	}
