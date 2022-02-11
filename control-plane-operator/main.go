@@ -64,6 +64,9 @@ const (
 	// TODO: Include konnectivity image in release payload
 	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+
+	// Default AWS KMS provider image. Can be overriden with annotation on HostedCluster
+	awsKMSProviderImage = "registry.ci.openshift.org/hypershift/aws-encryption-provider:latest"
 )
 
 func NewStartCommand() *cobra.Command {
@@ -230,6 +233,7 @@ func NewStartCommand() *cobra.Command {
 					"konnectivity-agent":             konnectivityAgentImage,
 					"socks5-proxy":                   socks5ProxyImage,
 					"token-minter":                   tokenMinterImage,
+					"aws-kms-provider":               awsKMSProviderImage,
 				},
 			},
 			RegistryOverrides: registryOverrides,
