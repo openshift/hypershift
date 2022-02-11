@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	hcpconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 const (
@@ -80,7 +81,11 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 			},
 			ServingInfo: configv1.HTTPServingInfo{
 				ServingInfo: configv1.ServingInfo{
-					NamedCertificates: configNamedCertificates(p.NamedCertificates),
+					CertInfo: configv1.CertInfo{
+						CertFile: path.Join(volumeMounts.Path(kasContainerMain().Name, kasVolumeServerCert().Name), corev1.TLSCertKey),
+						KeyFile:  path.Join(volumeMounts.Path(kasContainerMain().Name, kasVolumeServerCert().Name), corev1.TLSPrivateKeyKey),
+					},
+					NamedCertificates: globalconfig.GetConfigNamedCertificates(p.NamedCertificates, kasNamedCertificateMountPathPrefix),
 					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.APIServerPort),
 					BindNetwork:       "tcp4",
 					CipherSuites:      hcpconfig.CipherSuites(p.TLSSecurityProfile),
@@ -249,27 +254,6 @@ func admissionPlugins() []string {
 		"security.openshift.io/SecurityContextConstraint",
 		"security.openshift.io/ValidateSecurityContextConstraints",
 	}
-}
-
-func configNamedCertificates(servingCerts []configv1.APIServerNamedServingCert) []configv1.NamedCertificate {
-	result := []configv1.NamedCertificate{}
-	serverCertPath := volumeMounts.Path(kasContainerMain().Name, kasVolumeServerCert().Name)
-	result = append(result, configv1.NamedCertificate{
-		CertInfo: configv1.CertInfo{
-			CertFile: path.Join(serverCertPath, corev1.TLSCertKey),
-			KeyFile:  path.Join(serverCertPath, corev1.TLSPrivateKeyKey),
-		},
-	})
-	for i, cert := range servingCerts {
-		result = append(result, configv1.NamedCertificate{
-			Names: cert.Names,
-			CertInfo: configv1.CertInfo{
-				CertFile: fmt.Sprintf("%s-%d/%s", kasNamedCertificateMountPathPrefix, i+1, corev1.TLSCertKey),
-				KeyFile:  fmt.Sprintf("%s-%d/%s", kasNamedCertificateMountPathPrefix, i+1, corev1.TLSPrivateKeyKey),
-			},
-		})
-	}
-	return result
 }
 
 func corsAllowedOrigins(additionalCORSAllowedOrigins []string) []string {

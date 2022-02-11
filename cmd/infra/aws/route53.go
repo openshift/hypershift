@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 )
@@ -19,10 +20,10 @@ func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, client route5
 	name := o.BaseDomain
 	id, err := lookupZone(ctx, client, name, false)
 	if err != nil {
-		log.Error(err, "Public zone not found", "name", name)
+		log.Log.Error(err, "Public zone not found", "name", name)
 		return "", err
 	}
-	log.Info("Found existing public zone", "name", name, "id", id)
+	log.Log.Info("Found existing public zone", "name", name, "id", id)
 	return id, nil
 }
 
@@ -54,7 +55,7 @@ func lookupZone(ctx context.Context, client route53iface.Route53API, name string
 func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route53iface.Route53API, name, vpcID string) (string, error) {
 	id, err := lookupZone(ctx, client, name, true)
 	if err == nil {
-		log.Info("Found existing private zone", "name", name, "id", id)
+		log.Log.Info("Found existing private zone", "name", name, "id", id)
 		return id, err
 	}
 
@@ -84,7 +85,7 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route
 		return "", fmt.Errorf("unexpected output from hosted zone creation")
 	}
 	id = cleanZoneID(*res.HostedZone.Id)
-	log.Info("Created private zone", "name", name, "id", id)
+	log.Log.Info("Created private zone", "name", name, "id", id)
 
 	return id, nil
 }
@@ -110,7 +111,7 @@ func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, client ro
 		if err := deleteZone(ctx, id, client); err != nil {
 			return []error{fmt.Errorf("failed to delete private hosted zones for vpc %s: %w", *vpcID, err)}
 		}
-		log.Info("Deleted private hosted zone", "id", id, "name", *zone.Name)
+		log.Log.Info("Deleted private hosted zone", "id", id, "name", *zone.Name)
 	}
 
 	return errs
@@ -129,7 +130,7 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client rout
 			return fmt.Errorf("failed to delete wildcard record from public zone %s: %w", id, err)
 		}
 	} else {
-		log.Info("Deleted wildcard record from public hosted zone", "id", id, "name", recordName)
+		log.Log.Info("Deleted wildcard record from public hosted zone", "id", id, "name", recordName)
 	}
 	return nil
 }
@@ -186,7 +187,7 @@ func deleteRecords(ctx context.Context, client route53iface.Route53API, id strin
 	for _, changeBatch := range changeBatch.Changes {
 		deletedRecordNames = append(deletedRecordNames, *changeBatch.ResourceRecordSet.Name)
 	}
-	log.Info("Deleted records from private hosted zone", "id", id, "names", deletedRecordNames)
+	log.Log.Info("Deleted records from private hosted zone", "id", id, "names", deletedRecordNames)
 	return nil
 }
 

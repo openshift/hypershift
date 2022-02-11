@@ -8,6 +8,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/none"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 type DestroyOptions struct {
@@ -25,7 +26,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := DestroyCluster(cmd.Context(), opts); err != nil {
-			log.Error(err, "Failed to destroy cluster")
+			log.Log.Error(err, "Failed to destroy cluster")
 			return err
 		}
 

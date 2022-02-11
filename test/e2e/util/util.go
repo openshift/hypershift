@@ -310,21 +310,20 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
-func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolName crclient.ObjectKey) {
+func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
-		var nodepool hyperv1.NodePool
-		if err := hostClient.Get(ctx, nodePoolName, &nodepool); err != nil {
-			t.Fatalf("failed to get nodepool: %v", err)
+		var nodePoolList hyperv1.NodePoolList
+		if err := hostClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: nodePoolNamespace}); err != nil {
+			t.Fatalf("failed to list nodepools: %v", err)
+		}
+		nodeCount := 0
+		for _, nodePool := range nodePoolList.Items {
+			nodeCount = nodeCount + int(*nodePool.Spec.NodeCount)
 		}
 
 		var nodes corev1.NodeList
 		if err := guestClient.List(ctx, &nodes); err != nil {
 			t.Fatalf("failed to list nodes in guest cluster: %v", err)
-		}
-
-		var nodeCount int
-		if nodepool.Spec.NodeCount != nil {
-			nodeCount = int(*nodepool.Spec.NodeCount)
 		}
 
 		if nodeCount != len(nodes.Items) {

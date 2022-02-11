@@ -32,6 +32,8 @@ type testClient struct {
 
 var randomSource = rand.New(rand.NewSource(time.Now().UnixNano()))
 
+const activeImage = "myimage:1"
+
 func (c *testClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
 	c.createCount++
 	return c.Client.Create(ctx, obj, opts...)
@@ -94,6 +96,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+			activeImage:            activeImage,
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
@@ -117,6 +120,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+			activeImage:            activeImage,
 		}
 		r.Reconcile(context.Background(), controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
@@ -133,6 +137,8 @@ func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Clien
 
 func fakeHCP() *hyperv1.HostedControlPlane {
 	hcp := manifests.HostedControlPlane("bar", "foo")
+	hcp.Annotations = map[string]string{}
+	hcp.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = activeImage
 	hcp.Status.ControlPlaneEndpoint.Host = "server"
 	hcp.Status.ControlPlaneEndpoint.Port = 1234
 	return hcp

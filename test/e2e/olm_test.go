@@ -53,7 +53,8 @@ func TestOLM(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, cluster)
 
 	// Wait for guest cluster nodes to become available
-	util.WaitForNReadyNodes(t, ctx, guestClient, clusterOpts.NodePoolReplicas)
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	util.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
 
 	guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name
 	t.Logf("Hosted control plane namespace is %s", guestNamespace)

@@ -1,9 +1,10 @@
 package log
 
-import "github.com/openshift/hypershift/cmd/util"
+import (
+	"go.uber.org/zap/zapcore"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+)
 
-var log = util.Log
-
-func Error(err error, msg string, keysAndValues ...interface{}) {
-	log.Error(err, msg, keysAndValues...)
-}
+var Log = zap.New(zap.UseDevMode(true), func(o *zap.Options) {
+	o.TimeEncoder = zapcore.RFC3339TimeEncoder
+})

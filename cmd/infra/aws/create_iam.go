@@ -18,6 +18,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 )
 
@@ -85,7 +86,7 @@ func NewCreateIAMCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context(), util.GetClientOrDie()); err != nil {
-			log.Error(err, "Failed to create infrastructure")
+			log.Log.Error(err, "Failed to create infrastructure")
 			return err
 		}
 		return nil
@@ -149,7 +150,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 
 	o.IssuerURL = oidcDiscoveryURL(o.OIDCStorageProviderS3BucketName, o.OIDCStorageProviderS3Region, o.InfraID)
-	log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
+	log.Log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
 	awsSession := awsutil.NewSession("cli-create-iam")
 	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
@@ -165,7 +166,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	if err != nil {
 		return nil, err
 	}
-	log.Info("Created IAM profile", "name", profileName, "region", o.Region)
+	log.Log.Info("Created IAM profile", "name", profileName, "region", o.Region)
 
 	return results, nil
 }

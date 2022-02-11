@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
@@ -33,22 +32,6 @@ type ClusterDeploymentReference struct {
 
 // AgentClusterSpec defines the desired state of AgentCluster
 type AgentClusterSpec struct {
-	// ReleaseImage is the image used when installing the cluster
-	ReleaseImage string `json:"releaseImage"`
-
-	// ClusterName is the friendly name of the cluster. It is used for subdomains,
-	// some resource tagging, and other instances where a friendly name for the
-	// cluster is useful.
-	// +required
-	ClusterName string `json:"clusterName"`
-
-	// BaseDomain is the base domain to which the cluster should belong.
-	// +required
-	BaseDomain string `json:"baseDomain"`
-
-	// PullSecretRef is the reference to the secret to use when pulling images.
-	PullSecretRef *corev1.LocalObjectReference `json:"pullSecretRef,omitempty"`
-
 	// IgnitionEndpoint store the data to of the custom ignition endpoint.
 	// +optional
 	IgnitionEndpoint *IgnitionEndpoint `json:"ignitionEndpoint,omitempty"`
