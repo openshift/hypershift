@@ -154,6 +154,7 @@ test: build
 e2e:
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
 
 # Run go fmt against code
 .PHONY: fmt
