@@ -80,6 +80,15 @@ func (o *Options) Validate() error {
 	return errors.NewAggregate(errs)
 }
 
+func (o *Options) ApplyDefaults() {
+	switch {
+	case o.Development:
+		o.HyperShiftOperatorReplicas = 0
+	default:
+		o.HyperShiftOperatorReplicas = 1
+	}
+}
+
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "install",
@@ -110,15 +119,10 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecretKey, "oidc-storage-provider-s3-secret-key", "credentials", "Name of the secret key containing the OIDC S3 credentials.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		opts.ApplyDefaults()
+
 		if err := opts.Validate(); err != nil {
 			return err
-		}
-
-		switch {
-		case opts.Development:
-			opts.HyperShiftOperatorReplicas = 0
-		default:
-			opts.HyperShiftOperatorReplicas = 1
 		}
 
 		objects, err := hyperShiftOperatorManifests(opts)

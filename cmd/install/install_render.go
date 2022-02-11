@@ -1,7 +1,6 @@
 package install
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
@@ -38,6 +37,8 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Format, "format", RenderFormatYaml, fmt.Sprintf("Output format for the manifests, supports %s and %s", RenderFormatYaml, RenderFormatJson))
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		opts.ApplyDefaults()
+
 		var err error
 		if err = opts.ValidateRender(); err != nil {
 			return err
@@ -75,10 +76,6 @@ func (o *Options) ValidateRender() error {
 
 	if o.Format != RenderFormatYaml && o.Format != RenderFormatJson {
 		return fmt.Errorf("--format must be %s or %s", RenderFormatYaml, RenderFormatJson)
-	}
-
-	if o.OIDCStorageProviderS3BucketName != "" && o.OIDCStorageProviderS3CredentialsSecret == "" {
-		return errors.New("when --oidc-storage-provider-s3-bucket-name is present also --oidc-storage-provider-s3-secret must be specified")
 	}
 
 	return nil
@@ -177,7 +174,7 @@ func render(objects []crclient.Object, format string, out io.Writer) error {
 			if err != nil {
 				return err
 			}
-			if i > 0 {
+			if i < len(objects)-1 {
 				fmt.Fprintln(out, "---")
 			}
 		}

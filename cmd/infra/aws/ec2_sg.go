@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/openshift/hypershift/cmd/log"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -53,9 +54,9 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 			return "", fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(result.GroupId))
 		}
 		securityGroup = sgResult.SecurityGroups[0]
-		log.Info("Created security group", "name", groupName, "id", aws.StringValue(securityGroup.GroupId))
+		log.Log.Info("Created security group", "name", groupName, "id", aws.StringValue(securityGroup.GroupId))
 	} else {
-		log.Info("Found existing security group", "name", groupName, "id", aws.StringValue(securityGroup.GroupId))
+		log.Log.Info("Found existing security group", "name", groupName, "id", aws.StringValue(securityGroup.GroupId))
 	}
 	securityGroupID := aws.StringValue(securityGroup.GroupId)
 	sgUserID := aws.StringValue(securityGroup.OwnerId)
@@ -229,7 +230,7 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 				}
 			}
 		}
-		log.Info("Authorized egress rules on security group", "id", securityGroupID)
+		log.Log.Info("Authorized egress rules on security group", "id", securityGroupID)
 	}
 	if len(ingressToAuthorize) > 0 {
 		_, err = client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
@@ -245,7 +246,7 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 				}
 			}
 		}
-		log.Info("Authorized ingress rules on security group", "id", securityGroupID)
+		log.Log.Info("Authorized ingress rules on security group", "id", securityGroupID)
 	}
 	return securityGroupID, nil
 }

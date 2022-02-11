@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 type CreateInfraOptions struct {
@@ -86,10 +87,10 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context()); err != nil {
-			log.Error(err, "Failed to create infrastructure")
+			log.Log.Error(err, "Failed to create infrastructure")
 			return err
 		}
-		log.Info("Successfully created infrastructure")
+		log.Log.Info("Successfully created infrastructure")
 		return nil
 	}
 
@@ -122,7 +123,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) error {
 }
 
 func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutput, error) {
-	log.Info("Creating infrastructure", "id", o.InfraID)
+	log.Log.Info("Creating infrastructure", "id", o.InfraID)
 
 	awsSession := awsutil.NewSession("cli-create-infra")
 	ec2Client := ec2.New(awsSession, awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region))

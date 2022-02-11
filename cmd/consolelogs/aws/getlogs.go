@@ -17,6 +17,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 )
 
@@ -52,10 +53,10 @@ func NewCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context()); err != nil {
-			log.Error(err, "Failed to get console logs")
+			log.Log.Error(err, "Failed to get console logs")
 			return err
 		}
-		log.Info("Successfully retrieved console logs")
+		log.Log.Info("Successfully retrieved console logs")
 		return nil
 	}
 

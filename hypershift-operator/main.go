@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
@@ -69,7 +70,6 @@ type StartOptions struct {
 	Namespace                        string
 	DeploymentName                   string
 	MetricsAddr                      string
-	EnableLeaderElection             bool
 	IgnitionServerImage              string
 	EnableOCPClusterMonitoring       bool
 	EnableCIDebugOutput              bool
@@ -98,7 +98,6 @@ func NewStartCommand() *cobra.Command {
 		Namespace:                        "hypershift",
 		DeploymentName:                   "operator",
 		MetricsAddr:                      "0",
-		EnableLeaderElection:             false,
 		ControlPlaneOperatorImage:        "",
 		IgnitionServerImage:              "",
 		RegistryOverrides:                map[string]string{},
@@ -110,9 +109,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
 	cmd.Flags().StringVar(&opts.DeploymentName, "deployment-name", opts.DeploymentName, "The name of the deployment of this operator")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
-	cmd.Flags().BoolVar(&opts.EnableLeaderElection, "enable-leader-election", opts.EnableLeaderElection,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.AvailabilityProberImage, "availability-prober-operator-image", opts.AvailabilityProberImage, "Image for kube apiserver prober utility (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.SocksProxyImage, "socks-proxy-image", opts.SocksProxyImage, "Image for the SOCKS proxy (defaults to match this operator if running in a deployment)")
@@ -141,12 +137,21 @@ func NewStartCommand() *cobra.Command {
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "hypershift-operator-manager"
+	leaseDuration := time.Second * 60
+	renewDeadline := time.Second * 40
+	retryPeriod := time.Second * 15
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:             hyperapi.Scheme,
-		MetricsBindAddress: opts.MetricsAddr,
-		Port:               9443,
-		LeaderElection:     opts.EnableLeaderElection,
-		LeaderElectionID:   "b2ed43ca.hypershift.openshift.io",
+		Scheme:                        hyperapi.Scheme,
+		MetricsBindAddress:            opts.MetricsAddr,
+		Port:                          9443,
+		LeaderElection:                true,
+		LeaderElectionID:              "hypershift-operator-leader-elect",
+		LeaderElectionResourceLock:    "leases",
+		LeaderElectionReleaseOnCancel: true,
+		LeaderElectionNamespace:       opts.Namespace,
+		LeaseDuration:                 &leaseDuration,
+		RenewDeadline:                 &renewDeadline,
+		RetryPeriod:                   &retryPeriod,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)

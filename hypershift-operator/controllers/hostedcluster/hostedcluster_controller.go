@@ -615,22 +615,22 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane pull secret by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
+	var pullSecret corev1.Secret
 	{
-		var src corev1.Secret
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dst, func() error {
-			srcData, srcHasData := src.Data[".dockerconfigjson"]
+			srcData, srcHasData := pullSecret.Data[corev1.DockerConfigJsonKey]
 			if !srcHasData {
-				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", pullSecret.Name)
 			}
 			dst.Type = corev1.SecretTypeDockerConfigJson
 			if dst.Data == nil {
 				dst.Data = map[string][]byte{}
 			}
-			dst.Data[".dockerconfigjson"] = srcData
+			dst.Data[corev1.DockerConfigJsonKey] = srcData
 			return nil
 		})
 		if err != nil {
@@ -855,10 +855,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	cpoImage, err := getControlPlaneOperatorImage(ctx, hcluster.Annotations, hcluster.Spec.Release.Image, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup expected hypershift component image: %w", err)
+	}
+
 	// Reconcile the HostedControlPlane
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster)
+		return reconcileHostedControlPlane(hcp, hcluster, cpoImage)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -989,7 +994,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, cpoImage)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -1027,7 +1032,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, cpoImage string) error {
 	// Always initialize the HostedControlPlane with an image matching
 	// the HostedCluster.
 	if hcp.ObjectMeta.CreationTimestamp.IsZero() {
@@ -1063,6 +1068,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 			hcp.Annotations[key] = val
 		}
 	}
+	hcp.Annotations[hyperv1.DesiredControlPlaneOperatorImageAnnotation] = cpoImage
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
@@ -1318,7 +1324,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, cpoImage string) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -1368,22 +1374,9 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
 	}
 
-	// Reconcile operator deployment
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
-	}
-	controlPlaneOperatorImage, err := getControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
-	if err != nil {
-		return err
-	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, cpoImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1870,15 +1863,13 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 // 2. The hypershift image specified in the release payload indicated by the
 //    HostedCluster's release field
 // 3. The hypershift-operator's own image for release versions 4.9 and 4.10
-// 4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
-//    version 4.8
 //
 // If no image can be found according to these rules, an error is returned.
-func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
-	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
+func getControlPlaneOperatorImage(ctx context.Context, objectAnnotations map[string]string, releaseImage string, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	if val, ok := objectAnnotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
 		return val, nil
 	}
-	releaseInfo, err := releaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecret)
+	releaseInfo, err := releaseProvider.Lookup(ctx, releaseImage, pullSecret)
 	if err != nil {
 		return "", err
 	}
@@ -1891,16 +1882,10 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		return hypershiftImage, nil
 	}
 
-	versionMajMin := fmt.Sprintf("%d.%d", version.Major, version.Minor)
-	pullSpec := "registry.ci.openshift.org/hypershift/hypershift"
-	switch versionMajMin {
-	case "4.9", "4.10":
-		return hypershiftOperatorImage, nil
-	case "4.8":
-		return fmt.Sprintf("%s:%s", pullSpec, versionMajMin), nil
-	default:
-		return "", fmt.Errorf("unsupported release image with version %s", versionMajMin)
+	if version.Minor < 9 {
+		return "", fmt.Errorf("unsupported release image with version %s", version.String())
 	}
+	return hypershiftOperatorImage, nil
 }
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
@@ -1931,6 +1916,14 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 								ValueFrom: &corev1.EnvVarSource{
 									FieldRef: &corev1.ObjectFieldSelector{
 										FieldPath: "metadata.namespace",
+									},
+								},
+							},
+							{
+								Name: "POD_NAME",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.name",
 									},
 								},
 							},
@@ -1975,6 +1968,12 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							SuccessThreshold:    1,
 							FailureThreshold:    3,
 							TimeoutSeconds:      5,
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("44Mi"),
+								corev1.ResourceCPU:    resource.MustParse("1m"),
+							},
 						},
 					},
 				},
@@ -3797,21 +3796,5 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	if err != nil {
 		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
 	}
-
-	// Reconcile subnet IDs in AWSEndpointService CRs
-	awsEndpointServiceList := hyperv1.AWSEndpointServiceList{}
-	if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
-		return fmt.Errorf("failed to list AWSEndpointServices in namespace %s: %w", hcpNamespace, err)
-	}
-	for _, eps := range awsEndpointServiceList.Items {
-		_, err = createOrUpdate(ctx, r.Client, &eps, func() error {
-			eps.Spec.SubnetIDs = subnetIDs
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed to reconcile subnetIDs for AWSEndpointService %s: %w", eps.Name, err)
-		}
-	}
-
 	return nil
 }

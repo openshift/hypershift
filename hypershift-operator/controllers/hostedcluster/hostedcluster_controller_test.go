@@ -3,6 +3,7 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"testing"
 	"time"
 
@@ -41,6 +42,8 @@ import (
 var Now = metav1.NewTime(time.Now())
 var Later = metav1.NewTime(Now.Add(5 * time.Minute))
 
+const activeImage = "myimage:latest"
+
 func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	// TODO: the spec/status comparison of control plane is a weak check; the
 	// conditions should give us more information about e.g. whether that
@@ -67,6 +70,10 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 			},
 			ControlPlane: hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ControlPlaneOperatorImageAnnotation: activeImage,
+					}},
 				Spec:   hyperv1.HostedControlPlaneSpec{},
 				Status: hyperv1.HostedControlPlaneStatus{},
 			},
@@ -89,9 +96,12 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 			},
 			ControlPlane: hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status:     hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
+				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now,
+					Annotations: map[string]string{
+						hyperv1.ControlPlaneOperatorImageAnnotation: activeImage,
+					}},
+				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
+				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
 			},
 			ExpectedImage: "b",
 		},
@@ -113,9 +123,11 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 			},
 			ControlPlane: hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
-				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status:     hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
+				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now, Annotations: map[string]string{
+					hyperv1.ControlPlaneOperatorImageAnnotation: activeImage,
+				}},
+				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
+				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
 			},
 			ExpectedImage: "b",
 		},
@@ -124,7 +136,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster)
+			err := reconcileHostedControlPlane(updated, &test.Cluster, activeImage)
 			if err != nil {
 				t.Error(err)
 			}
@@ -467,7 +479,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, activeImage)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -1201,16 +1213,7 @@ func TestReconcileAWSSubnets(t *testing.T) {
 		Spec: capiawsv1.AWSClusterSpec{},
 	}
 
-	epsName := "test"
-	awsEndpointService := &hyperv1.AWSEndpointService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      epsName,
-			Namespace: hcpNamespace,
-		},
-		Spec: hyperv1.AWSEndpointServiceSpec{},
-	}
-
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2, awsEndpointService).Build()
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
 	r := &HostedClusterReconciler{
 		Client:         client,
 		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
@@ -1236,13 +1239,48 @@ func TestReconcileAWSSubnets(t *testing.T) {
 			ID: "2",
 		},
 	}))
+}
 
-	freshAWSEndpointService := &hyperv1.AWSEndpointService{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      epsName,
-			Namespace: hcpNamespace,
-		}}
-	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshAWSEndpointService), freshAWSEndpointService)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(freshAWSEndpointService.Spec.SubnetIDs).To(BeEquivalentTo([]string{"1", "2"}))
+func TestGetControlPlaneOperatorImage(t *testing.T) {
+	fakeReleaseImage := "myimage:1"
+	fakePullSecret := []byte(`pullsecret`)
+	fakeReleaseProvider := &fakereleaseprovider.FakeReleaseProvider{}
+	testsCases := []struct {
+		name                         string
+		inputAnnotations             map[string]string
+		inputReleaseImage            string
+		inputReleaseProvider         releaseinfo.Provider
+		inputHypershiftOperatorImage string
+		inputPullSecret              []byte
+		expectedImage                string
+	}{
+		{
+			name:                         "hypershift image is used if no annotation specified",
+			inputAnnotations:             nil,
+			inputReleaseImage:            fakeReleaseImage,
+			inputReleaseProvider:         fakeReleaseProvider,
+			inputHypershiftOperatorImage: "image1",
+			inputPullSecret:              fakePullSecret,
+			expectedImage:                "image1",
+		},
+		{
+			name: "Image override annotation is used when specified",
+			inputAnnotations: map[string]string{
+				hyperv1.ControlPlaneOperatorImageAnnotation: "image2",
+			},
+			inputReleaseImage:            fakeReleaseImage,
+			inputReleaseProvider:         fakeReleaseProvider,
+			inputHypershiftOperatorImage: "image1",
+			inputPullSecret:              fakePullSecret,
+			expectedImage:                "image2",
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			componentImage, err := getControlPlaneOperatorImage(context.Background(), tc.inputAnnotations, tc.inputReleaseImage, tc.inputReleaseProvider, tc.inputHypershiftOperatorImage, tc.inputPullSecret)
+			g.Expect(err).To(BeNil())
+			g.Expect(componentImage).To(BeEquivalentTo(tc.expectedImage))
+		})
+	}
 }
