@@ -356,22 +356,24 @@ objects:
       name: hypershift.rules
       rules:
       - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
-          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          by (pod, namespace, code, method) * on (pod, namespace) group_left(app)
+          label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
           "app", "$1", "label_app", "(.*)") )
         record: hypershift:controlplane:component_api_requests_total
       - expr: sum by (app, namespace) ( sum(container_memory_usage_bytes{container!="POD",container!=""})
-          by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          by (pod, namespace) * on (pod, namespace) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
           "app", "$1", "label_app", "(.*)") )
         record: hypershift:controlplane:component_memory_usage
       - expr: avg by (app, namespace) ( sum( rate( container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
-          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          ) ) by (pod, namespace) * on (pod, namespace) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
           "app", "$1", "label_app", "(.*)") ) / count by (app, namespace) ( sum( rate(
           container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
-          ) ) by (pod, namespace) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          ) ) by (pod, namespace) * on (pod, namespace) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
           "app", "$1", "label_app", "(.*)") )
         record: hypershift:controlplane:component_cpu_usage_seconds
       - expr: sum by (app, namespace, code, method) ( sum(rest_client_requests_total)
-          by (pod, namespace, code, method) * on (pod) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""},
+          by (pod, namespace, code, method) * on (pod, namespace) group_left(app)
+          label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""},
           "app", "$1", "label_app", "(.*)") )
         record: hypershift:operator:component_api_requests_total
 - apiVersion: apiextensions.k8s.io/v1
