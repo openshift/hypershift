@@ -206,7 +206,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 					return err
 				}
 			case hyperv1.AWS:
-				err := applyAWSKMSConfig(&deployment.Spec.Template.Spec, secretEncryptionData.KMS.AWS.ActiveKey, secretEncryptionData.KMS.AWS.BackupKey, secretEncryptionData.KMS.AWS.Auth, secretEncryptionData.KMS.AWS.Region, images.AWSKMS)
+				err := applyAWSKMSConfig(&deployment.Spec.Template.Spec, secretEncryptionData.KMS.AWS.ActiveKey, secretEncryptionData.KMS.AWS.BackupKey, secretEncryptionData.KMS.AWS.Auth, secretEncryptionData.KMS.AWS.Region, images.AWSKMS, images.TokenMinterImage)
 				if err != nil {
 					return err
 				}
