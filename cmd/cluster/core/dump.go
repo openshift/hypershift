@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
@@ -15,6 +16,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
@@ -38,6 +40,8 @@ type DumpOptions struct {
 	// AgentNamespace is the namespace where Agents
 	// are located, when using the agent platform.
 	AgentNamespace string
+
+	DumpGuestCluster bool
 }
 
 func NewDumpCommand() *cobra.Command {
@@ -58,6 +62,7 @@ func NewDumpCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
+	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
 
 	cmd.MarkFlagRequired("artifact-dir")
 
@@ -151,6 +156,49 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	podList.Items = append(podList.Items, hypershiftNSPodList.Items...)
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	outputLogs(ctx, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
+
+	if opts.DumpGuestCluster {
+		start := time.Now()
+		hcluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
+			Namespace: opts.Namespace,
+			Name:      opts.Name,
+		}}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(hcluster), hcluster); err != nil {
+			return fmt.Errorf("failed to get hostedcluster %s/%s: %w", opts.Namespace, opts.Name, err)
+		}
+		kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcluster.Namespace,
+			Name:      hcluster.Status.KubeConfig.Name,
+		}}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
+			return fmt.Errorf("failed to get guest cluster kubeconfig secret: %w", err)
+		}
+		if hcluster.Status.KubeConfig == nil {
+			log.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
+			return nil
+		}
+		kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
+		if err != nil {
+			return fmt.Errorf("failed to create tempfile for kubeconfig: %w", err)
+		}
+		defer func() {
+			if err := kubeconfigFile.Close(); err != nil {
+				log.Log.Error(err, "Failed to close kubeconfig file")
+			}
+			if err := os.Remove(kubeconfigFile.Name()); err != nil {
+				log.Log.Error(err, "Failed to cleanup temporary kubeconfig")
+			}
+		}()
+		if _, err := kubeconfigFile.Write(kubeconfigSecret.Data["kubeconfig"]); err != nil {
+			return fmt.Errorf("failed to write kubeconfig data: %w", err)
+		}
+		target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
+		log.Log.Info("Dumping guestcluster", "target", target)
+		if err := DumpGuestCluster(ctx, kubeconfigFile.Name(), target); err != nil {
+			return fmt.Errorf("failed to dump guest cluster: %w", err)
+		}
+		log.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
+	}
 	return nil
 }
 

@@ -3,16 +3,12 @@ package util
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/cmd/cluster/core"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -234,50 +230,6 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
 
 	t.Logf("Observed hostedcluster to have successfully rolled out image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
-}
-
-// DumpGuestCluster tries to collect resources from the from the hosted cluster,
-// and logs any failures that occur.
-func DumpGuestCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, destDir string) {
-	if len(destDir) == 0 {
-		t.Logf("Skipping guest cluster dump because no dest dir was provided")
-		return
-	}
-	kubeconfigTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	kubeconfig, err := WaitForGuestKubeConfig(t, kubeconfigTimeout, client, hostedCluster)
-	if err != nil {
-		t.Errorf("Failed to get guest kubeconfig: %v", err)
-		return
-	}
-
-	kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
-	if err != nil {
-		t.Errorf("Failed to create temporary directory: %v", err)
-		return
-	}
-	defer func() {
-		if err := os.Remove(kubeconfigFile.Name()); err != nil {
-			t.Errorf("Failed to remote temp file: %s: %v", kubeconfigFile.Name(), err)
-		}
-	}()
-
-	if _, err := kubeconfigFile.Write(kubeconfig); err != nil {
-		t.Errorf("Failed to write kubeconfig: %v", err)
-		return
-	}
-	if err := kubeconfigFile.Close(); err != nil {
-		t.Errorf("Failed to close kubeconfig file: %v", err)
-		return
-	}
-
-	dumpDir := filepath.Join(destDir, "hostedcluster-"+hostedCluster.Name)
-	t.Logf("Dumping guest cluster. Namespace: %s, name: %s, dest: %s", hostedCluster.Namespace, hostedCluster.Name, dumpDir)
-	if err := core.DumpGuestCluster(ctx, kubeconfigFile.Name(), dumpDir); err != nil {
-		t.Errorf("Failed to dump guest cluster: %v", err)
-		return
-	}
-	t.Logf("Dumped guest cluster data. Dir: %s", dumpDir)
 }
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
