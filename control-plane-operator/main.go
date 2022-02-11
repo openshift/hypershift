@@ -77,7 +77,6 @@ func NewStartCommand() *cobra.Command {
 		deploymentName                   string
 		metricsAddr                      string
 		healthProbeAddr                  string
-		enableLeaderElection             bool
 		hostedClusterConfigOperatorImage string
 		socks5ProxyImage                 string
 		availabilityProberImage          string
@@ -91,9 +90,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "control-plane-operator", "The name of the deployment of this operator")
 	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0.0.0.0:8080", "The address the metric endpoint binds to.")
 	cmd.Flags().StringVar(&healthProbeAddr, "health-probe-addr", "0.0.0.0:6060", "The address for the health probe endpoint.")
-	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", true,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image. (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&socks5ProxyImage, "socks5-proxy-image", "", "Image to use for socks5-proxy. (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&availabilityProberImage, "availability-prober-image", "", "Image to use for probing apiserver availability. (defaults to match this operator if running in a deployment)")
@@ -112,15 +108,22 @@ func NewStartCommand() *cobra.Command {
 
 		restConfig := ctrl.GetConfigOrDie()
 		restConfig.UserAgent = "hypershift-controlplane-manager"
+		leaseDuration := time.Second * 60
+		renewDeadline := time.Second * 40
+		retryPeriod := time.Second * 15
 		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-			Scheme:                     hyperapi.Scheme,
-			MetricsBindAddress:         metricsAddr,
-			Port:                       9443,
-			LeaderElection:             enableLeaderElection,
-			LeaderElectionID:           "b2ed43cb.hypershift.openshift.io",
-			LeaderElectionResourceLock: "leases",
-			LeaderElectionNamespace:    namespace,
-			HealthProbeBindAddress:     healthProbeAddr,
+			Scheme:                        hyperapi.Scheme,
+			MetricsBindAddress:            metricsAddr,
+			Port:                          9443,
+			LeaderElection:                true,
+			LeaderElectionID:              "control-plane-operator-leader-elect",
+			LeaderElectionResourceLock:    "leases",
+			LeaderElectionNamespace:       namespace,
+			LeaderElectionReleaseOnCancel: true,
+			LeaseDuration:                 &leaseDuration,
+			RenewDeadline:                 &renewDeadline,
+			RetryPeriod:                   &retryPeriod,
+			HealthProbeBindAddress:        healthProbeAddr,
 			// We manage a service outside the HCP namespace, but we don't want to scope the cache for all objects
 			// to both namespaces so just read from the API.
 			ClientDisableCacheFor: []client.Object{&corev1.Service{}},
