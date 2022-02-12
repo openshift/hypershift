@@ -143,6 +143,7 @@ app-sre-saas-template: hypershift
 		--oidc-storage-provider-s3-secret-key=credentials \
 		--enable-ocp-cluster-monitoring=false \
 		--enable-ci-debug-output=false \
+		--enable-admin-rbac-generation=true \
 		render --template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
 
 # Run tests
