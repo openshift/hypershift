@@ -602,7 +602,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile Platform specifics.
-	p, err := platform.GetPlatform(hcluster)
+	p, err := platform.GetPlatform(hcluster, r.AvailabilityProberImage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -883,7 +883,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile CAPI Provider Deployment.
-	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, r.TokenMinterImage)
+	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, r.TokenMinterImage, hcp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

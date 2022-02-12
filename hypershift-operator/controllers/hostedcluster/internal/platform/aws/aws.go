@@ -5,7 +5,9 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -24,7 +26,15 @@ const (
 	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
 )
 
-type AWS struct{}
+func New(availabilityProberImage string) *AWS {
+	return &AWS{
+		avaiabilityProberImage: availabilityProberImage,
+	}
+}
+
+type AWS struct {
+	avaiabilityProberImage string
+}
 
 func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
@@ -47,7 +57,7 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 	return awsCluster, nil
 }
 
-func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
+func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPA
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIProviderAWSImage]; ok {
 		providerImage = override
@@ -195,6 +205,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMi
 			},
 		},
 	}
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, hcp.Spec.APIPort), p.avaiabilityProberImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 

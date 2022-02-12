@@ -19,7 +19,7 @@ func (p None) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createO
 	return nil, nil
 }
 
-func (p None) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
+func (p None) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	return nil, nil
 }
 
