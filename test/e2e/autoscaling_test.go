@@ -29,11 +29,12 @@ func TestAutoscaling(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
+	awsClusterOpts := globalOpts.DefaultAWSClusterOptions()
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, &awsClusterOpts, globalOpts.ArtifactDir)
 
 	// Get one of the newly created NodePools
-	zone := clusterOpts.AWSPlatform.Zones[0]
+	zone := awsClusterOpts.Zones[0]
 	nodepool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedCluster.Namespace,
@@ -47,7 +48,7 @@ func TestAutoscaling(t *testing.T) {
 	// Perform some very basic assertions about the guest cluster
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
 	// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(awsClusterOpts.Zones))
 	nodes := e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
 
 	// Wait for the rollout to be reported complete

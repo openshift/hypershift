@@ -9,8 +9,11 @@ import (
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/log"
 )
+
+type CreateOptions struct {
+	APIServerAddress string
+}
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -19,40 +22,20 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.NonePlatform = core.NonePlatformCreateOptions{
+	platformOpts := CreateOptions{
 		APIServerAddress: "",
 	}
 
-	cmd.Flags().StringVar(&opts.NonePlatform.APIServerAddress, "external-api-server-address", opts.NonePlatform.APIServerAddress, "The external API Server Address when using platform none")
+	cmd.Flags().StringVar(&platformOpts.APIServerAddress, "external-api-server-address", platformOpts.APIServerAddress, "The external API Server Address when using platform none")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if opts.Timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-			defer cancel()
-		}
-
-		if err := CreateCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create cluster")
-			return err
-		}
-		return nil
-	}
+	cmd.RunE = opts.CreateRunFunc(&platformOpts)
 
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	if err := core.Validate(ctx, opts); err != nil {
-		return err
-	}
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
-}
-
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	if opts.NonePlatform.APIServerAddress == "" {
-		if opts.NonePlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx); err != nil {
+func (o *CreateOptions) ApplyPlatformSpecifics(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
+	if o.APIServerAddress == "" {
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx); err != nil {
 			return err
 		}
 	}
@@ -68,7 +51,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	exampleOptions.None = &apifixtures.ExampleNoneOptions{
-		APIServerAddress: opts.NonePlatform.APIServerAddress,
+		APIServerAddress: o.APIServerAddress,
 	}
 	return nil
 }

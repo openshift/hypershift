@@ -12,7 +12,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
@@ -35,7 +34,7 @@ import (
 //
 // This function is intended (for now) to be the preferred default way of
 // creating a hosted cluster during a test.
-func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string) *hyperv1.HostedCluster {
+func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, opts *core.CreateOptions, platform hyperv1.PlatformType, platformOpts core.PlatformCreateOptions, artifactDir string) *hyperv1.HostedCluster {
 	g := NewWithT(t)
 	start := time.Now()
 
@@ -69,9 +68,9 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 
 	// Try and create the cluster. If it fails, immediately try and clean up.
 	t.Logf("Creating a new cluster. Options: %v", opts)
-	if err := createCluster(ctx, hc, opts); err != nil {
+	if err := opts.CreateCluster(ctx, platformOpts); err != nil {
 		t.Logf("failed to create cluster, tearing down: %v", err)
-		teardown(context.Background(), t, client, hc, opts, artifactDir)
+		teardown(context.Background(), t, client, hc, opts, platformOpts, artifactDir)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
 	}
 
@@ -79,14 +78,14 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	// fails, immediately try and clean up.
 	if err := client.Get(ctx, crclient.ObjectKeyFromObject(hc), hc); err != nil {
 		t.Logf("failed to get cluster that was created, tearing down: %v", err)
-		teardown(context.Background(), t, client, hc, opts, artifactDir)
+		teardown(context.Background(), t, client, hc, opts, platformOpts, artifactDir)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 	}
 
 	// Everything went well, so register the async cleanup handler and allow tests
 	// to proceed.
 	t.Logf("Successfully created hostedcluster %s/%s in %s", hc.Namespace, hc.Name, time.Since(start).Round(time.Second))
-	t.Cleanup(func() { teardown(context.Background(), t, client, hc, opts, artifactDir) })
+	t.Cleanup(func() { teardown(context.Background(), t, client, hc, opts, platformOpts, artifactDir) })
 
 	return hc
 }
@@ -98,8 +97,8 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 // Note that most resource dumps are considered fatal to the tests. The reason
 // is that these dumps are critical to our ability to debug issues in CI, and so
 // we want to treat diagnostic dump failures as high priority bugs to resolve.
-func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) {
-	dumpCluster := newClusterDumper(hc, opts, artifactDir)
+func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions, platformOpts core.PlatformCreateOptions, artifactDir string) {
+	dumpCluster := newClusterDumper(hc, platformOpts, artifactDir)
 
 	// First, do a dump of the cluster before tearing it down
 	t.Run("PreTeardownClusterDump", func(t *testing.T) {
@@ -115,7 +114,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 	t.Run(fmt.Sprintf("DestroyCluster_%d", destroyAttempt), func(t *testing.T) {
 		t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
 		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-			err := destroyCluster(ctx, hc, opts)
+			err := destroyCluster(ctx, hc, opts, platformOpts)
 			if err != nil {
 				t.Logf("Failed to destroy cluster, will retry: %v", err)
 				err := dumpCluster(ctx, t, false)
@@ -172,35 +171,21 @@ func createClusterOpts(hc *hyperv1.HostedCluster, opts *core.CreateOptions) *cor
 	return opts
 }
 
-// createCluster calls the correct cluster create CLI function based on the
-// cluster platform.
-func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.CreateOptions) error {
-	switch hc.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		return aws.CreateCluster(ctx, opts)
-	case hyperv1.NonePlatform:
-		return none.CreateCluster(ctx, opts)
-	case hyperv1.KubevirtPlatform:
-		return kubevirt.CreateCluster(ctx, opts)
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
-}
-
 // destroyCluster calls the correct cluster destroy CLI function based on the
 // cluster platform and the options used to create the cluster.
-func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions) error {
+func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions, platformCreateOpts core.PlatformCreateOptions) error {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
+		awsCreateOpts := platformCreateOpts.(*aws.CreateOptions)
 		opts := &core.DestroyOptions{
 			Namespace: hc.Namespace,
 			Name:      hc.Name,
 			InfraID:   createOpts.InfraID,
 			AWSPlatform: core.AWSPlatformDestroyOptions{
 				BaseDomain:         createOpts.BaseDomain,
-				AWSCredentialsFile: createOpts.AWSPlatform.AWSCredentialsFile,
+				AWSCredentialsFile: awsCreateOpts.AWSCredentialsFile,
 				PreserveIAM:        false,
-				Region:             createOpts.AWSPlatform.Region,
+				Region:             awsCreateOpts.Region,
 			},
 			ClusterGracePeriod: 15 * time.Minute,
 		}
@@ -221,7 +206,7 @@ func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *
 // a cluster based on the cluster's platform. The output directory will be named
 // according to the test name. So, the returned dump function should be called
 // at most once per unique test name.
-func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
+func newClusterDumper(hc *hyperv1.HostedCluster, platformOpts core.PlatformCreateOptions, artifactDir string) func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
 	return func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
 		if len(artifactDir) == 0 {
 			t.Logf("Skipping cluster dump because no artifact directory was provided")
@@ -231,8 +216,9 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
+			awsOpts := platformOpts.(*aws.CreateOptions)
 			var dumpErrors []error
-			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.AWSCredentialsFile, dumpDir)
+			err := dump.DumpMachineConsoleLogs(ctx, hc, awsOpts.AWSCredentialsFile, dumpDir)
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
@@ -240,7 +226,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
-			err = dump.DumpJournals(t, ctx, hc, dumpDir, opts.AWSPlatform.AWSCredentialsFile)
+			err = dump.DumpJournals(t, ctx, hc, dumpDir, awsOpts.AWSCredentialsFile)
 			if err != nil {
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}

@@ -4,18 +4,20 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"os"
-	"os/signal"
-	"syscall"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/spf13/cobra"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/yaml"
 )
+
+type CreateOptions struct {
+	CredentialsFile string
+	Location        string
+	InstanceType    string
+}
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -24,45 +26,22 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.AzurePlatform.Location = "eastus"
-	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
-	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
-	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
-	cmd.Flags().StringVar(&opts.AzurePlatform.InstanceType, "instance-type", opts.AzurePlatform.InstanceType, "The instance type to use for nodes")
+	platformOpts := CreateOptions{}
+
+	platformOpts.Location = "eastus"
+	platformOpts.InstanceType = "Standard_D4s_v4"
+	cmd.Flags().StringVar(&platformOpts.CredentialsFile, "azure-creds", platformOpts.CredentialsFile, "Path to an Azure credentials file (required)")
+	cmd.Flags().StringVar(&platformOpts.Location, "location", platformOpts.Location, "Location for the cluster")
+	cmd.Flags().StringVar(&platformOpts.InstanceType, "instance-type", platformOpts.InstanceType, "The instance type to use for nodes")
 
 	cmd.MarkFlagRequired("azure-creds")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		if opts.Timeout > 0 {
-			ctx, cancel = context.WithTimeout(context.Background(), opts.Timeout)
-		}
-		defer cancel()
-
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := CreateCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create cluster")
-			os.Exit(1)
-		}
-	}
+	cmd.RunE = opts.CreateRunFunc(&platformOpts)
 
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	if err := core.Validate(ctx, opts); err != nil {
-		return err
-	}
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
-}
-
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) error {
+func (o *CreateOptions) ApplyPlatformSpecifics(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) error {
 	var infra *azureinfra.CreateInfraOutput
 	var err error
 	if opts.InfrastructureJSON != "" {
@@ -77,9 +56,9 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		infraID := fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
 		infra, err = (&azureinfra.CreateInfraOptions{
 			Name:            opts.Name,
-			Location:        opts.AzurePlatform.Location,
+			Location:        o.Location,
 			InfraID:         infraID,
-			CredentialsFile: opts.AzurePlatform.CredentialsFile,
+			CredentialsFile: o.CredentialsFile,
 		}).Run(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
@@ -94,13 +73,13 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		VnetID:            infra.VNetID,
 		BootImageID:       infra.BootImageID,
 		MachineIdentityID: infra.MachineIdentityID,
-		InstanceType:      opts.AzurePlatform.InstanceType,
+		InstanceType:      o.InstanceType,
 		SecurityGroupName: infra.SecurityGroupName,
 	}
 
-	azureCredsRaw, err := ioutil.ReadFile(opts.AzurePlatform.CredentialsFile)
+	azureCredsRaw, err := ioutil.ReadFile(o.CredentialsFile)
 	if err != nil {
-		return fmt.Errorf("failed to read --azure-creds file %s: %w", opts.AzurePlatform.CredentialsFile, err)
+		return fmt.Errorf("failed to read --azure-creds file %s: %w", o.CredentialsFile, err)
 	}
 	if err := yaml.Unmarshal(azureCredsRaw, &exampleOptions.Azure.Creds); err != nil {
 		return fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)

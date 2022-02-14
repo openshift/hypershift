@@ -9,8 +9,12 @@ import (
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/log"
 )
+
+type CreateOptions struct {
+	APIServerAddress string
+	AgentNamespace   string
+}
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -19,38 +23,21 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.AgentPlatform = core.AgentPlatformCreateOptions{
+	platformOpts := CreateOptions{
 		AgentNamespace: "",
 	}
 
-	cmd.Flags().StringVar(&opts.AgentPlatform.AgentNamespace, "agent-namespace", opts.AgentPlatform.AgentNamespace, "The namespace in which to search for Agents")
+	cmd.Flags().StringVar(&platformOpts.AgentNamespace, "agent-namespace", platformOpts.AgentNamespace, "The namespace in which to search for Agents")
 	cmd.MarkFlagRequired("agent-namespace")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if opts.Timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-			defer cancel()
-		}
-
-		if err := CreateCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create cluster")
-			return err
-		}
-		return nil
-	}
+	cmd.RunE = opts.CreateRunFunc(&platformOpts)
 
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
-}
-
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	if opts.AgentPlatform.APIServerAddress == "" {
-		opts.AgentPlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx)
+func (o *CreateOptions) ApplyPlatformSpecifics(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
+	if o.APIServerAddress == "" {
+		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx)
 		if err != nil {
 			return err
 		}
@@ -67,8 +54,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	exampleOptions.Agent = &apifixtures.ExampleAgentOptions{
-		APIServerAddress: opts.AgentPlatform.APIServerAddress,
-		AgentNamespace:   opts.AgentPlatform.AgentNamespace,
+		APIServerAddress: o.APIServerAddress,
+		AgentNamespace:   o.AgentNamespace,
 	}
 	return nil
 }

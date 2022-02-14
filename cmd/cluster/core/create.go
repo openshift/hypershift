@@ -28,10 +28,13 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/spf13/cobra"
 )
 
-// ApplyPlatformSpecifics can be used to create platform specific values as well as enriching the fixure with additional values
-type ApplyPlatformSpecifics = func(ctx context.Context, fixture *apifixtures.ExampleOptions, options *CreateOptions) error
+type PlatformCreateOptions interface {
+	// ApplyPlatformSpecifics can be used to create platform specific values as well as enriching the fixure with additional values
+	ApplyPlatformSpecifics(ctx context.Context, fixture *apifixtures.ExampleOptions, options *CreateOptions) error
+}
 
 type CreateOptions struct {
 	Annotations                      []string
@@ -55,65 +58,38 @@ type CreateOptions struct {
 	SSHKeyFile                       string
 	ServiceCIDR                      string
 	PodCIDR                          string
-	NonePlatform                     NonePlatformCreateOptions
-	KubevirtPlatform                 KubevirtPlatformCreateOptions
-	AWSPlatform                      AWSPlatformOptions
-	AgentPlatform                    AgentPlatformCreateOptions
-	AzurePlatform                    AzurePlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
 }
 
-type AgentPlatformCreateOptions struct {
-	APIServerAddress string
-	AgentNamespace   string
+func (o *CreateOptions) CreateRunFunc(platformOpts PlatformCreateOptions) func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if o.Timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, o.Timeout)
+			defer cancel()
+		}
+
+		if err := o.CreateCluster(ctx, platformOpts); err != nil {
+			log.Log.Error(err, "Failed to create cluster")
+			return err
+		}
+		return nil
+	}
 }
 
-type NonePlatformCreateOptions struct {
-	APIServerAddress string
-}
-
-type KubevirtPlatformCreateOptions struct {
-	APIServerAddress   string
-	Memory             string
-	Cores              uint32
-	ContainerDiskImage string
-}
-
-type AWSPlatformOptions struct {
-	AWSCredentialsFile string
-	AdditionalTags     []string
-	IAMJSON            string
-	InstanceType       string
-	IssuerURL          string
-	PrivateZoneID      string
-	PublicZoneID       string
-	Region             string
-	RootVolumeIOPS     int64
-	RootVolumeSize     int64
-	RootVolumeType     string
-	EndpointAccess     string
-	Zones              []string
-	EtcdKMSKeyARN      string
-}
-
-type AzurePlatformOptions struct {
-	CredentialsFile string
-	Location        string
-	InstanceType    string
-}
-
-func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
-	if len(opts.ReleaseImage) == 0 {
+func (o *CreateOptions) createCommonFixture() (*apifixtures.ExampleOptions, error) {
+	if len(o.ReleaseImage) == 0 {
 		defaultVersion, err := version.LookupDefaultOCPVersion()
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}
-		opts.ReleaseImage = defaultVersion.PullSpec
+		o.ReleaseImage = defaultVersion.PullSpec
 	}
 
 	annotations := map[string]string{}
-	for _, s := range opts.Annotations {
+	for _, s := range o.Annotations {
 		pair := strings.SplitN(s, "=", 2)
 		if len(pair) != 2 {
 			return nil, fmt.Errorf("invalid annotation: %s", s)
@@ -122,25 +98,25 @@ func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, erro
 		annotations[k] = v
 	}
 
-	if len(opts.ControlPlaneOperatorImage) > 0 {
-		annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = opts.ControlPlaneOperatorImage
+	if len(o.ControlPlaneOperatorImage) > 0 {
+		annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = o.ControlPlaneOperatorImage
 	}
 
-	pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
+	pullSecret, err := ioutil.ReadFile(o.PullSecretFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pull secret file: %w", err)
 	}
 	var sshKey, sshPrivateKey []byte
-	if len(opts.SSHKeyFile) > 0 {
-		if opts.GenerateSSH {
+	if len(o.SSHKeyFile) > 0 {
+		if o.GenerateSSH {
 			return nil, fmt.Errorf("--generate-ssh and --ssh-key cannot be specified together")
 		}
-		key, err := ioutil.ReadFile(opts.SSHKeyFile)
+		key, err := ioutil.ReadFile(o.SSHKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read ssh key file: %w", err)
 		}
 		sshKey = key
-	} else if opts.GenerateSSH {
+	} else if o.GenerateSSH {
 		sshKey, sshPrivateKey, err = generateSSHKeys()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ssh keys: %w", err)
@@ -148,23 +124,23 @@ func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, erro
 	}
 
 	return &apifixtures.ExampleOptions{
-		InfraID:                          opts.InfraID,
+		InfraID:                          o.InfraID,
 		Annotations:                      annotations,
-		AutoRepair:                       opts.AutoRepair,
-		ControlPlaneAvailabilityPolicy:   hyperv1.AvailabilityPolicy(opts.ControlPlaneAvailabilityPolicy),
-		FIPS:                             opts.FIPS,
-		InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(opts.InfrastructureAvailabilityPolicy),
-		Namespace:                        opts.Namespace,
-		Name:                             opts.Name,
-		NetworkType:                      hyperv1.NetworkType(opts.NetworkType),
-		NodePoolReplicas:                 opts.NodePoolReplicas,
+		AutoRepair:                       o.AutoRepair,
+		ControlPlaneAvailabilityPolicy:   hyperv1.AvailabilityPolicy(o.ControlPlaneAvailabilityPolicy),
+		FIPS:                             o.FIPS,
+		InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(o.InfrastructureAvailabilityPolicy),
+		Namespace:                        o.Namespace,
+		Name:                             o.Name,
+		NetworkType:                      hyperv1.NetworkType(o.NetworkType),
+		NodePoolReplicas:                 o.NodePoolReplicas,
 		PullSecret:                       pullSecret,
-		ReleaseImage:                     opts.ReleaseImage,
+		ReleaseImage:                     o.ReleaseImage,
 		SSHPrivateKey:                    sshPrivateKey,
 		SSHPublicKey:                     sshKey,
-		EtcdStorageClass:                 opts.EtcdStorageClass,
-		ServiceCIDR:                      opts.ServiceCIDR,
-		PodCIDR:                          opts.PodCIDR,
+		EtcdStorageClass:                 o.EtcdStorageClass,
+		ServiceCIDR:                      o.ServiceCIDR,
+		PodCIDR:                          o.PodCIDR,
 	}, nil
 }
 
@@ -274,11 +250,11 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 	return apiServerAddress, nil
 }
 
-func Validate(ctx context.Context, opts *CreateOptions) error {
-	if !opts.Render {
+func (o *CreateOptions) Validate(ctx context.Context) error {
+	if !o.Render {
 		client := util.GetClientOrDie()
 		// Validate HostedCluster with this name doesn't exists in the namespace
-		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
+		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: o.Namespace, Name: o.Name}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
 			return fmt.Errorf("hostedcluster %s already exists", crclient.ObjectKeyFromObject(cluster))
 		} else if !apierrors.IsNotFound(err) {
@@ -289,24 +265,27 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 	return nil
 }
 
-func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApply ApplyPlatformSpecifics) error {
-	if opts.Wait && opts.NodePoolReplicas < 1 {
+func (o *CreateOptions) CreateCluster(ctx context.Context, platformOpts PlatformCreateOptions) error {
+	if err := o.Validate(ctx); err != nil {
+		return err
+	}
+	if o.Wait && o.NodePoolReplicas < 1 {
 		return errors.New("--wait requires --node-pool-replicas > 0")
 	}
 
-	if opts.InfraID == "" {
-		opts.InfraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
+	if o.InfraID == "" {
+		o.InfraID = fmt.Sprintf("%s-%s", o.Name, utilrand.String(5))
 	}
 
-	exampleOptions, err := createCommonFixture(opts)
+	exampleOptions, err := o.createCommonFixture()
 	if err != nil {
 		return err
 	}
 
 	// Apply platform specific options and create platform specific resources
-	if err := platformSpecificApply(ctx, exampleOptions, opts); err != nil {
+	if err := platformOpts.ApplyPlatformSpecifics(ctx, exampleOptions, o); err != nil {
 		return err
 	}
 
-	return apply(ctx, exampleOptions, opts.Render, opts.Wait)
+	return apply(ctx, exampleOptions, o.Render, o.Wait)
 }

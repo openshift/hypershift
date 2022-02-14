@@ -45,15 +45,17 @@ func TestOLM(t *testing.T) {
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
+	awsClusterOpts := globalOpts.DefaultAWSClusterOptions()
+
 	clusterOpts.NodePoolReplicas = 1
-	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, &awsClusterOpts, globalOpts.ArtifactDir)
 
 	// Get guest client
 	t.Logf("Waiting for guest client to become available")
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, cluster)
 
 	// Wait for guest cluster nodes to become available
-	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(awsClusterOpts.Zones))
 	util.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
 
 	guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name

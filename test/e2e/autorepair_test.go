@@ -28,7 +28,9 @@ func TestAutoRepair(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
-	numZones := int32(len(clusterOpts.AWSPlatform.Zones))
+	awsClusterOpts := globalOpts.DefaultAWSClusterOptions()
+
+	numZones := int32(len(awsClusterOpts.Zones))
 	if numZones <= 1 {
 		clusterOpts.NodePoolReplicas = 3
 	} else if numZones == 2 {
@@ -38,7 +40,7 @@ func TestAutoRepair(t *testing.T) {
 	}
 	clusterOpts.AutoRepair = true
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, &awsClusterOpts, globalOpts.ArtifactDir)
 
 	// Perform some very basic assertions about the guest cluster
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
@@ -56,7 +58,7 @@ func TestAutoRepair(t *testing.T) {
 	g.Expect(len(awsSpec)).NotTo(BeZero())
 	instanceID := awsSpec[strings.LastIndex(awsSpec, "/")+1:]
 	t.Logf("Terminating AWS instance: %s", instanceID)
-	ec2client := ec2Client(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+	ec2client := ec2Client(awsClusterOpts.AWSCredentialsFile, awsClusterOpts.Region)
 	_, err := ec2client.TerminateInstances(&ec2.TerminateInstancesInput{
 		InstanceIds: []*string{aws.String(instanceID)},
 	})

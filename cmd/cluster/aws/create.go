@@ -13,9 +13,25 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 )
+
+type CreateOptions struct {
+	AWSCredentialsFile string
+	AdditionalTags     []string
+	IAMJSON            string
+	InstanceType       string
+	IssuerURL          string
+	PrivateZoneID      string
+	PublicZoneID       string
+	Region             string
+	RootVolumeIOPS     int64
+	RootVolumeSize     int64
+	RootVolumeType     string
+	EndpointAccess     string
+	Zones              []string
+	EtcdKMSKeyARN      string
+}
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -24,7 +40,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.AWSPlatform = core.AWSPlatformOptions{
+	platformOpts := CreateOptions{
 		AWSCredentialsFile: "",
 		Region:             "us-east-1",
 		InstanceType:       "m5.large",
@@ -34,46 +50,26 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		EndpointAccess:     string(hyperv1.Public),
 	}
 
-	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
-	cmd.Flags().StringVar(&opts.AWSPlatform.IAMJSON, "iam-json", opts.AWSPlatform.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
-	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Region to use for AWS infrastructure.")
-	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availablity zones in which NodePools will be created")
-	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "Instance type for AWS instances.")
-	cmd.Flags().StringVar(&opts.AWSPlatform.RootVolumeType, "root-volume-type", opts.AWSPlatform.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
-	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeIOPS, "root-volume-iops", opts.AWSPlatform.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
-	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeSize, "root-volume-size", opts.AWSPlatform.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
-	cmd.Flags().StringSliceVar(&opts.AWSPlatform.AdditionalTags, "additional-tags", opts.AWSPlatform.AdditionalTags, "Additional tags to set on AWS resources")
-	cmd.Flags().StringVar(&opts.AWSPlatform.EndpointAccess, "endpoint-access", opts.AWSPlatform.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
-	cmd.Flags().StringVar(&opts.AWSPlatform.EtcdKMSKeyARN, "kms-key-arn", opts.AWSPlatform.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
+	cmd.Flags().StringVar(&platformOpts.AWSCredentialsFile, "aws-creds", platformOpts.AWSCredentialsFile, "Path to an AWS credentials file (required)")
+	cmd.Flags().StringVar(&platformOpts.IAMJSON, "iam-json", platformOpts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
+	cmd.Flags().StringVar(&platformOpts.Region, "region", platformOpts.Region, "Region to use for AWS infrastructure.")
+	cmd.Flags().StringSliceVar(&platformOpts.Zones, "zones", platformOpts.Zones, "The availablity zones in which NodePools will be created")
+	cmd.Flags().StringVar(&platformOpts.InstanceType, "instance-type", platformOpts.InstanceType, "Instance type for AWS instances.")
+	cmd.Flags().StringVar(&platformOpts.RootVolumeType, "root-volume-type", platformOpts.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
+	cmd.Flags().Int64Var(&platformOpts.RootVolumeIOPS, "root-volume-iops", platformOpts.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
+	cmd.Flags().Int64Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
+	cmd.Flags().StringSliceVar(&platformOpts.AdditionalTags, "additional-tags", platformOpts.AdditionalTags, "Additional tags to set on AWS resources")
+	cmd.Flags().StringVar(&platformOpts.EndpointAccess, "endpoint-access", platformOpts.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
+	cmd.Flags().StringVar(&platformOpts.EtcdKMSKeyARN, "kms-key-arn", platformOpts.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 
 	cmd.MarkFlagRequired("aws-creds")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if opts.Timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-			defer cancel()
-		}
-
-		if err := CreateCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create cluster")
-			return err
-		}
-		return nil
-	}
+	cmd.RunE = opts.CreateRunFunc(&platformOpts)
 
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	if err := core.Validate(ctx, opts); err != nil {
-		return err
-	}
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
-}
-
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
+func (o *CreateOptions) ApplyPlatformSpecifics(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
 	client := util.GetClientOrDie()
 	infraID := opts.InfraID
 
@@ -101,13 +97,13 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
 		}
 		opt := awsinfra.CreateInfraOptions{
-			Region:             opts.AWSPlatform.Region,
+			Region:             o.Region,
 			InfraID:            infraID,
-			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
+			AWSCredentialsFile: o.AWSCredentialsFile,
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
-			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
-			Zones:              opts.AWSPlatform.Zones,
+			AdditionalTags:     o.AdditionalTags,
+			Zones:              o.Zones,
 		}
 		infra, err = opt.CreateInfra(ctx)
 		if err != nil {
@@ -116,8 +112,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	var iamInfo *awsinfra.CreateIAMOutput
-	if len(opts.AWSPlatform.IAMJSON) > 0 {
-		rawIAM, err := ioutil.ReadFile(opts.AWSPlatform.IAMJSON)
+	if len(o.IAMJSON) > 0 {
+		rawIAM, err := ioutil.ReadFile(o.IAMJSON)
 		if err != nil {
 			return fmt.Errorf("failed to read iam json file: %w", err)
 		}
@@ -127,15 +123,15 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	} else {
 		opt := awsinfra.CreateIAMOptions{
-			Region:             opts.AWSPlatform.Region,
-			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
+			Region:             o.Region,
+			AWSCredentialsFile: o.AWSCredentialsFile,
 			InfraID:            infra.InfraID,
-			IssuerURL:          opts.AWSPlatform.IssuerURL,
-			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
+			IssuerURL:          o.IssuerURL,
+			AdditionalTags:     o.AdditionalTags,
 			PrivateZoneID:      infra.PrivateZoneID,
 			PublicZoneID:       infra.PublicZoneID,
 			LocalZoneID:        infra.LocalZoneID,
-			KMSKeyARN:          opts.AWSPlatform.EtcdKMSKeyARN,
+			KMSKeyARN:          o.EtcdKMSKeyARN,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
@@ -143,7 +139,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 
-	tagMap, err := util.ParseAWSTags(opts.AWSPlatform.AdditionalTags)
+	tagMap, err := util.ParseAWSTags(o.AdditionalTags)
 	if err != nil {
 		return fmt.Errorf("failed to parse additional tags: %w", err)
 	}
@@ -171,18 +167,18 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		VPCID:                       infra.VPCID,
 		SecurityGroupID:             infra.SecurityGroupID,
 		InstanceProfile:             iamInfo.ProfileName,
-		InstanceType:                opts.AWSPlatform.InstanceType,
+		InstanceType:                o.InstanceType,
 		Roles:                       iamInfo.Roles,
 		KubeCloudControllerRoleARN:  iamInfo.KubeCloudControllerRoleARN,
 		NodePoolManagementRoleARN:   iamInfo.NodePoolManagementRoleARN,
 		ControlPlaneOperatorRoleARN: iamInfo.ControlPlaneOperatorRoleARN,
 		KMSProviderRoleARN:          iamInfo.KMSProviderRoleARN,
 		KMSKeyARN:                   iamInfo.KMSKeyARN,
-		RootVolumeSize:              opts.AWSPlatform.RootVolumeSize,
-		RootVolumeType:              opts.AWSPlatform.RootVolumeType,
-		RootVolumeIOPS:              opts.AWSPlatform.RootVolumeIOPS,
+		RootVolumeSize:              o.RootVolumeSize,
+		RootVolumeType:              o.RootVolumeType,
+		RootVolumeIOPS:              o.RootVolumeIOPS,
 		ResourceTags:                tags,
-		EndpointAccess:              opts.AWSPlatform.EndpointAccess,
+		EndpointAccess:              o.EndpointAccess,
 	}
 	return nil
 }

@@ -20,7 +20,10 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
+	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -192,7 +195,7 @@ type configurableClusterOptions struct {
 }
 
 func (o *options) DefaultClusterOptions() core.CreateOptions {
-	createOption := core.CreateOptions{
+	return core.CreateOptions{
 		ReleaseImage:              o.LatestReleaseImage,
 		GenerateSSH:               true,
 		SSHKeyFile:                "",
@@ -201,31 +204,40 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		BaseDomain:                o.configurableClusterOptions.BaseDomain,
 		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
 		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
-		AWSPlatform: core.AWSPlatformOptions{
-			InstanceType:       "m5.large",
-			RootVolumeSize:     64,
-			RootVolumeType:     "gp3",
-			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
-			Region:             o.configurableClusterOptions.Region,
-			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
-		},
-		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-			ContainerDiskImage: o.configurableClusterOptions.KubeVirtContainerDiskImage,
-			Cores:              2,
-			Memory:             "4Gi",
-		},
-		ServiceCIDR: "172.31.0.0/16",
-		PodCIDR:     "10.132.0.0/14",
+		ServiceCIDR:               "172.31.0.0/16",
+		PodCIDR:                   "10.132.0.0/14",
 	}
-	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
+}
+
+func (o *options) DefaultAWSClusterOptions() aws.CreateOptions {
+	opts := aws.CreateOptions{
+		InstanceType:       "m5.large",
+		RootVolumeSize:     64,
+		RootVolumeType:     "gp3",
+		AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
+		Region:             o.configurableClusterOptions.Region,
+		EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
+	}
+	opts.AdditionalTags = append(opts.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
 		// align with default for e2e.aws-region flag
-		createOption.AWSPlatform.Zones = []string{"us-east-1a"}
+		opts.Zones = []string{"us-east-1a"}
 	} else {
-		createOption.AWSPlatform.Zones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+		opts.Zones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
 	}
+	return opts
+}
 
-	return createOption
+func (o *options) DefaultKubevirtClusterOptions() kubevirt.CreateOptions {
+	return kubevirt.CreateOptions{
+		ContainerDiskImage: o.configurableClusterOptions.KubeVirtContainerDiskImage,
+		Cores:              2,
+		Memory:             "4Gi",
+	}
+}
+
+func (o *options) DefaultNoneClusterOptions() none.CreateOptions {
+	return none.CreateOptions{}
 }
 
 // Complete is intended to be called after flags have been bound and sets

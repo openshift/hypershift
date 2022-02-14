@@ -25,17 +25,19 @@ func TestUpgradeControlPlane(t *testing.T) {
 	t.Logf("Starting control plane upgrade test. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
+	awsClusterOpts := globalOpts.DefaultAWSClusterOptions()
+
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, &awsClusterOpts, globalOpts.ArtifactDir)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
 	t.Logf("Waiting for guest client to become available")
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(awsClusterOpts.Zones))
 	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
 
 	// Wait for the first rollout to be complete
