@@ -26,14 +26,16 @@ const (
 	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
 )
 
-func New(availabilityProberImage string) *AWS {
+func New(availabilityProberImage string, tokenMinterImage string) *AWS {
 	return &AWS{
 		avaiabilityProberImage: availabilityProberImage,
+		tokenMinterImage:       tokenMinterImage,
 	}
 }
 
 type AWS struct {
 	avaiabilityProberImage string
+	tokenMinterImage       string
 }
 
 func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -57,7 +59,7 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 	return awsCluster, nil
 }
 
-func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPA
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIProviderAWSImage]; ok {
 		providerImage = override
@@ -180,7 +182,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMi
 					},
 					{
 						Name:            "token-minter",
-						Image:           tokenMinterImage,
+						Image:           p.tokenMinterImage,
 						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{
