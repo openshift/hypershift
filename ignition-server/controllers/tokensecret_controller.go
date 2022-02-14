@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -21,13 +22,15 @@ import (
 )
 
 const (
-	TokenSecretReleaseKey = "release"
-	TokenSecretConfigKey  = "config"
-	TokenSecretTokenKey   = "token"
-	TokenSecretAnnotation = "hypershift.openshift.io/ignition-config"
+	TokenSecretReleaseKey          = "release"
+	TokenSecretConfigKey           = "config"
+	TokenSecretTokenKey            = "token"
+	TokenSecretOldTokenKey         = "old_token"
+	TokenSecretAnnotation          = "hypershift.openshift.io/ignition-config"
+	TokenSecretTokenGenerationTime = "hypershift.openshift.io/last-token-generation-time"
 	// Set the ttl 1h above the reconcile resync period so every existing
-	// token Secret has the chance to renew their expiry time on the PayloadStore.Get(token) operation
-	// while the non existing ones get eventually garbageCollected.
+	// token Secret has the chance to rotate their token ID during a reconciliation cycle
+	// while the expired ones get eventually garbageCollected.
 	// https://github.com/kubernetes-sigs/controller-runtime/blob/1e4d87c9f9e15e4a58bb81909dd787f30ede7693/pkg/cache/cache.go#L118
 	ttl = time.Hour * 11
 )
@@ -49,8 +52,8 @@ type IgnitionProvider interface {
 }
 
 // TokenSecretReconciler watches token Secrets
-// and uses an IgnitionProvider to get a payload out them
-// and stores it in the PayloadsStore.
+// and uses an IgnitionProvider to get a payload out them,
+// stores it in the PayloadsStore, and rotates the token ID periodically.
 // A token Secret is by contractual convention:
 // type: Secret
 //   metadata:
@@ -58,6 +61,7 @@ type IgnitionProvider interface {
 // 	   hypershift.openshift.io/ignition-config: "true"
 //	 data:
 //     token: <authz token>
+//     old_token: <authz token>
 //     release: <release image string>
 //     config: |-
 type TokenSecretReconciler struct {
@@ -141,25 +145,25 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// If the tokenSecret is older than ttl then purge its token from the cache
-	// and delete the secret.
-	timeLived := time.Since(tokenSecret.CreationTimestamp.Time)
-	if timeLived >= ttl {
-		log.Info("Deleting expired token", "tokenSecret", client.ObjectKeyFromObject(tokenSecret))
-		r.PayloadStore.Delete(string(tokenSecret.Data[TokenSecretTokenKey]))
-		if err := r.Delete(ctx, tokenSecret); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to delete tokenSecret: %w", err)
-			}
-		}
-		return ctrl.Result{}, nil
+	// Otherwise proceed to generate the payload and cache the content.
+	// Rotate the Token if necessary.
+	now := time.Now()
+	timeLived, err := getTokenTimeLived(tokenSecret, now)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
-	// Otherwise proceed to generate the payload and cache the content.
 	token := string(tokenSecret.Data[TokenSecretTokenKey])
-	if _, ok := r.PayloadStore.Get(token); ok {
+	if value, ok := r.PayloadStore.Get(token); ok {
 		log.Info("Payload found in cache")
-		return ctrl.Result{RequeueAfter: ttl - timeLived}, nil
+
+		if tokenNeedRotation(timeLived) {
+			log.Info("Rotating token ID")
+			if err := r.rotateToken(ctx, tokenSecret, value, now); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 	}
 
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
@@ -176,7 +180,13 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	log.Info("IgnitionProvider generated payload")
 	r.PayloadStore.Set(token, CacheValue{Payload: payload, SecretName: tokenSecret.Name})
-	return ctrl.Result{RequeueAfter: ttl - timeLived}, nil
+	oldToken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
+	if ok {
+		// If we got here and there's an old token e.g ignition server pod was restarted, then we set it as well
+		// So Machines that were given that token right before the restart can succeed.
+		r.PayloadStore.Set(string(oldToken), CacheValue{Payload: payload, SecretName: tokenSecret.Name})
+	}
+	return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 }
 
 func decompress(content []byte) ([]byte, error) {
@@ -193,4 +203,61 @@ func decompress(content []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read content: %w", err)
 	}
 	return data, nil
+}
+
+// getTokenIDTimeLived returns the duration a from TokenSecretLastUpdatedTokenIDAnnotation til now.
+func getTokenTimeLived(tokenSecret *corev1.Secret, now time.Time) (*time.Duration, error) {
+	generationTime, ok := tokenSecret.Annotations[TokenSecretTokenGenerationTime]
+	if !ok {
+		return nil, nil
+	}
+	generationTimeParsed, err := time.Parse(time.RFC3339Nano, generationTime)
+	if err != nil {
+		return nil, err
+	}
+	timeLived := now.Sub(generationTimeParsed)
+	return &timeLived, nil
+}
+
+// tokenIDNeedRotation returns true if a duration is longer than the ttl/2.
+// This is the criteria to trigger a token ID rotation.
+func tokenNeedRotation(timeLived *time.Duration) bool {
+	if timeLived == nil || *timeLived >= ttl/2 {
+		return true
+	}
+
+	return false
+}
+
+// rotateTokenID generates a new UUID for an existing value:
+// Patches the tokenSecret token key with it and stores it on the cache.
+func (r *TokenSecretReconciler) rotateToken(ctx context.Context, tokenSecret *corev1.Secret, value CacheValue, rotationTime time.Time) error {
+	newToken := uuid.New().String()
+
+	patch := tokenSecret.DeepCopy()
+	if patch.Annotations == nil {
+		patch.Annotations = make(map[string]string)
+	}
+
+	if _, ok := tokenSecret.Data[TokenSecretOldTokenKey]; ok {
+		r.PayloadStore.Delete(string(tokenSecret.Data[TokenSecretOldTokenKey]))
+	}
+
+	patch.Annotations[TokenSecretTokenGenerationTime] = rotationTime.Format(time.RFC3339Nano)
+	patch.Data[TokenSecretOldTokenKey] = tokenSecret.Data[TokenSecretTokenKey]
+	patch.Data[TokenSecretTokenKey] = []byte(newToken)
+
+	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+		return err
+	}
+
+	r.PayloadStore.Set(newToken, value)
+	return nil
+}
+
+func durationDeref(duration *time.Duration) time.Duration {
+	if duration == nil {
+		return time.Duration(0)
+	}
+	return *duration
 }

@@ -26,18 +26,16 @@ type entry struct {
 }
 
 func (c *ExpiringCache) Get(key string) (value CacheValue, ok bool) {
+	c.garbageCollect()
+
 	c.RLock()
 	defer c.RUnlock()
-
-	c.garbageCollect()
 
 	result, ok := c.cache[key]
 	if !ok {
 		return CacheValue{}, false
 	}
 
-	// Renew expiring time everytime time we Get.
-	result.expiry = time.Now().Add(c.ttl)
 	return result.value, ok
 }
 
