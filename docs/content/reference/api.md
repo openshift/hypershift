@@ -1602,6 +1602,16 @@ string
 </tr>
 <tr>
 <td>
+<code>subnetName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
 <code>subscriptionID</code></br>
 <em>
 string

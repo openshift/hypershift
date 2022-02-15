@@ -503,6 +503,8 @@ spec:
                         type: string
                       securityGroupName:
                         type: string
+                      subnetName:
+                        type: string
                       subscriptionID:
                         type: string
                       vnetID:
@@ -515,6 +517,7 @@ spec:
                     - machineIdentityID
                     - resourceGroup
                     - securityGroupName
+                    - subnetName
                     - subscriptionID
                     - vnetID
                     - vnetName

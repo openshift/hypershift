@@ -20179,6 +20179,8 @@ objects:
                           type: string
                         securityGroupName:
                           type: string
+                        subnetName:
+                          type: string
                         subscriptionID:
                           type: string
                         vnetID:
@@ -20191,6 +20193,7 @@ objects:
                       - machineIdentityID
                       - resourceGroup
                       - securityGroupName
+                      - subnetName
                       - subscriptionID
                       - vnetID
                       - vnetName
@@ -21245,6 +21248,8 @@ objects:
                           type: string
                         securityGroupName:
                           type: string
+                        subnetName:
+                          type: string
                         subscriptionID:
                           type: string
                         vnetID:
@@ -21257,6 +21262,7 @@ objects:
                       - machineIdentityID
                       - resourceGroup
                       - securityGroupName
+                      - subnetName
                       - subscriptionID
                       - vnetID
                       - vnetName

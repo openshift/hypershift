@@ -41,6 +41,7 @@ const (
 type MCSIgnitionProvider struct {
 	Client          client.Client
 	ReleaseProvider releaseinfo.Provider
+	CloudProvider   hyperv1.PlatformType
 	Namespace       string
 }
 
@@ -74,7 +75,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 	// and we might lose data.
 	base64CompressedConfig := base64.StdEncoding.EncodeToString(compressedConfig)
 	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
-	mcsPod := machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap)
+	mcsPod := machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap, p.CloudProvider)
 
 	// Launch the pod and ensure we clean up regardless of outcome
 	defer func() {
@@ -95,7 +96,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		return nil, fmt.Errorf("failed to create machine config server RoleBinding: %w", err)
 	}
 
-	mcsPod = machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap)
+	mcsPod = machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap, p.CloudProvider)
 	if err := p.Client.Create(ctx, mcsPod); err != nil {
 		return nil, fmt.Errorf("failed to create machine config server Pod: %w", err)
 	}
@@ -183,6 +184,15 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 const mcoBootstrapScript = `#!/bin/bash
 mkdir -p /mcc-manifests/bootstrap/manifests
 mkdir -p /mcc-manifests/manifests
+{{ if .isAzure }}
+cat <<EOF >/tmp/cloud.conf.configmap.yaml
+kind: ConfigMap
+apiVersion: v1
+data:
+  cloud.conf: |
+$(sed 's/^/    /g' /etc/cloudconfig/cloud.conf)
+{{ end }}
+EOF
 machine-config-operator bootstrap \
 --root-ca=/assets/manifests/root-ca.crt \
 --kube-ca=/assets/manifests/combined-ca.crt \
@@ -202,6 +212,9 @@ machine-config-operator bootstrap \
 --config-file=/assets/manifests/install-config.yaml \
 --dns-config-file=/assets/manifests/cluster-dns-02-config.yaml \
 --dest-dir=/mcc-manifests \
+{{ if .isAzure -}}
+--cloud-config-file=/tmp/cloud.conf.configmap.yaml \
+{{ end -}}
 --pull-secret=/assets/manifests/pull-secret.yaml
 # Use our own version of configpools that swap master and workers
 mv /mcc-manifests/bootstrap/manifests /mcc-manifests/bootstrap/manifests.tmp
@@ -211,9 +224,9 @@ cp /assets/manifests/*.machineconfigpool.yaml /mcc-manifests/bootstrap/manifests
 
 var mcoBootstrapScriptTemplate = template.Must(template.New("mcoBootstrap").Parse(mcoBootstrapScript))
 
-func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, config *corev1.ConfigMap) *corev1.Pod {
+func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseImage, config *corev1.ConfigMap, provider hyperv1.PlatformType) *corev1.Pod {
 	images := releaseImage.ComponentImages()
-	scriptArgs := map[string]string{
+	scriptArgs := map[string]interface{}{
 		"mcoImage":                 images["machine-config-operator"],
 		"osContentImage":           images["machine-os-content"],
 		"podImage":                 images["pod"],
@@ -222,6 +235,7 @@ func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseI
 		"mdnsImage":                images["mdns-publisher"],
 		"haproxyImage":             images["haproxy-router"],
 		"baremetalRuntimeCfgImage": images["baremetal-runtimecfg"],
+		"isAzure":                  provider == hyperv1.AzurePlatform,
 	}
 	bootstrapScriptBytes := &bytes.Buffer{}
 	if err := mcoBootstrapScriptTemplate.Execute(bootstrapScriptBytes, scriptArgs); err != nil {
@@ -231,7 +245,31 @@ func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseI
 cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --stdout > /mcc-manifests/bootstrap/manifests/custom.yaml`
 
 	podName := fmt.Sprintf("%s%d", resourceGenerateName, rand.Int31())
-	return &corev1.Pod{
+	bootstrapContainer := corev1.Container{
+		Image: images["machine-config-operator"],
+		Name:  "machine-config-operator-bootstrap",
+		Command: []string{
+			"/bin/bash",
+		},
+		Args: []string{
+			"-c",
+			bootstrapScriptBytes.String(),
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "mcc-manifests",
+				MountPath: "/mcc-manifests",
+			},
+			{
+				Name:      "config",
+				MountPath: "/assets/manifests",
+			},
+		},
+	}
+	if provider == hyperv1.AzurePlatform {
+		bootstrapContainer.VolumeMounts = append(bootstrapContainer.VolumeMounts, corev1.VolumeMount{Name: "cloudconf", MountPath: "/etc/cloudconfig"})
+	}
+	p := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      podName,
@@ -257,27 +295,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 				},
 			},
 			InitContainers: []corev1.Container{
-				{
-					Image: images["machine-config-operator"],
-					Name:  "machine-config-operator-bootstrap",
-					Command: []string{
-						"/bin/bash",
-					},
-					Args: []string{
-						"-c",
-						bootstrapScriptBytes.String(),
-					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "mcc-manifests",
-							MountPath: "/mcc-manifests",
-						},
-						{
-							Name:      "config",
-							MountPath: "/assets/manifests",
-						},
-					},
-				},
+				bootstrapContainer,
 				{
 					Image:           images["cli"],
 					ImagePullPolicy: corev1.PullIfNotPresent,
@@ -444,6 +462,10 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			},
 		},
 	}
+	if provider == hyperv1.AzurePlatform {
+		p.Spec.Volumes = append(p.Spec.Volumes, corev1.Volume{Name: "cloudconf", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.AzureProviderConfig("").Name}}}})
+	}
+	return p
 }
 
 func machineConfigServerConfigConfigMap(namespace, config string) *corev1.ConfigMap {

@@ -97,6 +97,7 @@ type CreateInfraOutput struct {
 	ResourceGroupName string `json:"resourceGroupName"`
 	VNetID            string `json:"vnetID"`
 	VnetName          string `json:"vnetName"`
+	SubnetName        string `json:"subnetName"`
 	BootImageID       string `json:"bootImageID"`
 	InfraID           string `json:"infraID"`
 	MachineIdentityID string `json:"machineIdentityID"`
@@ -238,6 +239,10 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vnet creation result: %w", err)
 	}
+	if vnet.Subnets == nil || len(*vnet.Subnets) < 1 {
+		return nil, fmt.Errorf("created vnet has no subnets: %+v", vnet)
+	}
+	result.SubnetName = *(*vnet.Subnets)[0].Name
 	result.VNetID = *vnet.ID
 	result.VnetName = *vnet.Name
 	log.Log.Info("Successfully created vnet", "name", *vnet.Name, "id", *vnet.ID)

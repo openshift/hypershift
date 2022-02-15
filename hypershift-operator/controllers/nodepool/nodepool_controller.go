@@ -42,6 +42,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
@@ -87,6 +88,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &agentv1.AgentMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&source.Kind{Type: &capiazure.AzureMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
 		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
@@ -1198,23 +1200,26 @@ func (r *NodePoolReconciler) listMachineTemplates(nodePool *hyperv1.NodePool) ([
 	machineTemplateList := &unstructured.UnstructuredList{}
 
 	var gvk schema.GroupVersionKind
+	var err error
 	switch nodePool.Spec.Platform.Type {
 	// Define the desired template type and mutateTemplate function.
 	case hyperv1.AWSPlatform:
-		var err error
 		gvk, err = apiutil.GVKForObject(&capiaws.AWSMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	case hyperv1.KubevirtPlatform:
-		var err error
 		gvk, err = apiutil.GVKForObject(&capikubevirt.KubevirtMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	case hyperv1.AgentPlatform:
-		var err error
 		gvk, err = apiutil.GVKForObject(&agentv1.AgentMachine{}, api.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	case hyperv1.AzurePlatform:
+		gvk, err = apiutil.GVKForObject(&capiazure.AzureMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}
@@ -1390,6 +1395,21 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)
+			if o.Annotations == nil {
+				o.Annotations = make(map[string]string)
+			}
+			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+			return nil
+		}
+	case hyperv1.AzurePlatform:
+		template = &capiazure.AzureMachineTemplate{}
+		mutateTemplate = func(object client.Object) error {
+			o, _ := object.(*capiazure.AzureMachineTemplate)
+			spec, err := azureMachineTemplateSpec(hcluster, nodePool, o.Spec)
+			if err != nil {
+				return err
+			}
+			o.Spec = *spec
 			if o.Annotations == nil {
 				o.Annotations = make(map[string]string)
 			}
