@@ -77,6 +77,9 @@ func (o *Options) Validate() error {
 		(len(o.OIDCStorageProviderS3BucketName) == 0 || len(o.OIDCStorageProviderS3Region) == 0 || len(o.OIDCStorageProviderS3CredentialsSecretKey) == 0) {
 		errs = append(errs, fmt.Errorf("all required oidc information is not set"))
 	}
+	if strings.Contains(o.OIDCStorageProviderS3BucketName, ".") {
+		errs = append(errs, fmt.Errorf("oidc bucket name must not contain dots (.); see the notes on HTTPS at https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html"))
+	}
 	return errors.NewAggregate(errs)
 }
 
