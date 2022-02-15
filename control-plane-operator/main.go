@@ -62,8 +62,8 @@ func main() {
 
 const (
 	// TODO: Include konnectivity image in release payload
-	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
-	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+	konnectivityServerImage = "us.icr.io/armada-master/rh-apiserver-network-proxy:447353321e2f10876043125b225b64d3aece3cb5"
+	konnectivityAgentImage  = "us.icr.io/armada-master/rh-apiserver-network-proxy:447353321e2f10876043125b225b64d3aece3cb5"
 
 	// Default AWS KMS provider image. Can be overriden with annotation on HostedCluster
 	awsKMSProviderImage = "registry.ci.openshift.org/hypershift/aws-encryption-provider:latest"
