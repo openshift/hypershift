@@ -19,7 +19,6 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
@@ -127,9 +126,6 @@ func NewStartCommand() *cobra.Command {
 			RenewDeadline:                 &renewDeadline,
 			RetryPeriod:                   &retryPeriod,
 			HealthProbeBindAddress:        healthProbeAddr,
-			// We manage a service outside the HCP namespace, but we don't want to scope the cache for all objects
-			// to both namespaces so just read from the API.
-			ClientDisableCacheFor: []client.Object{&corev1.Service{}},
 			NewCache: cache.BuilderWithOptions(cache.Options{
 				DefaultSelector:   cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
 				SelectorsByObject: cache.SelectorsByObject{&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)}},
