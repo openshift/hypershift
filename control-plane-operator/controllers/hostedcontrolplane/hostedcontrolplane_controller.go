@@ -1912,9 +1912,11 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 	// Collect Profiles
 	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
-	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
-	if err := r.Create(ctx, collectProfilesConfigMap); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesConfigMap, func() error {
+		olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles config map: %w", err)
 	}
 
 	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
@@ -1930,7 +1932,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles role: %w", err)
 	}
 
 	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
@@ -1938,13 +1940,15 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles rolebinding: %w", err)
 	}
 
 	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
-	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
-	if err := r.Create(ctx, collectProfilesSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesSecret, func() error {
+		olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles secret: %w", err)
 	}
 
 	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
@@ -1952,7 +1956,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles serviceaccount: %w", err)
 	}
 	return nil
 }
