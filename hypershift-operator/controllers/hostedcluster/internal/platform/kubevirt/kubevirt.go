@@ -52,7 +52,7 @@ func reconcileKubevirtCluster(kubevirtCluster *capikubevirt.KubevirtCluster, hcl
 	kubevirtCluster.Status.Ready = true
 }
 
-func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPK
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIKubeVirtProviderImage]; ok {
 		providerImage = override

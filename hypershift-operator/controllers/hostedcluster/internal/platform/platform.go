@@ -37,7 +37,7 @@ type Platform interface {
 	// the CAPI provider Deployment.
 	// It should return a CAPI provider DeploymentSpec with the specific needs for a particular platform.
 	// E.g particular volumes and secrets for credentials, containers, etc.
-	CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error)
+	CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error)
 
 	// ReconcileCredentials is responsible for reconciling resources related to cloud credentials
 	// from the HostedCluster namespace into to the HostedControlPlaneNamespace. So they can be used by
@@ -59,11 +59,11 @@ type Platform interface {
 	CAPIProviderPolicyRules() []rbacv1.PolicyRule
 }
 
-func GetPlatform(hcluster *hyperv1.HostedCluster, availabilityProberImage string) (Platform, error) {
+func GetPlatform(hcluster *hyperv1.HostedCluster, availabilityProberImage string, tokenMinterImage string) (Platform, error) {
 	var platform Platform
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		platform = aws.New(availabilityProberImage)
+		platform = aws.New(availabilityProberImage, tokenMinterImage)
 	case hyperv1.IBMCloudPlatform:
 		platform = &ibmcloud.IBMCloud{}
 	case hyperv1.NonePlatform:
