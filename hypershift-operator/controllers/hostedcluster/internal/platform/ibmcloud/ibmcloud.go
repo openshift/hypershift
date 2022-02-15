@@ -24,7 +24,9 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
-	if hcluster.Spec.Platform.IBMCloud != nil && hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
+	// TODO: will adjust reconcile for non-upi platforms when CAPI components ready
+	if hcluster.Spec.Platform.IBMCloud != nil && (hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI ||
+		hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeClassic || hcluster.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeVPC) {
 		return nil, nil
 	}
 	ibmCluster := &capiibmv1.IBMVPCCluster{
