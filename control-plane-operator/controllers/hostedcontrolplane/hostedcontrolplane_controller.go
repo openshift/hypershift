@@ -99,7 +99,6 @@ type HostedControlPlaneReconciler struct {
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
 	EnableCIDebugOutput bool
-	ActiveImage         string
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -164,11 +163,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.Update(ctx, hostedControlPlane); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
-	}
-
-	if !cpoutil.IsCPOCompatibleWithHCP(hostedControlPlane.Annotations, r.ActiveImage) {
-		r.Log.Info("No-oping until component is recreated with proper image", "activeImage", r.ActiveImage)
-		return ctrl.Result{}, nil
 	}
 
 	// Reconcile global configuration validation status

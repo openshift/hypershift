@@ -157,19 +157,7 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to detect cluster capabilities")
 			os.Exit(1)
 		}
-		podResource := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-				Name:      os.Getenv("POD_NAME"),
-			},
-		}
-		lookupContext, lookupContextCancel := context.WithTimeout(ctx, 60*time.Second)
-		activeImage, err := util.LookupActiveContainerImage(lookupContext, mgr.GetAPIReader(), podResource, "control-plane-operator")
-		lookupContextCancel()
-		if err != nil {
-			setupLog.Error(err, "unable to detect active pod image")
-			os.Exit(1)
-		}
+
 		lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name, userSpecifiedImage string) (string, error) {
 			if len(userSpecifiedImage) > 0 {
 				setupLog.Info("using image from arguments", "image", userSpecifiedImage)
@@ -254,7 +242,6 @@ func NewStartCommand() *cobra.Command {
 			HostedAPICache:                apiCacheController.GetCache(),
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
 			EnableCIDebugOutput:           enableCIDebugOutput,
-			ActiveImage:                   activeImage,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
