@@ -7634,6 +7634,2137 @@ objects:
     annotations:
       controller-gen.kubebuilder.io/version: v0.5.0
     creationTimestamp: null
+    name: azureclusteridentities.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureClusterIdentity
+      listKind: AzureClusterIdentityList
+      plural: azureclusteridentities
+      singular: azureclusteridentity
+    scope: Namespaced
+    versions:
+    - name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureClusterIdentity is the Schema for the azureclustersidentities
+            API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureClusterIdentitySpec defines the parameters that are
+                used to create an AzureIdentity.
+              properties:
+                allowedNamespaces:
+                  description: AllowedNamespaces is used to identify the namespaces
+                    the clusters are allowed to use the identity from. Namespaces
+                    can be selected either using an array of namespaces or with label
+                    selector. An empty allowedNamespaces object indicates that AzureClusters
+                    can use this identity from any namespace. If this object is nil,
+                    no namespaces will be allowed (default behaviour, if this field
+                    is not provided) A namespace should be either in the NamespaceList
+                    or match with Selector to use the identity.
+                  nullable: true
+                  properties:
+                    list:
+                      description: A nil or empty list indicates that AzureCluster
+                        cannot use the identity from any namespace.
+                      items:
+                        type: string
+                      nullable: true
+                      type: array
+                    selector:
+                      description: "Selector is a selector of namespaces that AzureCluster
+                        can use this Identity from. This is a standard Kubernetes
+                        LabelSelector, a label query over a set of resources. The
+                        result of matchLabels and matchExpressions are ANDed. \n A
+                        nil or empty selector indicates that AzureCluster cannot use
+                        this AzureClusterIdentity from any namespace."
+                      properties:
+                        matchExpressions:
+                          description: matchExpressions is a list of label selector
+                            requirements. The requirements are ANDed.
+                          items:
+                            description: A label selector requirement is a selector
+                              that contains values, a key, and an operator that relates
+                              the key and values.
+                            properties:
+                              key:
+                                description: key is the label key that the selector
+                                  applies to.
+                                type: string
+                              operator:
+                                description: operator represents a key's relationship
+                                  to a set of values. Valid operators are In, NotIn,
+                                  Exists and DoesNotExist.
+                                type: string
+                              values:
+                                description: values is an array of string values.
+                                  If the operator is In or NotIn, the values array
+                                  must be non-empty. If the operator is Exists or
+                                  DoesNotExist, the values array must be empty. This
+                                  array is replaced during a strategic merge patch.
+                                items:
+                                  type: string
+                                type: array
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          description: matchLabels is a map of {key,value} pairs.
+                            A single {key,value} in the matchLabels map is equivalent
+                            to an element of matchExpressions, whose key field is
+                            "key", the operator is "In", and the values array contains
+                            only "value". The requirements are ANDed.
+                          type: object
+                      type: object
+                  type: object
+                clientID:
+                  description: Both User Assigned MSI and SP can use this field.
+                  type: string
+                clientSecret:
+                  description: ClientSecret is a secret reference which should contain
+                    either a Service Principal password or certificate secret.
+                  properties:
+                    name:
+                      description: Name is unique within a namespace to reference
+                        a secret resource.
+                      type: string
+                    namespace:
+                      description: Namespace defines the space within which the secret
+                        name must be unique.
+                      type: string
+                  type: object
+                resourceID:
+                  description: User assigned MSI resource id.
+                  type: string
+                tenantID:
+                  description: Service principal primary tenant id.
+                  type: string
+                type:
+                  description: UserAssignedMSI or Service Principal
+                  enum:
+                  - ServicePrincipal
+                  - ManualServicePrincipal
+                  - UserAssignedMSI
+                  type: string
+              required:
+              - clientID
+              - tenantID
+              - type
+              type: object
+            status:
+              description: AzureClusterIdentityStatus defines the observed state of
+                AzureClusterIdentity.
+              properties:
+                conditions:
+                  description: Conditions defines current service state of the AzureClusterIdentity.
+                  items:
+                    description: Condition defines an observation of a Cluster API
+                      resource operational state.
+                    properties:
+                      lastTransitionTime:
+                        description: Last time the condition transitioned from one
+                          status to another. This should be when the underlying condition
+                          changed. If that is not known, then using the time when
+                          the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: A human readable message indicating details about
+                          the transition. This field may be empty.
+                        type: string
+                      reason:
+                        description: The reason for the condition's last transition
+                          in CamelCase. The specific API may choose whether or not
+                          this field is considered a guaranteed API. This field may
+                          not be empty.
+                        type: string
+                      severity:
+                        description: Severity provides an explicit classification
+                          of Reason code, so the users or machines can immediately
+                          understand the current situation and act accordingly. The
+                          Severity field MUST be set only when Status=False.
+                        type: string
+                      status:
+                        description: Status of the condition, one of True, False,
+                          Unknown.
+                        type: string
+                      type:
+                        description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                          Many .condition.type values are consistent across resources
+                          like Available, but because arbitrary conditions can be
+                          useful (see .node.status.conditions), the ability to deconflict
+                          is important.
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - status
+                    - type
+                    type: object
+                  type: array
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: []
+    storedVersions: []
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.5.0
+    creationTimestamp: null
+    labels:
+      cluster.x-k8s.io/v1beta1: v1beta1
+    name: azureclusters.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureCluster
+      listKind: AzureClusterList
+      plural: azureclusters
+      singular: azurecluster
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - description: Cluster to which this AzureCluster belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].status
+        name: Ready
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+        name: Reason
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].message
+        name: Message
+        priority: 1
+        type: string
+      - jsonPath: .spec.resourceGroup
+        name: Resource Group
+        priority: 1
+        type: string
+      - jsonPath: .spec.subscriptionID
+        name: SubscriptionID
+        priority: 1
+        type: string
+      - jsonPath: .spec.location
+        name: Location
+        priority: 1
+        type: string
+      - description: Control Plane Endpoint
+        jsonPath: .spec.controlPlaneEndpoint.host
+        name: Endpoint
+        priority: 1
+        type: string
+      name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureCluster is the Schema for the azureclusters API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureClusterSpec defines the desired state of AzureCluster.
+              properties:
+                additionalTags:
+                  additionalProperties:
+                    type: string
+                  description: AdditionalTags is an optional set of tags to add to
+                    Azure resources managed by the Azure provider, in addition to
+                    the ones added by default.
+                  type: object
+                azureEnvironment:
+                  description: 'AzureEnvironment is the name of the AzureCloud to
+                    be used. The default value that would be used by most users is
+                    "AzurePublicCloud", other values are: - ChinaCloud: "AzureChinaCloud"
+                    - GermanCloud: "AzureGermanCloud" - PublicCloud: "AzurePublicCloud"
+                    - USGovernmentCloud: "AzureUSGovernmentCloud"'
+                  type: string
+                bastionSpec:
+                  description: BastionSpec encapsulates all things related to the
+                    Bastions in the cluster.
+                  properties:
+                    azureBastion:
+                      description: AzureBastion specifies how the Azure Bastion cloud
+                        component should be configured.
+                      properties:
+                        name:
+                          type: string
+                        publicIP:
+                          description: PublicIPSpec defines the inputs to create an
+                            Azure public IP address.
+                          properties:
+                            dnsName:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        subnet:
+                          description: SubnetSpec configures an Azure subnet.
+                          properties:
+                            cidrBlocks:
+                              description: CIDRBlocks defines the subnet's address
+                                space, specified as one or more address prefixes in
+                                CIDR notation.
+                              items:
+                                type: string
+                              type: array
+                            id:
+                              description: ID is the Azure resource ID of the subnet.
+                                READ-ONLY
+                              type: string
+                            name:
+                              description: Name defines a name for the subnet resource.
+                              type: string
+                            natGateway:
+                              description: NatGateway associated with this subnet.
+                              properties:
+                                id:
+                                  description: ID is the Azure resource ID of the
+                                    NAT gateway. READ-ONLY
+                                  type: string
+                                ip:
+                                  description: PublicIPSpec defines the inputs to
+                                    create an Azure public IP address.
+                                  properties:
+                                    dnsName:
+                                      type: string
+                                    name:
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                name:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            role:
+                              description: Role defines the subnet role (eg. Node,
+                                ControlPlane)
+                              type: string
+                            routeTable:
+                              description: RouteTable defines the route table that
+                                should be attached to this subnet.
+                              properties:
+                                id:
+                                  description: ID is the Azure resource ID of the
+                                    route table. READ-ONLY
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            securityGroup:
+                              description: SecurityGroup defines the NSG (network
+                                security group) that should be attached to this subnet.
+                              properties:
+                                id:
+                                  description: ID is the Azure resource ID of the
+                                    security group. READ-ONLY
+                                  type: string
+                                name:
+                                  type: string
+                                securityRules:
+                                  description: SecurityRules is a slice of Azure security
+                                    rules for security groups.
+                                  items:
+                                    description: SecurityRule defines an Azure security
+                                      rule for security groups.
+                                    properties:
+                                      description:
+                                        description: A description for this rule.
+                                          Restricted to 140 chars.
+                                        type: string
+                                      destination:
+                                        description: Destination is the destination
+                                          address prefix. CIDR or destination IP range.
+                                          Asterix '*' can also be used to match all
+                                          source IPs. Default tags such as 'VirtualNetwork',
+                                          'AzureLoadBalancer' and 'Internet' can also
+                                          be used.
+                                        type: string
+                                      destinationPorts:
+                                        description: DestinationPorts specifies the
+                                          destination port or range. Integer or range
+                                          between 0 and 65535. Asterix '*' can also
+                                          be used to match all ports.
+                                        type: string
+                                      direction:
+                                        description: Direction indicates whether the
+                                          rule applies to inbound, or outbound traffic.
+                                          "Inbound" or "Outbound".
+                                        enum:
+                                        - Inbound
+                                        - Outbound
+                                        type: string
+                                      name:
+                                        description: Name is a unique name within
+                                          the network security group.
+                                        type: string
+                                      priority:
+                                        description: Priority is a number between
+                                          100 and 4096. Each rule should have a unique
+                                          value for priority. Rules are processed
+                                          in priority order, with lower numbers processed
+                                          before higher numbers. Once traffic matches
+                                          a rule, processing stops.
+                                        format: int32
+                                        type: integer
+                                      protocol:
+                                        description: Protocol specifies the protocol
+                                          type. "Tcp", "Udp", "Icmp", or "*".
+                                        enum:
+                                        - Tcp
+                                        - Udp
+                                        - Icmp
+                                        - '*'
+                                        type: string
+                                      source:
+                                        description: Source specifies the CIDR or
+                                          source IP range. Asterix '*' can also be
+                                          used to match all source IPs. Default tags
+                                          such as 'VirtualNetwork', 'AzureLoadBalancer'
+                                          and 'Internet' can also be used. If this
+                                          is an ingress rule, specifies where network
+                                          traffic originates from.
+                                        type: string
+                                      sourcePorts:
+                                        description: SourcePorts specifies source
+                                          port or range. Integer or range between
+                                          0 and 65535. Asterix '*' can also be used
+                                          to match all ports.
+                                        type: string
+                                    required:
+                                    - description
+                                    - direction
+                                    - name
+                                    - protocol
+                                    type: object
+                                  type: array
+                                tags:
+                                  additionalProperties:
+                                    type: string
+                                  description: Tags defines a map of tags.
+                                  type: object
+                              required:
+                              - name
+                              type: object
+                          required:
+                          - name
+                          - role
+                          type: object
+                      type: object
+                  type: object
+                cloudProviderConfigOverrides:
+                  description: 'CloudProviderConfigOverrides is an optional set of
+                    configuration values that can be overridden in azure cloud provider
+                    config. This is only a subset of options that are available in
+                    azure cloud provider config. Some values for the cloud provider
+                    config are inferred from other parts of cluster api provider azure
+                    spec, and may not be available for overrides. See: https://kubernetes-sigs.github.io/cloud-provider-azure/install/configs
+                    Note: All cloud provider config values can be customized by creating
+                    the secret beforehand. CloudProviderConfigOverrides is only used
+                    when the secret is managed by the Azure Provider.'
+                  properties:
+                    backOffs:
+                      description: BackOffConfig indicates the back-off config options.
+                      properties:
+                        cloudProviderBackoff:
+                          type: boolean
+                        cloudProviderBackoffDuration:
+                          type: integer
+                        cloudProviderBackoffExponent:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        cloudProviderBackoffJitter:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        cloudProviderBackoffRetries:
+                          type: integer
+                      type: object
+                    rateLimits:
+                      items:
+                        description: 'RateLimitSpec represents the rate limit configuration
+                          for a particular kind of resource. Eg. loadBalancerRateLimit
+                          is used to configure rate limits for load balancers. This
+                          eventually gets converted to CloudProviderRateLimitConfig
+                          that cloud-provider-azure expects. See: https://github.com/kubernetes-sigs/cloud-provider-azure/blob/d585c2031925b39c925624302f22f8856e29e352/pkg/provider/azure_ratelimit.go#L25
+                          We cannot use CloudProviderRateLimitConfig directly because
+                          floating point values are not supported in controller-tools.
+                          See: https://github.com/kubernetes-sigs/controller-tools/issues/245'
+                        properties:
+                          config:
+                            description: RateLimitConfig indicates the rate limit
+                              config options.
+                            properties:
+                              cloudProviderRateLimit:
+                                type: boolean
+                              cloudProviderRateLimitBucket:
+                                type: integer
+                              cloudProviderRateLimitBucketWrite:
+                                type: integer
+                              cloudProviderRateLimitQPS:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              cloudProviderRateLimitQPSWrite:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                            type: object
+                          name:
+                            description: Name is the name of the rate limit spec.
+                            enum:
+                            - defaultRateLimit
+                            - routeRateLimit
+                            - subnetsRateLimit
+                            - interfaceRateLimit
+                            - routeTableRateLimit
+                            - loadBalancerRateLimit
+                            - publicIPAddressRateLimit
+                            - securityGroupRateLimit
+                            - virtualMachineRateLimit
+                            - storageAccountRateLimit
+                            - diskRateLimit
+                            - snapshotRateLimit
+                            - virtualMachineScaleSetRateLimit
+                            - virtualMachineSizesRateLimit
+                            - availabilitySetRateLimit
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      type: array
+                  type: object
+                controlPlaneEndpoint:
+                  description: ControlPlaneEndpoint represents the endpoint used to
+                    communicate with the control plane.
+                  properties:
+                    host:
+                      description: The hostname on which the API server is serving.
+                      type: string
+                    port:
+                      description: The port on which the API server is serving.
+                      format: int32
+                      type: integer
+                  required:
+                  - host
+                  - port
+                  type: object
+                identityRef:
+                  description: IdentityRef is a reference to an AzureIdentity to be
+                    used when reconciling this cluster
+                  properties:
+                    apiVersion:
+                      description: API version of the referent.
+                      type: string
+                    fieldPath:
+                      description: 'If referring to a piece of an object instead of
+                        an entire object, this string should contain a valid JSON/Go
+                        field access statement, such as desiredState.manifest.containers[2].
+                        For example, if the object reference is to a container within
+                        a pod, this would take on a value like: "spec.containers{name}"
+                        (where "name" refers to the name of the container that triggered
+                        the event) or if no container name is specified "spec.containers[2]"
+                        (container with index 2 in this pod). This syntax is chosen
+                        only to have some well-defined way of referencing a part of
+                        an object. TODO: this design is not final and this field is
+                        subject to change in the future.'
+                      type: string
+                    kind:
+                      description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                      type: string
+                    name:
+                      description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                      type: string
+                    namespace:
+                      description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                      type: string
+                    resourceVersion:
+                      description: 'Specific resourceVersion to which this reference
+                        is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                      type: string
+                    uid:
+                      description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                      type: string
+                  type: object
+                location:
+                  type: string
+                networkSpec:
+                  description: NetworkSpec encapsulates all things related to Azure
+                    network.
+                  properties:
+                    apiServerLB:
+                      description: APIServerLB is the configuration for the control-plane
+                        load balancer.
+                      properties:
+                        frontendIPs:
+                          items:
+                            description: FrontendIP defines a load balancer frontend
+                              IP configuration.
+                            properties:
+                              name:
+                                minLength: 1
+                                type: string
+                              privateIP:
+                                type: string
+                              publicIP:
+                                description: PublicIPSpec defines the inputs to create
+                                  an Azure public IP address.
+                                properties:
+                                  dnsName:
+                                    type: string
+                                  name:
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                            required:
+                            - name
+                            type: object
+                          type: array
+                        frontendIPsCount:
+                          description: FrontendIPsCount specifies the number of frontend
+                            IP addresses for the load balancer.
+                          format: int32
+                          type: integer
+                        id:
+                          description: ID is the Azure resource ID of the load balancer.
+                            READ-ONLY
+                          type: string
+                        idleTimeoutInMinutes:
+                          description: IdleTimeoutInMinutes specifies the timeout
+                            for the TCP idle connection.
+                          format: int32
+                          type: integer
+                        name:
+                          type: string
+                        sku:
+                          description: SKU defines an Azure load balancer SKU.
+                          type: string
+                        type:
+                          description: LBType defines an Azure load balancer Type.
+                          type: string
+                      type: object
+                    controlPlaneOutboundLB:
+                      description: ControlPlaneOutboundLB is the configuration for
+                        the control-plane outbound load balancer. This is different
+                        from APIServerLB, and is used only in private clusters (optionally)
+                        for enabling outbound traffic.
+                      properties:
+                        frontendIPs:
+                          items:
+                            description: FrontendIP defines a load balancer frontend
+                              IP configuration.
+                            properties:
+                              name:
+                                minLength: 1
+                                type: string
+                              privateIP:
+                                type: string
+                              publicIP:
+                                description: PublicIPSpec defines the inputs to create
+                                  an Azure public IP address.
+                                properties:
+                                  dnsName:
+                                    type: string
+                                  name:
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                            required:
+                            - name
+                            type: object
+                          type: array
+                        frontendIPsCount:
+                          description: FrontendIPsCount specifies the number of frontend
+                            IP addresses for the load balancer.
+                          format: int32
+                          type: integer
+                        id:
+                          description: ID is the Azure resource ID of the load balancer.
+                            READ-ONLY
+                          type: string
+                        idleTimeoutInMinutes:
+                          description: IdleTimeoutInMinutes specifies the timeout
+                            for the TCP idle connection.
+                          format: int32
+                          type: integer
+                        name:
+                          type: string
+                        sku:
+                          description: SKU defines an Azure load balancer SKU.
+                          type: string
+                        type:
+                          description: LBType defines an Azure load balancer Type.
+                          type: string
+                      type: object
+                    nodeOutboundLB:
+                      description: NodeOutboundLB is the configuration for the node
+                        outbound load balancer.
+                      properties:
+                        frontendIPs:
+                          items:
+                            description: FrontendIP defines a load balancer frontend
+                              IP configuration.
+                            properties:
+                              name:
+                                minLength: 1
+                                type: string
+                              privateIP:
+                                type: string
+                              publicIP:
+                                description: PublicIPSpec defines the inputs to create
+                                  an Azure public IP address.
+                                properties:
+                                  dnsName:
+                                    type: string
+                                  name:
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                            required:
+                            - name
+                            type: object
+                          type: array
+                        frontendIPsCount:
+                          description: FrontendIPsCount specifies the number of frontend
+                            IP addresses for the load balancer.
+                          format: int32
+                          type: integer
+                        id:
+                          description: ID is the Azure resource ID of the load balancer.
+                            READ-ONLY
+                          type: string
+                        idleTimeoutInMinutes:
+                          description: IdleTimeoutInMinutes specifies the timeout
+                            for the TCP idle connection.
+                          format: int32
+                          type: integer
+                        name:
+                          type: string
+                        sku:
+                          description: SKU defines an Azure load balancer SKU.
+                          type: string
+                        type:
+                          description: LBType defines an Azure load balancer Type.
+                          type: string
+                      type: object
+                    privateDNSZoneName:
+                      description: PrivateDNSZoneName defines the zone name for the
+                        Azure Private DNS.
+                      type: string
+                    subnets:
+                      description: Subnets is the configuration for the control-plane
+                        subnet and the node subnet.
+                      items:
+                        description: SubnetSpec configures an Azure subnet.
+                        properties:
+                          cidrBlocks:
+                            description: CIDRBlocks defines the subnet's address space,
+                              specified as one or more address prefixes in CIDR notation.
+                            items:
+                              type: string
+                            type: array
+                          id:
+                            description: ID is the Azure resource ID of the subnet.
+                              READ-ONLY
+                            type: string
+                          name:
+                            description: Name defines a name for the subnet resource.
+                            type: string
+                          natGateway:
+                            description: NatGateway associated with this subnet.
+                            properties:
+                              id:
+                                description: ID is the Azure resource ID of the NAT
+                                  gateway. READ-ONLY
+                                type: string
+                              ip:
+                                description: PublicIPSpec defines the inputs to create
+                                  an Azure public IP address.
+                                properties:
+                                  dnsName:
+                                    type: string
+                                  name:
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          role:
+                            description: Role defines the subnet role (eg. Node, ControlPlane)
+                            type: string
+                          routeTable:
+                            description: RouteTable defines the route table that should
+                              be attached to this subnet.
+                            properties:
+                              id:
+                                description: ID is the Azure resource ID of the route
+                                  table. READ-ONLY
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          securityGroup:
+                            description: SecurityGroup defines the NSG (network security
+                              group) that should be attached to this subnet.
+                            properties:
+                              id:
+                                description: ID is the Azure resource ID of the security
+                                  group. READ-ONLY
+                                type: string
+                              name:
+                                type: string
+                              securityRules:
+                                description: SecurityRules is a slice of Azure security
+                                  rules for security groups.
+                                items:
+                                  description: SecurityRule defines an Azure security
+                                    rule for security groups.
+                                  properties:
+                                    description:
+                                      description: A description for this rule. Restricted
+                                        to 140 chars.
+                                      type: string
+                                    destination:
+                                      description: Destination is the destination
+                                        address prefix. CIDR or destination IP range.
+                                        Asterix '*' can also be used to match all
+                                        source IPs. Default tags such as 'VirtualNetwork',
+                                        'AzureLoadBalancer' and 'Internet' can also
+                                        be used.
+                                      type: string
+                                    destinationPorts:
+                                      description: DestinationPorts specifies the
+                                        destination port or range. Integer or range
+                                        between 0 and 65535. Asterix '*' can also
+                                        be used to match all ports.
+                                      type: string
+                                    direction:
+                                      description: Direction indicates whether the
+                                        rule applies to inbound, or outbound traffic.
+                                        "Inbound" or "Outbound".
+                                      enum:
+                                      - Inbound
+                                      - Outbound
+                                      type: string
+                                    name:
+                                      description: Name is a unique name within the
+                                        network security group.
+                                      type: string
+                                    priority:
+                                      description: Priority is a number between 100
+                                        and 4096. Each rule should have a unique value
+                                        for priority. Rules are processed in priority
+                                        order, with lower numbers processed before
+                                        higher numbers. Once traffic matches a rule,
+                                        processing stops.
+                                      format: int32
+                                      type: integer
+                                    protocol:
+                                      description: Protocol specifies the protocol
+                                        type. "Tcp", "Udp", "Icmp", or "*".
+                                      enum:
+                                      - Tcp
+                                      - Udp
+                                      - Icmp
+                                      - '*'
+                                      type: string
+                                    source:
+                                      description: Source specifies the CIDR or source
+                                        IP range. Asterix '*' can also be used to
+                                        match all source IPs. Default tags such as
+                                        'VirtualNetwork', 'AzureLoadBalancer' and
+                                        'Internet' can also be used. If this is an
+                                        ingress rule, specifies where network traffic
+                                        originates from.
+                                      type: string
+                                    sourcePorts:
+                                      description: SourcePorts specifies source port
+                                        or range. Integer or range between 0 and 65535.
+                                        Asterix '*' can also be used to match all
+                                        ports.
+                                      type: string
+                                  required:
+                                  - description
+                                  - direction
+                                  - name
+                                  - protocol
+                                  type: object
+                                type: array
+                              tags:
+                                additionalProperties:
+                                  type: string
+                                description: Tags defines a map of tags.
+                                type: object
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - name
+                        - role
+                        type: object
+                      type: array
+                    vnet:
+                      description: Vnet is the configuration for the Azure virtual
+                        network.
+                      properties:
+                        cidrBlocks:
+                          description: CIDRBlocks defines the virtual network's address
+                            space, specified as one or more address prefixes in CIDR
+                            notation.
+                          items:
+                            type: string
+                          type: array
+                        id:
+                          description: ID is the Azure resource ID of the virtual
+                            network. READ-ONLY
+                          type: string
+                        name:
+                          description: Name defines a name for the virtual network
+                            resource.
+                          type: string
+                        peerings:
+                          description: Peerings defines a list of peerings of the
+                            newly created virtual network with existing virtual networks.
+                          items:
+                            description: VnetPeeringSpec specifies an existing remote
+                              virtual network to peer with the AzureCluster's virtual
+                              network.
+                            properties:
+                              remoteVnetName:
+                                description: RemoteVnetName defines name of the remote
+                                  virtual network.
+                                type: string
+                              resourceGroup:
+                                description: ResourceGroup is the resource group name
+                                  of the remote virtual network.
+                                type: string
+                            required:
+                            - remoteVnetName
+                            type: object
+                          type: array
+                        resourceGroup:
+                          description: ResourceGroup is the name of the resource group
+                            of the existing virtual network or the resource group
+                            where a managed virtual network should be created.
+                          type: string
+                        tags:
+                          additionalProperties:
+                            type: string
+                          description: Tags is a collection of tags describing the
+                            resource.
+                          type: object
+                      required:
+                      - name
+                      type: object
+                  type: object
+                resourceGroup:
+                  type: string
+                subscriptionID:
+                  type: string
+              required:
+              - location
+              type: object
+            status:
+              description: AzureClusterStatus defines the observed state of AzureCluster.
+              properties:
+                conditions:
+                  description: Conditions defines current service state of the AzureCluster.
+                  items:
+                    description: Condition defines an observation of a Cluster API
+                      resource operational state.
+                    properties:
+                      lastTransitionTime:
+                        description: Last time the condition transitioned from one
+                          status to another. This should be when the underlying condition
+                          changed. If that is not known, then using the time when
+                          the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: A human readable message indicating details about
+                          the transition. This field may be empty.
+                        type: string
+                      reason:
+                        description: The reason for the condition's last transition
+                          in CamelCase. The specific API may choose whether or not
+                          this field is considered a guaranteed API. This field may
+                          not be empty.
+                        type: string
+                      severity:
+                        description: Severity provides an explicit classification
+                          of Reason code, so the users or machines can immediately
+                          understand the current situation and act accordingly. The
+                          Severity field MUST be set only when Status=False.
+                        type: string
+                      status:
+                        description: Status of the condition, one of True, False,
+                          Unknown.
+                        type: string
+                      type:
+                        description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                          Many .condition.type values are consistent across resources
+                          like Available, but because arbitrary conditions can be
+                          useful (see .node.status.conditions), the ability to deconflict
+                          is important.
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - status
+                    - type
+                    type: object
+                  type: array
+                failureDomains:
+                  additionalProperties:
+                    description: FailureDomainSpec is the Schema for Cluster API failure
+                      domains. It allows controllers to understand how many failure
+                      domains a cluster can optionally span across.
+                    properties:
+                      attributes:
+                        additionalProperties:
+                          type: string
+                        description: Attributes is a free form map of attributes an
+                          infrastructure provider might use or require.
+                        type: object
+                      controlPlane:
+                        description: ControlPlane determines if this failure domain
+                          is suitable for use by control plane machines.
+                        type: boolean
+                    type: object
+                  description: 'FailureDomains specifies the list of unique failure
+                    domains for the location/region of the cluster. A FailureDomain
+                    maps to Availability Zone with an Azure Region (if the region
+                    support them). An Availability Zone is a separate data center
+                    within a region and they can be used to ensure the cluster is
+                    more resilient to failure. See: https://docs.microsoft.com/en-us/azure/availability-zones/az-overview
+                    This list will be used by Cluster API to try and spread the machines
+                    across the failure domains.'
+                  type: object
+                longRunningOperationStates:
+                  description: LongRunningOperationStates saves the states for Azure
+                    long-running operations so they can be continued on the next reconciliation
+                    loop.
+                  items:
+                    description: Future contains the data needed for an Azure long-running
+                      operation to continue across reconcile loops.
+                    properties:
+                      data:
+                        description: Data is the base64 url encoded json Azure AutoRest
+                          Future.
+                        type: string
+                      name:
+                        description: Name is the name of the Azure resource. Together
+                          with the service name, this forms the unique identifier
+                          for the future.
+                        type: string
+                      resourceGroup:
+                        description: ResourceGroup is the Azure resource group for
+                          the resource.
+                        type: string
+                      serviceName:
+                        description: ServiceName is the name of the Azure service.
+                          Together with the name of the resource, this forms the unique
+                          identifier for the future.
+                        type: string
+                      type:
+                        description: Type describes the type of future, such as update,
+                          create, delete, etc.
+                        type: string
+                    required:
+                    - data
+                    - name
+                    - serviceName
+                    - type
+                    type: object
+                  type: array
+                ready:
+                  description: Ready is true when the provider resource is ready.
+                  type: boolean
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: []
+    storedVersions: []
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.5.0
+    creationTimestamp: null
+    labels:
+      cluster.x-k8s.io/v1beta1: v1beta1
+    name: azuremachines.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureMachine
+      listKind: AzureMachineList
+      plural: azuremachines
+      singular: azuremachine
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - jsonPath: .status.conditions[?(@.type=='Ready')].status
+        name: Ready
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+        name: Reason
+        type: string
+      - jsonPath: .status.conditions[?(@.type=='Ready')].message
+        name: Message
+        priority: 1
+        type: string
+      - description: Azure VM provisioning state
+        jsonPath: .status.vmState
+        name: State
+        type: string
+      - description: Cluster to which this AzureMachine belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        priority: 1
+        type: string
+      - description: Machine object to which this AzureMachine belongs
+        jsonPath: .metadata.ownerReferences[?(@.kind=="Machine")].name
+        name: Machine
+        priority: 1
+        type: string
+      - description: Azure VM ID
+        jsonPath: .spec.providerID
+        name: VM ID
+        priority: 1
+        type: string
+      - description: Azure VM Size
+        jsonPath: .spec.vmSize
+        name: VM Size
+        priority: 1
+        type: string
+      name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureMachine is the Schema for the azuremachines API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureMachineSpec defines the desired state of AzureMachine.
+              properties:
+                acceleratedNetworking:
+                  description: AcceleratedNetworking enables or disables Azure accelerated
+                    networking. If omitted, it will be set based on whether the requested
+                    VMSize supports accelerated networking. If AcceleratedNetworking
+                    is set to true with a VMSize that does not support it, Azure will
+                    return an error.
+                  type: boolean
+                additionalTags:
+                  additionalProperties:
+                    type: string
+                  description: AdditionalTags is an optional set of tags to add to
+                    an instance, in addition to the ones added by default by the Azure
+                    provider. If both the AzureCluster and the AzureMachine specify
+                    the same tag name with different values, the AzureMachine's value
+                    takes precedence.
+                  type: object
+                allocatePublicIP:
+                  description: AllocatePublicIP allows the ability to create dynamic
+                    public ips for machines where this value is true.
+                  type: boolean
+                dataDisks:
+                  description: DataDisk specifies the parameters that are used to
+                    add one or more data disks to the machine
+                  items:
+                    description: DataDisk specifies the parameters that are used to
+                      add one or more data disks to the machine.
+                    properties:
+                      cachingType:
+                        description: CachingType specifies the caching requirements.
+                        enum:
+                        - None
+                        - ReadOnly
+                        - ReadWrite
+                        type: string
+                      diskSizeGB:
+                        description: DiskSizeGB is the size in GB to assign to the
+                          data disk.
+                        format: int32
+                        type: integer
+                      lun:
+                        description: Lun Specifies the logical unit number of the
+                          data disk. This value is used to identify data disks within
+                          the VM and therefore must be unique for each data disk attached
+                          to a VM. The value must be between 0 and 63.
+                        format: int32
+                        type: integer
+                      managedDisk:
+                        description: ManagedDisk specifies the Managed Disk parameters
+                          for the data disk.
+                        properties:
+                          diskEncryptionSet:
+                            description: DiskEncryptionSetParameters defines disk
+                              encryption options.
+                            properties:
+                              id:
+                                description: ID defines resourceID for diskEncryptionSet
+                                  resource. It must be in the same subscription
+                                type: string
+                            type: object
+                          storageAccountType:
+                            type: string
+                        type: object
+                      nameSuffix:
+                        description: NameSuffix is the suffix to be appended to the
+                          machine name to generate the disk name. Each disk name will
+                          be in format <machineName>_<nameSuffix>.
+                        type: string
+                    required:
+                    - diskSizeGB
+                    - nameSuffix
+                    type: object
+                  type: array
+                enableIPForwarding:
+                  description: EnableIPForwarding enables IP Forwarding in Azure which
+                    is required for some CNI's to send traffic from a pods on one
+                    machine to another. This is required for IpV6 with Calico in combination
+                    with User Defined Routes (set by the Azure Cloud Controller manager).
+                    Default is false for disabled.
+                  type: boolean
+                failureDomain:
+                  description: FailureDomain is the failure domain unique identifier
+                    this Machine should be attached to, as defined in Cluster API.
+                    This relates to an Azure Availability Zone
+                  type: string
+                identity:
+                  default: None
+                  description: Identity is the type of identity used for the virtual
+                    machine. The type 'SystemAssigned' is an implicitly created identity.
+                    The generated identity will be assigned a Subscription contributor
+                    role. The type 'UserAssigned' is a standalone Azure resource provided
+                    by the user and assigned to the VM
+                  enum:
+                  - None
+                  - SystemAssigned
+                  - UserAssigned
+                  type: string
+                image:
+                  description: Image is used to provide details of an image to use
+                    during VM creation. If image details are omitted the image will
+                    default the Azure Marketplace "capi" offer, which is based on
+                    Ubuntu.
+                  properties:
+                    id:
+                      description: ID specifies an image to use by ID
+                      type: string
+                    marketplace:
+                      description: Marketplace specifies an image to use from the
+                        Azure Marketplace
+                      properties:
+                        offer:
+                          description: Offer specifies the name of a group of related
+                            images created by the publisher. For example, UbuntuServer,
+                            WindowsServer
+                          minLength: 1
+                          type: string
+                        publisher:
+                          description: Publisher is the name of the organization that
+                            created the image
+                          minLength: 1
+                          type: string
+                        sku:
+                          description: SKU specifies an instance of an offer, such
+                            as a major release of a distribution. For example, 18.04-LTS,
+                            2019-Datacenter
+                          minLength: 1
+                          type: string
+                        thirdPartyImage:
+                          default: false
+                          description: ThirdPartyImage indicates the image is published
+                            by a third party publisher and a Plan will be generated
+                            for it.
+                          type: boolean
+                        version:
+                          description: Version specifies the version of an image sku.
+                            The allowed formats are Major.Minor.Build or 'latest'.
+                            Major, Minor, and Build are decimal numbers. Specify 'latest'
+                            to use the latest version of an image available at deploy
+                            time. Even if you use 'latest', the VM image will not
+                            automatically update after deploy time even if a new version
+                            becomes available.
+                          minLength: 1
+                          type: string
+                      required:
+                      - offer
+                      - publisher
+                      - sku
+                      - version
+                      type: object
+                    sharedGallery:
+                      description: SharedGallery specifies an image to use from an
+                        Azure Shared Image Gallery
+                      properties:
+                        gallery:
+                          description: Gallery specifies the name of the shared image
+                            gallery that contains the image
+                          minLength: 1
+                          type: string
+                        name:
+                          description: Name is the name of the image
+                          minLength: 1
+                          type: string
+                        offer:
+                          description: Offer specifies the name of a group of related
+                            images created by the publisher. For example, UbuntuServer,
+                            WindowsServer This value will be used to add a `Plan`
+                            in the API request when creating the VM/VMSS resource.
+                            This is needed when the source image from which this SIG
+                            image was built requires the `Plan` to be used.
+                          type: string
+                        publisher:
+                          description: Publisher is the name of the organization that
+                            created the image. This value will be used to add a `Plan`
+                            in the API request when creating the VM/VMSS resource.
+                            This is needed when the source image from which this SIG
+                            image was built requires the `Plan` to be used.
+                          type: string
+                        resourceGroup:
+                          description: ResourceGroup specifies the resource group
+                            containing the shared image gallery
+                          minLength: 1
+                          type: string
+                        sku:
+                          description: SKU specifies an instance of an offer, such
+                            as a major release of a distribution. For example, 18.04-LTS,
+                            2019-Datacenter This value will be used to add a `Plan`
+                            in the API request when creating the VM/VMSS resource.
+                            This is needed when the source image from which this SIG
+                            image was built requires the `Plan` to be used.
+                          type: string
+                        subscriptionID:
+                          description: SubscriptionID is the identifier of the subscription
+                            that contains the shared image gallery
+                          minLength: 1
+                          type: string
+                        version:
+                          description: Version specifies the version of the marketplace
+                            image. The allowed formats are Major.Minor.Build or 'latest'.
+                            Major, Minor, and Build are decimal numbers. Specify 'latest'
+                            to use the latest version of an image available at deploy
+                            time. Even if you use 'latest', the VM image will not
+                            automatically update after deploy time even if a new version
+                            becomes available.
+                          minLength: 1
+                          type: string
+                      required:
+                      - gallery
+                      - name
+                      - resourceGroup
+                      - subscriptionID
+                      - version
+                      type: object
+                  type: object
+                osDisk:
+                  description: OSDisk specifies the parameters for the operating system
+                    disk of the machine
+                  properties:
+                    cachingType:
+                      description: CachingType specifies the caching requirements.
+                      enum:
+                      - None
+                      - ReadOnly
+                      - ReadWrite
+                      type: string
+                    diffDiskSettings:
+                      description: DiffDiskSettings describe ephemeral disk settings
+                        for the os disk.
+                      properties:
+                        option:
+                          description: Option enables ephemeral OS when set to "Local"
+                            See https://docs.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks
+                            for full details
+                          enum:
+                          - Local
+                          type: string
+                      required:
+                      - option
+                      type: object
+                    diskSizeGB:
+                      description: DiskSizeGB is the size in GB to assign to the OS
+                        disk. Will have a default of 30GB if not provided
+                      format: int32
+                      type: integer
+                    managedDisk:
+                      description: ManagedDisk specifies the Managed Disk parameters
+                        for the OS disk.
+                      properties:
+                        diskEncryptionSet:
+                          description: DiskEncryptionSetParameters defines disk encryption
+                            options.
+                          properties:
+                            id:
+                              description: ID defines resourceID for diskEncryptionSet
+                                resource. It must be in the same subscription
+                              type: string
+                          type: object
+                        storageAccountType:
+                          type: string
+                      type: object
+                    osType:
+                      type: string
+                  required:
+                  - osType
+                  type: object
+                providerID:
+                  description: ProviderID is the unique identifier as specified by
+                    the cloud provider.
+                  type: string
+                roleAssignmentName:
+                  description: RoleAssignmentName is the name of the role assignment
+                    to create for a system assigned identity. It can be any valid
+                    GUID. If not specified, a random GUID will be generated.
+                  type: string
+                securityProfile:
+                  description: SecurityProfile specifies the Security profile settings
+                    for a virtual machine.
+                  properties:
+                    encryptionAtHost:
+                      description: This field indicates whether Host Encryption should
+                        be enabled or disabled for a virtual machine or virtual machine
+                        scale set. Default is disabled.
+                      type: boolean
+                  type: object
+                spotVMOptions:
+                  description: SpotVMOptions allows the ability to specify the Machine
+                    should use a Spot VM
+                  properties:
+                    maxPrice:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: MaxPrice defines the maximum price the user is
+                        willing to pay for Spot VM instances
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                  type: object
+                sshPublicKey:
+                  type: string
+                subnetName:
+                  description: SubnetName selects the Subnet where the VM will be
+                    placed
+                  type: string
+                userAssignedIdentities:
+                  description: UserAssignedIdentities is a list of standalone Azure
+                    identities provided by the user The lifecycle of a user-assigned
+                    identity is managed separately from the lifecycle of the AzureMachine.
+                    See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/how-to-manage-ua-identity-cli
+                  items:
+                    description: UserAssignedIdentity defines the user-assigned identities
+                      provided by the user to be assigned to Azure resources.
+                    properties:
+                      providerID:
+                        description: 'ProviderID is the identification ID of the user-assigned
+                          Identity, the format of an identity is: ''azure:///subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}'''
+                        type: string
+                    required:
+                    - providerID
+                    type: object
+                  type: array
+                vmSize:
+                  type: string
+              required:
+              - osDisk
+              - sshPublicKey
+              - vmSize
+              type: object
+            status:
+              description: AzureMachineStatus defines the observed state of AzureMachine.
+              properties:
+                addresses:
+                  description: Addresses contains the Azure instance associated addresses.
+                  items:
+                    description: NodeAddress contains information for the node's address.
+                    properties:
+                      address:
+                        description: The node address.
+                        type: string
+                      type:
+                        description: Node address type, one of Hostname, ExternalIP
+                          or InternalIP.
+                        type: string
+                    required:
+                    - address
+                    - type
+                    type: object
+                  type: array
+                conditions:
+                  description: Conditions defines current service state of the AzureMachine.
+                  items:
+                    description: Condition defines an observation of a Cluster API
+                      resource operational state.
+                    properties:
+                      lastTransitionTime:
+                        description: Last time the condition transitioned from one
+                          status to another. This should be when the underlying condition
+                          changed. If that is not known, then using the time when
+                          the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: A human readable message indicating details about
+                          the transition. This field may be empty.
+                        type: string
+                      reason:
+                        description: The reason for the condition's last transition
+                          in CamelCase. The specific API may choose whether or not
+                          this field is considered a guaranteed API. This field may
+                          not be empty.
+                        type: string
+                      severity:
+                        description: Severity provides an explicit classification
+                          of Reason code, so the users or machines can immediately
+                          understand the current situation and act accordingly. The
+                          Severity field MUST be set only when Status=False.
+                        type: string
+                      status:
+                        description: Status of the condition, one of True, False,
+                          Unknown.
+                        type: string
+                      type:
+                        description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                          Many .condition.type values are consistent across resources
+                          like Available, but because arbitrary conditions can be
+                          useful (see .node.status.conditions), the ability to deconflict
+                          is important.
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - status
+                    - type
+                    type: object
+                  type: array
+                failureMessage:
+                  description: "ErrorMessage will be set in the event that there is
+                    a terminal problem reconciling the Machine and will contain a
+                    more verbose string suitable for logging and human consumption.
+                    \n This field should not be set for transitive errors that a controller
+                    faces that are expected to be fixed automatically over time (like
+                    service outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
+                  type: string
+                failureReason:
+                  description: "ErrorReason will be set in the event that there is
+                    a terminal problem reconciling the Machine and will contain a
+                    succinct value suitable for machine interpretation. \n This field
+                    should not be set for transitive errors that a controller faces
+                    that are expected to be fixed automatically over time (like service
+                    outages), but instead indicate that something is fundamentally
+                    wrong with the Machine's spec or the configuration of the controller,
+                    and that manual intervention is required. Examples of terminal
+                    errors would be invalid combinations of settings in the spec,
+                    values that are unsupported by the controller, or the responsible
+                    controller itself being critically misconfigured. \n Any transient
+                    errors that occur during the reconciliation of Machines can be
+                    added as events to the Machine object and/or logged in the controller's
+                    output."
+                  type: string
+                longRunningOperationStates:
+                  description: LongRunningOperationStates saves the states for Azure
+                    long-running operations so they can be continued on the next reconciliation
+                    loop.
+                  items:
+                    description: Future contains the data needed for an Azure long-running
+                      operation to continue across reconcile loops.
+                    properties:
+                      data:
+                        description: Data is the base64 url encoded json Azure AutoRest
+                          Future.
+                        type: string
+                      name:
+                        description: Name is the name of the Azure resource. Together
+                          with the service name, this forms the unique identifier
+                          for the future.
+                        type: string
+                      resourceGroup:
+                        description: ResourceGroup is the Azure resource group for
+                          the resource.
+                        type: string
+                      serviceName:
+                        description: ServiceName is the name of the Azure service.
+                          Together with the name of the resource, this forms the unique
+                          identifier for the future.
+                        type: string
+                      type:
+                        description: Type describes the type of future, such as update,
+                          create, delete, etc.
+                        type: string
+                    required:
+                    - data
+                    - name
+                    - serviceName
+                    - type
+                    type: object
+                  type: array
+                ready:
+                  description: Ready is true when the provider resource is ready.
+                  type: boolean
+                vmState:
+                  description: VMState is the provisioning state of the Azure virtual
+                    machine.
+                  type: string
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: []
+    storedVersions: []
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.5.0
+    creationTimestamp: null
+    labels:
+      cluster.x-k8s.io/v1beta1: v1beta1
+    name: azuremachinetemplates.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureMachineTemplate
+      listKind: AzureMachineTemplateList
+      plural: azuremachinetemplates
+      singular: azuremachinetemplate
+    scope: Namespaced
+    versions:
+    - name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureMachineTemplate is the Schema for the azuremachinetemplates
+            API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureMachineTemplateSpec defines the desired state of AzureMachineTemplate.
+              properties:
+                template:
+                  description: AzureMachineTemplateResource describes the data needed
+                    to create an AzureMachine from a template.
+                  properties:
+                    metadata:
+                      description: "ObjectMeta is metadata that all persisted resources
+                        must have, which includes all objects users must create. This
+                        is a copy of customizable fields from metav1.ObjectMeta. \n
+                        ObjectMeta is embedded in `Machine.Spec`, `MachineDeployment.Template`
+                        and `MachineSet.Template`, which are not top-level Kubernetes
+                        objects. Given that metav1.ObjectMeta has lots of special
+                        cases and read-only fields which end up in the generated CRD
+                        validation, having it as a subset simplifies the API and some
+                        issues that can impact user experience. \n During the [upgrade
+                        to controller-tools@v2](https://github.com/kubernetes-sigs/cluster-api/pull/1054)
+                        for v1alpha2, we noticed a failure would occur running Cluster
+                        API test suite against the new CRDs, specifically `spec.metadata.creationTimestamp
+                        in body must be of type string: \"null\"`. The investigation
+                        showed that `controller-tools@v2` behaves differently than
+                        its previous version when handling types from [metav1](k8s.io/apimachinery/pkg/apis/meta/v1)
+                        package. \n In more details, we found that embedded (non-top
+                        level) types that embedded `metav1.ObjectMeta` had validation
+                        properties, including for `creationTimestamp` (metav1.Time).
+                        The `metav1.Time` type specifies a custom json marshaller
+                        that, when IsZero() is true, returns `null` which breaks validation
+                        because the field isn't marked as nullable. \n In future versions,
+                        controller-tools@v2 might allow overriding the type and validation
+                        for embedded types. When that happens, this hack should be
+                        revisited."
+                      properties:
+                        annotations:
+                          additionalProperties:
+                            type: string
+                          description: 'Annotations is an unstructured key value map
+                            stored with a resource that may be set by external tools
+                            to store and retrieve arbitrary metadata. They are not
+                            queryable and should be preserved when modifying objects.
+                            More info: http://kubernetes.io/docs/user-guide/annotations'
+                          type: object
+                        labels:
+                          additionalProperties:
+                            type: string
+                          description: 'Map of string keys and values that can be
+                            used to organize and categorize (scope and select) objects.
+                            May match selectors of replication controllers and services.
+                            More info: http://kubernetes.io/docs/user-guide/labels'
+                          type: object
+                      type: object
+                    spec:
+                      description: Spec is the specification of the desired behavior
+                        of the machine.
+                      properties:
+                        acceleratedNetworking:
+                          description: AcceleratedNetworking enables or disables Azure
+                            accelerated networking. If omitted, it will be set based
+                            on whether the requested VMSize supports accelerated networking.
+                            If AcceleratedNetworking is set to true with a VMSize
+                            that does not support it, Azure will return an error.
+                          type: boolean
+                        additionalTags:
+                          additionalProperties:
+                            type: string
+                          description: AdditionalTags is an optional set of tags to
+                            add to an instance, in addition to the ones added by default
+                            by the Azure provider. If both the AzureCluster and the
+                            AzureMachine specify the same tag name with different
+                            values, the AzureMachine's value takes precedence.
+                          type: object
+                        allocatePublicIP:
+                          description: AllocatePublicIP allows the ability to create
+                            dynamic public ips for machines where this value is true.
+                          type: boolean
+                        dataDisks:
+                          description: DataDisk specifies the parameters that are
+                            used to add one or more data disks to the machine
+                          items:
+                            description: DataDisk specifies the parameters that are
+                              used to add one or more data disks to the machine.
+                            properties:
+                              cachingType:
+                                description: CachingType specifies the caching requirements.
+                                enum:
+                                - None
+                                - ReadOnly
+                                - ReadWrite
+                                type: string
+                              diskSizeGB:
+                                description: DiskSizeGB is the size in GB to assign
+                                  to the data disk.
+                                format: int32
+                                type: integer
+                              lun:
+                                description: Lun Specifies the logical unit number
+                                  of the data disk. This value is used to identify
+                                  data disks within the VM and therefore must be unique
+                                  for each data disk attached to a VM. The value must
+                                  be between 0 and 63.
+                                format: int32
+                                type: integer
+                              managedDisk:
+                                description: ManagedDisk specifies the Managed Disk
+                                  parameters for the data disk.
+                                properties:
+                                  diskEncryptionSet:
+                                    description: DiskEncryptionSetParameters defines
+                                      disk encryption options.
+                                    properties:
+                                      id:
+                                        description: ID defines resourceID for diskEncryptionSet
+                                          resource. It must be in the same subscription
+                                        type: string
+                                    type: object
+                                  storageAccountType:
+                                    type: string
+                                type: object
+                              nameSuffix:
+                                description: NameSuffix is the suffix to be appended
+                                  to the machine name to generate the disk name. Each
+                                  disk name will be in format <machineName>_<nameSuffix>.
+                                type: string
+                            required:
+                            - diskSizeGB
+                            - nameSuffix
+                            type: object
+                          type: array
+                        enableIPForwarding:
+                          description: EnableIPForwarding enables IP Forwarding in
+                            Azure which is required for some CNI's to send traffic
+                            from a pods on one machine to another. This is required
+                            for IpV6 with Calico in combination with User Defined
+                            Routes (set by the Azure Cloud Controller manager). Default
+                            is false for disabled.
+                          type: boolean
+                        failureDomain:
+                          description: FailureDomain is the failure domain unique
+                            identifier this Machine should be attached to, as defined
+                            in Cluster API. This relates to an Azure Availability
+                            Zone
+                          type: string
+                        identity:
+                          default: None
+                          description: Identity is the type of identity used for the
+                            virtual machine. The type 'SystemAssigned' is an implicitly
+                            created identity. The generated identity will be assigned
+                            a Subscription contributor role. The type 'UserAssigned'
+                            is a standalone Azure resource provided by the user and
+                            assigned to the VM
+                          enum:
+                          - None
+                          - SystemAssigned
+                          - UserAssigned
+                          type: string
+                        image:
+                          description: Image is used to provide details of an image
+                            to use during VM creation. If image details are omitted
+                            the image will default the Azure Marketplace "capi" offer,
+                            which is based on Ubuntu.
+                          properties:
+                            id:
+                              description: ID specifies an image to use by ID
+                              type: string
+                            marketplace:
+                              description: Marketplace specifies an image to use from
+                                the Azure Marketplace
+                              properties:
+                                offer:
+                                  description: Offer specifies the name of a group
+                                    of related images created by the publisher. For
+                                    example, UbuntuServer, WindowsServer
+                                  minLength: 1
+                                  type: string
+                                publisher:
+                                  description: Publisher is the name of the organization
+                                    that created the image
+                                  minLength: 1
+                                  type: string
+                                sku:
+                                  description: SKU specifies an instance of an offer,
+                                    such as a major release of a distribution. For
+                                    example, 18.04-LTS, 2019-Datacenter
+                                  minLength: 1
+                                  type: string
+                                thirdPartyImage:
+                                  default: false
+                                  description: ThirdPartyImage indicates the image
+                                    is published by a third party publisher and a
+                                    Plan will be generated for it.
+                                  type: boolean
+                                version:
+                                  description: Version specifies the version of an
+                                    image sku. The allowed formats are Major.Minor.Build
+                                    or 'latest'. Major, Minor, and Build are decimal
+                                    numbers. Specify 'latest' to use the latest version
+                                    of an image available at deploy time. Even if
+                                    you use 'latest', the VM image will not automatically
+                                    update after deploy time even if a new version
+                                    becomes available.
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - offer
+                              - publisher
+                              - sku
+                              - version
+                              type: object
+                            sharedGallery:
+                              description: SharedGallery specifies an image to use
+                                from an Azure Shared Image Gallery
+                              properties:
+                                gallery:
+                                  description: Gallery specifies the name of the shared
+                                    image gallery that contains the image
+                                  minLength: 1
+                                  type: string
+                                name:
+                                  description: Name is the name of the image
+                                  minLength: 1
+                                  type: string
+                                offer:
+                                  description: Offer specifies the name of a group
+                                    of related images created by the publisher. For
+                                    example, UbuntuServer, WindowsServer This value
+                                    will be used to add a `Plan` in the API request
+                                    when creating the VM/VMSS resource. This is needed
+                                    when the source image from which this SIG image
+                                    was built requires the `Plan` to be used.
+                                  type: string
+                                publisher:
+                                  description: Publisher is the name of the organization
+                                    that created the image. This value will be used
+                                    to add a `Plan` in the API request when creating
+                                    the VM/VMSS resource. This is needed when the
+                                    source image from which this SIG image was built
+                                    requires the `Plan` to be used.
+                                  type: string
+                                resourceGroup:
+                                  description: ResourceGroup specifies the resource
+                                    group containing the shared image gallery
+                                  minLength: 1
+                                  type: string
+                                sku:
+                                  description: SKU specifies an instance of an offer,
+                                    such as a major release of a distribution. For
+                                    example, 18.04-LTS, 2019-Datacenter This value
+                                    will be used to add a `Plan` in the API request
+                                    when creating the VM/VMSS resource. This is needed
+                                    when the source image from which this SIG image
+                                    was built requires the `Plan` to be used.
+                                  type: string
+                                subscriptionID:
+                                  description: SubscriptionID is the identifier of
+                                    the subscription that contains the shared image
+                                    gallery
+                                  minLength: 1
+                                  type: string
+                                version:
+                                  description: Version specifies the version of the
+                                    marketplace image. The allowed formats are Major.Minor.Build
+                                    or 'latest'. Major, Minor, and Build are decimal
+                                    numbers. Specify 'latest' to use the latest version
+                                    of an image available at deploy time. Even if
+                                    you use 'latest', the VM image will not automatically
+                                    update after deploy time even if a new version
+                                    becomes available.
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - gallery
+                              - name
+                              - resourceGroup
+                              - subscriptionID
+                              - version
+                              type: object
+                          type: object
+                        osDisk:
+                          description: OSDisk specifies the parameters for the operating
+                            system disk of the machine
+                          properties:
+                            cachingType:
+                              description: CachingType specifies the caching requirements.
+                              enum:
+                              - None
+                              - ReadOnly
+                              - ReadWrite
+                              type: string
+                            diffDiskSettings:
+                              description: DiffDiskSettings describe ephemeral disk
+                                settings for the os disk.
+                              properties:
+                                option:
+                                  description: Option enables ephemeral OS when set
+                                    to "Local" See https://docs.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks
+                                    for full details
+                                  enum:
+                                  - Local
+                                  type: string
+                              required:
+                              - option
+                              type: object
+                            diskSizeGB:
+                              description: DiskSizeGB is the size in GB to assign
+                                to the OS disk. Will have a default of 30GB if not
+                                provided
+                              format: int32
+                              type: integer
+                            managedDisk:
+                              description: ManagedDisk specifies the Managed Disk
+                                parameters for the OS disk.
+                              properties:
+                                diskEncryptionSet:
+                                  description: DiskEncryptionSetParameters defines
+                                    disk encryption options.
+                                  properties:
+                                    id:
+                                      description: ID defines resourceID for diskEncryptionSet
+                                        resource. It must be in the same subscription
+                                      type: string
+                                  type: object
+                                storageAccountType:
+                                  type: string
+                              type: object
+                            osType:
+                              type: string
+                          required:
+                          - osType
+                          type: object
+                        providerID:
+                          description: ProviderID is the unique identifier as specified
+                            by the cloud provider.
+                          type: string
+                        roleAssignmentName:
+                          description: RoleAssignmentName is the name of the role
+                            assignment to create for a system assigned identity. It
+                            can be any valid GUID. If not specified, a random GUID
+                            will be generated.
+                          type: string
+                        securityProfile:
+                          description: SecurityProfile specifies the Security profile
+                            settings for a virtual machine.
+                          properties:
+                            encryptionAtHost:
+                              description: This field indicates whether Host Encryption
+                                should be enabled or disabled for a virtual machine
+                                or virtual machine scale set. Default is disabled.
+                              type: boolean
+                          type: object
+                        spotVMOptions:
+                          description: SpotVMOptions allows the ability to specify
+                            the Machine should use a Spot VM
+                          properties:
+                            maxPrice:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: MaxPrice defines the maximum price the
+                                user is willing to pay for Spot VM instances
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                          type: object
+                        sshPublicKey:
+                          type: string
+                        subnetName:
+                          description: SubnetName selects the Subnet where the VM
+                            will be placed
+                          type: string
+                        userAssignedIdentities:
+                          description: UserAssignedIdentities is a list of standalone
+                            Azure identities provided by the user The lifecycle of
+                            a user-assigned identity is managed separately from the
+                            lifecycle of the AzureMachine. See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/how-to-manage-ua-identity-cli
+                          items:
+                            description: UserAssignedIdentity defines the user-assigned
+                              identities provided by the user to be assigned to Azure
+                              resources.
+                            properties:
+                              providerID:
+                                description: 'ProviderID is the identification ID
+                                  of the user-assigned Identity, the format of an
+                                  identity is: ''azure:///subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}'''
+                                type: string
+                            required:
+                            - providerID
+                            type: object
+                          type: array
+                        vmSize:
+                          type: string
+                      required:
+                      - osDisk
+                      - sshPublicKey
+                      - vmSize
+                      type: object
+                  required:
+                  - spec
+                  type: object
+              required:
+              - template
+              type: object
+          type: object
+      served: true
+      storage: true
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: []
+    storedVersions: []
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.5.0
+    creationTimestamp: null
     name: ibmpowervsclusters.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -18027,6 +20158,43 @@ objects:
                       - nodePoolManagementCreds
                       - region
                       type: object
+                    azure:
+                      description: Azure defines azure specific settings
+                      properties:
+                        credentials:
+                          description: LocalObjectReference contains enough information
+                            to let you locate the referenced object inside the same
+                            namespace.
+                          properties:
+                            name:
+                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                TODO: Add other useful fields. apiVersion, kind, uid?'
+                              type: string
+                          type: object
+                        location:
+                          type: string
+                        machineIdentityID:
+                          type: string
+                        resourceGroup:
+                          type: string
+                        securityGroupName:
+                          type: string
+                        subscriptionID:
+                          type: string
+                        vnetID:
+                          type: string
+                        vnetName:
+                          type: string
+                      required:
+                      - credentials
+                      - location
+                      - machineIdentityID
+                      - resourceGroup
+                      - securityGroupName
+                      - subscriptionID
+                      - vnetID
+                      - vnetName
+                      type: object
                     ibmcloud:
                       description: IBMCloud defines IBMCloud specific settings for
                         components
@@ -18045,6 +20213,7 @@ objects:
                       - IBMCloud
                       - Agent
                       - KubeVirt
+                      - Azure
                       type: string
                   required:
                   - type
@@ -19055,6 +21224,43 @@ objects:
                       - nodePoolManagementCreds
                       - region
                       type: object
+                    azure:
+                      description: Azure defines azure specific settings
+                      properties:
+                        credentials:
+                          description: LocalObjectReference contains enough information
+                            to let you locate the referenced object inside the same
+                            namespace.
+                          properties:
+                            name:
+                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                TODO: Add other useful fields. apiVersion, kind, uid?'
+                              type: string
+                          type: object
+                        location:
+                          type: string
+                        machineIdentityID:
+                          type: string
+                        resourceGroup:
+                          type: string
+                        securityGroupName:
+                          type: string
+                        subscriptionID:
+                          type: string
+                        vnetID:
+                          type: string
+                        vnetName:
+                          type: string
+                      required:
+                      - credentials
+                      - location
+                      - machineIdentityID
+                      - resourceGroup
+                      - securityGroupName
+                      - subscriptionID
+                      - vnetID
+                      - vnetName
+                      type: object
                     ibmcloud:
                       description: IBMCloud defines IBMCloud specific settings for
                         components
@@ -19073,6 +21279,7 @@ objects:
                       - IBMCloud
                       - Agent
                       - KubeVirt
+                      - Azure
                       type: string
                   required:
                   - type
@@ -19962,6 +22169,16 @@ objects:
                           type: object
                       required:
                       - instanceType
+                      type: object
+                    azure:
+                      properties:
+                        imageID:
+                          type: string
+                        vmsize:
+                          type: string
+                      required:
+                      - imageID
+                      - vmsize
                       type: object
                     ibmcloud:
                       description: IBMCloud defines IBMCloud specific settings for
@@ -24491,6 +26708,7 @@ objects:
                       - IBMCloud
                       - Agent
                       - KubeVirt
+                      - Azure
                       type: string
                   required:
                   - type

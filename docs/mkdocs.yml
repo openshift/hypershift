@@ -42,6 +42,7 @@ nav:
   - how-to/deploy-aws-private-clusters.md
   - how-to/oauth.md
   - how-to/agent-platform.md
+  - how-to/create-azure-cluster.md
 - 'Reference':
   - reference/index.md
   - reference/api.md

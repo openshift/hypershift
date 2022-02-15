@@ -566,6 +566,43 @@ spec:
                     - nodePoolManagementCreds
                     - region
                     type: object
+                  azure:
+                    description: Azure defines azure specific settings
+                    properties:
+                      credentials:
+                        description: LocalObjectReference contains enough information
+                          to let you locate the referenced object inside the same
+                          namespace.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      location:
+                        type: string
+                      machineIdentityID:
+                        type: string
+                      resourceGroup:
+                        type: string
+                      securityGroupName:
+                        type: string
+                      subscriptionID:
+                        type: string
+                      vnetID:
+                        type: string
+                      vnetName:
+                        type: string
+                    required:
+                    - credentials
+                    - location
+                    - machineIdentityID
+                    - resourceGroup
+                    - securityGroupName
+                    - subscriptionID
+                    - vnetID
+                    - vnetName
+                    type: object
                   ibmcloud:
                     description: IBMCloud defines IBMCloud specific settings for components
                     properties:
@@ -583,6 +620,7 @@ spec:
                     - IBMCloud
                     - Agent
                     - KubeVirt
+                    - Azure
                     type: string
                 required:
                 - type
