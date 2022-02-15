@@ -813,7 +813,7 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hypershift-reader",
+			Name: "hypershift-readers",
 		},
 		Rules: make([]rbacv1.PolicyRule, len(clusterOperatorRole.Rules)),
 	}
@@ -851,7 +851,7 @@ func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hypershift-reader",
+			Name: "hypershift-readers",
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",

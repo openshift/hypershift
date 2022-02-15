@@ -328,7 +328,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 
 		readerRoleBinding := assets.HyperShiftReaderClusterRoleBinding{
 			ClusterRole: readerClusterRole,
-			GroupName:   "hypershift-reader",
+			GroupName:   "hypershift-readers",
 		}.Build()
 		objects = append(objects, readerRoleBinding)
 	}

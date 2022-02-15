@@ -24655,7 +24655,7 @@ objects:
   kind: ClusterRole
   metadata:
     creationTimestamp: null
-    name: hypershift-reader
+    name: hypershift-readers
   rules:
   - apiGroups:
     - hypershift.openshift.io
@@ -24795,15 +24795,15 @@ objects:
   kind: ClusterRoleBinding
   metadata:
     creationTimestamp: null
-    name: hypershift-reader
+    name: hypershift-readers
   roleRef:
     apiGroup: rbac.authorization.k8s.io
     kind: ClusterRole
-    name: hypershift-reader
+    name: hypershift-readers
   subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
-    name: hypershift-reader
+    name: hypershift-readers
 parameters:
 - name: OPERATOR_IMG
   value: quay.io/hypershift/hypershift-operator
