@@ -13,7 +13,6 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zapcore"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/discovery"
@@ -242,6 +241,7 @@ func NewStartCommand() *cobra.Command {
 			HostedAPICache:                apiCacheController.GetCache(),
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
 			EnableCIDebugOutput:           enableCIDebugOutput,
+			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

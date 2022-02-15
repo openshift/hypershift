@@ -1928,6 +1928,10 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 									},
 								},
 							},
+							{
+								Name:  "OPERATE_ON_RELEASE_IMAGE",
+								Value: hc.Spec.Release.Image,
+							},
 						},
 						// needed since control plane operator runs with anyuuid scc
 						SecurityContext: &corev1.SecurityContext{

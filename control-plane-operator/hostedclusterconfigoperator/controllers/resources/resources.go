@@ -64,6 +64,7 @@ type reconciler struct {
 	oauthAddress              string
 	oauthPort                 int32
 	versions                  map[string]string
+	operateOnReleaseImage     string
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -93,6 +94,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		oauthAddress:              opts.OAuthAddress,
 		oauthPort:                 opts.OAuthPort,
 		versions:                  opts.Versions,
+		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -141,6 +143,11 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 		return fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
+	}
+
+	if r.operateOnReleaseImage != "" && r.operateOnReleaseImage != hcp.Spec.ReleaseImage {
+		log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hcp.Spec.ReleaseImage, r.operateOnReleaseImage)
+		return nil
 	}
 
 	globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hcp.Spec.Configuration)

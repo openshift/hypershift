@@ -61,6 +61,7 @@ type HostedClusterConfigOperatorConfig struct {
 	KonnectivityPort             int32
 	OAuthAddress                 string
 	OAuthPort                    int32
+	OperateOnReleaseImage        string
 
 	kubeClient kubeclient.Interface
 }
