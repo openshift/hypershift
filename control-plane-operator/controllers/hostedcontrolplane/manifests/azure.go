@@ -13,3 +13,12 @@ func AzureProviderConfig(ns string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func AzureProviderConfigWithCredentials(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-cloud-config",
+			Namespace: ns,
+		},
+	}
+}
