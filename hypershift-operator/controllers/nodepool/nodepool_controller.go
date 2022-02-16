@@ -117,7 +117,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Info("not found", "request", req.String())
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "error getting nodePool")
+		log.Error(err, "error getting nodepool")
 		return ctrl.Result{}, err
 	}
 
@@ -127,46 +127,19 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
-	md := machineDeployment(nodePool, hcluster.Spec.InfraID, controlPlaneNamespace)
-	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
-
+	// If deleted, clean up and return early.
 	if !nodePool.DeletionTimestamp.IsZero() {
-		machineTemplates, err := r.listMachineTemplates(nodePool)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to list MachineTemplates: %w", err)
+		if err := r.delete(ctx, nodePool, hcluster.Spec.InfraID, controlPlaneNamespace); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete nodepool: %w", err)
 		}
-		for k := range machineTemplates {
-			if err := r.Delete(ctx, machineTemplates[k]); err != nil && !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to delete MachineTemplate: %w", err)
-			}
-		}
-
-		// Delete any secret belonging to this NodePool i.e token Secret and userdata Secret.
-		secrets, err := r.listSecrets(nodePool)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to list secrets: %w", err)
-		}
-		for k := range secrets {
-			if err := r.Delete(ctx, &secrets[k]); err != nil && !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to delete secret: %w", err)
-			}
-		}
-
-		if err := r.Delete(ctx, md); err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to delete MachineDeployment: %w", err)
-		}
-
-		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to delete MachineHealthCheck: %w", err)
-		}
-
+		// Now we can remove the finalizer.
 		if controllerutil.ContainsFinalizer(nodePool, finalizer) {
 			controllerutil.RemoveFinalizer(nodePool, finalizer)
 			if err := r.Update(ctx, nodePool); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from NodePool: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from nodepool: %w", err)
 			}
 		}
-		log.Info("Deleted nodePool")
+		log.Info("Deleted nodepool", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 
@@ -174,7 +147,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if !controllerutil.ContainsFinalizer(nodePool, finalizer) {
 		controllerutil.AddFinalizer(nodePool, finalizer)
 		if err := r.Update(ctx, nodePool); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to nodePool: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to nodepool: %w", err)
 		}
 	}
 
@@ -452,13 +425,25 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// Ensure old configVersionHash resources are deleted, i.e token Secret and userdata Secret.
 	if isUpdatingVersion || isUpdatingConfig {
 		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
-		if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+		err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
+		}
+		if err == nil {
+			if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
+				return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+			}
 		}
 
 		userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
-		if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+		err = r.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return reconcile.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
+		}
+		if err == nil {
+			if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
+				return reconcile.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
+			}
 		}
 	}
 
@@ -552,8 +537,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			ObservedGeneration: nodePool.Generation,
 		})
 	} else {
-		if err := r.Client.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
+		err := r.Get(ctx, client.ObjectKeyFromObject(mhc), mhc)
+		if err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
+		}
+		if err == nil {
+			if err := r.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, err
+			}
 		}
 		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
@@ -563,6 +554,82 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 	return ctrl.Result{}, nil
+}
+
+func deleteMachineDeployment(ctx context.Context, c client.Client, md *capiv1.MachineDeployment) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(md), md)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineDeployment: %w", err)
+	}
+	if md.DeletionTimestamp != nil {
+		return nil
+	}
+	err = c.Delete(ctx, md)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error deleting MachineDeployment: %w", err)
+	}
+	return nil
+}
+
+func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.MachineHealthCheck) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(mhc), mhc)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineHealthCheck: %w", err)
+	}
+	if mhc.DeletionTimestamp != nil {
+		return nil
+	}
+	err = c.Delete(ctx, mhc)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error deleting MachineHealthCheck: %w", err)
+	}
+	return nil
+}
+
+func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, infraID, controlPlaneNamespace string) error {
+	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
+	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
+	machineTemplates, err := r.listMachineTemplates(nodePool)
+	if err != nil {
+		return fmt.Errorf("failed to list MachineTemplates: %w", err)
+	}
+	for k := range machineTemplates {
+		if err := r.Delete(ctx, machineTemplates[k]); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete MachineTemplate: %w", err)
+		}
+	}
+
+	// Delete any secret belonging to this NodePool i.e token Secret and userdata Secret.
+	secrets, err := r.listSecrets(ctx, nodePool)
+	if err != nil {
+		return fmt.Errorf("failed to list secrets: %w", err)
+	}
+	for k := range secrets {
+		if err := r.Delete(ctx, &secrets[k]); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete secret: %w", err)
+		}
+	}
+
+	if err := deleteMachineDeployment(ctx, r.Client, md); err != nil {
+		return fmt.Errorf("failed to delete MachineDeployment: %w", err)
+	}
+
+	if err := deleteMachineHealthCheck(ctx, r.Client, mhc); err != nil {
+		return fmt.Errorf("failed to delete MachineHealthCheck: %w", err)
+	}
+	return nil
 }
 
 func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string) error {
@@ -1110,9 +1177,9 @@ func enqueueParentNodePool(obj client.Object) []reconcile.Request {
 	}
 }
 
-func (r *NodePoolReconciler) listSecrets(nodePool *hyperv1.NodePool) ([]corev1.Secret, error) {
+func (r *NodePoolReconciler) listSecrets(ctx context.Context, nodePool *hyperv1.NodePool) ([]corev1.Secret, error) {
 	secretList := &corev1.SecretList{}
-	if err := r.List(context.Background(), secretList); err != nil {
+	if err := r.List(ctx, secretList); err != nil {
 		return nil, fmt.Errorf("failed to list secrets: %w", err)
 	}
 	filtered := []corev1.Secret{}
