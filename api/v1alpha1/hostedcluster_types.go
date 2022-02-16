@@ -28,9 +28,6 @@ const (
 	// ControlPlaneOperatorImageAnnotation is a annotation that allows the specification of the control plane operator image.
 	// This is used for development and e2e workflows
 	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"
-	// DesiredControlPlaneOperatorImageAnnotation is an annotation that is used to specify the desired image of the control-plane-operator
-	// that is expected to reconcile a specific version of an instance of a HostedControlPlane
-	DesiredControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/desired-control-plane-operator-image"
 	// RestartDateAnnotation is a annotation that can be used to trigger a rolling restart of all components managed by hypershift.
 	// it is important in some situations like CA rotation where components need to be fully restarted to pick up new CAs. It's also
 	// important in some recovery situations where a fresh start of the component helps fix symptoms a user might be experiencing.
