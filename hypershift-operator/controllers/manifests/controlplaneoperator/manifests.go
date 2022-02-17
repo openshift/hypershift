@@ -28,22 +28,6 @@ func OperatorServiceAccount(controlPlaneOperatorNamespace string) *corev1.Servic
 	}
 }
 
-func OperatorClusterRole() *rbacv1.ClusterRole {
-	return &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "control-plane-operator",
-		},
-	}
-}
-
-func OperatorClusterRoleBinding(controlPlaneOperatorNamespace string) *rbacv1.ClusterRoleBinding {
-	return &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "control-plane-operator-" + controlPlaneOperatorNamespace,
-		},
-	}
-}
-
 func OperatorRole(controlPlaneOperatorNamespace string) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
@@ -58,6 +42,42 @@ func OperatorRoleBinding(controlPlaneOperatorNamespace string) *rbacv1.RoleBindi
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneOperatorNamespace,
 			Name:      "control-plane-operator",
+		},
+	}
+}
+
+func OperatorIngressRole(ingressNamespace string, controlPlaneOperatorNamespace string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ingressNamespace,
+			Name:      "control-plane-operator-" + controlPlaneOperatorNamespace,
+		},
+	}
+}
+
+func OperatorIngressRoleBinding(ingressNamespace string, controlPlaneOperatorNamespace string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ingressNamespace,
+			Name:      "control-plane-operator-" + controlPlaneOperatorNamespace,
+		},
+	}
+}
+
+func OperatorIngressOperatorRole(ingressOperatorNamespace string, controlPlaneOperatorNamespace string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ingressOperatorNamespace,
+			Name:      "control-plane-operator-" + controlPlaneOperatorNamespace,
+		},
+	}
+}
+
+func OperatorIngressOperatorRoleBinding(ingressOperatorNamespace string, controlPlaneOperatorNamespace string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ingressOperatorNamespace,
+			Name:      "control-plane-operator-" + controlPlaneOperatorNamespace,
 		},
 	}
 }
