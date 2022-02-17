@@ -166,16 +166,16 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		if err := c.Get(ctx, client.ObjectKeyFromObject(hcluster), hcluster); err != nil {
 			return fmt.Errorf("failed to get hostedcluster %s/%s: %w", opts.Namespace, opts.Name, err)
 		}
+		if hcluster.Status.KubeConfig == nil {
+			log.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
+			return nil
+		}
 		kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 			Namespace: hcluster.Namespace,
 			Name:      hcluster.Status.KubeConfig.Name,
 		}}
 		if err := c.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
 			return fmt.Errorf("failed to get guest cluster kubeconfig secret: %w", err)
-		}
-		if hcluster.Status.KubeConfig == nil {
-			log.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
-			return nil
 		}
 		kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
 		if err != nil {
