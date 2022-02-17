@@ -105,6 +105,8 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	}
 	cmd.WithNamespace(opts.Namespace).Run(ctx, objectNames...)
 
+	cmd.Run(ctx, objectType(&corev1.Node{}))
+
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
 
 	resources := []client.Object{
