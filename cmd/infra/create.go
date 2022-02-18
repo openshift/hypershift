@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/infra/azure"
 )
 
 func NewCreateCommand() *cobra.Command {
@@ -14,6 +15,7 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(aws.NewCreateCommand())
+	cmd.AddCommand(azure.NewCreateCommand())
 
 	return cmd
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,7 +45,9 @@ const (
 
 type PrivateServiceObserver struct {
 	client.Client
-	log logr.Logger
+
+	clientset *kubeclient.Clientset
+	log       logr.Logger
 
 	ControllerName   string
 	ServiceNamespace string
@@ -83,11 +84,11 @@ func ControllerName(name string) string {
 func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	r.log = ctrl.Log.WithName(r.ControllerName).WithValues("name", r.ServiceName, "namespace", r.ServiceNamespace)
 	var err error
-	kubeClient, err := kubeclient.NewForConfig(mgr.GetConfig())
+	r.clientset, err = kubeclient.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return err
 	}
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResync, informers.WithNamespace(r.ServiceNamespace))
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(r.clientset, defaultResync, informers.WithNamespace(r.ServiceNamespace))
 	services := informerFactory.Core().V1().Services()
 	c, err := controller.New(r.ControllerName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
@@ -107,13 +108,8 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 	r.log.Info("reconciling")
 
 	// Fetch the Service
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      req.Name,
-			Namespace: req.Namespace,
-		},
-	}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+	svc, err := r.clientset.CoreV1().Services(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
+	if err != nil {
 		if apierrors.IsNotFound(err) {
 			r.log.Info("service not found")
 			return ctrl.Result{}, nil

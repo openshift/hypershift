@@ -220,6 +220,26 @@ func (o *CreateInfraOptions) CreateSubnet(client ec2iface.EC2API, vpcID, zone, c
 	if err != nil {
 		return "", fmt.Errorf("cannot create public subnet: %w", err)
 	}
+	backoff := wait.Backoff{
+		Steps:    10,
+		Duration: 3 * time.Second,
+		Factor:   1.0,
+		Jitter:   0.1,
+	}
+	var subnetResult *ec2.DescribeSubnetsOutput
+	err = retry.OnError(backoff, func(error) bool { return true }, func() error {
+		var err error
+		subnetResult, err = client.DescribeSubnets(&ec2.DescribeSubnetsInput{
+			SubnetIds: []*string{result.Subnet.SubnetId},
+		})
+		if err != nil || len(subnetResult.Subnets) == 0 {
+			return fmt.Errorf("not found yet")
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("cannot find subnet that was just created (%s)", aws.StringValue(result.Subnet.SubnetId))
+	}
 	subnetID = aws.StringValue(result.Subnet.SubnetId)
 	log.Log.Info("Created subnet", "name", name, "id", subnetID)
 	return subnetID, nil

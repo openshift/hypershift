@@ -253,24 +253,22 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
 		// Keep trying to delete until we know it's safe to finalize.
-		completed, err := r.delete(ctx, req, hcluster)
+		completed, err := r.delete(ctx, hcluster)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete cluster: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
 		}
 		if !completed {
 			log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
 			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
 		}
-		log.Info("finished deleting hostedcluster", "name", req.NamespacedName)
 		// Now we can remove the finalizer.
 		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
 			controllerutil.RemoveFinalizer(hcluster, finalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
-			log.Info("hostedcluster was finalized", "name", req.NamespacedName)
-			return ctrl.Result{}, nil
 		}
+		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 
@@ -602,7 +600,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile Platform specifics.
-	p, err := platform.GetPlatform(hcluster)
+	p, err := platform.GetPlatform(hcluster, r.AvailabilityProberImage, r.TokenMinterImage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -615,22 +613,22 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane pull secret by resolving the source secret
 	// reference from the HostedCluster and syncing the secret in the control plane namespace.
-	var pullSecret corev1.Secret
 	{
-		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		var src corev1.Secret
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dst, func() error {
-			srcData, srcHasData := pullSecret.Data[corev1.DockerConfigJsonKey]
+			srcData, srcHasData := src.Data[".dockerconfigjson"]
 			if !srcHasData {
-				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", pullSecret.Name)
+				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
 			}
 			dst.Type = corev1.SecretTypeDockerConfigJson
 			if dst.Data == nil {
 				dst.Data = map[string][]byte{}
 			}
-			dst.Data[corev1.DockerConfigJsonKey] = srcData
+			dst.Data[".dockerconfigjson"] = srcData
 			return nil
 		})
 		if err != nil {
@@ -855,15 +853,10 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	cpoImage, err := getControlPlaneOperatorImage(ctx, hcluster.Annotations, hcluster.Spec.Release.Image, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecret.Data[corev1.DockerConfigJsonKey])
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to lookup expected hypershift component image: %w", err)
-	}
-
 	// Reconcile the HostedControlPlane
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, cpoImage)
+		return reconcileHostedControlPlane(hcp, hcluster)
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -883,7 +876,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile CAPI Provider Deployment.
-	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, r.TokenMinterImage)
+	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, hcp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -994,7 +987,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, cpoImage)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -1032,7 +1025,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, cpoImage string) error {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
 	// Always initialize the HostedControlPlane with an image matching
 	// the HostedCluster.
 	if hcp.ObjectMeta.CreationTimestamp.IsZero() {
@@ -1068,7 +1061,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 			hcp.Annotations[key] = val
 		}
 	}
-	hcp.Annotations[hyperv1.DesiredControlPlaneOperatorImageAnnotation] = cpoImage
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
@@ -1324,7 +1316,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, cpoImage string) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -1374,9 +1366,22 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
 	}
 
+	// Reconcile operator deployment
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+	controlPlaneOperatorImage, err := getControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	if err != nil {
+		return err
+	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, cpoImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1863,13 +1868,15 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 // 2. The hypershift image specified in the release payload indicated by the
 //    HostedCluster's release field
 // 3. The hypershift-operator's own image for release versions 4.9 and 4.10
+// 4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
+//    version 4.8
 //
 // If no image can be found according to these rules, an error is returned.
-func getControlPlaneOperatorImage(ctx context.Context, objectAnnotations map[string]string, releaseImage string, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
-	if val, ok := objectAnnotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
+func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
 		return val, nil
 	}
-	releaseInfo, err := releaseProvider.Lookup(ctx, releaseImage, pullSecret)
+	releaseInfo, err := releaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecret)
 	if err != nil {
 		return "", err
 	}
@@ -1920,12 +1927,8 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 								},
 							},
 							{
-								Name: "POD_NAME",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.name",
-									},
-								},
+								Name:  "OPERATE_ON_RELEASE_IMAGE",
+								Value: hc.Spec.Release.Image,
 							},
 						},
 						// needed since control plane operator runs with anyuuid scc
@@ -2878,12 +2881,9 @@ func computeUnmanagedEtcdAvailability(hcluster *hyperv1.HostedCluster, unmanaged
 	}
 }
 
-func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName string) ([]hyperv1.NodePool, error) {
+func listNodePools(ctx context.Context, c client.Client, clusterNamespace, clusterName string) ([]hyperv1.NodePool, error) {
 	nodePoolList := &hyperv1.NodePoolList{}
-	if err := r.Client.List(
-		context.TODO(),
-		nodePoolList,
-	); err != nil {
+	if err := c.List(ctx, nodePoolList); err != nil {
 		return nil, fmt.Errorf("failed getting nodePool list: %v", err)
 	}
 	// TODO: do a label association or something
@@ -2896,74 +2896,151 @@ func (r *HostedClusterReconciler) listNodePools(clusterNamespace, clusterName st
 	return filtered, nil
 }
 
-func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, hc *hyperv1.HostedCluster) (bool, error) {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(req.Namespace, req.Name).Name
-	log := ctrl.LoggerFrom(ctx)
-
-	nodePools, err := r.listNodePools(req.Namespace, req.Name)
+func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.Client, namespace, name string) error {
+	nodePools, err := listNodePools(ctx, c, namespace, name)
 	if err != nil {
-		return false, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", req.Name, err)
+		return fmt.Errorf("failed to get NodePools by cluster name for cluster %q: %w", name, err)
 	}
-
-	for key := range nodePools {
-		if err := r.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("failed to delete nodePool %q for cluster %q: %w", nodePools[key].GetName(), req.Name, err)
+	for key, nodePool := range nodePools {
+		if nodePool.DeletionTimestamp != nil {
+			continue
+		}
+		if err := c.Delete(ctx, &nodePools[key]); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete NodePool %q for cluster %q: %w", nodePool.GetName(), name, err)
 		}
 	}
+	return nil
+}
 
-	if hc != nil && len(hc.Spec.InfraID) > 0 {
-		log.Info("Deleting Cluster", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
-		cluster := &capiv1.Cluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      hc.Spec.InfraID,
-				Namespace: controlPlaneNamespace,
-			},
-		}
-
-		if err := r.Delete(ctx, cluster); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return false, fmt.Errorf("error deleting Cluster: %w", err)
-			}
-			// The advancing case is when Delete() returns an error that the cluster is not found
-		} else {
-			log.Info("Waiting for Cluster deletion", "clusterName", hc.Spec.InfraID, "clusterNamespace", controlPlaneNamespace)
+func deleteCluster(ctx context.Context, c client.Client, cluster *capiv1.Cluster) (bool, error) {
+	err := c.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
+		return false, fmt.Errorf("error getting Cluster: %w", err)
 	}
+	if cluster.DeletionTimestamp != nil {
+		return true, nil
+	}
+	err = c.Delete(ctx, cluster)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting Cluster: %w", err)
+	}
+	return true, nil
+}
 
+func deleteAWSEndpointServices(ctx context.Context, c client.Client, namespace string) (bool, error) {
 	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
-	if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: controlPlaneNamespace}); err != nil && !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("failed to list AWSEndpointServices for cluster %q: %w", req.Name, err)
+	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
+		return false, fmt.Errorf("error listing awsendpointservices in namespace %s: %w", namespace, err)
 	}
 	for _, ep := range awsEndpointServiceList.Items {
-		if err := r.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("failed to delete AWSEndpointService %q for cluster %q: %w", ep.Name, req.Name, err)
+		if ep.DeletionTimestamp != nil {
+			continue
+		}
+		if err := c.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting awsendpointservices %s in namespace %s: %w", ep.Name, namespace, err)
 		}
 	}
 	if len(awsEndpointServiceList.Items) != 0 {
 		// The CPO puts a finalizer on AWSEndpointService resources and should
 		// not be terminated until the resources are removed from the API server
-		log.Info("Waiting for AWS endpoint service list to be empty")
+		return true, nil
+	}
+	return false, nil
+}
+
+func deleteHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting HostedControlPlane: %w", err)
+	}
+	if hcp.DeletionTimestamp != nil {
+		return true, nil
+	}
+	err = c.Delete(ctx, hcp)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting HostedControlPlane: %w", err)
+	}
+	return true, nil
+}
+
+func deleteNamespace(ctx context.Context, c client.Client, ns *corev1.Namespace) (bool, error) {
+	err := c.Get(ctx, client.ObjectKeyFromObject(ns), ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting Namespace: %w", err)
+	}
+	if ns.DeletionTimestamp != nil {
+		return true, nil
+	}
+	err = c.Delete(ctx, ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting Namespace: %w", err)
+	}
+	return true, nil
+}
+
+func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
+	log := ctrl.LoggerFrom(ctx)
+
+	err := r.deleteNodePools(ctx, r.Client, hc.Namespace, hc.Name)
+	if err != nil {
+		return false, err
+	}
+
+	if hc != nil && len(hc.Spec.InfraID) > 0 {
+		exists, err := deleteCluster(ctx, r.Client, &capiv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hc.Spec.InfraID,
+				Namespace: controlPlaneNamespace,
+			},
+		})
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for cluster deletion", "clusterName", hc.Spec.InfraID, "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
+	}
+
+	exists, err := deleteAWSEndpointServices(ctx, r.Client, controlPlaneNamespace)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
 		return false, nil
 	}
+
 	// There are scenarios where CAPI might not be operational e.g None Platform.
 	// We want to ensure the HCP resource is deleted before deleting the Namespace.
 	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
-	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
-	if err := r.Delete(ctx, hcp); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("error deleting HostedControlPlane %q in namespace %q: %w", hcp.Name, hcp.Namespace, err)
-		}
-	} else {
-		log.Info("Waiting for Hosted Control Plane deletion", "Name", hcp.Name, "Namespace", hcp.Namespace)
+	// NOTE: The advancing case is when Get() or Delete() returns an error that the HCP is not found
+	exists, err = deleteHostedControlPlane(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		log.Info("Waiting for hostedcontrolplane deletion", "controlPlaneNamespace", controlPlaneNamespace)
 		return false, nil
-	}
-	log.Info("Deleting controlplane namespace", "namespace", controlPlaneNamespace)
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
-	}
-	if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
 	if err := r.cleanupOIDCBucketData(ctx, log, hc); err != nil {
@@ -2972,9 +3049,17 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, req ctrl.Request, 
 
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
-	if err := r.Get(ctx, client.ObjectKeyFromObject(ns), ns); err == nil || !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("failed to get namespace: %w", err)
+	exists, err = deleteNamespace(ctx, r.Client, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
+	})
+	if err != nil {
+		return false, err
 	}
+	if exists {
+		log.Info("Waiting for namespace deletion", "controlPlaneNamespace", controlPlaneNamespace)
+		return false, nil
+	}
+
 	return true, nil
 }
 
@@ -3764,7 +3849,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
 	infraCR client.Object, namespace, clusterName, hcpNamespace string) error {
 
-	nodePools, err := r.listNodePools(namespace, clusterName)
+	nodePools, err := listNodePools(ctx, r.Client, namespace, clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", clusterName, err)
 	}

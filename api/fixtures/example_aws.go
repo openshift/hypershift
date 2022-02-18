@@ -9,6 +9,7 @@ type ExampleAWSResources struct {
 	KubeCloudControllerAWSCreds  *corev1.Secret
 	NodePoolManagementAWSCreds   *corev1.Secret
 	ControlPlaneOperatorAWSCreds *corev1.Secret
+	KMSProviderAWSCreds          *corev1.Secret
 }
 
 func (o *ExampleAWSResources) AsObjects() []crclient.Object {
@@ -21,6 +22,9 @@ func (o *ExampleAWSResources) AsObjects() []crclient.Object {
 	}
 	if o.ControlPlaneOperatorAWSCreds != nil {
 		objects = append(objects, o.ControlPlaneOperatorAWSCreds)
+	}
+	if o.KMSProviderAWSCreds != nil {
+		objects = append(objects, o.KMSProviderAWSCreds)
 	}
 	return objects
 }

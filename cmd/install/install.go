@@ -55,6 +55,7 @@ type Options struct {
 	OIDCStorageProviderS3Credentials          string
 	OIDCStorageProviderS3CredentialsSecret    string
 	OIDCStorageProviderS3CredentialsSecretKey string
+	EnableAdminRBACGeneration                 bool
 }
 
 func (o *Options) Validate() error {
@@ -76,6 +77,9 @@ func (o *Options) Validate() error {
 	if (len(o.OIDCStorageProviderS3CredentialsSecret) > 0 || len(o.OIDCStorageProviderS3Credentials) > 0) &&
 		(len(o.OIDCStorageProviderS3BucketName) == 0 || len(o.OIDCStorageProviderS3Region) == 0 || len(o.OIDCStorageProviderS3CredentialsSecretKey) == 0) {
 		errs = append(errs, fmt.Errorf("all required oidc information is not set"))
+	}
+	if strings.Contains(o.OIDCStorageProviderS3BucketName, ".") {
+		errs = append(errs, fmt.Errorf("oidc bucket name must not contain dots (.); see the notes on HTTPS at https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html"))
 	}
 	return errors.NewAggregate(errs)
 }
@@ -117,6 +121,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for writing the OIDC documents into the S3 bucket. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecret, "oidc-storage-provider-s3-secret", "", "Name of an existing secret containing the OIDC S3 credentials.")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecretKey, "oidc-storage-provider-s3-secret-key", "credentials", "Name of the secret key containing the OIDC S3 credentials.")
+	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -302,6 +307,34 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		}
 		return true
 	})...)
+
+	if opts.EnableAdminRBACGeneration {
+		// hypershift-client admin persona for hostedclusters and nodepools creation
+		clientClusterRole := assets.HyperShiftClientClusterRole{}.Build()
+		objects = append(objects, clientClusterRole)
+
+		clientServiceAccount := assets.HyperShiftClientServiceAccount{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, clientServiceAccount)
+
+		clientRoleBinding := assets.HyperShiftClientClusterRoleBinding{
+			ClusterRole:    clientClusterRole,
+			ServiceAccount: clientServiceAccount,
+			GroupName:      "hypershift-client",
+		}.Build()
+		objects = append(objects, clientRoleBinding)
+
+		// hypershift-reader admin persona for inspecting hosted controlplanes and the operator
+		readerClusterRole := assets.HyperShiftReaderClusterRole{}.Build()
+		objects = append(objects, readerClusterRole)
+
+		readerRoleBinding := assets.HyperShiftReaderClusterRoleBinding{
+			ClusterRole: readerClusterRole,
+			GroupName:   "hypershift-readers",
+		}.Build()
+		objects = append(objects, readerRoleBinding)
+	}
 
 	return objects, nil
 }

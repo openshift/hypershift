@@ -87,6 +87,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			CLI:                   images["cli"],
 			ClusterConfigOperator: images["cluster-config-operator"],
 			TokenMinterImage:      images["token-minter"],
+			AWSKMS:                images["aws-kms-provider"],
 		},
 	}
 	if hcp.Spec.APIAdvertiseAddress != nil {
