@@ -29,6 +29,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.InstanceType, "instance-type", opts.AzurePlatform.InstanceType, "The instance type to use for nodes")
+	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 
 	cmd.MarkFlagRequired("azure-creds")
 
@@ -80,12 +81,15 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Location:        opts.AzurePlatform.Location,
 			InfraID:         infraID,
 			CredentialsFile: opts.AzurePlatform.CredentialsFile,
+			BaseDomain:      opts.BaseDomain,
 		}).Run(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
 	}
 
+	exampleOptions.BaseDomain = infra.BaseDomain
+	exampleOptions.PublicZoneID = infra.PublicZoneID
 	exampleOptions.InfraID = infra.InfraID
 	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
 		Location:          infra.Location,

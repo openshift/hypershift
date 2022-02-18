@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/dns/mgmt/2018-05-01/dns"
 	"github.com/Azure/azure-sdk-for-go/services/msi/mgmt/2018-11-30/msi"
 	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2021-05-01/network"
 	"github.com/Azure/azure-sdk-for-go/services/preview/authorization/mgmt/2020-04-01-preview/authorization"
@@ -34,6 +35,7 @@ import (
 
 type CreateInfraOptions struct {
 	Name            string
+	BaseDomain      string
 	Location        string
 	InfraID         string
 	CredentialsFile string
@@ -54,6 +56,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID(required)")
 	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to a credentials file (required)")
 	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, "Location where cluster infra should be created")
+	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 
@@ -88,6 +91,8 @@ func readCredentials(path string) (*apifixtures.AzureCreds, error) {
 }
 
 type CreateInfraOutput struct {
+	BaseDomain        string `json:"baseDomain"`
+	PublicZoneID      string `json:"publicZoneID"`
 	Location          string `json:"region"`
 	ResourceGroupName string `json:"resourceGroupName"`
 	VNetID            string `json:"vnetID"`
@@ -118,13 +123,23 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get azure authorizer: %w", err)
 	}
-	resourceGroupClient := resources.NewGroupsClient(creds.SubscriptionID)
-	resourceGroupClient.Authorizer = authorizer
 
 	result := CreateInfraOutput{
-		Location: o.Location,
-		InfraID:  o.InfraID,
+		Location:   o.Location,
+		InfraID:    o.InfraID,
+		BaseDomain: o.BaseDomain,
 	}
+
+	zonesClient := dns.NewZonesClient(creds.SubscriptionID)
+	zonesClient.Authorizer = authorizer
+	dnsZone, err := findDNSZone(ctx, zonesClient, o.BaseDomain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find dns zone %s: %w", o.BaseDomain, err)
+	}
+	result.PublicZoneID = *dnsZone.ID
+
+	resourceGroupClient := resources.NewGroupsClient(creds.SubscriptionID)
+	resourceGroupClient.Authorizer = authorizer
 
 	resourceGroupName := resourceGroupName(o.Name, o.InfraID)
 	rg, err := resourceGroupClient.CreateOrUpdate(ctx, resourceGroupName, resources.Group{Location: utilpointer.String(o.Location)})
@@ -335,4 +350,23 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 
 	return &result, nil
 
+}
+
+func findDNSZone(ctx context.Context, client dns.ZonesClient, name string) (*dns.Zone, error) {
+	page, err := client.List(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list DNS zones: %w", err)
+	}
+	for page.NotDone() {
+		for _, item := range page.Values() {
+			if *item.Name == name {
+				return &item, nil
+			}
+			if err := page.NextWithContext(ctx); err != nil {
+				return nil, fmt.Errorf("failed to fetch DNS zone page: %w", err)
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("no dns zone with name %s found", name)
 }
