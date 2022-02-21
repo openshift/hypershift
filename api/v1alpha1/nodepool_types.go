@@ -305,6 +305,8 @@ type NodePoolPlatform struct {
 	//
 	// +optional
 	Agent *AgentNodePoolPlatform `json:"agent,omitempty"`
+
+	Azure *AzureNodePoolPlatform `json:"azure,omitempty"`
 }
 
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
@@ -423,4 +425,9 @@ type AgentNodePoolPlatform struct {
 	// be selected for a Machine.
 	// +optional
 	AgentLabelSelector *metav1.LabelSelector `json:"agentLabelSelector,omitempty"`
+}
+
+type AzureNodePoolPlatform struct {
+	VMSize  string `json:"vmsize"`
+	ImageID string `json:"imageID"`
 }

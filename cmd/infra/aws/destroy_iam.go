@@ -135,6 +135,9 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	if err := o.DestroyOIDCRole(iamClient, "cloud-network-config-controller"); err != nil {
 		return err
 	}
+	if err := o.DestroyOIDCRole(iamClient, "kms-provider"); err != nil {
+		return err
+	}
 
 	return nil
 }

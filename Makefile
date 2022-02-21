@@ -94,7 +94,7 @@ token-minter:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent api-docs
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure api-docs
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
@@ -130,6 +130,11 @@ cluster-api-provider-agent: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-agent/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/openshift/cluster-api-provider-agent/api/v1alpha1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-agent
 
+.PHONY: cluster-api-provider-azure
+cluster-api-provider-azure: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/cluster-api-provider-azure/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-azure/api/v1beta1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-azure
+
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
 	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
@@ -143,6 +148,7 @@ app-sre-saas-template: hypershift
 		--oidc-storage-provider-s3-secret-key=credentials \
 		--enable-ocp-cluster-monitoring=false \
 		--enable-ci-debug-output=false \
+		--enable-admin-rbac-generation=true \
 		render --template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
 
 # Run tests
@@ -154,6 +160,7 @@ test: build
 e2e:
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
 
 # Run go fmt against code
 .PHONY: fmt

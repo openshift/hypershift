@@ -19,6 +19,7 @@ import (
 //go:embed cluster-api-provider-ibmcloud/*
 //go:embed cluster-api-provider-kubevirt/*
 //go:embed cluster-api-provider-agent/*
+//go:embed cluster-api-provider-azure/*
 var crds embed.FS
 
 //go:embed recordingrules/*
@@ -41,6 +42,9 @@ var capiResources = map[string]string{
 	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentclusters.yaml":         "v1alpha1",
 	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachinetemplates.yaml": "v1alpha1",
 	"cluster-api-provider-agent/capi-provider.agent-install.openshift.io_agentmachines.yaml":         "v1alpha1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azureclusters.yaml":                  "v1beta1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachines.yaml":                  "v1beta1",
+	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachinetemplates.yaml":          "v1beta1",
 }
 
 func getContents(fs embed.FS, file string) []byte {

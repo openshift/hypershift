@@ -5,6 +5,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/nodepool/agent"
 	"github.com/openshift/hypershift/cmd/nodepool/aws"
+	"github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 )
@@ -40,6 +41,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
+	cmd.AddCommand(azure.NewCreateCommand(opts))
 
 	return cmd
 }

@@ -28,9 +28,6 @@ const (
 	// ControlPlaneOperatorImageAnnotation is a annotation that allows the specification of the control plane operator image.
 	// This is used for development and e2e workflows
 	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"
-	// DesiredControlPlaneOperatorImageAnnotation is an annotation that is used to specify the desired image of the control-plane-operator
-	// that is expected to reconcile a specific version of an instance of a HostedControlPlane
-	DesiredControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/desired-control-plane-operator-image"
 	// RestartDateAnnotation is a annotation that can be used to trigger a rolling restart of all components managed by hypershift.
 	// it is important in some situations like CA rotation where components need to be fully restarted to pick up new CAs. It's also
 	// important in some recovery situations where a fresh start of the component helps fix symptoms a user might be experiencing.
@@ -401,7 +398,7 @@ const (
 
 // PlatformType is a specific supported infrastructure provider.
 //
-// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt
+// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure
 type PlatformType string
 
 const (
@@ -419,6 +416,9 @@ const (
 
 	// KubevirtPlatform represents Kubevirt infrastructure.
 	KubevirtPlatform PlatformType = "KubeVirt"
+
+	// AzurePlatform represents Azure infrastructure.
+	AzurePlatform PlatformType = "Azure"
 )
 
 // PlatformSpec specifies the underlying infrastructure provider for the cluster
@@ -444,6 +444,9 @@ type PlatformSpec struct {
 
 	// IBMCloud defines IBMCloud specific settings for components
 	IBMCloud *IBMCloudPlatformSpec `json:"ibmcloud,omitempty"`
+
+	// Azure defines azure specific settings
+	Azure *AzurePlatformSpec `json:"azure,omitempty"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
@@ -623,6 +626,17 @@ type AWSServiceEndpoint struct {
 	//
 	// +kubebuilder:validation:Pattern=`^https://`
 	URL string `json:"url"`
+}
+
+type AzurePlatformSpec struct {
+	Credentials       corev1.LocalObjectReference `json:"credentials"`
+	Location          string                      `json:"location"`
+	ResourceGroupName string                      `json:"resourceGroup"`
+	VnetName          string                      `json:"vnetName"`
+	VnetID            string                      `json:"vnetID"`
+	SubscriptionID    string                      `json:"subscriptionID"`
+	MachineIdentityID string                      `json:"machineIdentityID"`
+	SecurityGroupName string                      `json:"securityGroupName"`
 }
 
 // Release represents the metadata for an OCP release payload image.

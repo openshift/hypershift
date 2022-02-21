@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	"crypto/rand"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -64,6 +65,7 @@ type ExampleOptions struct {
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
 	Kubevirt                         *ExampleKubevirtOptions
+	Azure                            *ExampleAzureOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
@@ -101,11 +103,34 @@ type ExampleAWSOptions struct {
 	KubeCloudControllerRoleARN  string
 	NodePoolManagementRoleARN   string
 	ControlPlaneOperatorRoleARN string
+	KMSProviderRoleARN          string
+	KMSKeyARN                   string
 	RootVolumeSize              int64
 	RootVolumeType              string
 	RootVolumeIOPS              int64
 	ResourceTags                []hyperv1.AWSResourceTag
 	EndpointAccess              string
+}
+
+type ExampleAzureOptions struct {
+	Creds             AzureCreds
+	Location          string
+	ResourceGroupName string
+	VnetName          string
+	VnetID            string
+	BootImageID       string
+	MachineIdentityID string
+	InstanceType      string
+	SecurityGroupName string
+}
+
+// TODO: This format is made up by using the env var keys as keys.
+// Is there any kind of official file format for this?
+type AzureCreds struct {
+	SubscriptionID string `json:"AZURE_SUBSCRIPTION_ID"`
+	TenantID       string `json:"AZURE_TENANT_ID"`
+	ClientID       string `json:"AZURE_CLIENT_ID"`
+	ClientSecret   string `json:"AZURE_CLIENT_SECRET"`
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -158,6 +183,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	var platformSpec hyperv1.PlatformSpec
 	var resources []crclient.Object
 	var services []hyperv1.ServicePublishingStrategyMapping
+	var secretEncryption *hyperv1.SecretEncryptionSpec
 
 	switch {
 	case o.AWS != nil:
@@ -179,10 +205,16 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
+
+		var kmsCredsSecret *corev1.Secret
+		if len(o.AWS.KMSProviderRoleARN) > 0 {
+			kmsCredsSecret = buildAWSCreds(o.Name+"-kms-creds", o.AWS.KMSProviderRoleARN)
+		}
 		awsResources := &ExampleAWSResources{
 			buildAWSCreds(o.Name+"-cloud-ctrl-creds", o.AWS.KubeCloudControllerRoleARN),
 			buildAWSCreds(o.Name+"-node-mgmt-creds", o.AWS.NodePoolManagementRoleARN),
 			buildAWSCreds(o.Name+"-cpo-creds", o.AWS.ControlPlaneOperatorRoleARN),
+			kmsCredsSecret,
 		}
 		resources = awsResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
@@ -204,6 +236,27 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				EndpointAccess:            hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess),
 			},
 		}
+
+		if kmsCredsSecret != nil {
+			secretEncryption = &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.KMS,
+				KMS: &hyperv1.KMSSpec{
+					Provider: hyperv1.AWS,
+					AWS: &hyperv1.AWSKMSSpec{
+						Region: o.AWS.Region,
+						ActiveKey: hyperv1.AWSKMSKeyEntry{
+							ARN: o.AWS.KMSKeyARN,
+						},
+						Auth: hyperv1.AWSKMSAuthSpec{
+							Credentials: corev1.LocalObjectReference{
+								Name: awsResources.KMSProviderAWSCreds.Name,
+							},
+						},
+					},
+				},
+			}
+		}
+
 		services = []hyperv1.ServicePublishingStrategyMapping{
 			{
 				Service: hyperv1.APIServer,
@@ -254,9 +307,81 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			Type: hyperv1.KubevirtPlatform,
 		}
 		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
+	case o.Azure != nil:
+		credentialSecret := &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "v1",
+				Kind:       "Secret",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      o.Name + "-cloud-credentials",
+				Namespace: namespace.Name,
+			},
+			Data: map[string][]byte{
+				"AZURE_SUBSCRIPTION_ID": []byte(o.Azure.Creds.SubscriptionID),
+				"AZURE_TENANT_ID":       []byte(o.Azure.Creds.TenantID),
+				"AZURE_CLIENT_ID":       []byte(o.Azure.Creds.ClientID),
+				"AZURE_CLIENT_SECRET":   []byte(o.Azure.Creds.ClientSecret),
+			},
+		}
+		resources = append(resources, credentialSecret)
+
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.AzurePlatform,
+			Azure: &hyperv1.AzurePlatformSpec{
+				Credentials:       corev1.LocalObjectReference{Name: credentialSecret.Name},
+				Location:          o.Azure.Location,
+				ResourceGroupName: o.Azure.ResourceGroupName,
+				VnetName:          o.Azure.VnetName,
+				VnetID:            o.Azure.VnetID,
+				SubscriptionID:    o.Azure.Creds.SubscriptionID,
+				MachineIdentityID: o.Azure.MachineIdentityID,
+				SecurityGroupName: o.Azure.SecurityGroupName,
+			},
+		}
+		services = []hyperv1.ServicePublishingStrategyMapping{
+			{
+				Service: hyperv1.APIServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.LoadBalancer,
+				},
+			},
+			{
+				Service: hyperv1.OAuthServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Konnectivity,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+			{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+				},
+			},
+		}
 
 	default:
 		panic("no platform specified")
+	}
+
+	// If secret encryption was not specified, default to AESCBC
+	if secretEncryption == nil {
+		encryptionSecret := o.EtcdEncryptionKeySecret()
+		resources = append(resources, encryptionSecret)
+		secretEncryption = &hyperv1.SecretEncryptionSpec{
+			Type: hyperv1.AESCBC,
+			AESCBC: &hyperv1.AESCBCSpec{
+				ActiveKey: corev1.LocalObjectReference{
+					Name: encryptionSecret.Name,
+				},
+			},
+		}
 	}
 
 	var etcdStorgageClass *string = nil
@@ -289,6 +414,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					},
 				},
 			},
+			SecretEncryption: secretEncryption,
 			Networking: hyperv1.ClusterNetworking{
 				ServiceCIDR: o.ServiceCIDR,
 				PodCIDR:     o.PodCIDR,
@@ -418,6 +544,13 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		nodePools = append(nodePools, nodePool)
 	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
 		nodePools = append(nodePools, defaultNodePool(cluster.Name))
+	case hyperv1.AzurePlatform:
+		nodePool := defaultNodePool(cluster.Name)
+		nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+			VMSize:  o.Azure.InstanceType,
+			ImageID: o.Azure.BootImageID,
+		}
+		nodePools = append(nodePools, nodePool)
 	default:
 		panic("Unsupported platform")
 	}
@@ -469,5 +602,27 @@ func (o ExampleOptions) getServicePublishingStrategyMappingByAPIServerAddress(AP
 				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
 			},
 		},
+	}
+}
+
+func (o ExampleOptions) EtcdEncryptionKeySecret() *corev1.Secret {
+	generatedKey := make([]byte, 32)
+	_, err := rand.Read(generatedKey)
+	if err != nil {
+		panic(fmt.Sprintf("failed to generate random etcd key: %v", err))
+	}
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      o.Name + "-etcd-encryption-key",
+			Namespace: o.Namespace,
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		Data: map[string][]byte{
+			hyperv1.AESCBCKeySecretKey: generatedKey,
+		},
+		Type: corev1.SecretTypeOpaque,
 	}
 }
