@@ -110,6 +110,7 @@ func TestAutoscaling(t *testing.T) {
 	_ = e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
 
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureAPIBudget(t, ctx, client, hostedCluster)
 }
 
 func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, image string, zone string) *batchv1.Job {
