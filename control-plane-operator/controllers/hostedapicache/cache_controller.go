@@ -38,7 +38,7 @@ type HostedAPICacheReconciler struct {
 func RegisterHostedAPICacheReconciler(mgr ctrl.Manager, cacheCtx context.Context, cacheLog logr.Logger, scope manifests.KubeconfigScope) (*HostedAPICacheReconciler, error) {
 	r := &HostedAPICacheReconciler{
 		Client:         mgr.GetClient(),
-		hostedAPICache: newHostedAPICache(cacheCtx, cacheLog, mgr.GetScheme(), mgr.GetRESTMapper()),
+		hostedAPICache: newHostedAPICache(cacheCtx, cacheLog, mgr.GetScheme()),
 		scope:          scope,
 	}
 
