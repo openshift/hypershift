@@ -90,6 +90,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 	exampleOptions.BaseDomain = infra.BaseDomain
 	exampleOptions.PublicZoneID = infra.PublicZoneID
+	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.InfraID = infra.InfraID
 	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
 		Location:          infra.Location,
