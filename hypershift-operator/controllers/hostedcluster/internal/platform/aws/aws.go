@@ -170,6 +170,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 									Port: intstr.FromString("healthz"),
 								},
 							},
+							FailureThreshold: 6,
 						},
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
