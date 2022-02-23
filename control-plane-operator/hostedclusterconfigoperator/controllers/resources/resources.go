@@ -741,6 +741,53 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 				errs = append(errs, fmt.Errorf("failed to reconcile aws cloud credential secret %s/%s: %w", secret.Namespace, secret.Name, err))
 			}
 		}
+	case hyperv1.AzurePlatform:
+		referenceCredentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(referenceCredentialsSecret), referenceCredentialsSecret); err != nil {
+			return []error{fmt.Errorf("failed to get cloud credentials secret in hcp namespace: %w", err)}
+		}
+
+		secretData := map[string][]byte{
+			"azure_client_id":       referenceCredentialsSecret.Data["AZURE_CLIENT_ID"],
+			"azure_client_secret":   referenceCredentialsSecret.Data["AZURE_CLIENT_SECRET"],
+			"azure_region":          []byte(hcp.Spec.Platform.Azure.Location),
+			"azure_resource_prefix": []byte(hcp.Name + "-" + hcp.Spec.InfraID),
+			"azure_resourcegroup":   []byte(hcp.Spec.Platform.Azure.ResourceGroupName),
+			"azure_subscription_id": referenceCredentialsSecret.Data["AZURE_SUBSCRIPTION_ID"],
+			"azure_tenant_id":       referenceCredentialsSecret.Data["AZURE_TENANT_ID"],
+		}
+
+		ingressCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, ingressCredentialSecret, func() error {
+			ingressCredentialSecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed tom reconcile guest cluster ingress operator secret: %w", err))
+		}
+
+		csiCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, csiCredentialSecret, func() error {
+			csiCredentialSecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster CSI secret: %w", err))
+		}
+
+		imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
+			imageRegistrySecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster image-registry secret: %w", err))
+		}
+
+		cloudNetworkConfigControllerSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cloud-network-config-controller", Name: "cloud-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, cloudNetworkConfigControllerSecret, func() error {
+			cloudNetworkConfigControllerSecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster cloud-network-config-controller secret: %w", err))
+		}
 	}
 	return errs
 }
