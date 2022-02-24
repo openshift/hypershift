@@ -61,5 +61,11 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			})
 		}
 		infra.Status.PlatformStatus.AWS.ResourceTags = tags
+	case hyperv1.AzurePlatform:
+		infra.Spec.CloudConfig.Name = "cloud.conf"
+		infra.Status.PlatformStatus.Azure = &configv1.AzurePlatformStatus{
+			CloudName:         configv1.AzurePublicCloud,
+			ResourceGroupName: hcp.Spec.Platform.Azure.ResourceGroupName,
+		}
 	}
 }

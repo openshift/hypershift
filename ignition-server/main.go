@@ -13,6 +13,7 @@ import (
 	"time"
 
 	hyperapi "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/spf13/cobra"
@@ -57,6 +58,7 @@ type Options struct {
 	CertFile          string
 	KeyFile           string
 	RegistryOverrides map[string]string
+	Platform          string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -76,6 +78,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.CertFile, "cert-file", opts.CertFile, "Path to the serving cert")
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", opts.KeyFile, "Path to the serving key")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringVar(&opts.Platform, "platform", "", "The cloud provider platform name")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -98,7 +101,7 @@ func NewStartCommand() *cobra.Command {
 
 // setUpPayloadStoreReconciler sets up manager with a TokenSecretReconciler controller
 // to keep the PayloadStore up to date.
-func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string) (ctrl.Manager, error) {
+func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string, cloudProvider hyperv1.PlatformType) (ctrl.Manager, error) {
 	if os.Getenv(namespaceEnvVariableName) == "" {
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
@@ -130,8 +133,9 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 				},
 				RegistryOverrides: registryOverrides,
 			},
-			Client:    mgr.GetClient(),
-			Namespace: os.Getenv(namespaceEnvVariableName),
+			Client:        mgr.GetClient(),
+			Namespace:     os.Getenv(namespaceEnvVariableName),
+			CloudProvider: cloudProvider,
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)
@@ -141,7 +145,7 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 }
 
 func run(ctx context.Context, opts Options) error {
-	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides)
+	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform))
 	if err != nil {
 		return fmt.Errorf("error setting up manager: %w", err)
 	}

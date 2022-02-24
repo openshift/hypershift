@@ -118,6 +118,7 @@ type ExampleAzureOptions struct {
 	ResourceGroupName string
 	VnetName          string
 	VnetID            string
+	SubnetName        string
 	BootImageID       string
 	MachineIdentityID string
 	InstanceType      string
@@ -334,6 +335,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				ResourceGroupName: o.Azure.ResourceGroupName,
 				VnetName:          o.Azure.VnetName,
 				VnetID:            o.Azure.VnetID,
+				SubnetName:        o.Azure.SubnetName,
 				SubscriptionID:    o.Azure.Creds.SubscriptionID,
 				MachineIdentityID: o.Azure.MachineIdentityID,
 				SecurityGroupName: o.Azure.SecurityGroupName,
