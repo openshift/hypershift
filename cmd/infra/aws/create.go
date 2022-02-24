@@ -125,9 +125,9 @@ func (o *CreateInfraOptions) Run(ctx context.Context) error {
 func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutput, error) {
 	log.Log.Info("Creating infrastructure", "id", o.InfraID)
 
-	awsSession := awsutil.NewSession("cli-create-infra")
-	ec2Client := ec2.New(awsSession, awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region))
-	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey))
+	awsSession := awsutil.NewSession("cli-create-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	ec2Client := ec2.New(awsSession, awsutil.NewConfig())
+	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
 
 	var err error
 	if err = o.parseAdditionalTags(); err != nil {
