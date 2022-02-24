@@ -619,7 +619,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile cluster version operator
-	r.Log.Info("Reonciling Cluster Version Operator")
+	r.Log.Info("Reconciling Cluster Version Operator")
 	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
