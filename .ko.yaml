@@ -11,10 +11,6 @@ builds:
   main: ./ignition-server
   flags:
   - -mod=vendor
-- id: hosted-cluster-config-operator
-  main: ./hosted-cluster-config-operator
-  flags:
-  - -mod=vendor
 - id: konnectivity-socks5-proxy
   main: ./konnectivity-socks5-proxy
   flags:
