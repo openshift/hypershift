@@ -73,10 +73,11 @@ type NonePlatformCreateOptions struct {
 }
 
 type KubevirtPlatformCreateOptions struct {
-	APIServerAddress   string
-	Memory             string
-	Cores              uint32
-	ContainerDiskImage string
+	ServicePublishingStrategy string
+	APIServerAddress          string
+	Memory                    string
+	Cores                     uint32
+	ContainerDiskImage        string
 }
 
 type AWSPlatformOptions struct {
