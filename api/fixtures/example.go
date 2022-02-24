@@ -524,6 +524,14 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 											},
 										},
 									},
+									Interfaces: []kubevirtv1.Interface{
+										kubevirtv1.Interface{
+											Name: "default",
+											InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+												Bridge: &kubevirtv1.InterfaceBridge{},
+											},
+										},
+									},
 								},
 							},
 							Volumes: []kubevirtv1.Volume{
@@ -533,6 +541,14 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 										ContainerDisk: &kubevirtv1.ContainerDiskSource{
 											Image: o.Kubevirt.Image,
 										},
+									},
+								},
+							},
+							Networks: []kubevirtv1.Network{
+								kubevirtv1.Network{
+									Name: "default",
+									NetworkSource: kubevirtv1.NetworkSource{
+										Pod: &kubevirtv1.PodNetwork{},
 									},
 								},
 							},
