@@ -3,6 +3,7 @@ package olm
 import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/config"
@@ -40,6 +41,10 @@ func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef 
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
 			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullAlways
+			deployment.Spec.Template.Spec.Containers[i].Resources.Requests = corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("15Mi"),
+			}
 		}
 	}
 	for i, env := range deployment.Spec.Template.Spec.Containers[0].Env {
@@ -81,6 +86,10 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
 			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullAlways
+			deployment.Spec.Template.Spec.Containers[i].Resources.Requests = corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("15Mi"),
+			}
 		}
 	}
 	for i, env := range deployment.Spec.Template.Spec.Containers[0].Env {

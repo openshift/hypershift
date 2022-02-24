@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -244,6 +245,10 @@ func buildKASContainerBootstrap(image string) func(c *corev1.Container) {
 			"-c",
 			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeBootstrapManifests().Name)),
 		}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+		}
 		c.Image = image
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -267,6 +272,10 @@ func buildKASContainerApplyBootstrap(image string) func(c *corev1.Container) {
 		c.Args = []string{
 			"-c",
 			applyBootstrapManifestsScript(volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name)),
+		}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
 		}
 		c.Env = []corev1.EnvVar{
 			{

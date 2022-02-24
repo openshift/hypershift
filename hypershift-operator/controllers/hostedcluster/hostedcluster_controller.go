@@ -2041,6 +2041,12 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				fmt.Sprintf("-kubeconfig-secret-namespace=%s", deployment.Namespace),
 				"-kubeconfig-secret-name=service-network-admin-kubeconfig",
 			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
 					Name:      "cloud-token",

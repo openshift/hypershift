@@ -2,6 +2,7 @@ package ingressoperator
 
 import (
 	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -138,6 +139,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 				"-service-account-name=ingress-operator",
 				"-token-file=/var/run/secrets/openshift/serviceaccount/token",
 				"-kubeconfig=/etc/kubernetes/kubeconfig",
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
 			},
 			Image: params.TokenMinterImage,
 			VolumeMounts: []corev1.VolumeMount{
