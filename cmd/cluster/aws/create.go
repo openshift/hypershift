@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/infraid"
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -98,7 +97,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 	if infra == nil {
 		if len(infraID) == 0 {
-			infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
+			infraID = infraid.New(opts.Name)
 		}
 		opt := awsinfra.CreateInfraOptions{
 			Region:             opts.AWSPlatform.Region,
