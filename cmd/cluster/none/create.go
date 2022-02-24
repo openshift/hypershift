@@ -2,10 +2,8 @@ package none
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -58,9 +56,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	infraID := opts.InfraID
-	if len(infraID) == 0 {
-		infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
-	}
 	exampleOptions.InfraID = infraID
 	exampleOptions.BaseDomain = opts.BaseDomain
 	if exampleOptions.BaseDomain == "" {
