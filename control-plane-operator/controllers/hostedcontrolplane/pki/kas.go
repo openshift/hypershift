@@ -70,6 +70,10 @@ func ReconcileIngressOperatorClientCertSecret(secret, ca *corev1.Secret, ownerRe
 	return reconcileSignedCert(secret, ca, ownerRef, "system:serviceaccount:openshift-ingress-operator:ingress-operator", []string{"system:serviceaccounts"}, X509UsageClientServerAuth)
 }
 
+func ReconcileKASMetricsClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:kas-metrics-client", []string{"kubernetes"}, X509UsageClientServerAuth)
+}
+
 func nextIP(ip net.IP) net.IP {
 	nextIP := net.IP(make([]byte, len(ip)))
 	copy(nextIP, ip)

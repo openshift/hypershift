@@ -49,6 +49,7 @@ var (
 			kasVolumeKubeletClientCert().Name:      "/etc/kubernetes/certs/kubelet",
 			kasVolumeKubeletClientCA().Name:        "/etc/kubernetes/certs/kubelet-ca",
 			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
+			kasVolumeMetricsClientCert().Name:      "/etc/kubernetes/certs/metrics-client",
 			kasVolumeEgressSelectorConfig().Name:   "/etc/kubernetes/egress-selector",
 		},
 	}
@@ -93,6 +94,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	aesCBCActiveKey []byte,
 	aesCBCBackupKey []byte,
 	etcdMgmtType hyperv1.EtcdManagementType,
+	port int32,
 ) error {
 
 	configBytes, ok := config.Data[KubeAPIServerConfigKey]
@@ -148,7 +150,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
-				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube)),
+				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port)),
 			},
 			Volumes: []corev1.Volume{
 				util.BuildVolume(kasVolumeBootstrapManifests(), buildKASVolumeBootstrapManifests),
@@ -168,6 +170,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeKubeletClientCert(), buildKASVolumeKubeletClientCert),
 				util.BuildVolume(kasVolumeKubeletClientCA(), buildKASVolumeKubeletClientCA),
 				util.BuildVolume(kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert),
+				util.BuildVolume(kasVolumeMetricsClientCert(), buildKASVolumeMetricsClientCert),
 				util.BuildVolume(kasVolumeEgressSelectorConfig(), buildKASVolumeEgressSelectorConfig),
 				util.BuildVolume(kasVolumeKubeconfig(), buildKASVolumeKubeconfig),
 			},
@@ -315,7 +318,7 @@ func kasContainerMain() *corev1.Container {
 	}
 }
 
-func buildKASContainerMain(image string) func(c *corev1.Container) {
+func buildKASContainerMain(image string, port int32) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
@@ -341,6 +344,13 @@ func buildKASContainerMain(image string) func(c *corev1.Container) {
 		}}
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "client",
+				ContainerPort: port,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		}
 	}
 }
 
@@ -463,6 +473,20 @@ func buildKASVolumeKonnectivityClientCert(v *corev1.Volume) {
 	}
 	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
+}
+
+func kasVolumeMetricsClientCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "metrics-client",
+	}
+}
+
+func buildKASVolumeMetricsClientCert(v *corev1.Volume) {
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
+	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.SecretName = manifests.KASMetricsClientCert("").Name
 }
 
 func kasVolumeAggregatorCert() *corev1.Volume {
