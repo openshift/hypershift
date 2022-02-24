@@ -435,3 +435,27 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 		}
 	})
 }
+
+func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureHCPContainersHaveResourceRequests", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, &crclient.ListOptions{Namespace: namespace}); err != nil {
+			t.Fatalf("failed to list pods: %v", err)
+		}
+		for _, pod := range podList.Items {
+			for _, container := range pod.Spec.Containers {
+				if container.Resources.Requests == nil {
+					t.Errorf("container %s in pod %s has no resource requests", container.Name, pod.Name)
+					continue
+				}
+				if _, ok := container.Resources.Requests[corev1.ResourceCPU]; !ok {
+					t.Errorf("container %s in pod %s has no CPU resource request", container.Name, pod.Name)
+				}
+				if _, ok := container.Resources.Requests[corev1.ResourceMemory]; !ok {
+					t.Errorf("container %s in pod %s has no memory resource request", container.Name, pod.Name)
+				}
+			}
+		}
+	})
+}
