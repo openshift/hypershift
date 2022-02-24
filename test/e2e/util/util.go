@@ -376,7 +376,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "control-plane-operator read",
 				query:  fmt.Sprintf("sum(hypershift:controlplane:component_api_requests_total{method=\"GET\", namespace=~\"%s\"}) by (pod)", namespace),
-				budget: 600,
+				budget: 800,
 			},
 			{
 				name:   "control-plane-operator mutate",
