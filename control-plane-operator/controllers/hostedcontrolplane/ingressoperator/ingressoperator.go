@@ -149,6 +149,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 				"-token-file=/var/run/secrets/openshift/serviceaccount/token",
 				"-kubeconfig=/etc/kubernetes/kubeconfig",
 			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
 			Image: params.TokenMinterImage,
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "serviceaccount-token", MountPath: "/var/run/secrets/openshift/serviceaccount"},
