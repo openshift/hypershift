@@ -13,6 +13,7 @@ const (
 	Provider       = "azure"
 )
 
+// ReconcileCloudConfigWithCredentials reconciles as expected by Nodes Kubelet.
 func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
 	cfg := azureConfigWithoutCredentials(hcp, credentialsSecret)
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
@@ -27,6 +28,7 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane,
 	return nil
 }
 
+// ReconcileCloudConfigWithCredentials reconciles as expected by KAS/KCM.
 func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
 	cfg := azureConfigWithoutCredentials(hcp, credentialsSecret)
 	cfg.AADClientID = string(credentialsSecret.Data["AZURE_CLIENT_ID"])
