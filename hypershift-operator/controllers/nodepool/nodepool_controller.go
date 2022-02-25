@@ -66,6 +66,7 @@ const (
 	nodePoolAnnotationCurrentConfigVersion    = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationPlatformMachineTemplate = "hypershift.openshift.io/nodePoolPlatformMachineTemplate"
 	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
+	TokenSecretTokenGenerationTime            = "hypershift.openshift.io/last-token-generation-time"
 	TokenSecretReleaseKey                     = "release"
 	TokenSecretTokenKey                       = "token"
 	TokenSecretConfigKey                      = "config"
@@ -423,7 +424,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
 	}
 
-	// Token Secrets are immutable and follow "prefixName-configVersionHash" naming convention.
+	// Token Secrets exist for each NodePool config/version and follow "prefixName-configVersionHash" naming convention.
 	// Ensure old configVersionHash resources are deleted, i.e token Secret and userdata Secret.
 	if isUpdatingVersion || isUpdatingConfig {
 		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
@@ -661,7 +662,10 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 }
 
 func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte) error {
-	tokenSecret.Immutable = k8sutilspointer.BoolPtr(true)
+	// The token secret controller updates expired token IDs for token Secrets.
+	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
+	// Therefore this secret is mutable.
+	tokenSecret.Immutable = k8sutilspointer.BoolPtr(false)
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = make(map[string]string)
 	}
@@ -671,6 +675,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 
 	if tokenSecret.Data == nil {
 		tokenSecret.Data = map[string][]byte{}
+		tokenSecret.Annotations[TokenSecretTokenGenerationTime] = time.Now().Format(time.RFC3339Nano)
 		tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
 		tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
 		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig
