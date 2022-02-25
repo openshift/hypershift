@@ -195,6 +195,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 	ignEndpoint := hcluster.Status.IgnitionEndpoint
 	infraID := hcluster.Spec.InfraID
+	if err := validateInfraID(infraID); err != nil {
+		// We don't return the error here as reconciling won't solve the input problem.
+		// An update event will trigger reconciliation.
+		// TODO (alberto): consider this an condition failure reason when revisiting conditions.
+		log.Error(err, "Invalid infraID, waiting.")
+		return reconcile.Result{}, nil
+	}
 
 	// 1. - Reconcile conditions according to current state of the world.
 
@@ -1434,4 +1441,11 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 	}
 
 	return template, mutateTemplate, string(machineTemplateSpecJSON), nil
+}
+
+func validateInfraID(infraID string) error {
+	if infraID == "" {
+		return fmt.Errorf("infraID can't be empty")
+	}
+	return nil
 }
