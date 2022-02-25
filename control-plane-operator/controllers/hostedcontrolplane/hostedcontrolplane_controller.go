@@ -15,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	// TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -116,6 +117,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ServiceAccount{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &policyv1beta1.PodDisruptionBudget{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &prometheusoperatorv1.PodMonitor{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Channel{Source: r.HostedAPICache.Events()}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Build(r)
 	if err != nil {
@@ -2123,6 +2125,25 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
+	}
+
+	podMonitor := manifests.ConfigOperatorPodMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, podMonitor, func() error {
+		podMonitor.Spec.Selector = *deployment.Spec.Selector
+		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
+			Interval: "15s",
+			Port:     "metrics",
+		}}
+		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{hcp.Namespace}}
+		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
+			APIVersion: hyperv1.GroupVersion.String(),
+			Kind:       "HostedControlPlane",
+			Name:       hcp.Name,
+			UID:        hcp.UID,
+		}})
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile pod monitor for config operator: %w", err)
 	}
 
 	return nil

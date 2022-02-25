@@ -118,11 +118,11 @@ func SSHKey(controlPlaneNamespace string) *corev1.Secret {
 	}
 }
 
-func PodMonitor(controlPlaneNamespace string, hostedClusterName string) *prometheusoperatorv1.PodMonitor {
+func PodMonitor(controlPlaneNamespace string) *prometheusoperatorv1.PodMonitor {
 	return &prometheusoperatorv1.PodMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
-			Name:      hostedClusterName,
+			Name:      "controlplane-operator",
 		},
 	}
 }
