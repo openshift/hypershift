@@ -70,6 +70,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
@@ -396,7 +397,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Type:               string(hyperv1.ValidHostedClusterConfiguration),
 			ObservedGeneration: hcluster.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(hcluster); err != nil {
+		if err := r.validateConfigAndClusterCapabilities(ctx, hcluster); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InvalidConfigurationReason
@@ -3349,13 +3350,46 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	return nil
 }
 
-func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	var errs []error
 	for _, svc := range hc.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
-			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+			errs = append(errs, fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service))
 		}
 	}
-	return nil
+
+	if err := r.validateAzureConfig(ctx, hc); err != nil {
+		errs = append(errs, err)
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+
+	if hc.Spec.Platform.Azure == nil {
+		return errors.New("azurecluster needs .spec.platform.azure to be filled")
+	}
+
+	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Namespace: hc.Namespace,
+		Name:      hc.Spec.Platform.Azure.Credentials.Name,
+	}}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+		return fmt.Errorf("failed to get credentials secret for cluster: %w", err)
+	}
+
+	var errs []error
+	for _, expectedKey := range []string{"AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"} {
+		if _, found := credentialsSecret.Data[expectedKey]; !found {
+			errs = append(errs, fmt.Errorf("credentials secret for cluster doesn't have required key %s", expectedKey))
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
