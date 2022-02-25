@@ -3036,22 +3036,67 @@ func deleteNamespace(ctx context.Context, c client.Client, ns *corev1.Namespace)
 	return true, nil
 }
 
-func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
-	rbacMeta := metav1.ObjectMeta{
-		Name:      "control-plane-operator-" + controlPlaneNamespace,
-		Namespace: rbacNamespace,
+func deleteControlPlaneOperatorRole(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "control-plane-operator-" + controlPlaneNamespace,
+			Namespace: rbacNamespace,
+		},
 	}
-
-	err := c.Delete(ctx, &rbacv1.Role{ObjectMeta: rbacMeta})
-	if err != nil && !apierrors.IsNotFound(err) {
+	err := c.Get(ctx, client.ObjectKeyFromObject(role), role)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting Role: %w", err)
+	}
+	if role.DeletionTimestamp != nil {
+		return nil
+	}
+	err = c.Delete(ctx, role)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
 		return fmt.Errorf("error deleting Role: %w", err)
 	}
+	return nil
+}
 
-	err = c.Delete(ctx, &rbacv1.RoleBinding{ObjectMeta: rbacMeta})
-	if err != nil && !apierrors.IsNotFound(err) {
+func deleteControlPlaneOperatorRoleBinding(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
+	rolebinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "control-plane-operator-" + controlPlaneNamespace,
+			Namespace: rbacNamespace,
+		},
+	}
+	err := c.Get(ctx, client.ObjectKeyFromObject(rolebinding), rolebinding)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting RoleBinding: %w", err)
+	}
+	if rolebinding.DeletionTimestamp != nil {
+		return nil
+	}
+	err = c.Delete(ctx, rolebinding)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
 		return fmt.Errorf("error deleting RoleBinding: %w", err)
 	}
+	return nil
+}
 
+func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
+	if err := deleteControlPlaneOperatorRole(ctx, c, rbacNamespace, controlPlaneNamespace); err != nil {
+		return err
+	}
+	if err := deleteControlPlaneOperatorRoleBinding(ctx, c, rbacNamespace, controlPlaneNamespace); err != nil {
+		return err
+	}
 	return nil
 }
 
