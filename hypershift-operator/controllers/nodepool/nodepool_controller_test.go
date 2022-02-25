@@ -3,6 +3,7 @@ package nodepool
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -1021,4 +1022,25 @@ func TestValidateInfraID(t *testing.T) {
 
 	err = validateInfraID("123")
 	g.Expect(err).ToNot(HaveOccurred())
+}
+
+func TestGetName(t *testing.T) {
+	g := NewWithT(t)
+
+	alphaNumeric := regexp.MustCompile(`^[a-z0-9]*$`)
+	base := "infraID-clusterName" // length 19
+	suffix := "nodePoolName"      // length 12
+	length := len(base) + len(suffix)
+
+	// When maxLength == base+suffix
+	name := getName(base, suffix, length)
+	g.Expect(alphaNumeric.MatchString(string(name[0]))).To(BeTrue())
+
+	// When maxLength < base+suffix
+	name = getName(base, suffix, length-1)
+	g.Expect(alphaNumeric.MatchString(string(name[0]))).To(BeTrue())
+
+	// When maxLength > base+suffix
+	name = getName(base, suffix, length+1)
+	g.Expect(alphaNumeric.MatchString(string(name[0]))).To(BeTrue())
 }
