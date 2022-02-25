@@ -8,10 +8,44 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-const CloudConfigKey = "cloud.conf"
+const (
+	CloudConfigKey = "cloud.conf"
+	Provider       = "azure"
+)
 
 func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg := AzureConfig{
+	cfg := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
+	}
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	cm.Data[CloudConfigKey] = string(serializedConfig)
+
+	return nil
+}
+
+func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
+	cfg := azureConfigWithoutCredentials(hcp, credentialsSecret)
+	cfg.AADClientID = string(credentialsSecret.Data["AZURE_CLIENT_ID"])
+	cfg.AADClientSecret = string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
+	cfg.UseManagedIdentityExtension = false
+	cfg.UseInstanceMetadata = false
+	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
+	}
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[CloudConfigKey] = serializedConfig
+	return nil
+}
+
+func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) AzureConfig {
+	return AzureConfig{
 		Cloud:                        "AzurePublicCloud",
 		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
 		UseManagedIdentityExtension:  true,
@@ -27,16 +61,6 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane,
 		UseInstanceMetadata:          true,
 		LoadBalancerSku:              "standard",
 	}
-	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
-	}
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-	cm.Data[CloudConfigKey] = string(serializedConfig)
-
-	return nil
 }
 
 // AzureConfig is a copy of the relevant subset of the upstream type
@@ -47,6 +71,8 @@ type AzureConfig struct {
 	TenantID                     string `json:"tenantId"`
 	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension"`
 	SubscriptionID               string `json:"subscriptionId"`
+	AADClientID                  string `json:"aadClientId"`
+	AADClientSecret              string `json:"aadClientSecret"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`
 	VnetName                     string `json:"vnetName"`

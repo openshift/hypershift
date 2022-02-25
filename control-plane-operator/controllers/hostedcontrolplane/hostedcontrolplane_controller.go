@@ -1225,6 +1225,12 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure cloud config: %w", err)
 		}
+		withSecrets := manifests.AzureProviderConfigWithCredentials(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, withSecrets, func() error {
+			return azure.ReconcileCloudConfigWithCredentials(withSecrets, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
+		}
 	}
 	return nil
 }
