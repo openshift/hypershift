@@ -1219,6 +1219,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
 		}
+
+		// We need different configs for KAS/KCM and Kubelet in Nodes
 		cfg := manifests.AzureProviderConfig(hcp.Namespace)
 		if _, err := r.CreateOrUpdate(ctx, r, cfg, func() error {
 			return azure.ReconcileCloudConfig(cfg, hcp, credentialsSecret)
