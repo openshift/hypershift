@@ -426,9 +426,9 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 				}
 				for _, sample := range vector {
 					if float64(sample.Value) > budget.budget {
-						t.Errorf("over budget: budget: %.0f, actual: %.0f", budget.budget, sample.Value)
+						t.Errorf("%q over budget: budget: %.0f, actual: %.0f", budget.name, budget.budget, sample.Value)
 					} else {
-						t.Logf("within budget: budget: %.0f, actual: %.0f", budget.budget, sample.Value)
+						t.Logf("%q within budget: budget: %.0f, actual: %.0f", budget.name, budget.budget, sample.Value)
 					}
 				}
 			})
