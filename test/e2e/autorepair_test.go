@@ -76,7 +76,6 @@ func TestAutoRepair(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
 
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	e2eutil.EnsureAPIBudget(t, ctx, client, hostedCluster)
 }
 
 func ec2Client(awsCredsFile, region string) *ec2.EC2 {
