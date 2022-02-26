@@ -187,7 +187,7 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	r.Client = mgr.GetClient()
 
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
-	awsSession := awsutil.NewSession("control-plane-operator")
+	awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
 	awsConfig := aws.NewConfig()
 	r.ec2Client = ec2.New(awsSession, awsConfig)
 	route53Config := aws.NewConfig()

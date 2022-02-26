@@ -32,6 +32,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
@@ -617,7 +618,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile cluster version operator
-	r.Log.Info("Reonciling Cluster Version Operator")
+	r.Log.Info("Reconciling Cluster Version Operator")
 	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
@@ -1206,6 +1207,25 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 			return p.ReconcileCloudConfig(awsProviderConfig)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile aws provider config: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		// We need different configs for KAS/KCM and Kubelet in Nodes
+		cfg := manifests.AzureProviderConfig(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, cfg, func() error {
+			return azure.ReconcileCloudConfig(cfg, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure cloud config: %w", err)
+		}
+		withSecrets := manifests.AzureProviderConfigWithCredentials(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, withSecrets, func() error {
+			return azure.ReconcileCloudConfigWithCredentials(withSecrets, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
 		}
 	}
 	return nil

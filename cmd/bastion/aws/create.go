@@ -140,8 +140,8 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 		}
 	}
 
-	awsSession := awsutil.NewSession("cli-create-bastion")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsSession := awsutil.NewSession("cli-create-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 
 	// Ensure security group exists

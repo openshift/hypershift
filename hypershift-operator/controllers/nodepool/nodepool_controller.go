@@ -42,6 +42,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
@@ -65,6 +66,7 @@ const (
 	nodePoolAnnotationCurrentConfigVersion    = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationPlatformMachineTemplate = "hypershift.openshift.io/nodePoolPlatformMachineTemplate"
 	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
+	TokenSecretTokenGenerationTime            = "hypershift.openshift.io/last-token-generation-time"
 	TokenSecretReleaseKey                     = "release"
 	TokenSecretTokenKey                       = "token"
 	TokenSecretConfigKey                      = "config"
@@ -87,6 +89,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &agentv1.AgentMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&source.Kind{Type: &capiazure.AzureMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
 		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
@@ -192,6 +195,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 	ignEndpoint := hcluster.Status.IgnitionEndpoint
 	infraID := hcluster.Spec.InfraID
+	if err := validateInfraID(infraID); err != nil {
+		// We don't return the error here as reconciling won't solve the input problem.
+		// An update event will trigger reconciliation.
+		// TODO (alberto): consider this an condition failure reason when revisiting conditions.
+		log.Error(err, "Invalid infraID, waiting.")
+		return reconcile.Result{}, nil
+	}
 
 	// 1. - Reconcile conditions according to current state of the world.
 
@@ -421,7 +431,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
 	}
 
-	// Token Secrets are immutable and follow "prefixName-configVersionHash" naming convention.
+	// Token Secrets exist for each NodePool config/version and follow "prefixName-configVersionHash" naming convention.
 	// Ensure old configVersionHash resources are deleted, i.e token Secret and userdata Secret.
 	if isUpdatingVersion || isUpdatingConfig {
 		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
@@ -659,7 +669,10 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 }
 
 func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte) error {
-	tokenSecret.Immutable = k8sutilspointer.BoolPtr(true)
+	// The token secret controller updates expired token IDs for token Secrets.
+	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
+	// Therefore this secret is mutable.
+	tokenSecret.Immutable = k8sutilspointer.BoolPtr(false)
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = make(map[string]string)
 	}
@@ -669,6 +682,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 
 	if tokenSecret.Data == nil {
 		tokenSecret.Data = map[string][]byte{}
+		tokenSecret.Annotations[TokenSecretTokenGenerationTime] = time.Now().Format(time.RFC3339Nano)
 		tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
 		tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
 		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig
@@ -1198,23 +1212,26 @@ func (r *NodePoolReconciler) listMachineTemplates(nodePool *hyperv1.NodePool) ([
 	machineTemplateList := &unstructured.UnstructuredList{}
 
 	var gvk schema.GroupVersionKind
+	var err error
 	switch nodePool.Spec.Platform.Type {
 	// Define the desired template type and mutateTemplate function.
 	case hyperv1.AWSPlatform:
-		var err error
 		gvk, err = apiutil.GVKForObject(&capiaws.AWSMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	case hyperv1.KubevirtPlatform:
-		var err error
 		gvk, err = apiutil.GVKForObject(&capikubevirt.KubevirtMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	case hyperv1.AgentPlatform:
-		var err error
 		gvk, err = apiutil.GVKForObject(&agentv1.AgentMachine{}, api.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	case hyperv1.AzurePlatform:
+		gvk, err = apiutil.GVKForObject(&capiazure.AzureMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}
@@ -1396,6 +1413,21 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 			return nil
 		}
+	case hyperv1.AzurePlatform:
+		template = &capiazure.AzureMachineTemplate{}
+		mutateTemplate = func(object client.Object) error {
+			o, _ := object.(*capiazure.AzureMachineTemplate)
+			spec, err := azureMachineTemplateSpec(hcluster, nodePool, o.Spec)
+			if err != nil {
+				return err
+			}
+			o.Spec = *spec
+			if o.Annotations == nil {
+				o.Annotations = make(map[string]string)
+			}
+			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+			return nil
+		}
 	default:
 		// TODO(alberto): Consider signal in a condition.
 		return nil, nil, "", fmt.Errorf("unsupported platform type: %s", nodePool.Spec.Platform.Type)
@@ -1409,4 +1441,11 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 	}
 
 	return template, mutateTemplate, string(machineTemplateSpecJSON), nil
+}
+
+func validateInfraID(infraID string) error {
+	if infraID == "" {
+		return fmt.Errorf("infraID can't be empty")
+	}
+	return nil
 }

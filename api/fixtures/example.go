@@ -118,6 +118,7 @@ type ExampleAzureOptions struct {
 	ResourceGroupName string
 	VnetName          string
 	VnetID            string
+	SubnetName        string
 	BootImageID       string
 	MachineIdentityID string
 	InstanceType      string
@@ -334,6 +335,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				ResourceGroupName: o.Azure.ResourceGroupName,
 				VnetName:          o.Azure.VnetName,
 				VnetID:            o.Azure.VnetID,
+				SubnetName:        o.Azure.SubnetName,
 				SubscriptionID:    o.Azure.Creds.SubscriptionID,
 				MachineIdentityID: o.Azure.MachineIdentityID,
 				SecurityGroupName: o.Azure.SecurityGroupName,
@@ -524,6 +526,14 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 											},
 										},
 									},
+									Interfaces: []kubevirtv1.Interface{
+										kubevirtv1.Interface{
+											Name: "default",
+											InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+												Bridge: &kubevirtv1.InterfaceBridge{},
+											},
+										},
+									},
 								},
 							},
 							Volumes: []kubevirtv1.Volume{
@@ -533,6 +543,14 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 										ContainerDisk: &kubevirtv1.ContainerDiskSource{
 											Image: o.Kubevirt.Image,
 										},
+									},
+								},
+							},
+							Networks: []kubevirtv1.Network{
+								kubevirtv1.Network{
+									Name: "default",
+									NetworkSource: kubevirtv1.NetworkSource{
+										Pod: &kubevirtv1.PodNetwork{},
 									},
 								},
 							},

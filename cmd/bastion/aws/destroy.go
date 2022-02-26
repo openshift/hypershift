@@ -104,8 +104,8 @@ func (o *DestroyBastionOpts) Run(ctx context.Context) error {
 		region = o.Region
 	}
 
-	awsSession := awsutil.NewSession("cli-destroy-bastion")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsSession := awsutil.NewSession("cli-destroy-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 
 	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {

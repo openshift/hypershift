@@ -19,6 +19,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	routev1 "github.com/openshift/api/route/v1"
+
+	promapi "github.com/prometheus/client_golang/api"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	promconfig "github.com/prometheus/common/config"
+	prommodel "github.com/prometheus/common/model"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
@@ -233,7 +240,7 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 }
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	t.Run("No controlplane pods crash", func(t *testing.T) {
+	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 
 		var podList corev1.PodList
@@ -280,6 +287,175 @@ func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, h
 
 		if nodeCount != len(nodes.Items) {
 			t.Errorf("nodepool replicas %d does not match number of nodes in cluster %d", nodeCount, len(nodes.Items))
+		}
+	})
+}
+
+func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureAPIBudget", func(t *testing.T) {
+
+		// Get hypershift-operator token
+		operatorServiceAccount := &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "operator",
+				Namespace: "hypershift",
+			},
+		}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(operatorServiceAccount), operatorServiceAccount); err != nil {
+			t.Fatalf("failed to get hypershift operator service account: %v", err)
+		}
+		var secretName string
+		for _, secret := range operatorServiceAccount.Secrets {
+			if strings.HasPrefix(secret.Name, "operator-token-") {
+				secretName = secret.Name
+				break
+			}
+		}
+		if secretName == "" {
+			t.Fatal("failed to determine hypershift operator token secret name")
+		}
+		tokenSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: "hypershift",
+			},
+		}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+			t.Fatalf("failed to get hypershift operator token secret: %v", err)
+		}
+		token, ok := tokenSecret.Data["token"]
+		if !ok {
+			t.Fatal("token secret did not contain a token value")
+		}
+
+		// Get thanos-querier endpoint
+		promRoute := &routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "thanos-querier",
+				Namespace: "openshift-monitoring",
+			},
+		}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(promRoute), promRoute); err != nil {
+			t.Skip("unable to get prometheus route, skipping")
+		}
+		if len(promRoute.Status.Ingress) == 0 {
+			t.Skip("unable to get prometheus ingress, skipping")
+		}
+		promEndpoint := fmt.Sprintf("https://%s", promRoute.Status.Ingress[0].Host)
+
+		// Create prometheus client
+		cfg := promconfig.HTTPClientConfig{
+			Authorization: &promconfig.Authorization{
+				Type:        "Bearer",
+				Credentials: promconfig.Secret(token),
+			},
+			TLSConfig: promconfig.TLSConfig{
+				InsecureSkipVerify: true,
+			},
+		}
+		rt, err := promconfig.NewRoundTripperFromConfig(cfg, "e2e-budget-checker")
+		if err != nil {
+			t.Fatalf("failed to get create round tripper: %v", err)
+		}
+		client, err := promapi.NewClient(promapi.Config{
+			Address:      promEndpoint,
+			RoundTripper: rt,
+		})
+		if err != nil {
+			t.Fatalf("failed to get create prometheus client: %v", err)
+		}
+		v1api := promv1.NewAPI(client)
+
+		// Compare metrics against budgets
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		budgets := []struct {
+			name   string
+			query  string
+			budget float64
+		}{
+			{
+				name:   "control-plane-operator read",
+				query:  fmt.Sprintf(`sum(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="GET", namespace=~"%s"}) by (pod)`, namespace),
+				budget: 800,
+			},
+			{
+				name:   "control-plane-operator mutate",
+				query:  fmt.Sprintf(`sum(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method!="GET", namespace=~"%s"}) by (pod)`, namespace),
+				budget: 400,
+			},
+			{
+				name:   "control-plane-operator no 404 deletes",
+				query:  fmt.Sprintf(`sum(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="DELETE", code="404", namespace=~"%s"}) by (pod)`, namespace),
+				budget: 0,
+			},
+			// hypershift-operator budget can not be per HC so metric will be significantly under budget for all but the last test(s) to complete on a particular test cluster
+			// These budgets will also need to scale up with additional tests that create HostedClusters
+			{
+				name:   "hypershift-operator read",
+				query:  `sum(hypershift:operator:component_api_requests_total{method="GET"})`,
+				budget: 1500,
+			},
+			{
+				name:   "hypershift-operator mutate",
+				query:  `sum(hypershift:operator:component_api_requests_total{method!="GET"})`,
+				budget: 2000,
+			},
+			{
+				name:   "hypershift-operator no 404 deletes",
+				query:  `sum(hypershift:operator:component_api_requests_total{method="DELETE", code="404"})`,
+				budget: 0,
+			},
+		}
+
+		for _, budget := range budgets {
+			t.Run(budget.name, func(t *testing.T) {
+				result, _, err := v1api.Query(ctx, budget.query, time.Now())
+				if err != nil {
+					t.Fatalf("failed to query prometheus: %v", err)
+				}
+				vector, ok := result.(prommodel.Vector)
+				if !ok {
+					t.Fatal("expected vector result")
+				}
+				if len(vector) == 0 {
+					if budget.budget == 0 {
+						t.Log("no samples returned for query with zero budget, skipping check")
+					} else {
+						t.Errorf("no samples returned for query with non-zero budget, failed check")
+					}
+				}
+				for _, sample := range vector {
+					if float64(sample.Value) > budget.budget {
+						t.Errorf("over budget: budget: %.0f, actual: %.0f", budget.budget, sample.Value)
+					} else {
+						t.Logf("within budget: budget: %.0f, actual: %.0f", budget.budget, sample.Value)
+					}
+				}
+			})
+		}
+	})
+}
+
+func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureHCPContainersHaveResourceRequests", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, &crclient.ListOptions{Namespace: namespace}); err != nil {
+			t.Fatalf("failed to list pods: %v", err)
+		}
+		for _, pod := range podList.Items {
+			for _, container := range pod.Spec.Containers {
+				if container.Resources.Requests == nil {
+					t.Errorf("container %s in pod %s has no resource requests", container.Name, pod.Name)
+					continue
+				}
+				if _, ok := container.Resources.Requests[corev1.ResourceCPU]; !ok {
+					t.Errorf("container %s in pod %s has no CPU resource request", container.Name, pod.Name)
+				}
+				if _, ok := container.Resources.Requests[corev1.ResourceMemory]; !ok {
+					t.Errorf("container %s in pod %s has no memory resource request", container.Name, pod.Name)
+				}
+			}
 		}
 	})
 }

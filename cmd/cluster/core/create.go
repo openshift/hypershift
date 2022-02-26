@@ -17,7 +17,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -292,10 +291,6 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApply ApplyPlatformSpecifics) error {
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return errors.New("--wait requires --node-pool-replicas > 0")
-	}
-
-	if opts.InfraID == "" {
-		opts.InfraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
 	}
 
 	exampleOptions, err := createCommonFixture(opts)

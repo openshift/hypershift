@@ -2,6 +2,7 @@ package ingressoperator
 
 import (
 	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -28,16 +29,18 @@ type Params struct {
 	ReleaseVersion          string
 	TokenMinterImage        string
 	AvailabilityProberImage string
+	Platform                hyperv1.PlatformType
 	DeploymentConfig        config.DeploymentConfig
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
 	p := Params{
 		IngressOperatorImage:    images["cluster-ingress-operator"],
 		HAProxyRouterImage:      images["haproxy-router"],
 		ReleaseVersion:          version,
 		TokenMinterImage:        images["token-minter"],
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		Platform:                platform,
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.DeploymentConfig.SetColocation(hcp)
@@ -95,42 +98,49 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	}
 	dep.Spec.Template.Labels["name"] = "ingress-operator"
 	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.BoolPtr(false)
-	dep.Spec.Template.Spec.Containers = []corev1.Container{
-		{
-			Command: []string{
-				"ingress-operator",
-				"start",
-				"--namespace",
-				"openshift-ingress-operator",
-				"--image",
-				"$(IMAGE)",
-				"--canary-image",
-				"$(CANARY_IMAGE)",
-				"--release-version",
-				"$(RELEASE_VERSION)",
-				"--metrics-listen-addr",
-				fmt.Sprintf("0.0.0.0:%d", ingressOperatorMetricsPort),
-			},
-			Env: []corev1.EnvVar{
-				{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
-				{Name: "IMAGE", Value: params.HAProxyRouterImage},
-				{Name: "CANARY_IMAGE", Value: params.IngressOperatorImage},
-				{Name: "KUBECONFIG", Value: "/etc/kubernetes/kubeconfig"},
-			},
-			Name:            ingressOperatorContainerName,
-			Image:           params.IngressOperatorImage,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("56Mi"),
-			}},
-			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: "ingress-operator-kubeconfig", MountPath: "/etc/kubernetes"},
-				{Name: "serviceaccount-token", MountPath: "/var/run/secrets/openshift/serviceaccount"},
-			},
+	dep.Spec.Template.Spec.Containers = []corev1.Container{{
+		Command: []string{
+			"ingress-operator",
+			"start",
+			"--namespace",
+			"openshift-ingress-operator",
+			"--image",
+			"$(IMAGE)",
+			"--canary-image",
+			"$(CANARY_IMAGE)",
+			"--release-version",
+			"$(RELEASE_VERSION)",
+			"--metrics-listen-addr",
+			fmt.Sprintf("0.0.0.0:%d", ingressOperatorMetricsPort),
 		},
-		{
+		Env: []corev1.EnvVar{
+			{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
+			{Name: "IMAGE", Value: params.HAProxyRouterImage},
+			{Name: "CANARY_IMAGE", Value: params.IngressOperatorImage},
+			{Name: "KUBECONFIG", Value: "/etc/kubernetes/kubeconfig"},
+		},
+		Name:            ingressOperatorContainerName,
+		Image:           params.IngressOperatorImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("56Mi"),
+		}},
+		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "ingress-operator-kubeconfig", MountPath: "/etc/kubernetes"},
+		},
+	}}
+
+	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
+		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name}}},
+	}
+
+	if params.Platform == hyperv1.AWSPlatform {
+		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{Name: "serviceaccount-token", MountPath: "/var/run/secrets/openshift/serviceaccount"},
+		)
+		dep.Spec.Template.Spec.Containers = append(dep.Spec.Template.Spec.Containers, corev1.Container{
 			Name:    "token-minter",
 			Command: []string{"/usr/bin/token-minter"},
 			Args: []string{
@@ -139,18 +149,22 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 				"-token-file=/var/run/secrets/openshift/serviceaccount/token",
 				"-kubeconfig=/etc/kubernetes/kubeconfig",
 			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
 			Image: params.TokenMinterImage,
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "serviceaccount-token", MountPath: "/var/run/secrets/openshift/serviceaccount"},
 				{Name: "admin-kubeconfig", MountPath: "/etc/kubernetes"},
 			},
-		},
-	}
-
-	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
-		{Name: "serviceaccount-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig"}}},
-		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name}}},
+		})
+		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
+			corev1.Volume{Name: "serviceaccount-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			corev1.Volume{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig"}}},
+		)
 	}
 
 	util.AvailabilityProber(

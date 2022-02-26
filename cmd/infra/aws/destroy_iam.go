@@ -71,8 +71,8 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
-	awsSession := awsutil.NewSession("cli-destroy-iam")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsSession := awsutil.NewSession("cli-destroy-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
 	var err error

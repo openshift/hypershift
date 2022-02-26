@@ -21,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/msi/mgmt/2018-11-30/msi"
 	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2021-05-01/network"
 	"github.com/Azure/azure-sdk-for-go/services/preview/authorization/mgmt/2020-04-01-preview/authorization"
+	"github.com/Azure/azure-sdk-for-go/services/privatedns/mgmt/2018-09-01/privatedns"
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-10-01/resources"
 	"github.com/Azure/azure-sdk-for-go/services/storage/mgmt/2021-04-01/storage"
 	"github.com/Azure/go-autorest/autorest"
@@ -93,10 +94,12 @@ func readCredentials(path string) (*apifixtures.AzureCreds, error) {
 type CreateInfraOutput struct {
 	BaseDomain        string `json:"baseDomain"`
 	PublicZoneID      string `json:"publicZoneID"`
+	PrivateZoneID     string `json:"privateZoneID"`
 	Location          string `json:"region"`
 	ResourceGroupName string `json:"resourceGroupName"`
 	VNetID            string `json:"vnetID"`
 	VnetName          string `json:"vnetName"`
+	SubnetName        string `json:"subnetName"`
 	BootImageID       string `json:"bootImageID"`
 	InfraID           string `json:"infraID"`
 	MachineIdentityID string `json:"machineIdentityID"`
@@ -238,9 +241,52 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vnet creation result: %w", err)
 	}
+	if vnet.Subnets == nil || len(*vnet.Subnets) < 1 {
+		return nil, fmt.Errorf("created vnet has no subnets: %+v", vnet)
+	}
+	result.SubnetName = *(*vnet.Subnets)[0].Name
 	result.VNetID = *vnet.ID
 	result.VnetName = *vnet.Name
 	log.Log.Info("Successfully created vnet", "name", *vnet.Name, "id", *vnet.ID)
+
+	privateZoneClient := privatedns.NewPrivateZonesClient(creds.SubscriptionID)
+	privateZoneClient.Authorizer = authorizer
+
+	privateZoneParams := privatedns.PrivateZone{
+		Location: utilpointer.String("global"),
+	}
+	privateDNSZonePromise, err := privateZoneClient.CreateOrUpdate(ctx, *rg.Name, o.Name+"-azurecluser."+o.BaseDomain, privateZoneParams, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create private DNS zone: %w", err)
+	}
+	if err := privateDNSZonePromise.WaitForCompletionRef(ctx, privateZoneClient.Client); err != nil {
+		return nil, fmt.Errorf("failed waiting for private DNS zone completion: %w", err)
+	}
+	privateDNSZone, err := privateDNSZonePromise.Result(privateZoneClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get result of private dns zone creation: %w", err)
+	}
+	result.PrivateZoneID = *privateDNSZone.ID
+	log.Log.Info("Successfuly created private DNS zone")
+
+	privateZoneLinkClient := privatedns.NewVirtualNetworkLinksClient(creds.SubscriptionID)
+	privateZoneLinkClient.Authorizer = authorizer
+
+	virtualNetworkLinkParams := privatedns.VirtualNetworkLink{
+		Location: utilpointer.String("global"),
+		VirtualNetworkLinkProperties: &privatedns.VirtualNetworkLinkProperties{
+			VirtualNetwork:      &privatedns.SubResource{ID: vnet.ID},
+			RegistrationEnabled: utilpointer.BoolPtr(false),
+		},
+	}
+	networkLinkPromise, err := privateZoneLinkClient.CreateOrUpdate(ctx, *rg.Name, *privateDNSZone.Name, o.Name+"-"+o.InfraID, virtualNetworkLinkParams, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to set up network link for private DNS zone: %w", err)
+	}
+	if err := networkLinkPromise.WaitForCompletionRef(ctx, privateZoneClient.Client); err != nil {
+		return nil, fmt.Errorf("failed waiting for network link for private DNS zone: %w", err)
+	}
+	log.Log.Info("Successfuly created private DNS zone link")
 
 	storageAccountClient := storage.NewAccountsClient(creds.SubscriptionID)
 	storageAccountClient.Authorizer = authorizer

@@ -106,10 +106,10 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>InfraID is a globally unique identifier for the cluster. This identifier
 will be used to associate various cloud resources with the HostedCluster
 and its associated NodePools.</p>
-<p>TODO(dan): consider moving this to .platform.aws.infraID</p>
 </td>
 </tr>
 <tr>
@@ -1602,6 +1602,16 @@ string
 </tr>
 <tr>
 <td>
+<code>subnetName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
 <code>subscriptionID</code></br>
 <em>
 string
@@ -2250,10 +2260,10 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>InfraID is a globally unique identifier for the cluster. This identifier
 will be used to associate various cloud resources with the HostedCluster
 and its associated NodePools.</p>
-<p>TODO(dan): consider moving this to .platform.aws.infraID</p>
 </td>
 </tr>
 <tr>

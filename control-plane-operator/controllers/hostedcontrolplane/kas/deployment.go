@@ -7,11 +7,13 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -184,7 +186,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		applyPortieriesConfig(&deployment.Spec.Template.Spec, images.Portieris)
 	}
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
-	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec)
+	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec, cloudProviderName)
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, cloudProviderName, cloudProviderCreds, images.TokenMinterImage, kasContainerMain().Name)
 
 	if auditWebhookRef != nil {
@@ -243,6 +245,10 @@ func buildKASContainerBootstrap(image string) func(c *corev1.Container) {
 			"-c",
 			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeBootstrapManifests().Name)),
 		}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+		}
 		c.Image = image
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -266,6 +272,10 @@ func buildKASContainerApplyBootstrap(image string) func(c *corev1.Container) {
 		c.Args = []string{
 			"-c",
 			applyBootstrapManifestsScript(volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name)),
+		}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
 		}
 		c.Env = []corev1.EnvVar{
 			{
@@ -567,19 +577,22 @@ func kasVolumeCloudConfig() *corev1.Volume {
 	}
 }
 
-func buildKASVolumeCloudConfig(configMapName string) func(v *corev1.Volume) {
+func buildKASVolumeCloudConfig(configMapName, providerName string) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
-		if v.ConfigMap == nil {
-			v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+		if providerName == azure.Provider {
+			v.Secret = &corev1.SecretVolumeSource{SecretName: configMapName}
+		} else {
+			v.ConfigMap = &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
+				DefaultMode:          pointer.Int32(420),
+			}
 		}
-		v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
-		v.ConfigMap.Name = configMapName
 	}
 }
 
-func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec *corev1.PodSpec) {
+func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec *corev1.PodSpec, cloudProviderName string) {
 	if configRef != nil && configRef.Name != "" {
-		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeCloudConfig(), buildKASVolumeCloudConfig(configRef.Name)))
+		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeCloudConfig(), buildKASVolumeCloudConfig(configRef.Name, cloudProviderName)))
 		var container *corev1.Container
 		for i, c := range podSpec.Containers {
 			if c.Name == kasContainerMain().Name {

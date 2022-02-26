@@ -76,10 +76,11 @@ func TestAutoRepair(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
 
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureAPIBudget(t, ctx, client, hostedCluster)
 }
 
 func ec2Client(awsCredsFile, region string) *ec2.EC2 {
-	awsSession := awsutil.NewSession("e2e-autorepair")
-	awsConfig := awsutil.NewConfig(awsCredsFile, "", "", region)
+	awsSession := awsutil.NewSession("e2e-autorepair", awsCredsFile, "", "", region)
+	awsConfig := awsutil.NewConfig()
 	return ec2.New(awsSession, awsConfig)
 }

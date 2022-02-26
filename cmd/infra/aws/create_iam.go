@@ -156,8 +156,8 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	o.IssuerURL = oidcDiscoveryURL(o.OIDCStorageProviderS3BucketName, o.OIDCStorageProviderS3Region, o.InfraID)
 	log.Log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
 
-	awsSession := awsutil.NewSession("cli-create-iam")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsSession := awsutil.NewSession("cli-create-iam", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
 	results, err := o.CreateOIDCResources(iamClient)

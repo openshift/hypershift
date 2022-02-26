@@ -19886,10 +19886,9 @@ objects:
                     type: object
                   type: array
                 infraID:
-                  description: "InfraID is a globally unique identifier for the cluster.
+                  description: InfraID is a globally unique identifier for the cluster.
                     This identifier will be used to associate various cloud resources
-                    with the HostedCluster and its associated NodePools. \n TODO(dan):
-                    consider moving this to .platform.aws.infraID"
+                    with the HostedCluster and its associated NodePools.
                   type: string
                 infrastructureAvailabilityPolicy:
                   description: InfrastructureAvailabilityPolicy specifies the availability
@@ -20179,6 +20178,8 @@ objects:
                           type: string
                         securityGroupName:
                           type: string
+                        subnetName:
+                          type: string
                         subscriptionID:
                           type: string
                         vnetID:
@@ -20191,6 +20192,7 @@ objects:
                       - machineIdentityID
                       - resourceGroup
                       - securityGroupName
+                      - subnetName
                       - subscriptionID
                       - vnetID
                       - vnetName
@@ -20515,7 +20517,6 @@ objects:
                       type: string
                   type: object
               required:
-              - infraID
               - issuerURL
               - networking
               - platform
@@ -21245,6 +21246,8 @@ objects:
                           type: string
                         securityGroupName:
                           type: string
+                        subnetName:
+                          type: string
                         subscriptionID:
                           type: string
                         vnetID:
@@ -21257,6 +21260,7 @@ objects:
                       - machineIdentityID
                       - resourceGroup
                       - securityGroupName
+                      - subnetName
                       - subscriptionID
                       - vnetID
                       - vnetName

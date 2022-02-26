@@ -12,6 +12,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
@@ -98,7 +99,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 	if servingCA != nil {
 		applyServingCAVolume(&deployment.Spec.Template.Spec, servingCA)
 	}
-	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig)
+	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig, p.CloudProvider)
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds, p.TokenMinterImage, kcmContainerMain().Name)
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
@@ -217,10 +218,13 @@ func kcmVolumeCloudConfig() *corev1.Volume {
 	}
 }
 
-func buildKCMVolumeCloudConfig(cloudProviderConfigName string) func(v *corev1.Volume) {
+func buildKCMVolumeCloudConfig(cloudProviderConfigName string, cloudProviderName string) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
-		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-		v.ConfigMap.Name = cloudProviderConfigName
+		if cloudProviderName == azure.Provider {
+			v.Secret = &corev1.SecretVolumeSource{SecretName: cloudProviderConfigName}
+		} else {
+			v.ConfigMap = &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: cloudProviderConfigName}}
+		}
 	}
 }
 
@@ -304,11 +308,11 @@ func cloudProviderConfig(cloudProvider string, configRef *corev1.LocalObjectRefe
 	return ""
 }
 
-func applyCloudConfigVolumeMount(podSpec *corev1.PodSpec, cloudProviderConfigRef *corev1.LocalObjectReference) {
+func applyCloudConfigVolumeMount(podSpec *corev1.PodSpec, cloudProviderConfigRef *corev1.LocalObjectReference, cloudProvider string) {
 	if cloudProviderConfigRef == nil || cloudProviderConfigRef.Name == "" {
 		return
 	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudConfig(), buildKCMVolumeCloudConfig(cloudProviderConfigRef.Name)))
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kcmVolumeCloudConfig(), buildKCMVolumeCloudConfig(cloudProviderConfigRef.Name, cloudProvider)))
 	container := mustContainer(podSpec, kcmContainerMain().Name)
 	container.VolumeMounts = append(container.VolumeMounts,
 		cloudProviderConfigVolumeMount.ContainerMounts(kcmContainerMain().Name)...)

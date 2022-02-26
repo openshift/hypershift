@@ -3,6 +3,8 @@ package util
 import (
 	"time"
 
+	utilpointer "k8s.io/utils/pointer"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -10,8 +12,18 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
-func NewSession(agent string) *session.Session {
-	awsSession := session.Must(session.NewSession())
+func NewSession(agent string, credentialsFile string, credKey string, credSecretKey string, region string) *session.Session {
+	sessionOpts := session.Options{}
+	if credentialsFile != "" {
+		sessionOpts.SharedConfigFiles = append(sessionOpts.SharedConfigFiles, credentialsFile)
+	}
+	if credKey != "" && credSecretKey != "" {
+		sessionOpts.Config.Credentials = credentials.NewStaticCredentials(credKey, credSecretKey, "")
+	}
+	if region != "" {
+		sessionOpts.Config.Region = utilpointer.StringPtr(region)
+	}
+	awsSession := session.Must(session.NewSessionWithOptions(sessionOpts))
 	awsSession.Handlers.Build.PushBackNamed(request.NamedHandler{
 		Name: "openshift.io/hypershift",
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", agent),
@@ -20,9 +32,8 @@ func NewSession(agent string) *session.Session {
 }
 
 // NewAWSRoute53Config generates an AWS config with slightly different Retryer timings
-func NewAWSRoute53Config(credentialsFile string, credKey string, credSecretKey string) *aws.Config {
-
-	awsRoute53Config := NewConfig(credentialsFile, credKey, credSecretKey, "us-east-1")
+func NewAWSRoute53Config() *aws.Config {
+	awsRoute53Config := NewConfig()
 	awsRoute53Config.Retryer = client.DefaultRetryer{
 		NumMaxRetries:    10,
 		MinRetryDelay:    5 * time.Second,
@@ -31,19 +42,10 @@ func NewAWSRoute53Config(credentialsFile string, credKey string, credSecretKey s
 	return awsRoute53Config
 }
 
-// NewConfig allows support for a CredentialsFile or StaticCredential (UserKey & UserSecretKey)
-// [Default] if all values are provided is to use credentialsFile
-// This allows methods to be used by the CLI or vendored for other Go code
-func NewConfig(credentialsFile string, credKey string, credSecretKey string, region string) *aws.Config {
+// NewConfig creates a new config.
+func NewConfig() *aws.Config {
 
-	// Will be empty when using credentialsFile
-	creds := credentials.NewStaticCredentials(credKey, credSecretKey, "")
-	if credentialsFile != "" {
-		creds = credentials.NewSharedCredentials(credentialsFile, "default")
-	}
-	awsConfig := aws.NewConfig().
-		WithRegion(region).
-		WithCredentials(creds)
+	awsConfig := aws.NewConfig()
 	awsConfig.Retryer = client.DefaultRetryer{
 		NumMaxRetries:    10,
 		MinRetryDelay:    5 * time.Second,

@@ -1013,3 +1013,12 @@ func TestListMachineTemplatesIBMCloud(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(len(templates)).To(Equal(0))
 }
+
+func TestValidateInfraID(t *testing.T) {
+	g := NewWithT(t)
+	err := validateInfraID("")
+	g.Expect(err).To(HaveOccurred())
+
+	err = validateInfraID("123")
+	g.Expect(err).ToNot(HaveOccurred())
+}
