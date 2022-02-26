@@ -152,7 +152,7 @@ func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
 		c.Command = []string{
 			"/bin/bash",
 			"-c",
-			"cp /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/ && " +
+			"cp -f /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/ && " +
 				"if ! [[ -f /run/service-ca-signer/service-ca.crt ]]; then exit 0; fi && " +
 				"chmod 0666 /run/ca-trust-generated/tls-ca-bundle.pem && " +
 				"echo '#service signer ca' >> /run/ca-trust-generated/tls-ca-bundle.pem && " +
