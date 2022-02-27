@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -43,7 +44,7 @@ func TestReconcileCredentials(t *testing.T) {
 	roleBinding := &rbacv1.RoleBinding{}
 	err = client.Get(context.Background(), types.NamespacedName{
 		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
-		Name:      credentialsRBACName,
+		Name:      fmt.Sprintf("%s-%s", credentialsRBACName, controlPlaneNamespace),
 	}, roleBinding)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(roleBinding.Subjects[0].Namespace).To(BeIdenticalTo(controlPlaneNamespace))

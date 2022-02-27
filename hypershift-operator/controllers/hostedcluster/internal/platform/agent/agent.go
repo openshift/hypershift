@@ -152,7 +152,7 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hcluster.Spec.Platform.Agent.AgentNamespace,
-			Name:      credentialsRBACName,
+			Name:      fmt.Sprintf("%s-%s", credentialsRBACName, controlPlaneNamespace),
 		},
 	}
 	_, err = createOrUpdate(ctx, c, roleBinding, func() error {
