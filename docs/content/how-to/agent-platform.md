@@ -32,7 +32,5 @@ Upon scaling down a NodePool, Agents will be unbound from the corresponding clus
   (agent_namespace is the namespace where the Agent CRs reside)
 * Scale up the Nodepool:
 	* Optionally specify which Agents to choose:
-		* NodePool.Spec.MinCPUs (the minimum number of CPU cores required)
-		* NodePool.Spec.MinMemoryMiB (the minimum amount of RAM required, in MiB)
 		* NodePool.Spec.AgentLabelSelector (labels that must be set on an Agent in order to be selected)
 	* Set NodePool.Spec.NodeCount to the desired number of nodes

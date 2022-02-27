@@ -259,16 +259,6 @@ spec:
                               only "value". The requirements are ANDed.
                             type: object
                         type: object
-                      minCPUs:
-                        description: MinCPUs specifies the minimum number of CPU cores
-                          required.
-                        format: int32
-                        type: integer
-                      minMemoryMiB:
-                        description: MinMemoryMiB specifies the minimum amount of
-                          RAM required, in MiB.
-                        format: int32
-                        type: integer
                     type: object
                   aws:
                     description: AWS specifies the configuration used when operating

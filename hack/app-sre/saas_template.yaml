@@ -3849,16 +3849,6 @@ objects:
                         are ANDed.
                       type: object
                   type: object
-                minCPUs:
-                  description: MinCPUs specifies the minimum number of CPU cores that
-                    this Machine requires.
-                  format: int32
-                  type: integer
-                minMemoryMiB:
-                  description: MinMemoryMiB specifies the minimum amount of RAM that
-                    this Machine requires, in MiB.
-                  format: int32
-                  type: integer
                 providerID:
                   description: ProviderID is the host's motherboard serial formatted
                     as agent://12345678-1234-1234-1234-123456789abc
@@ -4090,16 +4080,6 @@ objects:
                                 contains only "value". The requirements are ANDed.
                               type: object
                           type: object
-                        minCPUs:
-                          description: MinCPUs specifies the minimum number of CPU
-                            cores that this Machine requires.
-                          format: int32
-                          type: integer
-                        minMemoryMiB:
-                          description: MinMemoryMiB specifies the minimum amount of
-                            RAM that this Machine requires, in MiB.
-                          format: int32
-                          type: integer
                         providerID:
                           description: ProviderID is the host's motherboard serial
                             formatted as agent://12345678-1234-1234-1234-123456789abc
@@ -22011,16 +21991,6 @@ objects:
                                 contains only "value". The requirements are ANDed.
                               type: object
                           type: object
-                        minCPUs:
-                          description: MinCPUs specifies the minimum number of CPU
-                            cores required.
-                          format: int32
-                          type: integer
-                        minMemoryMiB:
-                          description: MinMemoryMiB specifies the minimum amount of
-                            RAM required, in MiB.
-                          format: int32
-                          type: integer
                       type: object
                     aws:
                       description: AWS specifies the configuration used when operating
