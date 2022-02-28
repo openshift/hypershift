@@ -8,8 +8,6 @@ import (
 func agentMachineTemplateSpec(nodePool *hyperv1.NodePool) *agentv1.AgentMachineTemplateSpec {
 	spec := agentv1.AgentMachineSpec{}
 	if nodePool.Spec.Platform.Agent != nil {
-		spec.MinCPUs = nodePool.Spec.Platform.Agent.MinCPUs
-		spec.MinMemoryMiB = nodePool.Spec.Platform.Agent.MinMemoryMiB
 		spec.AgentLabelSelector = nodePool.Spec.Platform.Agent.AgentLabelSelector
 	}
 	return &agentv1.AgentMachineTemplateSpec{

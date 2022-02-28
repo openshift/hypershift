@@ -1398,30 +1398,6 @@ on the Agent platform.</p>
 <tbody>
 <tr>
 <td>
-<code>minCPUs</code></br>
-<em>
-int32
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>MinCPUs specifies the minimum number of CPU cores required.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>minMemoryMiB</code></br>
-<em>
-int32
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>MinMemoryMiB specifies the minimum amount of RAM required, in MiB.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>agentLabelSelector</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#labelselector-v1-meta">
