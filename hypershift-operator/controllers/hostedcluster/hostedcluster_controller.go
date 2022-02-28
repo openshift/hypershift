@@ -2948,27 +2948,6 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 	return nil
 }
 
-func deleteCluster(ctx context.Context, c client.Client, cluster *capiv1.Cluster) (bool, error) {
-	err := c.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error getting Cluster: %w", err)
-	}
-	if cluster.DeletionTimestamp != nil {
-		return true, nil
-	}
-	err = c.Delete(ctx, cluster)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error deleting Cluster: %w", err)
-	}
-	return true, nil
-}
-
 func deleteAWSEndpointServices(ctx context.Context, c client.Client, namespace string) (bool, error) {
 	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
@@ -2990,107 +2969,31 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, namespace s
 	return false, nil
 }
 
-func deleteHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane) (bool, error) {
-	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
-	if err != nil {
+func deleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("error getting HostedControlPlane: %w", err)
+		return false, fmt.Errorf("error getting %T: %w", o, err)
 	}
-	if hcp.DeletionTimestamp != nil {
+	if o.GetDeletionTimestamp() != nil {
 		return true, nil
 	}
-	err = c.Delete(ctx, hcp)
-	if err != nil {
+	if err := c.Delete(ctx, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("error deleting HostedControlPlane: %w", err)
+		return false, fmt.Errorf("error deleting %T: %w", o, err)
 	}
+
 	return true, nil
-}
-
-func deleteNamespace(ctx context.Context, c client.Client, ns *corev1.Namespace) (bool, error) {
-	err := c.Get(ctx, client.ObjectKeyFromObject(ns), ns)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error getting Namespace: %w", err)
-	}
-	if ns.DeletionTimestamp != nil {
-		return true, nil
-	}
-	err = c.Delete(ctx, ns)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error deleting Namespace: %w", err)
-	}
-	return true, nil
-}
-
-func deleteControlPlaneOperatorRole(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "control-plane-operator-" + controlPlaneNamespace,
-			Namespace: rbacNamespace,
-		},
-	}
-	err := c.Get(ctx, client.ObjectKeyFromObject(role), role)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error getting Role: %w", err)
-	}
-	if role.DeletionTimestamp != nil {
-		return nil
-	}
-	err = c.Delete(ctx, role)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error deleting Role: %w", err)
-	}
-	return nil
-}
-
-func deleteControlPlaneOperatorRoleBinding(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
-	rolebinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "control-plane-operator-" + controlPlaneNamespace,
-			Namespace: rbacNamespace,
-		},
-	}
-	err := c.Get(ctx, client.ObjectKeyFromObject(rolebinding), rolebinding)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error getting RoleBinding: %w", err)
-	}
-	if rolebinding.DeletionTimestamp != nil {
-		return nil
-	}
-	err = c.Delete(ctx, rolebinding)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error deleting RoleBinding: %w", err)
-	}
-	return nil
 }
 
 func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
-	if err := deleteControlPlaneOperatorRole(ctx, c, rbacNamespace, controlPlaneNamespace); err != nil {
+	if _, err := deleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
 	}
-	if err := deleteControlPlaneOperatorRoleBinding(ctx, c, rbacNamespace, controlPlaneNamespace); err != nil {
+	if _, err := deleteIfNeeded(ctx, c, &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
 	}
 	return nil
@@ -3106,7 +3009,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	if hc != nil && len(hc.Spec.InfraID) > 0 {
-		exists, err := deleteCluster(ctx, r.Client, &capiv1.Cluster{
+		exists, err := deleteIfNeeded(ctx, r.Client, &capiv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      hc.Spec.InfraID,
 				Namespace: controlPlaneNamespace,
@@ -3146,7 +3049,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	// We want to ensure the HCP resource is deleted before deleting the Namespace.
 	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
 	// NOTE: The advancing case is when Get() or Delete() returns an error that the HCP is not found
-	exists, err = deleteHostedControlPlane(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
+	exists, err = deleteIfNeeded(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
 	if err != nil {
 		return false, err
 	}
@@ -3161,7 +3064,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
-	exists, err = deleteNamespace(ctx, r.Client, &corev1.Namespace{
+	exists, err = deleteIfNeeded(ctx, r.Client, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
 	})
 	if err != nil {
