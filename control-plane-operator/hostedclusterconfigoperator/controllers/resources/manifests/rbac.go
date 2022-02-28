@@ -68,3 +68,11 @@ func CSRRenewalClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 		},
 	}
 }
+
+func KASMetricsClientClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kas-metrics-client",
+		},
+	}
+}
