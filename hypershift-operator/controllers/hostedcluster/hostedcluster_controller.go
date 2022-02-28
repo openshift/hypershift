@@ -231,6 +231,24 @@ func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 
 }
 
+// pauseHostedControlPlane will handle adding the pausedUntil field to the hostedControlPlane object if it exists.
+// If it doesn't exist: it returns as there's no need to add it
+func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseAnnotationValue *string) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		} else {
+			return fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+		}
+	}
+	hcp.Spec.PausedUntil = pauseAnnotationValue
+	if err := c.Update(ctx, hcp); err != nil {
+		return fmt.Errorf("failed to pause hostedcontrolplane: %w", err)
+	}
+	return nil
+}
+
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	log := ctrl.LoggerFrom(ctx)
@@ -537,6 +555,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, util.GenerateReconciliationPausedCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Persist status updates
 	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
@@ -557,6 +576,17 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
 		}
+	}
+
+	// if paused: ensure associated hostedcontrolplane (if it exists) is also paused and stop reconciliation
+	if util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil) {
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
+			return ctrl.Result{}, err
+		}
+		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
+		return ctrl.Result{}, nil
 	}
 
 	// Default the infraID if unset
@@ -1116,6 +1146,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 
 	hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
+	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
 	return nil
 }
 

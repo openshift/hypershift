@@ -44,6 +44,7 @@ nav:
   - how-to/agent-platform.md
   - how-to/create-azure-cluster.md
   - how-to/kubevirt-platform.md
+  - how-to/pause-reconciliation.md
 - 'Reference':
   - reference/index.md
   - reference/api.md

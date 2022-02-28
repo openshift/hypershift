@@ -363,6 +363,21 @@ If set to true, the control plane&rsquo;s ignition server will be configured to
 expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>pausedUntil</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+Either a date can be provided in RFC3339 format or a boolean. If a date is
+provided: reconciliation is paused on the resource until that date. If the boolean true is
+provided: reconciliation is paused on the resource until the field is removed.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -1954,6 +1969,10 @@ HostedCluster is available to handle ignition requests.</p>
 <td></td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ReconciliationPaused&#34;</p></td>
+<td><p>ReconciliationPaused indicates if reconciliation of the hostedcluster is
+paused.</p>
+</td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
 <td><p>SupportedHostedCluster indicates whether a HostedCluster is supported by
 the current configuration of the hypershift-operator.
@@ -2493,6 +2512,21 @@ If set to true, the control plane&rsquo;s ignition server will be configured to
 expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>pausedUntil</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+Either a date can be provided in RFC3339 format or a boolean. If a date is
+provided: reconciliation is paused on the resource until that date. If the boolean true is
+provided: reconciliation is paused on the resource until the field is removed.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1alpha1.HostedClusterStatus }
@@ -2903,6 +2937,21 @@ SecretEncryptionSpec
 <em>(Optional)</em>
 <p>SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
 cluster when applicable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>pausedUntil</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+Either a date can be provided in RFC3339 format or a boolean. If a date is
+provided: reconciliation is paused on the resource until that date. If the boolean true is
+provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
 </tr>
 </tbody>

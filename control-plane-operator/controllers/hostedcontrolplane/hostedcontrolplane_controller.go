@@ -447,10 +447,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 		}
 	}
-
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, cpoutil.GenerateReconciliationPausedCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
 	if err := r.Client.Status().Update(ctx, hostedControlPlane); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+	if cpoutil.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil) {
+		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
+		return ctrl.Result{}, nil
 	}
 
 	// Perform the hosted control plane reconciliation
