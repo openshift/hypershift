@@ -426,9 +426,9 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 				}
 				for _, sample := range vector {
 					if float64(sample.Value) > budget.budget {
-						t.Errorf("over budget: budget: %.0f, actual: %.0f", budget.budget, sample.Value)
+						t.Errorf("pod %s over budget: budget: %.0f, actual: %.0f", sample.Metric["pod"], budget.budget, sample.Value)
 					} else {
-						t.Logf("within budget: budget: %.0f, actual: %.0f", budget.budget, sample.Value)
+						t.Logf("pod %s within budget: budget: %.0f, actual: %.0f", sample.Metric["pod"], budget.budget, sample.Value)
 					}
 				}
 			})
@@ -444,6 +444,9 @@ func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, 
 			t.Fatalf("failed to list pods: %v", err)
 		}
 		for _, pod := range podList.Items {
+			if strings.Contains(pod.Name, "-catalog-rollout-") {
+				continue
+			}
 			for _, container := range pod.Spec.Containers {
 				if container.Resources.Requests == nil {
 					t.Errorf("container %s in pod %s has no resource requests", container.Name, pod.Name)
