@@ -5,6 +5,7 @@ import (
 	"path"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -113,6 +114,10 @@ func buildCloudProviderTokenMinterContainer(image string, args []string) func(c 
 		c.ImagePullPolicy = corev1.PullAlways
 		c.Command = []string{"/usr/bin/token-minter"}
 		c.Args = args
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+		}
 		c.VolumeMounts = cloudProviderTokenVolumeMount(c.Name).ContainerMounts(c.Name)
 	}
 }

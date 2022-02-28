@@ -247,37 +247,39 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		controllerName := "PrivateKubeAPIServerServiceObserver"
-		if err := (&awsprivatelink.PrivateServiceObserver{
-			Client:                 mgr.GetClient(),
-			ControllerName:         controllerName,
-			ServiceNamespace:       namespace,
-			ServiceName:            manifests.KubeAPIServerPrivateServiceName,
-			HCPNamespace:           namespace,
-			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-		}).SetupWithManager(ctx, mgr); err != nil {
-			controllerName := awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
-			setupLog.Error(err, "unable to create controller", "controller", controllerName)
-			os.Exit(1)
-		}
+		if mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
+			controllerName := "PrivateKubeAPIServerServiceObserver"
+			if err := (&awsprivatelink.PrivateServiceObserver{
+				Client:                 mgr.GetClient(),
+				ControllerName:         controllerName,
+				ServiceNamespace:       namespace,
+				ServiceName:            manifests.KubeAPIServerPrivateServiceName,
+				HCPNamespace:           namespace,
+				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			}).SetupWithManager(ctx, mgr); err != nil {
+				controllerName := awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
+				setupLog.Error(err, "unable to create controller", "controller", controllerName)
+				os.Exit(1)
+			}
 
-		controllerName = "PrivateIngressServiceObserver"
-		if err := (&awsprivatelink.PrivateServiceObserver{
-			Client:                 mgr.GetClient(),
-			ControllerName:         controllerName,
-			ServiceNamespace:       "openshift-ingress",
-			ServiceName:            fmt.Sprintf("router-%s", namespace),
-			HCPNamespace:           namespace,
-			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-		}).SetupWithManager(ctx, mgr); err != nil {
-			controllerName := awsprivatelink.ControllerName(fmt.Sprintf("router-%s", namespace))
-			setupLog.Error(err, "unable to create controller", "controller", controllerName)
-			os.Exit(1)
-		}
+			controllerName = "PrivateIngressServiceObserver"
+			if err := (&awsprivatelink.PrivateServiceObserver{
+				Client:                 mgr.GetClient(),
+				ControllerName:         controllerName,
+				ServiceNamespace:       "openshift-ingress",
+				ServiceName:            fmt.Sprintf("router-%s", namespace),
+				HCPNamespace:           namespace,
+				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			}).SetupWithManager(ctx, mgr); err != nil {
+				controllerName := awsprivatelink.ControllerName(fmt.Sprintf("router-%s", namespace))
+				setupLog.Error(err, "unable to create controller", "controller", controllerName)
+				os.Exit(1)
+			}
 
-		if err := (&awsprivatelink.AWSEndpointServiceReconciler{}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
-			os.Exit(1)
+			if err := (&awsprivatelink.AWSEndpointServiceReconciler{}).SetupWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
+				os.Exit(1)
+			}
 		}
 
 		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -292,7 +294,6 @@ func NewStartCommand() *cobra.Command {
 		setupLog.Info("starting manager")
 		if err := mgr.Start(ctx); err != nil {
 			setupLog.Error(err, "problem running manager")
-			os.Exit(1)
 		}
 	}
 

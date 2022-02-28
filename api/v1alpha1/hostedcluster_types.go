@@ -97,10 +97,9 @@ type HostedClusterSpec struct {
 	// will be used to associate various cloud resources with the HostedCluster
 	// and its associated NodePools.
 	//
-	// TODO(dan): consider moving this to .platform.aws.infraID
-	//
+	// +optional
 	// +immutable
-	InfraID string `json:"infraID"`
+	InfraID string `json:"infraID,omitempty"`
 
 	// Platform specifies the underlying infrastructure provider for the cluster
 	// and is used to configure platform specific behavior.
@@ -634,6 +633,7 @@ type AzurePlatformSpec struct {
 	ResourceGroupName string                      `json:"resourceGroup"`
 	VnetName          string                      `json:"vnetName"`
 	VnetID            string                      `json:"vnetID"`
+	SubnetName        string                      `json:"subnetName"`
 	SubscriptionID    string                      `json:"subscriptionID"`
 	MachineIdentityID string                      `json:"machineIdentityID"`
 	SecurityGroupName string                      `json:"securityGroupName"`

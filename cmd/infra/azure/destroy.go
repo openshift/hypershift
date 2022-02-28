@@ -43,7 +43,7 @@ func NewDestroyCommand() *cobra.Command {
 			log.Log.Error(err, "Failed to destroy infrastructure")
 			return err
 		}
-		log.Log.Info("Successfully created infrastructure")
+		log.Log.Info("Successfully destroyed infrastructure")
 		return nil
 	}
 

@@ -244,9 +244,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
 	}
-	if opts.OIDCStorageProviderS3Credentials != "" {
-		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket")
-		awsConfig := awsutil.NewConfig(opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
+	if opts.OIDCStorageProviderS3BucketName != "" {
+		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
+		awsConfig := awsutil.NewConfig()
 		s3Client := s3.New(awsSession, awsConfig)
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName

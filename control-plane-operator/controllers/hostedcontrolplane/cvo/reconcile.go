@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
@@ -143,6 +144,10 @@ func buildCVOContainerApplyBootstrap(image string) func(*corev1.Container) {
 		c.Args = []string{
 			"-c",
 			applyBootrapScript(),
+		}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
 		}
 		c.Env = []corev1.EnvVar{
 			{

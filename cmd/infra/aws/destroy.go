@@ -84,11 +84,11 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
-	awsSession := awsutil.NewSession("cli-destroy-infra")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsSession := awsutil.NewSession("cli-destroy-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 	elbClient := elb.New(awsSession, awsConfig)
-	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey))
+	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
 	s3Client := s3.New(awsSession, awsConfig)
 
 	var errs []error

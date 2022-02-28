@@ -12,8 +12,8 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/support/infraid"
 	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/yaml"
 )
 
@@ -75,7 +75,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to deserialize infra json file: %w", err)
 		}
 	} else {
-		infraID := fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
+		infraID := infraid.New(opts.Name)
 		infra, err = (&azureinfra.CreateInfraOptions{
 			Name:            opts.Name,
 			Location:        opts.AzurePlatform.Location,
@@ -90,12 +90,14 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 	exampleOptions.BaseDomain = infra.BaseDomain
 	exampleOptions.PublicZoneID = infra.PublicZoneID
+	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.InfraID = infra.InfraID
 	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
 		Location:          infra.Location,
 		ResourceGroupName: infra.ResourceGroupName,
 		VnetName:          infra.VnetName,
 		VnetID:            infra.VNetID,
+		SubnetName:        infra.SubnetName,
 		BootImageID:       infra.BootImageID,
 		MachineIdentityID: infra.MachineIdentityID,
 		InstanceType:      opts.AzurePlatform.InstanceType,

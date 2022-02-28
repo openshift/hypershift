@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -45,7 +46,7 @@ var (
 			oasTrustAnchorVolume().Name:        "/etc/pki/ca-trust/extracted/pem",
 			pullSecretVolume().Name:            "/var/lib/kubelet",
 		},
-		oasKonnectivityProxyContainer().Name: {
+		oasSocks5ProxyContainer().Name: {
 			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
 			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
 		},
@@ -94,7 +95,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
 		Containers: []corev1.Container{
 			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0])),
-			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(socks5ProxyImage)),
+			util.BuildContainer(oasSocks5ProxyContainer(), buildOASSocks5ProxyContainer(socks5ProxyImage)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
@@ -139,9 +140,9 @@ func oasContainerMain() *corev1.Container {
 	}
 }
 
-func oasKonnectivityProxyContainer() *corev1.Container {
+func oasSocks5ProxyContainer() *corev1.Container {
 	return &corev1.Container{
-		Name: "oas-konnectivity-proxy",
+		Name: "socks5-proxy",
 	}
 }
 
@@ -151,7 +152,7 @@ func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
 		c.Command = []string{
 			"/bin/bash",
 			"-c",
-			"cp /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/ && " +
+			"cp -f /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/ && " +
 				"if ! [[ -f /run/service-ca-signer/service-ca.crt ]]; then exit 0; fi && " +
 				"chmod 0666 /run/ca-trust-generated/tls-ca-bundle.pem && " +
 				"echo '#service signer ca' >> /run/ca-trust-generated/tls-ca-bundle.pem && " +
@@ -162,11 +163,15 @@ func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
 	}
 }
 
-func buildOASKonnectivityProxyContainer(socks5ProxyImage string) func(c *corev1.Container) {
+func buildOASSocks5ProxyContainer(socks5ProxyImage string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = socks5ProxyImage
 		c.Command = []string{"/usr/bin/konnectivity-socks5-proxy"}
 		c.Args = []string{"run"}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+		}
 		c.Env = []corev1.EnvVar{{
 			Name:  "KUBECONFIG",
 			Value: "/etc/kubernetes/secrets/kubeconfig/kubeconfig",

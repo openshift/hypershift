@@ -60,4 +60,6 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureAPIBudget(t, ctx, client, hostedCluster)
+	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
 }
