@@ -1516,6 +1516,28 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		r.Log.Info("Reconciled api server pdb", "result", result)
 	}
 
+	rootCASecret := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
+		return err
+	}
+	metricsClientSecret := manifests.KASMetricsClientCert(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, metricsClientSecret, func() error {
+		return pki.ReconcileKASMetricsClientCertSecret(metricsClientSecret, rootCASecret, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas metrics client cert secret: %w", err)
+	} else {
+		r.Log.Info("Reconciled api server metrics client cert secret", "result", result)
+	}
+
+	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas service monitor: %w", err)
+	} else {
+		r.Log.Info("Reconciled api server service monitor", "result", result)
+	}
+
 	kubeAPIServerDeployment := manifests.KASDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
 		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
@@ -1532,6 +1554,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			aesCBCActiveKey,
 			aesCBCBackupKey,
 			hcp.Spec.Etcd.ManagementType,
+			p.APIServerPort,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)

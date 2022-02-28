@@ -226,3 +226,19 @@ func ReconcileCSRRenewalClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
 	}
 	return nil
 }
+
+func ReconcileKASMetricsClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:monitoring",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			APIGroup: rbacv1.SchemeGroupVersion.Group,
+			Kind:     "User",
+			Name:     "system:kas-metrics-client",
+		},
+	}
+	return nil
+}
