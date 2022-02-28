@@ -14,6 +14,7 @@ spec:
         app: certified-operators-catalog
         hypershift.openshift.io/control-plane-component: certified-operators-catalog
     spec:
+      automountServiceAccountToken: false
       nodeSelector:
         kubernetes.io/os: linux
       containers:

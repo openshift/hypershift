@@ -49,6 +49,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		util.BuildVolume(cpcVolumeServingCert(), buildCPCVolumeServingCert),
 		util.BuildVolume(cpcVolumeKubeconfig(), buildCPCVolumeKubeconfig),
 	}
+	noServiceTokenAutomount := true
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = &noServiceTokenAutomount
 	deploymentConfig.ApplyTo(deployment)
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiServerPort), availabilityProberImage, &deployment.Spec.Template.Spec)
