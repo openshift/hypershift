@@ -53,6 +53,12 @@ var (
 )
 
 func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev1.ConfigMap, p *KubeControllerManagerParams, apiPort *int32) error {
+	// preserve existing resource requirements for main KCM container
+	mainContainer := util.FindContainer(kcmContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		p.DeploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: kcmLabels,
 	}

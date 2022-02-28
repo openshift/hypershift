@@ -63,6 +63,12 @@ func openShiftAPIServerLabels() map[string]string {
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
+	// preserve existing resource requirements for main OAS container
+	mainContainer := util.FindContainer(oasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	configBytes, ok := config.Data[openshiftAPIServerConfigKey]
 	if !ok {
 		return fmt.Errorf("openshift apiserver configuration is not expected to be empty")

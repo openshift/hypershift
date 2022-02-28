@@ -1922,6 +1922,20 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 }
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
+	cpoResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("44Mi"),
+			corev1.ResourceCPU:    resource.MustParse("1m"),
+		},
+	}
+	// preserve existing resource requirements for main cpo container
+	mainContainer := util.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			cpoResources = mainContainer.Resources
+		}
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
@@ -1994,12 +2008,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							FailureThreshold:    3,
 							TimeoutSeconds:      5,
 						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("44Mi"),
-								corev1.ResourceCPU:    resource.MustParse("1m"),
-							},
-						},
+						Resources: cpoResources,
 					},
 				},
 			},

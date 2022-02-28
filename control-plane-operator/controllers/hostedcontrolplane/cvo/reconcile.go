@@ -78,6 +78,13 @@ var (
 
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage string) error {
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements for main CVO container
+	mainContainer := util.FindContainer(cvoContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: cvoLabels,

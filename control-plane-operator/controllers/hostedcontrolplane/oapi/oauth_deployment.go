@@ -47,6 +47,12 @@ func openShiftOAuthAPIServerLabels() map[string]string {
 func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, p *OAuthDeploymentParams, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
+	// preserve existing resource requirements for main oauth apiserver container
+	mainContainer := util.FindContainer(oauthContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		p.DeploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	maxUnavailable := intstr.FromInt(1)
 	maxSurge := intstr.FromInt(3)
 

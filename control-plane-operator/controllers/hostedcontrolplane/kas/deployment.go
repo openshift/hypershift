@@ -107,14 +107,9 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	maxUnavailable := intstr.FromInt(0)
 
 	// preserve existing resource requirements for main KAS container
-	mainContainer := findContainer(kasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	mainContainer := util.FindContainer(kasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
-		resources := mainContainer.Resources
-		if len(resources.Requests) > 0 || len(resources.Limits) > 0 {
-			if deploymentConfig.Resources != nil {
-				deploymentConfig.Resources[kasContainerMain().Name] = resources
-			}
-		}
+		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
 
 	deployment.Spec.Selector = &metav1.LabelSelector{
@@ -700,15 +695,6 @@ func applyKASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookR
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
 		kasAuditWebhookConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
-}
-
-func findContainer(name string, containers []corev1.Container) *corev1.Container {
-	for i, c := range containers {
-		if c.Name == name {
-			return &containers[i]
-		}
-	}
-	return nil
 }
 
 func kasVolumeKMSSocket() *corev1.Volume {

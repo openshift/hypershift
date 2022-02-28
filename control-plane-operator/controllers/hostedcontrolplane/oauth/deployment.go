@@ -50,6 +50,13 @@ func oauthLabels() map[string]string {
 
 func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert) error {
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements for main oauth container
+	mainContainer := util.FindContainer(oauthContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	deployment.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: oauthLabels(),
 	}
