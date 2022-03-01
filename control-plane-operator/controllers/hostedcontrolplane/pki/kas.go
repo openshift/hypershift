@@ -71,7 +71,7 @@ func ReconcileIngressOperatorClientCertSecret(secret, ca *corev1.Secret, ownerRe
 }
 
 func ReconcileKASMetricsClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "system:kas-metrics-client", []string{"kubernetes"}, X509UsageClientServerAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, "system:kas-metrics-client", []string{"kubernetes"}, X509UsageClientAuth)
 }
 
 func nextIP(ip net.IP) net.IP {
