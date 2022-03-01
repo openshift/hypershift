@@ -14,6 +14,7 @@ spec:
         app: redhat-marketplace-catalog
         hypershift.openshift.io/control-plane-component: redhat-marketplace-catalog
     spec:
+      automountServiceAccountToken: false
       nodeSelector:
         kubernetes.io/os: linux
       containers:
