@@ -83,17 +83,22 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 	// image roll out out consistently
 	waitForHostedClusterAvailable()
 
-	// Wait for kubevirt machines to come online
-	// TODO: Replace this with the generic WaitForNReadyNodes() function
-	// once we get better ingress support for KubeVirt platform
-	// that allows us to use the guest cluster's client to view
-	// node status.
+	t.Logf("Waiting for KubeVirtMachines to be marked as ready")
 	e2eutil.WaitForKubeVirtMachines(t, testContext, client, hostedCluster, *nodepool.Spec.NodeCount)
 
 	// Wait for kubevirt cluster to be marked as available
 	e2eutil.WaitForKubeVirtCluster(t, testContext, client, hostedCluster)
 
-	// TODO verify introspecting guest cluster once ingress is sorted out.
+	// Get a client for the cluster
+	t.Logf("Waiting for guest client to become available")
+	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
+
+	t.Logf("Waiting for nodes to become ready")
+	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, *nodepool.Spec.NodeCount)
+
+	t.Logf("Waiting for cluster operators to become available")
+	// TODO: once we can get console working with kubevirt platform, remove it from the ignore list
+	e2eutil.WaitForClusterOperators(t, testContext, guestClient, []string{"console"})
 }
 
 func TestNoneCreateCluster(t *testing.T) {

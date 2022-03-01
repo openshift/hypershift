@@ -131,6 +131,59 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
+func WaitForClusterOperators(t *testing.T, ctx context.Context, client crclient.Client, ignoreList []string) []configv1.ClusterOperator {
+
+	start := time.Now()
+	g := NewWithT(t)
+
+	t.Logf("Waiting for cluster operators to become available.")
+	operators := &configv1.ClusterOperatorList{}
+
+	ignoreMap := make(map[string]interface{})
+	for _, ignore := range ignoreList {
+		ignoreMap[ignore] = nil
+	}
+
+	waitForOperatorCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+	defer cancel()
+	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
+		err = client.List(ctx, operators)
+		if err != nil {
+			return false, nil
+		}
+		if len(operators.Items) == 0 {
+			return false, nil
+		}
+
+		allAvailable := true
+		for _, operator := range operators.Items {
+			_, shouldIgnore := ignoreMap[operator.Name]
+			if shouldIgnore {
+				continue
+			}
+			for _, cond := range operator.Status.Conditions {
+				if cond.Type == configv1.OperatorAvailable && cond.Status != configv1.ConditionTrue {
+					t.Logf("waiting on operator %s to become available", operator.Name)
+					allAvailable = false
+				}
+			}
+		}
+		if !allAvailable {
+			return false, nil
+		}
+		t.Logf("All operators are available. Count: %v", len(operators.Items))
+		return true, nil
+	}, waitForOperatorCtx.Done())
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure all cluster operators are available"))
+
+	if len(ignoreList) > 0 {
+		t.Logf("Ignored cluster operator availablity for [%v]", ignoreList)
+	}
+	t.Logf("All cluster operators for tenant cluster are available in %s", time.Since(start).Round(time.Second))
+
+	return operators.Items
+}
+
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
 	g := NewWithT(t)
 
