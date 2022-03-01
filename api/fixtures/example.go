@@ -125,13 +125,14 @@ type ExampleAzureOptions struct {
 	SecurityGroupName string
 }
 
-// TODO: This format is made up by using the env var keys as keys.
-// Is there any kind of official file format for this?
+// AzureCreds is the fileformat we expect for credentials. It is copied from the installer
+// to allow using the same crededentials file for both:
+// https://github.com/openshift/installer/blob/8fca1ade5b096d9b2cd312c4599881d099439288/pkg/asset/installconfig/azure/session.go#L36
 type AzureCreds struct {
-	SubscriptionID string `json:"AZURE_SUBSCRIPTION_ID"`
-	TenantID       string `json:"AZURE_TENANT_ID"`
-	ClientID       string `json:"AZURE_CLIENT_ID"`
-	ClientSecret   string `json:"AZURE_CLIENT_SECRET"`
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	ClientID       string `json:"clientId,omitempty"`
+	ClientSecret   string `json:"clientSecret,omitempty"`
+	TenantID       string `json:"tenantId,omitempty"`
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -527,7 +528,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 										},
 									},
 									Interfaces: []kubevirtv1.Interface{
-										kubevirtv1.Interface{
+										{
 											Name: "default",
 											InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
 												Bridge: &kubevirtv1.InterfaceBridge{},
@@ -547,7 +548,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 								},
 							},
 							Networks: []kubevirtv1.Network{
-								kubevirtv1.Network{
+								{
 									Name: "default",
 									NetworkSource: kubevirtv1.NetworkSource{
 										Pod: &kubevirtv1.PodNetwork{},
