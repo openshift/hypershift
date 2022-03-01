@@ -50,6 +50,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
+const (
+	// Image built from https://github.com/openshift/kubernetes-autoscaler/tree/release-4.10
+	// Upstream canonical image is k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
+	imageClusterAutoscaler = "quay.io/openshift/origin-cluster-autoscaler:4.10.0"
+
+	// Image built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
+	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
+
+	// Image built from https://github.com/openshift/cluster-api/tree/release-1.0
+	// Upstream canonical image comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
+	// us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0
+	imageCAPI = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
+)
+
 func main() {
 	cmd := &cobra.Command{
 		Use: "hypershift-operator",
@@ -71,6 +85,9 @@ type StartOptions struct {
 	DeploymentName                   string
 	MetricsAddr                      string
 	IgnitionServerImage              string
+	CAPIManagerImage                 string
+	MachineApproverImage             string
+	ClusterAutoscalerImage           string
 	EnableOCPClusterMonitoring       bool
 	EnableCIDebugOutput              bool
 	ControlPlaneOperatorImage        string
@@ -100,6 +117,9 @@ func NewStartCommand() *cobra.Command {
 		MetricsAddr:                      "0",
 		ControlPlaneOperatorImage:        "",
 		IgnitionServerImage:              "",
+		CAPIManagerImage:                 imageCAPI,
+		MachineApproverImage:             imageMachineApprover,
+		ClusterAutoscalerImage:           imageClusterAutoscaler,
 		RegistryOverrides:                map[string]string{},
 		PrivatePlatform:                  string(hyperv1.NonePlatform),
 		OIDCStorageProviderS3Region:      "",
@@ -114,6 +134,9 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.SocksProxyImage, "socks-proxy-image", opts.SocksProxyImage, "Image for the SOCKS proxy (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.TokenMinterImage, "token-minter-image", opts.TokenMinterImage, "Image for the token minter image (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
+	cmd.Flags().StringVar(&opts.CAPIManagerImage, "capi-manager-image", opts.CAPIManagerImage, "A cluster-api manager image to use for all clusters managed by operator")
+	cmd.Flags().StringVar(&opts.MachineApproverImage, "machine-approver-image", opts.MachineApproverImage, "A machine approver image to use for all clusters managed by operator")
+	cmd.Flags().StringVar(&opts.ClusterAutoscalerImage, "cluster-autoscaler-image", opts.ClusterAutoscalerImage, "A cluster-autoscaler image to use for all clusters managed by operator")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
@@ -234,6 +257,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		TokenMinterImage:              tokenMinterImage,
 		AvailabilityProberImage:       availabilityProberImage,
 		SocksProxyImage:               socksProxyImage,
+		ClusterAutoscalerImage:        opts.ClusterAutoscalerImage,
+		MachineApproverImage:          opts.MachineApproverImage,
+		CAPIManagerImage:              opts.CAPIManagerImage,
 		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.RegistryClientProvider{},

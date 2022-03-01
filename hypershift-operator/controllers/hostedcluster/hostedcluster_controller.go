@@ -94,18 +94,6 @@ const (
 	finalizer                      = "hypershift.openshift.io/finalizer"
 	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration = 5 * time.Second
-
-	// Image built from https://github.com/openshift/kubernetes-autoscaler/tree/release-4.10
-	// Upstream canonical image is k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
-	imageClusterAutoscaler = "quay.io/openshift/origin-cluster-autoscaler:4.10.0"
-
-	// Image built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
-	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
-
-	// Image built from https://github.com/openshift/cluster-api/tree/release-1.0
-	// Upstream canonical image comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
-	// us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0
-	imageCAPI = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -137,6 +125,15 @@ type HostedClusterReconciler struct {
 
 	// SocksProxyImage is the image used to deploy the socks proxy service.
 	SocksProxyImage string
+
+	// CAPIManagerImage is the image to use for the CAPI manager.
+	CAPIManagerImage string
+
+	// MachineApproverImage is the image to use for the machine approver.
+	MachineApproverImage string
+
+	// ClusterAutoscalerImage is the image to use for the cluster autoscaler.
+	ClusterAutoscalerImage string
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
@@ -1205,7 +1202,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	}
 
 	// Reconcile CAPI manager deployment
-	capiImage := imageCAPI
+	capiImage := r.CAPIManagerImage
 	if _, ok := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]; ok {
 		capiImage = hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
 	}
@@ -1869,7 +1866,7 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 		}
 
 		// Reconcile autoscaler deployment
-		clusterAutoScalerImage := imageClusterAutoscaler
+		clusterAutoScalerImage := r.ClusterAutoscalerImage
 		if _, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
 			clusterAutoScalerImage = hcluster.Annotations[hyperv1.ClusterAutoscalerImage]
 		}
@@ -3205,7 +3202,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		kubeconfigSecretName := machineapprover.KASServiceKubeconfigSecret(controlPlaneNamespaceName).Name
 
 		// Reconcile machine-approver deployment
-		image := imageMachineApprover
+		image := r.MachineApproverImage
 		if _, ok := hcluster.Annotations[hyperv1.MachineApproverImage]; ok {
 			image = hcluster.Annotations[hyperv1.MachineApproverImage]
 		}
