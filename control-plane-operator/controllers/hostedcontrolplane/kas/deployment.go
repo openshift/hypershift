@@ -50,7 +50,6 @@ var (
 			kasVolumeKubeletClientCert().Name:      "/etc/kubernetes/certs/kubelet",
 			kasVolumeKubeletClientCA().Name:        "/etc/kubernetes/certs/kubelet-ca",
 			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
-			kasVolumeMetricsClientCert().Name:      "/etc/kubernetes/certs/metrics-client",
 			kasVolumeEgressSelectorConfig().Name:   "/etc/kubernetes/egress-selector",
 		},
 	}
@@ -171,7 +170,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeKubeletClientCert(), buildKASVolumeKubeletClientCert),
 				util.BuildVolume(kasVolumeKubeletClientCA(), buildKASVolumeKubeletClientCA),
 				util.BuildVolume(kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert),
-				util.BuildVolume(kasVolumeMetricsClientCert(), buildKASVolumeMetricsClientCert),
 				util.BuildVolume(kasVolumeEgressSelectorConfig(), buildKASVolumeEgressSelectorConfig),
 				util.BuildVolume(kasVolumeKubeconfig(), buildKASVolumeKubeconfig),
 			},
@@ -474,20 +472,6 @@ func buildKASVolumeKonnectivityClientCert(v *corev1.Volume) {
 	}
 	v.Secret.DefaultMode = pointer.Int32Ptr(420)
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
-}
-
-func kasVolumeMetricsClientCert() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "metrics-client",
-	}
-}
-
-func buildKASVolumeMetricsClientCert(v *corev1.Volume) {
-	if v.Secret == nil {
-		v.Secret = &corev1.SecretVolumeSource{}
-	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
-	v.Secret.SecretName = manifests.KASMetricsClientCert("").Name
 }
 
 func kasVolumeAggregatorCert() *corev1.Volume {

@@ -157,15 +157,6 @@ func KASAuthenticationTokenWebhookConfigSecret(controlPlaneNamespace string) *co
 	}
 }
 
-func KASMetricsClientCert(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kas-metrics-cert",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
 func KASServiceMonitor(ns string) *prometheusoperatorv1.ServiceMonitor {
 	return &prometheusoperatorv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{

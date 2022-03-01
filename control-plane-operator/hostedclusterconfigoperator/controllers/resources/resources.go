@@ -507,6 +507,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
 		{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
 		{manifest: manifests.KASMetricsClientClusterRoleBinding, reconcile: rbac.ReconcileKASMetricsClusterRoleBinding},
+		{manifest: manifests.KCMMetricsClientClusterRoleBinding, reconcile: rbac.ReconcileKCMMetricsClusterRoleBinding},
 	}
 
 	var errs []error

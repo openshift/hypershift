@@ -110,7 +110,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(kcmLabels)
+		params.DeploymentConfig.SetMultizoneSpread(kcmLabels())
 	default:
 		params.Replicas = 1
 	}

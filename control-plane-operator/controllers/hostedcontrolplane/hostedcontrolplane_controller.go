@@ -1075,6 +1075,16 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile kas bootstrap client secret: %w", err)
 	}
 
+	// KAS metrics client cert secret
+	kasMetricsClientSecret := manifests.KASMetricsClientCert(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, kasMetricsClientSecret, func() error {
+		return pki.ReconcileKASMetricsClientCertSecret(kasMetricsClientSecret, rootCASecret, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas metrics client cert secret: %w", err)
+	} else {
+		r.Log.Info("Reconciled api server metrics client cert secret", "result", result)
+	}
+
 	// Service account signing key secret
 	serviceAccountSigningKeySecret := manifests.ServiceAccountSigningKeySecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, serviceAccountSigningKeySecret, func() error {
@@ -1201,6 +1211,22 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileOLMOperatorServingCertSecret(olmOperatorServingCert, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
+	}
+
+	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, kcmServerSecret, func() error {
+		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
+	}
+
+	kcmMetricsClientSecret := manifests.KCMMetricsClientCertSecret(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, kcmMetricsClientSecret, func() error {
+		return pki.ReconcileKCMMetricsClientCertSecret(kcmMetricsClientSecret, rootCASecret, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm metrics client cert secret: %w", err)
+	} else {
+		r.Log.Info("Reconciled kcm metrics client cert secret", "result", result)
 	}
 
 	return nil
@@ -1518,19 +1544,6 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		r.Log.Info("Reconciled api server pdb", "result", result)
 	}
 
-	rootCASecret := manifests.RootCASecret(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
-		return err
-	}
-	metricsClientSecret := manifests.KASMetricsClientCert(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, metricsClientSecret, func() error {
-		return pki.ReconcileKASMetricsClientCertSecret(metricsClientSecret, rootCASecret, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas metrics client cert secret: %w", err)
-	} else {
-		r.Log.Info("Reconciled api server metrics client cert secret", "result", result)
-	}
-
 	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
 	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
 		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp))
@@ -1567,6 +1580,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
 	p := kcm.NewKubeControllerManagerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
 
+	service := manifests.KCMService(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, service, func() error {
+		return kcm.ReconcileService(service, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm service: %w", err)
+	}
+
 	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
 		return fmt.Errorf("failed to fetch combined ca configmap: %w", err)
@@ -1576,6 +1596,15 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 		return kcm.ReconcileKCMServiceServingCA(serviceServingCA, combinedCA, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm serving ca: %w", err)
+	}
+
+	serviceMonitor := manifests.KCMServiceMonitor(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return kcm.ReconcileServiceMonitor(serviceMonitor, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm service monitor: %w", err)
+	} else {
+		r.Log.Info("Reconciled kcm service monitor", "result", result)
 	}
 
 	kcmConfig := manifests.KCMConfig(hcp.Namespace)

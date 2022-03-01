@@ -104,6 +104,33 @@ func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 	}
 }
 
+func KASMetricsClientCert(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kas-metrics-cert",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
+func KCMServerCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kcm-server",
+			Namespace: ns,
+		},
+	}
+}
+
+func KCMMetricsClientCertSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kcm-metrics-cert",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
 func ServiceAccountSigningKeySecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
