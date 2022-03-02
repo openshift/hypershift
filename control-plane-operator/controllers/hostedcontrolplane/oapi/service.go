@@ -16,13 +16,16 @@ const (
 )
 
 var (
-	openshiftAPIServerLabels = map[string]string{"app": "openshift-apiserver", hyperv1.ControlPlaneComponent: "openshift-apiserver"}
-	oauthAPIServerLabels     = map[string]string{"app": "openshift-oauth-apiserver", hyperv1.ControlPlaneComponent: "openshift-oauth-apiserver"}
-	olmPackageServerLabels   = map[string]string{"app": "packageserver", hyperv1.ControlPlaneComponent: "packageserver"}
+	oauthAPIServerLabels   = map[string]string{"app": "openshift-oauth-apiserver", hyperv1.ControlPlaneComponent: "openshift-oauth-apiserver"}
+	olmPackageServerLabels = map[string]string{"app": "packageserver", hyperv1.ControlPlaneComponent: "packageserver"}
 )
 
+func openshiftAPIServerLabels() map[string]string {
+	return map[string]string{"app": "openshift-apiserver", hyperv1.ControlPlaneComponent: "openshift-apiserver"}
+}
+
 func ReconcileOpenShiftAPIService(svc *corev1.Service, ownerRef config.OwnerRef) error {
-	return reconcileAPIService(svc, ownerRef, openshiftAPIServerLabels, OpenShiftAPIServerPort)
+	return reconcileAPIService(svc, ownerRef, openshiftAPIServerLabels(), OpenShiftAPIServerPort)
 }
 
 func ReconcileOAuthAPIService(svc *corev1.Service, ownerRef config.OwnerRef) error {
@@ -35,6 +38,7 @@ func ReconcileOLMPackageServerService(svc *corev1.Service, ownerRef config.Owner
 
 func reconcileAPIService(svc *corev1.Service, ownerRef config.OwnerRef, labels map[string]string, targetPort int) error {
 	ownerRef.ApplyTo(svc)
+	svc.Labels = openshiftAPIServerLabels()
 	svc.Spec.Selector = labels
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {

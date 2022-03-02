@@ -149,6 +149,15 @@ func OpenShiftAPIServerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
+func OpenShiftAPIMetricsClientCertSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openshift-apiserver-metrics-cert",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
 func OpenShiftOAuthAPIServerCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
