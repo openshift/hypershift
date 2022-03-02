@@ -19,6 +19,10 @@ func ReconcileOpenShiftAPIServerCertSecret(secret, ca *corev1.Secret, ownerRef c
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "openshift-apiserver", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
 }
 
+func ReconcileOpenShiftAPIServerMetricsClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:openshift-apiserver-metrics-client", []string{"kubernetes"}, X509UsageClientAuth)
+}
+
 func ReconcileOpenShiftOAuthAPIServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"openshift-oauth-apiserver",
