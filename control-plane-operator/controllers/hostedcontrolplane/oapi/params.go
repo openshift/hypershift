@@ -126,7 +126,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 			},
 		},
 		ReadinessProbes: config.ReadinessProbes{
-			oasContainerMain().Name: {
+			oauthContainerMain().Name: {
 				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
@@ -141,7 +141,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 			},
 		},
 		Resources: map[string]corev1.ResourceRequirements{
-			oasContainerMain().Name: {
+			oauthContainerMain().Name: {
 				Requests: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("200Mi"),
 					corev1.ResourceCPU:    resource.MustParse("150m"),
