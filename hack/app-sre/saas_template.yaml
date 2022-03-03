@@ -22164,6 +22164,11 @@ objects:
                       type: object
                     azure:
                       properties:
+                        diskSizeGB:
+                          default: 120
+                          format: int32
+                          minimum: 16
+                          type: integer
                         imageID:
                           type: string
                         vmsize:

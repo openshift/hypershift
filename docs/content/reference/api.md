@@ -1522,6 +1522,17 @@ string
 <td>
 </td>
 </tr>
+<tr>
+<td>
+<code>diskSizeGB</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1alpha1.AzurePlatformSpec }

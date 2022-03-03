@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"golang.org/x/crypto/ssh"
+	utilpointer "k8s.io/utils/pointer"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 )
 
@@ -23,8 +24,11 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		}
 	}
 	return &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
-		VMSize:                 nodePool.Spec.Platform.Azure.VMSize,
-		Image:                  &capiazure.Image{ID: &nodePool.Spec.Platform.Azure.ImageID},
+		VMSize: nodePool.Spec.Platform.Azure.VMSize,
+		Image:  &capiazure.Image{ID: &nodePool.Spec.Platform.Azure.ImageID},
+		OSDisk: capiazure.OSDisk{
+			DiskSizeGB: utilpointer.Int32Ptr(nodePool.Spec.Platform.Azure.DiskSizeGB),
+		},
 		SubnetName:             hcluster.Spec.Platform.Azure.SubnetName,
 		Identity:               capiazure.VMIdentityUserAssigned,
 		UserAssignedIdentities: []capiazure.UserAssignedIdentity{{ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID}},

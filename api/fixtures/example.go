@@ -124,6 +124,7 @@ type ExampleAzureOptions struct {
 	MachineIdentityID string
 	InstanceType      string
 	SecurityGroupName string
+	DiskSizeGB        int32
 }
 
 // AzureCreds is the fileformat we expect for credentials. It is copied from the installer
@@ -549,8 +550,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	case hyperv1.AzurePlatform:
 		nodePool := defaultNodePool(cluster.Name)
 		nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-			VMSize:  o.Azure.InstanceType,
-			ImageID: o.Azure.BootImageID,
+			VMSize:     o.Azure.InstanceType,
+			ImageID:    o.Azure.BootImageID,
+			DiskSizeGB: o.Azure.DiskSizeGB,
 		}
 		nodePools = append(nodePools, nodePool)
 	default:
