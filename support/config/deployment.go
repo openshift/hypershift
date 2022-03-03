@@ -22,6 +22,15 @@ type DeploymentConfig struct {
 	Resources                 ResourcesSpec         `json:"resources"`
 }
 
+func (c *DeploymentConfig) SetContainerResourcesIfPresent(container *corev1.Container) {
+	resources := container.Resources
+	if len(resources.Requests) > 0 || len(resources.Limits) > 0 {
+		if c.Resources != nil {
+			c.Resources[container.Name] = resources
+		}
+	}
+}
+
 func (c *DeploymentConfig) SetRestartAnnotation(objectMetadata metav1.ObjectMeta) {
 	if _, ok := objectMetadata.Annotations[hyperv1.RestartDateAnnotation]; ok {
 		if c.AdditionalAnnotations == nil {
