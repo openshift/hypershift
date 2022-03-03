@@ -31,3 +31,7 @@ func ReconcileServiceAccountSigningKeySecret(secret *corev1.Secret, ownerRef con
 	secret.Data[ServiceSignerPublicKey] = publicKeyBytes
 	return nil
 }
+
+func ReconcileMetricsSAClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:serviceaccount:hypershift:prometheus", []string{"kubernetes"}, X509UsageClientAuth)
+}

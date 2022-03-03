@@ -16,7 +16,3 @@ func ReconcileKCMServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRe
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kube-controller-manager", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
 }
-
-func ReconcileKCMMetricsClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "system:kcm-metrics-client", []string{"kubernetes"}, X509UsageClientAuth)
-}

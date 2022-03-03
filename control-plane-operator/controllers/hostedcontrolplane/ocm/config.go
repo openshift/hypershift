@@ -107,6 +107,7 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 	cfg.KubeClientConfig.KubeConfig = cpath(ocmVolumeKubeconfig().Name, kas.KubeconfigKey)
 	cfg.ServingInfo = &configv1.HTTPServingInfo{
 		ServingInfo: configv1.ServingInfo{
+			BindAddress: fmt.Sprintf("0.0.0.0:%d", servingPort),
 			CertInfo: configv1.CertInfo{
 				CertFile: cpath(ocmVolumeServingCert().Name, corev1.TLSCertKey),
 				KeyFile:  cpath(ocmVolumeServingCert().Name, corev1.TLSPrivateKeyKey),

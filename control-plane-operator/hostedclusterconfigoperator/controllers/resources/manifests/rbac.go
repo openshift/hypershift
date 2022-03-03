@@ -69,26 +69,10 @@ func CSRRenewalClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	}
 }
 
-func KASMetricsClientClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+func MetricsClientClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kas-metrics-client",
-		},
-	}
-}
-
-func KCMMetricsClientClusterRoleBinding() *rbacv1.ClusterRoleBinding {
-	return &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "kcm-metrics-client",
-		},
-	}
-}
-
-func OpenShiftAPIServerMetricsClientClusterRoleBinding() *rbacv1.ClusterRoleBinding {
-	return &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "openshift-apiserver-metrics-client",
+			Name: "hypershift-metrics-client",
 		},
 	}
 }

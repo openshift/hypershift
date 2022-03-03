@@ -227,50 +227,20 @@ func ReconcileCSRRenewalClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
 	return nil
 }
 
-func ReconcileKASMetricsClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
-	r.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.SchemeGroupVersion.Group,
-		Kind:     "ClusterRole",
-		Name:     "system:monitoring",
-	}
-	r.Subjects = []rbacv1.Subject{
-		{
+func ReconcileGenericMetricsClusterRoleBinding(cn string) func(*rbacv1.ClusterRoleBinding) error {
+	return func(r *rbacv1.ClusterRoleBinding) error {
+		r.RoleRef = rbacv1.RoleRef{
 			APIGroup: rbacv1.SchemeGroupVersion.Group,
-			Kind:     "User",
-			Name:     "system:kas-metrics-client",
-		},
+			Kind:     "ClusterRole",
+			Name:     "system:monitoring",
+		}
+		r.Subjects = []rbacv1.Subject{
+			{
+				APIGroup: rbacv1.SchemeGroupVersion.Group,
+				Kind:     "User",
+				Name:     cn,
+			},
+		}
+		return nil
 	}
-	return nil
-}
-
-func ReconcileKCMMetricsClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
-	r.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.SchemeGroupVersion.Group,
-		Kind:     "ClusterRole",
-		Name:     "system:monitoring",
-	}
-	r.Subjects = []rbacv1.Subject{
-		{
-			APIGroup: rbacv1.SchemeGroupVersion.Group,
-			Kind:     "User",
-			Name:     "system:kcm-metrics-client",
-		},
-	}
-	return nil
-}
-
-func ReconcileOpenShiftAPIServerMetricsClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
-	r.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.SchemeGroupVersion.Group,
-		Kind:     "ClusterRole",
-		Name:     "system:monitoring",
-	}
-	r.Subjects = []rbacv1.Subject{
-		{
-			APIGroup: rbacv1.SchemeGroupVersion.Group,
-			Kind:     "User",
-			Name:     "system:openshift-apiserver-metrics-client",
-		},
-	}
-	return nil
 }

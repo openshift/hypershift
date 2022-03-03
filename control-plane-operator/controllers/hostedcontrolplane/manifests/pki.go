@@ -32,6 +32,15 @@ func CombinedCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+func MetricsClientCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "metrics-client",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdClientSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -104,29 +113,11 @@ func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 	}
 }
 
-func KASMetricsClientCert(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kas-metrics-cert",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
 func KCMServerCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kcm-server",
 			Namespace: ns,
-		},
-	}
-}
-
-func KCMMetricsClientCertSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kcm-metrics-cert",
-			Namespace: controlPlaneNamespace,
 		},
 	}
 }
@@ -145,15 +136,6 @@ func OpenShiftAPIServerCertSecret(ns string) *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openshift-apiserver-cert",
 			Namespace: ns,
-		},
-	}
-}
-
-func OpenShiftAPIMetricsClientCertSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openshift-apiserver-metrics-cert",
-			Namespace: controlPlaneNamespace,
 		},
 	}
 }
@@ -266,15 +248,6 @@ func OLMPackageServerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
-func OLMProfileCollectorCertSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "olm-profile-collector",
-			Namespace: ns,
-		},
-	}
-}
-
 func OLMOperatorServingCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -306,16 +279,6 @@ func IBMCloudKASKMSWDEKSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kp-wdek-secret",
-			Namespace: ns,
-		},
-	}
-}
-
-// IBMCloudKASKMSKPCustomerAuthSecret ...
-func IBMCloudKASKMSKPCustomerAuthSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kp-customer-auth",
 			Namespace: ns,
 		},
 	}
