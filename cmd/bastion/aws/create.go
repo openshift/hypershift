@@ -102,7 +102,10 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 
 	if len(o.Name) > 0 {
 		// Find HostedCluster and get AWS creds
-		c := util.GetClientOrDie()
+		c, err := util.GetClient()
+		if err != nil {
+			return "", "", err
+		}
 
 		var hostedCluster hyperv1.HostedCluster
 		if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {

@@ -114,7 +114,12 @@ func main(m *testing.M) int {
 }
 
 func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir string) {
-	mgr, err := ctrl.NewManager(e2eutil.GetConfigOrDie(), manager.Options{MetricsBindAddress: "0"})
+	config, err := e2eutil.GetConfig()
+	if err != nil {
+		log.Error(err, "failed to construct config for observers")
+		return
+	}
+	mgr, err := ctrl.NewManager(config, manager.Options{MetricsBindAddress: "0"})
 	if err != nil {
 		log.Error(err, "failed to construct manager for observers")
 		return

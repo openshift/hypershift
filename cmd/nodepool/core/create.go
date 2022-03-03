@@ -42,10 +42,13 @@ func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions) func
 }
 
 func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts PlatformOptions) error {
-	client := util.GetClientOrDie()
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 
 	hcluster := &hyperv1.HostedCluster{}
-	err := client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.ClusterName}, hcluster)
+	err = client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.ClusterName}, hcluster)
 	if err != nil {
 		return fmt.Errorf("failed to get HostedCluster %s/%s: %w", o.Namespace, o.ClusterName, err)
 	}

@@ -23,7 +23,8 @@ func TestAutoscaling(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -40,7 +41,7 @@ func TestAutoscaling(t *testing.T) {
 			Name:      e2eutil.NodePoolName(hostedCluster.Name, zone),
 		},
 	}
-	err := client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
+	err = client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 	t.Logf("Created nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
 
