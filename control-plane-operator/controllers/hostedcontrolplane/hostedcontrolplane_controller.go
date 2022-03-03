@@ -38,6 +38,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cno"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
@@ -653,6 +654,11 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reconciling Cluster Version Operator")
 	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
+	}
+
+	r.Log.Info("Reconciling ClusterNetworkOperator")
+	if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile cluster network operator: %w", err)
 	}
 
 	r.Log.Info("Reconciling IngressOperator")
@@ -1899,6 +1905,33 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.APIPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	p := cno.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	role := manifests.ClusterNetworkOperatorRole(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, role, func() error {
+		return cno.ReconcileRole(role, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster network operator role: %w", err)
+	}
+
+	rb := manifests.ClusterNetworkOperatorRoleBinding(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, rb, func() error {
+		return cno.ReconcileRoleBinding(rb, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster network operator rolebinding: %w", err)
+	}
+
+	deployment := manifests.ClusterNetworkOperatorDeployment(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
+		cno.ReconcileDeployment(deployment, p, hcp.Spec.APIPort)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster network operator deployment: %w", err)
 	}
 	return nil
 }
