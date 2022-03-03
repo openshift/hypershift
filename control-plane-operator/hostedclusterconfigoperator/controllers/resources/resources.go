@@ -506,9 +506,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		{manifest: manifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
 		{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
 		{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
-		{manifest: manifests.KASMetricsClientClusterRoleBinding, reconcile: rbac.ReconcileKASMetricsClusterRoleBinding},
-		{manifest: manifests.KCMMetricsClientClusterRoleBinding, reconcile: rbac.ReconcileKCMMetricsClusterRoleBinding},
-		{manifest: manifests.OpenShiftAPIServerMetricsClientClusterRoleBinding, reconcile: rbac.ReconcileOpenShiftAPIServerMetricsClusterRoleBinding},
+		{manifest: manifests.MetricsClientClusterRoleBinding, reconcile: rbac.ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
 	}
 
 	var errs []error

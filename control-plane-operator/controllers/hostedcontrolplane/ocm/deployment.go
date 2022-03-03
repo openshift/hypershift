@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +18,8 @@ import (
 
 const (
 	configHashAnnotation = "openshift-controller-manager.hypershift.openshift.io/config-hash"
+
+	servingPort int32 = 8443
 )
 
 var (
@@ -27,10 +30,14 @@ var (
 			ocmVolumeKubeconfig().Name:  "/etc/kubernetes/secrets/svc-kubeconfig",
 		},
 	}
-	openShiftControllerManagerLabels = map[string]string{
-		"app": "openshift-controller-manager",
-	}
 )
+
+func openShiftControllerManagerLabels() map[string]string {
+	return map[string]string{
+		"app":                         "openshift-controller-manager",
+		hyperv1.ControlPlaneComponent: "openshift-controller-manager",
+	}
+}
 
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig) error {
 	configBytes, ok := config.Data[configKey]
@@ -53,9 +60,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MaxUnavailable: &maxUnavailable,
 	}
 	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: openShiftControllerManagerLabels,
+		MatchLabels: openShiftControllerManagerLabels(),
 	}
-	deployment.Spec.Template.ObjectMeta.Labels = openShiftControllerManagerLabels
+	deployment.Spec.Template.ObjectMeta.Labels = openShiftControllerManagerLabels()
 	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
 		configHashAnnotation: configHash,
 	}
@@ -88,6 +95,13 @@ func buildOCMContainerMain(image string) func(*corev1.Container) {
 			path.Join(volumeMounts.Path(c.Name, ocmVolumeConfig().Name), configKey),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "https",
+				ContainerPort: servingPort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		}
 	}
 }
 

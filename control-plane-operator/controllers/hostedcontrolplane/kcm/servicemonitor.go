@@ -27,21 +27,21 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.KCMMetricsClientCertSecret(sm.Namespace).Name,
+								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
 							},
 							Key: "tls.crt",
 						},
 					},
 					KeySecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: manifests.KCMMetricsClientCertSecret(sm.Namespace).Name,
+							Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
 						},
 						Key: "tls.key",
 					},
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.KCMMetricsClientCertSecret(sm.Namespace).Name,
+								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
 							},
 							Key: "ca.crt",
 						},

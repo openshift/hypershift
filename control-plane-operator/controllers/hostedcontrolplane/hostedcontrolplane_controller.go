@@ -611,7 +611,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	// Reconcile openshift controller manager
 	r.Log.Info("Reconciling OpenShift Controller Manager")
 	if err = r.reconcileOpenShiftControllerManager(ctx, hostedControlPlane, globalConfig, releaseImage); err != nil {
-		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+		return fmt.Errorf("failed to reconcile openshift controller manager: %w", err)
 	}
 
 	// Reconcile cluster policy controller
@@ -1011,6 +1011,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile combined CA: %w", err)
 	}
 
+	// Metrics client cert
+	metricsClientCert := manifests.MetricsClientCertSecret(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, metricsClientCert, func() error {
+		return pki.ReconcileMetricsSAClientCertSecret(metricsClientCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics client cert secret: %w", err)
+	}
+
 	// Etcd client secret
 	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, etcdClientSecret, func() error {
@@ -1075,16 +1083,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile kas bootstrap client secret: %w", err)
 	}
 
-	// KAS metrics client cert secret
-	kasMetricsClientSecret := manifests.KASMetricsClientCert(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, kasMetricsClientSecret, func() error {
-		return pki.ReconcileKASMetricsClientCertSecret(kasMetricsClientSecret, rootCASecret, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas metrics client cert secret: %w", err)
-	} else {
-		r.Log.Info("Reconciled api server metrics client cert secret", "result", result)
-	}
-
 	// Service account signing key secret
 	serviceAccountSigningKeySecret := manifests.ServiceAccountSigningKeySecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, serviceAccountSigningKeySecret, func() error {
@@ -1099,16 +1097,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileOpenShiftAPIServerCertSecret(openshiftAPIServerCertSecret, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
-	}
-
-	// OpenShift APIServer metrics client cert
-	openshiftAPIServerMetricsClientCert := manifests.OpenShiftAPIMetricsClientCertSecret(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, openshiftAPIServerMetricsClientCert, func() error {
-		return pki.ReconcileOpenShiftAPIServerMetricsClientCertSecret(openshiftAPIServerMetricsClientCert, rootCASecret, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift apiserver metrics client cert secret: %w", err)
-	} else {
-		r.Log.Info("Reconciled openshift apiserver metrics client cert secret", "result", result)
 	}
 
 	// OpenShift OAuth APIServer
@@ -1228,15 +1216,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
-	}
-
-	kcmMetricsClientSecret := manifests.KCMMetricsClientCertSecret(hcp.Namespace)
-	if result, err := r.CreateOrUpdate(ctx, r, kcmMetricsClientSecret, func() error {
-		return pki.ReconcileKCMMetricsClientCertSecret(kcmMetricsClientSecret, rootCASecret, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kcm metrics client cert secret: %w", err)
-	} else {
-		r.Log.Info("Reconciled kcm metrics client cert secret", "result", result)
 	}
 
 	return nil
@@ -1793,6 +1772,20 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
 	}
 
+	service := manifests.OpenShiftControllerService(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, service, func() error {
+		return ocm.ReconcileService(service, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager service: %w", err)
+	}
+
+	serviceMonitor := manifests.OpenShiftControllerServiceMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return ocm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager service monitor: %w", err)
+	}
+
 	deployment := manifests.OpenShiftControllerManagerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
 		return ocm.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftControllerManagerImage, config, p.DeploymentConfig)
@@ -1809,14 +1802,14 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 	if _, err := r.CreateOrUpdate(ctx, r, config, func() error {
 		return clusterpolicy.ReconcileClusterPolicyControllerConfig(config, p.OwnerRef, p.MinTLSVersion(), p.CipherSuites())
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
+		return fmt.Errorf("failed to reconcile cluster policy controller config: %w", err)
 	}
 
 	deployment := manifests.ClusterPolicyControllerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
 		return clusterpolicy.ReconcileDeployment(deployment, p.OwnerRef, p.Image, p.DeploymentConfig, p.AvailabilityProberImage, hcp.Spec.APIPort)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager deployment: %w", err)
+		return fmt.Errorf("failed to reconcile cluster policy controller deployment: %w", err)
 	}
 	return nil
 }
