@@ -26,6 +26,12 @@ const (
 	IgnitionCACertMissingReason   string = "IgnitionCACertMissing"
 )
 
+const (
+	// IgnitionServerTokenExpirationTimestampAnnotation holds the time that a ignition token expires and should be
+	// removed from the cluster.
+	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
+)
+
 func init() {
 	SchemeBuilder.Register(&NodePool{})
 	SchemeBuilder.Register(&NodePoolList{})

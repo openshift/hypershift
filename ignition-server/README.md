@@ -12,6 +12,12 @@ The TokenSecret controller watches token Secrets and:
 
 i.e a token is active a total of 11 hours, 5.5 main and then 5.5 in the rotated spot.
 
+### Token Deletion 
+
+Token secrets and the associated tokens are revoked/deleted immediately when the corresponding nodePool is deleted. 
+
+When a NodePool is upgraded or goes through a config change, a new token secret is created that corresponds to the updated config value and the old token secret is marked with an expiration date by the NodePool controller. Once the expiration date has passed: the old token secret is deleted and the associated tokens are revoked. This strategy is done to allow in flight provisions that occurred in proximity to the nodePool upgrade to complete.
+
 ## Ignition provider
 An interface to be implemented to produce a valid ignition payload out of a given release/config pair.
 

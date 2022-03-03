@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"github.com/go-logr/logr"
+	"github.com/openshift/hypershift/api/v1alpha1"
 	"testing"
 	"time"
 
@@ -352,4 +354,161 @@ func TestRotateTokenID(t *testing.T) {
 	value, ok := r.PayloadStore.Get(string(newToken))
 	g.Expect(value).To(BeEquivalentTo(existingValue))
 	g.Expect(ok).To(BeTrue())
+}
+
+func TestIsTokenExpired(t *testing.T) {
+	testCases := []struct {
+		name              string
+		annotations       map[string]string
+		expectedIsExpired bool
+	}{
+		{
+			name:              "when there's no token expiration timestamp annotation it should return that it is not expired (false)",
+			annotations:       map[string]string{},
+			expectedIsExpired: false,
+		},
+		{
+			name: "when the token expiration timestamp is in the past it should return that it is expired (true)",
+			annotations: map[string]string{
+				v1alpha1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(-4 * time.Hour).Format(time.RFC3339),
+			},
+			expectedIsExpired: true,
+		},
+		{
+			name: "when the token expiration timestamp is in the future it should return that it is not expired (false)",
+			annotations: map[string]string{
+				v1alpha1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(4 * time.Hour).Format(time.RFC3339),
+			},
+			expectedIsExpired: false,
+		},
+		{
+			name: "when the token expiration timestamp has an invalid value it should return that it is expired (true)",
+			annotations: map[string]string{
+				v1alpha1.IgnitionServerTokenExpirationTimestampAnnotation: "badvalue",
+			},
+			expectedIsExpired: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			actualIsExpired := isTokenExpired(logr.Discard(), tc.annotations)
+			g.Expect(actualIsExpired).To(Equal(tc.expectedIsExpired))
+		})
+	}
+}
+
+func TestProcessedExpiredToken(t *testing.T) {
+	fakeName := "test-token"
+	fakeNamespace := "master-cluster1"
+	fakeCurrentTokenVal := "tokenval1"
+	fakeOldTokenVal := "oldtokenval2"
+	fakeIndependentTokenVal := "independenttokenval1"
+	fakeTokenContent := []byte(`blah`)
+
+	testCases := []struct {
+		name                       string
+		inputSecret                *corev1.Secret
+		inputEntries               map[string][]byte
+		expectedRemainingEntries   map[string][]byte
+		expectedEntriesToBeRemoved map[string][]byte
+	}{
+		{
+			name: "when a token secret exists and the cache is populated then the secret is deleted and the token entries removed from cache",
+			inputEntries: map[string][]byte{
+				fakeCurrentTokenVal: fakeTokenContent,
+				fakeOldTokenVal:     fakeTokenContent,
+			},
+			inputSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeName,
+					Namespace: fakeNamespace,
+				},
+				Data: map[string][]byte{
+					TokenSecretOldTokenKey: []byte(fakeOldTokenVal),
+					TokenSecretTokenKey:    []byte(fakeCurrentTokenVal),
+				},
+			},
+			expectedRemainingEntries: nil,
+			expectedEntriesToBeRemoved: map[string][]byte{
+				fakeCurrentTokenVal: fakeTokenContent,
+				fakeOldTokenVal:     fakeTokenContent,
+			},
+		},
+		{
+			name: "when a token secret exists with only one token and the cache is populated then the secret is deleted and the token entries removed from cache",
+			inputEntries: map[string][]byte{
+				fakeCurrentTokenVal: fakeTokenContent,
+			},
+			inputSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeName,
+					Namespace: fakeNamespace,
+				},
+				Data: map[string][]byte{
+					TokenSecretTokenKey: []byte(fakeCurrentTokenVal),
+				},
+			},
+			expectedRemainingEntries: nil,
+			expectedEntriesToBeRemoved: map[string][]byte{
+				fakeCurrentTokenVal: fakeTokenContent,
+			},
+		},
+		{
+			name: "when a token secret exists and an independent secrets entry is also in the cache then only the processed tokens are removed",
+			inputEntries: map[string][]byte{
+				fakeCurrentTokenVal:     fakeTokenContent,
+				fakeIndependentTokenVal: fakeTokenContent,
+			},
+			inputSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeName,
+					Namespace: fakeNamespace,
+				},
+				Data: map[string][]byte{
+					TokenSecretTokenKey: []byte(fakeCurrentTokenVal),
+				},
+			},
+			expectedRemainingEntries: map[string][]byte{
+				fakeIndependentTokenVal: fakeTokenContent,
+			},
+			expectedEntriesToBeRemoved: map[string][]byte{
+				fakeCurrentTokenVal: fakeTokenContent,
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			payloadStore := NewPayloadStore()
+			for tokenKey, tokenVal := range tc.inputEntries {
+				payloadStore.Set(tokenKey, CacheValue{
+					Payload: tokenVal,
+				})
+			}
+			r := TokenSecretReconciler{
+				Client:           fake.NewClientBuilder().WithObjects(tc.inputSecret).Build(),
+				IgnitionProvider: &fakeIgnitionProvider{},
+				PayloadStore:     payloadStore,
+			}
+			err := r.processExpiredToken(context.Background(), tc.inputSecret)
+			g.Expect(err).To(Not(HaveOccurred()))
+			for expectedTokenKey := range tc.expectedRemainingEntries {
+				_, ok := payloadStore.Get(expectedTokenKey)
+				g.Expect(ok).To(BeTrue())
+			}
+			for expectedTokenKey := range tc.expectedEntriesToBeRemoved {
+				_, ok := payloadStore.Get(expectedTokenKey)
+				g.Expect(ok).To(BeFalse())
+			}
+			secretToFetch := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeName,
+					Namespace: fakeNamespace,
+				},
+			}
+			err = r.Client.Get(context.Background(), client.ObjectKeyFromObject(secretToFetch), secretToFetch)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+	}
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -107,6 +108,36 @@ func processIfMatchesAnnotation(logger logr.Logger, obj client.Object) bool {
 	return false
 }
 
+// isTokenExpired parses an expiration annotation and compares with the current time to see if a token is expired.
+// invalid formats are considered expired
+func isTokenExpired(logrInstance logr.Logger, tokenAnnotations map[string]string) bool {
+	if expirationTimestampRaw, ok := tokenAnnotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation]; ok {
+		expirationTime, err := time.Parse(time.RFC3339, expirationTimestampRaw)
+		if err != nil {
+			logrInstance.Error(err, "Invalid format for expiration time")
+			logrInstance.Info("Due to invalid expiration format: marking token as expired")
+			return true
+		}
+		return time.Now().After(expirationTime)
+	}
+	return false
+}
+
+// processExpiredToken handles clearing the cache of the expired token(s) and ensuring the token secret is removed
+// from the management cluster
+func (r *TokenSecretReconciler) processExpiredToken(ctx context.Context, tokenSecret *corev1.Secret) error {
+	if oldToken, ok := tokenSecret.Data[TokenSecretOldTokenKey]; ok {
+		r.PayloadStore.Delete(string(oldToken))
+	}
+	if currentToken, ok := tokenSecret.Data[TokenSecretTokenKey]; ok {
+		r.PayloadStore.Delete(string(currentToken))
+	}
+	if err := r.Client.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
 func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling")
@@ -143,6 +174,12 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			}
 		}
 		return ctrl.Result{}, nil
+	}
+
+	// if a token is expired remove it
+	if isTokenExpired(log, tokenSecret.Annotations) {
+		err := r.processExpiredToken(ctx, tokenSecret)
+		return ctrl.Result{}, err
 	}
 
 	// Otherwise proceed to generate the payload and cache the content.

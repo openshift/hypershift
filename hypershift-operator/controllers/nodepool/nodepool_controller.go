@@ -440,8 +440,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return reconcile.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
 		}
 		if err == nil {
-			if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to delete token Secret: %w", err)
+			if err := setExpirationTimestampOnToken(ctx, r.Client, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
+				return reconcile.Result{}, fmt.Errorf("failed to set expiration on token Secret: %w", err)
 			}
 		}
 
@@ -679,6 +679,8 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 
 	tokenSecret.Annotations[TokenSecretAnnotation] = "true"
 	tokenSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	// active token should never be marked as expired.
+	delete(tokenSecret.Annotations, hyperv1.IgnitionServerTokenExpirationTimestampAnnotation)
 
 	if tokenSecret.Data == nil {
 		tokenSecret.Data = map[string][]byte{}
@@ -1448,4 +1450,14 @@ func validateInfraID(infraID string) error {
 		return fmt.Errorf("infraID can't be empty")
 	}
 	return nil
+}
+
+func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSecret *corev1.Secret) error {
+	// this should be a reasonable value to allow all in flight provisions to complete.
+	timeUntilExpiry := 2 * time.Hour
+	if tokenSecret.Annotations == nil {
+		tokenSecret.Annotations = map[string]string{}
+	}
+	tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation] = time.Now().Add(timeUntilExpiry).Format(time.RFC3339)
+	return c.Update(ctx, tokenSecret)
 }
