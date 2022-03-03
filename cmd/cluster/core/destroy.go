@@ -46,7 +46,10 @@ type AzurePlatformDestroyOptions struct {
 }
 
 func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {
-	c := util.GetClientOrDie()
+	c, err := util.GetClient()
+	if err != nil {
+		return nil, err
+	}
 
 	var hostedCluster hyperv1.HostedCluster
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
@@ -63,7 +66,10 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
 	hostedClusterExists := hostedCluster != nil
-	c := util.GetClientOrDie()
+	c, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 
 	// If the hosted cluster exists, add a finalizer, delete it, and wait for
 	// the cluster to be cleaned up before destroying its infrastructure.
@@ -111,7 +117,7 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		return err
 	}
 
-	//clean up CLI generated secrets
+	// clean up CLI generated secrets
 	log.Log.Info("Deleting Secrets", "namespace", o.Namespace)
 	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{util.AutoInfraLabelName: o.InfraID}); err != nil {
 		if apierrors.IsNotFound(err) {

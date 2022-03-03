@@ -73,7 +73,10 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 }
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	client := util.GetClientOrDie()
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 	infraID := opts.InfraID
 
 	// Load or create infrastructure for the cluster

@@ -89,7 +89,12 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.MarkFlagRequired("oidc-bucket-region")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := opts.Run(cmd.Context(), util.GetClientOrDie()); err != nil {
+		client, err := util.GetClient()
+		if err != nil {
+			log.Log.Error(err, "failed to create client")
+			return err
+		}
+		if err := opts.Run(cmd.Context(), client); err != nil {
 			log.Log.Error(err, "Failed to create infrastructure")
 			return err
 		}

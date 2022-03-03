@@ -149,7 +149,10 @@ func NewCommand() *cobra.Command {
 }
 
 func apply(ctx context.Context, objects []crclient.Object) error {
-	client := util.GetClientOrDie()
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 	for _, object := range objects {
 		var objectBytes bytes.Buffer
 		err := hyperapi.YamlSerializer.Encode(object, &objectBytes)

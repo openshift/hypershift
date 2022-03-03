@@ -85,7 +85,12 @@ func monitoringCommand() *cobra.Command {
 		ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 		ctx := ctrl.SetupSignalHandler()
 
-		if err := opts.Configure(ctx, e2eutil.GetClientOrDie()); err != nil {
+		cl, err := e2eutil.GetClient()
+		if err != nil {
+			log.Error(err, "failed to get k8s client")
+			os.Exit(1)
+		}
+		if err := opts.Configure(ctx, cl); err != nil {
 			log.Error(err, "failed to configure monitoring")
 			os.Exit(1)
 		}

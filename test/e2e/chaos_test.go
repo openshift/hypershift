@@ -28,11 +28,13 @@ import (
 // of chaotic etcd tests which ensure no data is lost in the chaos.
 func TestHAEtcdChaos(t *testing.T) {
 	t.Parallel()
+	g := NewWithT(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
@@ -49,11 +51,13 @@ func TestHAEtcdChaos(t *testing.T) {
 // chaotic etcd tests which ensure no data is lost in the chaos.
 func TestEtcdChaos(t *testing.T) {
 	t.Parallel()
+	g := NewWithT(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
