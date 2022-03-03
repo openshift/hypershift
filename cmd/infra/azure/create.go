@@ -13,6 +13,7 @@ import (
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/log"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	utilpointer "k8s.io/utils/pointer"
 	"sigs.k8s.io/yaml"
 
@@ -291,7 +292,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	storageAccountClient := storage.NewAccountsClient(creds.SubscriptionID)
 	storageAccountClient.Authorizer = authorizer
 
-	storageAccountName := "cluster" + o.InfraID
+	storageAccountName := "cluster" + utilrand.String(5)
 	storageAccountFuture, err := storageAccountClient.Create(ctx, *rg.Name, storageAccountName, storage.AccountCreateParameters{
 		Sku:      &storage.Sku{Name: storage.SkuNamePremiumLRS, Tier: storage.SkuTierStandard},
 		Location: utilpointer.String(o.Location),
