@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"log"
@@ -19,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -145,9 +147,17 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 }
 
 func run(ctx context.Context, opts Options) error {
+	certWatcher, err := certwatcher.New(opts.CertFile, opts.KeyFile)
+	if err != nil {
+		return fmt.Errorf("failed to load serving cert: %w", err)
+	}
+
 	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform))
 	if err != nil {
 		return fmt.Errorf("error setting up manager: %w", err)
+	}
+	if err := mgr.Add(certWatcher); err != nil {
+		return fmt.Errorf("failed to add certWatcher to manager: %w", err)
 	}
 	go mgr.Start(ctx)
 
@@ -194,6 +204,7 @@ func run(ctx context.Context, opts Options) error {
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
+		TLSConfig:    &tls.Config{GetCertificate: certWatcher.GetCertificate},
 	}
 
 	go func() {
@@ -204,7 +215,7 @@ func run(ctx context.Context, opts Options) error {
 	}()
 
 	log.Printf("Listening on %s", opts.Addr)
-	if err := server.ListenAndServeTLS(opts.CertFile, opts.KeyFile); err != nil && err != http.ErrServerClosed {
+	if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil
