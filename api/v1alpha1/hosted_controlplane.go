@@ -95,6 +95,13 @@ type HostedControlPlaneSpec struct {
 	// cluster when applicable.
 	// +optional
 	SecretEncryption *SecretEncryptionSpec `json:"secretEncryption,omitempty"`
+
+	// PausedUntil is a field that can be used to pause reconciliation on a resource.
+	// Either a date can be provided in RFC3339 format or a boolean. If a date is
+	// provided: reconciliation is paused on the resource until that date. If the boolean true is
+	// provided: reconciliation is paused on the resource until the field is removed.
+	// +optional
+	PausedUntil *string `json:"pausedUntil,omitempty"`
 }
 
 // AvailabilityPolicy specifies a high level availability policy for components.

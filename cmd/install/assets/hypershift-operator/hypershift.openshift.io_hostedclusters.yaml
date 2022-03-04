@@ -358,6 +358,13 @@ spec:
                 - podCIDR
                 - serviceCIDR
                 type: object
+              pausedUntil:
+                description: 'PausedUntil is a field that can be used to pause reconciliation
+                  on a resource. Either a date can be provided in RFC3339 format or
+                  a boolean. If a date is provided: reconciliation is paused on the
+                  resource until that date. If the boolean true is provided: reconciliation
+                  is paused on the resource until the field is removed.'
+                type: string
               platform:
                 description: Platform specifies the underlying infrastructure provider
                   for the cluster and is used to configure platform specific behavior.
