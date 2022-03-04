@@ -80,6 +80,20 @@ type NodePoolReconciler struct {
 	upsert.CreateOrUpdateProvider
 }
 
+type awsRHCOSDetails struct {
+	AMI string
+}
+
+type kubevirtRHCOSDetails struct {
+	Checksum             string
+	OpenStackDownloadURL string
+}
+
+type rhcosDetails struct {
+	AWS      awsRHCOSDetails
+	KubeVirt kubevirtRHCOSDetails
+}
+
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.NodePool{}).
@@ -324,13 +338,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Validate platform specific input.
-	var ami string
-	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
+	rhcosInfo := &rhcosDetails{}
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
 		if hcluster.Spec.Platform.AWS == nil {
 			return ctrl.Result{}, fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
 		}
 		// TODO: Should the region be included in the NodePool platform information?
-		ami, err = getAMI(nodePool, hcluster.Spec.Platform.AWS.Region, releaseImage)
+		ami, err := getAMI(nodePool, hcluster.Spec.Platform.AWS.Region, releaseImage)
 		if err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidAMIConditionType,
@@ -341,14 +356,35 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			})
 			return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 		}
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidAMIConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
+			ObservedGeneration: nodePool.Generation,
+		})
+		rhcosInfo.AWS = awsRHCOSDetails{AMI: ami}
+	case hyperv1.KubevirtPlatform:
+		release, shasum, location, err := getOpenStackDiskInfo(releaseImage)
+		if err != nil {
+			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidRHCOSImageConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+				Message:            fmt.Sprintf("Couldn't discover any openstack rhcos checksum for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("couldn't discover any openstack rhcos checksum for release image: %w", err)
+		}
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidRHCOSImageConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Message:            fmt.Sprintf("Bootstrap openstack RHCOS image is release %q", release),
+			ObservedGeneration: nodePool.Generation,
+		})
+		rhcosInfo.KubeVirt = kubevirtRHCOSDetails{Checksum: shasum, OpenStackDownloadURL: location}
 	}
-	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidAMIConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-		Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
-		ObservedGeneration: nodePool.Generation,
-	})
 
 	// Validate config input.
 	// 3 generic core config resoures: fips, ssh and haproxy.
@@ -501,7 +537,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Reconcile (Platform)MachineTemplate.
-	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami)
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, rhcosInfo)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -912,6 +948,10 @@ func getAMI(nodePool *hyperv1.NodePool, region string, releaseImage *releaseinfo
 	return defaultNodePoolAMI(region, releaseImage)
 }
 
+func getOpenStackDiskInfo(releaseImage *releaseinfo.ReleaseImage) (string, string, string, error) {
+	return defaultOpenStackInfo(releaseImage)
+}
+
 func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config {
 	return ignitionapi.Config{
 		Ignition: ignitionapi.Ignition{
@@ -1093,6 +1133,28 @@ func validateAutoscaling(nodePool *hyperv1.NodePool) error {
 	}
 
 	return nil
+}
+
+func defaultOpenStackInfo(releaseImage *releaseinfo.ReleaseImage) (release string, sha256 string, url string, err error) {
+	// TODO: The architecture should be specified from the API
+	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+	if !foundArch {
+		return "", "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+	}
+	openStack, exists := arch.Artifacts["openstack"]
+	if !exists {
+		return "", "", "", fmt.Errorf("couldn't find OS metadata for openstack")
+	}
+	artifact, exists := openStack.Formats["qcow2.gz"]
+	if !exists {
+		return "", "", "", fmt.Errorf("couldn't find OS metadata for openstack artifact %v", "qcow2.gz")
+	}
+	disk, exists := artifact["disk"]
+	if !exists {
+		return "", "", "", fmt.Errorf("couldn't find OS metadata for the openstack disk")
+	}
+
+	return openStack.Release, disk.SHA256, disk.Location, nil
 }
 
 func defaultNodePoolAMI(region string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
@@ -1375,7 +1437,7 @@ func isPlatformNone(nodePool *hyperv1.NodePool) bool {
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
 func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool,
-	infraID, ami string) (client.Object, func(object client.Object) error, string, error) {
+	infraID string, rhcosInfo *rhcosDetails) (client.Object, func(object client.Object) error, string, error) {
 	var mutateTemplate func(object client.Object) error
 	var template client.Object
 	var machineTemplateSpec interface{}
@@ -1384,7 +1446,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 	// Define the desired template type and mutateTemplate function.
 	case hyperv1.AWSPlatform:
 		template = &capiaws.AWSMachineTemplate{}
-		machineTemplateSpec = awsMachineTemplateSpec(infraID, ami, hcluster, nodePool)
+		machineTemplateSpec = awsMachineTemplateSpec(infraID, rhcosInfo.AWS.AMI, hcluster, nodePool)
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capiaws.AWSMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capiaws.AWSMachineTemplateSpec)
@@ -1408,7 +1470,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		}
 	case hyperv1.KubevirtPlatform:
 		template = &capikubevirt.KubevirtMachineTemplate{}
-		machineTemplateSpec = kubevirtMachineTemplateSpec(nodePool)
+		machineTemplateSpec = kubevirtMachineTemplateSpec(nodePool, rhcosInfo.KubeVirt)
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)

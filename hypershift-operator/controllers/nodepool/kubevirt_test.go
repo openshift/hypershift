@@ -47,7 +47,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := kubevirtMachineTemplateSpec(tc.nodePool)
+			result := kubevirtMachineTemplateSpec(tc.nodePool, kubevirtRHCOSDetails{})
 			if !equality.Semantic.DeepEqual(tc.expected, result) {
 				t.Errorf(cmp.Diff(tc.expected, result))
 			}
@@ -69,7 +69,7 @@ func generateNodeTemplate(memory string, cpu uint32, image string) *capikubevirt
 						Devices: kubevirtv1.Devices{
 							Disks: []kubevirtv1.Disk{
 								{
-									Name: "containervolume",
+									Name: "rhcos",
 									DiskDevice: kubevirtv1.DiskDevice{
 										Disk: &kubevirtv1.DiskTarget{
 											Bus: "virtio",
@@ -81,7 +81,7 @@ func generateNodeTemplate(memory string, cpu uint32, image string) *capikubevirt
 					},
 					Volumes: []kubevirtv1.Volume{
 						{
-							Name: "containervolume",
+							Name: "rhcos",
 							VolumeSource: kubevirtv1.VolumeSource{
 								ContainerDisk: &kubevirtv1.ContainerDiskSource{
 									Image: image,
