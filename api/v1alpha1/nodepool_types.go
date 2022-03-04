@@ -10,6 +10,7 @@ import (
 const (
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
 	NodePoolValidAMIConditionType                = "ValidAMI"
+	NodePoolValidRHCOSImageConditionType         = "ValidRHCOSImage"
 	NodePoolConfigValidConfigConditionType       = "ValidConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"

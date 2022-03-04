@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/spf13/cobra"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
@@ -33,8 +34,11 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.Memory, "memory", opts.KubevirtPlatform.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
 	cmd.Flags().Uint32Var(&opts.KubevirtPlatform.Cores, "cores", opts.KubevirtPlatform.Cores, "The number of cores inside the vmi, Must be a value greater or equal 1")
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.RootVolumeStorageClass, "root-volume-storage-class", opts.KubevirtPlatform.RootVolumeStorageClass, "The storage class to use for machines in the NodePool")
+	cmd.Flags().Int64Var(&opts.KubevirtPlatform.RootVolumeSize, "root-volume-size", opts.KubevirtPlatform.RootVolumeSize, "The size of the root volume for machines in the NodePool in Gi")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.ContainerDiskImage, "containerdisk", opts.KubevirtPlatform.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.ServicePublishingStrategy, "service-publishing-strategy", opts.KubevirtPlatform.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through)", IngressServicePublishingStrategy, NodePortServicePublishingStrategy))
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.ContainerDiskRepo, "containerdisk-repository", opts.KubevirtPlatform.ContainerDiskRepo, "A reference to docker image registry with the embedded disk to be used to create the machines, the tag will be auto-discovered")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -76,8 +80,11 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		// As long as there is no official container image
 		// The image must be provided by user
 		// Otherwise it must fail
-		if opts.KubevirtPlatform.ContainerDiskImage == "" {
-			return errors.New("the container disk image for the Kubevirt machine must be provided by user (\"--containerdisk\" flag)")
+		if (opts.KubevirtPlatform.ContainerDiskImage != "" && opts.KubevirtPlatform.ContainerDiskRepo != "") && (opts.KubevirtPlatform.RootVolumeSize > 0 || opts.KubevirtPlatform.RootVolumeStorageClass != "") {
+			return errors.New("container disk options (\"--containerdisk*\" flag) can not be used together with customized root volume options (\"--root-volume-*\" flags)")
+		}
+		if opts.KubevirtPlatform.ContainerDiskRepo != "" {
+			opts.KubevirtPlatform.ContainerDiskImage = fmt.Sprintf("%v:%v", opts.KubevirtPlatform.ContainerDiskRepo, util.RHCOSOpenStackChecksumParameter)
 		}
 	}
 

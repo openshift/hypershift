@@ -32,6 +32,43 @@ hypershift install
 
 ## Create a HostedCluster
 
+### Hosted cluster with automatic RHCOS version detection
+
+!!! note
+
+    RHCOS will be imported into a PVC. A working storage provider
+    is needed.
+
+```shell linenums="1"
+export CLUSTER_NAME=example
+export PULL_SECRET="$HOME/pull-secret"
+
+hypershift create cluster kubevirt \
+--name $CLUSTER_NAME \
+--node-pool-replicas=3 \
+--pull-secret $PULL_SECRET \
+```
+
+### Hosted cluster with autodetected RHCOS container disk
+
+!!! note
+
+    This uses inofficial kubevirt community maintained containerdisks of
+    RHCOS. No working storage provider is needed.
+
+```shell linenums="1"
+export CLUSTER_NAME=example
+export PULL_SECRET="$HOME/pull-secret"
+
+hypershift create cluster kubevirt \
+--name $CLUSTER_NAME \
+--node-pool-replicas=3 \
+--pull-secret $PULL_SECRET \
+--containerdisk-repository quay.io/containerdisks/rhcos \
+```
+
+### Hosted cluster with a custom RHCOS container disk (development)
+
 Create a new cluster, specifying the RHCOS container disk image and the pull secret
 provided in the [Prerequisites](#prerequisites):
 

@@ -4,15 +4,11 @@ import (
 	"crypto/rand"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-
-	apiresource "k8s.io/apimachinery/pkg/api/resource"
-	kubevirtv1 "kubevirt.io/api/core/v1"
-	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -86,6 +82,8 @@ type ExampleKubevirtOptions struct {
 	Memory                    string
 	Cores                     uint32
 	Image                     string
+	RootVolumeSize            uint32
+	RootVolumeStorageClass    string
 }
 
 type ExampleAWSOptionsZones struct {
@@ -488,61 +486,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		}
 	case hyperv1.KubevirtPlatform:
 		nodePool := defaultNodePool(cluster.Name)
-		runAlways := kubevirtv1.RunStrategyAlways
-		guestQuantity := apiresource.MustParse(o.Kubevirt.Memory)
-		nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
-			NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
-				Spec: kubevirtv1.VirtualMachineSpec{
-					RunStrategy: &runAlways,
-					Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-						Spec: kubevirtv1.VirtualMachineInstanceSpec{
-							Domain: kubevirtv1.DomainSpec{
-								CPU:    &kubevirtv1.CPU{Cores: o.Kubevirt.Cores},
-								Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
-								Devices: kubevirtv1.Devices{
-									Disks: []kubevirtv1.Disk{
-										{
-											Name: "containervolume",
-											DiskDevice: kubevirtv1.DiskDevice{
-												Disk: &kubevirtv1.DiskTarget{
-													Bus: "virtio",
-												},
-											},
-										},
-									},
-									Interfaces: []kubevirtv1.Interface{
-										{
-											Name: "default",
-											InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
-												Bridge: &kubevirtv1.InterfaceBridge{},
-											},
-										},
-									},
-								},
-							},
-							Volumes: []kubevirtv1.Volume{
-								{
-									Name: "containervolume",
-									VolumeSource: kubevirtv1.VolumeSource{
-										ContainerDisk: &kubevirtv1.ContainerDiskSource{
-											Image: o.Kubevirt.Image,
-										},
-									},
-								},
-							},
-							Networks: []kubevirtv1.Network{
-								{
-									Name: "default",
-									NetworkSource: kubevirtv1.NetworkSource{
-										Pod: &kubevirtv1.PodNetwork{},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
+		nodePool.Spec.Platform.Kubevirt = ExampleKubeVirtTemplate(o.Kubevirt)
 		nodePools = append(nodePools, nodePool)
 	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
 		nodePools = append(nodePools, defaultNodePool(cluster.Name))

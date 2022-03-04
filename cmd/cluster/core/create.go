@@ -78,6 +78,9 @@ type KubevirtPlatformCreateOptions struct {
 	Memory                    string
 	Cores                     uint32
 	ContainerDiskImage        string
+	ContainerDiskRepo         string
+	RootVolumeSize            int64
+	RootVolumeStorageClass    string
 }
 
 type AWSPlatformOptions struct {
