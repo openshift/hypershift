@@ -87,7 +87,12 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 	infraID := opts.InfraID
 	exampleOptions.InfraID = infraID
-	exampleOptions.BaseDomain = "example.com"
+
+	if opts.BaseDomain != "" {
+		exampleOptions.BaseDomain = opts.BaseDomain
+	} else {
+		exampleOptions.BaseDomain = "example.com"
+	}
 
 	exampleOptions.Kubevirt = &apifixtures.ExampleKubevirtOptions{
 		ServicePublishingStrategy: opts.KubevirtPlatform.ServicePublishingStrategy,
