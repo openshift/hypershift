@@ -24,6 +24,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
@@ -341,6 +343,11 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 
 	log.Info("reconciling cloud credential secrets")
 	errs = append(errs, r.reconcileCloudCredentialSecrets(ctx, hcp, log)...)
+
+	log.Info("reconciling in-cluster cloud config")
+	if err := r.reconcileCloudConfig(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile the cloud config: %w", err))
+	}
 
 	log.Info("reconciling openshift controller manager service ca bundle")
 	ocmServiceCA := manifests.OpenShiftControllerManagerServiceCA()
@@ -918,4 +925,29 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 	}
 	return errs
 
+}
+
+func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
+	if hcp.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+
+	reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
+		return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
+	}
+
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-config", Name: "cloud-provider-config"}}
+	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+		if cm.Data == nil {
+			cm.Data = map[string]string{}
+		}
+		cm.Data["config"] = reference.Data[azure.CloudConfigKey]
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+	}
+
+	return nil
 }
