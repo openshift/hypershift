@@ -1117,7 +1117,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	r := &HostedClusterReconciler{
 		Client:                        client,
 		Clock:                         clock.RealClock{},
-		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(capabilities.CapabilityConfigOpenshiftIO),
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 	}
