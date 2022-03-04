@@ -41,6 +41,7 @@ type CreateInfraOptions struct {
 	Location        string
 	InfraID         string
 	CredentialsFile string
+	Credentials     *apifixtures.AzureCreds
 	OutputFile      string
 }
 
@@ -112,9 +113,14 @@ func resourceGroupName(clusterName, infraID string) string {
 }
 
 func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error) {
-	creds, err := readCredentials(o.CredentialsFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read the credentials: %w", err)
+	creds := o.Credentials
+	if creds == nil {
+		var err error
+		creds, err = readCredentials(o.CredentialsFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read the credentials: %w", err)
+		}
+		fmt.Printf("Using credentilas: %s", o.CredentialsFile)
 	}
 
 	authorizer, err := auth.ClientCredentialsConfig{
@@ -187,7 +193,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		}})
 		if err != nil {
 			if try < 99 {
-				log.Log.Info("Rolle assignment failed, retrying...", "try", strconv.Itoa(try), "err", err)
+				log.Log.Info("Role assignment failed, retrying...", "try", strconv.Itoa(try), "err", err)
 				time.Sleep(time.Second)
 				continue
 			}
