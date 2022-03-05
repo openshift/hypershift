@@ -41,7 +41,8 @@ func TestOLM(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
@@ -66,7 +67,7 @@ func TestOLM(t *testing.T) {
 			Namespace: guestNamespace,
 		},
 	}
-	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(redhatCatalogDeployment), redhatCatalogDeployment); err != nil {
 			t.Logf("failed to get Red Hat Catalog deployment %s/%s: %s", redhatCatalogDeployment.Namespace, redhatCatalogDeployment.Name, err)
 			return false, nil

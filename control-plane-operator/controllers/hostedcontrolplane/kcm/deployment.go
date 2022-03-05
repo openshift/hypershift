@@ -34,6 +34,7 @@ var (
 			kcmVolumeCertDir().Name:       "/var/run/kubernetes",
 			kcmVolumeClusterSigner().Name: "/etc/kubernetes/certs/cluster-signer",
 			kcmVolumeServiceSigner().Name: "/etc/kubernetes/certs/service-signer",
+			kcmVolumeServerCert().Name:    "/etc/kubernetes/certs/server",
 		},
 	}
 	serviceServingCAMount = util.PodVolumeMounts{
@@ -46,15 +47,24 @@ var (
 			kcmVolumeCloudConfig().Name: "/etc/kubernetes/cloud",
 		},
 	}
-	kcmLabels = map[string]string{
+)
+
+func kcmLabels() map[string]string {
+	return map[string]string{
 		"app":                         "kube-controller-manager",
 		hyperv1.ControlPlaneComponent: "kube-controller-manager",
 	}
-)
+}
 
 func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev1.ConfigMap, p *KubeControllerManagerParams, apiPort *int32) error {
+	// preserve existing resource requirements for main KCM container
+	mainContainer := util.FindContainer(kcmContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		p.DeploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: kcmLabels,
+		MatchLabels: kcmLabels(),
 	}
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
 	maxSurge := intstr.FromInt(3)
@@ -67,7 +77,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 	if deployment.Spec.Template.ObjectMeta.Labels == nil {
 		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{}
 	}
-	for k, v := range kcmLabels {
+	for k, v := range kcmLabels() {
 		deployment.Spec.Template.ObjectMeta.Labels[k] = v
 	}
 
@@ -83,7 +93,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(kcmContainerMain(), buildKCMContainerMain(p.HyperkubeImage, args)),
+			util.BuildContainer(kcmContainerMain(), buildKCMContainerMain(p.HyperkubeImage, args, DefaultPort)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(kcmVolumeConfig(), buildKCMVolumeConfig),
@@ -93,6 +103,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 			util.BuildVolume(kcmVolumeClusterSigner(), buildKCMVolumeClusterSigner),
 			util.BuildVolume(kcmVolumeCertDir(), buildKCMVolumeCertDir),
 			util.BuildVolume(kcmVolumeServiceSigner(), buildKCMVolumeServiceSigner),
+			util.BuildVolume(kcmVolumeServerCert(), buildKCMVolumeServerCert),
 		},
 	}
 	p.DeploymentConfig.ApplyTo(deployment)
@@ -112,7 +123,7 @@ func kcmContainerMain() *corev1.Container {
 	}
 }
 
-func buildKCMContainerMain(image string, args []string) func(c *corev1.Container) {
+func buildKCMContainerMain(image string, args []string, port int32) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{
@@ -121,6 +132,13 @@ func buildKCMContainerMain(image string, args []string) func(c *corev1.Container
 		}
 		c.Args = args
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "client",
+				ContainerPort: port,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		}
 	}
 }
 
@@ -228,6 +246,19 @@ func buildKCMVolumeCloudConfig(cloudProviderConfigName string, cloudProviderName
 	}
 }
 
+func kcmVolumeServerCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "server-crt",
+	}
+}
+func buildKCMVolumeServerCert(v *corev1.Volume) {
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
+	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.SecretName = manifests.KCMServerCertSecret("").Name
+}
+
 type serviceCAVolumeBuilder string
 
 func (name serviceCAVolumeBuilder) buildKCMVolumeServiceServingCA(v *corev1.Volume) {
@@ -293,6 +324,8 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),
 		"--use-service-account-credentials=true",
 		"--experimental-cluster-signing-duration=17520h",
+		fmt.Sprintf("--tls-cert-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSCertKey)),
+		fmt.Sprintf("--tls-private-key-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
 	}...)
 	for _, f := range p.FeatureGates() {
 		args = append(args, fmt.Sprintf("--feature-gates=%s", f))

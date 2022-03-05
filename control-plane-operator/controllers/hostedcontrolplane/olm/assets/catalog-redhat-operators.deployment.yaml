@@ -14,6 +14,7 @@ spec:
         app: redhat-operators-catalog
         hypershift.openshift.io/control-plane-component: redhat-operators-catalog
     spec:
+      automountServiceAccountToken: false
       nodeSelector:
         kubernetes.io/os: linux
       containers:

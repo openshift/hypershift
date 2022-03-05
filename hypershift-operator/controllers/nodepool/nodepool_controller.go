@@ -30,7 +30,6 @@ import (
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -207,9 +206,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Validate autoscaling input.
 	if err := validateAutoscaling(nodePool); err != nil {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Message:            err.Error(),
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			ObservedGeneration: nodePool.Generation,
@@ -220,17 +219,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return reconcile.Result{}, nil
 	}
 	if isAutoscalingEnabled(nodePool) {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
-			Status:             metav1.ConditionTrue,
+			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", nodePool.Spec.AutoScaling.Max, nodePool.Spec.AutoScaling.Min),
 			ObservedGeneration: nodePool.Generation,
 		})
 	} else {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -238,9 +237,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Validate management input.
 	if err := validateManagement(nodePool); err != nil {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Message:            err.Error(),
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			ObservedGeneration: nodePool.Generation,
@@ -250,18 +249,18 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Error(err, "validating management parameters failed")
 		return reconcile.Result{}, nil
 	}
-	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
-		Status:             metav1.ConditionTrue,
+		Status:             corev1.ConditionTrue,
 		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 		ObservedGeneration: nodePool.Generation,
 	})
 
 	// Validate IgnitionEndpoint.
 	if ignEndpoint == "" {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               string(hyperv1.IgnitionEndpointAvailable),
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Message:            "Ignition endpoint not available, waiting",
 			Reason:             hyperv1.IgnitionEndpointMissingReason,
 			ObservedGeneration: nodePool.Generation,
@@ -269,15 +268,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Info("Ignition endpoint not available, waiting")
 		return reconcile.Result{}, nil
 	}
-	RemoveStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
+	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	// Validate Ignition CA Secret.
 	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(caSecret), caSecret); err != nil {
 		if apierrors.IsNotFound(err) {
-			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.IgnitionEndpointAvailable),
-				Status:             metav1.ConditionFalse,
+				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.IgnitionCACertMissingReason,
 				Message:            "still waiting for ignition CA cert Secret to exist",
 				ObservedGeneration: nodePool.Generation,
@@ -288,13 +287,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("failed to get ignition CA Secret: %w", err)
 		}
 	}
-	RemoveStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
+	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	caCertBytes, hasCACert := caSecret.Data[corev1.TLSCertKey]
 	if !hasCACert {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               string(hyperv1.IgnitionEndpointAvailable),
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.IgnitionCACertMissingReason,
 			Message:            "CA Secret is missing tls.crt key",
 			ObservedGeneration: nodePool.Generation,
@@ -302,23 +301,23 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Info("CA Secret is missing tls.crt key")
 		return ctrl.Result{}, nil
 	}
-	RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.IgnitionCACertMissingReason)
+	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.IgnitionCACertMissingReason)
 
 	// Validate and get releaseImage.
 	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Spec.Release.Image)
 	if err != nil {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
 			ObservedGeneration: nodePool.Generation,
 		})
 		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
-	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidReleaseImageConditionType,
-		Status:             metav1.ConditionTrue,
+		Status:             corev1.ConditionTrue,
 		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 		Message:            fmt.Sprintf("Using release image: %s", nodePool.Spec.Release.Image),
 		ObservedGeneration: nodePool.Generation,
@@ -333,9 +332,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// TODO: Should the region be included in the NodePool platform information?
 		ami, err = getAMI(nodePool, hcluster.Spec.Platform.AWS.Region, releaseImage)
 		if err != nil {
-			meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidAMIConditionType,
-				Status:             metav1.ConditionFalse,
+				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 				Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
 				ObservedGeneration: nodePool.Generation,
@@ -343,9 +342,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 		}
 	}
-	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidAMIConditionType,
-		Status:             metav1.ConditionTrue,
+		Status:             corev1.ConditionTrue,
 		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 		Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
 		ObservedGeneration: nodePool.Generation,
@@ -362,9 +361,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace)
 	if err != nil {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			Message:            err.Error(),
 			ObservedGeneration: nodePool.Generation,
@@ -372,9 +371,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to get config: %w", err)
 	}
 	if missingConfigs {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			Message:            "Core ignition config has not been created yet",
 			ObservedGeneration: nodePool.Generation,
@@ -382,9 +381,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// We watch configmaps so we will get an event when these get created
 		return ctrl.Result{}, nil
 	}
-	meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolConfigValidConfigConditionType,
-		Status:             metav1.ConditionTrue,
+		Status:             corev1.ConditionTrue,
 		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 		ObservedGeneration: nodePool.Generation,
 	})
@@ -393,9 +392,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	targetConfigHash := hashStruct(config)
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
-			Status:             metav1.ConditionTrue,
+			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			Message:            fmt.Sprintf("Updating config in progress. Target config: %s", targetConfigHash),
 			ObservedGeneration: nodePool.Generation,
@@ -404,16 +403,16 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			"current", nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig],
 			"target", targetConfigHash)
 	} else {
-		RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingConfigConditionType)
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingConfigConditionType)
 	}
 
 	// Check if version needs to be updated.
 	targetVersion := releaseImage.Version()
 	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
 	if isUpdatingVersion {
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
-			Status:             metav1.ConditionTrue,
+			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			Message:            fmt.Sprintf("Updating version in progress. Target version: %s", targetVersion),
 			ObservedGeneration: nodePool.Generation,
@@ -421,7 +420,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Info("NodePool version is updating",
 			"current", nodePool.Status.Version, "target", targetVersion)
 	} else {
-		RemoveStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
 
 	// 2. - Reconcile towards expected state of the world.
@@ -540,9 +539,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		} else {
 			log.Info("Reconciled MachineHealthCheck", "result", result)
 		}
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
-			Status:             metav1.ConditionTrue,
+			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -556,9 +555,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				return ctrl.Result{}, err
 			}
 		}
-		meta.SetStatusCondition(&nodePool.Status.Conditions, metav1.Condition{
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
-			Status:             metav1.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -812,7 +811,30 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 
 	setMachineDeploymentReplicas(nodePool, machineDeployment)
 
+	// Bubble up AvailableReplicas and Ready condition from MachineDeployment.
 	nodePool.Status.NodeCount = machineDeployment.Status.AvailableReplicas
+	for _, c := range machineDeployment.Status.Conditions {
+		// This condition should aggregate and summarise readiness from underlying MachineSets and Machines
+		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
+		if c.Type == capiv1.ReadyCondition {
+			// this is so api server does not complain
+			// invalid value: \"\": status.conditions.reason in body should be at least 1 chars long"
+			reason := hyperv1.NodePoolAsExpectedConditionReason
+			if c.Reason != "" {
+				reason = c.Reason
+			}
+
+			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolReadyConditionType,
+				Status:             c.Status,
+				ObservedGeneration: nodePool.Generation,
+				Message:            c.Message,
+				Reason:             reason,
+			})
+			break
+		}
+	}
+
 	return nil
 }
 
@@ -1307,7 +1329,7 @@ func getName(base, suffix string, maxLength int) string {
 	baseLength := maxLength - 10 - len(suffix)
 
 	// if the suffix is too long, ignore it
-	if baseLength < 0 {
+	if baseLength < 1 {
 		prefix := base[0:min(len(base), max(0, maxLength-9))]
 		// Calculate hash on initial base-suffix string
 		shortName := fmt.Sprintf("%s-%s", prefix, hashStruct(name))
@@ -1333,25 +1355,6 @@ func min(a, b int) int {
 		return b
 	}
 	return a
-}
-
-// TODO(alberto): user core apimachinery func once we update deps to fetch
-// https://github.com/kubernetes/apimachinery/commit/f0c829d684eec47c6334ae69941224e1c70f16d6#diff-e3bc08d3d017ceff366d1c1c6f16c745e576e41f711a482a08f97006d306bf2a
-// RemoveStatusCondition removes the corresponding conditionType from conditions.
-// conditions must be non-nil.
-func RemoveStatusCondition(conditions *[]metav1.Condition, conditionType string) {
-	if conditions == nil || len(*conditions) == 0 {
-		return
-	}
-
-	newConditions := make([]metav1.Condition, 0, len(*conditions)-1)
-	for _, condition := range *conditions {
-		if condition.Type != conditionType {
-			newConditions = append(newConditions, condition)
-		}
-	}
-
-	*conditions = newConditions
 }
 
 func isAutomatedMachineManagement(nodePool *hyperv1.NodePool) bool {

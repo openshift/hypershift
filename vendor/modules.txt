@@ -303,7 +303,7 @@ github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
-# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220206195825-03d0b4a038df
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc
 ## explicit; go 1.16
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
 # github.com/openshift/custom-resource-status v0.0.0-20200602122900-c002fd1547ca

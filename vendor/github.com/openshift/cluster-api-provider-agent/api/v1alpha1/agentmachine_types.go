@@ -24,14 +24,6 @@ import (
 
 // AgentMachineSpec defines the desired state of AgentMachine
 type AgentMachineSpec struct {
-	// MinCPUs specifies the minimum number of CPU cores that this Machine requires.
-	// +optional
-	MinCPUs int32 `json:"minCPUs,omitempty"`
-
-	// MinMemoryMiB specifies the minimum amount of RAM that this Machine requires, in MiB.
-	// +optional
-	MinMemoryMiB int32 `json:"minMemoryMiB,omitempty"`
-
 	// AgentLabelSelector contains the labels that must be set on an Agent in order to be selected for this Machine.
 	// +optional
 	AgentLabelSelector *metav1.LabelSelector `json:"agentLabelSelector,omitempty"`

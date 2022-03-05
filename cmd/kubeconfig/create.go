@@ -78,7 +78,10 @@ func render(ctx context.Context, opts Options) error {
 		kubejson.DefaultMetaFactory, scheme, scheme,
 		kubejson.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
 	)
-	c := util.GetClientOrDie()
+	c, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 
 	var kubeConfig *clientcmdapiv1.Config
 	switch {

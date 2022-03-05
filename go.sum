@@ -1030,8 +1030,8 @@ github.com/opencontainers/selinux v1.8.0/go.mod h1:RScLhm78qiWa2gbVCcGkC7tCGdgk3
 github.com/openshift/api v0.0.0-20220124143425-d74727069f6f h1:iOTv1WudhVm2UsoST+L+ZrA5A9w57h9vmQsdlBuqG6g=
 github.com/openshift/api v0.0.0-20220124143425-d74727069f6f/go.mod h1:F/eU6jgr6Q2VhMu1mSpMmygxAELd7+BUxs3NHZ25jV4=
 github.com/openshift/build-machinery-go v0.0.0-20211213093930-7e33a7eb4ce3/go.mod h1:b1BuldmJlbA/xYtdZvKi+7j5YGB44qJUJDZ9zwiNCfE=
-github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220206195825-03d0b4a038df h1:6XaS0G71VIcSzoX8voFICE8tdn2oB92I5K0yY2G5U1M=
-github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220206195825-03d0b4a038df/go.mod h1:SKABBM8Idpzg3hSwtf7/nPQU6zcRuU3i+IsDxMvQQLk=
+github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc h1:/CaKFCqrrle4NE8YLwcAavCQp37MPF2TliFenPWF8FM=
+github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc/go.mod h1:SKABBM8Idpzg3hSwtf7/nPQU6zcRuU3i+IsDxMvQQLk=
 github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20211223062810-ef64d5ff1cde h1:DVqRkxwYQ+4KV5mGP2XCai9eB4puQ07zth8XwROHf0E=
 github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20211223062810-ef64d5ff1cde/go.mod h1:Z4fR4Cg8/z9GEys79MU+8CpX98aZQqI+tl9YIao0KxQ=
 github.com/openshift/custom-resource-status v0.0.0-20200602122900-c002fd1547ca h1:F1MEnOMwSrTA0YAkO0he9ip9w0JhYzI/iCB2mXmaSPg=

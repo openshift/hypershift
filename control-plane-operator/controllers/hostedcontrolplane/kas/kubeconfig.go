@@ -36,7 +36,7 @@ func ReconcileIngressOperatorKubeconfigSecret(secret, ca *corev1.Secret, ownerRe
 }
 
 func InClusterKASURL(namespace string, apiServerPort int32) string {
-	return fmt.Sprintf("https://%s:%d", manifests.KASService(namespace).Name, apiServerPort)
+	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, apiServerPort)
 }
 
 func InClusterKASReadyURL(namespace string, securePort *int32) string {
