@@ -19,3 +19,9 @@ Fixes #
 - [ ] Relevant issues have been referenced.
 - [ ] This change includes docs. 
 - [ ] This change includes unit tests.
+
+
+**Gotchas to lookout for**
+- Label selectors on deployments/daemonsets are immutable: reconciliation will fail if you expect them to update in place
+- roleRef in clusterRoleBindings/roleBindings are immutable: reconciliation will fail if you expect them to update in place.
+- Changes to the core components (kube-apiserver, controller-manager, etc) PKI/Secrets should be reviewed by all stakeholders. This includes introducing new PKI for a component, changing the names of existing PKI, or anything similar.
