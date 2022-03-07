@@ -22,7 +22,8 @@ func TestAutoRepair(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -57,7 +58,7 @@ func TestAutoRepair(t *testing.T) {
 	instanceID := awsSpec[strings.LastIndex(awsSpec, "/")+1:]
 	t.Logf("Terminating AWS instance: %s", instanceID)
 	ec2client := ec2Client(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
-	_, err := ec2client.TerminateInstances(&ec2.TerminateInstancesInput{
+	_, err = ec2client.TerminateInstances(&ec2.TerminateInstancesInput{
 		InstanceIds: []*string{aws.String(instanceID)},
 	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to terminate AWS instance")
@@ -76,7 +77,6 @@ func TestAutoRepair(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
 
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	e2eutil.EnsureAPIBudget(t, ctx, client, hostedCluster)
 }
 
 func ec2Client(awsCredsFile, region string) *ec2.EC2 {

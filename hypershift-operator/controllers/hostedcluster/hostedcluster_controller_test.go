@@ -12,6 +12,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -24,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
@@ -1117,7 +1119,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	r := &HostedClusterReconciler{
 		Client:                        client,
 		Clock:                         clock.RealClock{},
-		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(capabilities.CapabilityConfigOpenshiftIO),
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 	}
@@ -1325,3 +1327,59 @@ var equateErrorMessage = cmp.FilterValues(func(x, y interface{}) bool {
 	}
 	return xe.Error() == ye.Error()
 }))
+
+func TestPauseHostedControlPlane(t *testing.T) {
+	fakePauseAnnotationValue := "true"
+	fakeHCPName := "cluster1"
+	fakeHCPNamespace := "master-cluster1"
+	testsCases := []struct {
+		name                             string
+		inputObjects                     []crclient.Object
+		inputHostedControlPlane          *hyperv1.HostedControlPlane
+		expectedHostedControlPlaneObject *hyperv1.HostedControlPlane
+	}{
+		{
+			name:                    "if a hostedControlPlane exists then the pauseReconciliation annotation is added to it",
+			inputHostedControlPlane: manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName),
+			inputObjects: []crclient.Object{
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: fakeHCPNamespace,
+						Name:      fakeHCPName,
+					},
+				},
+			},
+			expectedHostedControlPlaneObject: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: fakeHCPNamespace,
+					Name:      fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					PausedUntil: &fakePauseAnnotationValue,
+				},
+			},
+		},
+		{
+			name:                             "if a hostedControlPlane does not exist it is not created",
+			inputHostedControlPlane:          manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName),
+			inputObjects:                     []crclient.Object{},
+			expectedHostedControlPlaneObject: nil,
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.inputObjects...).Build()
+			err := pauseHostedControlPlane(context.Background(), c, tc.inputHostedControlPlane, &fakePauseAnnotationValue)
+			g.Expect(err).ToNot(HaveOccurred())
+			finalHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
+			err = c.Get(context.Background(), crclient.ObjectKeyFromObject(finalHCP), finalHCP)
+			if tc.expectedHostedControlPlaneObject != nil {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(finalHCP.Annotations).To(BeEquivalentTo(tc.expectedHostedControlPlaneObject.Annotations))
+			} else {
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
+}

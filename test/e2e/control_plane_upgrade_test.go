@@ -20,7 +20,8 @@ func TestUpgradeControlPlane(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	t.Logf("Starting control plane upgrade test. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
@@ -41,7 +42,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 	// Wait for the first rollout to be complete
 	t.Logf("Waiting for initial cluster rollout. Image: %s", globalOpts.PreviousReleaseImage)
 	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.PreviousReleaseImage)
-	err := client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
 	// Update the cluster image
@@ -60,6 +61,5 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	e2eutil.EnsureAPIBudget(t, ctx, client, hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
 }

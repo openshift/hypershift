@@ -81,8 +81,14 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
 	}
-	cfg := util.GetConfigOrDie()
-	c := util.GetClientOrDie()
+	cfg, err := util.GetConfig()
+	if err != nil {
+		return err
+	}
+	c, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
 		log.Log.Error(err, "Cannot list nodepools")

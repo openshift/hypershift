@@ -1,7 +1,7 @@
 package v1alpha1
 
 import (
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -13,6 +13,7 @@ const (
 	NodePoolConfigValidConfigConditionType       = "ValidConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
+	NodePoolReadyConditionType                   = "Ready"
 	NodePoolAutorepairEnabledConditionType       = "AutorepairEnabled"
 	NodePoolUpdatingVersionConditionType         = "UpdatingVersion"
 	NodePoolUpdatingConfigConditionType          = "UpdatingConfig"
@@ -43,7 +44,8 @@ func init() {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:scale:specpath=.spec.nodeCount,statuspath=.status.nodeCount
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
-// +kubebuilder:printcolumn:name="NodeCount",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
+// +kubebuilder:printcolumn:name="DesiredNodes",type="integer",JSONPath=".spec.nodeCount",description="Desired Nodes"
+// +kubebuilder:printcolumn:name="CurrentNodes",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
 // +kubebuilder:printcolumn:name="Autoscaling",type="string",JSONPath=".status.conditions[?(@.type==\"AutoscalingEnabled\")].status",description="Autoscaling Enabled"
 // +kubebuilder:printcolumn:name="Autorepair",type="string",JSONPath=".status.conditions[?(@.type==\"AutorepairEnabled\")].status",description="Node Autorepair Enabled"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Current version"
@@ -110,7 +112,7 @@ type NodePoolSpec struct {
 	// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119
 	//
 	// +kubebuilder:validation:Optional
-	Config []v1.LocalObjectReference `json:"config,omitempty"`
+	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
 	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
 	// The default value is 0, meaning that the node can be drained without any time limitations.
@@ -137,7 +139,7 @@ type NodePoolStatus struct {
 
 	// Conditions represents the latest available observations of the node pool's
 	// current state.
-	Conditions []metav1.Condition `json:"conditions"`
+	Conditions []NodePoolCondition `json:"conditions"`
 }
 
 // NodePoolList contains a list of NodePools.
@@ -413,14 +415,6 @@ type Volume struct {
 // AgentNodePoolPlatform specifies the configuration of a NodePool when operating
 // on the Agent platform.
 type AgentNodePoolPlatform struct {
-	// MinCPUs specifies the minimum number of CPU cores required.
-	// +optional
-	MinCPUs int32 `json:"minCPUs,omitempty"`
-
-	// MinMemoryMiB specifies the minimum amount of RAM required, in MiB.
-	// +optional
-	MinMemoryMiB int32 `json:"minMemoryMiB,omitempty"`
-
 	// AgentLabelSelector contains labels that must be set on an Agent in order to
 	// be selected for a Machine.
 	// +optional
@@ -430,4 +424,42 @@ type AgentNodePoolPlatform struct {
 type AzureNodePoolPlatform struct {
 	VMSize  string `json:"vmsize"`
 	ImageID string `json:"imageID"`
+}
+
+// We define our own condition type since metav1.Condition has validation
+// for Reason that might be broken by what we bubble up from CAPI.
+// NodePoolCondition defines an observation of NodePool resource operational state.
+type NodePoolCondition struct {
+	// Type of condition in CamelCase or in foo.example.com/CamelCase.
+	// Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
+	// can be useful (see .node.status.conditions), the ability to deconflict is important.
+	Type string `json:"type"`
+
+	// Status of the condition, one of True, False, Unknown.
+	Status corev1.ConditionStatus `json:"status"`
+
+	// Severity provides an explicit classification of Reason code, so the users or machines can immediately
+	// understand the current situation and act accordingly.
+	// The Severity field MUST be set only when Status=False.
+	// +optional
+	Severity string `json:"severity,omitempty"`
+
+	// Last time the condition transitioned from one status to another.
+	// This should be when the underlying condition changed. If that is not known, then using the time when
+	// the API field changed is acceptable.
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+
+	// The reason for the condition's last transition in CamelCase.
+	// The specific API may choose whether or not this field is considered a guaranteed API.
+	// This field may not be empty.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// A human readable message indicating details about the transition.
+	// This field may be empty.
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }

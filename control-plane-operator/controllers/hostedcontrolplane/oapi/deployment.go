@@ -25,6 +25,9 @@ import (
 
 const (
 	configHashAnnotation = "openshift-apiserver.hypershift.openshift.io/config-hash"
+
+	// defaultOAPIPort is the default secure listen port for the OAPI server
+	defaultOAPIPort int32 = 8443
 )
 
 var (
@@ -63,6 +66,12 @@ func openShiftAPIServerLabels() map[string]string {
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
+	// preserve existing resource requirements for main OAS container
+	mainContainer := util.FindContainer(oasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	configBytes, ok := config.Data[openshiftAPIServerConfigKey]
 	if !ok {
 		return fmt.Errorf("openshift apiserver configuration is not expected to be empty")
@@ -94,7 +103,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
 		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0])),
+			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort)),
 			util.BuildContainer(oasSocks5ProxyContainer(), buildOASSocks5ProxyContainer(socks5ProxyImage)),
 		},
 		Volumes: []corev1.Volume{
@@ -180,7 +189,7 @@ func buildOASSocks5ProxyContainer(socks5ProxyImage string) func(c *corev1.Contai
 	}
 }
 
-func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Container) {
+func buildOASContainerMain(image string, etcdHostname string, port int32) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		cpath := func(volume, file string) string {
 			return path.Join(volumeMounts.Path(c.Name, volume), file)
@@ -215,6 +224,13 @@ func buildOASContainerMain(image string, etcdHostname string) func(c *corev1.Con
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.WorkingDir = volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name)
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "https",
+				ContainerPort: port,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		}
 	}
 }
 

@@ -2,27 +2,32 @@ package util
 
 import (
 	"fmt"
-	"os"
 
 	"k8s.io/client-go/rest"
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// GetConfigOrDie creates a REST config from current context
-func GetConfigOrDie() *rest.Config {
-	cfg := cr.GetConfigOrDie()
+// GetConfig creates a REST config from current context
+func GetConfig() (*rest.Config, error) {
+	cfg, err := cr.GetConfig()
+	if err != nil {
+		return nil, err
+	}
 	cfg.QPS = 100
 	cfg.Burst = 100
-	return cfg
+	return cfg, nil
 }
 
-// GetClientOrDie creates a controller-runtime client for Kubernetes
-func GetClientOrDie() crclient.Client {
-	client, err := crclient.New(GetConfigOrDie(), crclient.Options{Scheme: scheme})
+// GetClient creates a controller-runtime client for Kubernetes
+func GetClient() (crclient.Client, error) {
+	config, err := GetConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "unable to get kubernetes client: %v", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
-	return client
+	client, err := crclient.New(config, crclient.Options{Scheme: scheme})
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
+	}
+	return client, nil
 }

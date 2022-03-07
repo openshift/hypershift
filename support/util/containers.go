@@ -13,6 +13,15 @@ func BuildContainer(container *corev1.Container, buildFn func(*corev1.Container)
 	return *container
 }
 
+func FindContainer(name string, containers []corev1.Container) *corev1.Container {
+	for i, c := range containers {
+		if c.Name == name {
+			return &containers[i]
+		}
+	}
+	return nil
+}
+
 // AvailabilityProberImageName is the name under which components can find the availability prober
 // image in the release image.
 const AvailabilityProberImageName = "availability-prober"

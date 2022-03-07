@@ -21,6 +21,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -113,7 +114,12 @@ func main(m *testing.M) int {
 }
 
 func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir string) {
-	mgr, err := ctrl.NewManager(e2eutil.GetConfigOrDie(), manager.Options{MetricsBindAddress: "0"})
+	config, err := e2eutil.GetConfig()
+	if err != nil {
+		log.Error(err, "failed to construct config for observers")
+		return
+	}
+	mgr, err := ctrl.NewManager(config, manager.Options{MetricsBindAddress: "0"})
 	if err != nil {
 		log.Error(err, "failed to construct manager for observers")
 		return
@@ -210,9 +216,10 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
 		},
 		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-			ContainerDiskImage: o.configurableClusterOptions.KubeVirtContainerDiskImage,
-			Cores:              2,
-			Memory:             "4Gi",
+			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
+			ContainerDiskImage:        o.configurableClusterOptions.KubeVirtContainerDiskImage,
+			Cores:                     2,
+			Memory:                    "4Gi",
 		},
 		ServiceCIDR: "172.31.0.0/16",
 		PodCIDR:     "10.132.0.0/14",

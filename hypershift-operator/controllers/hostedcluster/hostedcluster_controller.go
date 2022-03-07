@@ -231,6 +231,24 @@ func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 
 }
 
+// pauseHostedControlPlane will handle adding the pausedUntil field to the hostedControlPlane object if it exists.
+// If it doesn't exist: it returns as there's no need to add it
+func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseAnnotationValue *string) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		} else {
+			return fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+		}
+	}
+	hcp.Spec.PausedUntil = pauseAnnotationValue
+	if err := c.Update(ctx, hcp); err != nil {
+		return fmt.Errorf("failed to pause hostedcontrolplane: %w", err)
+	}
+	return nil
+}
+
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	log := ctrl.LoggerFrom(ctx)
@@ -537,6 +555,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, util.GenerateReconciliationPausedCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Persist status updates
 	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
@@ -559,12 +578,27 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// if paused: ensure associated hostedcontrolplane (if it exists) is also paused and stop reconciliation
+	if util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil) {
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
+			return ctrl.Result{}, err
+		}
+		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
+		return ctrl.Result{}, nil
+	}
+
 	// Default the infraID if unset
 	if hcluster.Spec.InfraID == "" {
 		hcluster.Spec.InfraID = infraid.New(hcluster.Name)
 		if err := r.Update(ctx, hcluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster after defaulting the InfraID: %w", err)
 		}
+	}
+
+	if err := r.defaultAPIPortIfNeeded(ctx, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to default the apiserver port: %w", err)
 	}
 
 	// Set the infraID as Tag on all created AWS
@@ -1116,6 +1150,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 
 	hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
+	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
 	return nil
 }
 
@@ -1413,7 +1448,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	// Reconcile operator PodMonitor
-	podMonitor := controlplaneoperator.PodMonitor(controlPlaneNamespace.Name, hcluster.Name)
+	podMonitor := controlplaneoperator.PodMonitor(controlPlaneNamespace.Name)
 	if _, err := createOrUpdate(ctx, r.Client, podMonitor, func() error {
 		podMonitor.Spec.Selector = *controlPlaneOperatorDeployment.Spec.Selector
 		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
@@ -1922,6 +1957,20 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 }
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
+	cpoResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("44Mi"),
+			corev1.ResourceCPU:    resource.MustParse("1m"),
+		},
+	}
+	// preserve existing resource requirements for main cpo container
+	mainContainer := util.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			cpoResources = mainContainer.Resources
+		}
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
@@ -1994,12 +2043,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							FailureThreshold:    3,
 							TimeoutSeconds:      5,
 						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("44Mi"),
-								corev1.ResourceCPU:    resource.MustParse("1m"),
-							},
-						},
+						Resources: cpoResources,
 					},
 				},
 			},
@@ -2320,6 +2364,9 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
+							"--leader-elect-lease-duration=60s",
+							"--leader-elect-retry-period=15s",
+							"--leader-elect-renew-deadline=40s",
 						},
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
@@ -2566,6 +2613,9 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 		// we might end up locked with three nodes.
 		"--skip-nodes-with-local-storage=false",
 		"--alsologtostderr",
+		"--leader-elect-lease-duration=60s",
+		"--leader-elect-retry-period=15s",
+		"--leader-elect-renew-deadline=40s",
 		"--v=4",
 	}
 
@@ -2948,27 +2998,6 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 	return nil
 }
 
-func deleteCluster(ctx context.Context, c client.Client, cluster *capiv1.Cluster) (bool, error) {
-	err := c.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error getting Cluster: %w", err)
-	}
-	if cluster.DeletionTimestamp != nil {
-		return true, nil
-	}
-	err = c.Delete(ctx, cluster)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error deleting Cluster: %w", err)
-	}
-	return true, nil
-}
-
 func deleteAWSEndpointServices(ctx context.Context, c client.Client, namespace string) (bool, error) {
 	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
@@ -2990,107 +3019,31 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, namespace s
 	return false, nil
 }
 
-func deleteHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane) (bool, error) {
-	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
-	if err != nil {
+func deleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("error getting HostedControlPlane: %w", err)
+		return false, fmt.Errorf("error getting %T: %w", o, err)
 	}
-	if hcp.DeletionTimestamp != nil {
+	if o.GetDeletionTimestamp() != nil {
 		return true, nil
 	}
-	err = c.Delete(ctx, hcp)
-	if err != nil {
+	if err := c.Delete(ctx, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("error deleting HostedControlPlane: %w", err)
+		return false, fmt.Errorf("error deleting %T: %w", o, err)
 	}
+
 	return true, nil
-}
-
-func deleteNamespace(ctx context.Context, c client.Client, ns *corev1.Namespace) (bool, error) {
-	err := c.Get(ctx, client.ObjectKeyFromObject(ns), ns)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error getting Namespace: %w", err)
-	}
-	if ns.DeletionTimestamp != nil {
-		return true, nil
-	}
-	err = c.Delete(ctx, ns)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("error deleting Namespace: %w", err)
-	}
-	return true, nil
-}
-
-func deleteControlPlaneOperatorRole(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "control-plane-operator-" + controlPlaneNamespace,
-			Namespace: rbacNamespace,
-		},
-	}
-	err := c.Get(ctx, client.ObjectKeyFromObject(role), role)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error getting Role: %w", err)
-	}
-	if role.DeletionTimestamp != nil {
-		return nil
-	}
-	err = c.Delete(ctx, role)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error deleting Role: %w", err)
-	}
-	return nil
-}
-
-func deleteControlPlaneOperatorRoleBinding(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
-	rolebinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "control-plane-operator-" + controlPlaneNamespace,
-			Namespace: rbacNamespace,
-		},
-	}
-	err := c.Get(ctx, client.ObjectKeyFromObject(rolebinding), rolebinding)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error getting RoleBinding: %w", err)
-	}
-	if rolebinding.DeletionTimestamp != nil {
-		return nil
-	}
-	err = c.Delete(ctx, rolebinding)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("error deleting RoleBinding: %w", err)
-	}
-	return nil
 }
 
 func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
-	if err := deleteControlPlaneOperatorRole(ctx, c, rbacNamespace, controlPlaneNamespace); err != nil {
+	if _, err := deleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
 	}
-	if err := deleteControlPlaneOperatorRoleBinding(ctx, c, rbacNamespace, controlPlaneNamespace); err != nil {
+	if _, err := deleteIfNeeded(ctx, c, &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
 	}
 	return nil
@@ -3106,7 +3059,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	if hc != nil && len(hc.Spec.InfraID) > 0 {
-		exists, err := deleteCluster(ctx, r.Client, &capiv1.Cluster{
+		exists, err := deleteIfNeeded(ctx, r.Client, &capiv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      hc.Spec.InfraID,
 				Namespace: controlPlaneNamespace,
@@ -3146,7 +3099,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	// We want to ensure the HCP resource is deleted before deleting the Namespace.
 	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
 	// NOTE: The advancing case is when Get() or Delete() returns an error that the HCP is not found
-	exists, err = deleteHostedControlPlane(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
+	exists, err = deleteIfNeeded(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
 	if err != nil {
 		return false, err
 	}
@@ -3161,7 +3114,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
-	exists, err = deleteNamespace(ctx, r.Client, &corev1.Namespace{
+	exists, err = deleteIfNeeded(ctx, r.Client, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: controlPlaneNamespace},
 	})
 	if err != nil {
@@ -4026,5 +3979,35 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	if err != nil {
 		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
 	}
+	return nil
+}
+
+// defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
+// for https://bugzilla.redhat.com/show_bug.cgi?id=2060650: Azure LBs with port 6443 don't work
+func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+		return nil
+	}
+	infra := &configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(infra), infra); err != nil {
+		return fmt.Errorf("failed to retrieve infra: %w", err)
+	}
+
+	if infra.Spec.PlatformSpec.Type != configv1.AzurePlatformType {
+		return nil
+	}
+	if hcluster.Spec.Networking.APIServer == nil {
+		hcluster.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
+	}
+
+	if hcluster.Spec.Networking.APIServer.Port != nil {
+		return nil
+	}
+
+	hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32Ptr(6444)
+	if err := r.Update(ctx, hcluster); err != nil {
+		return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
+	}
+
 	return nil
 }

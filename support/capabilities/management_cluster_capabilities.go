@@ -3,6 +3,7 @@ package capabilities
 import (
 	"sync"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 
@@ -23,6 +24,10 @@ const (
 	// CapabilitySecurityContextConstraint indicates if the management cluster
 	// supports security context constraints
 	CapabilitySecurityContextConstraint
+
+	// CapabilityConfigOpenshiftIO indicates if the cluster supports the
+	// config.openshift.io api
+	CapabilityConfigOpenshiftIO
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -92,6 +97,14 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasSccCap {
 		discoveredCapabilities[CapabilitySecurityContextConstraint] = struct{}{}
+	}
+
+	hasConfigCap, err := isGroupVersionRegistered(client, configv1.GroupVersion)
+	if err != nil {
+		return nil, err
+	}
+	if hasConfigCap {
+		discoveredCapabilities[CapabilityConfigOpenshiftIO] = struct{}{}
 	}
 
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil

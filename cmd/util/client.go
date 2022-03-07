@@ -2,7 +2,6 @@ package util
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"k8s.io/client-go/rest"
@@ -16,22 +15,28 @@ const (
 	AutoInfraLabelName = "hypershift.openshift.io/auto-created-for-infra"
 )
 
-// GetConfigOrDie creates a REST config from current context
-func GetConfigOrDie() *rest.Config {
-	cfg := cr.GetConfigOrDie()
+// GetConfig creates a REST config from current context
+func GetConfig() (*rest.Config, error) {
+	cfg, err := cr.GetConfig()
+	if err != nil {
+		return nil, err
+	}
 	cfg.QPS = 100
 	cfg.Burst = 100
-	return cfg
+	return cfg, nil
 }
 
-// GetClientOrDie creates a controller-runtime client for Kubernetes
-func GetClientOrDie() crclient.Client {
-	client, err := crclient.New(GetConfigOrDie(), crclient.Options{Scheme: hyperapi.Scheme})
+// GetClient creates a controller-runtime client for Kubernetes
+func GetClient() (crclient.Client, error) {
+	config, err := GetConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "unable to get kubernetes client: %v", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
-	return client
+	client, err := crclient.New(config, crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
+	}
+	return client, nil
 }
 
 // ParseAWSTags does exactly that

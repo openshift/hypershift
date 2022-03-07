@@ -368,6 +368,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 
 		// Compare metrics against budgets
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		clusterAgeMinutes := int32(time.Since(hostedCluster.CreationTimestamp.Time).Round(time.Minute).Minutes())
 		budgets := []struct {
 			name   string
 			query  string
@@ -375,21 +376,23 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 		}{
 			{
 				name:   "control-plane-operator read",
-				query:  fmt.Sprintf(`sum(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="GET", namespace=~"%s"}) by (pod)`, namespace),
+				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="GET", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
 				budget: 800,
 			},
 			{
 				name:   "control-plane-operator mutate",
-				query:  fmt.Sprintf(`sum(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method!="GET", namespace=~"%s"}) by (pod)`, namespace),
+				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method!="GET", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
 				budget: 400,
 			},
 			{
 				name:   "control-plane-operator no 404 deletes",
-				query:  fmt.Sprintf(`sum(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="DELETE", code="404", namespace=~"%s"}) by (pod)`, namespace),
-				budget: 0,
+				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="DELETE", code="404", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
+				budget: 5,
 			},
-			// hypershift-operator budget can not be per HC so metric will be significantly under budget for all but the last test(s) to complete on a particular test cluster
-			// These budgets will also need to scale up with additional tests that create HostedClusters
+			// hypershift-operator budget can not be per HC so metric will be
+			// significantly under budget for all but the last test(s) to complete on
+			// a particular test cluster These budgets will also need to scale up with
+			// additional tests that create HostedClusters
 			{
 				name:   "hypershift-operator read",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="GET"})`,
@@ -403,7 +406,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "hypershift-operator no 404 deletes",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="DELETE", code="404"})`,
-				budget: 0,
+				budget: 5,
 			},
 		}
 
@@ -418,17 +421,21 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 					t.Fatal("expected vector result")
 				}
 				if len(vector) == 0 {
-					if budget.budget == 0 {
-						t.Log("no samples returned for query with zero budget, skipping check")
+					if budget.budget < 10 {
+						t.Log("no samples returned for query with small budget, skipping check")
 					} else {
-						t.Errorf("no samples returned for query with non-zero budget, failed check")
+						t.Errorf("no samples returned for query with large budget, failed check")
 					}
 				}
 				for _, sample := range vector {
+					podMsg := ""
+					if podName, ok := sample.Metric["pod"]; ok {
+						podMsg = fmt.Sprintf("pod %s ", podName)
+					}
 					if float64(sample.Value) > budget.budget {
-						t.Errorf("over budget: budget: %.0f, actual: %.0f", budget.budget, sample.Value)
+						t.Errorf("%sover budget: budget: %.0f, actual: %.0f", podMsg, budget.budget, sample.Value)
 					} else {
-						t.Logf("within budget: budget: %.0f, actual: %.0f", budget.budget, sample.Value)
+						t.Logf("%swithin budget: budget: %.0f, actual: %.0f", podMsg, budget.budget, sample.Value)
 					}
 				}
 			})
@@ -444,6 +451,9 @@ func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, 
 			t.Fatalf("failed to list pods: %v", err)
 		}
 		for _, pod := range podList.Items {
+			if strings.Contains(pod.Name, "-catalog-rollout-") {
+				continue
+			}
 			for _, container := range pod.Spec.Containers {
 				if container.Resources.Requests == nil {
 					t.Errorf("container %s in pod %s has no resource requests", container.Name, pod.Name)

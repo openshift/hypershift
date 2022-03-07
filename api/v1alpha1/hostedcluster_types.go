@@ -218,6 +218,13 @@ type HostedClusterSpec struct {
 	// +optional
 	// +immutable
 	FIPS bool `json:"fips"`
+
+	// PausedUntil is a field that can be used to pause reconciliation on a resource.
+	// Either a date can be provided in RFC3339 format or a boolean. If a date is
+	// provided: reconciliation is paused on the resource until that date. If the boolean true is
+	// provided: reconciliation is paused on the resource until the field is removed.
+	// +optional
+	PausedUntil *string `json:"pausedUntil,omitempty"`
 }
 
 // ImageContentSource specifies image mirrors that can be used by cluster nodes
@@ -981,6 +988,10 @@ const (
 	// version of the HostedCluster as indicated by the Failing condition in the
 	// underlying cluster's ClusterVersion.
 	ClusterVersionSucceeding ConditionType = "ClusterVersionSucceeding"
+
+	// ReconciliationPaused indicates if reconciliation of the hostedcluster is
+	// paused.
+	ReconciliationPaused ConditionType = "ReconciliationPaused"
 )
 
 const (

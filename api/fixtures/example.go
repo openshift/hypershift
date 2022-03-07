@@ -81,10 +81,11 @@ type ExampleAgentOptions struct {
 }
 
 type ExampleKubevirtOptions struct {
-	APIServerAddress string
-	Memory           string
-	Cores            uint32
-	Image            string
+	ServicePublishingStrategy string
+	APIServerAddress          string
+	Memory                    string
+	Cores                     uint32
+	Image                     string
 }
 
 type ExampleAWSOptionsZones struct {
@@ -125,13 +126,14 @@ type ExampleAzureOptions struct {
 	SecurityGroupName string
 }
 
-// TODO: This format is made up by using the env var keys as keys.
-// Is there any kind of official file format for this?
+// AzureCreds is the fileformat we expect for credentials. It is copied from the installer
+// to allow using the same crededentials file for both:
+// https://github.com/openshift/installer/blob/8fca1ade5b096d9b2cd312c4599881d099439288/pkg/asset/installconfig/azure/session.go#L36
 type AzureCreds struct {
-	SubscriptionID string `json:"AZURE_SUBSCRIPTION_ID"`
-	TenantID       string `json:"AZURE_TENANT_ID"`
-	ClientID       string `json:"AZURE_CLIENT_ID"`
-	ClientSecret   string `json:"AZURE_CLIENT_SECRET"`
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	ClientID       string `json:"clientId,omitempty"`
+	ClientSecret   string `json:"clientSecret,omitempty"`
+	TenantID       string `json:"tenantId,omitempty"`
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -307,7 +309,14 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.KubevirtPlatform,
 		}
-		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
+		switch o.Kubevirt.ServicePublishingStrategy {
+		case "NodePort":
+			services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
+		case "Ingress":
+			services = o.getIngressServicePublishingStrategyMapping()
+		default:
+			panic(fmt.Sprintf("service publishing type %s is not supported", o.Kubevirt.ServicePublishingStrategy))
+		}
 	case o.Azure != nil:
 		credentialSecret := &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{
@@ -341,32 +350,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				SecurityGroupName: o.Azure.SecurityGroupName,
 			},
 		}
-		services = []hyperv1.ServicePublishingStrategyMapping{
-			{
-				Service: hyperv1.APIServer,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type: hyperv1.LoadBalancer,
-				},
-			},
-			{
-				Service: hyperv1.OAuthServer,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type: hyperv1.Route,
-				},
-			},
-			{
-				Service: hyperv1.Konnectivity,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type: hyperv1.Route,
-				},
-			},
-			{
-				Service: hyperv1.Ignition,
-				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-					Type: hyperv1.Route,
-				},
-			},
-		}
+		services = o.getIngressServicePublishingStrategyMapping()
 
 	default:
 		panic("no platform specified")
@@ -527,7 +511,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 										},
 									},
 									Interfaces: []kubevirtv1.Interface{
-										kubevirtv1.Interface{
+										{
 											Name: "default",
 											InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
 												Bridge: &kubevirtv1.InterfaceBridge{},
@@ -547,7 +531,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 								},
 							},
 							Networks: []kubevirtv1.Network{
-								kubevirtv1.Network{
+								{
 									Name: "default",
 									NetworkSource: kubevirtv1.NetworkSource{
 										Pod: &kubevirtv1.PodNetwork{},
@@ -580,6 +564,35 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		SSHKey:     sshKeySecret,
 		Cluster:    cluster,
 		NodePools:  nodePools,
+	}
+}
+
+func (o ExampleOptions) getIngressServicePublishingStrategyMapping() []hyperv1.ServicePublishingStrategyMapping {
+	return []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+		{
+			Service: hyperv1.Konnectivity,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+		{
+			Service: hyperv1.Ignition,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
 	}
 }
 

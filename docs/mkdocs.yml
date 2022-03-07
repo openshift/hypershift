@@ -34,6 +34,7 @@ nav:
 - 'Getting started': getting-started.md
 - 'How-to guides':
   - how-to/index.md
+  - how-to/cluster-configuration.md
   - how-to/distribute-hosted-cluster-workloads.md
   - how-to/upgrades.md
   - how-to/restart-control-plane-components.md
@@ -44,6 +45,7 @@ nav:
   - how-to/agent-platform.md
   - how-to/create-azure-cluster.md
   - how-to/kubevirt-platform.md
+  - how-to/pause-reconciliation.md
 - 'Reference':
   - reference/index.md
   - reference/api.md

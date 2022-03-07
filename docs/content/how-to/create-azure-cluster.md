@@ -9,10 +9,10 @@ In order to authenticate with Azure, an Application must be created through the 
 Afterwards, create a credentials file that looks like this:
 
 ```
-AZURE_SUBSCRIPTION_ID: <your_subscription_id>
-AZURE_TENANT_ID: <your_tenant_id>
-AZURE_CLIENT_ID: <your_client_id>
-AZURE_CLIENT_SECRET: <your_client_secret>
+subscriptionId: <your_subscription_id>
+tenantId: <your_tenant_id>
+clientId: <your_client_id>
+clientSecret: <your_client_secret>
 ```
 
 ## Creating the cluster

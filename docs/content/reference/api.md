@@ -363,6 +363,21 @@ If set to true, the control plane&rsquo;s ignition server will be configured to
 expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>pausedUntil</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+Either a date can be provided in RFC3339 format or a boolean. If a date is
+provided: reconciliation is paused on the resource until that date. If the boolean true is
+provided: reconciliation is paused on the resource until the field is removed.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -1398,30 +1413,6 @@ on the Agent platform.</p>
 <tbody>
 <tr>
 <td>
-<code>minCPUs</code></br>
-<em>
-int32
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>MinCPUs specifies the minimum number of CPU cores required.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>minMemoryMiB</code></br>
-<em>
-int32
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>MinMemoryMiB specifies the minimum amount of RAM required, in MiB.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>agentLabelSelector</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#labelselector-v1-meta">
@@ -1978,6 +1969,10 @@ HostedCluster is available to handle ignition requests.</p>
 <td></td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ReconciliationPaused&#34;</p></td>
+<td><p>ReconciliationPaused indicates if reconciliation of the hostedcluster is
+paused.</p>
+</td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
 <td><p>SupportedHostedCluster indicates whether a HostedCluster is supported by
 the current configuration of the hypershift-operator.
@@ -2517,6 +2512,21 @@ If set to true, the control plane&rsquo;s ignition server will be configured to
 expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>pausedUntil</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+Either a date can be provided in RFC3339 format or a boolean. If a date is
+provided: reconciliation is paused on the resource until that date. If the boolean true is
+provided: reconciliation is paused on the resource until the field is removed.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1alpha1.HostedClusterStatus }
@@ -2927,6 +2937,21 @@ SecretEncryptionSpec
 <em>(Optional)</em>
 <p>SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
 cluster when applicable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>pausedUntil</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+Either a date can be provided in RFC3339 format or a boolean. If a date is
+provided: reconciliation is paused on the resource until that date. If the boolean true is
+provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
 </tr>
 </tbody>
@@ -3709,6 +3734,118 @@ int32
 </tr>
 </tbody>
 </table>
+###NodePoolCondition { #hypershift.openshift.io/v1alpha1.NodePoolCondition }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolStatus">NodePoolStatus</a>)
+</p>
+<p>
+<p>We define our own condition type since metav1.Condition has validation
+for Reason that might be broken by what we bubble up from CAPI.
+NodePoolCondition defines an observation of NodePool resource operational state.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Type of condition in CamelCase or in foo.example.com/CamelCase.
+Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
+can be useful (see .node.status.conditions), the ability to deconflict is important.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#conditionstatus-v1-core">
+Kubernetes core/v1.ConditionStatus
+</a>
+</em>
+</td>
+<td>
+<p>Status of the condition, one of True, False, Unknown.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>severity</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Severity provides an explicit classification of Reason code, so the users or machines can immediately
+understand the current situation and act accordingly.
+The Severity field MUST be set only when Status=False.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>lastTransitionTime</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<p>Last time the condition transitioned from one status to another.
+This should be when the underlying condition changed. If that is not known, then using the time when
+the API field changed is acceptable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>reason</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>The reason for the condition&rsquo;s last transition in CamelCase.
+The specific API may choose whether or not this field is considered a guaranteed API.
+This field may not be empty.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>message</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>A human readable message indicating details about the transition.
+This field may be empty.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>observedGeneration</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
 ###NodePoolManagement { #hypershift.openshift.io/v1alpha1.NodePoolManagement }
 <p>
 (<em>Appears on:</em>
@@ -4078,8 +4215,8 @@ the NodePool.</p>
 <td>
 <code>conditions</code></br>
 <em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
-[]Kubernetes meta/v1.Condition
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolCondition">
+[]NodePoolCondition
 </a>
 </em>
 </td>

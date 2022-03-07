@@ -73,10 +73,11 @@ type NonePlatformCreateOptions struct {
 }
 
 type KubevirtPlatformCreateOptions struct {
-	APIServerAddress   string
-	Memory             string
-	Cores              uint32
-	ContainerDiskImage string
+	ServicePublishingStrategy string
+	APIServerAddress          string
+	Memory                    string
+	Cores                     uint32
+	ContainerDiskImage        string
 }
 
 type AWSPlatformOptions struct {
@@ -202,7 +203,10 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 			fmt.Println("---")
 		}
 	default:
-		client := util.GetClientOrDie()
+		client, err := util.GetClient()
+		if err != nil {
+			return err
+		}
 		var hostedCluster *hyperv1.HostedCluster
 		for _, object := range exampleObjects {
 			key := crclient.ObjectKeyFromObject(object)
@@ -248,7 +252,14 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 	// - NodeExternalIP
 	// - NodeInternalIP
 	apiServerAddress := ""
-	kubeClient := kubeclient.NewForConfigOrDie(util.GetConfigOrDie())
+	config, err := util.GetConfig()
+	if err != nil {
+		return "", err
+	}
+	kubeClient, err := kubeclient.NewForConfig(config)
+	if err != nil {
+		return "", err
+	}
 	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1})
 	if err != nil {
 		return "", fmt.Errorf("unable to fetch node objects: %w", err)
@@ -275,7 +286,10 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 
 func Validate(ctx context.Context, opts *CreateOptions) error {
 	if !opts.Render {
-		client := util.GetClientOrDie()
+		client, err := util.GetClient()
+		if err != nil {
+			return err
+		}
 		// Validate HostedCluster with this name doesn't exists in the namespace
 		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
