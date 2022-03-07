@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/kubevirt"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -29,7 +30,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
-							NodeTemplate: generateNodeTemplate("5Gi", 4, "testimage"),
+							NodeTemplate: kubevirt.VirtualMachineTemplateSpecToRawExtension(generateNodeTemplate("5Gi", 4, "testimage")),
 						},
 					},
 					Release: hyperv1.Release{},
@@ -47,7 +48,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := kubevirtMachineTemplateSpec(tc.nodePool)
+			result, err := kubevirtMachineTemplateSpec(tc.nodePool)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if !equality.Semantic.DeepEqual(tc.expected, result) {
 				t.Errorf(cmp.Diff(tc.expected, result))
 			}

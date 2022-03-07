@@ -11,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+	"github.com/openshift/hypershift/support/kubevirt"
 )
 
 type KubevirtPlatformCreateOptions struct {
@@ -50,7 +51,7 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 	runAlways := kubevirtv1.RunStrategyAlways
 	guestQuantity := apiresource.MustParse(o.Memory)
 	nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
-		NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
+		NodeTemplate: kubevirt.VirtualMachineTemplateSpecToRawExtension(&capikubevirt.VirtualMachineTemplateSpec{
 			Spec: kubevirtv1.VirtualMachineSpec{
 				RunStrategy: &runAlways,
 				Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
@@ -70,7 +71,7 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 									},
 								},
 								Interfaces: []kubevirtv1.Interface{
-									kubevirtv1.Interface{
+									{
 										Name: "default",
 										InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
 											Bridge: &kubevirtv1.InterfaceBridge{},
@@ -90,7 +91,7 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 							},
 						},
 						Networks: []kubevirtv1.Network{
-							kubevirtv1.Network{
+							{
 								Name: "default",
 								NetworkSource: kubevirtv1.NetworkSource{
 									Pod: &kubevirtv1.PodNetwork{},
@@ -100,8 +101,9 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 					},
 				},
 			},
-		},
+		}),
 	}
+
 	return nil
 }
 

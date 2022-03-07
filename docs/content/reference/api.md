@@ -3559,7 +3559,9 @@ on KubeVirt platform.</p>
 <td>
 <code>nodeTemplate</code></br>
 <em>
-sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1.VirtualMachineTemplateSpec
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#rawextension-runtime-pkg">
+k8s.io/apimachinery/pkg/runtime.RawExtension
+</a>
 </em>
 </td>
 <td>

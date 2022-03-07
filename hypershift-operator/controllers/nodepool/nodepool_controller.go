@@ -1408,7 +1408,11 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		}
 	case hyperv1.KubevirtPlatform:
 		template = &capikubevirt.KubevirtMachineTemplate{}
-		machineTemplateSpec = kubevirtMachineTemplateSpec(nodePool)
+		var err error
+		machineTemplateSpec, err = kubevirtMachineTemplateSpec(nodePool)
+		if err != nil {
+			return nil, nil, "", err
+		}
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)
