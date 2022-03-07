@@ -928,7 +928,6 @@ spec:
                     type: string
                 type: object
             required:
-            - issuerURL
             - networking
             - platform
             - pullSecret

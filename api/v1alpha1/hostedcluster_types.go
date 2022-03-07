@@ -175,7 +175,8 @@ type HostedClusterSpec struct {
 	//
 	// +kubebuilder:default:="https://kubernetes.default.svc"
 	// +immutable
-	IssuerURL string `json:"issuerURL"`
+	// +optional
+	IssuerURL string `json:"issuerURL,omitempty"`
 
 	// Configuration specifies configuration for individual OCP components in the
 	// cluster, represented as embedded resources that correspond to the openshift
