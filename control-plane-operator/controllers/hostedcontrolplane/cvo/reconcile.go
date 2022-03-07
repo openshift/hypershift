@@ -6,10 +6,12 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -19,16 +21,12 @@ import (
 )
 
 var (
-	cvoLabels = map[string]string{
-		"app":                         "cluster-version-operator",
-		hyperv1.ControlPlaneComponent: "cluster-version-operator",
-	}
-
 	volumeMounts = util.PodVolumeMounts{
 		cvoContainerMain().Name: {
 			cvoVolumeUpdatePayloads().Name: "/etc/cvo/updatepayloads",
 			cvoVolumeKubeconfig().Name:     "/etc/openshift/kubeconfig",
 			cvoVolumePayload().Name:        "/var/payload",
+			cvoVolumeServerCert().Name:     "/etc/kubernetes/certs/server",
 		},
 		cvoContainerPrepPayload().Name: {
 			cvoVolumePayload().Name: "/var/payload",
@@ -76,6 +74,15 @@ var (
 	}
 )
 
+func cvoLabels() map[string]string {
+	return map[string]string{
+		"app":                         "cluster-version-operator",
+		hyperv1.ControlPlaneComponent: "cluster-version-operator",
+	}
+}
+
+var port int32 = 8443
+
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage string) error {
 	ownerRef.ApplyTo(deployment)
 
@@ -87,11 +94,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: cvoLabels,
+			MatchLabels: cvoLabels(),
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: cvoLabels,
+				Labels: cvoLabels(),
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
@@ -106,6 +113,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
 					util.BuildVolume(cvoVolumeKubeconfig(), buildCVOVolumeKubeconfig),
 					util.BuildVolume(cvoVolumeUpdatePayloads(), buildCVOVolumeUpdatePayloads),
+					util.BuildVolume(cvoVolumeServerCert(), buildCVOVolumeServerCert),
 				},
 			},
 		},
@@ -206,6 +214,9 @@ done
 }
 
 func buildCVOContainerMain(image string) func(c *corev1.Container) {
+	cpath := func(vol, file string) string {
+		return path.Join(volumeMounts.Path(cvoContainerMain().Name, vol), file)
+	}
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"cluster-version-operator"}
@@ -217,7 +228,9 @@ func buildCVOContainerMain(image string) func(c *corev1.Container) {
 			"--enable-default-cluster-version=true",
 			"--kubeconfig",
 			path.Join(volumeMounts.Path(c.Name, cvoVolumeKubeconfig().Name), kas.KubeconfigKey),
-			"--listen=",
+			fmt.Sprintf("--listen=0.0.0.0:%d", port),
+			fmt.Sprintf("--serving-cert-file=%s", cpath(cvoVolumeServerCert().Name, corev1.TLSCertKey)),
+			fmt.Sprintf("--serving-key-file=%s", cpath(cvoVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
 			"--v=4",
 		}
 		c.Env = []corev1.EnvVar{
@@ -236,6 +249,13 @@ func buildCVOContainerMain(image string) func(c *corev1.Container) {
 						FieldPath: "spec.nodeName",
 					},
 				},
+			},
+		}
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "https",
+				ContainerPort: port,
+				Protocol:      corev1.ProtocolTCP,
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
@@ -271,4 +291,100 @@ func buildCVOVolumeKubeconfig(v *corev1.Volume) {
 
 func buildCVOVolumePayload(v *corev1.Volume) {
 	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
+}
+
+func cvoVolumeServerCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "server-crt",
+	}
+}
+func buildCVOVolumeServerCert(v *corev1.Volume) {
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
+	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.SecretName = manifests.ClusterVersionOperatorServerCertSecret("").Name
+}
+
+func ReconcileService(svc *corev1.Service, owner config.OwnerRef) error {
+	owner.ApplyTo(svc)
+	svc.Spec.Selector = cvoLabels()
+
+	// Ensure labels propagate to endpoints so service monitors can select them
+	if svc.Labels == nil {
+		svc.Labels = map[string]string{}
+	}
+	for k, v := range cvoLabels() {
+		svc.Labels[k] = v
+	}
+
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
+
+	if len(svc.Spec.Ports) == 0 {
+		svc.Spec.Ports = []corev1.ServicePort{
+			{
+				Name: "https",
+			},
+		}
+	}
+
+	svc.Spec.Ports[0].Port = port
+	svc.Spec.Ports[0].Name = "https"
+	svc.Spec.Ports[0].TargetPort = intstr.FromString("https")
+	svc.Spec.Ports[0].Protocol = corev1.ProtocolTCP
+
+	return nil
+}
+
+func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(sm)
+
+	sm.Spec.Selector.MatchLabels = cvoLabels()
+	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
+		MatchNames: []string{sm.Namespace},
+	}
+	targetPort := intstr.FromString("https")
+	sm.Spec.Endpoints = []prometheusoperatorv1.Endpoint{
+		{
+			Interval:   "15s",
+			TargetPort: &targetPort,
+			Scheme:     "https",
+			TLSConfig: &prometheusoperatorv1.TLSConfig{
+				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+					ServerName: "cluster-version-operator",
+					Cert: prometheusoperatorv1.SecretOrConfigMap{
+						Secret: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
+							},
+							Key: "tls.crt",
+						},
+					},
+					KeySecret: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
+						},
+						Key: "tls.key",
+					},
+					CA: prometheusoperatorv1.SecretOrConfigMap{
+						Secret: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
+							},
+							Key: "ca.crt",
+						},
+					},
+				},
+			},
+			MetricRelabelConfigs: []*prometheusoperatorv1.RelabelConfig{
+				{
+					Action:       "drop",
+					Regex:        "etcd_(debugging|disk|server).*",
+					SourceLabels: []string{"__name__"},
+				},
+			},
+		},
+	}
+
+	return nil
 }

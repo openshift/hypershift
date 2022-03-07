@@ -1222,6 +1222,13 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
 	}
 
+	cvoServerCert := manifests.ClusterVersionOperatorServerCertSecret(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, cvoServerCert, func() error {
+		return pki.ReconcileCVOServerSecret(cvoServerCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cvo serving cert: %w", err)
+	}
+
 	return nil
 }
 
@@ -1820,6 +1827,20 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 
 func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	p := cvo.NewCVOParams(hcp, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	service := manifests.ClusterVersionOperatorService(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, service, func() error {
+		return cvo.ReconcileService(service, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster version operator service: %w", err)
+	}
+
+	serviceMonitor := manifests.ClusterVersionOperatorServiceMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return cvo.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster version operator service monitor: %w", err)
+	}
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
