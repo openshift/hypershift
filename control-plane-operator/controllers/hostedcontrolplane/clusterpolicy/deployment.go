@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -55,8 +56,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		util.BuildVolume(cpcVolumeServingCert(), buildCPCVolumeServingCert),
 		util.BuildVolume(cpcVolumeKubeconfig(), buildCPCVolumeKubeconfig),
 	}
-	noServiceTokenAutomount := true
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = &noServiceTokenAutomount
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
 	deploymentConfig.ApplyTo(deployment)
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiServerPort), availabilityProberImage, &deployment.Spec.Template.Spec)
