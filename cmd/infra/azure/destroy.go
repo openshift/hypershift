@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-10-01/resources"
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
+	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +17,7 @@ type DestroyInfraOptions struct {
 	Location        string
 	InfraID         string
 	CredentialsFile string
+	Credentials     *apifixtures.AzureCreds
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -52,11 +54,14 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context) error {
-	creds, err := readCredentials(o.CredentialsFile)
-	if err != nil {
-		return fmt.Errorf("failed to read the credentials: %w", err)
+	creds := o.Credentials
+	if creds == nil {
+		var err error
+		creds, err = readCredentials(o.CredentialsFile)
+		if err != nil {
+			return fmt.Errorf("failed to read the credentials: %w", err)
+		}
 	}
-
 	authorizer, err := auth.ClientCredentialsConfig{
 		TenantID:     creds.TenantID,
 		ClientID:     creds.ClientID,
