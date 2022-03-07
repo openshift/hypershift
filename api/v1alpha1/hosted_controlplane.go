@@ -102,6 +102,16 @@ type HostedControlPlaneSpec struct {
 	// provided: reconciliation is paused on the resource until the field is removed.
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
+
+	// OLMMode specifies the deployment layout for OLM components. By default, subset
+	// of OLM components are deployed on both management and guest clusters. If set
+	// to guest, all of OLM components will be deployed on the guest cluster.
+	//
+	// +kubebuilder:validation:Enum=default;guest
+	// +kubebuilder:default=default
+	// +optional
+	// +immutable
+	OLMMode *string `json:"olmMode,omitempty"`
 }
 
 // AvailabilityPolicy specifies a high level availability policy for components.

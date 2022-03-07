@@ -39,7 +39,16 @@ var (
 
 	// TODO: These manifests should eventually be removed from the CVO payload by annotating
 	// them with the proper cluster profile in the OLM repository.
-	manifestsToOmit = []string{
+	defaultManifestsToOmit = []string{
+		"0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml",
+
+		// TODO: Remove these when cluster profiles annotations are fixed
+		// for cco and auth  operators
+		"0000_50_cloud-credential-operator_01-operator-config.yaml",
+		"0000_50_cluster-authentication-operator_02_config.cr.yaml",
+	}
+
+	olmManifests = []string{
 		"0000_50_olm_00-pprof-config.yaml",
 		"0000_50_olm_00-pprof-rbac.yaml",
 		"0000_50_olm_00-pprof-secret.yaml",
@@ -65,12 +74,6 @@ var (
 		"0000_50_operator-marketplace_09_operator.yaml",
 		"0000_50_operator-marketplace_10_clusteroperator.yaml",
 		"0000_50_operator-marketplace_11_service_monitor.yaml",
-		"0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml",
-
-		// TODO: Remove these when cluster profiles annotations are fixed
-		// for cco and auth  operators
-		"0000_50_cloud-credential-operator_01-operator-config.yaml",
-		"0000_50_cluster-authentication-operator_02_config.cr.yaml",
 	}
 )
 
@@ -83,7 +86,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, cliImage string, olmMode string) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -103,7 +106,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image)),
+					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image, olmMode)),
 				},
 				Containers: []corev1.Container{
 					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(image)),
@@ -140,13 +143,13 @@ func cvoContainerMain() *corev1.Container {
 	}
 }
 
-func buildCVOContainerPrepPayload(image string) func(c *corev1.Container) {
+func buildCVOContainerPrepPayload(image string, olmMode string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(),
+			preparePayloadScript(olmMode),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -174,8 +177,14 @@ func buildCVOContainerApplyBootstrap(image string) func(*corev1.Container) {
 	}
 }
 
-func preparePayloadScript() string {
+func preparePayloadScript(olmMode string) string {
 	payloadDir := volumeMounts.Path(cvoContainerPrepPayload().Name, cvoVolumePayload().Name)
+
+	manifestsToOmit := defaultManifestsToOmit
+	if olmMode == "default" {
+		manifestsToOmit = append(manifestsToOmit, olmManifests...)
+	}
+
 	stmts := make([]string, 0, len(manifestsToOmit)+2)
 	stmts = append(stmts,
 		fmt.Sprintf("cp -R /manifests %s/", payloadDir),
@@ -183,6 +192,7 @@ func preparePayloadScript() string {
 		fmt.Sprintf("rm %s/manifests/*_servicemonitor.yaml", payloadDir),
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
+
 	for _, manifest := range manifestsToOmit {
 		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
 	}

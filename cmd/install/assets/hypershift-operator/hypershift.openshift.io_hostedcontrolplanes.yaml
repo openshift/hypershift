@@ -274,6 +274,16 @@ spec:
                 - OpenShiftSDN
                 - Calico
                 type: string
+              olmMode:
+                default: default
+                description: OLMMode specifies the deployment layout for OLM components.
+                  By default, subset of OLM components are deployed on both management
+                  and guest clusters. If set to guest, all of OLM components will
+                  be deployed on the guest cluster.
+                enum:
+                - default
+                - guest
+                type: string
               pausedUntil:
                 description: 'PausedUntil is a field that can be used to pause reconciliation
                   on a resource. Either a date can be provided in RFC3339 format or

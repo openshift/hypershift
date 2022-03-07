@@ -366,8 +366,10 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("failed to reconcile openshift controller manager service ca bundle: %w", err))
 	}
 
-	log.Info("reconciling olm resources")
-	errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+	if *hcp.Spec.OLMMode == "default" {
+		log.Info("reconciling olm resources")
+		errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+	}
 
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)

@@ -379,6 +379,20 @@ provided: reconciliation is paused on the resource until that date. If the boole
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>olmMode</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OLMMode specifies the deployment layout for OLM components. By default, subset
+of OLM components are deployed on both management and guest clusters. If set
+to guest, all of OLM components will be deployed on the guest cluster.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -2540,6 +2554,20 @@ provided: reconciliation is paused on the resource until that date. If the boole
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>olmMode</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OLMMode specifies the deployment layout for OLM components. By default, subset
+of OLM components are deployed on both management and guest clusters. If set
+to guest, all of OLM components will be deployed on the guest cluster.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1alpha1.HostedClusterStatus }
@@ -2965,6 +2993,20 @@ string
 Either a date can be provided in RFC3339 format or a boolean. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>olmMode</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OLMMode specifies the deployment layout for OLM components. By default, subset
+of OLM components are deployed on both management and guest clusters. If set
+to guest, all of OLM components will be deployed on the guest cluster.</p>
 </td>
 </tr>
 </tbody>
