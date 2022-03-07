@@ -1,8 +1,9 @@
 package manifests
 
 import (
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
-	//TODO: Switch to k8s.io/api/batch/v1 when all management clusters at 1.21+ OR 4.8_openshift+
+	// TODO: Switch to k8s.io/api/batch/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -174,6 +175,15 @@ func CatalogOperatorDeployment(ns string) *appsv1.Deployment {
 	}
 }
 
+func CatalogOperatorServiceMonitor(ns string) *prometheusoperatorv1.ServiceMonitor {
+	return &prometheusoperatorv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "catalog-operator",
+			Namespace: ns,
+		},
+	}
+}
+
 // OLM Operator
 
 func OLMOperatorMetricsService(ns string) *corev1.Service {
@@ -187,6 +197,15 @@ func OLMOperatorMetricsService(ns string) *corev1.Service {
 
 func OLMOperatorDeployment(ns string) *appsv1.Deployment {
 	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "olm-operator",
+			Namespace: ns,
+		},
+	}
+}
+
+func OLMOperatorServiceMonitor(ns string) *prometheusoperatorv1.ServiceMonitor {
+	return &prometheusoperatorv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "olm-operator",
 			Namespace: ns,

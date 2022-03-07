@@ -1968,6 +1968,12 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile catalog operator metrics service: %w", err)
 	}
+	catalogOperatorServiceMonitor := manifests.CatalogOperatorServiceMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, catalogOperatorServiceMonitor, func() error {
+		return olm.ReconcileCatalogServiceMonitor(catalogOperatorServiceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile catalog operator service monitor: %w", err)
+	}
 	catalogOperatorDeployment := manifests.CatalogOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, catalogOperatorDeployment, func() error {
 		return olm.ReconcileCatalogOperatorDeployment(catalogOperatorDeployment, p.OwnerRef, p.OLMImage, p.ProxyImage, p.OperatorRegistryImage, p.ReleaseVersion, p.DeploymentConfig, p.AvailabilityProberImage, hcp.Spec.APIPort)
@@ -1980,6 +1986,13 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return olm.ReconcileOLMOperatorMetricsService(olmOperatorMetricsService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator metrics service: %w", err)
+	}
+
+	olmOperatorServiceMonitor := manifests.OLMOperatorServiceMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, olmOperatorServiceMonitor, func() error {
+		return olm.ReconcileOLMOperatorServiceMonitor(olmOperatorServiceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile olm operator service monitor: %w", err)
 	}
 
 	olmOperatorDeployment := manifests.OLMOperatorDeployment(hcp.Namespace)

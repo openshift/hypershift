@@ -40,5 +40,5 @@ spec:
                 name: olm-collect-profiles
             - name: secret-volume
               secret:
-                secretName: pprof-cert
+                secretName: metrics-client
           restartPolicy: Never
