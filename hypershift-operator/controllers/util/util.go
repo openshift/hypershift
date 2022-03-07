@@ -13,7 +13,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
+	hyperapi "github.com/openshift/hypershift/support/api"
 )
 
 const HypershiftRouteLabel = "hypershift.openshift.io/hosted-control-plane"

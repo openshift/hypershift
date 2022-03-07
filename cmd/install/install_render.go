@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/cmd/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"

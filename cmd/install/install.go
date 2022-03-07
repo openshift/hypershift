@@ -30,11 +30,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 )
 
 type Options struct {
