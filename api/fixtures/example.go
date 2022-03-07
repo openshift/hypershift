@@ -6,6 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -13,20 +14,19 @@ import (
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type ExampleResources struct {
 	Namespace  *corev1.Namespace
 	PullSecret *corev1.Secret
-	Resources  []crclient.Object
+	Resources  []runtime.Object
 	SSHKey     *corev1.Secret
 	Cluster    *hyperv1.HostedCluster
 	NodePools  []*hyperv1.NodePool
 }
 
-func (o *ExampleResources) AsObjects() []crclient.Object {
-	objects := []crclient.Object{
+func (o *ExampleResources) AsObjects() []runtime.Object {
+	objects := []runtime.Object{
 		o.Namespace,
 		o.PullSecret,
 		o.Cluster,
@@ -184,7 +184,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	}
 
 	var platformSpec hyperv1.PlatformSpec
-	var resources []crclient.Object
+	var resources []runtime.Object
 	var services []hyperv1.ServicePublishingStrategyMapping
 	var secretEncryption *hyperv1.SecretEncryptionSpec
 

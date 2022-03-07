@@ -209,14 +209,15 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 		}
 		var hostedCluster *hyperv1.HostedCluster
 		for _, object := range exampleObjects {
-			key := crclient.ObjectKeyFromObject(object)
-			object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
+			crObject := object.(crclient.Object)
+			key := crclient.ObjectKeyFromObject(crObject)
+			crObject.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
 			var err error
 			if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
-				hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}
-				err = client.Create(ctx, object)
+				hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: crObject.GetNamespace(), Name: crObject.GetName()}}
+				err = client.Create(ctx, crObject)
 			} else {
-				err = client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
+				err = client.Patch(ctx, crObject, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
 			}
 			if err != nil {
 				return fmt.Errorf("failed to apply object %q: %w", key, err)

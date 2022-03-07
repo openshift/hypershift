@@ -2,7 +2,7 @@ package fixtures
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type ExampleAWSResources struct {
@@ -12,8 +12,8 @@ type ExampleAWSResources struct {
 	KMSProviderAWSCreds          *corev1.Secret
 }
 
-func (o *ExampleAWSResources) AsObjects() []crclient.Object {
-	var objects []crclient.Object
+func (o *ExampleAWSResources) AsObjects() []runtime.Object {
+	var objects []runtime.Object
 	if o.KubeCloudControllerAWSCreds != nil {
 		objects = append(objects, o.KubeCloudControllerAWSCreds)
 	}
