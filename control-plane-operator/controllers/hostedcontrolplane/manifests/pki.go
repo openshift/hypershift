@@ -283,3 +283,12 @@ func IBMCloudKASKMSWDEKSecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func ClusterVersionOperatorServerCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cvo-server",
+			Namespace: ns,
+		},
+	}
+}
