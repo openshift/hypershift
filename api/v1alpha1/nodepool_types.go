@@ -430,6 +430,10 @@ type AgentNodePoolPlatform struct {
 type AzureNodePoolPlatform struct {
 	VMSize  string `json:"vmsize"`
 	ImageID string `json:"imageID"`
+	// +kubebuilder:default:=120
+	// +kubebuilder:validation:Minimum=16
+	// +optional
+	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation

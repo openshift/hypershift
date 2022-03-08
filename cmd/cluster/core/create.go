@@ -101,6 +101,7 @@ type AzurePlatformOptions struct {
 	CredentialsFile string
 	Location        string
 	InstanceType    string
+	DiskSizeGB      int32
 }
 
 func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {

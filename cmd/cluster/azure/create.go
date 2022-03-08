@@ -26,9 +26,11 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 	opts.AzurePlatform.Location = "eastus"
 	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
+	opts.AzurePlatform.DiskSizeGB = 120
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.InstanceType, "instance-type", opts.AzurePlatform.InstanceType, "The instance type to use for nodes")
+	cmd.Flags().Int32Var(&opts.AzurePlatform.DiskSizeGB, "root-disk-size", opts.AzurePlatform.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
 
 	cmd.MarkFlagRequired("azure-creds")
 
@@ -101,6 +103,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		MachineIdentityID: infra.MachineIdentityID,
 		InstanceType:      opts.AzurePlatform.InstanceType,
 		SecurityGroupName: infra.SecurityGroupName,
+		DiskSizeGB:        opts.AzurePlatform.DiskSizeGB,
 	}
 
 	azureCredsRaw, err := ioutil.ReadFile(opts.AzurePlatform.CredentialsFile)
