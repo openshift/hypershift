@@ -1265,7 +1265,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		},
 		{
-			name: "Azurecluser with incomplete credentials secret, error",
+			name: "Azurecluster with incomplete credentials secret, error",
 			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
 				Type: hyperv1.AzurePlatform,
 				Azure: &hyperv1.AzurePlatformSpec{

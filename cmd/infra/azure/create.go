@@ -262,7 +262,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	privateZoneParams := privatedns.PrivateZone{
 		Location: utilpointer.String("global"),
 	}
-	privateDNSZonePromise, err := privateZoneClient.CreateOrUpdate(ctx, *rg.Name, o.Name+"-azurecluser."+o.BaseDomain, privateZoneParams, "", "")
+	privateDNSZonePromise, err := privateZoneClient.CreateOrUpdate(ctx, *rg.Name, o.Name+"-azurecluster."+o.BaseDomain, privateZoneParams, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create private DNS zone: %w", err)
 	}
