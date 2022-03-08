@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	api "github.com/openshift/hypershift/api"
@@ -1043,4 +1044,51 @@ func TestGetName(t *testing.T) {
 	// When maxLength > base+suffix
 	name = getName(base, suffix, length+1)
 	g.Expect(alphaNumeric.MatchString(string(name[0]))).To(BeTrue())
+}
+
+func TestSetExpirationTimestampOnToken(t *testing.T) {
+	fakeName := "test-token"
+	fakeNamespace := "master-cluster1"
+	fakeCurrentTokenVal := "tokenval1"
+
+	testCases := []struct {
+		name        string
+		inputSecret *corev1.Secret
+	}{
+		{
+			name: "when set expiration timestamp on token is called on a secret then the expiration timestamp is set",
+			inputSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeName,
+					Namespace: fakeNamespace,
+				},
+				Data: map[string][]byte{
+					TokenSecretTokenKey: []byte(fakeCurrentTokenVal),
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			c := fake.NewClientBuilder().WithObjects(tc.inputSecret).Build()
+			err := setExpirationTimestampOnToken(context.Background(), c, tc.inputSecret)
+			g.Expect(err).To(Not(HaveOccurred()))
+			actualSecretData := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeName,
+					Namespace: fakeNamespace,
+				},
+			}
+			err = c.Get(context.Background(), client.ObjectKeyFromObject(actualSecretData), actualSecretData)
+			g.Expect(err).To(Not(HaveOccurred()))
+			rawExpirationTimestamp, ok := actualSecretData.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation]
+			g.Expect(ok).To(BeTrue())
+			expirationTimestamp, err := time.Parse(time.RFC3339, rawExpirationTimestamp)
+			g.Expect(err).To(Not(HaveOccurred()))
+			// ensures the 2 hour expiration is active. 119 minutes is one minute less than 2 hours. gives time for
+			// test to run.
+			g.Expect(time.Now().Add(119 * time.Minute).Before(expirationTimestamp)).To(BeTrue())
+		})
+	}
 }
