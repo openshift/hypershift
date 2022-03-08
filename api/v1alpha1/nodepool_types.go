@@ -322,6 +322,7 @@ type NodePoolPlatform struct {
 type KubevirtNodePoolPlatform struct {
 	// NodeTemplate Spec contains the VirtualMachineInstance specification.
 	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:EmbeddedResource
 	NodeTemplate *runtime.RawExtension `json:"nodeTemplate,omitempty"`
 }
 

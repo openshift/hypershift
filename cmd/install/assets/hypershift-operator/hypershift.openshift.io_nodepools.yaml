@@ -441,6 +441,7 @@ spec:
                         description: NodeTemplate Spec contains the VirtualMachineInstance
                           specification.
                         type: object
+                        x-kubernetes-embedded-resource: true
                         x-kubernetes-preserve-unknown-fields: true
                     type: object
                   type:
