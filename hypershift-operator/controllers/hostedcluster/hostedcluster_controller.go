@@ -1885,6 +1885,11 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		}
 		proxy.SetEnvVars(&ignitionServerDeployment.Spec.Template.Spec.Containers[0].Env)
 
+		if hcluster.Spec.AdditionalTrustBundle != nil {
+			// Add trusted-ca mount with optional configmap
+			util.DeploymentAddTrustBundleVolume(hcluster.Spec.AdditionalTrustBundle, ignitionServerDeployment)
+		}
+
 		// set security context
 		if r.SetDefaultSecurityContext {
 			ignitionServerDeployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
@@ -2209,6 +2214,11 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				},
 			},
 		})
+	}
+
+	if hc.Spec.AdditionalTrustBundle != nil {
+		// Add trusted-ca mount with optional configmap
+		util.DeploymentAddTrustBundleVolume(hc.Spec.AdditionalTrustBundle, deployment)
 	}
 
 	// set security context
