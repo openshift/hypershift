@@ -428,8 +428,11 @@ type AgentNodePoolPlatform struct {
 }
 
 type AzureNodePoolPlatform struct {
-	VMSize  string `json:"vmsize"`
-	ImageID string `json:"imageID"`
+	VMSize string `json:"vmsize"`
+	// ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
+	// subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
+	// +optional
+	ImageID string `json:"imageID,omitempty"`
 	// +kubebuilder:default:=120
 	// +kubebuilder:validation:Minimum=16
 	// +optional

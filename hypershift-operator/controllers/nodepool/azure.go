@@ -6,10 +6,11 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"golang.org/x/crypto/ssh"
 	utilpointer "k8s.io/utils/pointer"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
 func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, existing capiazure.AzureMachineTemplateSpec) (*capiazure.AzureMachineTemplateSpec, error) {
@@ -25,7 +26,7 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 	}
 	return &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
 		VMSize: nodePool.Spec.Platform.Azure.VMSize,
-		Image:  &capiazure.Image{ID: &nodePool.Spec.Platform.Azure.ImageID},
+		Image:  &capiazure.Image{ID: utilpointer.String(bootImage(hcluster, nodePool))},
 		OSDisk: capiazure.OSDisk{
 			DiskSizeGB: utilpointer.Int32Ptr(nodePool.Spec.Platform.Azure.DiskSizeGB),
 		},
@@ -48,4 +49,11 @@ func generateSSHPubkey() (string, error) {
 	}
 
 	return base64.StdEncoding.EncodeToString(ssh.MarshalAuthorizedKey(publicRsaKey)), nil
+}
+
+func bootImage(hcluster *hyperv1.HostedCluster, nodepool *hyperv1.NodePool) string {
+	if nodepool.Spec.Platform.Azure.ImageID != "" {
+		return nodepool.Spec.Platform.Azure.ImageID
+	}
+	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/images/rhcos.x86_64.vhd", hcluster.Spec.Platform.Azure.SubscriptionID, hcluster.Spec.Platform.Azure.ResourceGroupName)
 }
