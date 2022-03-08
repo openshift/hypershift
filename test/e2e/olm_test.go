@@ -41,7 +41,8 @@ func TestOLM(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions()
@@ -53,7 +54,8 @@ func TestOLM(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, cluster)
 
 	// Wait for guest cluster nodes to become available
-	util.WaitForNReadyNodes(t, ctx, guestClient, clusterOpts.NodePoolReplicas)
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	util.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
 
 	guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name
 	t.Logf("Hosted control plane namespace is %s", guestNamespace)
@@ -65,7 +67,7 @@ func TestOLM(t *testing.T) {
 			Namespace: guestNamespace,
 		},
 	}
-	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(redhatCatalogDeployment), redhatCatalogDeployment); err != nil {
 			t.Logf("failed to get Red Hat Catalog deployment %s/%s: %s", redhatCatalogDeployment.Namespace, redhatCatalogDeployment.Name, err)
 			return false, nil

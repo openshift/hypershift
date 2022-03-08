@@ -23,7 +23,8 @@ func TestAutoscaling(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -32,21 +33,23 @@ func TestAutoscaling(t *testing.T) {
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
 
-	// Get the newly created nodepool
+	// Get one of the newly created NodePools
+	zone := clusterOpts.AWSPlatform.Zones[0]
 	nodepool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedCluster.Namespace,
-			Name:      hostedCluster.Name,
+			Name:      e2eutil.NodePoolName(hostedCluster.Name, zone),
 		},
 	}
-	err := client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
+	err = client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 	t.Logf("Created nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
 
 	// Perform some very basic assertions about the guest cluster
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
 	// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
-	nodes := e2eutil.WaitForNReadyNodes(t, testContext, guestClient, *nodepool.Spec.NodeCount)
+	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+	nodes := e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
@@ -55,13 +58,13 @@ func TestAutoscaling(t *testing.T) {
 	// Enable autoscaling.
 	err = client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
-	var max int32 = 3
+	var max int32 = 2
 
 	// This Deployment have replicas=2 with
 	// anti-affinity rules resulting in scheduling constraints
 	// that prevent the cluster from ever scaling back down to 1:
 	// aws-ebs-csi-driver-controller
-	var min int32 = 2
+	var min int32 = 1
 	nodepool.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
 		Min: min,
 		Max: max,
@@ -85,14 +88,15 @@ func TestAutoscaling(t *testing.T) {
 	// be used, not enough to have more than 1 pod per
 	// node.
 	workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.6*float32(bytes)))
-	workload := newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage)
+	workload := newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage, zone)
 	err = guestClient.Create(testContext, workload)
 	g.Expect(err).NotTo(HaveOccurred())
 	t.Logf("Created workload. Node: %s, memcapacity: %s", nodes[0].Name, memCapacity.String())
 
-	// Wait for 3 nodes.
+	// Wait for one more node.
 	// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
-	_ = e2eutil.WaitForNReadyNodes(t, testContext, guestClient, max)
+	numNodes = numNodes + 1
+	_ = e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
 
 	// Delete workload.
 	cascadeDelete := metav1.DeletePropagationForeground
@@ -102,13 +106,14 @@ func TestAutoscaling(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 	t.Logf("Deleted workload")
 
-	// Wait for exactly 1 node.
-	_ = e2eutil.WaitForNReadyNodes(t, testContext, guestClient, min)
+	// Wait for one less node.
+	numNodes = numNodes - 1
+	_ = e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
 
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }
 
-func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, image string) *batchv1.Job {
+func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, image string, zone string) *batchv1.Job {
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "autoscaling-workload",
@@ -138,6 +143,9 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 						},
 					},
 					RestartPolicy: corev1.RestartPolicy("Never"),
+					NodeSelector: map[string]string{
+						"topology.kubernetes.io/zone": zone,
+					},
 				},
 			},
 			BackoffLimit: pointer.Int32Ptr(4),

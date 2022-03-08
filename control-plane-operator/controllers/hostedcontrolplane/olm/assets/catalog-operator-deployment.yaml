@@ -15,13 +15,14 @@ spec:
         app: catalog-operator
         hypershift.openshift.io/control-plane-component: catalog-operator
     spec:
+      automountServiceAccountToken: false
       volumes:
         - name: srv-cert
           secret:
             secretName: catalog-operator-serving-cert
         - name: profile-collector
           secret:
-            secretName: pprof-cert
+            secretName: metrics-client
         - name: kubeconfig
           secret:
             secretName: service-network-admin-kubeconfig
@@ -56,7 +57,7 @@ spec:
             - --tls-key
             - /srv-cert/tls.key
             - --client-ca
-            - /client-ca/tls.crt
+            - /client-ca/ca.crt
             - -kubeconfig
             - /etc/openshift/kubeconfig/kubeconfig
           image: OLM_OPERATOR_IMAGE

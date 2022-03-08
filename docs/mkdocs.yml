@@ -34,14 +34,24 @@ nav:
 - 'Getting started': getting-started.md
 - 'How-to guides':
   - how-to/index.md
+  - how-to/cluster-configuration.md
+  - how-to/distribute-hosted-cluster-workloads.md
+  - how-to/upgrades.md
+  - how-to/restart-control-plane-components.md
+  - how-to/create-infra-iam-separately.md
+  - how-to/create-aws-hosted-cluster-multiple-zones.md
   - how-to/deploy-aws-private-clusters.md
   - how-to/oauth.md
-  - how-to/distribute-hosted-cluster-workloads.md
+  - how-to/agent-platform.md
+  - how-to/create-azure-cluster.md
+  - how-to/kubevirt-platform.md
+  - how-to/pause-reconciliation.md
 - 'Reference':
   - reference/index.md
   - reference/api.md
-  - reference/concepts.md
+  - reference/concepts-and-personas.md
   - reference/controller-architecture.md
+  - reference/multi-platform-support.md
 - 'Contribute':
   - contribute/index.md
   - contribute/develop-in-cluster.md

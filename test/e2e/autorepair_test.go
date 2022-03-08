@@ -15,41 +15,37 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestAutoRepair(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
-	client := e2eutil.GetClientOrDie()
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
-	clusterOpts.NodePoolReplicas = 3
+	numZones := int32(len(clusterOpts.AWSPlatform.Zones))
+	if numZones <= 1 {
+		clusterOpts.NodePoolReplicas = 3
+	} else if numZones == 2 {
+		clusterOpts.NodePoolReplicas = 2
+	} else {
+		clusterOpts.NodePoolReplicas = 1
+	}
 	clusterOpts.AutoRepair = true
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
 
-	// Get the newly created nodepool
-	nodepool := &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: hostedCluster.Namespace,
-			Name:      hostedCluster.Name,
-		},
-	}
-	err := client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
-	t.Logf("Created nodepool: %s", crclient.ObjectKeyFromObject(nodepool))
-
 	// Perform some very basic assertions about the guest cluster
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
 	// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
-	nodes := e2eutil.WaitForNReadyNodes(t, testContext, guestClient, *nodepool.Spec.NodeCount)
+	numNodes := clusterOpts.NodePoolReplicas * numZones
+	nodes := e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
@@ -68,9 +64,9 @@ func TestAutoRepair(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to terminate AWS instance")
 
 	// Wait for nodes to be ready again, without the node that was terminated
-	t.Logf("Waiting for %d available nodes without %s", *nodepool.Spec.NodeCount, nodeToReplace)
+	t.Logf("Waiting for %d available nodes without %s", numNodes, nodeToReplace)
 	err = wait.PollUntil(30*time.Second, func() (done bool, err error) {
-		nodes := e2eutil.WaitForNReadyNodes(t, testContext, guestClient, *nodepool.Spec.NodeCount)
+		nodes := e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
 		for _, node := range nodes {
 			if node.Name == nodeToReplace {
 				return false, nil
@@ -84,7 +80,7 @@ func TestAutoRepair(t *testing.T) {
 }
 
 func ec2Client(awsCredsFile, region string) *ec2.EC2 {
-	awsSession := awsutil.NewSession("e2e-autorepair")
-	awsConfig := awsutil.NewConfig(awsCredsFile, "", "", region)
+	awsSession := awsutil.NewSession("e2e-autorepair", awsCredsFile, "", "", region)
+	awsConfig := awsutil.NewConfig()
 	return ec2.New(awsSession, awsConfig)
 }

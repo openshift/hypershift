@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -54,6 +55,11 @@ func (uld *updateLoopDetector) recordNoOpUpdate(obj crclient.Object, key crclien
 }
 
 func (uld *updateLoopDetector) recordActualUpdate(original, modified runtime.Object, key crclient.ObjectKey) {
+	// We have multiple controllers acting on these and they have no defaulting, which incorrectly triggers the
+	// detector. Just skip them.
+	if _, isAWSEndpointService := original.(*hyperv1.AWSEndpointService); isAWSEndpointService {
+		return
+	}
 	cacheKey := uld.keyFor(original, key)
 	uld.lock.RLock()
 	hasNoOpUpdate := uld.hasNoOpUpdate.Has(cacheKey)

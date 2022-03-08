@@ -6,10 +6,15 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/log"
+)
+
+const (
+	NodePortServicePublishingStrategy = "NodePort"
+	IngressServicePublishingStrategy  = "Ingress"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -20,14 +25,16 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.KubevirtPlatform = core.KubevirtPlatformCreateOptions{
-		Memory:             "4Gi",
-		Cores:              2,
-		ContainerDiskImage: "",
+		ServicePublishingStrategy: IngressServicePublishingStrategy,
+		Memory:                    "4Gi",
+		Cores:                     2,
+		ContainerDiskImage:        "",
 	}
 
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.Memory, "memory", opts.KubevirtPlatform.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
 	cmd.Flags().Uint32Var(&opts.KubevirtPlatform.Cores, "cores", opts.KubevirtPlatform.Cores, "The number of cores inside the vmi, Must be a value greater or equal 1")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.ContainerDiskImage, "containerdisk", opts.KubevirtPlatform.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.ServicePublishingStrategy, "service-publishing-strategy", opts.KubevirtPlatform.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through)", IngressServicePublishingStrategy, NodePortServicePublishingStrategy))
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -38,7 +45,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}
 
 		if err := CreateCluster(ctx, opts); err != nil {
-			log.Error(err, "Failed to create cluster")
+			log.Log.Error(err, "Failed to create cluster")
 			return err
 		}
 		return nil
@@ -52,7 +59,13 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 }
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	if opts.KubevirtPlatform.APIServerAddress == "" {
+	if opts.KubevirtPlatform.ServicePublishingStrategy != NodePortServicePublishingStrategy && opts.KubevirtPlatform.ServicePublishingStrategy != IngressServicePublishingStrategy {
+		return fmt.Errorf("service publish strategy %s is not supported, supported options: %s, %s", opts.KubevirtPlatform.ServicePublishingStrategy, IngressServicePublishingStrategy, NodePortServicePublishingStrategy)
+	}
+	if opts.KubevirtPlatform.ServicePublishingStrategy != NodePortServicePublishingStrategy && opts.KubevirtPlatform.APIServerAddress != "" {
+		return fmt.Errorf("external-api-server-address is supported only for NodePort service publishing strategy, service publishing strategy %s is used", opts.KubevirtPlatform.ServicePublishingStrategy)
+	}
+	if opts.KubevirtPlatform.APIServerAddress == "" && opts.KubevirtPlatform.ServicePublishingStrategy == NodePortServicePublishingStrategy && !opts.Render {
 		if opts.KubevirtPlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx); err != nil {
 			return err
 		}
@@ -73,17 +86,20 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	infraID := opts.InfraID
-	if len(infraID) == 0 {
-		infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
-	}
 	exampleOptions.InfraID = infraID
-	exampleOptions.BaseDomain = "example.com"
+
+	if opts.BaseDomain != "" {
+		exampleOptions.BaseDomain = opts.BaseDomain
+	} else {
+		exampleOptions.BaseDomain = "example.com"
+	}
 
 	exampleOptions.Kubevirt = &apifixtures.ExampleKubevirtOptions{
-		APIServerAddress: opts.KubevirtPlatform.APIServerAddress,
-		Memory:           opts.KubevirtPlatform.Memory,
-		Cores:            opts.KubevirtPlatform.Cores,
-		Image:            opts.KubevirtPlatform.ContainerDiskImage,
+		ServicePublishingStrategy: opts.KubevirtPlatform.ServicePublishingStrategy,
+		APIServerAddress:          opts.KubevirtPlatform.APIServerAddress,
+		Memory:                    opts.KubevirtPlatform.Memory,
+		Cores:                     opts.KubevirtPlatform.Cores,
+		Image:                     opts.KubevirtPlatform.ContainerDiskImage,
 	}
 	return nil
 }

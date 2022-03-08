@@ -9,9 +9,24 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
+)
+
+const (
+	// EtcdPriorityClass is for etcd pods.
+	EtcdPriorityClass = "hypershift-etcd"
+
+	// APICriticalPriorityClass is for pods that are required for API calls and
+	// resource admission to succeed. This includes pods like kube-apiserver,
+	// aggregated API servers, and webhooks.
+	APICriticalPriorityClass = "hypershift-api-critical"
+
+	// DefaultPriorityClass is for pods in the Hypershift control plane that are
+	// not API critical but still need elevated priority.
+	DefaultPriorityClass = "hypershift-control-plane"
 )
 
 type HyperShiftNamespace struct {
@@ -44,10 +59,8 @@ type HyperShiftOperatorCredentialsSecret struct {
 
 const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
-	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
 	awsCredsSecretKey             = "credentials"
-	oidcProviderS3SecretBucketKey = "bucket"
-	oidcProviderS3SecretRegionKey = "region"
+	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
 )
 
 func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
@@ -68,10 +81,9 @@ func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 }
 
 type HyperShiftOperatorOIDCProviderS3Secret struct {
-	Namespace                       *corev1.Namespace
-	OIDCStorageProviderS3CredBytes  []byte
-	OIDCStorageProviderS3BucketName string
-	OIDCStorageProviderS3Region     string
+	Namespace                      *corev1.Namespace
+	OIDCStorageProviderS3CredBytes []byte
+	CredsKey                       string
 }
 
 func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
@@ -85,25 +97,26 @@ func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
 			Namespace: o.Namespace.Name,
 		},
 		Data: map[string][]byte{
-			awsCredsSecretKey:             o.OIDCStorageProviderS3CredBytes,
-			oidcProviderS3SecretBucketKey: []byte(o.OIDCStorageProviderS3BucketName),
-			oidcProviderS3SecretRegionKey: []byte(o.OIDCStorageProviderS3Region),
+			o.CredsKey: o.OIDCStorageProviderS3CredBytes,
 		},
 	}
 	return secret
 }
 
 type HyperShiftOperatorDeployment struct {
-	Namespace                   *corev1.Namespace
-	OperatorImage               string
-	ServiceAccount              *corev1.ServiceAccount
-	Replicas                    int32
-	EnableOCPClusterMonitoring  bool
-	EnableCIDebugOutput         bool
-	PrivatePlatform             string
-	AWSPrivateCreds             string
-	AWSPrivateRegion            string
-	OIDCStorageProviderS3Config *HyperShiftOperatorOIDCProviderS3Secret
+	Namespace                      *corev1.Namespace
+	OperatorImage                  string
+	ServiceAccount                 *corev1.ServiceAccount
+	Replicas                       int32
+	EnableOCPClusterMonitoring     bool
+	EnableCIDebugOutput            bool
+	PrivatePlatform                string
+	AWSPrivateCreds                string
+	AWSPrivateRegion               string
+	OIDCBucketName                 string
+	OIDCBucketRegion               string
+	OIDCStorageProviderS3Secret    *corev1.Secret
+	OIDCStorageProviderS3SecretKey string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -128,12 +141,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			},
 		},
 	}
-
-	if o.OIDCStorageProviderS3Config != nil {
+	if len(o.OIDCBucketName) > 0 && len(o.OIDCBucketRegion) > 0 && len(o.OIDCStorageProviderS3SecretKey) > 0 &&
+		o.OIDCStorageProviderS3Secret != nil && len(o.OIDCStorageProviderS3Secret.Name) > 0 {
 		args = append(args,
-			"--oidc-storage-provider-s3-bucket-name=$(MY_OIDC_BUCKET)",
-			"--oidc-storage-provider-s3-region=$(MY_OIDC_REGION)",
-			"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+awsCredsSecretKey,
+			"--oidc-storage-provider-s3-bucket-name="+o.OIDCBucketName,
+			"--oidc-storage-provider-s3-region="+o.OIDCBucketRegion,
+			"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+o.OIDCStorageProviderS3SecretKey,
 		)
 		oidcVolumeMount = []corev1.VolumeMount{
 			{
@@ -146,33 +159,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				Name: "oidc-storage-provider-s3-creds",
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName: oidcProviderS3CredsSecretName,
+						SecretName: o.OIDCStorageProviderS3Secret.Name,
 					},
 				},
 			},
 		}
-		envVars = append(envVars,
-			corev1.EnvVar{
-				Name: "MY_OIDC_BUCKET",
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: oidcProviderS3CredsSecretName},
-						Key:                  oidcProviderS3SecretBucketKey,
-					},
-				},
-			},
-			corev1.EnvVar{
-				Name: "MY_OIDC_REGION",
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: oidcProviderS3CredsSecretName},
-						Key:                  oidcProviderS3SecretRegionKey,
-					},
-				},
-			},
-		)
 	}
-
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -244,6 +236,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									Name:          "metrics",
 									ContainerPort: 9000,
 									Protocol:      corev1.ProtocolTCP,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("150Mi"),
+									corev1.ResourceCPU:    resource.MustParse("10m"),
 								},
 							},
 							VolumeMounts: oidcVolumeMount,
@@ -571,7 +569,7 @@ func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass
 			APIVersion: schedulingv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hypershift-control-plane",
+			Name: DefaultPriorityClass,
 		},
 		Value:         100000000,
 		GlobalDefault: false,
@@ -588,7 +586,7 @@ func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass 
 			APIVersion: schedulingv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hypershift-api-critical",
+			Name: APICriticalPriorityClass,
 		},
 		Value:         100001000,
 		GlobalDefault: false,
@@ -605,7 +603,7 @@ func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
 			APIVersion: schedulingv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hypershift-etcd",
+			Name: EtcdPriorityClass,
 		},
 		Value:         100002000,
 		GlobalDefault: false,
@@ -728,19 +726,218 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 	return rule
 }
 
-func OIDCStorageProviderS3ConfigMap(bucketName, bucketRegion string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
+type HyperShiftClientClusterRole struct{}
+
+func (o HyperShiftClientClusterRole) Build() *rbacv1.ClusterRole {
+	role := &rbacv1.ClusterRole{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "ConfigMap",
+			Kind:       "ClusterRole",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-public",
-			Name:      "oidc-storage-provider-s3-config",
+			Name: "hypershift-client",
 		},
-		Data: map[string]string{
-			"name":   bucketName,
-			"region": bucketRegion,
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{"hostedclusters", "nodepools"},
+				Verbs:     []string{"*"},
+			},
 		},
 	}
+	return role
+}
+
+type HyperShiftClientServiceAccount struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftClientServiceAccount) Build() *corev1.ServiceAccount {
+	sa := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceAccount",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "hypershift-client",
+		},
+	}
+	return sa
+}
+
+type HyperShiftClientClusterRoleBinding struct {
+	ClusterRole    *rbacv1.ClusterRole
+	ServiceAccount *corev1.ServiceAccount
+	GroupName      string
+}
+
+func (o HyperShiftClientClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
+	binding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-client",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     o.ClusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      o.ServiceAccount.Name,
+				Namespace: o.ServiceAccount.Namespace,
+			},
+			{
+				Kind:     "Group",
+				APIGroup: "rbac.authorization.k8s.io",
+				Name:     o.GroupName,
+			},
+		},
+	}
+	return binding
+}
+
+type HyperShiftReaderClusterRole struct{}
+
+func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
+	role := &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRole",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-readers",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"config.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"apiextensions.k8s.io"},
+				Resources: []string{"customresourcedefinitions"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"networking.k8s.io"},
+				Resources: []string{"networkpolicies"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{
+					"bootstrap.cluster.x-k8s.io",
+					"controlplane.cluster.x-k8s.io",
+					"infrastructure.cluster.x-k8s.io",
+					"machines.cluster.x-k8s.io",
+					"exp.infrastructure.cluster.x-k8s.io",
+					"addons.cluster.x-k8s.io",
+					"exp.cluster.x-k8s.io",
+					"cluster.x-k8s.io",
+				},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"operator.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"security.openshift.io"},
+				Resources: []string{"securitycontextconstraints"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"rbac.authorization.k8s.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"events",
+					"configmaps",
+					"pods",
+					"pods/log",
+					"nodes",
+					"namespaces",
+					"serviceaccounts",
+					"services",
+				},
+				Verbs: []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"apps"},
+				Resources: []string{"deployments"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"etcd.database.coreos.com"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"machine.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"monitoring.coreos.com"},
+				Resources: []string{"podmonitors"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+		},
+	}
+	return role
+}
+
+type HyperShiftReaderClusterRoleBinding struct {
+	ClusterRole *rbacv1.ClusterRole
+	GroupName   string
+}
+
+func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
+	binding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift-readers",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     o.ClusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:     "Group",
+				APIGroup: "rbac.authorization.k8s.io",
+				Name:     o.GroupName,
+			},
+		},
+	}
+	return binding
 }

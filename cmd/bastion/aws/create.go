@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -59,16 +60,16 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
-			log.Error(err, "Invalid arguments")
+			log.Log.Error(err, "Invalid arguments")
 			cmd.Usage()
 			return nil
 		}
 
 		if instanceID, publicIP, err := opts.Run(cmd.Context()); err != nil {
-			log.Error(err, "Failed to create bastion")
+			log.Log.Error(err, "Failed to create bastion")
 			return err
 		} else {
-			log.Info("Successfully created bastion", "id", instanceID, "publicIP", publicIP)
+			log.Log.Info("Successfully created bastion", "id", instanceID, "publicIP", publicIP)
 		}
 		return nil
 	}
@@ -101,7 +102,10 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 
 	if len(o.Name) > 0 {
 		// Find HostedCluster and get AWS creds
-		c := util.GetClientOrDie()
+		c, err := util.GetClient()
+		if err != nil {
+			return "", "", err
+		}
 
 		var hostedCluster hyperv1.HostedCluster
 		if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
@@ -113,7 +117,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 
 		infraID = hostedCluster.Spec.InfraID
 		region = hostedCluster.Spec.Platform.AWS.Region
-		log.Info("Found hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "infraID", infraID, "region", region)
+		log.Log.Info("Found hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "infraID", infraID, "region", region)
 
 		if len(o.SSHKeyFile) == 0 {
 			if len(hostedCluster.Spec.SSHKey.Name) == 0 {
@@ -139,8 +143,8 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 		}
 	}
 
-	awsSession := awsutil.NewSession("cli-create-bastion")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsSession := awsutil.NewSession("cli-create-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 
 	// Ensure security group exists
@@ -235,9 +239,9 @@ func ensureBastionSecurityGroup(ctx context.Context, ec2Client *ec2.EC2, infraID
 			return "", fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(result.GroupId))
 		}
 		sg = sgResult.SecurityGroups[0]
-		log.Info("Created security group", "name", name, "id", aws.StringValue(sg.GroupId))
+		log.Log.Info("Created security group", "name", name, "id", aws.StringValue(sg.GroupId))
 	} else {
-		log.Info("Found existing security group", "name", aws.StringValue(sg.GroupName), "id", aws.StringValue(sg.GroupId))
+		log.Log.Info("Found existing security group", "name", aws.StringValue(sg.GroupName), "id", aws.StringValue(sg.GroupId))
 	}
 
 	permission := &ec2.IpPermission{
@@ -325,7 +329,7 @@ func ensureBastionKeyPair(ctx context.Context, ec2Client *ec2.EC2, infraID strin
 		return fmt.Errorf("failed to check for existing keypair: %w", err)
 	}
 	if keyPairID != "" {
-		log.Info("Found existing key pair", "id", keyPairID, "name", keyPairName(infraID))
+		log.Log.Info("Found existing key pair", "id", keyPairID, "name", keyPairName(infraID))
 		return nil
 	}
 	kpCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -352,7 +356,7 @@ func ensureBastionKeyPair(ctx context.Context, ec2Client *ec2.EC2, infraID strin
 	if err != nil {
 		return fmt.Errorf("failed to import keypair: %w", err)
 	}
-	log.Info("Created key pair", "id", aws.StringValue(result.KeyPairId), "name", aws.StringValue(result.KeyName))
+	log.Log.Info("Created key pair", "id", aws.StringValue(result.KeyPairId), "name", aws.StringValue(result.KeyName))
 	return nil
 }
 
@@ -384,7 +388,7 @@ func runEC2BastionInstance(ctx context.Context, ec2Client *ec2.EC2, sgID, infraI
 		return "", fmt.Errorf("cannot check for existing instances: %w", err)
 	}
 	if len(instanceID) > 0 {
-		log.Info("Found existing instance", "id", instanceID)
+		log.Log.Info("Found existing instance", "id", instanceID)
 		return instanceID, nil
 	}
 
@@ -434,7 +438,7 @@ func runEC2BastionInstance(ctx context.Context, ec2Client *ec2.EC2, sgID, infraI
 	}
 	for _, instance := range result.Instances {
 		instanceID := aws.StringValue(instance.InstanceId)
-		log.Info("Created ec2 instance", "id", instanceID, "name", instanceName(infraID))
+		log.Log.Info("Created ec2 instance", "id", instanceID, "name", instanceName(infraID))
 		return instanceID, nil
 	}
 	return "", fmt.Errorf("no instances were created")

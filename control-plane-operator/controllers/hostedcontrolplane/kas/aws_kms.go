@@ -3,15 +3,17 @@ package kas
 import (
 	"bytes"
 	"fmt"
+	"hash/fnv"
+	"path"
+	"time"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/util"
-	"hash/fnv"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apiserver/pkg/apis/config/v1"
 	"k8s.io/utils/pointer"
-	"time"
 )
 
 const (
@@ -28,12 +30,18 @@ var (
 			kasVolumeKMSSocket().Name: "/var/run",
 		},
 		kasContainerAWSKMSActive().Name: {
-			kasVolumeKMSSocket().Name:         "/var/run",
-			kasVolumeAWSKMSCredentials().Name: "/.aws",
+			kasVolumeKMSSocket().Name:                "/var/run",
+			kasVolumeAWSKMSCredentials().Name:        "/aws",
+			kasVolumeAWSKMSCloudProviderToken().Name: "/var/run/secrets/openshift/serviceaccount",
 		},
 		kasContainerAWSKMSBackup().Name: {
-			kasVolumeKMSSocket().Name:         "/var/run",
-			kasVolumeAWSKMSCredentials().Name: "/.aws",
+			kasVolumeKMSSocket().Name:                "/var/run",
+			kasVolumeAWSKMSCredentials().Name:        "/aws",
+			kasVolumeAWSKMSCloudProviderToken().Name: "/var/run/secrets/openshift/serviceaccount",
+		},
+		kasContainerAWSKMSTokenMinter().Name: {
+			kasVolumeLocalhostKubeconfig().Name:      "/var/secrets/localhost-kubeconfig",
+			kasVolumeAWSKMSCloudProviderToken().Name: "/var/run/secrets/openshift/serviceaccount",
 		},
 	}
 
@@ -97,10 +105,11 @@ func generateAWSKMSEncryptionConfig(activeKey hyperv1.AWSKMSKeyEntry, backupKey 
 	return bufferInstance.Bytes(), nil
 }
 
-func applyAWSKMSConfig(podSpec *corev1.PodSpec, activeKey hyperv1.AWSKMSKeyEntry, backupKey *hyperv1.AWSKMSKeyEntry, awsAuth hyperv1.AWSKMSAuthSpec, awsRegion string, kmsImage string) error {
+func applyAWSKMSConfig(podSpec *corev1.PodSpec, activeKey hyperv1.AWSKMSKeyEntry, backupKey *hyperv1.AWSKMSKeyEntry, awsAuth hyperv1.AWSKMSAuthSpec, awsRegion string, kmsImage, tokenMinterImage string) error {
 	if len(activeKey.ARN) == 0 || len(kmsImage) == 0 {
 		return fmt.Errorf("aws kms active key metadata is nil")
 	}
+	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSTokenMinter(), buildKASContainerAWSKMSTokenMinter(tokenMinterImage)))
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSActive(), buildKASContainerAWSKMS(kmsImage, activeKey.ARN, awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(kasContainerMain().Name, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName), activeAWSKMSHealthPort)))
 	if backupKey != nil && len(backupKey.ARN) > 0 {
 		podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(kmsImage, activeKey.ARN, awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(kasContainerMain().Name, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
@@ -108,7 +117,11 @@ func applyAWSKMSConfig(podSpec *corev1.PodSpec, activeKey hyperv1.AWSKMSKeyEntry
 	if len(awsAuth.Credentials.Name) == 0 {
 		return fmt.Errorf("aws kms credential data not specified")
 	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeAWSKMSCredentials(), buildVolumeAWSKMSCredentials(awsAuth.Credentials.Name)), util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket))
+	podSpec.Volumes = append(podSpec.Volumes,
+		util.BuildVolume(kasVolumeAWSKMSCredentials(), buildVolumeAWSKMSCredentials(awsAuth.Credentials.Name)),
+		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
+		util.BuildVolume(kasVolumeAWSKMSCloudProviderToken(), buildKASVolumeAWSKMSCloudProviderToken),
+	)
 	var container *corev1.Container
 	for i, c := range podSpec.Containers {
 		if c.Name == kasContainerMain().Name {
@@ -136,6 +149,12 @@ func kasContainerAWSKMSBackup() *corev1.Container {
 	}
 }
 
+func kasContainerAWSKMSTokenMinter() *corev1.Container {
+	return &corev1.Container{
+		Name: "aws-kms-token-minter",
+	}
+}
+
 func buildKASContainerAWSKMS(image string, arn string, region string, unixSocketPath string, healthPort int32) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
@@ -147,8 +166,20 @@ func buildKASContainerAWSKMS(image string, arn string, region string, unixSocket
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
-		c.Command = []string{
-			"/aws-encryption-provider",
+		c.Env = append(c.Env,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeAWSKMSCredentials().Name), hyperv1.AWSCredentialsFileSecretKey),
+			},
+			corev1.EnvVar{
+				Name:  "AWS_SDK_LOAD_CONFIG",
+				Value: "true",
+			},
+			corev1.EnvVar{
+				Name:  "AWS_EC2_METADATA_DISABLED",
+				Value: "true",
+			})
+		c.Args = []string{
 			fmt.Sprintf("--key=%s", arn),
 			fmt.Sprintf("--region=%s", region),
 			fmt.Sprintf("--listen=%s", unixSocketPath),
@@ -169,4 +200,30 @@ func buildVolumeAWSKMSCredentials(secretName string) func(*corev1.Volume) {
 		v.Secret = &corev1.SecretVolumeSource{}
 		v.Secret.SecretName = secretName
 	}
+}
+
+func buildKASContainerAWSKMSTokenMinter(image string) func(*corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.ImagePullPolicy = corev1.PullAlways
+		c.Command = []string{"/usr/bin/token-minter"}
+		c.Args = []string{
+			"-service-account-namespace=kube-system",
+			"-service-account-name=kms-provider",
+			"-token-audience=openshift",
+			fmt.Sprintf("-token-file=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeAWSKMSCloudProviderToken().Name), "token")),
+			fmt.Sprintf("-kubeconfig=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey)),
+		}
+		c.VolumeMounts = awsKMSVolumeMounts.ContainerMounts(c.Name)
+	}
+}
+
+func kasVolumeAWSKMSCloudProviderToken() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "aws-kms-token",
+	}
+}
+
+func buildKASVolumeAWSKMSCloudProviderToken(v *corev1.Volume) {
+	v.EmptyDir = &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}
 }

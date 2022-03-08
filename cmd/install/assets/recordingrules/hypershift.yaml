@@ -3,43 +3,43 @@ groups:
   interval: "30s"
   rules:
   - record: hypershift:controlplane:component_api_requests_total
-    expr: sum by (app, namespace, code, method) (
+    expr: sum by (app, namespace, code, method, pod) (
             sum(rest_client_requests_total) by (pod, namespace, code, method)
-          * on (pod) group_left(app)
+          * on (pod, namespace) group_left(app)
             label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
           )
 
   - record: hypershift:controlplane:component_memory_usage
-    expr: sum by (app, namespace) (
+    expr: sum by (app, namespace, pod) (
             sum(container_memory_usage_bytes{container!="POD",container!=""}) by (pod, namespace)
-          * on (pod) group_left(app)
+          * on (pod, namespace) group_left(app)
             label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
           )
 
   - record: hypershift:controlplane:component_cpu_usage_seconds
-    expr: avg by (app, namespace) (
+    expr: avg by (app, namespace, pod) (
             sum(
               rate(
                 container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
               )
             ) by (pod, namespace)
-          * on (pod) group_left(app)
+          * on (pod, namespace) group_left(app)
             label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
           )
           /
-          count by (app, namespace) (
+          count by (app, namespace, pod) (
             sum(
               rate(
                 container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
               )
             ) by (pod, namespace)
-          * on (pod) group_left(app)
+          * on (pod, namespace) group_left(app)
             label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
           )
 
   - record: hypershift:operator:component_api_requests_total
     expr: sum by (app, namespace, code, method) (
             sum(rest_client_requests_total) by (pod, namespace, code, method)
-          * on (pod) group_left(app)
+          * on (pod, namespace) group_left(app)
             label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""}, "app", "$1", "label_app", "(.*)")
           )

@@ -36,6 +36,13 @@ var (
 
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, featureGates []string, policy configv1.ConfigMapNameReference, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements for main scheduler container
+	mainContainer := util.FindContainer(schedulerContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		config.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
 	deployment.Spec = appsv1.DeploymentSpec{

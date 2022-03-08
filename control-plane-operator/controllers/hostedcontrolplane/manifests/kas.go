@@ -3,9 +3,11 @@ package manifests
 import (
 	"fmt"
 
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
+
+	// TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -129,15 +131,6 @@ func KASConfig(controlPlaneNamespace string) *corev1.ConfigMap {
 	}
 }
 
-func KASService(controlPlaneNamespace string) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kube-apiserver",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
 func KASOAuthMetadata(controlPlaneNamespace string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -152,6 +145,15 @@ func KASAuthenticationTokenWebhookConfigSecret(controlPlaneNamespace string) *co
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kas-authentication-token-webhook-config",
 			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
+func KASServiceMonitor(ns string) *prometheusoperatorv1.ServiceMonitor {
+	return &prometheusoperatorv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: ns,
 		},
 	}
 }

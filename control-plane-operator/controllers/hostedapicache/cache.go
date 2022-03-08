@@ -13,10 +13,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
@@ -62,12 +65,11 @@ type hostedAPICache struct {
 // newHostedAPICache returns a new hostedAPICache. The context passed here is
 // used to drive the cache itself and should be used for graceful termination
 // of the process for an overall shutdown.
-func newHostedAPICache(ctx context.Context, log logr.Logger, scheme *runtime.Scheme, mapper meta.RESTMapper) *hostedAPICache {
+func newHostedAPICache(ctx context.Context, log logr.Logger, scheme *runtime.Scheme) *hostedAPICache {
 	return &hostedAPICache{
 		ctx:    ctx,
 		log:    log,
 		scheme: scheme,
-		mapper: mapper,
 		cache:  nil,
 		events: make(chan event.GenericEvent),
 	}
@@ -122,14 +124,23 @@ func (h *hostedAPICache) update(requestCtx context.Context, triggerObj client.Ob
 	if err != nil {
 		return fmt.Errorf("invalid kube config: %w", err)
 	}
-	newCache, err := cache.New(restConfig, cache.Options{
-		Scheme: h.scheme,
-		Mapper: h.mapper,
+	guestCluster, err := cluster.New(restConfig, func(opt *cluster.Options) {
+		opt.Scheme = h.scheme
+		opt.MapperProvider = func(c *rest.Config) (meta.RESTMapper, error) {
+			var err error
+			if h.mapper == nil {
+				h.mapper, err = apiutil.NewDynamicRESTMapper(c)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return h.mapper, nil
+		}
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create cache: %w", err)
+		return fmt.Errorf("failed to create controller-runtime cluster for guest: %w", err)
 	}
-
+	newCache := guestCluster.GetCache()
 	// Initialize event handlers for the new cache
 	err = func(c cache.Cache) error {
 		informer, err := c.GetInformerForKind(requestCtx, schema.GroupVersionKind{

@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/infraid"
+	"github.com/spf13/cobra"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -36,12 +36,14 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Path to an AWS credentials file (required)")
 	cmd.Flags().StringVar(&opts.AWSPlatform.IAMJSON, "iam-json", opts.AWSPlatform.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Region to use for AWS infrastructure.")
+	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availablity zones in which NodePools will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "Instance type for AWS instances.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.RootVolumeType, "root-volume-type", opts.AWSPlatform.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeIOPS, "root-volume-iops", opts.AWSPlatform.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeSize, "root-volume-size", opts.AWSPlatform.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.AdditionalTags, "additional-tags", opts.AWSPlatform.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().StringVar(&opts.AWSPlatform.EndpointAccess, "endpoint-access", opts.AWSPlatform.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
+	cmd.Flags().StringVar(&opts.AWSPlatform.EtcdKMSKeyARN, "kms-key-arn", opts.AWSPlatform.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 
 	cmd.MarkFlagRequired("aws-creds")
 
@@ -54,7 +56,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}
 
 		if err := CreateCluster(ctx, opts); err != nil {
-			log.Error(err, "Failed to create cluster")
+			log.Log.Error(err, "Failed to create cluster")
 			return err
 		}
 		return nil
@@ -71,7 +73,10 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 }
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
-	client := util.GetClientOrDie()
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 	infraID := opts.InfraID
 
 	// Load or create infrastructure for the cluster
@@ -95,7 +100,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 	if infra == nil {
 		if len(infraID) == 0 {
-			infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
+			infraID = infraid.New(opts.Name)
 		}
 		opt := awsinfra.CreateInfraOptions{
 			Region:             opts.AWSPlatform.Region,
@@ -104,6 +109,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
+			Zones:              opts.AWSPlatform.Zones,
 		}
 		infra, err = opt.CreateInfra(ctx)
 		if err != nil {
@@ -131,6 +137,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			PrivateZoneID:      infra.PrivateZoneID,
 			PublicZoneID:       infra.PublicZoneID,
 			LocalZoneID:        infra.LocalZoneID,
+			KMSKeyARN:          opts.AWSPlatform.EtcdKMSKeyARN,
 		}
 		iamInfo, err = opt.CreateIAM(ctx, client)
 		if err != nil {
@@ -153,12 +160,17 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.PublicZoneID = infra.PublicZoneID
 	exampleOptions.InfraID = infraID
-
+	var zones []apifixtures.ExampleAWSOptionsZones
+	for _, outputZone := range infra.Zones {
+		zones = append(zones, apifixtures.ExampleAWSOptionsZones{
+			Name:     outputZone.Name,
+			SubnetID: &outputZone.SubnetID,
+		})
+	}
 	exampleOptions.AWS = &apifixtures.ExampleAWSOptions{
 		Region:                      infra.Region,
-		Zone:                        infra.Zone,
+		Zones:                       zones,
 		VPCID:                       infra.VPCID,
-		SubnetID:                    infra.PrivateSubnetID,
 		SecurityGroupID:             infra.SecurityGroupID,
 		InstanceProfile:             iamInfo.ProfileName,
 		InstanceType:                opts.AWSPlatform.InstanceType,
@@ -166,6 +178,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		KubeCloudControllerRoleARN:  iamInfo.KubeCloudControllerRoleARN,
 		NodePoolManagementRoleARN:   iamInfo.NodePoolManagementRoleARN,
 		ControlPlaneOperatorRoleARN: iamInfo.ControlPlaneOperatorRoleARN,
+		KMSProviderRoleARN:          iamInfo.KMSProviderRoleARN,
+		KMSKeyARN:                   iamInfo.KMSKeyARN,
 		RootVolumeSize:              opts.AWSPlatform.RootVolumeSize,
 		RootVolumeType:              opts.AWSPlatform.RootVolumeType,
 		RootVolumeIOPS:              opts.AWSPlatform.RootVolumeIOPS,

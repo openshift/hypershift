@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
@@ -15,6 +16,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
@@ -23,6 +25,7 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
@@ -37,6 +40,8 @@ type DumpOptions struct {
 	// AgentNamespace is the namespace where Agents
 	// are located, when using the agent platform.
 	AgentNamespace string
+
+	DumpGuestCluster bool
 }
 
 func NewDumpCommand() *cobra.Command {
@@ -57,12 +62,13 @@ func NewDumpCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
+	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
 
 	cmd.MarkFlagRequired("artifact-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := DumpCluster(cmd.Context(), opts); err != nil {
-			log.Error(err, "Error")
+			log.Log.Error(err, "Error")
 			return err
 		}
 		return nil
@@ -75,11 +81,17 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
 	}
-	cfg := util.GetConfigOrDie()
-	c := util.GetClientOrDie()
+	cfg, err := util.GetConfig()
+	if err != nil {
+		return err
+	}
+	c, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
-		log.Error(err, "Cannot list nodepools")
+		log.Log.Error(err, "Cannot list nodepools")
 	}
 	nodePools := []*hyperv1.NodePool{}
 	for i := range allNodePools.Items {
@@ -98,6 +110,8 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		objectNames = append(objectNames, typedName(&hyperv1.NodePool{}, nodePool.Name))
 	}
 	cmd.WithNamespace(opts.Namespace).Run(ctx, objectNames...)
+
+	cmd.Run(ctx, objectType(&corev1.Node{}))
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
 
@@ -141,15 +155,58 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	podList := &corev1.PodList{}
 	if err = c.List(ctx, podList, client.InNamespace(controlPlaneNamespace)); err != nil {
-		log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
+		log.Log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
 	}
 	hypershiftNSPodList := &corev1.PodList{}
 	if err := c.List(ctx, hypershiftNSPodList, client.InNamespace("hypershift")); err != nil {
-		log.Error(err, "Failed to list pods in hypershift namespace")
+		log.Log.Error(err, "Failed to list pods in hypershift namespace")
 	}
 	podList.Items = append(podList.Items, hypershiftNSPodList.Items...)
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	outputLogs(ctx, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
+
+	if opts.DumpGuestCluster {
+		start := time.Now()
+		hcluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
+			Namespace: opts.Namespace,
+			Name:      opts.Name,
+		}}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(hcluster), hcluster); err != nil {
+			return fmt.Errorf("failed to get hostedcluster %s/%s: %w", opts.Namespace, opts.Name, err)
+		}
+		if hcluster.Status.KubeConfig == nil {
+			log.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
+			return nil
+		}
+		kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcluster.Namespace,
+			Name:      hcluster.Status.KubeConfig.Name,
+		}}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
+			return fmt.Errorf("failed to get guest cluster kubeconfig secret: %w", err)
+		}
+		kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
+		if err != nil {
+			return fmt.Errorf("failed to create tempfile for kubeconfig: %w", err)
+		}
+		defer func() {
+			if err := kubeconfigFile.Close(); err != nil {
+				log.Log.Error(err, "Failed to close kubeconfig file")
+			}
+			if err := os.Remove(kubeconfigFile.Name()); err != nil {
+				log.Log.Error(err, "Failed to cleanup temporary kubeconfig")
+			}
+		}()
+		if _, err := kubeconfigFile.Write(kubeconfigSecret.Data["kubeconfig"]); err != nil {
+			return fmt.Errorf("failed to write kubeconfig data: %w", err)
+		}
+		target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
+		log.Log.Info("Dumping guestcluster", "target", target)
+		if err := DumpGuestCluster(ctx, kubeconfigFile.Name(), target); err != nil {
+			return fmt.Errorf("failed to dump guest cluster: %w", err)
+		}
+		log.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
+	}
 	return nil
 }
 
@@ -212,7 +269,7 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
+		log.Log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
 	}
 }
 
@@ -251,7 +308,7 @@ func outputLogs(ctx context.Context, c kubeclient.Interface, artifactDir string,
 	for _, pod := range podList.Items {
 		dir := filepath.Join(artifactDir, "namespaces", pod.Namespace, "core", "pods", "logs")
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Error(err, "Cannot create directory", "directory", dir)
+			log.Log.Error(err, "Cannot create directory", "directory", dir)
 			continue
 		}
 		for _, container := range pod.Spec.InitContainers {
@@ -273,7 +330,7 @@ func outputLog(ctx context.Context, fileName string, req *restclient.Request, sk
 	b, err := req.DoRaw(ctx)
 	if err != nil {
 		if !skipLogErr {
-			log.Info("Failed to get pod log", "req", req.URL().String(), "error", err.Error())
+			log.Log.Info("Failed to get pod log", "req", req.URL().String(), "error", err.Error())
 		}
 		return
 	}
@@ -281,6 +338,6 @@ func outputLog(ctx context.Context, fileName string, req *restclient.Request, sk
 		c(fileName, b)
 	}
 	if err := ioutil.WriteFile(fileName, b, 0644); err != nil {
-		log.Error(err, "Failed to write file", "file", fileName)
+		log.Log.Error(err, "Failed to write file", "file", fileName)
 	}
 }

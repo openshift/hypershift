@@ -3,11 +3,10 @@ package aws
 import (
 	"context"
 	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/types"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -42,13 +41,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeIOPS, "root-volume-iops", platformOpts.RootVolumeIOPS, "The iops of the root volume for machines in the NodePool")
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := coreOpts.CreateNodePool(cmd.Context(), platformOpts); err != nil {
-			log.Error(err, "Failed to create nodepool")
-			return err
-		}
-		return nil
-	}
+	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
 	return cmd
 }
@@ -65,9 +58,19 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 		}
 	}
 	if len(o.SecurityGroupID) == 0 {
-		defaultNodePool := &hyperv1.NodePool{}
-		if err := client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Name}, defaultNodePool); err != nil {
+		nodePoolList := &hyperv1.NodePoolList{}
+		if err := client.List(ctx, nodePoolList, &crclient.ListOptions{Namespace: hcluster.Namespace}); err != nil {
 			return fmt.Errorf("security group ID was not specified and cannot be determined from default nodepool: %v", err)
+		}
+		var defaultNodePool *hyperv1.NodePool
+		for i, nodePool := range nodePoolList.Items {
+			if nodePool.Spec.ClusterName == hcluster.Name {
+				defaultNodePool = &nodePoolList.Items[i]
+				break
+			}
+		}
+		if defaultNodePool == nil {
+			return fmt.Errorf("--securitygroup-id flag is required when there are no existing nodepools")
 		}
 		if defaultNodePool.Spec.Platform.AWS == nil || len(defaultNodePool.Spec.Platform.AWS.SecurityGroups) == 0 ||
 			defaultNodePool.Spec.Platform.AWS.SecurityGroups[0].ID == nil {

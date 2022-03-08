@@ -10,7 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 )
 
-func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32) error {
+func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool) error {
 	ingressController.Spec.Domain = ingressSubdomain
 	ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 		Type: operatorv1.LoadBalancerServiceStrategyType,
@@ -27,11 +27,20 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 			Name: manifests.IngressDefaultIngressControllerCert().Name,
 		}
 	case hyperv1.IBMCloudPlatform:
-		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
-			Type: operatorv1.LoadBalancerServiceStrategyType,
-			LoadBalancer: &operatorv1.LoadBalancerStrategy{
-				Scope: operatorv1.ExternalLoadBalancer,
-			},
+		if isIBMCloudUPI {
+			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+				Type: operatorv1.NodePortServiceStrategyType,
+				NodePort: &operatorv1.NodePortStrategy{
+					Protocol: operatorv1.TCPProtocol,
+				},
+			}
+		} else {
+			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+				Type: operatorv1.LoadBalancerServiceStrategyType,
+				LoadBalancer: &operatorv1.LoadBalancerStrategy{
+					Scope: operatorv1.ExternalLoadBalancer,
+				},
+			}
 		}
 		ingressController.Spec.NodePlacement = &operatorv1.NodePlacement{
 			Tolerations: []corev1.Toleration{

@@ -2,13 +2,12 @@ package none
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spf13/cobra"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -33,7 +32,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}
 
 		if err := CreateCluster(ctx, opts); err != nil {
-			log.Error(err, "Failed to create cluster")
+			log.Log.Error(err, "Failed to create cluster")
 			return err
 		}
 		return nil
@@ -57,9 +56,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	infraID := opts.InfraID
-	if len(infraID) == 0 {
-		infraID = fmt.Sprintf("%s-%s", opts.Name, utilrand.String(5))
-	}
 	exampleOptions.InfraID = infraID
 	exampleOptions.BaseDomain = opts.BaseDomain
 	if exampleOptions.BaseDomain == "" {

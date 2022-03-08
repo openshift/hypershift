@@ -10,6 +10,7 @@ import (
 
 	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -45,6 +46,12 @@ func openShiftOAuthAPIServerLabels() map[string]string {
 
 func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, p *OAuthDeploymentParams, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements for main oauth apiserver container
+	mainContainer := util.FindContainer(oauthContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		p.DeploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
 
 	maxUnavailable := intstr.FromInt(1)
 	maxSurge := intstr.FromInt(3)
@@ -120,6 +127,12 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container)
 		}
 		c.VolumeMounts = oauthVolumeMounts.ContainerMounts(c.Name)
 		c.WorkingDir = oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name)
+		c.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		}
 	}
 }
 

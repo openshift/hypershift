@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	"crypto/rand"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,7 +22,7 @@ type ExampleResources struct {
 	Resources  []crclient.Object
 	SSHKey     *corev1.Secret
 	Cluster    *hyperv1.HostedCluster
-	NodePool   *hyperv1.NodePool
+	NodePools  []*hyperv1.NodePool
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
@@ -34,8 +35,8 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
 	}
-	if o.NodePool != nil {
-		objects = append(objects, o.NodePool)
+	for _, nodePool := range o.NodePools {
+		objects = append(objects, nodePool)
 	}
 	return objects
 }
@@ -64,6 +65,7 @@ type ExampleOptions struct {
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
 	Kubevirt                         *ExampleKubevirtOptions
+	Azure                            *ExampleAzureOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
@@ -79,17 +81,22 @@ type ExampleAgentOptions struct {
 }
 
 type ExampleKubevirtOptions struct {
-	APIServerAddress string
-	Memory           string
-	Cores            uint32
-	Image            string
+	ServicePublishingStrategy string
+	APIServerAddress          string
+	Memory                    string
+	Cores                     uint32
+	Image                     string
+}
+
+type ExampleAWSOptionsZones struct {
+	Name     string
+	SubnetID *string
 }
 
 type ExampleAWSOptions struct {
 	Region                      string
-	Zone                        string
+	Zones                       []ExampleAWSOptionsZones
 	VPCID                       string
-	SubnetID                    string
 	SecurityGroupID             string
 	InstanceProfile             string
 	InstanceType                string
@@ -97,11 +104,36 @@ type ExampleAWSOptions struct {
 	KubeCloudControllerRoleARN  string
 	NodePoolManagementRoleARN   string
 	ControlPlaneOperatorRoleARN string
+	KMSProviderRoleARN          string
+	KMSKeyARN                   string
 	RootVolumeSize              int64
 	RootVolumeType              string
 	RootVolumeIOPS              int64
 	ResourceTags                []hyperv1.AWSResourceTag
 	EndpointAccess              string
+}
+
+type ExampleAzureOptions struct {
+	Creds             AzureCreds
+	Location          string
+	ResourceGroupName string
+	VnetName          string
+	VnetID            string
+	SubnetName        string
+	BootImageID       string
+	MachineIdentityID string
+	InstanceType      string
+	SecurityGroupName string
+}
+
+// AzureCreds is the fileformat we expect for credentials. It is copied from the installer
+// to allow using the same crededentials file for both:
+// https://github.com/openshift/installer/blob/8fca1ade5b096d9b2cd312c4599881d099439288/pkg/asset/installconfig/azure/session.go#L36
+type AzureCreds struct {
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	ClientID       string `json:"clientId,omitempty"`
+	ClientSecret   string `json:"clientSecret,omitempty"`
+	TenantID       string `json:"tenantId,omitempty"`
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -154,6 +186,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	var platformSpec hyperv1.PlatformSpec
 	var resources []crclient.Object
 	var services []hyperv1.ServicePublishingStrategyMapping
+	var secretEncryption *hyperv1.SecretEncryptionSpec
 
 	switch {
 	case o.AWS != nil:
@@ -175,10 +208,16 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
+
+		var kmsCredsSecret *corev1.Secret
+		if len(o.AWS.KMSProviderRoleARN) > 0 {
+			kmsCredsSecret = buildAWSCreds(o.Name+"-kms-creds", o.AWS.KMSProviderRoleARN)
+		}
 		awsResources := &ExampleAWSResources{
 			buildAWSCreds(o.Name+"-cloud-ctrl-creds", o.AWS.KubeCloudControllerRoleARN),
 			buildAWSCreds(o.Name+"-node-mgmt-creds", o.AWS.NodePoolManagementRoleARN),
 			buildAWSCreds(o.Name+"-cpo-creds", o.AWS.ControlPlaneOperatorRoleARN),
+			kmsCredsSecret,
 		}
 		resources = awsResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
@@ -189,9 +228,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
 					VPC: o.AWS.VPCID,
 					Subnet: &hyperv1.AWSResourceReference{
-						ID: &o.AWS.SubnetID,
+						ID: o.AWS.Zones[0].SubnetID,
 					},
-					Zone: o.AWS.Zone,
+					Zone: o.AWS.Zones[0].Name,
 				},
 				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: awsResources.KubeCloudControllerAWSCreds.Name},
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: awsResources.NodePoolManagementAWSCreds.Name},
@@ -200,6 +239,27 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				EndpointAccess:            hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess),
 			},
 		}
+
+		if kmsCredsSecret != nil {
+			secretEncryption = &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.KMS,
+				KMS: &hyperv1.KMSSpec{
+					Provider: hyperv1.AWS,
+					AWS: &hyperv1.AWSKMSSpec{
+						Region: o.AWS.Region,
+						ActiveKey: hyperv1.AWSKMSKeyEntry{
+							ARN: o.AWS.KMSKeyARN,
+						},
+						Auth: hyperv1.AWSKMSAuthSpec{
+							Credentials: corev1.LocalObjectReference{
+								Name: awsResources.KMSProviderAWSCreds.Name,
+							},
+						},
+					},
+				},
+			}
+		}
+
 		services = []hyperv1.ServicePublishingStrategyMapping{
 			{
 				Service: hyperv1.APIServer,
@@ -249,10 +309,65 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.KubevirtPlatform,
 		}
-		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
+		switch o.Kubevirt.ServicePublishingStrategy {
+		case "NodePort":
+			services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
+		case "Ingress":
+			services = o.getIngressServicePublishingStrategyMapping()
+		default:
+			panic(fmt.Sprintf("service publishing type %s is not supported", o.Kubevirt.ServicePublishingStrategy))
+		}
+	case o.Azure != nil:
+		credentialSecret := &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "v1",
+				Kind:       "Secret",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      o.Name + "-cloud-credentials",
+				Namespace: namespace.Name,
+			},
+			Data: map[string][]byte{
+				"AZURE_SUBSCRIPTION_ID": []byte(o.Azure.Creds.SubscriptionID),
+				"AZURE_TENANT_ID":       []byte(o.Azure.Creds.TenantID),
+				"AZURE_CLIENT_ID":       []byte(o.Azure.Creds.ClientID),
+				"AZURE_CLIENT_SECRET":   []byte(o.Azure.Creds.ClientSecret),
+			},
+		}
+		resources = append(resources, credentialSecret)
+
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.AzurePlatform,
+			Azure: &hyperv1.AzurePlatformSpec{
+				Credentials:       corev1.LocalObjectReference{Name: credentialSecret.Name},
+				Location:          o.Azure.Location,
+				ResourceGroupName: o.Azure.ResourceGroupName,
+				VnetName:          o.Azure.VnetName,
+				VnetID:            o.Azure.VnetID,
+				SubnetName:        o.Azure.SubnetName,
+				SubscriptionID:    o.Azure.Creds.SubscriptionID,
+				MachineIdentityID: o.Azure.MachineIdentityID,
+				SecurityGroupName: o.Azure.SecurityGroupName,
+			},
+		}
+		services = o.getIngressServicePublishingStrategyMapping()
 
 	default:
 		panic("no platform specified")
+	}
+
+	// If secret encryption was not specified, default to AESCBC
+	if secretEncryption == nil {
+		encryptionSecret := o.EtcdEncryptionKeySecret()
+		resources = append(resources, encryptionSecret)
+		secretEncryption = &hyperv1.SecretEncryptionSpec{
+			Type: hyperv1.AESCBC,
+			AESCBC: &hyperv1.AESCBCSpec{
+				ActiveKey: corev1.LocalObjectReference{
+					Name: encryptionSecret.Name,
+				},
+			},
+		}
 	}
 
 	var etcdStorgageClass *string = nil
@@ -285,6 +400,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					},
 				},
 			},
+			SecretEncryption: secretEncryption,
 			Networking: hyperv1.ClusterNetworking{
 				ServiceCIDR: o.ServiceCIDR,
 				PodCIDR:     o.PodCIDR,
@@ -308,16 +424,26 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		},
 	}
 
-	var nodePool *hyperv1.NodePool
-	if o.NodePoolReplicas > -1 {
-		nodePool = &hyperv1.NodePool{
+	if o.NodePoolReplicas <= -1 {
+		return &ExampleResources{
+			Namespace:  namespace,
+			PullSecret: pullSecret,
+			Resources:  resources,
+			SSHKey:     sshKeySecret,
+			Cluster:    cluster,
+			NodePools:  []*hyperv1.NodePool{},
+		}
+	}
+
+	defaultNodePool := func(name string) *hyperv1.NodePool {
+		return &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "NodePool",
 				APIVersion: hyperv1.GroupVersion.String(),
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: namespace.Name,
-				Name:      o.Name,
+				Name:      name,
 			},
 			Spec: hyperv1.NodePoolSpec{
 				Management: hyperv1.NodePoolManagement{
@@ -334,14 +460,18 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			},
 		}
+	}
 
-		switch nodePool.Spec.Platform.Type {
-		case hyperv1.AWSPlatform:
+	var nodePools []*hyperv1.NodePool
+	switch cluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		for _, zone := range o.AWS.Zones {
+			nodePool := defaultNodePool(fmt.Sprintf("%s-%s", cluster.Name, zone.Name))
 			nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
 				InstanceType:    o.AWS.InstanceType,
 				InstanceProfile: o.AWS.InstanceProfile,
 				Subnet: &hyperv1.AWSResourceReference{
-					ID: &o.AWS.SubnetID,
+					ID: zone.SubnetID,
 				},
 				SecurityGroups: []hyperv1.AWSResourceReference{
 					{
@@ -354,47 +484,77 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					IOPS: o.AWS.RootVolumeIOPS,
 				},
 			}
-		case hyperv1.KubevirtPlatform:
-			runAlways := kubevirtv1.RunStrategyAlways
-			guestQuantity := apiresource.MustParse(o.Kubevirt.Memory)
-			nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
-				NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
-					Spec: kubevirtv1.VirtualMachineSpec{
-						RunStrategy: &runAlways,
-						Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-							Spec: kubevirtv1.VirtualMachineInstanceSpec{
-								Domain: kubevirtv1.DomainSpec{
-									CPU:    &kubevirtv1.CPU{Cores: o.Kubevirt.Cores},
-									Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
-									Devices: kubevirtv1.Devices{
-										Disks: []kubevirtv1.Disk{
-											{
-												Name: "containervolume",
-												DiskDevice: kubevirtv1.DiskDevice{
-													Disk: &kubevirtv1.DiskTarget{
-														Bus: "virtio",
-													},
+			nodePools = append(nodePools, nodePool)
+		}
+	case hyperv1.KubevirtPlatform:
+		nodePool := defaultNodePool(cluster.Name)
+		runAlways := kubevirtv1.RunStrategyAlways
+		guestQuantity := apiresource.MustParse(o.Kubevirt.Memory)
+		nodePool.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
+			NodeTemplate: &capikubevirt.VirtualMachineTemplateSpec{
+				Spec: kubevirtv1.VirtualMachineSpec{
+					RunStrategy: &runAlways,
+					Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+						Spec: kubevirtv1.VirtualMachineInstanceSpec{
+							Domain: kubevirtv1.DomainSpec{
+								CPU:    &kubevirtv1.CPU{Cores: o.Kubevirt.Cores},
+								Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
+								Devices: kubevirtv1.Devices{
+									Disks: []kubevirtv1.Disk{
+										{
+											Name: "containervolume",
+											DiskDevice: kubevirtv1.DiskDevice{
+												Disk: &kubevirtv1.DiskTarget{
+													Bus: "virtio",
 												},
 											},
 										},
 									},
-								},
-								Volumes: []kubevirtv1.Volume{
-									{
-										Name: "containervolume",
-										VolumeSource: kubevirtv1.VolumeSource{
-											ContainerDisk: &kubevirtv1.ContainerDiskSource{
-												Image: o.Kubevirt.Image,
+									Interfaces: []kubevirtv1.Interface{
+										{
+											Name: "default",
+											InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+												Bridge: &kubevirtv1.InterfaceBridge{},
 											},
 										},
+									},
+								},
+							},
+							Volumes: []kubevirtv1.Volume{
+								{
+									Name: "containervolume",
+									VolumeSource: kubevirtv1.VolumeSource{
+										ContainerDisk: &kubevirtv1.ContainerDiskSource{
+											Image: o.Kubevirt.Image,
+										},
+									},
+								},
+							},
+							Networks: []kubevirtv1.Network{
+								{
+									Name: "default",
+									NetworkSource: kubevirtv1.NetworkSource{
+										Pod: &kubevirtv1.PodNetwork{},
 									},
 								},
 							},
 						},
 					},
 				},
-			}
+			},
 		}
+		nodePools = append(nodePools, nodePool)
+	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
+		nodePools = append(nodePools, defaultNodePool(cluster.Name))
+	case hyperv1.AzurePlatform:
+		nodePool := defaultNodePool(cluster.Name)
+		nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+			VMSize:  o.Azure.InstanceType,
+			ImageID: o.Azure.BootImageID,
+		}
+		nodePools = append(nodePools, nodePool)
+	default:
+		panic("Unsupported platform")
 	}
 
 	return &ExampleResources{
@@ -403,7 +563,36 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		Resources:  resources,
 		SSHKey:     sshKeySecret,
 		Cluster:    cluster,
-		NodePool:   nodePool,
+		NodePools:  nodePools,
+	}
+}
+
+func (o ExampleOptions) getIngressServicePublishingStrategyMapping() []hyperv1.ServicePublishingStrategyMapping {
+	return []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+		{
+			Service: hyperv1.Konnectivity,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+		{
+			Service: hyperv1.Ignition,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
 	}
 }
 
@@ -444,5 +633,27 @@ func (o ExampleOptions) getServicePublishingStrategyMappingByAPIServerAddress(AP
 				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
 			},
 		},
+	}
+}
+
+func (o ExampleOptions) EtcdEncryptionKeySecret() *corev1.Secret {
+	generatedKey := make([]byte, 32)
+	_, err := rand.Read(generatedKey)
+	if err != nil {
+		panic(fmt.Sprintf("failed to generate random etcd key: %v", err))
+	}
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      o.Name + "-etcd-encryption-key",
+			Namespace: o.Namespace,
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		Data: map[string][]byte{
+			hyperv1.AESCBCKeySecretKey: generatedKey,
+		},
+		Type: corev1.SecretTypeOpaque,
 	}
 }

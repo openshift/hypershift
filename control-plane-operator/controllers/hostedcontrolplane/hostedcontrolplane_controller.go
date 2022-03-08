@@ -15,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	// TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,6 +33,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
@@ -98,7 +100,8 @@ type HostedControlPlaneReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
-	EnableCIDebugOutput bool
+	EnableCIDebugOutput   bool
+	OperateOnReleaseImage string
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -114,6 +117,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &corev1.ServiceAccount{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &policyv1beta1.PodDisruptionBudget{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
+		Watches(&source.Kind{Type: &prometheusoperatorv1.PodMonitor{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Channel{Source: r.HostedAPICache.Events()}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Build(r)
 	if err != nil {
@@ -163,6 +167,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.Update(ctx, hostedControlPlane); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
+	}
+
+	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != hostedControlPlane.Spec.ReleaseImage {
+		r.Log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hostedControlPlane.Spec.ReleaseImage, r.OperateOnReleaseImage)
+		return ctrl.Result{}, nil
 	}
 
 	// Reconcile global configuration validation status
@@ -440,10 +449,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 		}
 	}
-
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, cpoutil.GenerateReconciliationPausedCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
 	if err := r.Client.Status().Update(ctx, hostedControlPlane); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+	if cpoutil.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil) {
+		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
+		return ctrl.Result{}, nil
 	}
 
 	// Perform the hosted control plane reconciliation
@@ -602,7 +615,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	// Reconcile openshift controller manager
 	r.Log.Info("Reconciling OpenShift Controller Manager")
 	if err = r.reconcileOpenShiftControllerManager(ctx, hostedControlPlane, globalConfig, releaseImage); err != nil {
-		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
+		return fmt.Errorf("failed to reconcile openshift controller manager: %w", err)
 	}
 
 	// Reconcile cluster policy controller
@@ -612,7 +625,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile cluster version operator
-	r.Log.Info("Reonciling Cluster Version Operator")
+	r.Log.Info("Reconciling Cluster Version Operator")
 	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
@@ -1002,6 +1015,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile combined CA: %w", err)
 	}
 
+	// Metrics client cert
+	metricsClientCert := manifests.MetricsClientCertSecret(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, metricsClientCert, func() error {
+		return pki.ReconcileMetricsSAClientCertSecret(metricsClientCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics client cert secret: %w", err)
+	}
+
 	// Etcd client secret
 	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, etcdClientSecret, func() error {
@@ -1194,6 +1215,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
 	}
 
+	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, kcmServerSecret, func() error {
+		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
+	}
+
+	cvoServerCert := manifests.ClusterVersionOperatorServerCertSecret(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, cvoServerCert, func() error {
+		return pki.ReconcileCVOServerSecret(cvoServerCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cvo serving cert: %w", err)
+	}
+
 	return nil
 }
 
@@ -1206,6 +1241,25 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 			return p.ReconcileCloudConfig(awsProviderConfig)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile aws provider config: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get Azure credentials secret: %w", err)
+		}
+
+		// We need different configs for KAS/KCM and Kubelet in Nodes
+		cfg := manifests.AzureProviderConfig(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, cfg, func() error {
+			return azure.ReconcileCloudConfig(cfg, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure cloud config: %w", err)
+		}
+		withSecrets := manifests.AzureProviderConfigWithCredentials(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, withSecrets, func() error {
+			return azure.ReconcileCloudConfigWithCredentials(withSecrets, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
 		}
 	}
 	return nil
@@ -1490,6 +1544,15 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		r.Log.Info("Reconciled api server pdb", "result", result)
 	}
 
+	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas service monitor: %w", err)
+	} else {
+		r.Log.Info("Reconciled api server service monitor", "result", result)
+	}
+
 	kubeAPIServerDeployment := manifests.KASDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
 		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
@@ -1506,6 +1569,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			aesCBCActiveKey,
 			aesCBCBackupKey,
 			hcp.Spec.Etcd.ManagementType,
+			p.APIServerPort,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
@@ -1516,6 +1580,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage) error {
 	p := kcm.NewKubeControllerManagerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
 
+	service := manifests.KCMService(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, service, func() error {
+		return kcm.ReconcileService(service, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm service: %w", err)
+	}
+
 	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
 		return fmt.Errorf("failed to fetch combined ca configmap: %w", err)
@@ -1525,6 +1596,15 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 		return kcm.ReconcileKCMServiceServingCA(serviceServingCA, combinedCA, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm serving ca: %w", err)
+	}
+
+	serviceMonitor := manifests.KCMServiceMonitor(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return kcm.ReconcileServiceMonitor(serviceMonitor, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm service monitor: %w", err)
+	} else {
+		r.Log.Info("Reconciled kcm service monitor", "result", result)
 	}
 
 	kcmConfig := manifests.KCMConfig(hcp.Namespace)
@@ -1586,6 +1666,15 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		return fmt.Errorf("failed to reconcile openshift apiserver pdb: %w", err)
 	} else {
 		r.Log.Info("Reconciled openshift apiserver pdb", "result", result)
+	}
+
+	serviceMonitor := manifests.OpenShiftAPIServerServiceMonitor(hcp.Namespace)
+	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return oapi.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift apiserver servicemonitor: %w", err)
+	} else {
+		r.Log.Info("reconciled openshift apiserver servicemonitor", "result", result)
 	}
 
 	deployment := manifests.OpenShiftAPIServerDeployment(hcp.Namespace)
@@ -1678,7 +1767,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, hcp.Spec.APIPort)
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, hcp.Spec.APIPort, p.NamedCertificates())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
@@ -1692,6 +1781,20 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 		return ocm.ReconcileOpenShiftControllerManagerConfig(config, p.OwnerRef, p.DeployerImage, p.DockerBuilderImage, p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Build, p.Network)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
+	}
+
+	service := manifests.OpenShiftControllerService(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, service, func() error {
+		return ocm.ReconcileService(service, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager service: %w", err)
+	}
+
+	serviceMonitor := manifests.OpenShiftControllerServiceMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return ocm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift controller manager service monitor: %w", err)
 	}
 
 	deployment := manifests.OpenShiftControllerManagerDeployment(hcp.Namespace)
@@ -1710,20 +1813,34 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 	if _, err := r.CreateOrUpdate(ctx, r, config, func() error {
 		return clusterpolicy.ReconcileClusterPolicyControllerConfig(config, p.OwnerRef, p.MinTLSVersion(), p.CipherSuites())
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
+		return fmt.Errorf("failed to reconcile cluster policy controller config: %w", err)
 	}
 
 	deployment := manifests.ClusterPolicyControllerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
 		return clusterpolicy.ReconcileDeployment(deployment, p.OwnerRef, p.Image, p.DeploymentConfig, p.AvailabilityProberImage, hcp.Spec.APIPort)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager deployment: %w", err)
+		return fmt.Errorf("failed to reconcile cluster policy controller deployment: %w", err)
 	}
 	return nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	p := cvo.NewCVOParams(hcp, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	service := manifests.ClusterVersionOperatorService(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, service, func() error {
+		return cvo.ReconcileService(service, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster version operator service: %w", err)
+	}
+
+	serviceMonitor := manifests.ClusterVersionOperatorServiceMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
+		return cvo.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster version operator service monitor: %w", err)
+	}
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
@@ -1735,7 +1852,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
-	p := ingressoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+	p := ingressoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
 
 	kubeconfig := manifests.IngressOperatorKubeconfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeconfig, func() error {
@@ -1876,6 +1993,12 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile catalog operator metrics service: %w", err)
 	}
+	catalogOperatorServiceMonitor := manifests.CatalogOperatorServiceMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, catalogOperatorServiceMonitor, func() error {
+		return olm.ReconcileCatalogServiceMonitor(catalogOperatorServiceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile catalog operator service monitor: %w", err)
+	}
 	catalogOperatorDeployment := manifests.CatalogOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, catalogOperatorDeployment, func() error {
 		return olm.ReconcileCatalogOperatorDeployment(catalogOperatorDeployment, p.OwnerRef, p.OLMImage, p.ProxyImage, p.OperatorRegistryImage, p.ReleaseVersion, p.DeploymentConfig, p.AvailabilityProberImage, hcp.Spec.APIPort)
@@ -1888,6 +2011,13 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return olm.ReconcileOLMOperatorMetricsService(olmOperatorMetricsService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator metrics service: %w", err)
+	}
+
+	olmOperatorServiceMonitor := manifests.OLMOperatorServiceMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r, olmOperatorServiceMonitor, func() error {
+		return olm.ReconcileOLMOperatorServiceMonitor(olmOperatorServiceMonitor, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile olm operator service monitor: %w", err)
 	}
 
 	olmOperatorDeployment := manifests.OLMOperatorDeployment(hcp.Namespace)
@@ -1906,9 +2036,11 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 	// Collect Profiles
 	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
-	olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
-	if err := r.Create(ctx, collectProfilesConfigMap); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesConfigMap, func() error {
+		olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles config map: %w", err)
 	}
 
 	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
@@ -1924,7 +2056,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles role: %w", err)
 	}
 
 	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
@@ -1932,13 +2064,15 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles rolebinding: %w", err)
 	}
 
 	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
-	olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
-	if err := r.Create(ctx, collectProfilesSecret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+	if _, err := r.CreateOrUpdate(ctx, r, collectProfilesSecret, func() error {
+		olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile collect profiles secret: %w", err)
 	}
 
 	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
@@ -1946,7 +2080,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		return fmt.Errorf("failed to reconcile collect profiles serviceaccount: %w", err)
 	}
 	return nil
 }
@@ -2090,9 +2224,28 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
+	}
+
+	podMonitor := manifests.ConfigOperatorPodMonitor(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, podMonitor, func() error {
+		podMonitor.Spec.Selector = *deployment.Spec.Selector
+		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
+			Interval: "15s",
+			Port:     "metrics",
+		}}
+		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{hcp.Namespace}}
+		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
+			APIVersion: hyperv1.GroupVersion.String(),
+			Kind:       "HostedControlPlane",
+			Name:       hcp.Name,
+			UID:        hcp.UID,
+		}})
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile pod monitor for config operator: %w", err)
 	}
 
 	return nil

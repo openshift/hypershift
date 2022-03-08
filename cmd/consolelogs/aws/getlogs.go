@@ -17,6 +17,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 )
 
@@ -52,10 +53,10 @@ func NewCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context()); err != nil {
-			log.Error(err, "Failed to get console logs")
+			log.Log.Error(err, "Failed to get console logs")
 			return err
 		}
-		log.Info("Successfully retrieved console logs")
+		log.Log.Info("Successfully retrieved console logs")
 		return nil
 	}
 
@@ -63,7 +64,10 @@ func NewCommand() *cobra.Command {
 }
 
 func (o *ConsoleLogOpts) Run(ctx context.Context) error {
-	c := util.GetClientOrDie()
+	c, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 
 	var hostedCluster hyperv1.HostedCluster
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
@@ -71,8 +75,8 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	}
 	infraID := hostedCluster.Spec.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
-	awsSession := awsutil.NewSession("cli-console-logs")
-	awsConfig := awsutil.NewConfig(o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsSession := awsutil.NewSession("cli-console-logs", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 
 	// Fetch any instances belonging to the cluster

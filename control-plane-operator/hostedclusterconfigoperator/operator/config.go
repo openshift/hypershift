@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -60,6 +61,7 @@ type HostedClusterConfigOperatorConfig struct {
 	KonnectivityPort             int32
 	OAuthAddress                 string
 	OAuthPort                    int32
+	OperateOnReleaseImage        string
 
 	kubeClient kubeclient.Interface
 }
@@ -69,13 +71,21 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 	allSelector := cache.ObjectSelector{
 		Label: labels.Everything(),
 	}
+	leaseDuration := time.Second * 60
+	renewDeadline := time.Second * 40
+	retryPeriod := time.Second * 15
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		LeaderElection:             true,
-		LeaderElectionResourceLock: "leases",
-		LeaderElectionNamespace:    namespace,
-		LeaderElectionConfig:       cpConfig,
-		LeaderElectionID:           "hcco.hypershift.openshift.io",
-		HealthProbeBindAddress:     ":6060",
+		LeaderElection:                true,
+		LeaderElectionResourceLock:    "leases",
+		LeaderElectionNamespace:       namespace,
+		LeaderElectionConfig:          cpConfig,
+		LeaderElectionID:              "hosted-cluster-config-operator-leader-elect",
+		LeaderElectionReleaseOnCancel: true,
+		LeaseDuration:                 &leaseDuration,
+		RenewDeadline:                 &renewDeadline,
+		RetryPeriod:                   &retryPeriod,
+		HealthProbeBindAddress:        ":6060",
+		MetricsBindAddress:            "0.0.0.0:8080",
 
 		NewClient: func(cache cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
 			client, err := cluster.DefaultNewClient(cache, config, options, uncachedObjects...)
@@ -99,6 +109,7 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&configv1.Image{}:          allSelector,
 				&configv1.Project{}:        allSelector,
 				&configv1.ClusterVersion{}: allSelector,
+				&configv1.FeatureGate{}:    allSelector,
 			},
 			DefaultSelector: cache.ObjectSelector{Label: cacheLabelSelector()},
 		}),

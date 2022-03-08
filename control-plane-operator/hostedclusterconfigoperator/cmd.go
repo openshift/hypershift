@@ -21,6 +21,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
@@ -213,24 +214,26 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 			Upstream:  upsert.New(o.enableCIDebugOutput),
 			APIReader: mgr.GetAPIReader(),
 		},
-		Config:              cpConfig,
-		TargetConfig:        cfg,
-		Manager:             mgr,
-		Namespace:           o.Namespace,
-		HCPName:             o.HostedControlPlaneName,
-		InitialCA:           string(o.initialCA),
-		ClusterSignerCA:     string(o.clusterSignerCA),
-		Controllers:         o.Controllers,
-		ControllerFuncs:     controllerFuncs,
-		Versions:            versions,
-		PlatformType:        hyperv1.PlatformType(o.platformType),
-		CPCluster:           cpCluster,
-		Logger:              ctrl.Log.WithName("hypershift-operator"),
-		ReleaseProvider:     releaseProvider,
-		KonnectivityAddress: o.KonnectivityAddress,
-		KonnectivityPort:    o.KonnectivityPort,
-		OAuthAddress:        o.OAuthAddress,
-		OAuthPort:           o.OAuthPort,
+		Config:                cpConfig,
+		TargetConfig:          cfg,
+		Manager:               mgr,
+		Namespace:             o.Namespace,
+		HCPName:               o.HostedControlPlaneName,
+		InitialCA:             string(o.initialCA),
+		ClusterSignerCA:       string(o.clusterSignerCA),
+		Controllers:           o.Controllers,
+		ControllerFuncs:       controllerFuncs,
+		Versions:              versions,
+		PlatformType:          hyperv1.PlatformType(o.platformType),
+		CPCluster:             cpCluster,
+		Logger:                ctrl.Log.WithName("hypershift-operator"),
+		ReleaseProvider:       releaseProvider,
+		KonnectivityAddress:   o.KonnectivityAddress,
+		KonnectivityPort:      o.KonnectivityPort,
+		OAuthAddress:          o.OAuthAddress,
+		OAuthPort:             o.OAuthPort,
+		OperateOnReleaseImage: os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 	}
+	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)
 }

@@ -25,7 +25,12 @@ const (
 // AWSEndpointServiceSpec defines the desired state of AWSEndpointService
 type AWSEndpointServiceSpec struct {
 	// The name of the NLB for which an Endpoint Service should be configured
-	NetworkLoadBalancerName string `json:"networkLoadBalancerName,omitempty"`
+	NetworkLoadBalancerName string `json:"networkLoadBalancerName"`
+
+	// SubnetIDs is the list of subnet IDs to which guest nodes can attach
+	// +optional
+	SubnetIDs []string `json:"subnetIDs,omitempty"`
+
 	// Tags to apply to the EndpointService
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`

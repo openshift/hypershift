@@ -32,6 +32,15 @@ func CombinedCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+func MetricsClientCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "metrics-client",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdClientSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -99,6 +108,15 @@ func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kas-bootstrap-client",
+			Namespace: ns,
+		},
+	}
+}
+
+func KCMServerCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kcm-server",
 			Namespace: ns,
 		},
 	}
@@ -230,15 +248,6 @@ func OLMPackageServerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
-func OLMProfileCollectorCertSecret(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "olm-profile-collector",
-			Namespace: ns,
-		},
-	}
-}
-
 func OLMOperatorServingCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -275,11 +284,10 @@ func IBMCloudKASKMSWDEKSecret(ns string) *corev1.Secret {
 	}
 }
 
-// IBMCloudKASKMSKPCustomerAuthSecret ...
-func IBMCloudKASKMSKPCustomerAuthSecret(ns string) *corev1.Secret {
+func ClusterVersionOperatorServerCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kp-customer-auth",
+			Name:      "cvo-server",
 			Namespace: ns,
 		},
 	}

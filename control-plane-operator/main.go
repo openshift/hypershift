@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
@@ -12,13 +13,11 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zapcore"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
@@ -63,6 +62,9 @@ const (
 	// TODO: Include konnectivity image in release payload
 	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+
+	// Default AWS KMS provider image. Can be overriden with annotation on HostedCluster
+	awsKMSProviderImage = "registry.ci.openshift.org/hypershift/aws-encryption-provider:latest"
 )
 
 func NewStartCommand() *cobra.Command {
@@ -76,7 +78,6 @@ func NewStartCommand() *cobra.Command {
 		deploymentName                   string
 		metricsAddr                      string
 		healthProbeAddr                  string
-		enableLeaderElection             bool
 		hostedClusterConfigOperatorImage string
 		socks5ProxyImage                 string
 		availabilityProberImage          string
@@ -90,9 +91,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&deploymentName, "deployment-name", "control-plane-operator", "The name of the deployment of this operator")
 	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0.0.0.0:8080", "The address the metric endpoint binds to.")
 	cmd.Flags().StringVar(&healthProbeAddr, "health-probe-addr", "0.0.0.0:6060", "The address for the health probe endpoint.")
-	cmd.Flags().BoolVar(&enableLeaderElection, "enable-leader-election", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image. (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&socks5ProxyImage, "socks5-proxy-image", "", "Image to use for socks5-proxy. (defaults to match this operator if running in a deployment)")
 	cmd.Flags().StringVar(&availabilityProberImage, "availability-prober-image", "", "Image to use for probing apiserver availability. (defaults to match this operator if running in a deployment)")
@@ -111,16 +109,22 @@ func NewStartCommand() *cobra.Command {
 
 		restConfig := ctrl.GetConfigOrDie()
 		restConfig.UserAgent = "hypershift-controlplane-manager"
+		leaseDuration := time.Second * 60
+		renewDeadline := time.Second * 40
+		retryPeriod := time.Second * 15
 		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-			Scheme:                 hyperapi.Scheme,
-			MetricsBindAddress:     metricsAddr,
-			Port:                   9443,
-			LeaderElection:         enableLeaderElection,
-			LeaderElectionID:       "b2ed43cb.hypershift.openshift.io",
-			HealthProbeBindAddress: healthProbeAddr,
-			// We manage a service outside the HCP namespace, but we don't want to scope the cache for all objects
-			// to both namespaces so just read from the API.
-			ClientDisableCacheFor: []client.Object{&corev1.Service{}},
+			Scheme:                        hyperapi.Scheme,
+			MetricsBindAddress:            metricsAddr,
+			Port:                          9443,
+			LeaderElection:                true,
+			LeaderElectionID:              "control-plane-operator-leader-elect",
+			LeaderElectionResourceLock:    "leases",
+			LeaderElectionNamespace:       namespace,
+			LeaderElectionReleaseOnCancel: true,
+			LeaseDuration:                 &leaseDuration,
+			RenewDeadline:                 &renewDeadline,
+			RetryPeriod:                   &retryPeriod,
+			HealthProbeBindAddress:        healthProbeAddr,
 			NewCache: cache.BuilderWithOptions(cache.Options{
 				DefaultSelector:   cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
 				SelectorsByObject: cache.SelectorsByObject{&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)}},
@@ -212,6 +216,7 @@ func NewStartCommand() *cobra.Command {
 					"konnectivity-agent":             konnectivityAgentImage,
 					"socks5-proxy":                   socks5ProxyImage,
 					"token-minter":                   tokenMinterImage,
+					"aws-kms-provider":               awsKMSProviderImage,
 				},
 			},
 			RegistryOverrides: registryOverrides,
@@ -236,42 +241,45 @@ func NewStartCommand() *cobra.Command {
 			HostedAPICache:                apiCacheController.GetCache(),
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
 			EnableCIDebugOutput:           enableCIDebugOutput,
+			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
 
-		controllerName := "PrivateKubeAPIServerServiceObserver"
-		if err := (&awsprivatelink.PrivateServiceObserver{
-			Client:                 mgr.GetClient(),
-			ControllerName:         controllerName,
-			ServiceNamespace:       namespace,
-			ServiceName:            manifests.KubeAPIServerPrivateServiceName,
-			HCPNamespace:           namespace,
-			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-		}).SetupWithManager(ctx, mgr); err != nil {
-			controllerName := awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
-			setupLog.Error(err, "unable to create controller", "controller", controllerName)
-			os.Exit(1)
-		}
+		if mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
+			controllerName := "PrivateKubeAPIServerServiceObserver"
+			if err := (&awsprivatelink.PrivateServiceObserver{
+				Client:                 mgr.GetClient(),
+				ControllerName:         controllerName,
+				ServiceNamespace:       namespace,
+				ServiceName:            manifests.KubeAPIServerPrivateServiceName,
+				HCPNamespace:           namespace,
+				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			}).SetupWithManager(ctx, mgr); err != nil {
+				controllerName := awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
+				setupLog.Error(err, "unable to create controller", "controller", controllerName)
+				os.Exit(1)
+			}
 
-		controllerName = "PrivateIngressServiceObserver"
-		if err := (&awsprivatelink.PrivateServiceObserver{
-			Client:                 mgr.GetClient(),
-			ControllerName:         controllerName,
-			ServiceNamespace:       "openshift-ingress",
-			ServiceName:            fmt.Sprintf("router-%s", namespace),
-			HCPNamespace:           namespace,
-			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-		}).SetupWithManager(ctx, mgr); err != nil {
-			controllerName := awsprivatelink.ControllerName(fmt.Sprintf("router-%s", namespace))
-			setupLog.Error(err, "unable to create controller", "controller", controllerName)
-			os.Exit(1)
-		}
+			controllerName = "PrivateIngressServiceObserver"
+			if err := (&awsprivatelink.PrivateServiceObserver{
+				Client:                 mgr.GetClient(),
+				ControllerName:         controllerName,
+				ServiceNamespace:       "openshift-ingress",
+				ServiceName:            fmt.Sprintf("router-%s", namespace),
+				HCPNamespace:           namespace,
+				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			}).SetupWithManager(ctx, mgr); err != nil {
+				controllerName := awsprivatelink.ControllerName(fmt.Sprintf("router-%s", namespace))
+				setupLog.Error(err, "unable to create controller", "controller", controllerName)
+				os.Exit(1)
+			}
 
-		if err := (&awsprivatelink.AWSEndpointServiceReconciler{}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
-			os.Exit(1)
+			if err := (&awsprivatelink.AWSEndpointServiceReconciler{}).SetupWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
+				os.Exit(1)
+			}
 		}
 
 		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -286,7 +294,6 @@ func NewStartCommand() *cobra.Command {
 		setupLog.Info("starting manager")
 		if err := mgr.Start(ctx); err != nil {
 			setupLog.Error(err, "problem running manager")
-			os.Exit(1)
 		}
 	}
 

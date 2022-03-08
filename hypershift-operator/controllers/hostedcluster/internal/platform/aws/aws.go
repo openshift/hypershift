@@ -5,10 +5,13 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -24,7 +27,17 @@ const (
 	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
 )
 
-type AWS struct{}
+func New(availabilityProberImage string, tokenMinterImage string) *AWS {
+	return &AWS{
+		avaiabilityProberImage: availabilityProberImage,
+		tokenMinterImage:       tokenMinterImage,
+	}
+}
+
+type AWS struct {
+	avaiabilityProberImage string
+	tokenMinterImage       string
+}
 
 func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
@@ -47,7 +60,7 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 	return awsCluster, nil
 }
 
-func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMinterImage string) (*appsv1.DeploymentSpec, error) {
+func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPA
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIProviderAWSImage]; ok {
 		providerImage = override
@@ -104,6 +117,12 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMi
 						Name:            "manager",
 						Image:           providerImage,
 						ImagePullPolicy: corev1.PullAlways,
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("100Mi"),
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+							},
+						},
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "credentials",
@@ -170,7 +189,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMi
 					},
 					{
 						Name:            "token-minter",
-						Image:           tokenMinterImage,
+						Image:           p.tokenMinterImage,
 						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{
@@ -190,11 +209,18 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, tokenMi
 							"-token-file=/var/run/secrets/openshift/serviceaccount/token",
 							"-kubeconfig=/etc/kubernetes/kubeconfig",
 						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("10Mi"),
+							},
+						},
 					},
 				},
 			},
 		},
 	}
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, hcp.Spec.APIPort), p.avaiabilityProberImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 
@@ -335,20 +361,6 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 
 		if hcluster.Spec.Platform.AWS.CloudProviderConfig != nil {
 			awsCluster.Spec.NetworkSpec.VPC.ID = hcluster.Spec.Platform.AWS.CloudProviderConfig.VPC
-
-			// TODO: This https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2728
-			// broke our assumption in CAPA 0.7 for externally managed infrastructure.
-			// This effectively limit our ability to span NodePools across multiple subnets.
-			// In a follow up we need to either enable upstream back to support arbitrary subnets IDs
-			// in the awsMachine CR or possibly expose a slice of available subnets for NodePools in hcluster.Spec.Platform.AWS.
-			if hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet != nil &&
-				hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
-				awsCluster.Spec.NetworkSpec.Subnets = []capiawsv1.SubnetSpec{
-					{
-						ID: *hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID,
-					},
-				}
-			}
 		}
 
 		if len(hcluster.Spec.Platform.AWS.ResourceTags) > 0 {

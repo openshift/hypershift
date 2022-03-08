@@ -6,8 +6,10 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,13 +31,26 @@ type PlatformOptions interface {
 	Type() hyperv1.PlatformType
 }
 
+func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions) func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := o.CreateNodePool(cmd.Context(), platformOpts); err != nil {
+			log.Log.Error(err, "Failed to create nodepool")
+			return err
+		}
+		return nil
+	}
+}
+
 func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts PlatformOptions) error {
-	client := util.GetClientOrDie()
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
 
 	hcluster := &hyperv1.HostedCluster{}
-	err := client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.ClusterName}, hcluster)
+	err = client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.ClusterName}, hcluster)
 	if err != nil {
-		return fmt.Errorf("failed to get HostedCluster %s/%s: %w", o.Namespace, o.Name, err)
+		return fmt.Errorf("failed to get HostedCluster %s/%s: %w", o.Namespace, o.ClusterName, err)
 	}
 
 	if platformOpts.Type() != hcluster.Spec.Platform.Type {

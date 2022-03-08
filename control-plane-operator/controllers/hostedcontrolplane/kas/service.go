@@ -14,6 +14,16 @@ import (
 func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, isPublic bool) error {
 	util.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels()
+
+	// Ensure labels propagate to endpoints so service
+	// monitors can select them
+	if svc.Labels == nil {
+		svc.Labels = map[string]string{}
+	}
+	for k, v := range kasLabels() {
+		svc.Labels[k] = v
+	}
+
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]

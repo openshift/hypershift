@@ -2,37 +2,39 @@ package hostedcluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/upsert"
-	"go.opentelemetry.io/otel"
-	"go.uber.org/zap/zapcore"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
-	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
-	"sigs.k8s.io/cluster-api/api/v1beta1"
 
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/capabilities"
+	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/upsert"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
+	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	"sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1116,9 +1118,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
 	r := &HostedClusterReconciler{
 		Client:                        client,
-		tracer:                        otel.Tracer(("")),
 		Clock:                         clock.RealClock{},
-		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(capabilities.CapabilityConfigOpenshiftIO),
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 	}
@@ -1152,4 +1153,233 @@ func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Obje
 	}
 	c.createdTypes.Insert(fmt.Sprintf("%T", obj))
 	return c.Client.Create(ctx, obj, opts...)
+}
+
+func TestReconcileAWSSubnets(t *testing.T) {
+	g := NewGomegaWithT(t)
+	hcNamespace := "test"
+	hcName := "test"
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: hcNamespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcName,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					Subnet: &hyperv1.AWSResourceReference{
+						ID: pointer.StringPtr("1"),
+					},
+				},
+			},
+		},
+	}
+
+	nodePool2 := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test2",
+			Namespace: hcNamespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcName,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					Subnet: &hyperv1.AWSResourceReference{
+						ID: pointer.StringPtr("2"),
+					},
+				},
+			},
+		},
+	}
+
+	infraCRName := "test"
+	hcpNamespace := "hcp"
+	infraCR := &capiawsv1.AWSCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      infraCRName,
+			Namespace: hcpNamespace,
+		},
+		Spec: capiawsv1.AWSClusterSpec{},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
+	r := &HostedClusterReconciler{
+		Client:         client,
+		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+	}
+	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}
+	createOrUpdate := r.createOrUpdate(req)
+
+	err := r.reconcileAWSSubnets(context.Background(), createOrUpdate, infraCR, req.Namespace, req.Name, hcpNamespace)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	freshInfraCR := &capiawsv1.AWSCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      infraCRName,
+			Namespace: hcpNamespace,
+		}}
+	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshInfraCR), freshInfraCR)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(freshInfraCR.Spec.NetworkSpec.Subnets).To(BeEquivalentTo([]capiawsv1.SubnetSpec{
+		{
+			ID: "1",
+		},
+		{
+			ID: "2",
+		},
+	}))
+}
+
+func TestValidateConfigAndClusterCapabilities(t *testing.T) {
+	testCases := []struct {
+		name                          string
+		hostedCluster                 *hyperv1.HostedCluster
+		other                         []crclient.Object
+		managementClusterCapabilities capabilities.CapabiltyChecker
+		expectedResult                error
+	}{
+		{
+			name: "Cluster uses route but not supported, error",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					}},
+				},
+			}},
+			managementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+			expectedResult:                errors.New(`cluster does not support Routes, but service "" is exposed via a Route`),
+		},
+		{
+			name: "Cluster uses routes and supported, success",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					}},
+				},
+			}},
+			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		},
+		{
+			name: "Azurecluser with incomplete credentials secret, error",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Credentials: corev1.LocalObjectReference{Name: "creds"},
+				},
+			}}},
+			other: []crclient.Object{
+				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
+			},
+			expectedResult: errors.New(`[credentials secret for cluster doesn't have required key AZURE_CLIENT_ID, credentials secret for cluster doesn't have required key AZURE_CLIENT_SECRET, credentials secret for cluster doesn't have required key AZURE_SUBSCRIPTION_ID, credentials secret for cluster doesn't have required key AZURE_TENANT_ID]`),
+		},
+		{
+			name: "Azurecluster with complete credentials secret, success",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Credentials: corev1.LocalObjectReference{Name: "creds"},
+				},
+			}}},
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "creds"},
+					Data: map[string][]byte{
+						"AZURE_CLIENT_ID":       nil,
+						"AZURE_CLIENT_SECRET":   nil,
+						"AZURE_SUBSCRIPTION_ID": nil,
+						"AZURE_TENANT_ID":       nil,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &HostedClusterReconciler{
+				Client:                        fake.NewClientBuilder().WithObjects(tc.other...).Build(),
+				ManagementClusterCapabilities: tc.managementClusterCapabilities,
+			}
+
+			ctx := context.Background()
+			actual := r.validateConfigAndClusterCapabilities(ctx, tc.hostedCluster)
+			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
+				t.Errorf("actual validation result differs from expected: %s", diff)
+			}
+		})
+	}
+}
+
+var equateErrorMessage = cmp.FilterValues(func(x, y interface{}) bool {
+	_, ok1 := x.(error)
+	_, ok2 := y.(error)
+	return ok1 && ok2
+}, cmp.Comparer(func(x, y interface{}) bool {
+	xe := x.(error)
+	ye := y.(error)
+	if xe == nil || ye == nil {
+		return xe == nil && ye == nil
+	}
+	return xe.Error() == ye.Error()
+}))
+
+func TestPauseHostedControlPlane(t *testing.T) {
+	fakePauseAnnotationValue := "true"
+	fakeHCPName := "cluster1"
+	fakeHCPNamespace := "master-cluster1"
+	testsCases := []struct {
+		name                             string
+		inputObjects                     []crclient.Object
+		inputHostedControlPlane          *hyperv1.HostedControlPlane
+		expectedHostedControlPlaneObject *hyperv1.HostedControlPlane
+	}{
+		{
+			name:                    "if a hostedControlPlane exists then the pauseReconciliation annotation is added to it",
+			inputHostedControlPlane: manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName),
+			inputObjects: []crclient.Object{
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: fakeHCPNamespace,
+						Name:      fakeHCPName,
+					},
+				},
+			},
+			expectedHostedControlPlaneObject: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: fakeHCPNamespace,
+					Name:      fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					PausedUntil: &fakePauseAnnotationValue,
+				},
+			},
+		},
+		{
+			name:                             "if a hostedControlPlane does not exist it is not created",
+			inputHostedControlPlane:          manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName),
+			inputObjects:                     []crclient.Object{},
+			expectedHostedControlPlaneObject: nil,
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.inputObjects...).Build()
+			err := pauseHostedControlPlane(context.Background(), c, tc.inputHostedControlPlane, &fakePauseAnnotationValue)
+			g.Expect(err).ToNot(HaveOccurred())
+			finalHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
+			err = c.Get(context.Background(), crclient.ObjectKeyFromObject(finalHCP), finalHCP)
+			if tc.expectedHostedControlPlaneObject != nil {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(finalHCP.Annotations).To(BeEquivalentTo(tc.expectedHostedControlPlaneObject.Annotations))
+			} else {
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
 }

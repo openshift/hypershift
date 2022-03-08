@@ -34,7 +34,10 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	sshKeySecret := &corev1.Secret{}
 	sshKeySecret.Name = secretName
 	sshKeySecret.Namespace = hc.Namespace
-	kubeClient := cmdutil.GetClientOrDie()
+	kubeClient, err := cmdutil.GetClient()
+	if err != nil {
+		return err
+	}
 	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(sshKeySecret), sshKeySecret); err != nil {
 		return err
 	}
@@ -89,8 +92,8 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	}()
 
 	// Find worker machine IPs
-	awsSession := awsutil.NewSession("cli-destroy-bastion")
-	awsConfig := awsutil.NewConfig(awsCreds, "", "", hc.Spec.Platform.AWS.Region)
+	awsSession := awsutil.NewSession("cli-destroy-bastion", awsCreds, "", "", hc.Spec.Platform.AWS.Region)
+	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 
 	result, err := ec2Client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{

@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
@@ -19,7 +20,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := DestroyCluster(cmd.Context(), opts); err != nil {
-			log.Error(err, "Failed to destroy cluster")
+			log.Log.Error(err, "Failed to destroy cluster")
 			return err
 		}
 		return nil

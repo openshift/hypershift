@@ -21,6 +21,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -54,10 +55,11 @@ func init() {
 func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
 	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
+	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zones", "AWS zones for clusters")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "container disk image to use for kubevirt nodes")
-	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas in the cluster's node pool")
+	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
 	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
 	flag.StringVar(&globalOpts.ArtifactDir, "e2e.artifact-dir", "", "The directory where cluster resources and logs should be dumped. If empty, nothing is dumped")
@@ -112,7 +114,12 @@ func main(m *testing.M) int {
 }
 
 func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir string) {
-	mgr, err := ctrl.NewManager(e2eutil.GetConfigOrDie(), manager.Options{MetricsBindAddress: "0"})
+	config, err := e2eutil.GetConfig()
+	if err != nil {
+		log.Error(err, "failed to construct config for observers")
+		return
+	}
+	mgr, err := ctrl.NewManager(config, manager.Options{MetricsBindAddress: "0"})
 	if err != nil {
 		log.Error(err, "failed to construct manager for observers")
 		return
@@ -181,6 +188,7 @@ type options struct {
 type configurableClusterOptions struct {
 	AWSCredentialsFile         string
 	Region                     string
+	Zone                       stringSliceVar
 	PullSecretFile             string
 	BaseDomain                 string
 	ControlPlaneOperatorImage  string
@@ -208,14 +216,21 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
 		},
 		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-			ContainerDiskImage: o.configurableClusterOptions.KubeVirtContainerDiskImage,
-			Cores:              2,
-			Memory:             "4Gi",
+			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
+			ContainerDiskImage:        o.configurableClusterOptions.KubeVirtContainerDiskImage,
+			Cores:                     2,
+			Memory:                    "4Gi",
 		},
 		ServiceCIDR: "172.31.0.0/16",
 		PodCIDR:     "10.132.0.0/14",
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
+	if len(o.configurableClusterOptions.Zone) == 0 {
+		// align with default for e2e.aws-region flag
+		createOption.AWSPlatform.Zones = []string{"us-east-1a"}
+	} else {
+		createOption.AWSPlatform.Zones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+	}
 
 	return createOption
 }

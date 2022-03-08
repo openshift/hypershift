@@ -23,6 +23,7 @@ import (
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -57,6 +58,7 @@ type CreateOptions struct {
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
+	AzurePlatform                    AzurePlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
 }
@@ -71,10 +73,11 @@ type NonePlatformCreateOptions struct {
 }
 
 type KubevirtPlatformCreateOptions struct {
-	APIServerAddress   string
-	Memory             string
-	Cores              uint32
-	ContainerDiskImage string
+	ServicePublishingStrategy string
+	APIServerAddress          string
+	Memory                    string
+	Cores                     uint32
+	ContainerDiskImage        string
 }
 
 type AWSPlatformOptions struct {
@@ -90,6 +93,14 @@ type AWSPlatformOptions struct {
 	RootVolumeSize     int64
 	RootVolumeType     string
 	EndpointAccess     string
+	Zones              []string
+	EtcdKMSKeyARN      string
+}
+
+type AzurePlatformOptions struct {
+	CredentialsFile string
+	Location        string
+	InstanceType    string
 }
 
 func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
@@ -192,7 +203,10 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 			fmt.Println("---")
 		}
 	default:
-		client := util.GetClientOrDie()
+		client, err := util.GetClient()
+		if err != nil {
+			return err
+		}
 		var hostedCluster *hyperv1.HostedCluster
 		for _, object := range exampleObjects {
 			key := crclient.ObjectKeyFromObject(object)
@@ -207,11 +221,11 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 			if err != nil {
 				return fmt.Errorf("failed to apply object %q: %w", key, err)
 			}
-			log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
+			log.Log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
 		}
 
 		if waitForRollout {
-			log.Info("Waiting for cluster rollout")
+			log.Log.Info("Waiting for cluster rollout")
 			return wait.PollInfiniteWithContext(ctx, 30*time.Second, func(ctx context.Context) (bool, error) {
 				hostedCluster := hostedCluster.DeepCopy()
 				if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
@@ -219,7 +233,7 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 				}
 				rolledOut := len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
 				if !rolledOut {
-					log.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
+					log.Log.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
 				}
 				return rolledOut, nil
 			})
@@ -238,7 +252,14 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 	// - NodeExternalIP
 	// - NodeInternalIP
 	apiServerAddress := ""
-	kubeClient := kubeclient.NewForConfigOrDie(util.GetConfigOrDie())
+	config, err := util.GetConfig()
+	if err != nil {
+		return "", err
+	}
+	kubeClient, err := kubeclient.NewForConfig(config)
+	if err != nil {
+		return "", err
+	}
 	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1})
 	if err != nil {
 		return "", fmt.Errorf("unable to fetch node objects: %w", err)
@@ -259,13 +280,16 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 	if apiServerAddress == "" {
 		return "", fmt.Errorf("node %q does not expose any IP addresses, this should not be possible", nodes.Items[0].Name)
 	}
-	log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", apiServerAddress, nodes.Items[0].Name))
+	log.Log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", apiServerAddress, nodes.Items[0].Name))
 	return apiServerAddress, nil
 }
 
 func Validate(ctx context.Context, opts *CreateOptions) error {
 	if !opts.Render {
-		client := util.GetClientOrDie()
+		client, err := util.GetClient()
+		if err != nil {
+			return err
+		}
 		// Validate HostedCluster with this name doesn't exists in the namespace
 		cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(cluster), cluster); err == nil {
@@ -282,6 +306,7 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return errors.New("--wait requires --node-pool-replicas > 0")
 	}
+
 	exampleOptions, err := createCommonFixture(opts)
 	if err != nil {
 		return err

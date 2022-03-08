@@ -2,6 +2,7 @@ package awsprivatelink
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,12 +10,12 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,7 +45,9 @@ const (
 
 type PrivateServiceObserver struct {
 	client.Client
-	log logr.Logger
+
+	clientset *kubeclient.Clientset
+	log       logr.Logger
 
 	ControllerName   string
 	ServiceNamespace string
@@ -81,11 +84,11 @@ func ControllerName(name string) string {
 func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	r.log = ctrl.Log.WithName(r.ControllerName).WithValues("name", r.ServiceName, "namespace", r.ServiceNamespace)
 	var err error
-	kubeClient, err := kubeclient.NewForConfig(mgr.GetConfig())
+	r.clientset, err = kubeclient.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return err
 	}
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResync, informers.WithNamespace(r.ServiceNamespace))
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(r.clientset, defaultResync, informers.WithNamespace(r.ServiceNamespace))
 	services := informerFactory.Core().V1().Services()
 	c, err := controller.New(r.ControllerName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
@@ -105,13 +108,8 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 	r.log.Info("reconciling")
 
 	// Fetch the Service
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      req.Name,
-			Namespace: req.Namespace,
-		},
-	}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+	svc, err := r.clientset.CoreV1().Services(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
+	if err != nil {
 		if apierrors.IsNotFound(err) {
 			r.log.Info("service not found")
 			return ctrl.Result{}, nil
@@ -189,7 +187,7 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	r.Client = mgr.GetClient()
 
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
-	awsSession := awsutil.NewSession("control-plane-operator")
+	awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
 	awsConfig := aws.NewConfig()
 	r.ec2Client = ec2.New(awsSession, awsConfig)
 	route53Config := aws.NewConfig()
@@ -313,12 +311,45 @@ func hasAWSConfig(platform *hyperv1.PlatformSpec) bool {
 		platform.AWS.CloudProviderConfig.Subnet != nil && platform.AWS.CloudProviderConfig.Subnet.ID != nil
 }
 
+func diffSubnetIDs(desired []string, existing []*string) (added, removed []*string) {
+	var found bool
+	for i, desiredID := range desired {
+		found = false
+		for _, existingID := range existing {
+			if desiredID == *existingID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			added = append(added, &desired[i])
+		}
+	}
+	for _, existingID := range existing {
+		found = false
+		for _, desiredID := range desired {
+			if desiredID == *existingID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			removed = append(removed, existingID)
+		}
+	}
+	return
+}
+
 func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) error {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("logger not found: %w", err)
 	}
-	serviceName := awsEndpointService.Status.EndpointServiceName
+
+	if len(awsEndpointService.Status.EndpointServiceName) == 0 {
+		log.Info("endpoint service name is not set, ignoring", "name", awsEndpointService.Name)
+		return nil
+	}
 
 	endpointID := awsEndpointService.Status.EndpointID
 	var endpointDNSEntries []*ec2.DnsEntry
@@ -328,15 +359,45 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			VpcEndpointIds: []*string{aws.String(endpointID)},
 		})
 		if err != nil {
+			if awsErr, ok := err.(awserr.Error); ok {
+				if awsErr.Code() == "InvalidVpcEndpointId.NotFound" {
+					// clear the EndpointID so a new Endpoint is created on the requeue
+					awsEndpointService.Status.EndpointID = ""
+					return fmt.Errorf("endpoint with id %s not found, resetting status", endpointID)
+				} else {
+					return errors.New(awsErr.Code())
+				}
+			}
 			return err
 		}
 		if len(output.VpcEndpoints) == 0 {
+			// This should not happen but just in case
 			// clear the EndpointID so a new Endpoint is created on the requeue
 			awsEndpointService.Status.EndpointID = ""
-			return fmt.Errorf("endpoint %s not found, resetting status", serviceName)
+			return fmt.Errorf("endpoint with id %s not found, resetting status", endpointID)
 		}
 		log.Info("endpoint exists", "endpointID", endpointID)
 		endpointDNSEntries = output.VpcEndpoints[0].DnsEntries
+
+		// ensure endpoint has the right subnets
+		added, removed := diffSubnetIDs(awsEndpointService.Spec.SubnetIDs, output.VpcEndpoints[0].SubnetIds)
+		if added != nil || removed != nil {
+			log.Info("endpoint subnets have changed")
+			_, err := ec2Client.ModifyVpcEndpointWithContext(ctx, &ec2.ModifyVpcEndpointInput{
+				VpcEndpointId:   aws.String(endpointID),
+				AddSubnetIds:    added,
+				RemoveSubnetIds: removed,
+			})
+			if err != nil {
+				if awsErr, ok := err.(awserr.Error); ok {
+					return errors.New(awsErr.Code())
+				}
+				return err
+			}
+			log.Info("endpoint subnets updated")
+		} else {
+			log.Info("endpoint subnets are unchanged")
+		}
 	} else {
 		if !hasAWSConfig(&hcp.Spec.Platform) {
 			return fmt.Errorf("AWS platform information not provided in HostedControlPlane")
@@ -349,6 +410,9 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
 		})
 		if err != nil {
+			if awsErr, ok := err.(awserr.Error); ok {
+				return errors.New(awsErr.Code())
+			}
 			return err
 		}
 		if len(output.VpcEndpoints) != 0 {
@@ -359,18 +423,24 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		} else {
 			log.Info("endpoint does not already exist")
 			// Create the Endpoint
-			input := &ec2.CreateVpcEndpointInput{
-				ServiceName:     aws.String(serviceName),
+			subnetIDs := []*string{}
+			for i := range awsEndpointService.Spec.SubnetIDs {
+				subnetIDs = append(subnetIDs, &awsEndpointService.Spec.SubnetIDs[i])
+			}
+			output, err := ec2Client.CreateVpcEndpointWithContext(ctx, &ec2.CreateVpcEndpointInput{
+				ServiceName:     aws.String(awsEndpointService.Status.EndpointServiceName),
 				VpcId:           aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
 				VpcEndpointType: aws.String(ec2.VpcEndpointTypeInterface),
-				SubnetIds:       []*string{hcp.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID},
+				SubnetIds:       subnetIDs,
 				TagSpecifications: []*ec2.TagSpecification{{
 					ResourceType: aws.String("vpc-endpoint"),
 					Tags:         apiTagToEC2Tag(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
 				}},
-			}
-			output, err := ec2Client.CreateVpcEndpointWithContext(ctx, input)
+			})
 			if err != nil {
+				if awsErr, ok := err.(awserr.Error); ok {
+					return errors.New(awsErr.Code())
+				}
 				return err
 			}
 			if output == nil || output.VpcEndpoint == nil {

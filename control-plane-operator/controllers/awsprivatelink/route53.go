@@ -2,11 +2,13 @@ package awsprivatelink
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 )
@@ -58,6 +60,9 @@ func createRecord(ctx context.Context, client route53iface.Route53API, zondID, n
 	}
 
 	_, err := client.ChangeResourceRecordSetsWithContext(ctx, input)
+	if awsErr, ok := err.(awserr.Error); ok {
+		return errors.New(awsErr.Code())
+	}
 	return err
 }
 

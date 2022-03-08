@@ -103,13 +103,11 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 
 	// First, do a dump of the cluster before tearing it down
 	t.Run("PreTeardownClusterDump", func(t *testing.T) {
-		err := dumpCluster(ctx, t)
+		err := dumpCluster(ctx, t, true)
 		if err != nil {
 			t.Errorf("Failed to dump cluster: %v", err)
 		}
 	})
-
-	// TODO: DumpGuestCluster was taking far too long and so was disabled. This needs revisited.
 
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
 	// the current cluster to help debug teardown lifecycle issues.
@@ -120,7 +118,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 			err := destroyCluster(ctx, hc, opts)
 			if err != nil {
 				t.Logf("Failed to destroy cluster, will retry: %v", err)
-				err := dumpCluster(ctx, t)
+				err := dumpCluster(ctx, t, false)
 				if err != nil {
 					t.Logf("Failed to dump cluster during destroy; this is nonfatal: %v", err)
 				}
@@ -136,6 +134,11 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		}
 	})
 
+	// All clusters created during tests should ultimately conform to our API
+	// budget. This should be checked after deletion to ensure that API operations
+	// for the full lifecycle are accounted for.
+	EnsureAPIBudget(t, ctx, client, hc)
+
 	// Finally, delete the test namespace containing the HostedCluster/NodePool
 	// resources.
 	//
@@ -149,7 +152,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		err := DeleteNamespace(t, deleteTimeout, client, hc.Name)
 		if err != nil {
 			t.Errorf("Failed to delete test namespace: %v", err)
-			err := dumpCluster(ctx, t)
+			err := dumpCluster(ctx, t, false)
 			if err != nil {
 				t.Errorf("Failed to dump cluster: %v", err)
 			}
@@ -223,8 +226,8 @@ func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *
 // a cluster based on the cluster's platform. The output directory will be named
 // according to the test name. So, the returned dump function should be called
 // at most once per unique test name.
-func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) func(ctx context.Context, t *testing.T) error {
-	return func(ctx context.Context, t *testing.T) error {
+func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
+	return func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
 		if len(artifactDir) == 0 {
 			t.Logf("Skipping cluster dump because no artifact directory was provided")
 			return nil
@@ -238,7 +241,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, hc, dumpDir)
+			err = dump.DumpHostedCluster(ctx, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
@@ -248,7 +251,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
-			err := dump.DumpHostedCluster(ctx, hc, dumpDir)
+			err := dump.DumpHostedCluster(ctx, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}
@@ -257,4 +260,8 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			return fmt.Errorf("unsupported cluster platform")
 		}
 	}
+}
+
+func NodePoolName(hcName, zone string) string {
+	return fmt.Sprintf("%s-%s", hcName, zone)
 }

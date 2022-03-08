@@ -3,7 +3,9 @@ package nodepool
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/openshift/hypershift/cmd/nodepool/agent"
 	"github.com/openshift/hypershift/cmd/nodepool/aws"
+	"github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 )
@@ -11,6 +13,7 @@ import (
 // The following lines are needed in order to validate that any platform implementing PlatformOptions satisfy the interface
 var _ core.PlatformOptions = &aws.AWSPlatformCreateOptions{}
 var _ core.PlatformOptions = &kubevirt.KubevirtPlatformCreateOptions{}
+var _ core.PlatformOptions = &agent.AgentPlatformCreateOptions{}
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -37,6 +40,8 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 	cmd.AddCommand(aws.NewCreateCommand(opts))
+	cmd.AddCommand(agent.NewCreateCommand(opts))
+	cmd.AddCommand(azure.NewCreateCommand(opts))
 
 	return cmd
 }

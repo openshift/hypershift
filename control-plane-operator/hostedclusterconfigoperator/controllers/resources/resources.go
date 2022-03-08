@@ -24,6 +24,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
@@ -41,6 +43,7 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 )
 
@@ -64,6 +67,7 @@ type reconciler struct {
 	oauthAddress              string
 	oauthPort                 int32
 	versions                  map[string]string
+	operateOnReleaseImage     string
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -93,6 +97,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		oauthAddress:              opts.OAuthAddress,
 		oauthPort:                 opts.OAuthPort,
 		versions:                  opts.Versions,
+		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -141,6 +146,15 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 		return fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
+	}
+
+	if util.IsReconciliationPaused(log, hcp.Spec.PausedUntil) {
+		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
+		return nil
+	}
+	if r.operateOnReleaseImage != "" && r.operateOnReleaseImage != hcp.Spec.ReleaseImage {
+		log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hcp.Spec.ReleaseImage, r.operateOnReleaseImage)
+		return nil
 	}
 
 	globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hcp.Spec.Configuration)
@@ -335,6 +349,11 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	log.Info("reconciling cloud credential secrets")
 	errs = append(errs, r.reconcileCloudCredentialSecrets(ctx, hcp, log)...)
 
+	log.Info("reconciling in-cluster cloud config")
+	if err := r.reconcileCloudConfig(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile the cloud config: %w", err))
+	}
+
 	log.Info("reconciling openshift controller manager service ca bundle")
 	ocmServiceCA := manifests.OpenShiftControllerManagerServiceCA()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ocmServiceCA, func() error {
@@ -499,6 +518,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		{manifest: manifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
 		{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
 		{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
+		{manifest: manifests.MetricsClientClusterRoleBinding, reconcile: rbac.ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
 	}
 
 	var errs []error
@@ -528,7 +548,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	p := ingress.NewIngressParams(hcp, globalConfig)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
-		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas)
+		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, (hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI))
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
@@ -661,6 +681,10 @@ func (r *reconciler) reconcileOpenshiftOAuthAPIServerEndpoints(ctx context.Conte
 func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			// kubeAdminPasswordHash will not exist when a user specifies an explicit oauth config
+			return nil
+		}
 		return fmt.Errorf("failed to get kubeadmin password secret: %w", err)
 	}
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
@@ -729,6 +753,53 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile aws cloud credential secret %s/%s: %w", secret.Namespace, secret.Name, err))
 			}
+		}
+	case hyperv1.AzurePlatform:
+		referenceCredentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(referenceCredentialsSecret), referenceCredentialsSecret); err != nil {
+			return []error{fmt.Errorf("failed to get cloud credentials secret in hcp namespace: %w", err)}
+		}
+
+		secretData := map[string][]byte{
+			"azure_client_id":       referenceCredentialsSecret.Data["AZURE_CLIENT_ID"],
+			"azure_client_secret":   referenceCredentialsSecret.Data["AZURE_CLIENT_SECRET"],
+			"azure_region":          []byte(hcp.Spec.Platform.Azure.Location),
+			"azure_resource_prefix": []byte(hcp.Name + "-" + hcp.Spec.InfraID),
+			"azure_resourcegroup":   []byte(hcp.Spec.Platform.Azure.ResourceGroupName),
+			"azure_subscription_id": referenceCredentialsSecret.Data["AZURE_SUBSCRIPTION_ID"],
+			"azure_tenant_id":       referenceCredentialsSecret.Data["AZURE_TENANT_ID"],
+		}
+
+		ingressCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, ingressCredentialSecret, func() error {
+			ingressCredentialSecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed tom reconcile guest cluster ingress operator secret: %w", err))
+		}
+
+		csiCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, csiCredentialSecret, func() error {
+			csiCredentialSecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster CSI secret: %w", err))
+		}
+
+		imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
+			imageRegistrySecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster image-registry secret: %w", err))
+		}
+
+		cloudNetworkConfigControllerSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cloud-network-config-controller", Name: "cloud-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, cloudNetworkConfigControllerSecret, func() error {
+			cloudNetworkConfigControllerSecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster cloud-network-config-controller secret: %w", err))
 		}
 	}
 	return errs
@@ -859,4 +930,29 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 	}
 	return errs
 
+}
+
+func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
+	if hcp.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+
+	reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
+		return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
+	}
+
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-config", Name: "cloud-provider-config"}}
+	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+		if cm.Data == nil {
+			cm.Data = map[string]string{}
+		}
+		cm.Data["config"] = reference.Data[azure.CloudConfigKey]
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+	}
+
+	return nil
 }
