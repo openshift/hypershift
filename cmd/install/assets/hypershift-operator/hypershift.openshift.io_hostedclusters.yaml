@@ -40,6 +40,10 @@ spec:
       jsonPath: .status.conditions[?(@.type=="Available")].reason
       name: Reason
       type: string
+    - description: Message
+      jsonPath: .status.conditions[?(@.type=="Available")].message
+      name: Message
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:

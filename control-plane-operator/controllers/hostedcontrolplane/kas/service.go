@@ -2,12 +2,16 @@ package kas
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -59,7 +63,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	return nil
 }
 
-func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int) (host string, port int32, err error) {
+func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
@@ -68,6 +72,16 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 			return
 		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
+			message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned; %v since creation.", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+			var eventMessages []string
+			eventMessages, err = messageCollector.ErrorMessages(svc)
+			if err != nil {
+				err = fmt.Errorf("failed to get events for service %s/%s: %w", svc.Namespace, svc.Name, err)
+				return
+			}
+			if len(eventMessages) > 0 {
+				message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned: %s", strings.Join(eventMessages, "; "))
+			}
 			return
 		}
 		switch {

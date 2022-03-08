@@ -11,14 +11,17 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
@@ -126,12 +129,26 @@ func NewStartCommand() *cobra.Command {
 			RetryPeriod:                   &retryPeriod,
 			HealthProbeBindAddress:        healthProbeAddr,
 			NewCache: cache.BuilderWithOptions(cache.Options{
-				DefaultSelector:   cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
-				SelectorsByObject: cache.SelectorsByObject{&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)}},
+				DefaultSelector: cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
+				SelectorsByObject: cache.SelectorsByObject{
+					&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)},
+					// We watch warning events to be able to surface cloud provider errors as conditions
+					// Surfacing cloud-provider specific status is discussed in:
+					// https://github.com/kubernetes/kubernetes/issues/70159
+					// https://github.com/kubernetes/kubernetes/issues/52670
+					&corev1.Event{}: {Field: fields.AndSelectors(fields.OneTermEqualSelector("metadata.namespace", namespace), fields.OneTermEqualSelector("type", "warning"))},
+				},
 			}),
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")
+			os.Exit(1)
+		}
+		if err = mgr.GetFieldIndexer().IndexField(ctx, &corev1.Event{}, events.EventInvolvedObjectUIDField, func(object crclient.Object) []string {
+			event := object.(*corev1.Event)
+			return []string{string(event.InvolvedObject.UID)}
+		}); err != nil {
+			setupLog.Error(err, "failed to setup event involvedObject.uid index")
 			os.Exit(1)
 		}
 

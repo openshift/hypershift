@@ -1032,6 +1032,21 @@ const (
 	HostedClusterUnhealthyComponentsReason = "UnhealthyControlPlaneComponents"
 	InvalidConfigurationReason             = "InvalidConfiguration"
 
+	DeploymentNotFoundReason      = "DeploymentNotFound"
+	DeploymentStatusUnknownReason = "DeploymentStatusUnknown"
+
+	HostedControlPlaneComponentsUnavailableReason = "ComponentsUnavailable"
+	KubeconfigUnavailableReason                   = "KubeconfigUnavailable"
+	ClusterVersionStatusUnknownReason             = "ClusterVersionStatusUnknown"
+
+	StatusUnknownReason = "StatusUnknown"
+	AsExpectedReason    = "AsExpected"
+
+	EtcdQuorumAvailableReason     = "QuorumAvailable"
+	EtcdQuorumUnavailableReason   = "QuorumUnavailable"
+	EtcdStatusUnknownReason       = "EtcdStatusUnknown"
+	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
+
 	UnsupportedHostedClusterReason = "UnsupportedHostedCluster"
 
 	UnmanagedEtcdStatusUnknownReason = "UnmanagedEtcdStatusUnknown"
@@ -1144,6 +1159,7 @@ type ClusterConfiguration struct {
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
 // +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
+// +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
