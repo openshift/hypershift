@@ -11,7 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
-	ignitionserver "github.com/openshift/hypershift/ignition-server"
+	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"

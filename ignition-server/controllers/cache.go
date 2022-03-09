@@ -3,7 +3,22 @@ package controllers
 import (
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
+
+var (
+	PayloadCacheSizeTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "ign_server_payload_cache_total",
+	})
+)
+
+func init() {
+	metrics.Registry.MustRegister(
+		PayloadCacheSizeTotal,
+	)
+}
 
 // ExpiringCache enables a cache of pairs "token: payload".
 // Any pair in the cache is expired once entry.expiry time is above the cache ttl.
@@ -48,12 +63,14 @@ func (c *ExpiringCache) Set(key string, value CacheValue) {
 		value:  value,
 		expiry: time.Now().Add(c.ttl),
 	}
+	PayloadCacheSizeTotal.Inc()
 }
 
 func (c *ExpiringCache) Delete(key string) {
 	c.Lock()
 	defer c.Unlock()
 	delete(c.cache, key)
+	PayloadCacheSizeTotal.Dec()
 }
 
 func (c *ExpiringCache) Keys() []string {
