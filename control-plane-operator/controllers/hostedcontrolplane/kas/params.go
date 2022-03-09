@@ -52,6 +52,7 @@ type KubeAPIServerParams struct {
 	APIServerPort        int32                        `json:"apiServerPort"`
 	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
 	AuditWebhookRef      *corev1.LocalObjectReference `json:"auditWebhookRef"`
+	ConsolePublicURL     string                       `json:"consolePublicURL"`
 	config.DeploymentConfig
 	config.OwnerRef
 
@@ -66,6 +67,8 @@ type KubeAPIServerServiceParams struct {
 }
 
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
+	dns := globalconfig.DNSConfig()
+	globalconfig.ReconcileDNSConfig(dns, hcp)
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
 		FeatureGate:          globalConfig.FeatureGate,
@@ -82,6 +85,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ServiceCIDR:          hcp.Spec.ServiceCIDR,
 		PodCIDR:              hcp.Spec.PodCIDR,
 		Availability:         hcp.Spec.ControllerAvailabilityPolicy,
+		ConsolePublicURL:     fmt.Sprintf("console-openshift-console.%s", dns.Spec.BaseDomain),
 
 		Images: KubeAPIServerImages{
 			HyperKube:             images["hyperkube"],

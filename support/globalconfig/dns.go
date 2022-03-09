@@ -18,7 +18,9 @@ func DNSConfig() *configv1.DNS {
 }
 
 func ReconcileDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
-	dns.Spec.BaseDomain = BaseDomain(hcp)
+	if len(dns.Spec.BaseDomain) == 0 {
+		dns.Spec.BaseDomain = BaseDomain(hcp)
+	}
 	if len(hcp.Spec.DNS.PublicZoneID) > 0 {
 		dns.Spec.PublicZone = &configv1.DNSZone{
 			ID: hcp.Spec.DNS.PublicZoneID,
