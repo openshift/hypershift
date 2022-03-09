@@ -26,9 +26,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -337,6 +339,30 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 			GroupName:   "hypershift-readers",
 		}.Build()
 		objects = append(objects, readerRoleBinding)
+	}
+
+	if opts.OIDCStorageProviderS3BucketName != "" {
+		objects = append(objects, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "kube-public",
+				Name:      "oidc-storage-provider-s3-config",
+			},
+			Data: map[string]string{
+				"name":   opts.OIDCStorageProviderS3BucketName,
+				"region": opts.OIDCStorageProviderS3Region,
+			},
+		})
+	}
+
+	for idx := range objects {
+		gvk, err := apiutil.GVKForObject(objects[idx], hyperapi.Scheme)
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up gvk for %T: %w", objects[idx], err)
+		}
+		// Everything that embedds metav1.TypeMeta implements this
+		objects[idx].(interface {
+			SetGroupVersionKind(gvk schema.GroupVersionKind)
+		}).SetGroupVersionKind(gvk)
 	}
 
 	return objects, nil

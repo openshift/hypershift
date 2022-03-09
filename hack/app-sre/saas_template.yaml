@@ -27001,6 +27001,15 @@ objects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: hypershift-readers
+- apiVersion: v1
+  data:
+    name: ${OIDC_S3_NAME}
+    region: ${OIDC_S3_REGION}
+  kind: ConfigMap
+  metadata:
+    creationTimestamp: null
+    name: oidc-storage-provider-s3-config
+    namespace: kube-public
 parameters:
 - name: OPERATOR_IMG
   value: quay.io/hypershift/hypershift-operator
