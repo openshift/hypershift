@@ -1537,6 +1537,19 @@ int32
 <em>(Optional)</em>
 </td>
 </tr>
+<tr>
+<td>
+<code>availabilityZone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AvailabilityZone of the nodepool. Must not be specified for clusters
+in a location that does not support AvailabilityZone.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1alpha1.AzurePlatformSpec }

@@ -34,6 +34,7 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		Identity:               capiazure.VMIdentityUserAssigned,
 		UserAssignedIdentities: []capiazure.UserAssignedIdentity{{ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID}},
 		SSHPublicKey:           sshKey,
+		FailureDomain:          failureDomain(nodePool),
 	}}}, nil
 }
 
@@ -56,4 +57,11 @@ func bootImage(hcluster *hyperv1.HostedCluster, nodepool *hyperv1.NodePool) stri
 		return nodepool.Spec.Platform.Azure.ImageID
 	}
 	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/images/rhcos.x86_64.vhd", hcluster.Spec.Platform.Azure.SubscriptionID, hcluster.Spec.Platform.Azure.ResourceGroupName)
+}
+
+func failureDomain(nodepool *hyperv1.NodePool) *string {
+	if nodepool.Spec.Platform.Azure.AvailabilityZone == "" {
+		return nil
+	}
+	return utilpointer.String(nodepool.Spec.Platform.Azure.AvailabilityZone)
 }

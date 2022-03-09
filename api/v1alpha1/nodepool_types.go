@@ -437,6 +437,10 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Minimum=16
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
+	// AvailabilityZone of the nodepool. Must not be specified for clusters
+	// in a location that does not support AvailabilityZone.
+	// +optional
+	AvailabilityZone string `json:"availabilityZone,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation

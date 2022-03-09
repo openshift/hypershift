@@ -417,6 +417,11 @@ spec:
                     type: object
                   azure:
                     properties:
+                      availabilityZone:
+                        description: AvailabilityZone of the nodepool. Must not be
+                          specified for clusters in a location that does not support
+                          AvailabilityZone.
+                        type: string
                       diskSizeGB:
                         default: 120
                         format: int32
