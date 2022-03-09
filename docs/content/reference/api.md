@@ -1521,6 +1521,9 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
+subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd</p>
 </td>
 </tr>
 <tr>
