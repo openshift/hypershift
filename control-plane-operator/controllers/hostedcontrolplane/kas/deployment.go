@@ -367,7 +367,7 @@ func buildKASVolumeLocalhostKubeconfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.KASLocalhostKubeconfigSecret("").Name
 }
 
@@ -412,7 +412,7 @@ func buildKASVolumeRootCA(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
@@ -439,7 +439,7 @@ func buildKASVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.KASServerCertSecret("").Name
 }
 
@@ -465,7 +465,7 @@ func buildKASVolumeKonnectivityClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
 }
 
@@ -478,7 +478,7 @@ func buildKASVolumeAggregatorCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.KASAggregatorCertSecret("").Name
 }
 
@@ -518,7 +518,7 @@ func buildKASVolumeServiceAccountKey(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.ServiceAccountSigningKeySecret("").Name
 }
 
@@ -532,7 +532,7 @@ func buildKASVolumeKubeletClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.KASKubeletClientCertSecret("").Name
 }
 
@@ -545,7 +545,7 @@ func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
 }
 
@@ -571,7 +571,7 @@ func buildKASVolumeAuthTokenWebhookConfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.KASAuthenticationTokenWebhookConfigSecret("").Name
 }
 
