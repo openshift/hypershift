@@ -120,7 +120,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		if err != nil {
 			return nil, fmt.Errorf("failed to read the credentials: %w", err)
 		}
-		fmt.Printf("Using credentilas: %s", o.CredentialsFile)
+		log.Log.Info("Using credentials from file", "path", o.CredentialsFile)
 	}
 
 	authorizer, err := auth.ClientCredentialsConfig{
