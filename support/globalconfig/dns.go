@@ -18,7 +18,11 @@ func DNSConfig() *configv1.DNS {
 }
 
 func ReconcileDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
-	dns.Spec.BaseDomain = BaseDomain(hcp)
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		dns.Spec.BaseDomain = hcp.Spec.DNS.BaseDomain
+	} else {
+		dns.Spec.BaseDomain = BaseDomain(hcp)
+	}
 	if len(hcp.Spec.DNS.PublicZoneID) > 0 {
 		dns.Spec.PublicZone = &configv1.DNSZone{
 			ID: hcp.Spec.DNS.PublicZoneID,
