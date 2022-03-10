@@ -433,6 +433,16 @@ spec:
                   ibmcloud:
                     description: IBMCloud defines IBMCloud specific settings for components
                     properties:
+                      olmMode:
+                        default: default
+                        description: OLMMode specifies the deployment layout for OLM
+                          components. By default, subset of OLM components are deployed
+                          on both management and guest clusters. If set to guest,
+                          all of OLM components will be deployed on the guest cluster.
+                        enum:
+                        - default
+                        - guest
+                        type: string
                       providerType:
                         description: ProviderType is a specific supported infrastructure
                           provider within IBM Cloud.

@@ -1151,7 +1151,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
 	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
-	hcp.Spec.OLMMode = hcluster.Spec.OLMMode
 	return nil
 }
 

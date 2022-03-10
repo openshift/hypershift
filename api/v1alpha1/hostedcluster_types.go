@@ -226,16 +226,6 @@ type HostedClusterSpec struct {
 	// provided: reconciliation is paused on the resource until the field is removed.
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
-
-	// OLMMode specifies the deployment layout for OLM components. By default, subset
-	// of OLM components are deployed on both management and guest clusters. If set
-	// to guest, all of OLM components will be deployed on the guest cluster.
-	//
-	// +kubebuilder:validation:Enum=default;guest
-	// +kubebuilder:default=default
-	// +optional
-	// +immutable
-	OLMMode *string `json:"olmMode,omitempty"`
 }
 
 // ImageContentSource specifies image mirrors that can be used by cluster nodes
@@ -476,6 +466,16 @@ type AgentPlatformSpec struct {
 type IBMCloudPlatformSpec struct {
 	// ProviderType is a specific supported infrastructure provider within IBM Cloud.
 	ProviderType configv1.IBMCloudProviderType `json:"providerType,omitempty"`
+
+	// OLMMode specifies the deployment layout for OLM components. By default, subset
+	// of OLM components are deployed on both management and guest clusters. If set
+	// to guest, all of OLM components will be deployed on the guest cluster.
+	//
+	// +kubebuilder:validation:Enum=default;guest
+	// +kubebuilder:default=default
+	// +optional
+	// +immutable
+	OLMMode *string `json:"olmMode,omitempty"`
 }
 
 // AWSCloudProviderConfig specifies AWS networking configuration.

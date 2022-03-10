@@ -366,7 +366,12 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("failed to reconcile openshift controller manager service ca bundle: %w", err))
 	}
 
-	if *hcp.Spec.OLMMode == "default" {
+	olmMode := "default"
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		olmMode = *hcp.Spec.Platform.IBMCloud.OLMMode
+	}
+
+	if olmMode == "default" {
 		log.Info("reconciling olm resources")
 		errs = append(errs, r.reconcileOLM(ctx, hcp)...)
 	}

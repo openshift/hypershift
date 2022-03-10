@@ -624,9 +624,14 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile cluster policy controller: %w", err)
 	}
 
+	olmMode := "default"
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		olmMode = *hostedControlPlane.Spec.Platform.IBMCloud.OLMMode
+	}
+
 	// Reconcile cluster version operator
 	r.Log.Info("Reconciling Cluster Version Operator")
-	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage); err != nil {
+	if err = r.reconcileClusterVersionOperator(ctx, hostedControlPlane, releaseImage, olmMode); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator: %w", err)
 	}
 
@@ -650,7 +655,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile OLM
-	if *hostedControlPlane.Spec.OLMMode == "default" {
+	if olmMode == "default" {
 		r.Log.Info("Reconciling OLM")
 		if err = r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImage, infraStatus.PackageServerAPIAddress); err != nil {
 			return fmt.Errorf("failed to reconcile olm: %w", err)
@@ -1827,7 +1832,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, olmMode string) error {
 	p := cvo.NewCVOParams(hcp, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
 
 	service := manifests.ClusterVersionOperatorService(hcp.Namespace)
@@ -1846,7 +1851,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage, *hcp.Spec.OLMMode)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage, olmMode)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
