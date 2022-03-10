@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"strconv"
 	"strings"
 	"time"
 
@@ -186,6 +185,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		return nil, fmt.Errorf("failed to generate uuid for role assignment name: %w", err)
 	}
 
+	log.Log.Info("Assigning role to managed identity, this may take some time")
 	for try := 0; try < 100; try++ {
 		_, err := roleAssignmentClient.Create(ctx, *rg.ID, roleAssignmentName, authorization.RoleAssignmentCreateParameters{RoleAssignmentProperties: &authorization.RoleAssignmentProperties{
 			RoleDefinitionID: roleDefinitions.Values()[0].ID,
@@ -193,7 +193,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		}})
 		if err != nil {
 			if try < 99 {
-				log.Log.Info("Role assignment failed, retrying...", "try", strconv.Itoa(try), "err", err)
 				time.Sleep(time.Second)
 				continue
 			}
