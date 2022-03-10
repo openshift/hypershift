@@ -1986,6 +1986,11 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				},
 			},
 			Spec: corev1.PodSpec{
+				ImagePullSecrets: []corev1.LocalObjectReference{
+					{
+						Name: "pull-secret",
+					},
+				},
 				ServiceAccountName: sa.Name,
 				Containers: []corev1.Container{
 					{
