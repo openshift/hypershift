@@ -85,7 +85,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ServiceCIDR:          hcp.Spec.ServiceCIDR,
 		PodCIDR:              hcp.Spec.PodCIDR,
 		Availability:         hcp.Spec.ControllerAvailabilityPolicy,
-		ConsolePublicURL:     fmt.Sprintf("console-openshift-console.%s", dns.Spec.BaseDomain),
+		ConsolePublicURL:     fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
 
 		Images: KubeAPIServerImages{
 			HyperKube:             images["hyperkube"],
