@@ -4009,7 +4009,7 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 		return nil
 	}
 
-	hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32Ptr(6444)
+	hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32Ptr(7443)
 	if err := r.Update(ctx, hcluster); err != nil {
 		return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
 	}
