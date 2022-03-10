@@ -125,6 +125,7 @@ type ExampleAzureOptions struct {
 	InstanceType      string
 	SecurityGroupName string
 	DiskSizeGB        int32
+	AvailabilityZones []string
 }
 
 // AzureCreds is the fileformat we expect for credentials. It is copied from the installer
@@ -548,13 +549,27 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
 		nodePools = append(nodePools, defaultNodePool(cluster.Name))
 	case hyperv1.AzurePlatform:
-		nodePool := defaultNodePool(cluster.Name)
-		nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-			VMSize:     o.Azure.InstanceType,
-			ImageID:    o.Azure.BootImageID,
-			DiskSizeGB: o.Azure.DiskSizeGB,
+		if len(o.Azure.AvailabilityZones) > 0 {
+			for _, availabilityZone := range o.Azure.AvailabilityZones {
+				nodePool := defaultNodePool(fmt.Sprintf("%s-%s", cluster.Name, availabilityZone))
+				nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+					VMSize:           o.Azure.InstanceType,
+					ImageID:          o.Azure.BootImageID,
+					DiskSizeGB:       o.Azure.DiskSizeGB,
+					AvailabilityZone: availabilityZone,
+				}
+				nodePools = append(nodePools, nodePool)
+			}
+
+		} else {
+			nodePool := defaultNodePool(cluster.Name)
+			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+				VMSize:     o.Azure.InstanceType,
+				ImageID:    o.Azure.BootImageID,
+				DiskSizeGB: o.Azure.DiskSizeGB,
+			}
+			nodePools = append(nodePools, nodePool)
 		}
-		nodePools = append(nodePools, nodePool)
 	default:
 		panic("Unsupported platform")
 	}

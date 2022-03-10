@@ -98,10 +98,11 @@ type AWSPlatformOptions struct {
 }
 
 type AzurePlatformOptions struct {
-	CredentialsFile string
-	Location        string
-	InstanceType    string
-	DiskSizeGB      int32
+	CredentialsFile   string
+	Location          string
+	InstanceType      string
+	DiskSizeGB        int32
+	AvailabilityZones []string
 }
 
 func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
