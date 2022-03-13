@@ -1,6 +1,8 @@
 package util
 
 import (
+	"context"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -61,4 +63,24 @@ func serializeResource(resource client.Object, objectTyper runtime.ObjectTyper) 
 		return "", err
 	}
 	return out.String(), nil
+}
+
+func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting %T: %w", o, err)
+	}
+	if o.GetDeletionTimestamp() != nil {
+		return true, nil
+	}
+	if err := c.Delete(ctx, o); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting %T: %w", o, err)
+	}
+
+	return true, nil
 }

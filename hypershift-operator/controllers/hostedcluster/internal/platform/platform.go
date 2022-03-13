@@ -50,6 +50,10 @@ type Platform interface {
 	// by the CAPI provider in order to manage the resources by this platform
 	// Return nil if no aditional policy rule is required
 	CAPIProviderPolicyRules() []rbacv1.PolicyRule
+
+	// DeleteCredentials is responsible for deleting resources related to platform credentials
+	// So they won't leak on upon hostedcluster deletion
+	DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error
 }
 
 func GetPlatform(hcluster *hyperv1.HostedCluster, availabilityProberImage string, tokenMinterImage string) (Platform, error) {

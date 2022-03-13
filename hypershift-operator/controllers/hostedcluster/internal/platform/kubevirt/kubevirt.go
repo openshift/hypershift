@@ -165,3 +165,7 @@ func (Kubevirt) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 		},
 	}
 }
+
+func (Kubevirt) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return nil
+}
