@@ -10,6 +10,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -52,11 +53,15 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	err := client.Create(ctx, namespace)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create namespace")
 
+	name := opts.Name
+	if name == "" {
+		name = SimpleNameGenerator.GenerateName("example-")
+	}
 	// Build the skeletal HostedCluster based on the provided platform.
 	hc := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      SimpleNameGenerator.GenerateName("example-"),
+			Name:      name,
 		},
 		Spec: hyperv1.HostedClusterSpec{
 			Platform: hyperv1.PlatformSpec{
@@ -190,6 +195,8 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 		return kubevirt.CreateCluster(ctx, opts)
 	case hyperv1.AzurePlatform:
 		return azure.CreateCluster(ctx, opts)
+	case hyperv1.AgentPlatform:
+		return agent.CreateCluster(ctx, opts)
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
@@ -213,7 +220,12 @@ func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *
 			Region:             createOpts.AWSPlatform.Region,
 		}
 		return aws.DestroyCluster(ctx, opts)
-	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
+	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform, hyperv1.AgentPlatform:
+		opts := &core.DestroyOptions{
+			Namespace:          hc.Namespace,
+			Name:               hc.Name,
+			ClusterGracePeriod: 15 * time.Minute,
+		}
 		return none.DestroyCluster(ctx, opts)
 	case hyperv1.AzurePlatform:
 		opts.AzurePlatform = core.AzurePlatformDestroyOptions{

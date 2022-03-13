@@ -1,6 +1,7 @@
 package util
 
 import (
+	capiagent "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -19,4 +20,5 @@ func init() {
 	operatorsv1.AddToScheme(scheme)
 	operatorsv1alpha1.AddToScheme(scheme)
 	capikubevirt.AddToScheme(scheme)
+	capiagent.AddToScheme(scheme)
 }

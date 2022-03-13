@@ -154,3 +154,51 @@ func TestNoneCreateCluster(t *testing.T) {
 	// etcd restarts for me once always and apiserver two times before running stable
 	// e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }
+
+// TestAgentCreateCluster implements a test that mimics the operation described in the
+// HyperShift quick start (creating a basic guest cluster).
+//
+// This test is meant to provide a first, fast signal to detect regression; it
+// is recommended to use it as a PR blocker test.
+func TestAgentCreateCluster(t *testing.T) {
+	ctx, cancel := context.WithTimeout(testContext, 35*time.Minute)
+	defer cancel()
+
+	t.Parallel()
+	g := NewWithT(t)
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
+
+	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts.Name = "hypershift"
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AgentPlatform, globalOpts.ArtifactDir)
+
+	// Get the newly created nodepool
+	nodepool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedCluster.Namespace,
+			Name:      hostedCluster.Name,
+		},
+	}
+	err = client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
+	t.Logf("Created nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
+
+	t.Logf("Waiting for AgentMachines to be marked as ready")
+	e2eutil.WaitForAgentMachines(t, ctx, client, hostedCluster, *nodepool.Spec.NodeCount)
+
+	t.Logf("Waiting for AgentCluster to be marked as ready")
+	e2eutil.WaitForAgentCluster(t, ctx, client, hostedCluster)
+
+	// Get a client for the cluster
+	t.Logf("Waiting for guest client to become available")
+	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
+
+	// Using the guest client, introspect that the nodes for the tenant cluster become ready
+	t.Logf("Waiting for nodes to become ready")
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, *nodepool.Spec.NodeCount)
+
+	// Verify the cluster rolls out completely
+	t.Logf("Waiting for cluster operators to become available")
+	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.LatestReleaseImage)
+}
