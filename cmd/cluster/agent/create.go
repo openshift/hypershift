@@ -2,12 +2,17 @@ package agent
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -65,5 +70,20 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		APIServerAddress: opts.AgentPlatform.APIServerAddress,
 		AgentNamespace:   opts.AgentPlatform.AgentNamespace,
 	}
+
+	// Validate that the agent namespace exists
+	agentNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: opts.AgentPlatform.AgentNamespace,
+		},
+	}
+	client, err := util.GetClient()
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(agentNamespace), agentNamespace); err != nil {
+		return fmt.Errorf("failed to get agent namespace: %w", err)
+	}
+
 	return nil
 }
