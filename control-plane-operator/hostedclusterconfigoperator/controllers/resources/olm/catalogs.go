@@ -5,33 +5,33 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 )
 
-func ReconcileCertifiedOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource) {
-	reconcileCatalogSource(cs, "certified-operators:50051", "Certified Operators", -200)
+func ReconcileCertifiedOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource, p *OperatorLifecycleManagerParams) {
+	reconcileCatalogSource(cs, "certified-operators:50051", p.CertifiedOperatorsImage, "Certified Operators", -200, p.OLMCatalogPlacement)
 }
 
-func ReconcileCommunityOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource) {
-	reconcileCatalogSource(cs, "community-operators:50051", "Community Operators", -400)
+func ReconcileCommunityOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource, p *OperatorLifecycleManagerParams) {
+	reconcileCatalogSource(cs, "community-operators:50051", p.CommunityOperatorsImage, "Community Operators", -400, p.OLMCatalogPlacement)
 }
 
-func ReconcileRedHatMarketplaceCatalogSource(cs *operatorsv1alpha1.CatalogSource) {
-	reconcileCatalogSource(cs, "redhat-marketplace:50051", "Red Hat Marketplace", -300)
+func ReconcileRedHatMarketplaceCatalogSource(cs *operatorsv1alpha1.CatalogSource, p *OperatorLifecycleManagerParams) {
+	reconcileCatalogSource(cs, "redhat-marketplace:50051", p.RedHatMarketplaceImage, "Red Hat Marketplace", -300, p.OLMCatalogPlacement)
 }
 
-func ReconcileRedHatOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource) {
-	reconcileCatalogSource(cs, "redhat-operators:50051", "Red Hat Operators", -100)
+func ReconcileRedHatOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource, p *OperatorLifecycleManagerParams) {
+	reconcileCatalogSource(cs, "redhat-operators:50051", p.RedHatOperatorsImage, "Red Hat Operators", -100, p.OLMCatalogPlacement)
 }
 
-func reconcileCatalogSource(cs *operatorsv1alpha1.CatalogSource, address, displayName string, priority int) {
+func reconcileCatalogSource(cs *operatorsv1alpha1.CatalogSource, address string, image string, displayName string, priority int, placement hyperv1.OLMCatalogPlacement) {
 	if cs.Annotations == nil {
 		cs.Annotations = map[string]string{}
 	}
 	cs.Annotations["target.workload.openshift.io/management"] = `{"effect": "PreferredDuringScheduling"}`
 	cs.Spec = operatorsv1alpha1.CatalogSourceSpec{
 		SourceType:  operatorsv1alpha1.SourceTypeGrpc,
-		Address:     address,
 		DisplayName: displayName,
 		Publisher:   "Red Hat",
 		Priority:    priority,
@@ -40,5 +40,11 @@ func reconcileCatalogSource(cs *operatorsv1alpha1.CatalogSource, address, displa
 				Interval: &metav1.Duration{Duration: 10 * time.Minute},
 			},
 		},
+	}
+	if placement == hyperv1.ManagementOLMCatalogPlacement {
+		cs.Spec.Address = address
+	}
+	if placement == hyperv1.GuestOLMCatalogPlacement {
+		cs.Spec.Image = image
 	}
 }

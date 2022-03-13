@@ -379,6 +379,28 @@ provided: reconciliation is paused on the resource until that date. If the boole
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>olmCatalogPlacement</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.OLMCatalogPlacement">
+OLMCatalogPlacement
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+this is set to management and OLM catalog components are deployed onto the management
+cluster. If set to guest, the OLM catalog components will be deployed onto the guest
+cluster.</p>
+<p>
+Value must be one of:
+&#34;guest&#34;, 
+&#34;management&#34;
+</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -2556,6 +2578,28 @@ provided: reconciliation is paused on the resource until that date. If the boole
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>olmCatalogPlacement</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.OLMCatalogPlacement">
+OLMCatalogPlacement
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+this is set to management and OLM catalog components are deployed onto the management
+cluster. If set to guest, the OLM catalog components will be deployed onto the guest
+cluster.</p>
+<p>
+Value must be one of:
+&#34;guest&#34;, 
+&#34;management&#34;
+</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1alpha1.HostedClusterStatus }
@@ -2981,6 +3025,28 @@ string
 Either a date can be provided in RFC3339 format or a boolean. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>olmCatalogPlacement</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.OLMCatalogPlacement">
+OLMCatalogPlacement
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+this is set to management and OLM catalog components are deployed onto the management
+cluster. If set to guest, the OLM catalog components will be deployed onto the guest
+cluster.</p>
+<p>
+Value must be one of:
+&#34;guest&#34;, 
+&#34;management&#34;
+</p>
 </td>
 </tr>
 </tbody>
@@ -4326,6 +4392,32 @@ assigned when the service is created.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###OLMCatalogPlacement { #hypershift.openshift.io/v1alpha1.OLMCatalogPlacement }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;guest&#34;</p></td>
+<td><p>GuestOLMCatalogPlacement indicates OLM catalog components will be placed in
+the guest cluster.</p>
+</td>
+</tr><tr><td><p>&#34;management&#34;</p></td>
+<td><p>ManagementOLMCatalogPlacement indicates OLM catalog components will be placed in
+the management cluster.</p>
+</td>
+</tr></tbody>
 </table>
 ###PersistentVolumeEtcdStorageSpec { #hypershift.openshift.io/v1alpha1.PersistentVolumeEtcdStorageSpec }
 <p>
