@@ -3102,6 +3102,13 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 	return nil
 }
 
+func deleteClusterAPIClusterRoleBinding(ctx context.Context, c client.Client, controlPlaneNamespace string) error {
+	if _, err := deleteIfNeeded(ctx, c, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "cluster-api-master-" + controlPlaneNamespace}}); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
 	log := ctrl.LoggerFrom(ctx)
@@ -3157,6 +3164,11 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		if err != nil {
 			return false, fmt.Errorf("failed to clean up control plane operator ingress operator RBAC: %w", err)
 		}
+	}
+
+	err = deleteClusterAPIClusterRoleBinding(ctx, r.Client, controlPlaneNamespace)
+	if err != nil {
+		return false, fmt.Errorf("failed to clean up Cluster API Cluster Role Binding: %w", err)
 	}
 
 	// There are scenarios where CAPI might not be operational e.g None Platform.
