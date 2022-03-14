@@ -52,16 +52,17 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 	return namespace
 }
 
-type HyperShiftOperatorCredentialsSecret struct {
-	Namespace  *corev1.Namespace
-	CredsBytes []byte
-}
-
 const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
 	awsCredsSecretKey             = "credentials"
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
+	externaDNSCredsSecretName     = "external-dns-credentials"
 )
+
+type HyperShiftOperatorCredentialsSecret struct {
+	Namespace  *corev1.Namespace
+	CredsBytes []byte
+}
 
 func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 	secret := &corev1.Secret{
@@ -101,6 +102,141 @@ func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
 		},
 	}
 	return secret
+}
+
+type ExternalDNSCredsSecret struct {
+	Namespace  *corev1.Namespace
+	CredsBytes []byte
+}
+
+func (o ExternalDNSCredsSecret) Build() *corev1.Secret {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      externaDNSCredsSecretName,
+			Namespace: o.Namespace.Name,
+		},
+		Data: map[string][]byte{
+			"credentials": o.CredsBytes,
+		},
+	}
+	return secret
+}
+
+type ExternalDNSDeployment struct {
+	Namespace         *corev1.Namespace
+	Image             string
+	ServiceAccount    *corev1.ServiceAccount
+	Provider          string
+	DomainFilter      string
+	CredentialsSecret *corev1.Secret
+}
+
+func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: appsv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "external-dns",
+			Namespace: o.Namespace.Name,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "external-dns",
+				},
+			},
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name":                    "external-dns",
+						"app":                     "external-dns",
+						hyperv1.OperatorComponent: "external-dns",
+					},
+				},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: o.ServiceAccount.Name,
+					Containers: []corev1.Container{
+						{
+							Name:            "external-dns",
+							Image:           o.Image,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Command:         []string{"/external-dns"},
+							Args: []string{
+								"--source=service",
+								"--source=openshift-route",
+								fmt.Sprintf("--domain-filter=%s", o.DomainFilter),
+								fmt.Sprintf("--provider=%s", o.Provider),
+								"--registry=noop",
+								"--txt-owner-id=hypershift",
+							},
+							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/healthz",
+										Port:   intstr.FromInt(7979),
+										Scheme: corev1.URISchemeHTTP,
+									},
+								},
+								InitialDelaySeconds: 60,
+								PeriodSeconds:       60,
+								SuccessThreshold:    1,
+								FailureThreshold:    5,
+								TimeoutSeconds:      5,
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("20Mi"),
+									corev1.ResourceCPU:    resource.MustParse("5m"),
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "credentials",
+									MountPath: "/etc/provider",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "credentials",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: o.CredentialsSecret.Name,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Add platform specific settings
+	switch o.Provider {
+	case "aws":
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AWS_SHARED_CREDENTIALS_FILE",
+				Value: "/etc/provider/credentials",
+			},
+			corev1.EnvVar{
+				Name:  "AWS_REGION",
+				Value: "us-east-1",
+			})
+		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args, "--aws-zone-type=public")
+	}
+
+	return deployment
 }
 
 type HyperShiftOperatorDeployment struct {
@@ -341,6 +477,86 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 			},
 		},
 	}
+}
+
+type ExternalDNSServiceAccount struct {
+	Namespace *corev1.Namespace
+}
+
+func (o ExternalDNSServiceAccount) Build() *corev1.ServiceAccount {
+	sa := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceAccount",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      "external-dns",
+		},
+	}
+	return sa
+}
+
+type ExternalDNSClusterRole struct{}
+
+func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
+	role := &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRole",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "external-dns",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"endpoints",
+					"services",
+					"nodes",
+					"pods",
+				},
+				Verbs: []string{"get", "list", "watch"},
+			},
+		},
+	}
+	return role
+}
+
+type ExternalDNSClusterRoleBinding struct {
+	ClusterRole    *rbacv1.ClusterRole
+	ServiceAccount *corev1.ServiceAccount
+}
+
+func (o ExternalDNSClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
+	binding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "external-dns",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     o.ClusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      o.ServiceAccount.Name,
+				Namespace: o.ServiceAccount.Namespace,
+			},
+		},
+	}
+	return binding
 }
 
 type HyperShiftOperatorServiceAccount struct {

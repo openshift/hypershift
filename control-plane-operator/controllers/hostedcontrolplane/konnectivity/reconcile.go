@@ -187,6 +187,12 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			if svc.Annotations == nil {
+				svc.Annotations = map[string]string{}
+			}
+			svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
 		if portSpec.NodePort == 0 && strategy.NodePort != nil {
@@ -201,8 +207,15 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	return nil
 }
 
-func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool) error {
+func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool, strategy *hyperv1.ServicePublishingStrategy) error {
 	ownerRef.ApplyTo(route)
+	if !private && strategy.Route != nil && strategy.Route.Hostname != "" {
+		if route.Annotations == nil {
+			route.Annotations = map[string]string{}
+		}
+		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.Route.Hostname
+		route.Spec.Host = strategy.Route.Hostname
+	}
 	if private {
 		if route.Labels == nil {
 			route.Labels = map[string]string{}
@@ -226,6 +239,11 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool
 func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			host = strategy.LoadBalancer.Hostname
+			port = int32(KonnectivityServerPort)
+			return
+		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
 			return
 		}
@@ -251,6 +269,11 @@ func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, str
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
 	case hyperv1.Route:
+		if strategy.Route != nil && strategy.Route.Hostname != "" {
+			host = strategy.Route.Hostname
+			port = 443
+			return
+		}
 		if route.Spec.Host == "" {
 			return
 		}

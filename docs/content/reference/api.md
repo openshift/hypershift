@@ -3595,6 +3595,36 @@ sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1.VirtualMachineTemplateSpe
 </tr>
 </tbody>
 </table>
+###LoadBalancerPublishingStrategy { #hypershift.openshift.io/v1alpha1.LoadBalancerPublishingStrategy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategy">ServicePublishingStrategy</a>)
+</p>
+<p>
+<p>LoadBalancerPublishingStrategy specifies setting used to expose a service as a LoadBalancer.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>hostname</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Hostname is the DNS name that will be created via external-dns pointing to the LoadBalancer.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ManagedEtcdSpec { #hypershift.openshift.io/v1alpha1.ManagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -4634,6 +4664,36 @@ running at any time during the update is at most 130% of desired nodes.</p>
 </tr>
 </tbody>
 </table>
+###RoutePublishingStrategy { #hypershift.openshift.io/v1alpha1.RoutePublishingStrategy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.ServicePublishingStrategy">ServicePublishingStrategy</a>)
+</p>
+<p>
+<p>RoutePublishingStrategy specifies options for exposing a service as a Route.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>hostname</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Hostname is the DNS name that will be created via external-dns pointing to the Route.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###SecretEncryptionSpec { #hypershift.openshift.io/v1alpha1.SecretEncryptionSpec }
 <p>
 (<em>Appears on:</em>
@@ -4763,6 +4823,32 @@ NodePortPublishingStrategy
 </td>
 <td>
 <p>NodePort configures exposing a service using a NodePort.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>loadBalancer</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.LoadBalancerPublishingStrategy">
+LoadBalancerPublishingStrategy
+</a>
+</em>
+</td>
+<td>
+<p>LoadBalancer configures exposing a service using a LoadBalancer.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>route</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.RoutePublishingStrategy">
+RoutePublishingStrategy
+</a>
+</em>
+</td>
+<td>
+<p>Route configures exposing a service using a LoadBalancer.</p>
 </td>
 </tr>
 </tbody>

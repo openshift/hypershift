@@ -882,6 +882,15 @@ spec:
                       description: ServicePublishingStrategy specifies how to publish
                         Service.
                       properties:
+                        loadBalancer:
+                          description: LoadBalancer configures exposing a service
+                            using a LoadBalancer.
+                          properties:
+                            hostname:
+                              description: Hostname is the DNS name that will be created
+                                via external-dns pointing to the LoadBalancer.
+                              type: string
+                          type: object
                         nodePort:
                           description: NodePort configures exposing a service using
                             a NodePort.
@@ -898,6 +907,15 @@ spec:
                               type: integer
                           required:
                           - address
+                          type: object
+                        route:
+                          description: Route configures exposing a service using a
+                            LoadBalancer.
+                          properties:
+                            hostname:
+                              description: Hostname is the DNS name that will be created
+                                via external-dns pointing to the Route.
+                              type: string
                           type: object
                         type:
                           description: Type is the publishing strategy used for the

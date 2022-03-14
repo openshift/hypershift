@@ -480,14 +480,18 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		switch serviceStrategy.Type {
 		case hyperv1.Route:
-			ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
-			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
+			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+				hcluster.Status.IgnitionEndpoint = serviceStrategy.Route.Hostname
+			} else {
+				ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
+				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
+					}
 				}
-			}
-			if err == nil && ignitionServerRoute.Spec.Host != "" {
-				hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
+				if err == nil && ignitionServerRoute.Spec.Host != "" {
+					hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
+				}
 			}
 		case hyperv1.NodePort:
 			if serviceStrategy.NodePort == nil {
@@ -1562,6 +1566,9 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				}
 				ignitionServerRoute.Labels[hyperutil.HypershiftRouteLabel] = controlPlaneNamespace.Name
 				ignitionServerRoute.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", ignitionServerRoute.Name, hcluster.Name)
+			} else if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+				ignitionServerRoute.ObjectMeta.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = serviceStrategy.Route.Hostname
+				ignitionServerRoute.Spec.Host = serviceStrategy.Route.Hostname
 			}
 			ignitionServerRoute.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{

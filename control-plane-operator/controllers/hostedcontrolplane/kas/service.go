@@ -33,13 +33,17 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(apiServerPort)
-	svc.ObjectMeta.Annotations = map[string]string{
-		"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
 	}
+	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if isPublic {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+			}
 		} else {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
 		}
@@ -58,6 +62,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int) (host string, port int32, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			host = strategy.LoadBalancer.Hostname
+			port = int32(apiServerPort)
+			return
+		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
 			return
 		}
@@ -100,10 +109,11 @@ func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) 
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(apiServerPort)
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
-	svc.ObjectMeta.Annotations = map[string]string{
-		"service.beta.kubernetes.io/aws-load-balancer-internal": "true",
-		"service.beta.kubernetes.io/aws-load-balancer-type":     "nlb",
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
 	}
+	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	svc.Spec.Ports[0] = portSpec
 	return nil
 }
