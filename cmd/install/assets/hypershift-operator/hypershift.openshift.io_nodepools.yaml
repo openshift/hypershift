@@ -26,11 +26,11 @@ spec:
       type: string
     - description: Desired Nodes
       jsonPath: .spec.nodeCount
-      name: DesiredNodes
+      name: Desired Nodes
       type: integer
     - description: Available Nodes
       jsonPath: .status.nodeCount
-      name: CurrentNodes
+      name: Current Nodes
       type: integer
     - description: Autoscaling Enabled
       jsonPath: .status.conditions[?(@.type=="AutoscalingEnabled")].status
@@ -51,6 +51,10 @@ spec:
     - description: UpdatingConfig in progress
       jsonPath: .status.conditions[?(@.type=="UpdatingConfig")].status
       name: UpdatingConfig
+      type: string
+    - description: Message
+      jsonPath: .status.conditions[?(@.type=="Ready")].message
+      name: Message
       type: string
     name: v1alpha1
     schema:

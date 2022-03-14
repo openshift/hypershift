@@ -362,7 +362,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace)
 	if err != nil {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			Message:            err.Error(),
@@ -372,7 +372,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	if missingConfigs {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolConfigValidConfigConditionType,
+			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			Message:            "Core ignition config has not been created yet",
@@ -382,7 +382,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolConfigValidConfigConditionType,
+		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 		Status:             corev1.ConditionTrue,
 		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 		ObservedGeneration: nodePool.Generation,
