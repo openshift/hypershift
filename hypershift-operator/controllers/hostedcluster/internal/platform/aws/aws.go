@@ -383,3 +383,7 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 func (AWS) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
+
+func (AWS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return nil
+}
