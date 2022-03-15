@@ -1203,24 +1203,6 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 		return fmt.Errorf("failed to reconcile capi manager service account: %w", err)
 	}
 
-	// Reconcile CAPI manager cluster role
-	capiManagerClusterRole := clusterapi.CAPIManagerClusterRole(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerClusterRole, func() error {
-		return reconcileCAPIManagerClusterRole(capiManagerClusterRole)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi manager cluster role: %w", err)
-	}
-
-	// Reconcile CAPI manager cluster role binding
-	capiManagerClusterRoleBinding := clusterapi.CAPIManagerClusterRoleBinding(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerClusterRoleBinding, func() error {
-		return reconcileCAPIManagerClusterRoleBinding(capiManagerClusterRoleBinding, capiManagerClusterRole, capiManagerServiceAccount)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi manager cluster role binding: %w", err)
-	}
-
 	// Reconcile CAPI manager role
 	capiManagerRole := clusterapi.CAPIManagerRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiManagerRole, func() error {
@@ -2445,34 +2427,6 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 		hyperutil.SetDeploymentReplicas(hc, deployment, 1)
 	}
 
-	return nil
-}
-
-func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{"apiextensions.k8s.io"},
-			Resources: []string{"customresourcedefinitions"},
-			Verbs:     []string{"get", "list", "watch"},
-		},
-	}
-	return nil
-}
-
-func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, role *rbacv1.ClusterRole, sa *corev1.ServiceAccount) error {
-	binding.RoleRef = rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "ClusterRole",
-		Name:     role.Name,
-	}
-
-	binding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      sa.Name,
-			Namespace: sa.Namespace,
-		},
-	}
 	return nil
 }
 
