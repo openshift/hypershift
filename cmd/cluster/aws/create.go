@@ -160,6 +160,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.PublicZoneID = infra.PublicZoneID
 	exampleOptions.InfraID = infraID
+	exampleOptions.ExternalDNSDomain = opts.ExternalDNSDomain
 	var zones []apifixtures.ExampleAWSOptionsZones
 	for _, outputZone := range infra.Zones {
 		zones = append(zones, apifixtures.ExampleAWSOptionsZones{

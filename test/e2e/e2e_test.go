@@ -58,6 +58,7 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zones", "AWS zones for clusters")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
+	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "container disk image to use for kubevirt nodes")
 	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
 	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
@@ -193,6 +194,7 @@ type configurableClusterOptions struct {
 	BaseDomain                 string
 	ControlPlaneOperatorImage  string
 	AWSEndpointAccess          string
+	ExternalDNSDomain          string
 	KubeVirtContainerDiskImage string
 	NodePoolReplicas           int
 }
@@ -207,6 +209,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		BaseDomain:                o.configurableClusterOptions.BaseDomain,
 		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
 		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
+		ExternalDNSDomain:         o.configurableClusterOptions.ExternalDNSDomain,
 		AWSPlatform: core.AWSPlatformOptions{
 			InstanceType:       "m5.large",
 			RootVolumeSize:     64,
