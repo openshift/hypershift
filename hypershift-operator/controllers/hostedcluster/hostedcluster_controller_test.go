@@ -1046,7 +1046,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type:  hyperv1.AgentPlatform,
-					Agent: &hyperv1.AgentPlatformSpec{},
+					Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
 				},
 			},
 		},
@@ -1099,6 +1099,11 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Data: map[string][]byte{
 				"credentials":       []byte("creds"),
 				".dockerconfigjson": []byte("{}"),
+			},
+		},
+		&corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "agent-namespace",
 			},
 		},
 	}

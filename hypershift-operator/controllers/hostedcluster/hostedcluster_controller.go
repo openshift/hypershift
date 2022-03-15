@@ -3359,6 +3359,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
+	if err := r.validateAgentConfig(ctx, hc); err != nil {
+		errs = append(errs, err)
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
@@ -3387,6 +3391,29 @@ func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *h
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+func (r *HostedClusterReconciler) validateAgentConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	if hc.Spec.Platform.Type != hyperv1.AgentPlatform {
+		return nil
+	}
+
+	if hc.Spec.Platform.Agent == nil {
+		return errors.New("agentcluster needs .spec.platform.agent to be filled")
+	}
+
+	// Validate that the agent namespace exists
+	agentNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: hc.Spec.Platform.Agent.AgentNamespace,
+		},
+	}
+
+	if err := r.Get(ctx, client.ObjectKeyFromObject(agentNamespace), agentNamespace); err != nil {
+		return fmt.Errorf("failed to get agent namespace: %w", err)
+	}
+
+	return nil
 }
 
 func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
