@@ -1,6 +1,6 @@
-# Bare Metal workers using 'none' provider
+# Create a None cluster
 
-This document explains how to deploy HyperShift in OpenShift and then use the 'none' provider to deploy bare metal worker nodes for our `HostedClusters`.
+This document explains how to create HostedClusters and NodePools using the 'None' platform to create bare metal worker nodes.
 
 ## Hypershift Operator requirements
 

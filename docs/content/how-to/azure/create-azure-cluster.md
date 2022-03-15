@@ -1,4 +1,4 @@
- # Creating an Azure cluster
+ # Create an Azure cluster
 
 This document describes how to set up an Azure cluster with Hypershift.
 
