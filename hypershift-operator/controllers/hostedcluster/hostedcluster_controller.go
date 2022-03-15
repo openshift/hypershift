@@ -2166,7 +2166,15 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 		{
 			APIGroups: []string{"rbac.authorization.k8s.io"},
 			Resources: []string{"roles", "rolebindings"},
-			Verbs:     []string{"*"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"create",
+				"update",
+				"patch",
+				"delete",
+			},
 		},
 		{
 			APIGroups: []string{"route.openshift.io"},

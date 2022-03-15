@@ -66,6 +66,19 @@ objects:
     verbs:
     - '*'
   - apiGroups:
+    - batch
+    resources:
+    - cronjobs
+    - jobs
+    verbs:
+    - '*'
+  - apiGroups:
+    - coordination.k8s.io
+    resources:
+    - leases
+    verbs:
+    - '*'
+  - apiGroups:
     - networking.k8s.io
     resources:
     - networkpolicies
@@ -80,8 +93,15 @@ objects:
     - addons.cluster.x-k8s.io
     - exp.cluster.x-k8s.io
     - cluster.x-k8s.io
+    - monitoring.coreos.com
     resources:
     - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - policy
+    resources:
+    - poddisruptionbudgets
     verbs:
     - '*'
   - apiGroups:
@@ -107,7 +127,13 @@ objects:
     resources:
     - '*'
     verbs:
-    - '*'
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
   - apiGroups:
     - ""
     resources:
@@ -120,12 +146,14 @@ objects:
     - namespaces
     - serviceaccounts
     - services
+    - endpoints
     verbs:
     - '*'
   - apiGroups:
     - apps
     resources:
     - deployments
+    - statefulsets
     verbs:
     - '*'
   - apiGroups:
@@ -154,6 +182,19 @@ objects:
     - capi-provider.agent-install.openshift.io
     resources:
     - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - operator.openshift.io
+    resources:
+    - ingresscontrollers
+    verbs:
+    - '*'
+  - apiGroups:
+    - kubevirt.io
+    resources:
+    - virtualmachineinstances
+    - virtualmachines
     verbs:
     - '*'
 - apiVersion: rbac.authorization.k8s.io/v1
