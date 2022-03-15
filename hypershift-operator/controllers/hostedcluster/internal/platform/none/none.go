@@ -38,3 +38,7 @@ func (None) ReconcileSecretEncryption(ctx context.Context, c client.Client, crea
 func (None) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
+
+func (None) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return nil
+}

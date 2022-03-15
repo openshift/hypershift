@@ -49,6 +49,22 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			SuccessThreshold:    1,
 		},
 	}
+	p.ServerDeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		konnectivityServerContainer().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    3,
+			TimeoutSeconds:      5,
+		},
+	}
 	p.ServerDeploymentConfig.Resources = config.ResourcesSpec{
 		konnectivityServerContainer().Name: {
 			Requests: corev1.ResourceList{

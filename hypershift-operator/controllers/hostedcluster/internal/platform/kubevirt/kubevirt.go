@@ -57,7 +57,7 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIKubeVirtProviderImage]; ok {
 		providerImage = override
 	}
-	defaultMode := int32(420)
+	defaultMode := int32(416)
 	return &appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Template: corev1.PodTemplateSpec{
@@ -164,4 +164,8 @@ func (Kubevirt) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 			Verbs:     []string{"*"},
 		},
 	}
+}
+
+func (Kubevirt) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return nil
 }

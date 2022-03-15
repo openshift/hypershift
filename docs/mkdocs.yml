@@ -42,10 +42,11 @@ nav:
   - how-to/create-aws-hosted-cluster-multiple-zones.md
   - how-to/deploy-aws-private-clusters.md
   - how-to/oauth.md
-  - how-to/agent-platform.md
   - how-to/create-azure-cluster.md
   - how-to/kubevirt-platform.md
   - how-to/pause-reconciliation.md
+  - how-to/baremetal-none.md
+  - how-to/baremetal-agent.md
 - 'Reference':
   - reference/index.md
   - reference/api.md

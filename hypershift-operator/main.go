@@ -37,7 +37,6 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
@@ -321,22 +320,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
 		}
 		log.Info("reconciled default ingress controller")
-	}
-
-	if opts.OIDCStorageProviderS3BucketName != "" {
-		oidcStorageProviderS3ConfigMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "kube-public", Name: "oidc-storage-provider-s3-config"},
-		}
-		if _, err := controllerutil.CreateOrUpdate(ctx, apiReadingClient, oidcStorageProviderS3ConfigMap, func() error {
-			if oidcStorageProviderS3ConfigMap.Data == nil {
-				oidcStorageProviderS3ConfigMap.Data = map[string]string{}
-			}
-			oidcStorageProviderS3ConfigMap.Data["name"] = opts.OIDCStorageProviderS3BucketName
-			oidcStorageProviderS3ConfigMap.Data["region"] = opts.OIDCStorageProviderS3Region
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile the %s configmap: %w", crclient.ObjectKeyFromObject(oidcStorageProviderS3ConfigMap), err)
-		}
 	}
 
 	if err := setupMetrics(mgr); err != nil {

@@ -153,3 +153,7 @@ func (a *Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, 
 func (a *Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
+
+func (a *Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return nil
+}

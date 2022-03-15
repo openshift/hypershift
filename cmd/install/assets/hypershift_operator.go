@@ -389,6 +389,18 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"*"},
 			},
 			{
+				APIGroups: []string{"batch"},
+				Resources: []string{"cronjobs", "jobs"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"coordination.k8s.io"},
+				Resources: []string{
+					"leases",
+				},
+				Verbs: []string{"*"},
+			},
+			{
 				APIGroups: []string{"networking.k8s.io"},
 				Resources: []string{"networkpolicies"},
 				Verbs:     []string{"*"},
@@ -403,8 +415,14 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"addons.cluster.x-k8s.io",
 					"exp.cluster.x-k8s.io",
 					"cluster.x-k8s.io",
+					"monitoring.coreos.com",
 				},
 				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"policy"},
+				Resources: []string{"poddisruptionbudgets"},
 				Verbs:     []string{"*"},
 			},
 			{
@@ -425,7 +443,15 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"rbac.authorization.k8s.io"},
 				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Verbs: []string{
+					"get",
+					"list",
+					"watch",
+					"create",
+					"update",
+					"patch",
+					"delete",
+				},
 			},
 			{
 				APIGroups: []string{""},
@@ -439,12 +465,13 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"namespaces",
 					"serviceaccounts",
 					"services",
+					"endpoints",
 				},
 				Verbs: []string{"*"},
 			},
 			{
 				APIGroups: []string{"apps"},
-				Resources: []string{"deployments"},
+				Resources: []string{"deployments", "statefulsets"},
 				Verbs:     []string{"*"},
 			},
 			{
@@ -465,6 +492,16 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
 				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"operator.openshift.io"},
+				Resources: []string{"ingresscontrollers"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"kubevirt.io"},
+				Resources: []string{"virtualmachineinstances", "virtualmachines"},
 				Verbs:     []string{"*"},
 			},
 		},

@@ -302,7 +302,7 @@ func buildCVOVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(420)
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.ClusterVersionOperatorServerCertSecret("").Name
 }
 

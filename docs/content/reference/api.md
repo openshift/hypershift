@@ -1521,6 +1521,33 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
+subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskSizeGB</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+</td>
+</tr>
+<tr>
+<td>
+<code>availabilityZone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AvailabilityZone of the nodepool. Must not be specified for clusters
+in a location that does not support AvailabilityZone.</p>
 </td>
 </tr>
 </tbody>

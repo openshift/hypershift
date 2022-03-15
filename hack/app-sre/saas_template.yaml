@@ -66,6 +66,19 @@ objects:
     verbs:
     - '*'
   - apiGroups:
+    - batch
+    resources:
+    - cronjobs
+    - jobs
+    verbs:
+    - '*'
+  - apiGroups:
+    - coordination.k8s.io
+    resources:
+    - leases
+    verbs:
+    - '*'
+  - apiGroups:
     - networking.k8s.io
     resources:
     - networkpolicies
@@ -80,8 +93,15 @@ objects:
     - addons.cluster.x-k8s.io
     - exp.cluster.x-k8s.io
     - cluster.x-k8s.io
+    - monitoring.coreos.com
     resources:
     - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - policy
+    resources:
+    - poddisruptionbudgets
     verbs:
     - '*'
   - apiGroups:
@@ -107,7 +127,13 @@ objects:
     resources:
     - '*'
     verbs:
-    - '*'
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
   - apiGroups:
     - ""
     resources:
@@ -120,12 +146,14 @@ objects:
     - namespaces
     - serviceaccounts
     - services
+    - endpoints
     verbs:
     - '*'
   - apiGroups:
     - apps
     resources:
     - deployments
+    - statefulsets
     verbs:
     - '*'
   - apiGroups:
@@ -154,6 +182,19 @@ objects:
     - capi-provider.agent-install.openshift.io
     resources:
     - '*'
+    verbs:
+    - '*'
+  - apiGroups:
+    - operator.openshift.io
+    resources:
+    - ingresscontrollers
+    verbs:
+    - '*'
+  - apiGroups:
+    - kubevirt.io
+    resources:
+    - virtualmachineinstances
+    - virtualmachines
     verbs:
     - '*'
 - apiVersion: rbac.authorization.k8s.io/v1
@@ -21767,11 +21808,11 @@ objects:
         type: string
       - description: Desired Nodes
         jsonPath: .spec.nodeCount
-        name: DesiredNodes
+        name: Desired Nodes
         type: integer
       - description: Available Nodes
         jsonPath: .status.nodeCount
-        name: CurrentNodes
+        name: Current Nodes
         type: integer
       - description: Autoscaling Enabled
         jsonPath: .status.conditions[?(@.type=="AutoscalingEnabled")].status
@@ -21792,6 +21833,10 @@ objects:
       - description: UpdatingConfig in progress
         jsonPath: .status.conditions[?(@.type=="UpdatingConfig")].status
         name: UpdatingConfig
+        type: string
+      - description: Message
+        jsonPath: .status.conditions[?(@.type=="Ready")].message
+        name: Message
         type: string
       name: v1alpha1
       schema:
@@ -22163,12 +22208,24 @@ objects:
                       type: object
                     azure:
                       properties:
+                        availabilityZone:
+                          description: AvailabilityZone of the nodepool. Must not
+                            be specified for clusters in a location that does not
+                            support AvailabilityZone.
+                          type: string
+                        diskSizeGB:
+                          default: 120
+                          format: int32
+                          minimum: 16
+                          type: integer
                         imageID:
+                          description: 'ImageID is the id of the image to boot from.
+                            If unset, the default image at the location below will
+                            be used: subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd'
                           type: string
                         vmsize:
                           type: string
                       required:
-                      - imageID
                       - vmsize
                       type: object
                     ibmcloud:
@@ -26994,6 +27051,15 @@ objects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: hypershift-readers
+- apiVersion: v1
+  data:
+    name: ${OIDC_S3_NAME}
+    region: ${OIDC_S3_REGION}
+  kind: ConfigMap
+  metadata:
+    creationTimestamp: null
+    name: oidc-storage-provider-s3-config
+    namespace: kube-public
 parameters:
 - name: OPERATOR_IMG
   value: quay.io/hypershift/hypershift-operator

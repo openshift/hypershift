@@ -65,7 +65,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIProviderAWSImage]; ok {
 		providerImage = override
 	}
-	defaultMode := int32(420)
+	defaultMode := int32(416)
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
@@ -381,5 +381,9 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 }
 
 func (AWS) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
+	return nil
+}
+
+func (AWS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
 }

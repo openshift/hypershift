@@ -10,7 +10,7 @@ import (
 const (
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
 	NodePoolValidAMIConditionType                = "ValidAMI"
-	NodePoolConfigValidConfigConditionType       = "ValidConfig"
+	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
 	NodePoolReadyConditionType                   = "Ready"
@@ -50,13 +50,14 @@ func init() {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:scale:specpath=.spec.nodeCount,statuspath=.status.nodeCount
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
-// +kubebuilder:printcolumn:name="DesiredNodes",type="integer",JSONPath=".spec.nodeCount",description="Desired Nodes"
-// +kubebuilder:printcolumn:name="CurrentNodes",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
+// +kubebuilder:printcolumn:name="Desired Nodes",type="integer",JSONPath=".spec.nodeCount",description="Desired Nodes"
+// +kubebuilder:printcolumn:name="Current Nodes",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
 // +kubebuilder:printcolumn:name="Autoscaling",type="string",JSONPath=".status.conditions[?(@.type==\"AutoscalingEnabled\")].status",description="Autoscaling Enabled"
 // +kubebuilder:printcolumn:name="Autorepair",type="string",JSONPath=".status.conditions[?(@.type==\"AutorepairEnabled\")].status",description="Node Autorepair Enabled"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Current version"
 // +kubebuilder:printcolumn:name="UpdatingVersion",type="string",JSONPath=".status.conditions[?(@.type==\"UpdatingVersion\")].status",description="UpdatingVersion in progress"
 // +kubebuilder:printcolumn:name="UpdatingConfig",type="string",JSONPath=".status.conditions[?(@.type==\"UpdatingConfig\")].status",description="UpdatingConfig in progress"
+// +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message",description="Message"
 type NodePool struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -428,8 +429,19 @@ type AgentNodePoolPlatform struct {
 }
 
 type AzureNodePoolPlatform struct {
-	VMSize  string `json:"vmsize"`
-	ImageID string `json:"imageID"`
+	VMSize string `json:"vmsize"`
+	// ImageID is the id of the image to boot from. If unset, the default image at the location below will be used:
+	// subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd
+	// +optional
+	ImageID string `json:"imageID,omitempty"`
+	// +kubebuilder:default:=120
+	// +kubebuilder:validation:Minimum=16
+	// +optional
+	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
+	// AvailabilityZone of the nodepool. Must not be specified for clusters
+	// in a location that does not support AvailabilityZone.
+	// +optional
+	AvailabilityZone string `json:"availabilityZone,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation
