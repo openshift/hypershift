@@ -42,7 +42,7 @@ func openShiftControllerManagerLabels() map[string]string {
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig) error {
 	configBytes, ok := config.Data[configKey]
 	if !ok {
-		return fmt.Errorf("openshift apiserver configuration is not expected to be empty")
+		return fmt.Errorf("openshift controller manager configuration is not expected to be empty")
 	}
 	configHash := util.ComputeHash(configBytes)
 
@@ -75,6 +75,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		util.BuildVolume(ocmVolumeServingCert(), buildOCMVolumeServingCert),
 		util.BuildVolume(ocmVolumeKubeconfig(), buildOCMVolumeKubeconfig),
 	}
+	// The OCM takes up to 75 seconds to finish its graceful shutdown, give it enough time
+	// to do that + 15 seconds margin -> 90s.
+	deployment.Spec.Template.Spec.TerminationGracePeriodSeconds = pointer.Int64Ptr(90)
 	deploymentConfig.ApplyTo(deployment)
 	return nil
 }

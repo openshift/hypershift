@@ -128,6 +128,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 				}
 			}),
 		},
+		// The OAS takes up to 75 seconds to finish its graceful shutdown, give it enough time
+		// to do that + 15 seconds margin -> 90s.
+		TerminationGracePeriodSeconds: pointer.Int64Ptr(90),
 	}
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
