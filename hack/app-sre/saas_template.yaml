@@ -20521,8 +20521,8 @@ objects:
                               using a LoadBalancer.
                             properties:
                               hostname:
-                                description: Hostname is the DNS name that will be
-                                  created via external-dns pointing to the LoadBalancer.
+                                description: Hostname is the name of the DNS record
+                                  that will be created pointing to the LoadBalancer.
                                 type: string
                             type: object
                           nodePort:
@@ -20544,11 +20544,11 @@ objects:
                             type: object
                           route:
                             description: Route configures exposing a service using
-                              a LoadBalancer.
+                              a Route.
                             properties:
                               hostname:
-                                description: Hostname is the DNS name that will be
-                                  created via external-dns pointing to the Route.
+                                description: Hostname is the name of the DNS record
+                                  that will be created pointing to the Route.
                                 type: string
                             type: object
                           type:
@@ -21612,8 +21612,8 @@ objects:
                               using a LoadBalancer.
                             properties:
                               hostname:
-                                description: Hostname is the DNS name that will be
-                                  created via external-dns pointing to the LoadBalancer.
+                                description: Hostname is the name of the DNS record
+                                  that will be created pointing to the LoadBalancer.
                                 type: string
                             type: object
                           nodePort:
@@ -21635,11 +21635,11 @@ objects:
                             type: object
                           route:
                             description: Route configures exposing a service using
-                              a LoadBalancer.
+                              a Route.
                             properties:
                               hostname:
-                                description: Hostname is the DNS name that will be
-                                  created via external-dns pointing to the Route.
+                                description: Hostname is the name of the DNS record
+                                  that will be created pointing to the Route.
                                 type: string
                             type: object
                           type:

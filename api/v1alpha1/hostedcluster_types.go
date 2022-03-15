@@ -304,7 +304,7 @@ type ServicePublishingStrategy struct {
 	// LoadBalancer configures exposing a service using a LoadBalancer.
 	LoadBalancer *LoadBalancerPublishingStrategy `json:"loadBalancer,omitempty"`
 
-	// Route configures exposing a service using a LoadBalancer.
+	// Route configures exposing a service using a Route.
 	Route *RoutePublishingStrategy `json:"route,omitempty"`
 }
 
@@ -357,14 +357,14 @@ type NodePortPublishingStrategy struct {
 
 // LoadBalancerPublishingStrategy specifies setting used to expose a service as a LoadBalancer.
 type LoadBalancerPublishingStrategy struct {
-	// Hostname is the DNS name that will be created via external-dns pointing to the LoadBalancer.
+	// Hostname is the name of the DNS record that will be created pointing to the LoadBalancer.
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
 }
 
 // RoutePublishingStrategy specifies options for exposing a service as a Route.
 type RoutePublishingStrategy struct {
-	// Hostname is the DNS name that will be created via external-dns pointing to the Route.
+	// Hostname is the name of the DNS record that will be created pointing to the Route.
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
 }
