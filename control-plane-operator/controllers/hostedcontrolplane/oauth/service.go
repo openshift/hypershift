@@ -53,6 +53,11 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *h
 func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
 	switch strategy.Type {
 	case hyperv1.Route:
+		if strategy.Route != nil && strategy.Route.Hostname != "" {
+			host = strategy.Route.Hostname
+			port = RouteExternalPort
+			return
+		}
 		if route.Spec.Host == "" {
 			return
 		}

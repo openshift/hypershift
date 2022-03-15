@@ -57,6 +57,10 @@ type Options struct {
 	OIDCStorageProviderS3Credentials          string
 	OIDCStorageProviderS3CredentialsSecret    string
 	OIDCStorageProviderS3CredentialsSecretKey string
+	ExternalDNSProvider                       string
+	ExternalDNSCredentials                    string
+	ExternalDNSCredentialsSecret              string
+	ExternalDNSDomainFilter                   string
 	EnableAdminRBACGeneration                 bool
 }
 
@@ -82,6 +86,18 @@ func (o *Options) Validate() error {
 	}
 	if strings.Contains(o.OIDCStorageProviderS3BucketName, ".") {
 		errs = append(errs, fmt.Errorf("oidc bucket name must not contain dots (.); see the notes on HTTPS at https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html"))
+	}
+
+	if len(o.ExternalDNSProvider) > 0 {
+		if len(o.ExternalDNSCredentials) == 0 && len(o.ExternalDNSCredentialsSecret) == 0 {
+			errs = append(errs, fmt.Errorf("--external-dns-credentials or --external-dns-credentials-secret are required with --external-dns-provider"))
+		}
+		if len(o.ExternalDNSCredentials) != 0 && len(o.ExternalDNSCredentialsSecret) != 0 {
+			errs = append(errs, fmt.Errorf("only one of --external-dns-credentials or --external-dns-credentials-secret is supported"))
+		}
+		if len(o.ExternalDNSDomainFilter) == 0 {
+			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
+		}
 	}
 	return errors.NewAggregate(errs)
 }
@@ -123,6 +139,10 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for writing the OIDC documents into the S3 bucket. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecret, "oidc-storage-provider-s3-secret", "", "Name of an existing secret containing the OIDC S3 credentials.")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3CredentialsSecretKey, "oidc-storage-provider-s3-secret-key", "credentials", "Name of the secret key containing the OIDC S3 credentials.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSProvider, "external-dns-provider", opts.OIDCStorageProviderS3Credentials, "Provider to use for managing DNS records using external-dns")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentials, "external-dns-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for managing DNS records using external-dns")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -245,6 +265,54 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 				Name:      opts.OIDCStorageProviderS3CredentialsSecret,
 			},
 		}
+	}
+
+	if len(opts.ExternalDNSProvider) > 0 {
+		externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, externalDNSServiceAccount)
+
+		externalDNSClusterRole := assets.ExternalDNSClusterRole{}.Build()
+		objects = append(objects, externalDNSClusterRole)
+
+		externalDNSClusterRoleBinding := assets.ExternalDNSClusterRoleBinding{
+			ClusterRole:    externalDNSClusterRole,
+			ServiceAccount: externalDNSServiceAccount,
+		}.Build()
+		objects = append(objects, externalDNSClusterRoleBinding)
+
+		var externalDNSSecret *corev1.Secret
+		if opts.ExternalDNSCredentials != "" {
+			externalDNSCreds, err := ioutil.ReadFile(opts.ExternalDNSCredentials)
+			if err != nil {
+				return nil, err
+			}
+
+			externalDNSSecret = assets.ExternalDNSCredsSecret{
+				Namespace:  operatorNamespace,
+				CredsBytes: externalDNSCreds,
+			}.Build()
+			objects = append(objects, externalDNSSecret)
+		} else if opts.ExternalDNSCredentialsSecret != "" {
+			externalDNSSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: operatorNamespace.Name,
+					Name:      opts.ExternalDNSCredentialsSecret,
+				},
+			}
+		}
+
+		externalDNSDeployment := assets.ExternalDNSDeployment{
+			Namespace: operatorNamespace,
+			// TODO: need to look this up from somewhere
+			Image:             "registry.redhat.io/edo/external-dns-rhel8@sha256:c1134bb46172997ef7278b6cefbb0da44e72a9f808a7cd67b3c65d464754cab9",
+			ServiceAccount:    externalDNSServiceAccount,
+			Provider:          opts.ExternalDNSProvider,
+			DomainFilter:      opts.ExternalDNSDomainFilter,
+			CredentialsSecret: externalDNSSecret,
+		}.Build()
+		objects = append(objects, externalDNSDeployment)
 	}
 
 	operatorDeployment := assets.HyperShiftOperatorDeployment{

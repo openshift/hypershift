@@ -82,6 +82,9 @@ const (
 	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
 	// no images can be pulled from registries outside of IBM Cloud's official regional registries
 	MachineApproverImage = "hypershift.openshift.io/machine-approver-image"
+
+	// ExternalDNSHostnameAnnotation is the annotation external-dns uses to register DNS name for different HCP services.
+	ExternalDNSHostnameAnnotation = "external-dns.alpha.kubernetes.io/hostname"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -269,6 +272,12 @@ type ServicePublishingStrategy struct {
 
 	// NodePort configures exposing a service using a NodePort.
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
+
+	// LoadBalancer configures exposing a service using a LoadBalancer.
+	LoadBalancer *LoadBalancerPublishingStrategy `json:"loadBalancer,omitempty"`
+
+	// Route configures exposing a service using a LoadBalancer.
+	Route *RoutePublishingStrategy `json:"route,omitempty"`
 }
 
 // PublishingStrategyType defines publishing strategies for services.
@@ -316,6 +325,20 @@ type NodePortPublishingStrategy struct {
 	// Port is the port of the NodePort service. If <=0, the port is dynamically
 	// assigned when the service is created.
 	Port int32 `json:"port,omitempty"`
+}
+
+// LoadBalancerPublishingStrategy specifies setting used to expose a service as a LoadBalancer.
+type LoadBalancerPublishingStrategy struct {
+	// Hostname is the DNS name that will be created via external-dns pointing to the LoadBalancer.
+	// +optional
+	Hostname string `json:"hostname,omitempty"`
+}
+
+// RoutePublishingStrategy specifies options for exposing a service as a Route.
+type RoutePublishingStrategy struct {
+	// Hostname is the DNS name that will be created via external-dns pointing to the Route.
+	// +optional
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // DNSSpec specifies the DNS configuration in the cluster.

@@ -1,9 +1,10 @@
 package install
 
 import (
+	"testing"
+
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"testing"
 )
 
 func TestOptions_Validate(t *testing.T) {
@@ -30,6 +31,29 @@ func TestOptions_Validate(t *testing.T) {
 		"when partially specified oauth creds used (OIDCStorageProviderS3CredentialsSecret) it errors": {
 			inputOptions: Options{
 				OIDCStorageProviderS3CredentialsSecret: "mysecret",
+			},
+			expectError: true,
+		},
+		"when external-dns provider is set without creds it errors": {
+			inputOptions: Options{
+				ExternalDNSProvider:     "aws",
+				ExternalDNSDomainFilter: "test.com",
+			},
+			expectError: true,
+		},
+		"when external-dns provider is set with both creds methods it errors": {
+			inputOptions: Options{
+				ExternalDNSProvider:          "aws",
+				ExternalDNSCredentials:       "/path/to/credentials",
+				ExternalDNSCredentialsSecret: "creds-secret",
+				ExternalDNSDomainFilter:      "test.com",
+			},
+			expectError: true,
+		},
+		"when external-dns provider is set without domain filter it errors": {
+			inputOptions: Options{
+				ExternalDNSProvider:    "aws",
+				ExternalDNSCredentials: "/path/to/credentials",
 			},
 			expectError: true,
 		},
