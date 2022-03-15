@@ -5,9 +5,10 @@ import (
 	"encoding/hex"
 
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
-func ReconcileRegistryConfig(cfg *imageregistryv1.Config, isPlatformNone bool) {
+func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.PlatformType) {
 	cfg.Spec.DefaultRoute = false
 	if cfg.Spec.HTTPSecret == "" {
 		cfg.Spec.HTTPSecret = generateImageRegistrySecret()
@@ -26,7 +27,7 @@ func ReconcileRegistryConfig(cfg *imageregistryv1.Config, isPlatformNone bool) {
 	cfg.Spec.Requests.Write.MaxRunning = 0
 	cfg.Spec.Requests.Write.MaxWaitInQueue.Reset()
 
-	if isPlatformNone {
+	if platform == hyperv1.KubevirtPlatform || platform == hyperv1.NonePlatform {
 		cfg.Spec.Storage = imageregistryv1.ImageRegistryConfigStorage{EmptyDir: &imageregistryv1.ImageRegistryConfigStorageEmptyDir{}}
 	} else {
 		cfg.Spec.Storage.EmptyDir = nil

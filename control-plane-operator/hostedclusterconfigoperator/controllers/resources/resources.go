@@ -209,7 +209,7 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 		log.Info("reconciling registry config")
 		registryConfig := manifests.Registry()
 		if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-			registry.ReconcileRegistryConfig(registryConfig, r.platformType == hyperv1.NonePlatform)
+			registry.ReconcileRegistryConfig(registryConfig, r.platformType)
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
