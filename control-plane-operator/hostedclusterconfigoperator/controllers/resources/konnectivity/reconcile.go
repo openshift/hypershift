@@ -35,7 +35,7 @@ func konnectivityAgentLabels() map[string]string {
 	}
 }
 
-func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32) {
+func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32, platform hyperv1.PlatformType) {
 	daemonset.Spec = appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: konnectivityAgentLabels(),
@@ -57,6 +57,11 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 				},
 			},
 		},
+	}
+	if platform != hyperv1.IBMCloudPlatform {
+		daemonset.Spec.Template.Spec.HostNetwork = true
+		// Default is not the default, it means that the kubelets will re-use the hosts DNS resolver
+		daemonset.Spec.Template.Spec.DNSPolicy = corev1.DNSDefault
 	}
 	deploymentConfig.ApplyToDaemonSet(daemonset)
 }

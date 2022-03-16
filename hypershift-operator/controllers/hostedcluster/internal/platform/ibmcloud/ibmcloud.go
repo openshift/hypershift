@@ -106,3 +106,7 @@ func (IBMCloud) ReconcileSecretEncryption(ctx context.Context, c client.Client, 
 func (IBMCloud) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
+
+func (IBMCloud) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return nil
+}

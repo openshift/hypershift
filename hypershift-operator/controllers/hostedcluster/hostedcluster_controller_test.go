@@ -1046,7 +1046,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type:  hyperv1.AgentPlatform,
-					Agent: &hyperv1.AgentPlatformSpec{},
+					Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
 				},
 			},
 		},
@@ -1099,6 +1099,11 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Data: map[string][]byte{
 				"credentials":       []byte("creds"),
 				".dockerconfigjson": []byte("{}"),
+			},
+		},
+		&corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "agent-namespace",
 			},
 		},
 	}
@@ -1265,7 +1270,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		},
 		{
-			name: "Azurecluser with incomplete credentials secret, error",
+			name: "Azurecluster with incomplete credentials secret, error",
 			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
 				Type: hyperv1.AzurePlatform,
 				Azure: &hyperv1.AzurePlatformSpec{

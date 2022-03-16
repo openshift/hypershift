@@ -26,11 +26,11 @@ spec:
       type: string
     - description: Desired Nodes
       jsonPath: .spec.nodeCount
-      name: DesiredNodes
+      name: Desired Nodes
       type: integer
     - description: Available Nodes
       jsonPath: .status.nodeCount
-      name: CurrentNodes
+      name: Current Nodes
       type: integer
     - description: Autoscaling Enabled
       jsonPath: .status.conditions[?(@.type=="AutoscalingEnabled")].status
@@ -51,6 +51,10 @@ spec:
     - description: UpdatingConfig in progress
       jsonPath: .status.conditions[?(@.type=="UpdatingConfig")].status
       name: UpdatingConfig
+      type: string
+    - description: Message
+      jsonPath: .status.conditions[?(@.type=="Ready")].message
+      name: Message
       type: string
     name: v1alpha1
     schema:
@@ -417,12 +421,24 @@ spec:
                     type: object
                   azure:
                     properties:
+                      availabilityZone:
+                        description: AvailabilityZone of the nodepool. Must not be
+                          specified for clusters in a location that does not support
+                          AvailabilityZone.
+                        type: string
+                      diskSizeGB:
+                        default: 120
+                        format: int32
+                        minimum: 16
+                        type: integer
                       imageID:
+                        description: 'ImageID is the id of the image to boot from.
+                          If unset, the default image at the location below will be
+                          used: subscription/$subscriptionID/resourceGroups/$resourceGroupName/providers/Microsoft.Compute/images/rhcos.x86_64.vhd'
                         type: string
                       vmsize:
                         type: string
                     required:
-                    - imageID
                     - vmsize
                     type: object
                   ibmcloud:
