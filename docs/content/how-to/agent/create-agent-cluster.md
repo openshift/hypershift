@@ -445,6 +445,25 @@ spec:
 EOF
 ~~~
 
+> **NOTE**: If you wish to use an `InfraEnv` (and its associated `Agents`) from a namespace that isn't the ${HOSTED_CLUSTER_NS}, you must create a role for capi-provider-agent in that namespace (this is the same namespace as specified in the hosted cluster Spec (`spec.platform.agent.agentNamespace`).
+~~~sh
+envsubst <<"EOF" | oc apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: null
+  name: capi-provider-role
+  namespace: ${INFRA_ENV_NS}
+rules:
+- apiGroups:
+  - agent-install.openshift.io
+  resources:
+  - agents
+  verbs:
+  - '*'
+EOF
+~~~
+
 This will generate a custom ISO for the host to be installed.
 
 ~~~sh
