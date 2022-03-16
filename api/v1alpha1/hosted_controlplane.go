@@ -34,6 +34,7 @@ type HostedControlPlaneSpec struct {
 	// NetworkType specifies the SDN provider used for cluster networking.
 	NetworkType NetworkType                 `json:"networkType"`
 	SSHKey      corev1.LocalObjectReference `json:"sshKey"`
+	ClusterID   string                      `json:"clusterID"`
 	InfraID     string                      `json:"infraID"`
 	Platform    PlatformSpec                `json:"platform"`
 	DNS         DNSSpec                     `json:"dns"`

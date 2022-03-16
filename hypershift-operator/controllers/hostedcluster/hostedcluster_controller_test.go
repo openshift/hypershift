@@ -1300,6 +1300,13 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "invalid cluster uuid",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "foobar",
+			}},
+			expectedResult: errors.New(`cannot parse cluster ID "foobar": invalid UUID length: 6`),
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1382,6 +1389,64 @@ func TestPauseHostedControlPlane(t *testing.T) {
 				g.Expect(finalHCP.Annotations).To(BeEquivalentTo(tc.expectedHostedControlPlaneObject.Annotations))
 			} else {
 				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
+}
+
+func TestDefaultClusterIDsIfNeeded(t *testing.T) {
+	testHC := func(infraID, clusterID string) *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "fake-cluster",
+				Namespace: "fake-namespace",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				InfraID:   infraID,
+				ClusterID: clusterID,
+			},
+		}
+	}
+	tests := []struct {
+		name string
+		hc   *hyperv1.HostedCluster
+	}{
+		{
+			name: "generate both",
+			hc:   testHC("", ""),
+		},
+		{
+			name: "generate clusterid",
+			hc:   testHC("fake-infra", ""),
+		},
+		{
+			name: "generate infra-id",
+			hc:   testHC("", "fake-uuid"),
+		},
+		{
+			name: "generate none",
+			hc:   testHC("fake-infra", "fake-uuid"),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r := &HostedClusterReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.hc).Build(),
+			}
+			g := NewGomegaWithT(t)
+			previousInfraID := test.hc.Spec.InfraID
+			previousClusterID := test.hc.Spec.ClusterID
+			err := r.defaultClusterIDsIfNeeded(context.Background(), test.hc)
+			g.Expect(err).ToNot(HaveOccurred())
+			resultHC := &hyperv1.HostedCluster{}
+			r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
+			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
+			if len(previousClusterID) > 0 {
+				g.Expect(resultHC.Spec.ClusterID).To(BeIdenticalTo(previousClusterID))
+			}
+			if len(previousInfraID) > 0 {
+				g.Expect(resultHC.Spec.InfraID).To(BeIdenticalTo(previousInfraID))
 			}
 		})
 	}

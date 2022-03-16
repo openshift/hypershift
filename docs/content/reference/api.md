@@ -100,6 +100,26 @@ and InfrastructureAvailabilityPolicy.</p>
 </tr>
 <tr>
 <td>
+<code>clusterID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ClusterID uniquely identifies this cluster. This is expected to be
+an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
+hexadecimal values).
+As with a Kubernetes metadata.uid, this ID uniquely identifies this
+cluster in space and time.
+This value identifies the cluster in metrics pushed to telemetry and
+metrics produced by the control plane operators. If a value is not
+specified, an ID is generated. After initial creation, the value is
+immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>infraID</code></br>
 <em>
 string
@@ -2299,6 +2319,26 @@ and InfrastructureAvailabilityPolicy.</p>
 </tr>
 <tr>
 <td>
+<code>clusterID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ClusterID uniquely identifies this cluster. This is expected to be
+an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
+hexadecimal values).
+As with a Kubernetes metadata.uid, this ID uniquely identifies this
+cluster in space and time.
+This value identifies the cluster in metrics pushed to telemetry and
+metrics produced by the control plane operators. If a value is not
+specified, an ID is generated. After initial creation, the value is
+immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>infraID</code></br>
 <em>
 string
@@ -2791,6 +2831,16 @@ Value must be one of:
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
 Kubernetes core/v1.LocalObjectReference
 </a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterID</code></br>
+<em>
+string
 </em>
 </td>
 <td>
