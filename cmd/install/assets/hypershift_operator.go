@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/images"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -242,6 +243,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 type HyperShiftOperatorDeployment struct {
 	Namespace                      *corev1.Namespace
 	OperatorImage                  string
+	Images                         map[string]string
 	ServiceAccount                 *corev1.ServiceAccount
 	Replicas                       int32
 	EnableOCPClusterMonitoring     bool
@@ -301,6 +303,21 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			},
 		}
 	}
+	image := o.OperatorImage
+
+	if mapImage, ok := o.Images["hypershift-operator"]; ok {
+		image = mapImage
+	}
+	tagMapping := images.TagMapping()
+	for tag, ref := range o.Images {
+		if envVar, exists := tagMapping[tag]; exists {
+			envVars = append(envVars, corev1.EnvVar{
+				Name:  envVar,
+				Value: ref,
+			})
+		}
+	}
+
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -334,7 +351,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							SecurityContext: &corev1.SecurityContext{
 								RunAsUser: k8sutilspointer.Int64Ptr(1000),
 							},
-							Image:           o.OperatorImage,
+							Image:           image,
 							ImagePullPolicy: corev1.PullAlways,
 							Env:             envVars,
 							Command:         []string{"/usr/bin/hypershift-operator"},

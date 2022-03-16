@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zapcore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,11 +61,10 @@ func main() {
 
 const (
 	// TODO: Include konnectivity image in release payload
-	konnectivityServerImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
-	konnectivityAgentImage  = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
+	defaultKonnectivityImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
 
 	// Default AWS KMS provider image. Can be overriden with annotation on HostedCluster
-	awsKMSProviderImage = "registry.ci.openshift.org/hypershift/aws-encryption-provider:latest"
+	defaultAWSKMSProviderImage = "registry.ci.openshift.org/hypershift/aws-encryption-provider:latest"
 )
 
 func NewStartCommand() *cobra.Command {
@@ -202,6 +202,18 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 		setupLog.Info("using token minter image", "image", tokenMinterImage)
+
+		konnectivityServerImage := defaultKonnectivityImage
+		konnectivityAgentImage := defaultKonnectivityImage
+		if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
+			konnectivityServerImage = envImage
+			konnectivityAgentImage = envImage
+		}
+
+		awsKMSProviderImage := defaultAWSKMSProviderImage
+		if envImage := os.Getenv(images.AWSEncryptionProviderEnvVar); len(envImage) > 0 {
+			awsKMSProviderImage = envImage
+		}
 
 		releaseProvider := &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.StaticProviderDecorator{
