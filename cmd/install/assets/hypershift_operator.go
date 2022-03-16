@@ -720,6 +720,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"virtualmachineinstances", "virtualmachines"},
 				Verbs:     []string{"*"},
 			},
+			{
+				APIGroups: []string{"agent-install.openshift.io"},
+				Resources: []string{"agents"},
+				Verbs:     []string{"*"},
+			},
 		},
 	}
 	return role
