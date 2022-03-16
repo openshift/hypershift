@@ -3,12 +3,15 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
+
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -57,6 +60,9 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 
 func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPAgent
+	if envImage := os.Getenv(images.AgentCAPIProviderEnvVar); len(envImage) > 0 {
+		providerImage = envImage
+	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAgentProviderImage]; ok {
 		providerImage = override
 	}

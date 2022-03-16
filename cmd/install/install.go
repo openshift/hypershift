@@ -29,9 +29,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	imageapi "github.com/openshift/api/image/v1"
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/install/assets"
@@ -42,6 +44,7 @@ import (
 type Options struct {
 	Namespace                                 string
 	HyperShiftImage                           string
+	ImageRefsFile                             string
 	HyperShiftOperatorReplicas                int32
 	Development                               bool
 	Template                                  bool
@@ -99,6 +102,9 @@ func (o *Options) Validate() error {
 			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
 		}
 	}
+	if o.HyperShiftImage != version.HyperShiftImage && len(o.ImageRefsFile) > 0 {
+		errs = append(errs, fmt.Errorf("only one of --hypershift-image or --image-refs-file should be specified"))
+	}
 	return errors.NewAggregate(errs)
 }
 
@@ -144,6 +150,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
+	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -202,8 +209,33 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 	return nil
 }
 
+func fetchImageRefs(file string) (map[string]string, error) {
+	content, err := ioutil.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read image references file: %w", err)
+	}
+	imageStream := imageapi.ImageStream{}
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(content), 100).Decode(&imageStream); err != nil {
+		return nil, fmt.Errorf("cannot parse image references file: %w", err)
+	}
+	result := map[string]string{}
+	for _, tag := range imageStream.Spec.Tags {
+		result[tag.Name] = tag.From.Name
+	}
+	return result, nil
+}
+
 func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	var objects []crclient.Object
+
+	var images map[string]string
+	if len(opts.ImageRefsFile) > 0 {
+		var err error
+		images, err = fetchImageRefs(opts.ImageRefsFile)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	controlPlanePriorityClass := assets.HyperShiftControlPlanePriorityClass{}.Build()
 	objects = append(objects, controlPlanePriorityClass)
@@ -329,6 +361,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		OIDCBucketRegion:               opts.OIDCStorageProviderS3Region,
 		OIDCStorageProviderS3Secret:    oidcSecret,
 		OIDCStorageProviderS3SecretKey: opts.OIDCStorageProviderS3CredentialsSecretKey,
+		Images:                         images,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 

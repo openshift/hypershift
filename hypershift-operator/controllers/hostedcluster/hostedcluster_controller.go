@@ -54,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1245,6 +1246,9 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 
 	// Reconcile CAPI manager deployment
 	capiImage := imageCAPI
+	if envImage := os.Getenv(images.CAPIEnvVar); len(envImage) > 0 {
+		capiImage = envImage
+	}
 	if _, ok := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]; ok {
 		capiImage = hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
 	}
@@ -2060,6 +2064,23 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				},
 			},
 		},
+	}
+
+	if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  images.KonnectivityEnvVar,
+				Value: envImage,
+			},
+		)
+	}
+	if envImage := os.Getenv(images.AWSEncryptionProviderEnvVar); len(envImage) > 0 {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  images.AWSEncryptionProviderEnvVar,
+				Value: envImage,
+			},
+		)
 	}
 
 	hyperutil.SetDeploymentReplicas(hc, deployment, 1)
