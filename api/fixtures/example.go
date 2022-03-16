@@ -3,6 +3,7 @@ package fixtures
 import (
 	"crypto/rand"
 	"fmt"
+	rbacv1 "k8s.io/api/rbac/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -306,6 +307,26 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				AgentNamespace: o.Agent.AgentNamespace,
 			},
 		}
+		agentResources := &ExampleAgentResources{
+			&rbacv1.Role{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Role",
+					APIVersion: rbacv1.SchemeGroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: o.Agent.AgentNamespace,
+					Name:      "capi-provider-role",
+				},
+				Rules: []rbacv1.PolicyRule{
+					{
+						APIGroups: []string{"agent-install.openshift.io"},
+						Resources: []string{"agents"},
+						Verbs:     []string{"*"},
+					},
+				},
+			},
+		}
+		resources = agentResources.AsObjects()
 		services = o.getServicePublishingStrategyMappingByAPIServerAddress(o.Agent.APIServerAddress)
 	case o.Kubevirt != nil:
 		platformSpec = hyperv1.PlatformSpec{
