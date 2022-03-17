@@ -154,7 +154,7 @@ app-sre-saas-template: hypershift
 # Run tests
 .PHONY: test
 test: build
-	$(GO) test ./... -coverprofile cover.out
+	$(GO) test -race -count=25 ./... -coverprofile cover.out
 
 .PHONY: e2e
 e2e:
