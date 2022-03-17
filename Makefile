@@ -233,4 +233,7 @@ ci-install-hypershift-private:
 		--oidc-storage-provider-s3-region=us-east-1 \
 		--private-platform=AWS \
 		--aws-private-creds=/etc/hypershift-pool-aws-credentials/credentials \
-		--aws-private-region=us-east-1
+		--aws-private-region=us-east-1 \
+		--external-dns-provider=aws \
+		--external-dns-credentials=/etc/hypershift-pool-aws-credentials/credentials \
+		--external-dns-domain-filter=service.ci.hypershift.devcluster.openshift.com
