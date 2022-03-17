@@ -1450,7 +1450,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SocksProxyImage, r.TokenMinterImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.AvailabilityProberImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1968,7 +1968,7 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	return hypershiftOperatorImage, nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, proberImage, socksImage, minterImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, minterImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("44Mi"),
@@ -2027,9 +2027,6 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 						Args: []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator",
 							"--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
 							fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine),
-							"--socks5-proxy-image", socksImage,
-							"--availability-prober-image", proberImage,
-							"--token-minter-image", minterImage,
 						},
 						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
 						LivenessProbe: &corev1.Probe{
