@@ -3,9 +3,11 @@ package aws
 import (
 	"context"
 	"fmt"
+	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -62,6 +64,9 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 
 func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPA
+	if envImage := os.Getenv(images.AWSCAPIProviderEnvVar); len(envImage) > 0 {
+		providerImage = envImage
+	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIProviderAWSImage]; ok {
 		providerImage = override
 	}

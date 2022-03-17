@@ -2,12 +2,16 @@ package kas
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -33,13 +37,17 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(apiServerPort)
-	svc.ObjectMeta.Annotations = map[string]string{
-		"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
 	}
+	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if isPublic {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+			}
 		} else {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
 		}
@@ -55,10 +63,25 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	return nil
 }
 
-func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int) (host string, port int32, err error) {
+func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			host = strategy.LoadBalancer.Hostname
+			port = int32(apiServerPort)
+			return
+		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
+			message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned; %v since creation.", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+			var eventMessages []string
+			eventMessages, err = messageCollector.ErrorMessages(svc)
+			if err != nil {
+				err = fmt.Errorf("failed to get events for service %s/%s: %w", svc.Namespace, svc.Name, err)
+				return
+			}
+			if len(eventMessages) > 0 {
+				message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned: %s", strings.Join(eventMessages, "; "))
+			}
 			return
 		}
 		switch {
@@ -100,10 +123,11 @@ func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) 
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(apiServerPort)
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
-	svc.ObjectMeta.Annotations = map[string]string{
-		"service.beta.kubernetes.io/aws-load-balancer-internal": "true",
-		"service.beta.kubernetes.io/aws-load-balancer-type":     "nlb",
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
 	}
+	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	svc.Spec.Ports[0] = portSpec
 	return nil
 }

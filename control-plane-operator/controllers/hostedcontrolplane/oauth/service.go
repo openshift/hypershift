@@ -2,8 +2,10 @@ package oauth
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -50,10 +52,16 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *h
 	return nil
 }
 
-func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
+func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, message string, err error) {
 	switch strategy.Type {
 	case hyperv1.Route:
+		if strategy.Route != nil && strategy.Route.Hostname != "" {
+			host = strategy.Route.Hostname
+			port = RouteExternalPort
+			return
+		}
 		if route.Spec.Host == "" {
+			message = fmt.Sprintf("OAuth service route does not contain valid host; %v since creation", duration.ShortHumanDuration(time.Since(route.ObjectMeta.CreationTimestamp.Time)))
 			return
 		}
 		port = RouteExternalPort

@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"path"
 	"strconv"
+	"strings"
+	"time"
 
 	"k8s.io/utils/pointer"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -20,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -187,6 +191,12 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			if svc.Annotations == nil {
+				svc.Annotations = map[string]string{}
+			}
+			svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
 		if portSpec.NodePort == 0 && strategy.NodePort != nil {
@@ -201,8 +211,15 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	return nil
 }
 
-func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool) error {
+func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool, strategy *hyperv1.ServicePublishingStrategy) error {
 	ownerRef.ApplyTo(route)
+	if !private && strategy.Route != nil && strategy.Route.Hostname != "" {
+		if route.Annotations == nil {
+			route.Annotations = map[string]string{}
+		}
+		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.Route.Hostname
+		route.Spec.Host = strategy.Route.Hostname
+	}
 	if private {
 		if route.Labels == nil {
 			route.Labels = map[string]string{}
@@ -223,10 +240,26 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool
 	return nil
 }
 
-func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy) (host string, port int32, err error) {
+func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
+
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
+			host = strategy.LoadBalancer.Hostname
+			port = int32(KonnectivityServerPort)
+			return
+		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
+			message = fmt.Sprintf("Konnectivity load balancer is not provisioned; %v since creation", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+			var messages []string
+			messages, err = messageCollector.ErrorMessages(svc)
+			if err != nil {
+				err = fmt.Errorf("failed to get events for service %s/%s: %w", svc.Namespace, svc.Name, err)
+				return
+			}
+			if len(messages) > 0 {
+				message = fmt.Sprintf("Konnectivity load balancer is not provisioned: %s", strings.Join(messages, "; "))
+			}
 			return
 		}
 		switch {
@@ -251,6 +284,11 @@ func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, str
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
 	case hyperv1.Route:
+		if strategy.Route != nil && strategy.Route.Hostname != "" {
+			host = strategy.Route.Hostname
+			port = 443
+			return
+		}
 		if route.Spec.Host == "" {
 			return
 		}

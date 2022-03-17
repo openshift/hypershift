@@ -1,4 +1,4 @@
-# Kubevirt platform
+# Create a Kubevirt cluster
 
 Install a nested OCP cluster running on VMs within a management OCP cluster
 

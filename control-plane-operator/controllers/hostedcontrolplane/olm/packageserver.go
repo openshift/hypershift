@@ -1,6 +1,8 @@
 package olm
 
 import (
+	"strings"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -15,7 +17,7 @@ var (
 	packageServerDeployment = MustDeployment("assets/packageserver-deployment.yaml")
 )
 
-func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, apiPort *int32) error {
+func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, apiPort *int32, noProxy []string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = packageServerDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
@@ -35,6 +37,8 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 		switch env.Name {
 		case "RELEASE_VERSION":
 			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = releaseVersion
+		case "NO_PROXY":
+			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = strings.Join(noProxy, ",")
 		}
 	}
 	dc.ApplyTo(deployment)

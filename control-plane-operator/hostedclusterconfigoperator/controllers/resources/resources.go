@@ -367,7 +367,7 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	}
 
 	log.Info("reconciling olm resources")
-	errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+	errs = append(errs, r.reconcileOLM(ctx, hcp, releaseImage)...)
 
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
@@ -805,12 +805,14 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 	return errs
 }
 
-func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
+func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
 	var errs []error
+
+	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImage.Version())
 
 	catalogs := []struct {
 		manifest  func() *operatorsv1alpha1.CatalogSource
-		reconcile func(*operatorsv1alpha1.CatalogSource)
+		reconcile func(*operatorsv1alpha1.CatalogSource, *olm.OperatorLifecycleManagerParams)
 	}{
 		{manifest: manifests.CertifiedOperatorsCatalogSource, reconcile: olm.ReconcileCertifiedOperatorsCatalogSource},
 		{manifest: manifests.CommunityOperatorsCatalogSource, reconcile: olm.ReconcileCommunityOperatorsCatalogSource},
@@ -821,7 +823,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	for _, catalog := range catalogs {
 		cs := catalog.manifest()
 		if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
-			catalog.reconcile(cs)
+			catalog.reconcile(cs, p)
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))

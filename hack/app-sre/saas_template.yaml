@@ -139,6 +139,7 @@ objects:
     resources:
     - events
     - configmaps
+    - persistentvolumeclaims
     - pods
     - pods/log
     - secrets
@@ -195,6 +196,12 @@ objects:
     resources:
     - virtualmachineinstances
     - virtualmachines
+    verbs:
+    - '*'
+  - apiGroups:
+    - agent-install.openshift.io
+    resources:
+    - agents
     verbs:
     - '*'
 - apiVersion: rbac.authorization.k8s.io/v1
@@ -19644,6 +19651,10 @@ objects:
         jsonPath: .status.conditions[?(@.type=="Available")].reason
         name: Reason
         type: string
+      - description: Message
+        jsonPath: .status.conditions[?(@.type=="Available")].message
+        name: Message
+        type: string
       name: v1alpha1
       schema:
         openAPIV3Schema:
@@ -19969,6 +19980,17 @@ objects:
                   - podCIDR
                   - serviceCIDR
                   type: object
+                olmCatalogPlacement:
+                  default: management
+                  description: OLMCatalogPlacement specifies the placement of OLM
+                    catalog components. By default, this is set to management and
+                    OLM catalog components are deployed onto the management cluster.
+                    If set to guest, the OLM catalog components will be deployed onto
+                    the guest cluster.
+                  enum:
+                  - management
+                  - guest
+                  type: string
                 pausedUntil:
                   description: 'PausedUntil is a field that can be used to pause reconciliation
                     on a resource. Either a date can be provided in RFC3339 format
@@ -20499,6 +20521,15 @@ objects:
                         description: ServicePublishingStrategy specifies how to publish
                           Service.
                         properties:
+                          loadBalancer:
+                            description: LoadBalancer configures exposing a service
+                              using a LoadBalancer.
+                            properties:
+                              hostname:
+                                description: Hostname is the name of the DNS record
+                                  that will be created pointing to the LoadBalancer.
+                                type: string
+                            type: object
                           nodePort:
                             description: NodePort configures exposing a service using
                               a NodePort.
@@ -20515,6 +20546,15 @@ objects:
                                 type: integer
                             required:
                             - address
+                            type: object
+                          route:
+                            description: Route configures exposing a service using
+                              a Route.
+                            properties:
+                              hostname:
+                                description: Hostname is the name of the DNS record
+                                  that will be created pointing to the Route.
+                                type: string
                             type: object
                           type:
                             description: Type is the publishing strategy used for
@@ -21042,6 +21082,17 @@ objects:
                   - OpenShiftSDN
                   - Calico
                   type: string
+                olmCatalogPlacement:
+                  default: management
+                  description: OLMCatalogPlacement specifies the placement of OLM
+                    catalog components. By default, this is set to management and
+                    OLM catalog components are deployed onto the management cluster.
+                    If set to guest, the OLM catalog components will be deployed onto
+                    the guest cluster.
+                  enum:
+                  - management
+                  - guest
+                  type: string
                 pausedUntil:
                   description: 'PausedUntil is a field that can be used to pause reconciliation
                     on a resource. Either a date can be provided in RFC3339 format
@@ -21561,6 +21612,15 @@ objects:
                         description: ServicePublishingStrategy specifies how to publish
                           Service.
                         properties:
+                          loadBalancer:
+                            description: LoadBalancer configures exposing a service
+                              using a LoadBalancer.
+                            properties:
+                              hostname:
+                                description: Hostname is the name of the DNS record
+                                  that will be created pointing to the LoadBalancer.
+                                type: string
+                            type: object
                           nodePort:
                             description: NodePort configures exposing a service using
                               a NodePort.
@@ -21577,6 +21637,15 @@ objects:
                                 type: integer
                             required:
                             - address
+                            type: object
+                          route:
+                            description: Route configures exposing a service using
+                              a Route.
+                            properties:
+                              hostname:
+                                description: Hostname is the name of the DNS record
+                                  that will be created pointing to the Route.
+                                type: string
                             type: object
                           type:
                             description: Type is the publishing strategy used for

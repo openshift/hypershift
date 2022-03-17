@@ -3,8 +3,10 @@ package azure
 import (
 	"context"
 	"fmt"
+	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -57,10 +59,17 @@ func (a *Azure) ReconcileCAPIInfraCR(
 }
 
 func (a *Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+	image := providerImage
+	if envImage := os.Getenv(images.AzureCAPIProviderEnvVar); len(envImage) > 0 {
+		image = envImage
+	}
+	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAzureProviderImage]; ok {
+		image = override
+	}
 	return &appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
 		Containers: []corev1.Container{{
 			Name:    "manager",
-			Image:   providerImage,
+			Image:   image,
 			Command: []string{"/manager"},
 			Args: []string{
 				"--namespace=$(MY_NAMESPACE)",
