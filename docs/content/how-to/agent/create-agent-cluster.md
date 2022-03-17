@@ -1,6 +1,6 @@
-# Agent platform on baremetal OCP
+# Create an Agent cluster
 
-This document explains how to deploy HyperShift in OpenShift and then use the 'agent' provider to deploy bare metal worker nodes for our `HostedClusters`.
+This document explains how to create HostedClusters and NodePools using the 'Agent' platform to create bare metal worker nodes.
 
 The Agent platform uses the [Infrastructure Operator](https://github.com/openshift/assisted-service) (AKA Assisted Installer) to add worker nodes to a hosted cluster. For a primer on the Infrastructure Operator, see [here](https://github.com/openshift/assisted-service/blob/master/docs/hive-integration/kube-api-getting-started.md).
 
@@ -12,7 +12,7 @@ Upon scaling up a NodePool, a Machine will be created, and the CAPI provider wil
 
 Upon scaling down a NodePool, Agents will be unbound from the corresponding cluster. However, you must boot them with the Discovery Image once again before reusing them.
 
-## Hypershift Operator requirements
+## HyperShift Operator requirements
 
 * cluster-admin access to an OpenShift IPI baremetal cluster (tested with 4.9.21) to deploy the CRDs + operator (in this example, a 3 nodes compact cluster)
 
@@ -101,7 +101,7 @@ EOF
 until oc wait -n assisted-installer $(oc get pods -n assisted-installer -l app=assisted-service -o name) --for condition=Ready --timeout 10s >/dev/null 2>&1 ; do sleep 1 ; done
 ~~~
 
-## Prerequisites: Building the Hypershift Operator
+## Prerequisites: Building the HyperShift Operator
 
 Currently, the HyperShift operator is deployed using the `hypershift` binary, which needs to be compiled manually.
 RHEL8 doesn't include go1.17 officially but it can be installed via `gvm` by following the next steps:
@@ -442,6 +442,25 @@ spec:
   pullSecretRef:
     name: ${PULL_SECRET_NAME}
   sshAuthorizedKey: ${SSH_PUB}
+EOF
+~~~
+
+> **NOTE**: If you wish to use an `InfraEnv` (and its associated `Agents`) from a namespace that isn't the ${HOSTED_CLUSTER_NS}, you must create a role for capi-provider-agent in that namespace (this is the same namespace as specified in the hosted cluster Spec (`spec.platform.agent.agentNamespace`).
+~~~sh
+envsubst <<"EOF" | oc apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: null
+  name: capi-provider-role
+  namespace: ${INFRA_ENV_NS}
+rules:
+- apiGroups:
+  - agent-install.openshift.io
+  resources:
+  - agents
+  verbs:
+  - '*'
 EOF
 ~~~
 

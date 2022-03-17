@@ -63,6 +63,10 @@ const (
 	// a HostedControlPlane.
 	ClusterAPIAgentProviderImage = "hypershift.openshift.io/capi-provider-agent-image"
 
+	// ClusterAPIAzureProviderImage overrides the CAPI Azure provider image to use for
+	// a HostedControlPlane.
+	ClusterAPIAzureProviderImage = "hypershift.openshift.io/capi-provider-azure-image"
+
 	// AESCBCKeySecretKey defines the Kubernetes secret key name that contains the aescbc encryption key
 	// in the AESCBC secret encryption strategy
 	AESCBCKeySecretKey = "key"
@@ -82,6 +86,9 @@ const (
 	// This is a temporary workaround necessary for compliance reasons on the IBM Cloud side:
 	// no images can be pulled from registries outside of IBM Cloud's official regional registries
 	MachineApproverImage = "hypershift.openshift.io/machine-approver-image"
+
+	// ExternalDNSHostnameAnnotation is the annotation external-dns uses to register DNS name for different HCP services.
+	ExternalDNSHostnameAnnotation = "external-dns.alpha.kubernetes.io/hostname"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -226,7 +233,31 @@ type HostedClusterSpec struct {
 	// provided: reconciliation is paused on the resource until the field is removed.
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
+
+	// OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+	// this is set to management and OLM catalog components are deployed onto the management
+	// cluster. If set to guest, the OLM catalog components will be deployed onto the guest
+	// cluster.
+	//
+	// +kubebuilder:default=management
+	// +optional
+	// +immutable
+	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
 }
+
+// OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
+// +kubebuilder:validation:Enum=management;guest
+type OLMCatalogPlacement string
+
+const (
+	// ManagementOLMCatalogPlacement indicates OLM catalog components will be placed in
+	// the management cluster.
+	ManagementOLMCatalogPlacement OLMCatalogPlacement = "management"
+
+	// GuestOLMCatalogPlacement indicates OLM catalog components will be placed in
+	// the guest cluster.
+	GuestOLMCatalogPlacement OLMCatalogPlacement = "guest"
+)
 
 // ImageContentSource specifies image mirrors that can be used by cluster nodes
 // to pull content. For cluster workloads, if a container image registry host of
@@ -269,13 +300,19 @@ type ServicePublishingStrategy struct {
 
 	// NodePort configures exposing a service using a NodePort.
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
+
+	// LoadBalancer configures exposing a service using a LoadBalancer.
+	LoadBalancer *LoadBalancerPublishingStrategy `json:"loadBalancer,omitempty"`
+
+	// Route configures exposing a service using a Route.
+	Route *RoutePublishingStrategy `json:"route,omitempty"`
 }
 
 // PublishingStrategyType defines publishing strategies for services.
 type PublishingStrategyType string
 
 var (
-	// LoadBalancer exposes  a service with a LoadBalancer kube service.
+	// LoadBalancer exposes a service with a LoadBalancer kube service.
 	LoadBalancer PublishingStrategyType = "LoadBalancer"
 	// NodePort exposes a service with a NodePort kube service.
 	NodePort PublishingStrategyType = "NodePort"
@@ -316,6 +353,20 @@ type NodePortPublishingStrategy struct {
 	// Port is the port of the NodePort service. If <=0, the port is dynamically
 	// assigned when the service is created.
 	Port int32 `json:"port,omitempty"`
+}
+
+// LoadBalancerPublishingStrategy specifies setting used to expose a service as a LoadBalancer.
+type LoadBalancerPublishingStrategy struct {
+	// Hostname is the name of the DNS record that will be created pointing to the LoadBalancer.
+	// +optional
+	Hostname string `json:"hostname,omitempty"`
+}
+
+// RoutePublishingStrategy specifies options for exposing a service as a Route.
+type RoutePublishingStrategy struct {
+	// Hostname is the name of the DNS record that will be created pointing to the Route.
+	// +optional
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // DNSSpec specifies the DNS configuration in the cluster.
@@ -1005,6 +1056,21 @@ const (
 	HostedClusterUnhealthyComponentsReason = "UnhealthyControlPlaneComponents"
 	InvalidConfigurationReason             = "InvalidConfiguration"
 
+	DeploymentNotFoundReason      = "DeploymentNotFound"
+	DeploymentStatusUnknownReason = "DeploymentStatusUnknown"
+
+	HostedControlPlaneComponentsUnavailableReason = "ComponentsUnavailable"
+	KubeconfigUnavailableReason                   = "KubeconfigUnavailable"
+	ClusterVersionStatusUnknownReason             = "ClusterVersionStatusUnknown"
+
+	StatusUnknownReason = "StatusUnknown"
+	AsExpectedReason    = "AsExpected"
+
+	EtcdQuorumAvailableReason     = "QuorumAvailable"
+	EtcdQuorumUnavailableReason   = "QuorumUnavailable"
+	EtcdStatusUnknownReason       = "EtcdStatusUnknown"
+	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
+
 	UnsupportedHostedClusterReason = "UnsupportedHostedCluster"
 
 	UnmanagedEtcdStatusUnknownReason = "UnmanagedEtcdStatusUnknown"
@@ -1117,6 +1183,7 @@ type ClusterConfiguration struct {
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
 // +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
+// +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

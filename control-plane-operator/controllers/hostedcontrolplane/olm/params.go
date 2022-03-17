@@ -20,6 +20,7 @@ type OperatorLifecycleManagerParams struct {
 	DeploymentConfig        config.DeploymentConfig
 	PackageServerConfig     config.DeploymentConfig
 	AvailabilityProberImage string
+	NoProxy                 []string
 	config.OwnerRef
 }
 
@@ -31,6 +32,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 		OperatorRegistryImage:   images["operator-registry"],
 		ReleaseVersion:          releaseVersion,
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		NoProxy:                 []string{"kube-apiserver"},
 		OwnerRef:                config.OwnerRefFrom(hcp),
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
@@ -63,6 +65,10 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	params.PackageServerConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+
+	if hcp.Spec.OLMCatalogPlacement == "management" {
+		params.NoProxy = append(params.NoProxy, "certified-operators", "community-operators", "redhat-operators", "redhat-marketplace")
+	}
 
 	return params
 }

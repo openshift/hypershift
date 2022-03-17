@@ -54,6 +54,7 @@ type CreateOptions struct {
 	SSHKeyFile                       string
 	ServiceCIDR                      string
 	PodCIDR                          string
+	ExternalDNSDomain                string
 	NonePlatform                     NonePlatformCreateOptions
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions

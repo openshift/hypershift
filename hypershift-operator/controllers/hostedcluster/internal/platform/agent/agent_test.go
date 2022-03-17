@@ -35,13 +35,6 @@ func TestReconcileCredentials(t *testing.T) {
 		hostedCluster, controlPlaneNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	role := &rbacv1.Role{}
-	err = client.Get(context.Background(), types.NamespacedName{
-		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
-		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
-	}, role)
-	g.Expect(err).ToNot(HaveOccurred())
-
 	roleBinding := &rbacv1.RoleBinding{}
 	err = client.Get(context.Background(), types.NamespacedName{
 		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
@@ -81,18 +74,20 @@ func TestDeleteCredentials(t *testing.T) {
 		hostedCluster, controlPlaneNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
+	// Verify the roleBinding exists
+	roleBinding := &rbacv1.RoleBinding{}
+	err = client.Get(context.Background(), types.NamespacedName{
+		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
+		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
+	}, roleBinding)
+	g.Expect(err).ToNot(HaveOccurred())
+
 	err = platform.DeleteCredentials(context.Background(),
 		client,
 		hostedCluster, controlPlaneNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
-	role := &rbacv1.Role{}
-	err = client.Get(context.Background(), types.NamespacedName{
-		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
-		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
-	}, role)
-	g.Expect(apierrors.IsNotFound(err)).To(Equal(true))
 
-	roleBinding := &rbacv1.RoleBinding{}
+	roleBinding = &rbacv1.RoleBinding{}
 	err = client.Get(context.Background(), types.NamespacedName{
 		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
 		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),

@@ -38,15 +38,19 @@ nav:
   - how-to/distribute-hosted-cluster-workloads.md
   - how-to/upgrades.md
   - how-to/restart-control-plane-components.md
-  - how-to/create-infra-iam-separately.md
-  - how-to/create-aws-hosted-cluster-multiple-zones.md
-  - how-to/deploy-aws-private-clusters.md
-  - how-to/oauth.md
-  - how-to/create-azure-cluster.md
-  - how-to/kubevirt-platform.md
   - how-to/pause-reconciliation.md
-  - how-to/baremetal-none.md
-  - how-to/baremetal-agent.md
+  - 'AWS':
+    - how-to/aws/create-infra-iam-separately.md
+    - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
+    - how-to/aws/deploy-aws-private-clusters.md
+  - 'Azure':
+    - how-to/azure/create-azure-cluster.md
+  - 'Agent':
+    - how-to/agent/create-agent-cluster.md
+  - 'Kubevirt':
+    - how-to/kubevirt/create-kubevirt-cluster.md
+  - 'None':
+    - how-to/none/create-none-cluster.md
 - 'Reference':
   - reference/index.md
   - reference/api.md
