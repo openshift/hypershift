@@ -233,7 +233,31 @@ type HostedClusterSpec struct {
 	// provided: reconciliation is paused on the resource until the field is removed.
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
+
+	// OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+	// this is set to management and OLM catalog components are deployed onto the management
+	// cluster. If set to guest, the OLM catalog components will be deployed onto the guest
+	// cluster.
+	//
+	// +kubebuilder:default=management
+	// +optional
+	// +immutable
+	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
 }
+
+// OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
+// +kubebuilder:validation:Enum=management;guest
+type OLMCatalogPlacement string
+
+const (
+	// ManagementOLMCatalogPlacement indicates OLM catalog components will be placed in
+	// the management cluster.
+	ManagementOLMCatalogPlacement OLMCatalogPlacement = "management"
+
+	// GuestOLMCatalogPlacement indicates OLM catalog components will be placed in
+	// the guest cluster.
+	GuestOLMCatalogPlacement OLMCatalogPlacement = "guest"
+)
 
 // ImageContentSource specifies image mirrors that can be used by cluster nodes
 // to pull content. For cluster workloads, if a container image registry host of
@@ -288,7 +312,7 @@ type ServicePublishingStrategy struct {
 type PublishingStrategyType string
 
 var (
-	// LoadBalancer exposes  a service with a LoadBalancer kube service.
+	// LoadBalancer exposes a service with a LoadBalancer kube service.
 	LoadBalancer PublishingStrategyType = "LoadBalancer"
 	// NodePort exposes a service with a NodePort kube service.
 	NodePort PublishingStrategyType = "NodePort"

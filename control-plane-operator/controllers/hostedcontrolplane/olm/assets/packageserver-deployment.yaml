@@ -21,24 +21,6 @@ spec:
         hypershift.openshift.io/control-plane-component: packageserver
     spec:
       containers:
-      - name: socks5-proxy
-        command:
-          - "/usr/bin/konnectivity-socks5-proxy"
-        args:
-          - run
-        image: SOCKS5_PROXY_IMAGE
-        env:
-          - name: KUBECONFIG
-            value: /etc/openshift/kubeconfig/kubeconfig
-        ports:
-          - containerPort: 8090
-        volumeMounts:
-          - mountPath: /etc/konnectivity-proxy-tls
-            name: oas-konnectivity-proxy-cert
-            readOnly: true
-          - mountPath: /etc/openshift/kubeconfig
-            name: kubeconfig
-            readOnly: true
       - command:
         - /bin/package-server
         - -v=4
@@ -99,6 +81,24 @@ spec:
         - mountPath: /etc/openshift/kubeconfig
           name: kubeconfig
           readOnly: true
+      - name: socks5-proxy
+        command:
+          - "/usr/bin/konnectivity-socks5-proxy"
+        args:
+          - run
+        image: SOCKS5_PROXY_IMAGE
+        env:
+          - name: KUBECONFIG
+            value: /etc/openshift/kubeconfig/kubeconfig
+        ports:
+          - containerPort: 8090
+        volumeMounts:
+          - mountPath: /etc/konnectivity-proxy-tls
+            name: oas-konnectivity-proxy-cert
+            readOnly: true
+          - mountPath: /etc/openshift/kubeconfig
+            name: kubeconfig
+            readOnly: true
       restartPolicy: Always
       securityContext: {}
       terminationGracePeriodSeconds: 30

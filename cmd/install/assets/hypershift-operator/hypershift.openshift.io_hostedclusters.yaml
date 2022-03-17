@@ -358,6 +358,16 @@ spec:
                 - podCIDR
                 - serviceCIDR
                 type: object
+              olmCatalogPlacement:
+                default: management
+                description: OLMCatalogPlacement specifies the placement of OLM catalog
+                  components. By default, this is set to management and OLM catalog
+                  components are deployed onto the management cluster. If set to guest,
+                  the OLM catalog components will be deployed onto the guest cluster.
+                enum:
+                - management
+                - guest
+                type: string
               pausedUntil:
                 description: 'PausedUntil is a field that can be used to pause reconciliation
                   on a resource. Either a date can be provided in RFC3339 format or
