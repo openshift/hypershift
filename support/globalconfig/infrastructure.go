@@ -21,18 +21,26 @@ func InfrastructureConfig() *configv1.Infrastructure {
 
 func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.HostedControlPlane) {
 
+	platformType := hcp.Spec.Platform.Type
+	switch hcp.Spec.Platform.Type {
+	// In case of KubeVirtPlatform, set the Infrastructure to NonePlatform
+	// This is done in order to prevent error in machine-config-server
+	case hyperv1.KubevirtPlatform:
+		platformType = hyperv1.NonePlatform
+	}
+
 	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
 	apiServerPort := hcp.Status.ControlPlaneEndpoint.Port
 
-	infra.Spec.PlatformSpec.Type = configv1.PlatformType(hcp.Spec.Platform.Type)
+	infra.Spec.PlatformSpec.Type = configv1.PlatformType(platformType)
 	infra.Status.APIServerInternalURL = fmt.Sprintf("https://%s:%d", apiServerAddress, apiServerPort)
 	infra.Status.APIServerURL = fmt.Sprintf("https://%s:%d", apiServerAddress, apiServerPort)
 	infra.Status.EtcdDiscoveryDomain = BaseDomain(hcp)
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
 	infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
-	infra.Status.Platform = configv1.PlatformType(hcp.Spec.Platform.Type)
+	infra.Status.Platform = configv1.PlatformType(platformType)
 	infra.Status.PlatformStatus = &configv1.PlatformStatus{
-		Type: configv1.PlatformType(hcp.Spec.Platform.Type),
+		Type: configv1.PlatformType(platformType),
 	}
 
 	switch hcp.Spec.InfrastructureAvailabilityPolicy {
@@ -42,7 +50,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		infra.Status.InfrastructureTopology = configv1.HighlyAvailableTopologyMode
 	}
 
-	switch hcp.Spec.Platform.Type {
+	switch platformType {
 	case hyperv1.AWSPlatform:
 		infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
 		infra.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{
