@@ -31,6 +31,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -266,6 +267,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		CreateOrUpdateProvider: createOrUpdate,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
+	}
+
+	if mgmtClusterCaps.Has(capabilities.CapabilityConfigOpenshiftIO) {
+		if err := proxy.Setup(mgr, opts.Namespace, opts.DeploymentName); err != nil {
+			return fmt.Errorf("failed to set up the proxy controller: %w", err)
+		}
 	}
 
 	// Start platform-specific controllers

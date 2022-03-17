@@ -56,6 +56,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -923,6 +924,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, hcp)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	if capiProviderDeploymentSpec != nil {
+		proxy.SetEnvVars(&capiProviderDeploymentSpec.Template.Spec.Containers[0].Env)
 	}
 
 	// Reconcile cluster prometheus RBAC resources if enabled
@@ -1831,6 +1835,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				},
 			},
 		}
+		proxy.SetEnvVars(&ignitionServerDeployment.Spec.Template.Spec.Containers[0].Env)
 
 		// set security context
 		if r.SetDefaultSecurityContext {
@@ -2083,6 +2088,8 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			},
 		)
 	}
+	mainContainer = util.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
+	proxy.SetEnvVars(&mainContainer.Env)
 
 	hyperutil.SetDeploymentReplicas(hc, deployment, 1)
 

@@ -219,7 +219,7 @@ func buildOASContainerMain(image string, etcdHostname string, port int32) func(c
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: fmt.Sprintf("%s,%s,registry.access.redhat.com,quay.io,registry.redhat.io,amazonaws.com", manifests.KubeAPIServerService("").Name, etcdHostname),
+				Value: fmt.Sprintf("%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname),
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
