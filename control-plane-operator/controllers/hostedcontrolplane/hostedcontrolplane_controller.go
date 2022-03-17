@@ -5,9 +5,11 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/events"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
@@ -21,6 +23,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -76,6 +81,7 @@ type InfrastructureStatus struct {
 	OpenShiftAPIHost        string
 	OauthAPIServerHost      string
 	PackageServerAPIAddress string
+	Message                 string
 }
 
 func (s InfrastructureStatus) IsReady() bool {
@@ -110,6 +116,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		}).
+		Watches(&source.Kind{Type: &corev1.Event{}}, handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)).
 		Watches(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &appsv1.StatefulSet{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
@@ -201,7 +208,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		newCondition := metav1.Condition{
 			Type:   string(hyperv1.EtcdAvailable),
 			Status: metav1.ConditionUnknown,
-			Reason: "EtcdStatusUnknown",
+			Reason: hyperv1.EtcdStatusUnknownReason,
 		}
 		switch hostedControlPlane.Spec.Etcd.ManagementType {
 		case hyperv1.Managed:
@@ -212,25 +219,17 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 					newCondition = metav1.Condition{
 						Type:   string(hyperv1.EtcdAvailable),
 						Status: metav1.ConditionFalse,
-						Reason: "StatefulSetNotFound",
+						Reason: hyperv1.EtcdStatefulSetNotFoundReason,
 					}
 				} else {
 					return ctrl.Result{}, fmt.Errorf("failed to fetch etcd statefulset %s/%s: %w", sts.Namespace, sts.Name, err)
 				}
 			} else {
-				if sts.Status.ReadyReplicas >= *sts.Spec.Replicas/2+1 {
-					newCondition = metav1.Condition{
-						Type:   string(hyperv1.EtcdAvailable),
-						Status: metav1.ConditionTrue,
-						Reason: "QuorumAvailable",
-					}
-				} else {
-					newCondition = metav1.Condition{
-						Type:   string(hyperv1.EtcdAvailable),
-						Status: metav1.ConditionFalse,
-						Reason: "QuorumUnavailable",
-					}
+				conditionPtr, err := r.etcdStatefulSetCondition(ctx, sts)
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to get etcd statefulset status: %w", err)
 				}
+				newCondition = *conditionPtr
 			}
 		case hyperv1.Unmanaged:
 			r.Log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
@@ -250,15 +249,16 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		newCondition := metav1.Condition{
 			Type:   string(hyperv1.KubeAPIServerAvailable),
 			Status: metav1.ConditionUnknown,
-			Reason: "StatusUnknown",
+			Reason: hyperv1.StatusUnknownReason,
 		}
 		deployment := manifests.KASDeployment(hostedControlPlane.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
 			if apierrors.IsNotFound(err) {
 				newCondition = metav1.Condition{
-					Type:   string(hyperv1.KubeAPIServerAvailable),
-					Status: metav1.ConditionFalse,
-					Reason: "DeploymentNotFound",
+					Type:    string(hyperv1.KubeAPIServerAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.DeploymentNotFoundReason,
+					Message: "Kube APIServer deployment not found",
 				}
 			} else {
 				return ctrl.Result{}, fmt.Errorf("failed to fetch Kube APIServer deployment %s/%s: %w", deployment.Namespace, deployment.Name, err)
@@ -268,14 +268,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			newCondition = metav1.Condition{
 				Type:   string(hyperv1.KubeAPIServerAvailable),
 				Status: metav1.ConditionFalse,
-				Reason: "DeploymentStatusUnknown",
+				Reason: hyperv1.DeploymentStatusUnknownReason,
 			}
 			for _, cond := range deployment.Status.Conditions {
 				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
 					newCondition = metav1.Condition{
 						Type:   string(hyperv1.KubeAPIServerAvailable),
 						Status: metav1.ConditionTrue,
-						Reason: "AsExpected",
+						Reason: hyperv1.AsExpectedReason,
 					}
 					break
 				}
@@ -285,40 +285,13 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
-	// Reconcile hostedcontrolplane availability and Ready flag
-	{
-		newCondition := metav1.Condition{
-			Type:   string(hyperv1.HostedControlPlaneAvailable),
-			Status: metav1.ConditionUnknown,
-			Reason: "StatusUnknown",
-		}
-		if meta.IsStatusConditionPresentAndEqual(hostedControlPlane.Status.Conditions, string(hyperv1.KubeAPIServerAvailable), metav1.ConditionTrue) &&
-			meta.IsStatusConditionPresentAndEqual(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdAvailable), metav1.ConditionTrue) {
-			hostedControlPlane.Status.Ready = true
-			newCondition = metav1.Condition{
-				Type:   string(hyperv1.HostedControlPlaneAvailable),
-				Status: metav1.ConditionTrue,
-				Reason: "AsExpected",
-			}
-		} else {
-			hostedControlPlane.Status.Ready = false
-			newCondition = metav1.Condition{
-				Type:    string(hyperv1.HostedControlPlaneAvailable),
-				Status:  metav1.ConditionFalse,
-				Reason:  "ComponentsUnavailable",
-				Message: "Not all dependent components are available yet",
-			}
-		}
-		newCondition.ObservedGeneration = hostedControlPlane.Generation
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
-	}
-
+	// Reconcile infrastructure status
 	{
 		r.Log.Info("Reconciling infrastructure status")
 		newCondition := metav1.Condition{
 			Type:   string(hyperv1.InfrastructureReady),
 			Status: metav1.ConditionUnknown,
-			Reason: "StatusUnknown",
+			Reason: hyperv1.StatusUnknownReason,
 		}
 		infraStatus, err := r.reconcileInfrastructureStatus(ctx, hostedControlPlane)
 		if err != nil {
@@ -338,14 +311,18 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				newCondition = metav1.Condition{
 					Type:   string(hyperv1.InfrastructureReady),
 					Status: metav1.ConditionTrue,
-					Reason: "AsExpected",
+					Reason: hyperv1.AsExpectedReason,
 				}
 			} else {
+				message := "Cluster infrastructure is still provisioning"
+				if len(infraStatus.Message) > 0 {
+					message = infraStatus.Message
+				}
 				newCondition = metav1.Condition{
 					Type:    string(hyperv1.InfrastructureReady),
 					Status:  metav1.ConditionFalse,
 					Reason:  "WaitingOnInfrastructureReady",
-					Message: "Cluster infrastructure is still provisioning",
+					Message: message,
 				}
 				r.Log.Info("Infrastructure is not yet ready")
 			}
@@ -364,7 +341,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return metav1.Condition{
 					Type:    string(hyperv1.ClusterVersionFailing),
 					Status:  metav1.ConditionUnknown,
-					Reason:  "StatusUnknown",
+					Reason:  hyperv1.ClusterVersionStatusUnknownReason,
 					Message: fmt.Sprintf("failed to get clusterversion: %v", err),
 				}
 			}
@@ -383,12 +360,53 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return metav1.Condition{
 				Type:   string(hyperv1.ClusterVersionFailing),
 				Status: metav1.ConditionFalse,
-				Reason: "AsExpected",
+				Reason: hyperv1.AsExpectedReason,
 			}
 		}()
 		newCondition.ObservedGeneration = hostedControlPlane.Generation
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 		r.Log.Info("Finished reconciling hosted cluster version conditions")
+	}
+
+	// Reconcile hostedcontrolplane availability and Ready flag
+	{
+		infrastructureCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.InfrastructureReady))
+		kubeConfigAvailable := hostedControlPlane.Status.KubeConfig != nil
+		etcdCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdAvailable))
+		kubeAPIServerCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
+
+		status := metav1.ConditionFalse
+		var reason, message string
+		switch {
+		case infrastructureCondition == nil && etcdCondition == nil && kubeAPIServerCondition == nil:
+			reason = hyperv1.StatusUnknownReason
+			message = ""
+		case infrastructureCondition != nil && infrastructureCondition.Status == metav1.ConditionFalse:
+			reason = infrastructureCondition.Reason
+			message = infrastructureCondition.Message
+		case !kubeConfigAvailable:
+			reason = hyperv1.KubeconfigUnavailableReason
+			message = "The hosted control plane kubeconfig is not available"
+		case etcdCondition != nil && etcdCondition.Status == metav1.ConditionFalse:
+			reason = etcdCondition.Reason
+			message = etcdCondition.Message
+		case kubeAPIServerCondition != nil && kubeAPIServerCondition.Status == metav1.ConditionFalse:
+			reason = kubeAPIServerCondition.Reason
+			message = kubeAPIServerCondition.Message
+		default:
+			reason = hyperv1.AsExpectedReason
+			message = ""
+			status = metav1.ConditionTrue
+		}
+		hostedControlPlane.Status.Ready = (status == metav1.ConditionTrue)
+		condition := metav1.Condition{
+			Type:               string(hyperv1.HostedControlPlaneAvailable),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: hostedControlPlane.Generation,
+		}
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
 	}
 
 	kubeconfig := manifests.KASExternalKubeconfigSecret(hostedControlPlane.Namespace, hostedControlPlane.Spec.KubeConfig)
@@ -842,31 +860,49 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructure(ctx context.Conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
-	var infraStatus InfrastructureStatus
-	var err error
-	if infraStatus.APIHost, infraStatus.APIPort, err = r.reconcileAPIServerServiceStatus(ctx, hcp); err != nil {
-		return infraStatus, err
+	var (
+		infraStatus InfrastructureStatus
+		errs        []error
+		err         error
+		msg         string
+		messages    []string
+	)
+	if infraStatus.APIHost, infraStatus.APIPort, msg, err = r.reconcileAPIServerServiceStatus(ctx, hcp); err != nil {
+		errs = append(errs, err)
 	}
-	if infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, err = r.reconcileKonnectivityServiceStatus(ctx, hcp); err != nil {
-		return infraStatus, err
+	if len(msg) > 0 {
+		messages = append(messages, msg)
 	}
-	if infraStatus.OAuthHost, infraStatus.OAuthPort, err = r.reconcileOAuthServiceStatus(ctx, hcp); err != nil {
-		return infraStatus, err
+	if infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, msg, err = r.reconcileKonnectivityServiceStatus(ctx, hcp); err != nil {
+		errs = append(errs, err)
+	}
+	if len(msg) > 0 {
+		messages = append(messages, msg)
+	}
+	if infraStatus.OAuthHost, infraStatus.OAuthPort, msg, err = r.reconcileOAuthServiceStatus(ctx, hcp); err != nil {
+		errs = append(errs, err)
+	}
+	if len(msg) > 0 {
+		messages = append(messages, msg)
 	}
 	if infraStatus.OpenShiftAPIHost, err = r.reconcileOpenShiftAPIServerServiceStatus(ctx, hcp); err != nil {
-		return infraStatus, err
+		errs = append(errs, err)
 	}
 	if infraStatus.OauthAPIServerHost, err = r.reconcileOAuthAPIServerServiceStatus(ctx, hcp); err != nil {
-		return infraStatus, err
+		errs = append(errs, err)
 	}
 	if infraStatus.PackageServerAPIAddress, err = r.reconcileOLMPackageServerServiceStatus(ctx, hcp); err != nil {
-		return infraStatus, err
+		errs = append(errs, err)
 	}
 
-	return infraStatus, nil
+	if len(messages) > 0 {
+		infraStatus.Message = strings.Join(messages, "; ")
+	}
+
+	return infraStatus, utilerrors.NewAggregate(errs)
 }
 
-func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
+func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.APIServer)
 	if serviceStrategy == nil {
 		err = fmt.Errorf("APIServer service strategy not specified")
@@ -884,14 +920,14 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 			return
 		}
 		p := kas.NewKubeAPIServerServiceParams(hcp)
-		return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort)
-
+		return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort, events.NewMessageCollector(ctx, r.Client))
 	}
 
-	return kas.ReconcilePrivateServiceStatus(hcp.Name)
+	host, port, err = kas.ReconcilePrivateServiceStatus(hcp.Name)
+	return
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
+func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Konnectivity)
 	if serviceStrategy == nil {
 		err = fmt.Errorf("konnectivity service strategy not specified")
@@ -918,10 +954,10 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx co
 			return
 		}
 	}
-	return konnectivity.ReconcileServerServiceStatus(svc, route, serviceStrategy)
+	return konnectivity.ReconcileServerServiceStatus(svc, route, serviceStrategy, events.NewMessageCollector(ctx, r.Client))
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
+func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.OAuthServer)
 	if serviceStrategy == nil {
 		err = fmt.Errorf("OAuth strategy not specified")
@@ -2302,4 +2338,69 @@ func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.Hosted
 		*password = string(existingPassword)
 	}
 	return nil
+}
+
+func (r *HostedControlPlaneReconciler) hostedControlPlaneInNamespace(resource client.Object) []reconcile.Request {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(context.Background(), hcpList, &client.ListOptions{
+		Namespace: resource.GetNamespace(),
+	}); err != nil {
+		r.Log.Error(err, "failed to list hosted control planes in namespace", "namespace", resource.GetNamespace())
+		return nil
+	}
+	if len(hcpList.Items) > 1 {
+		r.Log.Error(fmt.Errorf("more than one HostedControlPlane resource found in namespace %s", resource.GetNamespace()), "unexpected number of HostedControlPlane resources")
+		return nil
+	}
+	var result []reconcile.Request
+	for _, hcp := range hcpList.Items {
+		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hcp.Namespace, Name: hcp.Name}})
+	}
+	return result
+}
+
+func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Context, sts *appsv1.StatefulSet) (*metav1.Condition, error) {
+	if sts.Status.ReadyReplicas >= *sts.Spec.Replicas/2+1 {
+		return &metav1.Condition{
+			Type:   string(hyperv1.EtcdAvailable),
+			Status: metav1.ConditionTrue,
+			Reason: hyperv1.EtcdQuorumAvailableReason,
+		}, nil
+	}
+
+	var message string
+
+	// Check that any etcd PVCs have been provisioned
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	if err := r.List(ctx, pvcList, &client.ListOptions{
+		Namespace:     sts.Namespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{"app": "etcd"}),
+	}); err != nil {
+		return nil, err
+	}
+
+	messageCollector := events.NewMessageCollector(ctx, r.Client)
+	for _, pvc := range pvcList.Items {
+		if pvc.Status.Phase != corev1.ClaimBound {
+			eventMessages, err := messageCollector.ErrorMessages(&pvc)
+			if err != nil {
+				return nil, err
+			}
+			if len(eventMessages) > 0 {
+				message = fmt.Sprintf("Etcd volume claim %s pending: %s", pvc.Name, strings.Join(eventMessages, "; "))
+				break
+			}
+		}
+	}
+
+	if len(message) == 0 {
+		message = "Etcd has not yet reached quorum"
+	}
+	return &metav1.Condition{
+		Type:    string(hyperv1.EtcdAvailable),
+		Status:  metav1.ConditionFalse,
+		Reason:  hyperv1.EtcdQuorumUnavailableReason,
+		Message: message,
+	}, nil
+
 }

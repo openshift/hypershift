@@ -288,7 +288,7 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 				Status: metav1.ConditionFalse,
 			},
 		},
-		"missing kubeconfig should cause unavailability": {
+		"hosted controlplane with availability false should cause unavailability": {
 			Cluster: hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
@@ -296,10 +296,10 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 				Status: hyperv1.HostedClusterStatus{},
 			},
 			ControlPlane: &hyperv1.HostedControlPlane{
-				Spec: hyperv1.HostedControlPlaneSpec{},
+				Spec: hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
 				Status: hyperv1.HostedControlPlaneStatus{
 					Conditions: []metav1.Condition{
-						{Type: string(hyperv1.HostedControlPlaneAvailable), Status: metav1.ConditionTrue},
+						{Type: string(hyperv1.HostedControlPlaneAvailable), Status: metav1.ConditionFalse},
 					},
 				},
 			},
@@ -313,9 +313,7 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 				Spec: hyperv1.HostedClusterSpec{
 					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
 				},
-				Status: hyperv1.HostedClusterStatus{
-					KubeConfig: &corev1.LocalObjectReference{Name: "foo"},
-				},
+				Status: hyperv1.HostedClusterStatus{},
 			},
 			ControlPlane: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},

@@ -139,6 +139,7 @@ objects:
     resources:
     - events
     - configmaps
+    - persistentvolumeclaims
     - pods
     - pods/log
     - secrets
@@ -19649,6 +19650,10 @@ objects:
       - description: Reason
         jsonPath: .status.conditions[?(@.type=="Available")].reason
         name: Reason
+        type: string
+      - description: Message
+        jsonPath: .status.conditions[?(@.type=="Available")].message
+        name: Message
         type: string
       name: v1alpha1
       schema:

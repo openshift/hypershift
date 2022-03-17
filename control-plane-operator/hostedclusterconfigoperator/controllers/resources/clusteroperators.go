@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 )
@@ -279,25 +280,25 @@ func (r *reconciler) clusterOperatorStatus(coInfo ClusterOperatorInfo, currentSt
 			Type:               configv1.OperatorAvailable,
 			Status:             configv1.ConditionTrue,
 			LastTransitionTime: now,
-			Reason:             "AsExpected",
+			Reason:             hyperv1.AsExpectedReason,
 		},
 		{
 			Type:               configv1.OperatorProgressing,
 			Status:             configv1.ConditionFalse,
 			LastTransitionTime: now,
-			Reason:             "AsExpected",
+			Reason:             hyperv1.AsExpectedReason,
 		},
 		{
 			Type:               configv1.OperatorDegraded,
 			Status:             configv1.ConditionFalse,
 			LastTransitionTime: now,
-			Reason:             "AsExpected",
+			Reason:             hyperv1.AsExpectedReason,
 		},
 		{
 			Type:               configv1.OperatorUpgradeable,
 			Status:             configv1.ConditionTrue,
 			LastTransitionTime: now,
-			Reason:             "AsExpected",
+			Reason:             hyperv1.AsExpectedReason,
 		},
 	}
 	for _, condition := range conditions {

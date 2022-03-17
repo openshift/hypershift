@@ -336,7 +336,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ClusterVersionSucceeding),
 			Status:             metav1.ConditionUnknown,
-			Reason:             "ClusterVersionStatusUnknown",
+			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
 			ObservedGeneration: hcluster.Generation,
 		}
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -456,7 +456,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		condition := metav1.Condition{
 			Type:   string(hyperv1.ValidHostedControlPlaneConfiguration),
 			Status: metav1.ConditionUnknown,
-			Reason: "StatusUnknown",
+			Reason: hyperv1.StatusUnknownReason,
 		}
 		if hcp != nil {
 			validConfigHCPCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
@@ -2215,6 +2215,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Resources: []string{
 				"events",
 				"configmaps",
+				"persistentvolumeclaims",
 				"pods",
 				"pods/log",
 				"secrets",
@@ -2913,50 +2914,27 @@ func computeClusterVersionStatus(clock clock.Clock, hcluster *hyperv1.HostedClus
 // given HostedCluster and returns it.
 func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) metav1.Condition {
 	// Determine whether the hosted control plane is available.
-	hcpAvailable := false
+	hcpAvailableStatus := metav1.ConditionFalse
+	hcpAvailableMessage := "The hosted control plane is unavailable"
+	hcpAvailableReason := hyperv1.HostedClusterUnhealthyComponentsReason
+	var hcpAvailableCondition *metav1.Condition
 	if hcp != nil {
-		hcpAvailable = meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
+		hcpAvailableCondition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
 	}
-
-	// Determine whether the kubeconfig is available.
-	// TODO: is it a good idea to compute hc status based on other field within
-	// the same resource like this? does it imply an ordering requirement that
-	// kubeconfig status must come before availability status? would extracting
-	// the kubeconfig as an argument help by making that dependency explicit?
-	kubeConfigAvailable := hcluster.Status.KubeConfig != nil
-
-	// Managed etcd availability isn't reported at this granularity yet, so always
-	// assume managed etcd is available. If etcd is configured as unmanaged, consider
-	// etcd available once the unmanaged available condition is true.
-	etcdAvailable := hcluster.Spec.Etcd.ManagementType == hyperv1.Managed ||
-		meta.IsStatusConditionTrue(hcluster.Status.Conditions, string(hyperv1.UnmanagedEtcdAvailable))
-
-	switch {
-	case hcpAvailable && kubeConfigAvailable && etcdAvailable:
-		return metav1.Condition{
-			Type:               string(hyperv1.HostedClusterAvailable),
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: hcluster.Generation,
-			Reason:             hyperv1.HostedClusterAsExpectedReason,
+	if hcpAvailableCondition != nil {
+		hcpAvailableStatus = hcpAvailableCondition.Status
+		hcpAvailableMessage = hcpAvailableCondition.Message
+		if hcpAvailableStatus == metav1.ConditionTrue {
+			hcpAvailableReason = hyperv1.HostedClusterAsExpectedReason
+			hcpAvailableMessage = ""
 		}
-	default:
-		var messages []string
-		if !hcpAvailable {
-			messages = append(messages, "the hosted control plane is unavailable")
-		}
-		if !kubeConfigAvailable {
-			messages = append(messages, "the hosted control plane kubeconfig is unavailable")
-		}
-		if !etcdAvailable {
-			messages = append(messages, "etcd is unavailable")
-		}
-		return metav1.Condition{
-			Type:               string(hyperv1.HostedClusterAvailable),
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: hcluster.Generation,
-			Reason:             hyperv1.HostedClusterUnhealthyComponentsReason,
-			Message:            strings.Join(messages, "; "),
-		}
+	}
+	return metav1.Condition{
+		Type:               string(hyperv1.HostedClusterAvailable),
+		Status:             hcpAvailableStatus,
+		ObservedGeneration: hcluster.Generation,
+		Reason:             hcpAvailableReason,
+		Message:            hcpAvailableMessage,
 	}
 }
 
