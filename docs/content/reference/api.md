@@ -3686,7 +3686,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Hostname is the DNS name that will be created via external-dns pointing to the LoadBalancer.</p>
+<p>Hostname is the name of the DNS record that will be created pointing to the LoadBalancer.</p>
 </td>
 </tr>
 </tbody>
@@ -4781,7 +4781,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Hostname is the DNS name that will be created via external-dns pointing to the Route.</p>
+<p>Hostname is the name of the DNS record that will be created pointing to the Route.</p>
 </td>
 </tr>
 </tbody>
@@ -4940,7 +4940,7 @@ RoutePublishingStrategy
 </em>
 </td>
 <td>
-<p>Route configures exposing a service using a LoadBalancer.</p>
+<p>Route configures exposing a service using a Route.</p>
 </td>
 </tr>
 </tbody>

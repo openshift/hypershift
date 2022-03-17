@@ -231,7 +231,9 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 				Value: "/etc/provider/credentials",
 			},
 			corev1.EnvVar{
-				Name:  "AWS_REGION",
+				Name: "AWS_REGION",
+				// external-dns only makes route53 requests which is a global service,
+				// thus we can assume us-east-1 without having to request it on the command line
 				Value: "us-east-1",
 			})
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args, "--aws-zone-type=public")
