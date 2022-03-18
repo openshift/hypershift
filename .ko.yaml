@@ -27,3 +27,4 @@ builds:
   main: ./token-minter
   flags:
   - -mod=vendor
+defaultBaseImage: gcr.io/distroless/static:debug-nonroot
