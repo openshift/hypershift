@@ -1,6 +1,8 @@
 package pki
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -15,12 +17,18 @@ func ReconcileServiceAccountSigningKeySecret(secret *corev1.Secret, ownerRef con
 	}
 	ownerRef.ApplyTo(secret)
 	secret.Type = corev1.SecretTypeOpaque
-	key, err := certs.PrivateKey()
+
+	// The SA signer only supports RSA and ECDSA: https://github.com/kubernetes/kubernetes/blob/ab13c85316015cf9f115e29923ba9740bd1564fd/pkg/serviceaccount/jwt.go#L80
+	// and AWS seems to refuse JWTs that are not signed with RSA as invalid (`The ID Token provided is not a valid JWT. (You may see this error if you sent an Access Token)`)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return fmt.Errorf("failed generating a private key: %w", err)
 	}
-	keyBytes := certs.PrivateKeyToPem(key)
-	publicKeyBytes, err := certs.PublicKeyToPem(&key.PublicKey)
+	keyBytes, err := certs.PrivateKeyToPem(key)
+	if err != nil {
+		return fmt.Errorf("failed to serialize private key to PEM: %w", err)
+	}
+	publicKeyBytes, err := certs.PublicKeyToPem(key.Public())
 	if err != nil {
 		return fmt.Errorf("failed to generate public key from private key: %w", err)
 	}
