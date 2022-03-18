@@ -963,6 +963,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			if !srcHasData {
 				return fmt.Errorf("controlplane kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(src), key)
 			}
+			dest.Labels = hcluster.Labels
 			dest.Type = corev1.SecretTypeOpaque
 			if dest.Data == nil {
 				dest.Data = map[string][]byte{}
