@@ -12,6 +12,7 @@ import (
 
 	socks5 "github.com/armon/go-socks5"
 	"github.com/spf13/cobra"
+	"golang.org/x/net/proxy"
 	"k8s.io/apimachinery/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
@@ -71,7 +72,7 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		conf := &socks5.Config{
-			Dial: dialKonnectivityFunc(caCertPath, clientCertPath, clientKeyPath, proxyHostname, proxyPort),
+			Dial: dialFunc(caCertPath, clientCertPath, clientKeyPath, proxyHostname, proxyPort),
 			Resolver: K8sServiceResolver{
 				client: client,
 			},
@@ -89,8 +90,11 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
-func dialKonnectivityFunc(caCertPath string, clientCertPath string, clientKeyPath string, proxyHostname string, proxyPort int) func(ctx context.Context, network string, addr string) (net.Conn, error) {
+func dialFunc(caCertPath string, clientCertPath string, clientKeyPath string, proxyHostname string, proxyPort int) func(ctx context.Context, network string, addr string) (net.Conn, error) {
 	return func(ctx context.Context, network string, addr string) (net.Conn, error) {
+		if shouldGoDirect(strings.Split(addr, ":")[0]) {
+			return dialDirect(ctx, network, addr)
+		}
 		caCert := caCertPath
 		tlsConfig, err := util.GetClientTLSConfig(caCert, clientCertPath, clientKeyPath, proxyHostname, nil)
 		if err != nil {
@@ -128,12 +132,21 @@ func dialKonnectivityFunc(caCertPath string, clientCertPath string, clientKeyPat
 	}
 }
 
+// dialDirect directly connect directly to the target, respecting any local proxy settings from the environment
+func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
+	return proxy.Dial(ctx, network, addr)
+}
+
 // K8sServiceResolver attempts to resolve the hostname by matching it to a Kubernetes Service, but will fallback to the system DNS if an error is encountered.
 type K8sServiceResolver struct {
 	client client.Client
 }
 
 func (d K8sServiceResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
+	// Preserve the host so we can recognize it
+	if shouldGoDirect(name) {
+		return ctx, nil, nil
+	}
 	_, ip, err := d.ResolveK8sService(ctx, name)
 	if err != nil {
 		fmt.Printf("Error resolving k8s service %v\n", err)
@@ -168,4 +181,15 @@ func (d K8sServiceResolver) ResolveK8sService(ctx context.Context, name string) 
 	fmt.Printf("%s resolved to %v\n", name, ip)
 
 	return ctx, ip, nil
+}
+
+// shouldGoDirect is a hardcoded list of domains that should not be routed through konnektivity but be reached
+// through the management cluster. This is needed to support management clusters with a proxy configuration,
+// as the components themselves already have proxy env vars pointing to the socks proxy (this binary). If we then
+// actually end up proxying or not depends on the env for this binary.
+// DNS domains. The API list can be found below:
+// AWS: https://docs.aws.amazon.com/general/latest/gr/rande.html#regional-endpoints
+// AZURE: https://docs.microsoft.com/en-us/rest/api/azure/#how-to-call-azure-rest-apis-with-curl
+func shouldGoDirect(host string) bool {
+	return strings.HasSuffix(host, ".amazonaws.com") || strings.HasSuffix(host, ".microsoftonline.com") || strings.HasSuffix(host, "azure.com")
 }
