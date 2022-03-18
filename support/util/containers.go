@@ -36,7 +36,8 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 		Image:           image,
 		ImagePullPolicy: corev1.PullAlways,
 		Command: []string{
-			"/usr/bin/availability-prober",
+			"/usr/bin/control-plane-operator",
+			"availability-prober",
 			"--target",
 			target,
 		},

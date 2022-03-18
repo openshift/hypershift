@@ -1,4 +1,4 @@
-package main
+package ignitionserver
 
 import (
 	"context"
@@ -30,6 +30,14 @@ const namespaceEnvVariableName = "MY_NAMESPACE"
 var ignPathPattern = regexp.MustCompile("^/ignition[^/ ]*$")
 var payloadStore = controllers.NewPayloadStore()
 
+type Options struct {
+	Addr              string
+	CertFile          string
+	KeyFile           string
+	RegistryOverrides map[string]string
+	Platform          string
+}
+
 // This is an https server that enable us to satisfy
 // 1 - 1 relation between clusters and ign endpoints.
 // It runs a token Secret controller.
@@ -39,33 +47,9 @@ var payloadStore = controllers.NewPayloadStore()
 // A token represents a given cluster version (and in the future also a machine Config) at any given point in time.
 // For a request to succeed a token needs to be passed in the Header.
 // TODO (alberto): Metrics.
-func main() {
-	cmd := &cobra.Command{
-		Use: "ignition-server",
-		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
-			os.Exit(1)
-		},
-	}
-	cmd.AddCommand(NewStartCommand())
-
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
-}
-
-type Options struct {
-	Addr              string
-	CertFile          string
-	KeyFile           string
-	RegistryOverrides map[string]string
-	Platform          string
-}
-
 func NewStartCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "start",
+		Use:   "ignition-server",
 		Short: "Starts the ignition server",
 	}
 

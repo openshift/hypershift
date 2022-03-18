@@ -95,7 +95,8 @@ spec:
               value: kube-apiserver,redhat-operators,certified-operators,community-operators,redhat-marketplace
         - name: socks5-proxy
           command:
-            - "/usr/bin/konnectivity-socks5-proxy"
+            - /usr/bin/control-plane-operator
+            - konnectivity-socks5-proxy
           args:
             - run
           image: SOCKS5_PROXY_IMAGE

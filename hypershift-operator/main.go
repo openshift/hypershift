@@ -70,13 +70,9 @@ type StartOptions struct {
 	Namespace                        string
 	DeploymentName                   string
 	MetricsAddr                      string
-	IgnitionServerImage              string
 	EnableOCPClusterMonitoring       bool
 	EnableCIDebugOutput              bool
 	ControlPlaneOperatorImage        string
-	AvailabilityProberImage          string
-	SocksProxyImage                  string
-	TokenMinterImage                 string
 	RegistryOverrides                map[string]string
 	PrivatePlatform                  string
 	OIDCStorageProviderS3BucketName  string
@@ -99,7 +95,6 @@ func NewStartCommand() *cobra.Command {
 		DeploymentName:                   "operator",
 		MetricsAddr:                      "0",
 		ControlPlaneOperatorImage:        "",
-		IgnitionServerImage:              "",
 		RegistryOverrides:                map[string]string{},
 		PrivatePlatform:                  string(hyperv1.NonePlatform),
 		OIDCStorageProviderS3Region:      "",
@@ -110,10 +105,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.DeploymentName, "deployment-name", opts.DeploymentName, "The name of the deployment of this operator")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
 	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
-	cmd.Flags().StringVar(&opts.AvailabilityProberImage, "availability-prober-operator-image", opts.AvailabilityProberImage, "Image for kube apiserver prober utility (defaults to match this operator if running in a deployment)")
-	cmd.Flags().StringVar(&opts.SocksProxyImage, "socks-proxy-image", opts.SocksProxyImage, "Image for the SOCKS proxy (defaults to match this operator if running in a deployment)")
-	cmd.Flags().StringVar(&opts.TokenMinterImage, "token-minter-image", opts.TokenMinterImage, "Image for the token minter image (defaults to match this operator if running in a deployment)")
-	cmd.Flags().StringVar(&opts.IgnitionServerImage, "ignition-server-image", opts.IgnitionServerImage, "An ignition server image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
@@ -200,40 +191,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	log.Info("using hosted control plane operator image", "operator-image", operatorImage)
 
-	ignitionServerImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.IgnitionServerImage)
-	if err != nil {
-		return fmt.Errorf("failed to find operator image: %w", err)
-	}
-	log.Info("using ignition server image", "image", ignitionServerImage)
-
-	availabilityProberImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.AvailabilityProberImage)
-	if err != nil {
-		return fmt.Errorf("failed to find operator image: %w", err)
-	}
-	log.Info("using availability prober image", "image", availabilityProberImage)
-
-	socksProxyImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.SocksProxyImage)
-	if err != nil {
-		return fmt.Errorf("failed to find operator image: %w", err)
-	}
-	log.Info("using socks proxy image", "image", socksProxyImage)
-
-	tokenMinterImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.TokenMinterImage)
-	if err != nil {
-		return fmt.Errorf("failed to find operator image: %w", err)
-	}
-	log.Info("using token minter image", "image", tokenMinterImage)
-
 	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
 
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
-		IgnitionServerImage:           ignitionServerImage,
-		TokenMinterImage:              tokenMinterImage,
-		AvailabilityProberImage:       availabilityProberImage,
-		SocksProxyImage:               socksProxyImage,
 		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.RegistryClientProvider{},
