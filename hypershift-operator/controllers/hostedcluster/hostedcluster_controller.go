@@ -1194,8 +1194,12 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 		if capiWebhooksTLSSecret.Data == nil {
 			capiWebhooksTLSSecret.Data = map[string][]byte{}
 		}
+		privKeyPem, err := certs.PrivateKeyToPem(key)
+		if err != nil {
+			return fmt.Errorf("failed to conver private key to pem: %w", err)
+		}
 		capiWebhooksTLSSecret.Data[corev1.TLSCertKey] = certs.CertToPem(crt)
-		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = certs.PrivateKeyToPem(key)
+		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = privKeyPem
 		return nil
 	})
 	if err != nil {
@@ -1619,10 +1623,14 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			if err != nil {
 				return fmt.Errorf("failed to generate CA: %w", err)
 			}
+			privKeyPem, err := certs.PrivateKeyToPem(key)
+			if err != nil {
+				return fmt.Errorf("failed to conver private key to pem: %w", err)
+			}
 			caCertSecret.Type = corev1.SecretTypeTLS
 			caCertSecret.Data = map[string][]byte{
 				corev1.TLSCertKey:       certs.CertToPem(crt),
-				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
+				corev1.TLSPrivateKeyKey: privKeyPem,
 			}
 		}
 		return nil
@@ -1660,10 +1668,14 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			if err != nil {
 				return fmt.Errorf("failed to generate ignition serving cert: %w", err)
 			}
+			privKeyPem, err := certs.PrivateKeyToPem(key)
+			if err != nil {
+				return fmt.Errorf("failed to conver private key to pem: %w", err)
+			}
 			servingCertSecret.Type = corev1.SecretTypeTLS
 			servingCertSecret.Data = map[string][]byte{
 				corev1.TLSCertKey:       certs.CertToPem(crt),
-				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
+				corev1.TLSPrivateKeyKey: privKeyPem,
 			}
 		}
 		return nil
@@ -3818,8 +3830,8 @@ type KeyResponse struct {
 
 func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
 	block, _ := pem.Decode(params.pubKey)
-	if block == nil || block.Type != "RSA PUBLIC KEY" {
-		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key")
+	if block == nil || (block.Type != "RSA PUBLIC KEY" && block.Type != "PUBLIC KEY") {
+		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key, block had type %q", block.Type)
 	}
 	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
@@ -3827,7 +3839,7 @@ func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
 	}
 	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("public key is not RSA")
+		return nil, fmt.Errorf("public key is not RSA but %T", pubKey)
 	}
 
 	hasher := crypto.SHA256.New()
