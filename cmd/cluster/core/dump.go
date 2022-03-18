@@ -236,6 +236,7 @@ func DumpGuestCluster(ctx context.Context, kubeconfig string, destDir string) er
 		&corev1.PersistentVolumeClaim{},
 		&corev1.Pod{},
 		&corev1.ReplicationController{},
+		&corev1.Node{},
 		&configv1.ClusterOperator{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
