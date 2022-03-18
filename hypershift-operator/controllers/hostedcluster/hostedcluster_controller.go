@@ -2028,9 +2028,6 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 						Args: []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator",
 							"--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
 							fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine),
-							"--socks5-proxy-image", socksImage,
-							"--availability-prober-image", proberImage,
-							"--token-minter-image", minterImage,
 						},
 						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
 						LivenessProbe: &corev1.Probe{
@@ -2066,6 +2063,13 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				},
 			},
 		},
+	}
+	// TODO: these images will ultimately go away when the CPO is adjusted to have proper subcommands for those images
+	// and that is integrated into all active release payloads.
+	if hc.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args, "--socks5-proxy-image", socksImage,
+			"--availability-prober-image", proberImage,
+			"--token-minter-image", minterImage)
 	}
 
 	if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
