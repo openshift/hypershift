@@ -12,13 +12,13 @@ var (
 
 type FakeSupportAllCapabilities struct{}
 
-func (f *FakeSupportAllCapabilities) Has(capabilities ...capabilities.CapabilityType) bool {
+func (*FakeSupportAllCapabilities) Has(capabilities ...capabilities.CapabilityType) bool {
 	return true
 }
 
 type FakeSupportNoCapabilities struct{}
 
-func (f *FakeSupportNoCapabilities) Has(capabilities ...capabilities.CapabilityType) bool {
+func (*FakeSupportNoCapabilities) Has(capabilities ...capabilities.CapabilityType) bool {
 	return false
 }
 

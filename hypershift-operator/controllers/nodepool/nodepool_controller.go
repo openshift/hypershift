@@ -690,7 +690,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 	return nil
 }
 
-func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
+func (*NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	machineDeployment *capiv1.MachineDeployment,
 	nodePool *hyperv1.NodePool,
 	userDataSecret *corev1.Secret,
@@ -839,7 +839,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	return nil
 }
 
-func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHealthCheck,
+func (*NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHealthCheck,
 	nodePool *hyperv1.NodePool,
 	CAPIClusterName string) error {
 	// Opinionated spec based on

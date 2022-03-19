@@ -98,6 +98,6 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 	return nil
 }
 
-func (o *AWSPlatformCreateOptions) Type() hyperv1.PlatformType {
+func (*AWSPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.AWSPlatform
 }

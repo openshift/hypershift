@@ -3037,7 +3037,7 @@ func listNodePools(ctx context.Context, c client.Client, clusterNamespace, clust
 	return filtered, nil
 }
 
-func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.Client, namespace, name string) error {
+func (*HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.Client, namespace, name string) error {
 	nodePools, err := listNodePools(ctx, c, namespace, name)
 	if err != nil {
 		return fmt.Errorf("failed to get NodePools by cluster name for cluster %q: %w", name, err)
@@ -3460,7 +3460,7 @@ func (r *HostedClusterReconciler) validateAgentConfig(ctx context.Context, hc *h
 	return nil
 }
 
-func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
+func (*HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		if hc.Spec.Platform.AWS == nil {

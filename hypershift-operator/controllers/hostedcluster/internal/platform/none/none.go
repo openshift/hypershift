@@ -12,18 +12,18 @@ import (
 
 type None struct{}
 
-func (p None) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (None) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error,
 ) {
 	return nil, nil
 }
 
-func (p None) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (None) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	return nil, nil
 }
 
-func (p None) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (None) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	return nil

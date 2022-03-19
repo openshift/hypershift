@@ -61,6 +61,6 @@ func (o *opts) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, h
 	return nil
 }
 
-func (o opts) Type() hyperv1.PlatformType {
+func (opts) Type() hyperv1.PlatformType {
 	return hyperv1.AzurePlatform
 }

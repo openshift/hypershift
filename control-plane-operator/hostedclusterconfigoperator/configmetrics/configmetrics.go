@@ -45,7 +45,7 @@ type configMetrics struct {
 	cache           crclient.Reader
 }
 
-func (m *configMetrics) Create(version *semver.Version) bool {
+func (*configMetrics) Create(version *semver.Version) bool {
 	return true
 }
 
@@ -104,8 +104,8 @@ func booleanGaugeValue(g prometheus.Gauge, value bool) prometheus.Gauge {
 	return g
 }
 
-func (m *configMetrics) ClearState() {}
+func (*configMetrics) ClearState() {}
 
-func (m *configMetrics) FQName() string {
+func (*configMetrics) FQName() string {
 	return "cluster_kube_apiserver_operator"
 }

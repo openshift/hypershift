@@ -20,7 +20,7 @@ import (
 
 type IBMCloud struct{}
 
-func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
@@ -55,11 +55,11 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 	return ibmCluster, nil
 }
 
-func (p IBMCloud) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (IBMCloud) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	return nil, nil
 }
 
-func (p IBMCloud) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (IBMCloud) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	return nil

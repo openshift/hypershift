@@ -187,11 +187,11 @@ type fakeFailableDiscoveryClient struct {
 	err       error
 }
 
-func (f fakeFailableDiscoveryClient) ServerResourcesForGroupVersion(_ string) (*metav1.APIResourceList, error) {
+func (fakeFailableDiscoveryClient) ServerResourcesForGroupVersion(_ string) (*metav1.APIResourceList, error) {
 	panic("implement me")
 }
 
-func (f fakeFailableDiscoveryClient) ServerResources() ([]*metav1.APIResourceList, error) {
+func (fakeFailableDiscoveryClient) ServerResources() ([]*metav1.APIResourceList, error) {
 	panic("implement me")
 }
 
@@ -199,10 +199,10 @@ func (f fakeFailableDiscoveryClient) ServerGroupsAndResources() ([]*metav1.APIGr
 	return nil, f.Resources, f.err
 }
 
-func (f fakeFailableDiscoveryClient) ServerPreferredResources() ([]*metav1.APIResourceList, error) {
+func (fakeFailableDiscoveryClient) ServerPreferredResources() ([]*metav1.APIResourceList, error) {
 	panic("implement me")
 }
 
-func (f fakeFailableDiscoveryClient) ServerPreferredNamespacedResources() ([]*metav1.APIResourceList, error) {
+func (fakeFailableDiscoveryClient) ServerPreferredNamespacedResources() ([]*metav1.APIResourceList, error) {
 	panic("implement me")
 }

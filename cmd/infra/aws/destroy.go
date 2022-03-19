@@ -136,7 +136,7 @@ func emptyBucket(ctx context.Context, client s3iface.S3API, name string) error {
 	return s3manager.NewBatchDeleteWithClient(client).Delete(ctx, iter)
 }
 
-func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
+func (*DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
 	var errs []error
 	deleteLBs := func(out *elb.DescribeLoadBalancersOutput, _ bool) bool {
 		for _, lb := range out.LoadBalancerDescriptions {
@@ -163,7 +163,7 @@ func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.E
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyVPCEndpoints(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
+func (*DestroyInfraOptions) DestroyVPCEndpoints(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
 	var errs []error
 	deleteVPCEndpoints := func(out *ec2.DescribeVpcEndpointsOutput, _ bool) bool {
 		ids := make([]*string, 0, len(out.VpcEndpoints))
@@ -226,7 +226,7 @@ func (o *DestroyInfraOptions) DestroyVPCEndpointServices(ctx context.Context, cl
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
+func (*DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
 	var errs []error
 	deleteRouteTables := func(out *ec2.DescribeRouteTablesOutput, _ bool) bool {
 		for _, routeTable := range out.RouteTables {
@@ -294,7 +294,7 @@ func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
+func (*DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
 	var errs []error
 	deleteSecurityGroups := func(out *ec2.DescribeSecurityGroupsOutput, _ bool) bool {
 		for _, sg := range out.SecurityGroups {
@@ -351,7 +351,7 @@ func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client 
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyNATGateways(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
+func (*DestroyInfraOptions) DestroyNATGateways(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
 	var errs []error
 	deleteNATGateways := func(out *ec2.DescribeNatGatewaysOutput, _ bool) bool {
 		for _, natGateway := range out.NatGateways {
@@ -416,7 +416,7 @@ func (o *DestroyInfraOptions) DestroyInternetGateways(ctx context.Context, clien
 	return nil
 }
 
-func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
+func (*DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2iface.EC2API, vpcID *string) []error {
 	var errs []error
 	deleteSubnets := func(out *ec2.DescribeSubnetsOutput, _ bool) bool {
 		for _, subnet := range out.Subnets {

@@ -25,7 +25,7 @@ const (
 
 type Kubevirt struct{}
 
-func (p Kubevirt) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (Kubevirt) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
 	kubevirtCluster := &capikubevirt.KubevirtCluster{
@@ -54,7 +54,7 @@ func reconcileKubevirtCluster(kubevirtCluster *capikubevirt.KubevirtCluster, hcl
 	kubevirtCluster.Status.Ready = true
 }
 
-func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPK
 	if envImage := os.Getenv(images.KubevirtCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
@@ -144,7 +144,7 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 	}, nil
 }
 
-func (p Kubevirt) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (Kubevirt) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	return nil

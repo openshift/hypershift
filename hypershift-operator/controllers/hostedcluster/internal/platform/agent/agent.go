@@ -32,7 +32,7 @@ const (
 
 type Agent struct{}
 
-func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error,
 ) {
@@ -58,7 +58,7 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	return agentCluster, nil
 }
 
-func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPAgent
 	if envImage := os.Getenv(images.AgentCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
@@ -164,7 +164,7 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 	return p.reconcileClusterRole(ctx, c, createOrUpdate, controlPlaneNamespace)
 }
 
-func (p Agent) reconcileClusterRole(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (Agent) reconcileClusterRole(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
 ) error {
 	role := &rbacv1.ClusterRole{

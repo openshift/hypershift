@@ -423,7 +423,7 @@ func (p *KubeAPIServerParams) AdditionalCORSAllowedOrigins() []string {
 	return []string{}
 }
 
-func (p *KubeAPIServerParams) InternalRegistryHostName() string {
+func (*KubeAPIServerParams) InternalRegistryHostName() string {
 	return config.DefaultImageRegistryHostname
 }
 

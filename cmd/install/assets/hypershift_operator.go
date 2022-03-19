@@ -518,7 +518,7 @@ func (o ExternalDNSServiceAccount) Build() *corev1.ServiceAccount {
 
 type ExternalDNSClusterRole struct{}
 
-func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
+func (ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
 	role := &rbacv1.ClusterRole{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ClusterRole",
@@ -598,7 +598,7 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 
 type HyperShiftOperatorClusterRole struct{}
 
-func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
+func (HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 	role := &rbacv1.ClusterRole{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ClusterRole",
@@ -840,7 +840,7 @@ func (o HyperShiftOperatorRoleBinding) Build() *rbacv1.RoleBinding {
 
 type HyperShiftControlPlanePriorityClass struct{}
 
-func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass {
+func (HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -857,7 +857,7 @@ func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass
 
 type HyperShiftAPICriticalPriorityClass struct{}
 
-func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass {
+func (HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -874,7 +874,7 @@ func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass 
 
 type HyperShiftEtcdPriorityClass struct{}
 
-func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
+func (HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -1006,7 +1006,7 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 
 type HyperShiftClientClusterRole struct{}
 
-func (o HyperShiftClientClusterRole) Build() *rbacv1.ClusterRole {
+func (HyperShiftClientClusterRole) Build() *rbacv1.ClusterRole {
 	role := &rbacv1.ClusterRole{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ClusterRole",
@@ -1082,7 +1082,7 @@ func (o HyperShiftClientClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 
 type HyperShiftReaderClusterRole struct{}
 
-func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
+func (HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 	role := &rbacv1.ClusterRole{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ClusterRole",

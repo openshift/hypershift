@@ -21,7 +21,7 @@ const providerImage = "gcr.io/k8s-staging-cluster-api-azure/cluster-api-azure-co
 
 type Azure struct{}
 
-func (a *Azure) ReconcileCAPIInfraCR(
+func (*Azure) ReconcileCAPIInfraCR(
 	ctx context.Context,
 	client client.Client,
 	createOrUpdate upsert.CreateOrUpdateFN,
@@ -57,7 +57,7 @@ func (a *Azure) ReconcileCAPIInfraCR(
 	return cluster, nil
 }
 
-func (a *Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (*Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	image := providerImage
 	if envImage := os.Getenv(images.AzureCAPIProviderEnvVar); len(envImage) > 0 {
 		image = envImage
@@ -133,7 +133,7 @@ func (a *Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp 
 	}}}, nil
 }
 
-func (a *Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (*Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	var source corev1.Secret
 	name := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Azure.Credentials.Name}
 	if err := c.Get(ctx, name, &source); err != nil {
@@ -153,14 +153,14 @@ func (a *Azure) ReconcileCredentials(ctx context.Context, c client.Client, creat
 	return err
 }
 
-func (a *Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (*Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
 }
 
-func (a *Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
+func (*Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
 
-func (a *Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (*Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
 }

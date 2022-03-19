@@ -45,15 +45,15 @@ func (s *refreshTokenStore) SetRefreshToken(url *url.URL, service string, token 
 
 type noopCredentialStore struct{}
 
-func (s *noopCredentialStore) Basic(url *url.URL) (string, string) {
+func (*noopCredentialStore) Basic(url *url.URL) (string, string) {
 	return "", ""
 }
 
-func (s *noopCredentialStore) RefreshToken(url *url.URL, service string) string {
+func (*noopCredentialStore) RefreshToken(url *url.URL, service string) string {
 	return ""
 }
 
-func (s *noopCredentialStore) SetRefreshToken(url *url.URL, service string, token string) {
+func (*noopCredentialStore) SetRefreshToken(url *url.URL, service string, token string) {
 }
 
 func NewBasicCredentials() *BasicCredentials {

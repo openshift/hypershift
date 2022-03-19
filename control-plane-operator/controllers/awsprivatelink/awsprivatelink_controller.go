@@ -507,7 +507,7 @@ func apiTagToEC2Filter(name string, in []hyperv1.AWSResourceTag) []*ec2.Filter {
 	return result
 }
 
-func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) (bool, error) {
+func (*AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) (bool, error) {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return false, fmt.Errorf("logger not found: %w", err)

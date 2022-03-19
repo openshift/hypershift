@@ -28,7 +28,7 @@ var retryBackoff = wait.Backoff{
 	Jitter:   0.1,
 }
 
-func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
+func (*CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
 	result, err := client.DescribeAvailabilityZones(&ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
 		return "", fmt.Errorf("failed to list availability zones: %w", err)
@@ -518,7 +518,7 @@ func (o *CreateInfraOptions) existingRouteTable(client ec2iface.EC2API, name str
 	return nil, nil
 }
 
-func (o *CreateInfraOptions) hasNATGatewayRoute(table *ec2.RouteTable, natGatewayID string) bool {
+func (*CreateInfraOptions) hasNATGatewayRoute(table *ec2.RouteTable, natGatewayID string) bool {
 	for _, route := range table.Routes {
 		if aws.StringValue(route.NatGatewayId) == natGatewayID &&
 			aws.StringValue(route.DestinationCidrBlock) == "0.0.0.0/0" {
@@ -528,7 +528,7 @@ func (o *CreateInfraOptions) hasNATGatewayRoute(table *ec2.RouteTable, natGatewa
 	return false
 }
 
-func (o *CreateInfraOptions) hasInternetGatewayRoute(table *ec2.RouteTable, igwID string) bool {
+func (*CreateInfraOptions) hasInternetGatewayRoute(table *ec2.RouteTable, igwID string) bool {
 	for _, route := range table.Routes {
 		if aws.StringValue(route.GatewayId) == igwID &&
 			aws.StringValue(route.DestinationCidrBlock) == "0.0.0.0/0" {
@@ -538,7 +538,7 @@ func (o *CreateInfraOptions) hasInternetGatewayRoute(table *ec2.RouteTable, igwI
 	return false
 }
 
-func (o *CreateInfraOptions) hasAssociatedSubnet(table *ec2.RouteTable, subnetID string) bool {
+func (*CreateInfraOptions) hasAssociatedSubnet(table *ec2.RouteTable, subnetID string) bool {
 	for _, assoc := range table.Associations {
 		if aws.StringValue(assoc.RouteTableId) == subnetID {
 			return true

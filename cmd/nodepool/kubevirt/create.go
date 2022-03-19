@@ -105,6 +105,6 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 	return nil
 }
 
-func (o *KubevirtPlatformCreateOptions) Type() hyperv1.PlatformType {
+func (*KubevirtPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.KubevirtPlatform
 }

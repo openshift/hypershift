@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/openshift/hypershift/api/v1alpha1"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
+	"github.com/openshift/hypershift/api/v1alpha1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,7 +23,7 @@ var fakePayload = "test"
 
 type fakeIgnitionProvider struct{}
 
-func (p *fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
+func (*fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
 	return []byte(fakePayload), nil
 }
 

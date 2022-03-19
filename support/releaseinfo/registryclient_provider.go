@@ -18,7 +18,7 @@ var _ Provider = (*RegistryClientProvider)(nil)
 // content and extract image metadata.
 type RegistryClientProvider struct{}
 
-func (p *RegistryClientProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (releaseImage *ReleaseImage, err error) {
+func (*RegistryClientProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (releaseImage *ReleaseImage, err error) {
 	fileContents, err := registryclient.ExtractImageFiles(ctx, image, pullSecret, ReleaseImageStreamFile, ReleaseImageMetadataFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract release metadata: %w", err)

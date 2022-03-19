@@ -41,7 +41,7 @@ type AWS struct {
 	tokenMinterImage       string
 }
 
-func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint,
@@ -230,7 +230,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	return deploymentSpec, nil
 }
 
-func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+func (AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	// Reconcile the platform provider cloud controller credentials secret by resolving

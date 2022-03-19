@@ -31,14 +31,14 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	return cmd
 }
 
-func (o *AgentPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
+func (*AgentPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
 	return nil
 }
 
-func (o *AgentPlatformCreateOptions) Type() hyperv1.PlatformType {
+func (*AgentPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.AgentPlatform
 }
 
-func (o *AgentPlatformCreateOptions) Validate() error {
+func (*AgentPlatformCreateOptions) Validate() error {
 	return nil
 }
