@@ -81,7 +81,7 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 	client := &http.Client{
 		Timeout: requestTimeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13},
 		},
 	}
 	for ; ; time.Sleep(sleepTime) {

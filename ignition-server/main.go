@@ -204,7 +204,7 @@ func run(ctx context.Context, opts Options) error {
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
-		TLSConfig:    &tls.Config{GetCertificate: certWatcher.GetCertificate},
+		TLSConfig:    &tls.Config{GetCertificate: certWatcher.GetCertificate, MinVersion: tls.VersionTLS13},
 	}
 
 	go func() {

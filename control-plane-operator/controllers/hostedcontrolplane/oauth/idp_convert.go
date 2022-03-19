@@ -567,7 +567,7 @@ func isValidURL(rawurl string, optional bool) bool {
 func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, name, key string) (http.RoundTripper, error) {
 	// copy default transport
 	transport := net.SetTransportDefaults(&http.Transport{
-		TLSClientConfig: &tls.Config{},
+		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13},
 	})
 
 	if name == "" {
