@@ -231,7 +231,6 @@ func IsRegistryDockerHub(registry string) bool {
 // DeepCopyInto writing into out. in must be non-nil.
 func (in *DockerImageReference) DeepCopyInto(out *DockerImageReference) {
 	*out = *in
-	return
 }
 
 // DeepCopy copies the receiver, creating a new DockerImageReference.
