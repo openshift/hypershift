@@ -16,7 +16,7 @@ import (
 
 const aescbcKeyNamePrefix = "key"
 
-func generateAESCBCEncryptionConfig(activeKey []byte, backupKey []byte) ([]byte, error) {
+func generateAESCBCEncryptionConfig(activeKey, backupKey []byte) ([]byte, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 	var keyList []v1.Key
 	if len(activeKey) == 0 {
@@ -70,7 +70,7 @@ func generateAESCBCEncryptionConfig(activeKey []byte, backupKey []byte) ([]byte,
 	return bufferInstance.Bytes(), nil
 }
 
-func applyAESCBCKeyHashAnnotation(podSpec *corev1.PodTemplateSpec, activeKey []byte, backupKey []byte) error {
+func applyAESCBCKeyHashAnnotation(podSpec *corev1.PodTemplateSpec, activeKey, backupKey []byte) error {
 	hasher := fnv.New32()
 	_, err := hasher.Write(activeKey)
 	if err != nil {

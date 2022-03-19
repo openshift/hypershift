@@ -162,7 +162,7 @@ func main() {
 	}
 }
 
-func deleteZone(ctx context.Context, zoneName string, zoneId string, client route53iface.Route53API) error {
+func deleteZone(ctx context.Context, zoneName, zoneId string, client route53iface.Route53API) error {
 	err := deleteRecords(ctx, client, zoneId)
 	if err != nil {
 		return fmt.Errorf("failed to delete zone records")

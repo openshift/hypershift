@@ -90,7 +90,7 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
-func dialFunc(caCertPath string, clientCertPath string, clientKeyPath string, proxyHostname string, proxyPort int) func(ctx context.Context, network string, addr string) (net.Conn, error) {
+func dialFunc(caCertPath, clientCertPath, clientKeyPath, proxyHostname string, proxyPort int) func(ctx context.Context, network string, addr string) (net.Conn, error) {
 	return func(ctx context.Context, network string, addr string) (net.Conn, error) {
 		if shouldGoDirect(strings.Split(addr, ":")[0]) {
 			return dialDirect(ctx, network, addr)

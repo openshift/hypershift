@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func ApplyNamedCertificateMounts(containerName string, mountPrefix string, certs []configv1.APIServerNamedServingCert, spec *corev1.PodSpec) {
+func ApplyNamedCertificateMounts(containerName, mountPrefix string, certs []configv1.APIServerNamedServingCert, spec *corev1.PodSpec) {
 	var container *corev1.Container
 	for i := range spec.Containers {
 		if spec.Containers[i].Name == containerName {

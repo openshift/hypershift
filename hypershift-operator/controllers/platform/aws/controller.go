@@ -213,7 +213,7 @@ func reconcileAWSEndpointServiceSubnetIDs(ctx context.Context, c client.Client, 
 	return nil
 }
 
-func listNodePools(ctx context.Context, c client.Client, nodePoolNamespace string, clusterName string) ([]hyperv1.NodePool, error) {
+func listNodePools(ctx context.Context, c client.Client, nodePoolNamespace, clusterName string) ([]hyperv1.NodePool, error) {
 	nodePoolList := &hyperv1.NodePoolList{}
 	if err := c.List(ctx, nodePoolList, &client.ListOptions{Namespace: nodePoolNamespace}); err != nil {
 		return nil, fmt.Errorf("failed to list NodePools in namespace %s for cluster %s : %w", nodePoolNamespace, clusterName, err)

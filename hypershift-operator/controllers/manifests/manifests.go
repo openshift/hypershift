@@ -16,7 +16,7 @@ func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName strin
 	}
 }
 
-func KubeConfigSecret(hostedClusterNamespace string, hostedClusterName string) *corev1.Secret {
+func KubeConfigSecret(hostedClusterNamespace, hostedClusterName string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedClusterNamespace,
@@ -25,7 +25,7 @@ func KubeConfigSecret(hostedClusterNamespace string, hostedClusterName string) *
 	}
 }
 
-func KubeadminPasswordSecret(hostedClusterNamespace string, hostedClusterName string) *corev1.Secret {
+func KubeadminPasswordSecret(hostedClusterNamespace, hostedClusterName string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedClusterNamespace,

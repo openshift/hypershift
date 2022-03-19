@@ -173,7 +173,7 @@ func splitURL(url *url.URL) (parts []string, port string) {
 }
 
 // overloaded version of urlsMatch, operating on strings instead of URLs.
-func urlsMatchStr(glob string, target string) (bool, error) {
+func urlsMatchStr(glob, target string) (bool, error) {
 	globURL, err := parseSchemelessURL(glob)
 	if err != nil {
 		return false, err
@@ -193,7 +193,7 @@ func urlsMatchStr(glob string, target string) (bool, error) {
 //    globURL=*.docker.io, targetURL=not.right.io   => no match
 //
 // Note that we don't support wildcards in ports and paths yet.
-func urlsMatch(globURL *url.URL, targetURL *url.URL) (bool, error) {
+func urlsMatch(globURL, targetURL *url.URL) (bool, error) {
 	globURLParts, globPort := splitURL(globURL)
 	targetURLParts, targetPort := splitURL(targetURL)
 	if globPort != targetPort {

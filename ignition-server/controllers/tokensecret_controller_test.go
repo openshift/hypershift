@@ -23,7 +23,7 @@ var fakePayload = "test"
 
 type fakeIgnitionProvider struct{}
 
-func (*fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
+func (*fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage, config string) (payload []byte, err error) {
 	return []byte(fakePayload), nil
 }
 

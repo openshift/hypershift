@@ -68,7 +68,7 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 	return nil
 }
 
-func ReconcileDefaultIngressControllerCertSecret(certSecret *corev1.Secret, sourceSecret *corev1.Secret) error {
+func ReconcileDefaultIngressControllerCertSecret(certSecret, sourceSecret *corev1.Secret) error {
 	if _, hasCertKey := sourceSecret.Data[corev1.TLSCertKey]; !hasCertKey {
 		return fmt.Errorf("source secret %s/%s does not have a cert key", sourceSecret.Namespace, sourceSecret.Name)
 	}

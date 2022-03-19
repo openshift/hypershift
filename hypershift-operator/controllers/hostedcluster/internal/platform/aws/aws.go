@@ -29,7 +29,7 @@ const (
 	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
 )
 
-func New(availabilityProberImage string, tokenMinterImage string) *AWS {
+func New(availabilityProberImage, tokenMinterImage string) *AWS {
 	return &AWS{
 		avaiabilityProberImage: availabilityProberImage,
 		tokenMinterImage:       tokenMinterImage,

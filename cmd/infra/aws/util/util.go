@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
-func NewSession(agent string, credentialsFile string, credKey string, credSecretKey string, region string) *session.Session {
+func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *session.Session {
 	sessionOpts := session.Options{}
 	if credentialsFile != "" {
 		sessionOpts.SharedConfigFiles = append(sessionOpts.SharedConfigFiles, credentialsFile)

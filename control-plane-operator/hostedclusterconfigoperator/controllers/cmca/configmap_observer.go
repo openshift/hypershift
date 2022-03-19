@@ -95,7 +95,7 @@ func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
-func (r *ManagedCAObserver) ensureAnnotationOnDeployment(ctx context.Context, deploymentName string, hash string) error {
+func (r *ManagedCAObserver) ensureAnnotationOnDeployment(ctx context.Context, deploymentName, hash string) error {
 	deployment, err := r.Client.AppsV1().Deployments(r.Namespace).Get(ctx, deploymentName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to get deployment %s/%s: %w", r.Namespace, deploymentName, err)

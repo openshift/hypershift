@@ -25,7 +25,7 @@ func ReconcileRedHatOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource, 
 	reconcileCatalogSource(cs, "redhat-operators:50051", p.RedHatOperatorsImage, "Red Hat Operators", -100, p.OLMCatalogPlacement)
 }
 
-func reconcileCatalogSource(cs *operatorsv1alpha1.CatalogSource, address string, image string, displayName string, priority int, placement hyperv1.OLMCatalogPlacement) {
+func reconcileCatalogSource(cs *operatorsv1alpha1.CatalogSource, address, image, displayName string, priority int, placement hyperv1.OLMCatalogPlacement) {
 	if cs.Annotations == nil {
 		cs.Annotations = map[string]string{}
 	}

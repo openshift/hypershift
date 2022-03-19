@@ -33,7 +33,7 @@ func konnectivityAgentLabels() map[string]string {
 	}
 }
 
-func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32, platform hyperv1.PlatformType) {
+func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image, host string, port int32, platform hyperv1.PlatformType) {
 	daemonset.Spec = appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: konnectivityAgentLabels(),

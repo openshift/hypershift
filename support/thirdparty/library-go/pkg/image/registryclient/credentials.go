@@ -34,7 +34,7 @@ func (s *refreshTokenStore) RefreshToken(url *url.URL, service string) string {
 	return s.store[refreshTokenKey{url: url.String(), service: service}]
 }
 
-func (s *refreshTokenStore) SetRefreshToken(url *url.URL, service string, token string) {
+func (s *refreshTokenStore) SetRefreshToken(url *url.URL, service, token string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	if s.store == nil {
@@ -53,7 +53,7 @@ func (*noopCredentialStore) RefreshToken(url *url.URL, service string) string {
 	return ""
 }
 
-func (*noopCredentialStore) SetRefreshToken(url *url.URL, service string, token string) {
+func (*noopCredentialStore) SetRefreshToken(url *url.URL, service, token string) {
 }
 
 func NewBasicCredentials() *BasicCredentials {

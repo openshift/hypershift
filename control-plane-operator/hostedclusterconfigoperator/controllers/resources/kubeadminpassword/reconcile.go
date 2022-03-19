@@ -8,7 +8,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func ReconcileKubeadminPasswordHashSecret(secret *corev1.Secret, passwordSecret *corev1.Secret) error {
+func ReconcileKubeadminPasswordHashSecret(secret, passwordSecret *corev1.Secret) error {
 	if secret.Data != nil {
 		hash, hasHash := secret.Data["kubeadmin"]
 		if hasHash && len(hash) > 0 {

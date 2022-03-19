@@ -18,7 +18,7 @@ import (
 	proxypkg "github.com/openshift/hypershift/support/proxy"
 )
 
-func Setup(mgr manager.Manager, deploymentNamespace string, deploymentName string) error {
+func Setup(mgr manager.Manager, deploymentNamespace, deploymentName string) error {
 	// We do not want this controller to require leader election, as that slows things down drastically when there is a proxy
 	// and if we have multiple instances running, they should all attempt to do the same change. This means we can not use
 	// the builder and have to wrap the controller.

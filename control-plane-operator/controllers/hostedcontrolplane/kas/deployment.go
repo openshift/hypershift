@@ -290,7 +290,7 @@ func kasContainerWaitForEtcd() *corev1.Container {
 	}
 }
 
-func buildKASContainerWaitForEtcd(image string, namespace string) func(c *corev1.Container) {
+func buildKASContainerWaitForEtcd(image, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile

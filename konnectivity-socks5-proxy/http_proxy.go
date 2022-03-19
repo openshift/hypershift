@@ -34,7 +34,7 @@ type httpProxyDialer struct {
 	forwardDial func(network, addr string) (net.Conn, error)
 }
 
-func (hpd *httpProxyDialer) Dial(network string, addr string) (net.Conn, error) {
+func (hpd *httpProxyDialer) Dial(network, addr string) (net.Conn, error) {
 	hostPort, _ := hostPortNoPort(hpd.proxyURL)
 	conn, err := hpd.forwardDial(network, hostPort)
 	if err != nil {

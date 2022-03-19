@@ -193,7 +193,7 @@ func generateSSHKeys() ([]byte, []byte, error) {
 	return publicBytes, privatePEM, nil
 }
 
-func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, render bool, waitForRollout bool) error {
+func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, render, waitForRollout bool) error {
 	exampleObjects := exampleOptions.Resources().AsObjects()
 	switch {
 	case render:

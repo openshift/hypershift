@@ -28,7 +28,7 @@ func validCA(secret *corev1.Secret) bool {
 	return hasKeys(secret, CASignerCertMapKey, CASignerKeyMapKey)
 }
 
-func signCertificate(cfg *certs.CertCfg, ca *corev1.Secret) (crtBytes []byte, keyBytes []byte, caBytes []byte, err error) {
+func signCertificate(cfg *certs.CertCfg, ca *corev1.Secret) (crtBytes, keyBytes, caBytes []byte, err error) {
 	caCert, caKey, err := decodeCA(ca)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to decode CA secret: %w", err)
@@ -44,7 +44,7 @@ func signCertificate(cfg *certs.CertCfg, ca *corev1.Secret) (crtBytes []byte, ke
 	return certs.CertToPem(crt), privKeyPem, certs.CertToPem(caCert), nil
 }
 
-func hasCAHash(secret *corev1.Secret, ca *corev1.Secret) bool {
+func hasCAHash(secret, ca *corev1.Secret) bool {
 	if secret.Annotations == nil {
 		return false
 	}

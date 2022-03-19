@@ -191,11 +191,11 @@ func (o *CreateInfraOptions) existingDHCPOptions(client ec2iface.EC2API) (string
 	return optID, nil
 }
 
-func (o *CreateInfraOptions) CreatePrivateSubnet(client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
+func (o *CreateInfraOptions) CreatePrivateSubnet(client ec2iface.EC2API, vpcID, zone, cidr string) (string, error) {
 	return o.CreateSubnet(client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone))
 }
 
-func (o *CreateInfraOptions) CreatePublicSubnet(client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
+func (o *CreateInfraOptions) CreatePublicSubnet(client ec2iface.EC2API, vpcID, zone, cidr string) (string, error) {
 	return o.CreateSubnet(client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone))
 }
 

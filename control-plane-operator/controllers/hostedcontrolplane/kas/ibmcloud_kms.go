@@ -152,7 +152,7 @@ func buildVolumeIBMCloudKMSKP(v *corev1.Volume) {
 	v.Secret.Optional = &optionalMount
 }
 
-func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, customerAPIKeyReference *corev1.EnvVarSource) func(c *corev1.Container) {
+func buildKASContainerIBMCloudKMS(image, region, kmsInfo string, customerAPIKeyReference *corev1.EnvVarSource) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways

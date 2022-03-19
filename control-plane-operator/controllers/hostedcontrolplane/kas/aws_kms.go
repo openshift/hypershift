@@ -105,7 +105,7 @@ func generateAWSKMSEncryptionConfig(activeKey hyperv1.AWSKMSKeyEntry, backupKey 
 	return bufferInstance.Bytes(), nil
 }
 
-func applyAWSKMSConfig(podSpec *corev1.PodSpec, activeKey hyperv1.AWSKMSKeyEntry, backupKey *hyperv1.AWSKMSKeyEntry, awsAuth hyperv1.AWSKMSAuthSpec, awsRegion string, kmsImage, tokenMinterImage string) error {
+func applyAWSKMSConfig(podSpec *corev1.PodSpec, activeKey hyperv1.AWSKMSKeyEntry, backupKey *hyperv1.AWSKMSKeyEntry, awsAuth hyperv1.AWSKMSAuthSpec, awsRegion, kmsImage, tokenMinterImage string) error {
 	if activeKey.ARN == "" || kmsImage == "" {
 		return fmt.Errorf("aws kms active key metadata is nil")
 	}
@@ -155,7 +155,7 @@ func kasContainerAWSKMSTokenMinter() *corev1.Container {
 	}
 }
 
-func buildKASContainerAWSKMS(image string, arn string, region string, unixSocketPath string, healthPort int32) func(c *corev1.Container) {
+func buildKASContainerAWSKMS(image, arn, region, unixSocketPath string, healthPort int32) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways

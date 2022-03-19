@@ -214,7 +214,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 // indicated by the provided kubeconfig. This function assumes that pods aren't
 // able to be scheduled and so can only gather information directly accessible
 // through the api server.
-func DumpGuestCluster(ctx context.Context, kubeconfig string, destDir string) error {
+func DumpGuestCluster(ctx context.Context, kubeconfig, destDir string) error {
 	ocCommand, err := exec.LookPath("oc")
 	if err != nil || ocCommand == "" {
 		return fmt.Errorf("cannot find oc command")

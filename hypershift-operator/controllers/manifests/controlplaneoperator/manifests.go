@@ -46,7 +46,7 @@ func OperatorRoleBinding(controlPlaneOperatorNamespace string) *rbacv1.RoleBindi
 	}
 }
 
-func OperatorIngressRole(ingressNamespace string, controlPlaneOperatorNamespace string) *rbacv1.Role {
+func OperatorIngressRole(ingressNamespace, controlPlaneOperatorNamespace string) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ingressNamespace,
@@ -55,7 +55,7 @@ func OperatorIngressRole(ingressNamespace string, controlPlaneOperatorNamespace 
 	}
 }
 
-func OperatorIngressRoleBinding(ingressNamespace string, controlPlaneOperatorNamespace string) *rbacv1.RoleBinding {
+func OperatorIngressRoleBinding(ingressNamespace, controlPlaneOperatorNamespace string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ingressNamespace,
@@ -64,7 +64,7 @@ func OperatorIngressRoleBinding(ingressNamespace string, controlPlaneOperatorNam
 	}
 }
 
-func OperatorIngressOperatorRole(ingressOperatorNamespace string, controlPlaneOperatorNamespace string) *rbacv1.Role {
+func OperatorIngressOperatorRole(ingressOperatorNamespace, controlPlaneOperatorNamespace string) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ingressOperatorNamespace,
@@ -73,7 +73,7 @@ func OperatorIngressOperatorRole(ingressOperatorNamespace string, controlPlaneOp
 	}
 }
 
-func OperatorIngressOperatorRoleBinding(ingressOperatorNamespace string, controlPlaneOperatorNamespace string) *rbacv1.RoleBinding {
+func OperatorIngressOperatorRoleBinding(ingressOperatorNamespace, controlPlaneOperatorNamespace string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ingressOperatorNamespace,
@@ -82,7 +82,7 @@ func OperatorIngressOperatorRoleBinding(ingressOperatorNamespace string, control
 	}
 }
 
-func CAPICluster(controlPlaneOperatorNamespace string, infraID string) *capiv1.Cluster {
+func CAPICluster(controlPlaneOperatorNamespace, infraID string) *capiv1.Cluster {
 	return &capiv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneOperatorNamespace,
@@ -91,7 +91,7 @@ func CAPICluster(controlPlaneOperatorNamespace string, infraID string) *capiv1.C
 	}
 }
 
-func HostedControlPlane(controlPlaneNamespace string, hostedClusterName string) *hyperv1.HostedControlPlane {
+func HostedControlPlane(controlPlaneNamespace, hostedClusterName string) *hyperv1.HostedControlPlane {
 	return &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,

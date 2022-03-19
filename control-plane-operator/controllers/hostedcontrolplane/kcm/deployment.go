@@ -238,7 +238,7 @@ func kcmVolumeCloudConfig() *corev1.Volume {
 	}
 }
 
-func buildKCMVolumeCloudConfig(cloudProviderConfigName string, cloudProviderName string) func(v *corev1.Volume) {
+func buildKCMVolumeCloudConfig(cloudProviderConfigName, cloudProviderName string) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
 		if cloudProviderName == azure.Provider {
 			v.Secret = &corev1.SecretVolumeSource{SecretName: cloudProviderConfigName}

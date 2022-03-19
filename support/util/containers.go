@@ -26,7 +26,7 @@ func FindContainer(name string, containers []corev1.Container) *corev1.Container
 // image in the release image.
 const AvailabilityProberImageName = "availability-prober"
 
-func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...AvailabilityProberOpt) {
+func AvailabilityProber(target, image string, spec *corev1.PodSpec, o ...AvailabilityProberOpt) {
 	opts := AvailabilityProberOpts{}
 	for _, opt := range o {
 		opt(&opts)

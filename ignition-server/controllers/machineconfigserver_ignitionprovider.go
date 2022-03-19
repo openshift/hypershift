@@ -45,7 +45,7 @@ type MCSIgnitionProvider struct {
 	Namespace       string
 }
 
-func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
+func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage, config string) (payload []byte, err error) {
 	pullSecret := &corev1.Secret{}
 	if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: pullSecretName}, pullSecret); err != nil {
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)

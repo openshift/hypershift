@@ -33,7 +33,7 @@ func ReconcileChallengingClient(client *oauthv1.OAuthClient, externalHost string
 	return reconcileOAuthClient(client, redirectURIs, true, false)
 }
 
-func reconcileOAuthClient(client *oauthv1.OAuthClient, redirectURIs []string, respondWithChallenges bool, setSecret bool) error {
+func reconcileOAuthClient(client *oauthv1.OAuthClient, redirectURIs []string, respondWithChallenges, setSecret bool) error {
 	client.RedirectURIs = redirectURIs
 	client.RespondWithChallenges = respondWithChallenges
 	client.GrantMethod = oauthv1.GrantHandlerAuto
