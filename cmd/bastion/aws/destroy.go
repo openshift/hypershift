@@ -72,10 +72,8 @@ func (o *DestroyBastionOpts) Validate() error {
 		if len(o.InfraID) > 0 || len(o.Region) > 0 {
 			return fmt.Errorf("infra id and region cannot be specified when specifying a hosted cluster name")
 		}
-	} else {
-		if o.InfraID == "" || o.Region == "" {
-			return fmt.Errorf("infra id and region must be specified when not specifying a hosted cluster name")
-		}
+	} else if o.InfraID == "" || o.Region == "" {
+		return fmt.Errorf("infra id and region must be specified when not specifying a hosted cluster name")
 	}
 	return nil
 }

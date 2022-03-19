@@ -104,10 +104,8 @@ spec:
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(actualSecret.Data).To(HaveKey("password"))
 				g.Expect(actualSecret.Data["password"]).ToNot(BeEmpty())
-			} else {
-				if !errors.IsNotFound(err) {
-					g.Expect(err).NotTo(HaveOccurred())
-				}
+			} else if !errors.IsNotFound(err) {
+				g.Expect(err).NotTo(HaveOccurred())
 			}
 		})
 	}
