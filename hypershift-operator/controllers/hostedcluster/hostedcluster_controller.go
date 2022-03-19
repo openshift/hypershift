@@ -1213,7 +1213,10 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 
 	// Reconcile CAPI manager service account
 	capiManagerServiceAccount := clusterapi.CAPIManagerServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerServiceAccount, NoopReconcile)
+	_, err = createOrUpdate(ctx, r.Client, capiManagerServiceAccount, func() error {
+		util.EnsurePullSecret(capiManagerServiceAccount, controlplaneoperator.PullSecret("").Name)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager service account: %w", err)
 	}
@@ -1301,7 +1304,10 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 	// Reconcile CAPI provider service account
 	capiProviderServiceAccount := clusterapi.CAPIProviderServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiProviderServiceAccount, NoopReconcile)
+	_, err = createOrUpdate(ctx, r.Client, capiProviderServiceAccount, func() error {
+		util.EnsurePullSecret(capiProviderServiceAccount, controlplaneoperator.PullSecret("").Name)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi provider service account: %w", err)
 	}
@@ -1716,7 +1722,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 	}
 
 	sa := ignitionserver.ServiceAccount(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
+	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
+		return nil
+	}); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
 	}
 
@@ -1904,7 +1913,10 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 
 	// Reconcile autoscaler service account
 	autoScalerServiceAccount := autoscaler.AutoScalerServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, autoScalerServiceAccount, NoopReconcile)
+	_, err = createOrUpdate(ctx, r.Client, autoScalerServiceAccount, func() error {
+		util.EnsurePullSecret(autoScalerServiceAccount, controlplaneoperator.PullSecret("").Name)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
 	}
@@ -3266,7 +3278,10 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 
 	// Reconcile machine-approver service account
 	sa := machineapprover.ServiceAccount(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
+	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
+		return nil
+	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
 	}
 
