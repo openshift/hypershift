@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -242,6 +243,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 				Value: releaseImage,
 			},
 		}
+		proxy.SetEnvVars(&c.Env)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }

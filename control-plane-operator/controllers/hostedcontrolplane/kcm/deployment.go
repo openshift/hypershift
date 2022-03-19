@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -139,6 +140,7 @@ func buildKCMContainerMain(image string, args []string, port int32) func(c *core
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
+		proxy.SetEnvVars(&c.Env)
 	}
 }
 

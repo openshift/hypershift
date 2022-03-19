@@ -154,7 +154,7 @@ app-sre-saas-template: hypershift
 # Run tests
 .PHONY: test
 test: build
-	$(GO) test ./... -coverprofile cover.out
+	$(GO) test -race -count=25 ./... -coverprofile cover.out
 
 .PHONY: e2e
 e2e:
@@ -219,11 +219,7 @@ run-local:
 	bin/hypershift-operator run
 
 .PHONY: ci-install-hypershift
-ci-install-hypershift:
-	bin/hypershift install --hypershift-image $(HYPERSHIFT_RELEASE_LATEST) \
-		--oidc-storage-provider-s3-credentials=/etc/hypershift-pool-aws-credentials/credentials \
-		--oidc-storage-provider-s3-bucket-name=hypershift-ci-oidc \
-		--oidc-storage-provider-s3-region=us-east-1
+ci-install-hypershift: ci-install-hypershift-private
 
 .PHONY: ci-install-hypershift-private
 ci-install-hypershift-private:

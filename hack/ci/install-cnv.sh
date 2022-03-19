@@ -2,6 +2,9 @@
 
 set -ex
 
+# The kubevirt tests require wildcard routes to be allowed
+oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'
+
 oc apply -f - <<EOF
 apiVersion: v1
 kind: Namespace

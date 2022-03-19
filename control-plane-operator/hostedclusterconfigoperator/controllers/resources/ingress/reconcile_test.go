@@ -1,12 +1,13 @@
 package ingress
 
 import (
+	"testing"
+
 	. "github.com/onsi/gomega"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	corev1 "k8s.io/api/core/v1"
-	"testing"
 )
 
 func TestReconcileDefaultIngressController(t *testing.T) {
@@ -80,7 +81,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:                   "Kubevirt uses HostNetwork publishing strategy",
+			name:                   "Kubevirt uses NodePort publishing strategy",
 			inputIngressController: manifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.KubevirtPlatform,
@@ -92,7 +93,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
 					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
-						Type: operatorv1.HostNetworkStrategyType,
+						Type: operatorv1.NodePortServiceStrategyType,
 					},
 					DefaultCertificate: &corev1.LocalObjectReference{
 						Name: manifests.IngressDefaultIngressControllerCert().Name,
