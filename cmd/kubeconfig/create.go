@@ -85,7 +85,7 @@ func render(ctx context.Context, opts Options) error {
 
 	var kubeConfig *clientcmdapiv1.Config
 	switch {
-	case len(opts.Name) == 0:
+	case opts.Name == "":
 		config, err := buildCombinedConfig(ctx, c)
 		if err != nil {
 			return fmt.Errorf("failed to make kubeconfig: %w", err)

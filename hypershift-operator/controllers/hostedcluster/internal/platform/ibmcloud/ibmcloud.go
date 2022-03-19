@@ -72,7 +72,7 @@ func (IBMCloud) ReconcileSecretEncryption(ctx context.Context, c client.Client, 
 		return fmt.Errorf("ibm kms metadata nil")
 	}
 	if hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Type == hyperv1.IBMCloudKMSUnmanagedAuth {
-		if hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged == nil || len(hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged.Credentials.Name) == 0 {
+		if hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged == nil || hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged.Credentials.Name == "" {
 			return fmt.Errorf("ibm unmanaged auth credential nil")
 		}
 		var src corev1.Secret

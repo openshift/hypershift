@@ -224,7 +224,7 @@ func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, c
 }
 
 func applyIBMCloudKMSConfig(podSpec *corev1.PodSpec, ibmCloud *hyperv1.IBMCloudKMSSpec, kmsImage string) error {
-	if ibmCloud == nil || len(ibmCloud.KeyList) == 0 || len(ibmCloud.Region) == 0 || len(kmsImage) == 0 {
+	if ibmCloud == nil || len(ibmCloud.KeyList) == 0 || ibmCloud.Region == "" || kmsImage == "" {
 		return fmt.Errorf("ibmcloud kms metadata not specified")
 	}
 	kmsKPInfo, err := buildIBMCloudKMSInfoEnvVar(buildIBMCloudKeyVersionKeyEntryMap(ibmCloud.KeyList), ibmCloud.Auth.Type)
@@ -235,7 +235,7 @@ func applyIBMCloudKMSConfig(podSpec *corev1.PodSpec, ibmCloud *hyperv1.IBMCloudK
 	var customerAPIKeyReference *corev1.EnvVarSource
 	switch ibmCloud.Auth.Type {
 	case hyperv1.IBMCloudKMSUnmanagedAuth:
-		if len(ibmCloud.Auth.Unmanaged.Credentials.Name) == 0 {
+		if ibmCloud.Auth.Unmanaged.Credentials.Name == "" {
 			return fmt.Errorf("ibmcloud kms credential not specified")
 		}
 		customerAPIKeyReference = &corev1.EnvVarSource{

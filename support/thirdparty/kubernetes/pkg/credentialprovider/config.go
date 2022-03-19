@@ -115,7 +115,7 @@ func (ident *DockerConfigEntry) UnmarshalJSON(data []byte) error {
 	ident.Password = tmp.Password
 	ident.Email = tmp.Email
 
-	if len(tmp.Auth) == 0 {
+	if tmp.Auth == "" {
 		return nil
 	}
 

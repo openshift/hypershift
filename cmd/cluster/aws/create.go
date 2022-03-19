@@ -99,7 +99,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 	if infra == nil {
-		if len(infraID) == 0 {
+		if infraID == "" {
 			infraID = infraid.New(opts.Name)
 		}
 		opt := awsinfra.CreateInfraOptions{

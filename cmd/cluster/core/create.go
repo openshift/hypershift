@@ -107,7 +107,7 @@ type AzurePlatformOptions struct {
 }
 
 func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
-	if len(opts.ReleaseImage) == 0 {
+	if opts.ReleaseImage == "" {
 		defaultVersion, err := version.LookupDefaultOCPVersion()
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)

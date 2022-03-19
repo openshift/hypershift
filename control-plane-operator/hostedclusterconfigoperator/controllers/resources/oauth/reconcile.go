@@ -37,7 +37,7 @@ func reconcileOAuthClient(client *oauthv1.OAuthClient, redirectURIs []string, re
 	client.RedirectURIs = redirectURIs
 	client.RespondWithChallenges = respondWithChallenges
 	client.GrantMethod = oauthv1.GrantHandlerAuto
-	if setSecret && len(client.Secret) == 0 {
+	if setSecret && client.Secret == "" {
 		client.Secret = randomString(32)
 	}
 	return nil

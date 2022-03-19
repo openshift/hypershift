@@ -325,7 +325,7 @@ func (AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUp
 func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
-	if hcluster.Spec.SecretEncryption.KMS.AWS == nil || len(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name) == 0 {
+	if hcluster.Spec.SecretEncryption.KMS.AWS == nil || hcluster.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name == "" {
 		return fmt.Errorf("aws kms metadata nil")
 	}
 	var src corev1.Secret

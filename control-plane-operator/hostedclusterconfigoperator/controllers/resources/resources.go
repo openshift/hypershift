@@ -393,7 +393,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 
 	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
 
-	if len(apiServerAddress) == 0 {
+	if apiServerAddress == "" {
 		return fmt.Errorf("hosted control plane does not have an APIServer endpoint address")
 	}
 
@@ -651,7 +651,7 @@ func (r *reconciler) reconcileOpenshiftAPIServerEndpoints(ctx context.Context, h
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
 		return fmt.Errorf("failed to get openshift apiserver service from control plane: %w", err)
 	}
-	if len(cpService.Spec.ClusterIP) == 0 {
+	if cpService.Spec.ClusterIP == "" {
 		return fmt.Errorf("openshift apiserver service in control plane does not yet have a cluster IP")
 	}
 	openshiftAPIServerEndpoints := manifests.OpenShiftAPIServerClusterEndpoints()
@@ -667,7 +667,7 @@ func (r *reconciler) reconcileOpenshiftOAuthAPIServerEndpoints(ctx context.Conte
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
 		return fmt.Errorf("failed to get openshift oauth apiserver service from control plane: %w", err)
 	}
-	if len(cpService.Spec.ClusterIP) == 0 {
+	if cpService.Spec.ClusterIP == "" {
 		return fmt.Errorf("openshift oauth apiserver service in control plane does not yet have a cluster IP")
 	}
 	openshiftOAuthAPIServerEndpoints := manifests.OpenShiftOAuthAPIServerClusterEndpoints()
@@ -863,7 +863,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
 		errs = append(errs, fmt.Errorf("failed to get packageserver service from control plane namespace: %w", err))
 	} else {
-		if len(cpService.Spec.ClusterIP) == 0 {
+		if cpService.Spec.ClusterIP == "" {
 			errs = append(errs, fmt.Errorf("packageserver service does not yet have a cluster IP"))
 		} else {
 			packageServerEndpoints := manifests.OLMPackageServerEndpoints()

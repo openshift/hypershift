@@ -184,7 +184,7 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 		if !ok {
 			continue
 		}
-		if len(version.DisplayName) == 0 {
+		if version.DisplayName == "" {
 			version.DisplayName = v.List()[0]
 		}
 		out[k] = version
@@ -198,7 +198,7 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 
 func parseComponentVersionsLabel(label, displayNames string) (ComponentVersions, error) {
 	label = strings.TrimSpace(label)
-	if len(label) == 0 {
+	if label == "" {
 		return nil, nil
 	}
 	var names map[string]string
@@ -224,7 +224,7 @@ func parseComponentVersionsLabel(label, displayNames string) (ComponentVersions,
 	}
 
 	labels := make(ComponentVersions)
-	if len(label) == 0 {
+	if label == "" {
 		return nil, fmt.Errorf("the version pair must be NAME=VERSION")
 	}
 	for _, pair := range strings.Split(label, ",") {
@@ -320,7 +320,7 @@ func (v ComponentVersions) DisplayNameLabel() string {
 		if i != 0 {
 			buf.WriteRune(',')
 		}
-		if len(v[k].DisplayName) == 0 {
+		if v[k].DisplayName == "" {
 			continue
 		}
 		fmt.Fprintf(buf, "%s=%s", k, v[k].DisplayName)

@@ -346,7 +346,7 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		return fmt.Errorf("logger not found: %w", err)
 	}
 
-	if len(awsEndpointService.Status.EndpointServiceName) == 0 {
+	if awsEndpointService.Status.EndpointServiceName == "" {
 		log.Info("endpoint service name is not set, ignoring", "name", awsEndpointService.Name)
 		return nil
 	}

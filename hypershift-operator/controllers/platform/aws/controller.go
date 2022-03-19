@@ -251,7 +251,7 @@ func reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *
 	}
 
 	serviceName := awsEndpointService.Status.EndpointServiceName
-	if len(serviceName) != 0 {
+	if serviceName != "" {
 		// check if Endpoint Service exists in AWS
 		output, err := ec2Client.DescribeVpcEndpointServiceConfigurationsWithContext(ctx, &ec2.DescribeVpcEndpointServiceConfigurationsInput{
 			Filters: []*ec2.Filter{
@@ -325,7 +325,7 @@ func reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *
 				return errors.New(awsErr.Code())
 			}
 		}
-		if len(serviceName) == 0 {
+		if serviceName == "" {
 			return err
 		}
 		log.Info("endpoint service adopted", "serviceName", serviceName)
@@ -376,7 +376,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	}
 
 	serviceName := awsEndpointService.Status.EndpointServiceName
-	if len(serviceName) == 0 {
+	if serviceName == "" {
 		// nothing to clean up
 		return true, nil
 	}

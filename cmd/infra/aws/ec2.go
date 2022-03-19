@@ -47,7 +47,7 @@ func (o *CreateInfraOptions) createVPC(client ec2iface.EC2API) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(vpcID) == 0 {
+	if vpcID == "" {
 		createResult, err := client.CreateVpc(&ec2.CreateVpcInput{
 			CidrBlock:         aws.String(DefaultCIDRBlock),
 			TagSpecifications: o.ec2TagSpecifications("vpc", vpcName),
@@ -145,7 +145,7 @@ func (o *CreateInfraOptions) CreateDHCPOptions(client ec2iface.EC2API, vpcID str
 	if err != nil {
 		return err
 	}
-	if len(optID) == 0 {
+	if optID == "" {
 		result, err := client.CreateDhcpOptions(&ec2.CreateDhcpOptionsInput{
 			DhcpConfigurations: []*ec2.NewDhcpConfiguration{
 				{

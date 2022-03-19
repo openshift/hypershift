@@ -52,7 +52,7 @@ func (s *keyringCredentialStore) Basic(url *url.URL) (string, string) {
 func BasicFromKeyring(keyring credentialprovider.DockerKeyring, target *url.URL) (string, string) {
 	// TODO: compare this logic to Docker authConfig in v2 configuration
 	var value string
-	if len(target.Scheme) == 0 || target.Scheme == "https" {
+	if target.Scheme == "" || target.Scheme == "https" {
 		value = target.Host + target.Path
 	} else {
 		// always require an explicit port to look up HTTP credentials

@@ -60,7 +60,7 @@ func validateSessionSecrets(value []byte) bool {
 	if len(sessionSecrets.Secrets) == 0 {
 		return false
 	}
-	if len(sessionSecrets.Secrets[0].Authentication) == 0 || len(sessionSecrets.Secrets[0].Encryption) == 0 {
+	if sessionSecrets.Secrets[0].Authentication == "" || sessionSecrets.Secrets[0].Encryption == "" {
 		return false
 	}
 	return true

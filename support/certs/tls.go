@@ -108,7 +108,7 @@ func SelfSignedCertificate(cfg *CertCfg, key crypto.Signer) (*x509.Certificate, 
 		Subject:               cfg.Subject,
 	}
 	// verifies that the CN and/or OU for the cert is set
-	if len(cfg.Subject.CommonName) == 0 || len(cfg.Subject.OrganizationalUnit) == 0 {
+	if cfg.Subject.CommonName == "" || len(cfg.Subject.OrganizationalUnit) == 0 {
 		return nil, errors.Errorf("certification's subject is not set, or invalid")
 	}
 	pub := key.Public()

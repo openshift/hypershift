@@ -168,7 +168,7 @@ func (c *Context) Ping(ctx context.Context, registry *url.URL, insecure bool) (h
 		t = c.InsecureTransport
 	}
 	src := *registry
-	if len(src.Scheme) == 0 {
+	if src.Scheme == "" {
 		src.Scheme = "https"
 	}
 

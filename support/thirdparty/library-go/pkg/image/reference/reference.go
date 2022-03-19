@@ -73,13 +73,13 @@ func (r DockerImageReference) Equal(other DockerImageReference) bool {
 
 // DockerClientDefaults sets the default values used by the Docker client.
 func (r DockerImageReference) DockerClientDefaults() DockerImageReference {
-	if len(r.Registry) == 0 {
+	if r.Registry == "" {
 		r.Registry = DockerDefaultRegistry
 	}
-	if len(r.Namespace) == 0 && IsRegistryDockerHub(r.Registry) {
+	if r.Namespace == "" && IsRegistryDockerHub(r.Registry) {
 		r.Namespace = "library"
 	}
-	if len(r.Tag) == 0 {
+	if r.Tag == "" {
 		r.Tag = "latest"
 	}
 	return r
@@ -155,14 +155,14 @@ func (r DockerImageReference) AsV2() DockerImageReference {
 // current ref, preferring an ID over a Tag. Allows client code dealing with both tags and IDs
 // to get the most specific reference easily.
 func (r DockerImageReference) MostSpecific() DockerImageReference {
-	if len(r.ID) == 0 {
+	if r.ID == "" {
 		return r
 	}
 	if _, err := digest.ParseDigest(r.ID); err == nil {
 		r.Tag = ""
 		return r
 	}
-	if len(r.Tag) == 0 {
+	if r.Tag == "" {
 		r.Tag, r.ID = r.ID, ""
 		return r
 	}
@@ -172,7 +172,7 @@ func (r DockerImageReference) MostSpecific() DockerImageReference {
 // NameString returns the name of the reference with its tag or ID.
 func (r DockerImageReference) NameString() string {
 	switch {
-	case len(r.Name) == 0:
+	case r.Name == "":
 		return ""
 	case len(r.ID) > 0:
 		var ref string
@@ -194,7 +194,7 @@ func (r DockerImageReference) NameString() string {
 // Exact returns a string representation of the set fields on the DockerImageReference
 func (r DockerImageReference) Exact() string {
 	name := r.NameString()
-	if len(name) == 0 {
+	if name == "" {
 		return name
 	}
 	s := r.Registry
@@ -202,7 +202,7 @@ func (r DockerImageReference) Exact() string {
 		s += "/"
 	}
 
-	if len(r.Namespace) != 0 {
+	if r.Namespace != "" {
 		s += r.Namespace + "/"
 	}
 	return s + name
@@ -211,7 +211,7 @@ func (r DockerImageReference) Exact() string {
 // String converts a DockerImageReference to a Docker pull spec (which implies a default namespace
 // according to V1 Docker registry rules). Use Exact() if you want no defaulting.
 func (r DockerImageReference) String() string {
-	if len(r.Namespace) == 0 && IsRegistryDockerHub(r.Registry) {
+	if r.Namespace == "" && IsRegistryDockerHub(r.Registry) {
 		r.Namespace = "library"
 	}
 	return r.Exact()

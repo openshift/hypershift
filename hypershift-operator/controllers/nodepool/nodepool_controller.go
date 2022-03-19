@@ -1106,7 +1106,7 @@ func defaultNodePoolAMI(region string, releaseImage *releaseinfo.ReleaseImage) (
 	if !hasRegionData {
 		return "", fmt.Errorf("couldn't find AWS image for region %q", region)
 	}
-	if len(regionData.Image) == 0 {
+	if regionData.Image == "" {
 		return "", fmt.Errorf("release image metadata has no image for region %q", region)
 	}
 	return regionData.Image, nil

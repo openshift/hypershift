@@ -552,7 +552,7 @@ type openIDProviderJSON struct {
 }
 
 func isValidURL(rawurl string, optional bool) bool {
-	if len(rawurl) == 0 {
+	if rawurl == "" {
 		return optional
 	}
 
@@ -561,7 +561,7 @@ func isValidURL(rawurl string, optional bool) bool {
 		return false
 	}
 
-	return u.Scheme == "https" && len(u.Host) > 0 && len(u.Fragment) == 0
+	return u.Scheme == "https" && len(u.Host) > 0 && u.Fragment == ""
 }
 
 func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, name, key string) (http.RoundTripper, error) {
@@ -570,7 +570,7 @@ func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, 
 		TLSClientConfig: &tls.Config{},
 	})
 
-	if len(name) == 0 {
+	if name == "" {
 		return transport, nil
 	}
 

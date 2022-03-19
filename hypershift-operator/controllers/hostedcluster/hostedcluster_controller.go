@@ -684,7 +684,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		log.Info("Reconciling secret encryption configuration")
 		switch hcluster.Spec.SecretEncryption.Type {
 		case hyperv1.AESCBC:
-			if hcluster.Spec.SecretEncryption.AESCBC == nil || len(hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name) == 0 {
+			if hcluster.Spec.SecretEncryption.AESCBC == nil || hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name == "" {
 				log.Error(fmt.Errorf("aescbc metadata  is nil"), "")
 				// don't return error here as reconciling won't fix input error
 				return ctrl.Result{}, nil
@@ -1602,7 +1602,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		}
 
 		// The route must be admitted and assigned a host before we can generate certs
-		if len(ignitionServerRoute.Status.Ingress) == 0 || len(ignitionServerRoute.Status.Ingress[0].Host) == 0 {
+		if len(ignitionServerRoute.Status.Ingress) == 0 || ignitionServerRoute.Status.Ingress[0].Host == "" {
 			log.Info("ignition server reconciliation waiting for ignition server route to be assigned a host value")
 			return nil
 		}
@@ -2983,7 +2983,7 @@ func computeUnmanagedEtcdAvailability(hcluster *hyperv1.HostedCluster, unmanaged
 			Message: fmt.Sprintf("missing TLS client secret %s", hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name),
 		}
 	}
-	if hcluster.Spec.Etcd.Unmanaged == nil || len(hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name) == 0 || len(hcluster.Spec.Etcd.Unmanaged.Endpoint) == 0 {
+	if hcluster.Spec.Etcd.Unmanaged == nil || hcluster.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name == "" || hcluster.Spec.Etcd.Unmanaged.Endpoint == "" {
 		return metav1.Condition{
 			Type:    string(hyperv1.UnmanagedEtcdAvailable),
 			Status:  metav1.ConditionFalse,

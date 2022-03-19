@@ -38,7 +38,7 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		o.InfraID = hostedCluster.Spec.InfraID
 	}
 	var inputErrors []error
-	if len(o.InfraID) == 0 {
+	if o.InfraID == "" {
 		inputErrors = append(inputErrors, fmt.Errorf("infrastructure ID is required"))
 	}
 	if err := errors.NewAggregate(inputErrors); err != nil {

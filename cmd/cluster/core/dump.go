@@ -78,7 +78,7 @@ func NewDumpCommand() *cobra.Command {
 
 func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	ocCommand, err := exec.LookPath("oc")
-	if err != nil || len(ocCommand) == 0 {
+	if err != nil || ocCommand == "" {
 		return fmt.Errorf("cannot find oc command")
 	}
 	cfg, err := util.GetConfig()
@@ -216,7 +216,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 // through the api server.
 func DumpGuestCluster(ctx context.Context, kubeconfig string, destDir string) error {
 	ocCommand, err := exec.LookPath("oc")
-	if err != nil || len(ocCommand) == 0 {
+	if err != nil || ocCommand == "" {
 		return fmt.Errorf("cannot find oc command")
 	}
 	cmd := OCAdmInspect{

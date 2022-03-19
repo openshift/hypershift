@@ -84,7 +84,7 @@ func (o *Options) Validate() error {
 		errs = append(errs, fmt.Errorf("only one of --oidc-storage-provider-s3-secret or --oidc-storage-provider-s3-credentials is supported"))
 	}
 	if (len(o.OIDCStorageProviderS3CredentialsSecret) > 0 || len(o.OIDCStorageProviderS3Credentials) > 0) &&
-		(len(o.OIDCStorageProviderS3BucketName) == 0 || len(o.OIDCStorageProviderS3Region) == 0 || len(o.OIDCStorageProviderS3CredentialsSecretKey) == 0) {
+		(o.OIDCStorageProviderS3BucketName == "" || o.OIDCStorageProviderS3Region == "" || o.OIDCStorageProviderS3CredentialsSecretKey == "") {
 		errs = append(errs, fmt.Errorf("all required oidc information is not set"))
 	}
 	if strings.Contains(o.OIDCStorageProviderS3BucketName, ".") {
@@ -92,13 +92,13 @@ func (o *Options) Validate() error {
 	}
 
 	if len(o.ExternalDNSProvider) > 0 {
-		if len(o.ExternalDNSCredentials) == 0 && len(o.ExternalDNSCredentialsSecret) == 0 {
+		if o.ExternalDNSCredentials == "" && o.ExternalDNSCredentialsSecret == "" {
 			errs = append(errs, fmt.Errorf("--external-dns-credentials or --external-dns-credentials-secret are required with --external-dns-provider"))
 		}
-		if len(o.ExternalDNSCredentials) != 0 && len(o.ExternalDNSCredentialsSecret) != 0 {
+		if o.ExternalDNSCredentials != "" && o.ExternalDNSCredentialsSecret != "" {
 			errs = append(errs, fmt.Errorf("only one of --external-dns-credentials or --external-dns-credentials-secret is supported"))
 		}
-		if len(o.ExternalDNSDomainFilter) == 0 {
+		if o.ExternalDNSDomainFilter == "" {
 			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
 		}
 	}

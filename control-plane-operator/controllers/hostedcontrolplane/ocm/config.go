@@ -59,7 +59,7 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 	// registry config
 	cfg.DockerPullSecret.InternalRegistryHostname = imageConfig.Status.InternalRegistryHostname
 	cfg.DockerPullSecret.RegistryURLs = imageConfig.Status.ExternalRegistryHostnames
-	if len(cfg.DockerPullSecret.InternalRegistryHostname) == 0 {
+	if cfg.DockerPullSecret.InternalRegistryHostname == "" {
 		cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
 	}
 

@@ -27,7 +27,7 @@ type PodProvider struct {
 func (p *PodProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (releaseImage *ReleaseImage, err error) {
 	log := ctrl.LoggerFrom(ctx, "image-lookup", image)
 
-	if len(image) == 0 {
+	if image == "" {
 		return nil, fmt.Errorf("image pull reference is blank, a value is required")
 	}
 	if len(pullSecret) == 0 {

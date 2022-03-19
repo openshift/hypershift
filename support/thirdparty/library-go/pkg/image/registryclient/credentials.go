@@ -76,10 +76,10 @@ func (c *BasicCredentials) Add(url *url.URL, username, password string) {
 
 func (c *BasicCredentials) Basic(url *url.URL) (string, string) {
 	for _, cred := range c.creds {
-		if len(cred.url.Host) != 0 && cred.url.Host != url.Host {
+		if cred.url.Host != "" && cred.url.Host != url.Host {
 			continue
 		}
-		if len(cred.url.Path) != 0 && cred.url.Path != url.Path {
+		if cred.url.Path != "" && cred.url.Path != url.Path {
 			continue
 		}
 		return cred.username, cred.password

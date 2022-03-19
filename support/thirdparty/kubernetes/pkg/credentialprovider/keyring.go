@@ -129,7 +129,7 @@ const (
 func isDefaultRegistryMatch(image string) bool {
 	parts := strings.SplitN(image, "/", 2)
 
-	if len(parts[0]) == 0 {
+	if parts[0] == "" {
 		return false
 	}
 

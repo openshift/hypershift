@@ -47,17 +47,17 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 }
 
 func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
-	if len(o.InstanceProfile) == 0 {
+	if o.InstanceProfile == "" {
 		o.InstanceProfile = fmt.Sprintf("%s-worker", hcluster.Spec.InfraID)
 	}
-	if len(o.SubnetID) == 0 {
+	if o.SubnetID == "" {
 		if hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
 			o.SubnetID = *hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID
 		} else {
 			return fmt.Errorf("subnet ID was not specified and cannot be determined from HostedCluster")
 		}
 	}
-	if len(o.SecurityGroupID) == 0 {
+	if o.SecurityGroupID == "" {
 		nodePoolList := &hyperv1.NodePoolList{}
 		if err := client.List(ctx, nodePoolList, &crclient.ListOptions{Namespace: hcluster.Namespace}); err != nil {
 			return fmt.Errorf("security group ID was not specified and cannot be determined from default nodepool: %v", err)

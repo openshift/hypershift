@@ -145,7 +145,7 @@ func (o *HostedClusterConfigOperator) Validate() error {
 	if len(o.Controllers) == 0 {
 		return fmt.Errorf("at least one controller is required")
 	}
-	if len(o.Namespace) == 0 {
+	if o.Namespace == "" {
 		return fmt.Errorf("the namespace for control plane components is required")
 	}
 	return nil

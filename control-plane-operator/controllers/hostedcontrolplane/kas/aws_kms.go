@@ -51,7 +51,7 @@ var (
 
 func generateAWSKMSEncryptionConfig(activeKey hyperv1.AWSKMSKeyEntry, backupKey *hyperv1.AWSKMSKeyEntry) ([]byte, error) {
 	var providerConfiguration []v1.ProviderConfiguration
-	if len(activeKey.ARN) == 0 {
+	if activeKey.ARN == "" {
 		return nil, fmt.Errorf("active key metadata is nil")
 	}
 	hasher := fnv.New32()
@@ -106,7 +106,7 @@ func generateAWSKMSEncryptionConfig(activeKey hyperv1.AWSKMSKeyEntry, backupKey 
 }
 
 func applyAWSKMSConfig(podSpec *corev1.PodSpec, activeKey hyperv1.AWSKMSKeyEntry, backupKey *hyperv1.AWSKMSKeyEntry, awsAuth hyperv1.AWSKMSAuthSpec, awsRegion string, kmsImage, tokenMinterImage string) error {
-	if len(activeKey.ARN) == 0 || len(kmsImage) == 0 {
+	if activeKey.ARN == "" || kmsImage == "" {
 		return fmt.Errorf("aws kms active key metadata is nil")
 	}
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSTokenMinter(), buildKASContainerAWSKMSTokenMinter(tokenMinterImage)))
@@ -114,7 +114,7 @@ func applyAWSKMSConfig(podSpec *corev1.PodSpec, activeKey hyperv1.AWSKMSKeyEntry
 	if backupKey != nil && len(backupKey.ARN) > 0 {
 		podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(kmsImage, activeKey.ARN, awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(kasContainerMain().Name, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
 	}
-	if len(awsAuth.Credentials.Name) == 0 {
+	if awsAuth.Credentials.Name == "" {
 		return fmt.Errorf("aws kms credential data not specified")
 	}
 	podSpec.Volumes = append(podSpec.Volumes,

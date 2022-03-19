@@ -78,17 +78,17 @@ func NewCreateCommand() *cobra.Command {
 
 func (o *CreateBastionOpts) Validate() error {
 	if len(o.Name) > 0 {
-		if len(o.Namespace) == 0 {
+		if o.Namespace == "" {
 			return fmt.Errorf("a namespace must be specified if specifying a hosted cluster name")
 		}
 		if len(o.InfraID) > 0 || len(o.Region) > 0 {
 			return fmt.Errorf("infra id and region cannot be specified when specifying a hosted cluster name")
 		}
 	} else {
-		if len(o.InfraID) == 0 || len(o.Region) == 0 {
+		if o.InfraID == "" || o.Region == "" {
 			return fmt.Errorf("infra id and region must be specified when not specifying a hosted cluster name")
 		}
-		if len(o.SSHKeyFile) == 0 {
+		if o.SSHKeyFile == "" {
 			return fmt.Errorf("ssh-key-file must be specified when not specifying a hosted cluster name")
 		}
 	}
@@ -119,7 +119,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 		log.Log.Info("Found hosted cluster", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name, "infraID", infraID, "region", region)
 
 		if len(o.SSHKeyFile) == 0 {
-			if len(hostedCluster.Spec.SSHKey.Name) == 0 {
+			if hostedCluster.Spec.SSHKey.Name == "" {
 				return "", "", fmt.Errorf("hosted cluster does not have a public SSH key and no SSH key file was specified")
 			}
 			sshKeySecret := &corev1.Secret{}
