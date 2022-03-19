@@ -30,31 +30,29 @@ const (
 	defaultOAPIPort int32 = 8443
 )
 
-var (
-	volumeMounts = util.PodVolumeMounts{
-		oasTrustAnchorGenerator().Name: {
-			oasTrustAnchorVolume().Name:  "/run/ca-trust-generated",
-			serviceCASignerVolume().Name: "/run/service-ca-signer",
-		},
-		oasContainerMain().Name: {
-			oasVolumeWorkLogs().Name:           "/var/log/openshift-apiserver",
-			oasVolumeConfig().Name:             "/etc/kubernetes/config",
-			oasVolumeAuditConfig().Name:        "/etc/kubernetes/audit-config",
-			oasVolumeAggregatorClientCA().Name: "/etc/kubernetes/certs/aggregator-client-ca",
-			oasVolumeEtcdClientCA().Name:       "/etc/kubernetes/certs/etcd-client-ca",
-			oasVolumeServingCA().Name:          "/etc/kubernetes/certs/serving-ca",
-			oasVolumeKubeconfig().Name:         "/etc/kubernetes/secrets/svc-kubeconfig",
-			oasVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
-			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
-			oasTrustAnchorVolume().Name:        "/etc/pki/ca-trust/extracted/pem",
-			pullSecretVolume().Name:            "/var/lib/kubelet",
-		},
-		oasSocks5ProxyContainer().Name: {
-			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
-			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
-		},
-	}
-)
+var volumeMounts = util.PodVolumeMounts{
+	oasTrustAnchorGenerator().Name: {
+		oasTrustAnchorVolume().Name:  "/run/ca-trust-generated",
+		serviceCASignerVolume().Name: "/run/service-ca-signer",
+	},
+	oasContainerMain().Name: {
+		oasVolumeWorkLogs().Name:           "/var/log/openshift-apiserver",
+		oasVolumeConfig().Name:             "/etc/kubernetes/config",
+		oasVolumeAuditConfig().Name:        "/etc/kubernetes/audit-config",
+		oasVolumeAggregatorClientCA().Name: "/etc/kubernetes/certs/aggregator-client-ca",
+		oasVolumeEtcdClientCA().Name:       "/etc/kubernetes/certs/etcd-client-ca",
+		oasVolumeServingCA().Name:          "/etc/kubernetes/certs/serving-ca",
+		oasVolumeKubeconfig().Name:         "/etc/kubernetes/secrets/svc-kubeconfig",
+		oasVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
+		oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
+		oasTrustAnchorVolume().Name:        "/etc/pki/ca-trust/extracted/pem",
+		pullSecretVolume().Name:            "/var/lib/kubelet",
+	},
+	oasSocks5ProxyContainer().Name: {
+		oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
+		oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
+	},
+}
 
 func openShiftAPIServerLabels() map[string]string {
 	return map[string]string{

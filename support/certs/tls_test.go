@@ -110,10 +110,8 @@ func TestValidateKeyPairConsidersExpiration(t *testing.T) {
 			if isValid != tc.expectValid {
 				t.Errorf("expected valid: %t, actual valid: %t, error from ValidateKeyPair: %v", tc.expectValid, isValid, err)
 			}
-
 		})
 	}
-
 }
 
 func fuzzer() *fuzz.Fuzzer {

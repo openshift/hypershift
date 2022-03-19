@@ -470,7 +470,6 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2ifac
 	err := ec2client.DescribeVpcsPagesWithContext(ctx,
 		&ec2.DescribeVpcsInput{Filters: o.ec2Filters()},
 		deleteVPC)
-
 	if err != nil {
 		errs = append(errs, err)
 	}

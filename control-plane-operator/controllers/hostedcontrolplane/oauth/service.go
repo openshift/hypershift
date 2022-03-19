@@ -18,12 +18,10 @@ const (
 	RouteExternalPort = 443
 )
 
-var (
-	oauthServerLabels = map[string]string{
-		"app":                         "oauth-openshift",
-		hyperv1.ControlPlaneComponent: "oauth-openshift",
-	}
-)
+var oauthServerLabels = map[string]string{
+	"app":                         "oauth-openshift",
+	hyperv1.ControlPlaneComponent: "oauth-openshift",
+}
 
 func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy) error {
 	ownerRef.ApplyTo(svc)

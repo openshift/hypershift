@@ -9,10 +9,8 @@ import (
 
 const buffer32K = 32 * 1024
 
-var (
-	// BufioReader32KPool is a pool which returns bufio.Reader with a 32K buffer.
-	BufioReader32KPool = newBufioReaderPoolWithSize(buffer32K)
-)
+// BufioReader32KPool is a pool which returns bufio.Reader with a 32K buffer.
+var BufioReader32KPool = newBufioReaderPoolWithSize(buffer32K)
 
 // BufioReaderPool is a bufio reader that uses sync.Pool.
 type BufioReaderPool struct {

@@ -2,12 +2,13 @@ package util
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
-	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
 )

@@ -22,15 +22,13 @@ const (
 	servingPort int32 = 8443
 )
 
-var (
-	volumeMounts = util.PodVolumeMounts{
-		ocmContainerMain().Name: {
-			ocmVolumeConfig().Name:      "/etc/kubernetes/config",
-			ocmVolumeServingCert().Name: "/etc/kubernetes/certs",
-			ocmVolumeKubeconfig().Name:  "/etc/kubernetes/secrets/svc-kubeconfig",
-		},
-	}
-)
+var volumeMounts = util.PodVolumeMounts{
+	ocmContainerMain().Name: {
+		ocmVolumeConfig().Name:      "/etc/kubernetes/config",
+		ocmVolumeServingCert().Name: "/etc/kubernetes/certs",
+		ocmVolumeKubeconfig().Name:  "/etc/kubernetes/secrets/svc-kubeconfig",
+	},
+}
 
 func openShiftControllerManagerLabels() map[string]string {
 	return map[string]string{

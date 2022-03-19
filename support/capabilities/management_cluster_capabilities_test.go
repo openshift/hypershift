@@ -19,7 +19,6 @@ import (
 var _ CapabiltyChecker = &ManagementClusterCapabilities{}
 
 func TestIsGroupVersionRegistered(t *testing.T) {
-
 	testCases := []struct {
 		name         string
 		client       discovery.ServerResourcesInterface
@@ -102,7 +101,6 @@ func TestIsGroupVersionRegistered(t *testing.T) {
 }
 
 func TestDetectManagementCapabilities(t *testing.T) {
-
 	testCases := []struct {
 		name           string
 		client         discovery.ServerResourcesInterface

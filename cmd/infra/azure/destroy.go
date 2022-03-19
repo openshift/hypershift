@@ -50,7 +50,6 @@ func NewDestroyCommand() *cobra.Command {
 	}
 
 	return cmd
-
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context) error {

@@ -16,8 +16,7 @@ var _ Provider = (*RegistryClientProvider)(nil)
 
 // RegistryClientProvider uses a registry client to directly stream image
 // content and extract image metadata.
-type RegistryClientProvider struct {
-}
+type RegistryClientProvider struct{}
 
 func (p *RegistryClientProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (releaseImage *ReleaseImage, err error) {
 	fileContents, err := registryclient.ExtractImageFiles(ctx, image, pullSecret, ReleaseImageStreamFile, ReleaseImageMetadataFile)

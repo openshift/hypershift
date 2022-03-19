@@ -252,20 +252,17 @@ func allRequestBodiesAuditPolicy() *auditv1.Policy {
 			},
 		},
 	}
-
 }
 
 const (
 	AuditPolicyConfigMapKey = "policy.yaml"
 )
 
-var (
-	auditPolicies = map[configv1.AuditProfileType]*auditv1.Policy{
-		configv1.DefaultAuditProfileType:            defaultAuditPolicy(),
-		configv1.WriteRequestBodiesAuditProfileType: writeRequestBodiesAuditPolicy(),
-		configv1.AllRequestBodiesAuditProfileType:   allRequestBodiesAuditPolicy(),
-	}
-)
+var auditPolicies = map[configv1.AuditProfileType]*auditv1.Policy{
+	configv1.DefaultAuditProfileType:            defaultAuditPolicy(),
+	configv1.WriteRequestBodiesAuditProfileType: writeRequestBodiesAuditPolicy(),
+	configv1.AllRequestBodiesAuditProfileType:   allRequestBodiesAuditPolicy(),
+}
 
 func ReconcileAuditConfig(auditCfgMap *corev1.ConfigMap, ownerRef config.OwnerRef, auditProfile configv1.AuditProfileType) error {
 	ownerRef.ApplyTo(auditCfgMap)

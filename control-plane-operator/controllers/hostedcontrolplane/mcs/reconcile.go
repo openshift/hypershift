@@ -61,9 +61,7 @@ func serialize(obj client.Object) (string, error) {
 	return util.SerializeResource(obj, api.Scheme)
 }
 
-var (
-	machineConfigPoolScheme = runtime.NewScheme()
-)
+var machineConfigPoolScheme = runtime.NewScheme()
 
 func init() {
 	mcfgv1.AddToScheme(machineConfigPoolScheme)

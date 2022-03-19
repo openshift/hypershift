@@ -49,7 +49,6 @@ type ManagedCAObserver struct {
 // the kube-controller-manager-ca configmap in the management cluster with their
 // content.
 func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	if req.Namespace != ManagedConfigNamespace {
 		return ctrl.Result{}, nil
 	}
@@ -94,7 +93,6 @@ func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	return ctrl.Result{}, nil
-
 }
 
 func (r *ManagedCAObserver) ensureAnnotationOnDeployment(ctx context.Context, deploymentName string, hash string) error {

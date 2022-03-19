@@ -29,7 +29,6 @@ func (a *Azure) ReconcileCAPIInfraCR(
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint,
 ) (client.Object, error) {
-
 	cluster := &capiazure.AzureCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hcluster.Spec.InfraID,
@@ -135,7 +134,6 @@ func (a *Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp 
 }
 
 func (a *Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-
 	var source corev1.Secret
 	name := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Azure.Credentials.Name}
 	if err := c.Get(ctx, name, &source); err != nil {

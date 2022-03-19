@@ -26,20 +26,18 @@ const (
 	oauthNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
 )
 
-var (
-	volumeMounts = util.PodVolumeMounts{
-		oauthContainerMain().Name: {
-			oauthVolumeConfig().Name:            "/etc/kubernetes/config",
-			oauthVolumeKubeconfig().Name:        "/etc/kubernetes/secrets/svc-kubeconfig",
-			oauthVolumeServingCert().Name:       "/etc/kubernetes/certs/serving-cert",
-			oauthVolumeSessionSecret().Name:     "/etc/kubernetes/secrets/session",
-			oauthVolumeErrorTemplate().Name:     "/etc/kubernetes/secrets/templates/error",
-			oauthVolumeLoginTemplate().Name:     "/etc/kubernetes/secrets/templates/login",
-			oauthVolumeProvidersTemplate().Name: "/etc/kubernetes/secrets/templates/providers",
-			oauthVolumeWorkLogs().Name:          "/var/run/kubernetes",
-		},
-	}
-)
+var volumeMounts = util.PodVolumeMounts{
+	oauthContainerMain().Name: {
+		oauthVolumeConfig().Name:            "/etc/kubernetes/config",
+		oauthVolumeKubeconfig().Name:        "/etc/kubernetes/secrets/svc-kubeconfig",
+		oauthVolumeServingCert().Name:       "/etc/kubernetes/certs/serving-cert",
+		oauthVolumeSessionSecret().Name:     "/etc/kubernetes/secrets/session",
+		oauthVolumeErrorTemplate().Name:     "/etc/kubernetes/secrets/templates/error",
+		oauthVolumeLoginTemplate().Name:     "/etc/kubernetes/secrets/templates/login",
+		oauthVolumeProvidersTemplate().Name: "/etc/kubernetes/secrets/templates/providers",
+		oauthVolumeWorkLogs().Name:          "/var/run/kubernetes",
+	},
+}
 
 func oauthLabels() map[string]string {
 	return map[string]string{
@@ -164,6 +162,7 @@ func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
 	}
 }
+
 func oauthVolumeServingCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "serving-cert",
@@ -175,16 +174,19 @@ func buildOAuthVolumeServingCert(v *corev1.Volume) {
 		SecretName: manifests.OpenShiftOAuthServerCert("").Name,
 	}
 }
+
 func oauthVolumeSessionSecret() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "session-secret",
 	}
 }
+
 func buildOAuthVolumeSessionSecret(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName: manifests.OAuthServerServiceSessionSecret("").Name,
 	}
 }
+
 func oauthVolumeErrorTemplate() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "error-template",

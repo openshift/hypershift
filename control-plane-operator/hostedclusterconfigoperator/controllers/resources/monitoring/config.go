@@ -11,9 +11,7 @@ import (
 
 const configKey = "config.yaml"
 
-var (
-	workerNodeSelector = map[string]string{"kubernetes.io/os": "linux"}
-)
+var workerNodeSelector = map[string]string{"kubernetes.io/os": "linux"}
 
 // ReconcileMonitoringConfig ensures that the prometheus operator nodeselector does not select
 // master nodes. Other changes made by the guest cluster user should be preserved.

@@ -194,7 +194,6 @@ func generateSSHKeys() ([]byte, []byte, error) {
 }
 
 func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, render bool, waitForRollout bool) error {
-
 	exampleObjects := exampleOptions.Resources().AsObjects()
 	switch {
 	case render:

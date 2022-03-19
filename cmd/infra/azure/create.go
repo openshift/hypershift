@@ -401,7 +401,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	}
 
 	return &result, nil
-
 }
 
 func findDNSZone(ctx context.Context, client dns.ZonesClient, name string) (*dns.Zone, error) {

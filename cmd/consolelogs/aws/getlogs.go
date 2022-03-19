@@ -31,7 +31,6 @@ type ConsoleLogOpts struct {
 }
 
 func NewCommand() *cobra.Command {
-
 	opts := &ConsoleLogOpts{
 		Namespace: "clusters",
 	}

@@ -98,12 +98,15 @@ var (
 func ReconcileCertifiedOperatorsCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
 	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, certifiedCatalogRolloutCronJob)
 }
+
 func ReconcileCommunityOperatorsCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
 	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, communityCatalogRolloutCronJob)
 }
+
 func ReconcileRedHatMarketplaceOperatorsCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
 	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, redHatMarketplaceCatalogRolloutCronJob)
 }
+
 func ReconcileRedHatOperatorsCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
 	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, redHatOperatorsCatalogRolloutCronJob)
 }

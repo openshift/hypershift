@@ -253,6 +253,7 @@ func kcmVolumeServerCert() *corev1.Volume {
 		Name: "server-crt",
 	}
 }
+
 func buildKCMVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}

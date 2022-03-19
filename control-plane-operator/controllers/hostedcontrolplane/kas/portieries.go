@@ -7,14 +7,12 @@ import (
 
 const portierisPort = 8000
 
-var (
-	portieriesVolumeMounts = util.PodVolumeMounts{
-		kasContainerPortieries().Name: {
-			kasVolumeLocalhostKubeconfig().Name: "/etc/openshift/kubeconfig",
-			kasVolumePortierisCerts().Name:      "/etc/certs",
-		},
-	}
-)
+var portieriesVolumeMounts = util.PodVolumeMounts{
+	kasContainerPortieries().Name: {
+		kasVolumeLocalhostKubeconfig().Name: "/etc/openshift/kubeconfig",
+		kasVolumePortierisCerts().Name:      "/etc/certs",
+	},
+}
 
 func applyPortieriesConfig(podSpec *corev1.PodSpec, portieriesImage string) {
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerPortieries(), buildKASContainerPortieries(portieriesImage)))

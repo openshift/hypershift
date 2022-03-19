@@ -3,8 +3,9 @@ package agent
 import (
 	"context"
 	"fmt"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"testing"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"

@@ -41,9 +41,7 @@ import (
 	// +kubebuilder:scaffold:imports
 )
 
-var (
-	setupLog = ctrl.Log.WithName("setup")
-)
+var setupLog = ctrl.Log.WithName("setup")
 
 func main() {
 	cmd := &cobra.Command{

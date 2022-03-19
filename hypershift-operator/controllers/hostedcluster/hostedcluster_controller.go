@@ -230,7 +230,6 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 // check status of the ignition service
 func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 	return svc != nil && len(svc.Spec.Ports) > 0 && svc.Spec.Ports[0].NodePort > 0
-
 }
 
 // pauseHostedControlPlane will handle adding the pausedUntil field to the hostedControlPlane object if it exists.
@@ -252,7 +251,6 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 }
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling")
 
@@ -1549,7 +1547,6 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 }
 
 func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
-
 	log := ctrl.LoggerFrom(ctx)
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -2054,7 +2051,8 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							},
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
-						Args: []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator",
+						Args: []string{
+							"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator",
 							"--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
 							fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine),
 						},
@@ -2439,7 +2437,8 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 							},
 						},
 						Command: []string{"/manager"},
-						Args: []string{"--namespace", "$(MY_NAMESPACE)",
+						Args: []string{
+							"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
@@ -3189,7 +3188,6 @@ func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
 }
 
 func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
-
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
@@ -3489,6 +3487,7 @@ func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.Hoste
 type ClusterMachineApproverConfig struct {
 	NodeClientCert NodeClientCert `json:"nodeClientCert,omitempty"`
 }
+
 type NodeClientCert struct {
 	Disabled bool `json:"disabled,omitempty"`
 }
@@ -4022,8 +4021,8 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 }
 
 func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
-	infraCR client.Object, namespace, clusterName, hcpNamespace string) error {
-
+	infraCR client.Object, namespace, clusterName, hcpNamespace string,
+) error {
 	nodePools, err := listNodePools(ctx, r.Client, namespace, clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", clusterName, err)

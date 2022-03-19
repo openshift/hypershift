@@ -2,6 +2,7 @@ package globalconfig
 
 import (
 	"fmt"
+
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 )

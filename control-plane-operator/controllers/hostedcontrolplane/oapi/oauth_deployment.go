@@ -8,7 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
-	//TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
+	// TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,20 +22,18 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-var (
-	oauthVolumeMounts = util.PodVolumeMounts{
-		oauthContainerMain().Name: {
-			oauthVolumeWorkLogs().Name:           "/var/log/openshift-apiserver",
-			oauthVolumeAuditConfig().Name:        "/etc/kubernetes/audit-config",
-			oauthVolumeAggregatorClientCA().Name: "/etc/kubernetes/certs/aggregator-client-ca",
-			oauthVolumeEtcdClientCA().Name:       "/etc/kubernetes/certs/etcd-client-ca",
-			oauthVolumeServingCA().Name:          "/etc/kubernetes/certs/serving-ca",
-			oauthVolumeKubeconfig().Name:         "/etc/kubernetes/secrets/svc-kubeconfig",
-			oauthVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
-			oauthVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
-		},
-	}
-)
+var oauthVolumeMounts = util.PodVolumeMounts{
+	oauthContainerMain().Name: {
+		oauthVolumeWorkLogs().Name:           "/var/log/openshift-apiserver",
+		oauthVolumeAuditConfig().Name:        "/etc/kubernetes/audit-config",
+		oauthVolumeAggregatorClientCA().Name: "/etc/kubernetes/certs/aggregator-client-ca",
+		oauthVolumeEtcdClientCA().Name:       "/etc/kubernetes/certs/etcd-client-ca",
+		oauthVolumeServingCA().Name:          "/etc/kubernetes/certs/serving-ca",
+		oauthVolumeKubeconfig().Name:         "/etc/kubernetes/secrets/svc-kubeconfig",
+		oauthVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
+		oauthVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
+	},
+}
 
 func openShiftOAuthAPIServerLabels() map[string]string {
 	return map[string]string{

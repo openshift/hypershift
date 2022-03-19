@@ -4,9 +4,11 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 )
 
-var _ capabilities.CapabiltyChecker = &FakeSupportAllCapabilities{}
-var _ capabilities.CapabiltyChecker = &FakeSupportNoCapabilities{}
-var _ capabilities.CapabiltyChecker = &FakeCapabilitiesSupportAllExcept{}
+var (
+	_ capabilities.CapabiltyChecker = &FakeSupportAllCapabilities{}
+	_ capabilities.CapabiltyChecker = &FakeSupportNoCapabilities{}
+	_ capabilities.CapabiltyChecker = &FakeCapabilitiesSupportAllExcept{}
+)
 
 type FakeSupportAllCapabilities struct{}
 

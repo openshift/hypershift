@@ -2,6 +2,7 @@ package kas
 
 import (
 	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hcpconfig "github.com/openshift/hypershift/support/config"

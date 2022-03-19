@@ -83,7 +83,6 @@ func WaitForKubeVirtCluster(t *testing.T, ctx context.Context, client crclient.C
 }
 
 func CreateKubeVirtClusterWildcardRoute(t *testing.T, ctx context.Context, client crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster, baseDomain string) {
-
 	g := NewWithT(t)
 
 	// manifests for default ingress nodeport on guest cluster

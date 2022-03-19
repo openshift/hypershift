@@ -85,7 +85,6 @@ var cpObjects = []client.Object{
 }
 
 func TestReconcileErrorHandling(t *testing.T) {
-
 	// get initial number of creates with no get errors
 	var totalCreates int
 	{

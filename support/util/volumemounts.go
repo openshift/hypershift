@@ -7,8 +7,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-type ContainerVolumeMounts map[string]string
-type PodVolumeMounts map[string]ContainerVolumeMounts
+type (
+	ContainerVolumeMounts map[string]string
+	PodVolumeMounts       map[string]ContainerVolumeMounts
+)
 
 func (m PodVolumeMounts) Path(container, volume string) string {
 	containerMounts, ok := m[container]

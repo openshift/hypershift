@@ -555,7 +555,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				}
 				nodePools = append(nodePools, nodePool)
 			}
-
 		} else {
 			nodePool := defaultNodePool(cluster.Name)
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{

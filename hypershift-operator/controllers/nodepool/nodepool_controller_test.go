@@ -847,7 +847,6 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 		},
 		Spec: hyperv1.NodePoolSpec{
 			Platform: hyperv1.NodePoolPlatform{
-
 				Type: hyperv1.AWSPlatform,
 				AWS: &hyperv1.AWSNodePoolPlatform{
 					InstanceType:    "",

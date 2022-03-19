@@ -506,7 +506,6 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
-
 	// Block here if the cluster configuration does not pass validation
 	{
 		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
@@ -2402,5 +2401,4 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 		Reason:  hyperv1.EtcdQuorumUnavailableReason,
 		Message: message,
 	}, nil
-
 }

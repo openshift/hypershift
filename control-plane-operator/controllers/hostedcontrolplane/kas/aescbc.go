@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"github.com/openshift/hypershift/support/api"
 	"hash/fnv"
+	"strconv"
+
+	"github.com/openshift/hypershift/support/api"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apiserver/pkg/apis/config/v1"
-	"strconv"
 )
 
 const aescbcKeyNamePrefix = "key"

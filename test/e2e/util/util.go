@@ -293,7 +293,6 @@ func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, h
 
 func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAPIBudget", func(t *testing.T) {
-
 		// Get hypershift-operator token
 		operatorServiceAccount := &corev1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{

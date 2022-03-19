@@ -50,7 +50,6 @@ func SetEnvVarsTo(env *[]corev1.EnvVar, httpProxy, httpsProxy, noProxy string) {
 	} else {
 		upsertEnvVar(env, corev1.EnvVar{Name: "NO_PROXY", Value: noProxy})
 	}
-
 }
 
 func removeEnvVarIfPresent(list *[]corev1.EnvVar, name string) {

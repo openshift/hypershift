@@ -24,19 +24,17 @@ const (
 	Canonical = SHA256
 )
 
-var (
-	// TODO(stevvooe): Follow the pattern of the standard crypto package for
-	// registration of digests. Effectively, we are a registerable set and
-	// common symbol access.
+// TODO(stevvooe): Follow the pattern of the standard crypto package for
+// registration of digests. Effectively, we are a registerable set and
+// common symbol access.
 
-	// algorithms maps values to hash.Hash implementations. Other algorithms
-	// may be available but they cannot be calculated by the digest package.
-	algorithms = map[Algorithm]crypto.Hash{
-		SHA256: crypto.SHA256,
-		SHA384: crypto.SHA384,
-		SHA512: crypto.SHA512,
-	}
-)
+// algorithms maps values to hash.Hash implementations. Other algorithms
+// may be available but they cannot be calculated by the digest package.
+var algorithms = map[Algorithm]crypto.Hash{
+	SHA256: crypto.SHA256,
+	SHA384: crypto.SHA384,
+	SHA512: crypto.SHA512,
+}
 
 // Available returns true if the digest type is available for use. If this
 // returns false, New and Hash will return nil.

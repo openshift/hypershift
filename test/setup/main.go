@@ -25,9 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-var (
-	log = ctrl.Log.WithName("e2e-setup")
-)
+var log = ctrl.Log.WithName("e2e-setup")
 
 //go:embed cluster-monitoring-config.yaml
 var clusterMonitoringConfigTemplateString string

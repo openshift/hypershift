@@ -74,7 +74,6 @@ func NewCreateCommands() *cobra.Command {
 }
 
 func NewDestroyCommands() *cobra.Command {
-
 	opts := &core.DestroyOptions{
 		Namespace:          "clusters",
 		Name:               "",

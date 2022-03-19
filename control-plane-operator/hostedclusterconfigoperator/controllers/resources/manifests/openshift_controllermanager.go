@@ -16,6 +16,7 @@ func OpenShiftControllerManagerServiceCA() *corev1.ConfigMap {
 		},
 	}
 }
+
 func OpenShiftControllerManagerConfig(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

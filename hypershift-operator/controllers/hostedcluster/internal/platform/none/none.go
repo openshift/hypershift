@@ -14,8 +14,8 @@ type None struct{}
 
 func (p None) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
-
+	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error,
+) {
 	return nil, nil
 }
 

@@ -7,9 +7,7 @@ import (
 	"github.com/docker/distribution/registry/client/auth"
 )
 
-var (
-	NoCredentials auth.CredentialStore = &noopCredentialStore{}
-)
+var NoCredentials auth.CredentialStore = &noopCredentialStore{}
 
 type RefreshTokenStore interface {
 	RefreshToken(url *url.URL, service string) string

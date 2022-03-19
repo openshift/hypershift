@@ -271,7 +271,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	}
 	var oidcVolumeMount []corev1.VolumeMount
 	var oidcVolumeCred []corev1.Volume
-	var envVars = []corev1.EnvVar{
+	envVars := []corev1.EnvVar{
 		{
 			Name: "MY_NAMESPACE",
 			ValueFrom: &corev1.EnvVarSource{

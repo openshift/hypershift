@@ -12,7 +12,6 @@ import (
 func createOrUpdateWithAnnotationFactory(upstream upsert.CreateOrUpdateProvider) func(reconcile.Request) upsert.CreateOrUpdateFN {
 	return func(req reconcile.Request) upsert.CreateOrUpdateFN {
 		return func(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
-
 			// Wrap f() to add the annotation at the end
 			mutateFN := func() error {
 				if err := f(); err != nil {

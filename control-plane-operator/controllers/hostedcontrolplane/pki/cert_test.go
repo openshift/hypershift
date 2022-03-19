@@ -185,7 +185,6 @@ func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
 
 			for _, tc := range testCases {
 				t.Run(tc.name, func(t *testing.T) {
-
 					secret, err := tc.secret()
 					if err != nil {
 						t.Fatalf("failed to generate secret: %v", err)
@@ -222,8 +221,6 @@ func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
 					}
 				})
 			}
-
 		})
 	}
-
 }

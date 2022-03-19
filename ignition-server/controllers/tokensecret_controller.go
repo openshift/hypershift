@@ -87,6 +87,7 @@ func tokenSecretAnnotationPredicate(ctx context.Context) predicate.Predicate {
 		},
 	}
 }
+
 func (r *TokenSecretReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	log := ctrl.Log.WithName("secret-token-controller")
 	log.Info("SetupWithManager", "ns", os.Getenv("MY_NAMESPACE"))

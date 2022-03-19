@@ -17,11 +17,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ Platform = aws.AWS{}
-var _ Platform = ibmcloud.IBMCloud{}
-var _ Platform = none.None{}
-var _ Platform = agent.Agent{}
-var _ Platform = kubevirt.Kubevirt{}
+var (
+	_ Platform = aws.AWS{}
+	_ Platform = ibmcloud.IBMCloud{}
+	_ Platform = none.None{}
+	_ Platform = agent.Agent{}
+	_ Platform = kubevirt.Kubevirt{}
+)
 
 type Platform interface {
 	// ReconcileCAPIInfraCR is called during HostedCluster reconciliation prior to reconciling the CAPI Cluster CR.

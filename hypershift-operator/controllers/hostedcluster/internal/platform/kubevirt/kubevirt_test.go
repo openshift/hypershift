@@ -85,7 +85,6 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 				if !equality.Semantic.DeepEqual(expectedResult, result) {
 					t.Errorf(cmp.Diff(expectedResult, result))
 				}
-
 			}
 		})
 	}

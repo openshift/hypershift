@@ -20,7 +20,6 @@ func InfrastructureConfig() *configv1.Infrastructure {
 }
 
 func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.HostedControlPlane) {
-
 	platformType := hcp.Spec.Platform.Type
 	switch hcp.Spec.Platform.Type {
 	// In case of KubeVirtPlatform, set the Infrastructure to NonePlatform

@@ -21,6 +21,7 @@ func cloudProviderCredsVolumeMount(containerName string) PodVolumeMounts {
 		},
 	}
 }
+
 func cloudProviderTokenVolumeMount(containerName string) PodVolumeMounts {
 	return PodVolumeMounts{
 		containerName: {

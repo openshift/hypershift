@@ -2,11 +2,12 @@ package assets
 
 import (
 	"fmt"
+	"testing"
+
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"testing"
 )
 
 func TestHyperShiftOperatorDeployment_Build(t *testing.T) {

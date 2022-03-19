@@ -12,8 +12,11 @@ import (
 
 // The following lines are needed in order to validate that any platform implementing PlatformOptions satisfy the interface
 var _ core.PlatformOptions = &aws.AWSPlatformCreateOptions{}
-var _ core.PlatformOptions = &kubevirt.KubevirtPlatformCreateOptions{}
-var _ core.PlatformOptions = &agent.AgentPlatformCreateOptions{}
+
+var (
+	_ core.PlatformOptions = &kubevirt.KubevirtPlatformCreateOptions{}
+	_ core.PlatformOptions = &agent.AgentPlatformCreateOptions{}
+)
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{

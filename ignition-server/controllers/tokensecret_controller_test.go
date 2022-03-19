@@ -2,10 +2,11 @@ package controllers
 
 import (
 	"context"
-	"github.com/go-logr/logr"
-	"github.com/openshift/hypershift/api/v1alpha1"
 	"testing"
 	"time"
+
+	"github.com/go-logr/logr"
+	"github.com/openshift/hypershift/api/v1alpha1"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
@@ -18,9 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-var (
-	fakePayload = "test"
-)
+var fakePayload = "test"
 
 type fakeIgnitionProvider struct{}
 

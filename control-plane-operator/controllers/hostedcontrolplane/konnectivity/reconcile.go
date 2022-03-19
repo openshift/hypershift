@@ -27,17 +27,15 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-var (
-	volumeMounts = util.PodVolumeMounts{
-		konnectivityServerContainer().Name: util.ContainerVolumeMounts{
-			konnectivityVolumeServerCerts().Name:  "/etc/konnectivity/server",
-			konnectivityVolumeClusterCerts().Name: "/etc/konnectivity/cluster",
-		},
-		konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
-			konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
-		},
-	}
-)
+var volumeMounts = util.PodVolumeMounts{
+	konnectivityServerContainer().Name: util.ContainerVolumeMounts{
+		konnectivityVolumeServerCerts().Name:  "/etc/konnectivity/server",
+		konnectivityVolumeClusterCerts().Name: "/etc/konnectivity/cluster",
+	},
+	konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
+		konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
+	},
+}
 
 func konnectivityServerLabels() map[string]string {
 	return map[string]string{
@@ -241,7 +239,6 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool
 }
 
 func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
-
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {

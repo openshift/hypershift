@@ -81,7 +81,6 @@ func (o *DestroyBastionOpts) Validate() error {
 }
 
 func (o *DestroyBastionOpts) Run(ctx context.Context) error {
-
 	var infraID, region string
 
 	if len(o.Name) > 0 {

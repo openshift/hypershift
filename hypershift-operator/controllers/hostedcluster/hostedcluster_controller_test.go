@@ -42,8 +42,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var Now = metav1.NewTime(time.Now())
-var Later = metav1.NewTime(Now.Add(5 * time.Minute))
+var (
+	Now   = metav1.NewTime(time.Now())
+	Later = metav1.NewTime(Now.Add(5 * time.Minute))
+)
 
 func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	// TODO: the spec/status comparison of control plane is a weak check; the
@@ -1037,7 +1039,6 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
-
 	hostedClusters := []*hyperv1.HostedCluster{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "agent"},
@@ -1225,7 +1226,8 @@ func TestReconcileAWSSubnets(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      infraCRName,
 			Namespace: hcpNamespace,
-		}}
+		},
+	}
 	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshInfraCR), freshInfraCR)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(freshInfraCR.Spec.NetworkSpec.Subnets).To(BeEquivalentTo([]capiawsv1.SubnetSpec{

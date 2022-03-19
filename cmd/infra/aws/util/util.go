@@ -44,7 +44,6 @@ func NewAWSRoute53Config() *aws.Config {
 
 // NewConfig creates a new config.
 func NewConfig() *aws.Config {
-
 	awsConfig := aws.NewConfig()
 	awsConfig.Retryer = client.DefaultRetryer{
 		NumMaxRetries:    10,

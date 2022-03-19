@@ -96,7 +96,6 @@ func (o *CreateBastionOpts) Validate() error {
 }
 
 func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
-
 	var infraID, region string
 	var sshPublicKey []byte
 
@@ -511,7 +510,6 @@ func existingInstance(ctx context.Context, ec2Client *ec2.EC2, infraID string) (
 }
 
 func waitForInstanceRunning(ctx context.Context, ec2Client *ec2.EC2, instanceID string) (string, error) {
-
 	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {

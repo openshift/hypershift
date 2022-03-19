@@ -931,7 +931,6 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 		}
 	}
 	return errs
-
 }
 
 func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

@@ -20,13 +20,11 @@ const (
 	healthPort = 2041
 )
 
-var (
-	volumeMounts = util.PodVolumeMounts{
-		konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
-			konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
-		},
-	}
-)
+var volumeMounts = util.PodVolumeMounts{
+	konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
+		konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
+	},
+}
 
 func konnectivityAgentLabels() map[string]string {
 	return map[string]string{

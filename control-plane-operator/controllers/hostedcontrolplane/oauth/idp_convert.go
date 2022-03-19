@@ -319,7 +319,7 @@ func convertProviderConfigToIDPData(
 			ExtraScopes:              openIDConfig.ExtraScopes,
 			ExtraAuthorizeParameters: openIDConfig.ExtraAuthorizeParameters,
 		}
-		//Handle special case for IBM Cloud's OIDC provider (need to override some fields not available in public api)
+		// Handle special case for IBM Cloud's OIDC provider (need to override some fields not available in public api)
 		if configOverride != nil {
 			openIDProvider.URLs = configOverride.URLs
 			openIDProvider.Claims = configOverride.Claims

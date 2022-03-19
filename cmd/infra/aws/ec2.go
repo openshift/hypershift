@@ -21,14 +21,12 @@ const (
 	invalidRouteTableID    = "InvalidRouteTableId.NotFound"
 )
 
-var (
-	retryBackoff = wait.Backoff{
-		Steps:    5,
-		Duration: 3 * time.Second,
-		Factor:   3.0,
-		Jitter:   0.1,
-	}
-)
+var retryBackoff = wait.Backoff{
+	Steps:    5,
+	Duration: 3 * time.Second,
+	Factor:   3.0,
+	Jitter:   0.1,
+}
 
 func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
 	result, err := client.DescribeAvailabilityZones(&ec2.DescribeAvailabilityZonesInput{})
@@ -37,7 +35,6 @@ func (o *CreateInfraOptions) firstZone(client ec2iface.EC2API) (string, error) {
 	}
 	if len(result.AvailabilityZones) == 0 {
 		return "", fmt.Errorf("no availability zones found")
-
 	}
 	zone := aws.StringValue(result.AvailabilityZones[0].ZoneName)
 	log.Log.Info("Using zone", "zone", zone)
@@ -607,5 +604,4 @@ func ec2Tags(infraID, name string) []*ec2.Tag {
 		})
 	}
 	return tags
-
 }

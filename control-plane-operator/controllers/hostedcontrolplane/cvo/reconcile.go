@@ -191,7 +191,7 @@ func preparePayloadScript() string {
 
 func applyBootrapScript() string {
 	payloadDir := volumeMounts.Path(cvoContainerApplyBootstrap().Name, cvoVolumePayload().Name)
-	var script = `#!/bin/bash
+	script := `#!/bin/bash
 set -euo pipefail
 while true; do
   echo "Applying CVO bootstrap manifests"
@@ -298,6 +298,7 @@ func cvoVolumeServerCert() *corev1.Volume {
 		Name: "server-crt",
 	}
 }
+
 func buildCVOVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}

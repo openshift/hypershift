@@ -97,7 +97,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	etcdMgmtType hyperv1.EtcdManagementType,
 	port int32,
 ) error {
-
 	configBytes, ok := config.Data[KubeAPIServerConfigKey]
 	if !ok {
 		return fmt.Errorf("kube apiserver configuration is not expected to be empty")
@@ -365,6 +364,7 @@ func kasVolumeLocalhostKubeconfig() *corev1.Volume {
 		Name: "localhost-kubeconfig",
 	}
 }
+
 func buildKASVolumeLocalhostKubeconfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -378,14 +378,17 @@ func kasVolumeWorkLogs() *corev1.Volume {
 		Name: "logs",
 	}
 }
+
 func buildKASVolumeWorkLogs(v *corev1.Volume) {
 	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
 }
+
 func kasVolumeConfig() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "kas-config",
 	}
 }
+
 func buildKASVolumeConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -393,11 +396,13 @@ func buildKASVolumeConfig(v *corev1.Volume) {
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.KASConfig("").Name
 }
+
 func kasVolumeAuditConfig() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "audit-config",
 	}
 }
+
 func buildKASVolumeAuditConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -405,11 +410,13 @@ func buildKASVolumeAuditConfig(v *corev1.Volume) {
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.KASAuditConfig("").Name
 }
+
 func kasVolumeRootCA() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "root-ca",
 	}
 }
+
 func buildKASVolumeRootCA(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -424,6 +431,7 @@ func kasVolumeClientCA() *corev1.Volume {
 		Name: "client-ca",
 	}
 }
+
 func buildKASVolumeClientCA(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -437,6 +445,7 @@ func kasVolumeServerCert() *corev1.Volume {
 		Name: "server-crt",
 	}
 }
+
 func buildKASVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -450,6 +459,7 @@ func kasVolumeKubeletClientCA() *corev1.Volume {
 		Name: "kubelet-client-ca",
 	}
 }
+
 func buildKASVolumeKubeletClientCA(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -463,6 +473,7 @@ func kasVolumeKonnectivityClientCert() *corev1.Volume {
 		Name: "konnectivity-client",
 	}
 }
+
 func buildKASVolumeKonnectivityClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -476,6 +487,7 @@ func kasVolumeAggregatorCert() *corev1.Volume {
 		Name: "aggregator-crt",
 	}
 }
+
 func buildKASVolumeAggregatorCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -489,6 +501,7 @@ func kasVolumeAggregatorCA() *corev1.Volume {
 		Name: "aggregator-ca",
 	}
 }
+
 func buildKASVolumeAggregatorCA(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -516,6 +529,7 @@ func kasVolumeServiceAccountKey() *corev1.Volume {
 		Name: "svcacct-key",
 	}
 }
+
 func buildKASVolumeServiceAccountKey(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -543,6 +557,7 @@ func kasVolumeEtcdClientCert() *corev1.Volume {
 		Name: "etcd-client-crt",
 	}
 }
+
 func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -556,6 +571,7 @@ func kasVolumeOauthMetadata() *corev1.Volume {
 		Name: "oauth-metadata",
 	}
 }
+
 func buildKASVolumeOauthMetadata(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -569,6 +585,7 @@ func kasVolumeAuthTokenWebhookConfig() *corev1.Volume {
 		Name: "auth-token-webhook-config",
 	}
 }
+
 func buildKASVolumeAuthTokenWebhookConfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -615,7 +632,7 @@ func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec
 }
 
 func invokeBootstrapRenderScript(workDir string) string {
-	var script = `#!/bin/sh
+	script := `#!/bin/sh
 cd /tmp
 mkdir input output
 /usr/bin/cluster-config-operator render \
@@ -628,7 +645,7 @@ cp /tmp/output/manifests/* %[1]s
 }
 
 func applyBootstrapManifestsScript(workDir string) string {
-	var script = `#!/bin/sh
+	script := `#!/bin/sh
 while true; do
   if oc apply -f %[1]s; then
     echo "Bootstrap manifests applied successfully."
@@ -644,7 +661,7 @@ done
 }
 
 func waitForEtcdScript(namespace string) string {
-	var script = `#!/bin/sh
+	script := `#!/bin/sh
 while ! nslookup etcd-client.%s.svc; do sleep 1; done
 `
 	return fmt.Sprintf(script, namespace)

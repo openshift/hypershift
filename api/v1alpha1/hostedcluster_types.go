@@ -793,9 +793,7 @@ const (
 	PersistentVolumeEtcdStorage ManagedEtcdStorageType = "PersistentVolume"
 )
 
-var (
-	DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("4Gi")
-)
+var DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("4Gi")
 
 // ManagedEtcdStorageSpec describes the storage configuration for etcd data.
 type ManagedEtcdStorageSpec struct {
@@ -970,8 +968,7 @@ type IBMCloudKMSUnmanagedAuthSpec struct {
 
 // IBMCloudKMSManagedAuthSpec defines metadata around the service to service authentication strategy for the IBM Cloud
 // KMS system (all provider managed).
-type IBMCloudKMSManagedAuthSpec struct {
-}
+type IBMCloudKMSManagedAuthSpec struct{}
 
 // AWSKMSSpec defines metadata about the configuration of the AWS KMS Secret Encryption provider
 type AWSKMSSpec struct {

@@ -59,8 +59,8 @@ func GenerateSelfSignedCertificate(cfg *CertCfg) (*ecdsa.PrivateKey, *x509.Certi
 
 // GenerateSignedCertificate generate a key and cert defined by CertCfg and signed by CA.
 func GenerateSignedCertificate(caKey crypto.Signer, caCert *x509.Certificate,
-	cfg *CertCfg) (*ecdsa.PrivateKey, *x509.Certificate, error) {
-
+	cfg *CertCfg) (*ecdsa.PrivateKey, *x509.Certificate, error,
+) {
 	// create a private key
 	key, err := PrivateKey()
 	if err != nil {

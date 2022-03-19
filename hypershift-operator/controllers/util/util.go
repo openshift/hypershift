@@ -1,14 +1,14 @@
 package util
 
 import (
+	"bytes"
 	"context"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
-	"bytes"
-	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"

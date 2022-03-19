@@ -13,9 +13,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-var (
-	packageServerDeployment = MustDeployment("assets/packageserver-deployment.yaml")
-)
+var packageServerDeployment = MustDeployment("assets/packageserver-deployment.yaml")
 
 func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, apiPort *int32, noProxy []string) error {
 	ownerRef.ApplyTo(deployment)

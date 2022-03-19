@@ -34,8 +34,8 @@ type Agent struct{}
 
 func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
-
+	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error,
+) {
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
 	if err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 		return nil, fmt.Errorf("failed to get control plane ref: %w", err)
@@ -134,8 +134,8 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 // TODO add a new method to Platform interface?
 func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
-
+	controlPlaneNamespace string,
+) error {
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hcluster.Spec.Platform.Agent.AgentNamespace,
@@ -165,8 +165,8 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 }
 
 func (p Agent) reconcileClusterRole(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	controlPlaneNamespace string) error {
-
+	controlPlaneNamespace string,
+) error {
 	role := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: CredentialsRBACPrefix,
@@ -243,7 +243,8 @@ func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, hcluster *hyperv1
 	if hcluster.Status.IgnitionEndpoint != "" {
 		agentCluster.Spec.IgnitionEndpoint = &agentv1.IgnitionEndpoint{
 			Url:                    "https://" + hcluster.Status.IgnitionEndpoint + "/ignition",
-			CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace}}
+			CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
+		}
 	}
 	agentCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
 		Host: hcp.Status.ControlPlaneEndpoint.Host,

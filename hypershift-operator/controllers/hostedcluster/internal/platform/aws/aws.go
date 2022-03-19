@@ -162,7 +162,8 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 							},
 						},
 						Command: []string{"/manager"},
-						Args: []string{"--namespace", "$(MY_NAMESPACE)",
+						Args: []string{
+							"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",

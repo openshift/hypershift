@@ -118,7 +118,6 @@ func findRecord(ctx context.Context, client route53iface.Route53API, id, name st
 		record = recordSet
 		return false
 	})
-
 	if err != nil {
 		return nil, err
 	}

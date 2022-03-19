@@ -2,7 +2,6 @@ package config
 
 import (
 	"bytes"
-
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -62,5 +61,4 @@ func TestSetResources(t *testing.T) {
 	if len(deployment.Spec.Template.Spec.Containers[0].Resources.Requests) == 0 {
 		t.Errorf("did not get any resource requests applied\n")
 	}
-
 }

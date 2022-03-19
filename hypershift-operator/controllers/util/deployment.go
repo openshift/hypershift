@@ -42,15 +42,14 @@ func SetMultizoneSpread(labels map[string]string, deployment *appsv1.Deployment)
 	if deployment.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
 		deployment.Spec.Template.Spec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
 	}
-	deployment.Spec.Template.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution =
-		[]corev1.PodAffinityTerm{
-			{
-				TopologyKey: corev1.LabelTopologyZone,
-				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: labels,
-				},
+	deployment.Spec.Template.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = []corev1.PodAffinityTerm{
+		{
+			TopologyKey: corev1.LabelTopologyZone,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: labels,
 			},
-		}
+		},
+	}
 }
 
 const colocationLabelKey = "hypershift.openshift.io/hosted-control-plane"

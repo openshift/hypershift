@@ -107,7 +107,6 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling")
 
@@ -698,8 +697,8 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	machineTemplateCR client.Object,
 	CAPIClusterName string,
 	targetVersion,
-	targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON string) error {
-
+	targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON string,
+) error {
 	// Set annotations and labels
 	if machineDeployment.GetAnnotations() == nil {
 		machineDeployment.Annotations = map[string]string{}
@@ -1015,6 +1014,7 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 
 	return nil
 }
+
 func validateConfigManifest(manifest []byte) error {
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
