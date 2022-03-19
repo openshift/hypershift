@@ -56,6 +56,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -924,6 +925,9 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	if capiProviderDeploymentSpec != nil {
+		proxy.SetEnvVars(&capiProviderDeploymentSpec.Template.Spec.Containers[0].Env)
+	}
 
 	// Reconcile cluster prometheus RBAC resources if enabled
 	if r.EnableOCPClusterMonitoring {
@@ -963,6 +967,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			if !srcHasData {
 				return fmt.Errorf("controlplane kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(src), key)
 			}
+			dest.Labels = hcluster.Labels
 			dest.Type = corev1.SecretTypeOpaque
 			if dest.Data == nil {
 				dest.Data = map[string][]byte{}
@@ -1146,7 +1151,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()
 	switch hcluster.Spec.Platform.Type {
-	case hyperv1.AgentPlatform, hyperv1.KubevirtPlatform:
+	case hyperv1.AgentPlatform:
 		// Agent platform uses None platform for the hcp.
 		hcp.Spec.Platform.Type = hyperv1.NonePlatform
 	}
@@ -1194,8 +1199,12 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 		if capiWebhooksTLSSecret.Data == nil {
 			capiWebhooksTLSSecret.Data = map[string][]byte{}
 		}
+		privKeyPem, err := certs.PrivateKeyToPem(key)
+		if err != nil {
+			return fmt.Errorf("failed to conver private key to pem: %w", err)
+		}
 		capiWebhooksTLSSecret.Data[corev1.TLSCertKey] = certs.CertToPem(crt)
-		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = certs.PrivateKeyToPem(key)
+		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = privKeyPem
 		return nil
 	})
 	if err != nil {
@@ -1204,7 +1213,10 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 
 	// Reconcile CAPI manager service account
 	capiManagerServiceAccount := clusterapi.CAPIManagerServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerServiceAccount, NoopReconcile)
+	_, err = createOrUpdate(ctx, r.Client, capiManagerServiceAccount, func() error {
+		util.EnsurePullSecret(capiManagerServiceAccount, controlplaneoperator.PullSecret("").Name)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager service account: %w", err)
 	}
@@ -1292,7 +1304,10 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 	// Reconcile CAPI provider service account
 	capiProviderServiceAccount := clusterapi.CAPIProviderServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiProviderServiceAccount, NoopReconcile)
+	_, err = createOrUpdate(ctx, r.Client, capiProviderServiceAccount, func() error {
+		util.EnsurePullSecret(capiProviderServiceAccount, controlplaneoperator.PullSecret("").Name)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi provider service account: %w", err)
 	}
@@ -1619,10 +1634,14 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			if err != nil {
 				return fmt.Errorf("failed to generate CA: %w", err)
 			}
+			privKeyPem, err := certs.PrivateKeyToPem(key)
+			if err != nil {
+				return fmt.Errorf("failed to conver private key to pem: %w", err)
+			}
 			caCertSecret.Type = corev1.SecretTypeTLS
 			caCertSecret.Data = map[string][]byte{
 				corev1.TLSCertKey:       certs.CertToPem(crt),
-				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
+				corev1.TLSPrivateKeyKey: privKeyPem,
 			}
 		}
 		return nil
@@ -1660,10 +1679,14 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			if err != nil {
 				return fmt.Errorf("failed to generate ignition serving cert: %w", err)
 			}
+			privKeyPem, err := certs.PrivateKeyToPem(key)
+			if err != nil {
+				return fmt.Errorf("failed to conver private key to pem: %w", err)
+			}
 			servingCertSecret.Type = corev1.SecretTypeTLS
 			servingCertSecret.Data = map[string][]byte{
 				corev1.TLSCertKey:       certs.CertToPem(crt),
-				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
+				corev1.TLSPrivateKeyKey: privKeyPem,
 			}
 		}
 		return nil
@@ -1699,7 +1722,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 	}
 
 	sa := ignitionserver.ServiceAccount(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
+	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
+		return nil
+	}); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
 	}
 
@@ -1831,6 +1857,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 				},
 			},
 		}
+		proxy.SetEnvVars(&ignitionServerDeployment.Spec.Template.Spec.Containers[0].Env)
 
 		// set security context
 		if r.SetDefaultSecurityContext {
@@ -1886,7 +1913,10 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 
 	// Reconcile autoscaler service account
 	autoScalerServiceAccount := autoscaler.AutoScalerServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, autoScalerServiceAccount, NoopReconcile)
+	_, err = createOrUpdate(ctx, r.Client, autoScalerServiceAccount, func() error {
+		util.EnsurePullSecret(autoScalerServiceAccount, controlplaneoperator.PullSecret("").Name)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
 	}
@@ -2027,9 +2057,6 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 						Args: []string{"run", "--namespace", "$(MY_NAMESPACE)", "--deployment-name", "control-plane-operator",
 							"--metrics-addr", "0.0.0.0:8080", fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
 							fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine),
-							"--socks5-proxy-image", socksImage,
-							"--availability-prober-image", proberImage,
-							"--token-minter-image", minterImage,
 						},
 						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
 						LivenessProbe: &corev1.Probe{
@@ -2066,6 +2093,13 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			},
 		},
 	}
+	// TODO: these images will ultimately go away when the CPO is adjusted to have proper subcommands for those images
+	// and that is integrated into all active release payloads.
+	if hc.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args, "--socks5-proxy-image", socksImage,
+			"--availability-prober-image", proberImage,
+			"--token-minter-image", minterImage)
+	}
 
 	if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
@@ -2083,6 +2117,8 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			},
 		)
 	}
+	mainContainer = util.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
+	proxy.SetEnvVars(&mainContainer.Env)
 
 	hyperutil.SetDeploymentReplicas(hc, deployment, 1)
 
@@ -3242,7 +3278,10 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 
 	// Reconcile machine-approver service account
 	sa := machineapprover.ServiceAccount(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, sa, NoopReconcile); err != nil {
+	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
+		return nil
+	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
 	}
 
@@ -3818,8 +3857,8 @@ type KeyResponse struct {
 
 func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
 	block, _ := pem.Decode(params.pubKey)
-	if block == nil || block.Type != "RSA PUBLIC KEY" {
-		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key")
+	if block == nil || (block.Type != "RSA PUBLIC KEY" && block.Type != "PUBLIC KEY") {
+		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key, block had type %q", block.Type)
 	}
 	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
@@ -3827,7 +3866,7 @@ func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
 	}
 	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("public key is not RSA")
+		return nil, fmt.Errorf("public key is not RSA but %T", pubKey)
 	}
 
 	hasher := crypto.SHA256.New()

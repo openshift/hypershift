@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"sort"
 	"testing"
 	"time"
 
@@ -90,6 +91,8 @@ func TestErrorMessages(t *testing.T) {
 			collector := NewMessageCollector(context.Background(), client)
 			result, err := collector.ErrorMessages(fakeObj)
 			g.Expect(err).ToNot(HaveOccurred())
+			sort.Strings(result)
+			sort.Strings(test.expected)
 			g.Expect(result).To(Equal(test.expected))
 		})
 	}

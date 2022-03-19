@@ -3,13 +3,14 @@ package resources
 import (
 	"context"
 	"fmt"
+	"math/rand"
+	"testing"
+	"time"
+
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"math/rand"
-	"testing"
-	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -42,6 +43,13 @@ var initialObjects = []client.Object{
 	globalconfig.ImageConfig(),
 	globalconfig.ProjectConfig(),
 	globalconfig.BuildConfig(),
+	// Not running bcrypt hashing for the kubeadmin secret massively speeds up the tests, 4s vs 0.1s (and for -race its ~10x that)
+	&corev1.Secret{
+		ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
+		Data: map[string][]byte{
+			"kubeadmin": []byte("something"),
+		},
+	},
 }
 
 func shouldNotError(key client.ObjectKey) bool {

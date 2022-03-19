@@ -28,11 +28,15 @@ func reconcileSelfSignedCA(secret *corev1.Secret, ownerRef config.OwnerRef, cn, 
 	if err != nil {
 		return fmt.Errorf("failed to generate CA (cn=%s,ou=%s): %w", cn, ou, err)
 	}
+	privKeyPem, err := certs.PrivateKeyToPem(key)
+	if err != nil {
+		return fmt.Errorf("failed to serialize private key to PEM: %w", err)
+	}
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
 	secret.Data[CASignerCertMapKey] = certs.CertToPem(crt)
-	secret.Data[CASignerKeyMapKey] = certs.PrivateKeyToPem(key)
+	secret.Data[CASignerKeyMapKey] = privKeyPem
 	return nil
 }
 

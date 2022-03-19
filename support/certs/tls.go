@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
@@ -26,8 +27,6 @@ import (
 )
 
 const (
-	keySize = 2048
-
 	ValidityOneDay   = 24 * time.Hour
 	ValidityOneYear  = 365 * ValidityOneDay
 	ValidityTenYears = 10 * ValidityOneYear
@@ -44,14 +43,8 @@ type CertCfg struct {
 	IsCA         bool
 }
 
-// rsaPublicKey reflects the ASN.1 structure of a PKCS#1 public key.
-type rsaPublicKey struct {
-	N *big.Int
-	E int
-}
-
 // GenerateSelfSignedCertificate generates a key/cert pair defined by CertCfg.
-func GenerateSelfSignedCertificate(cfg *CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+func GenerateSelfSignedCertificate(cfg *CertCfg) (*ecdsa.PrivateKey, *x509.Certificate, error) {
 	key, err := PrivateKey()
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to generate private key")
@@ -65,8 +58,8 @@ func GenerateSelfSignedCertificate(cfg *CertCfg) (*rsa.PrivateKey, *x509.Certifi
 }
 
 // GenerateSignedCertificate generate a key and cert defined by CertCfg and signed by CA.
-func GenerateSignedCertificate(caKey *rsa.PrivateKey, caCert *x509.Certificate,
-	cfg *CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+func GenerateSignedCertificate(caKey crypto.Signer, caCert *x509.Certificate,
+	cfg *CertCfg) (*ecdsa.PrivateKey, *x509.Certificate, error) {
 
 	// create a private key
 	key, err := PrivateKey()
@@ -93,18 +86,14 @@ func GenerateSignedCertificate(caKey *rsa.PrivateKey, caCert *x509.Certificate,
 	return key, cert, nil
 }
 
-// PrivateKey generates an RSA Private key and returns the value
-func PrivateKey() (*rsa.PrivateKey, error) {
-	rsaKey, err := rsa.GenerateKey(rand.Reader, keySize)
-	if err != nil {
-		return nil, errors.Wrap(err, "error generating RSA private key")
-	}
-
-	return rsaKey, nil
+// PrivateKey generates an ecdsa private key using the P512 curve and returns the value.
+// The returned private key is FIPS compliant
+func PrivateKey() (*ecdsa.PrivateKey, error) {
+	return ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 }
 
 // SelfSignedCertificate creates a self signed certificate
-func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate, error) {
+func SelfSignedCertificate(cfg *CertCfg, key crypto.Signer) (*x509.Certificate, error) {
 	serial, err := rand.Int(rand.Reader, new(big.Int).SetInt64(math.MaxInt64))
 	if err != nil {
 		return nil, err
@@ -138,9 +127,9 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 func signedCertificate(
 	cfg *CertCfg,
 	csr *x509.CertificateRequest,
-	key *rsa.PrivateKey,
+	key crypto.Signer,
 	caCert *x509.Certificate,
-	caKey *rsa.PrivateKey,
+	caKey crypto.Signer,
 ) (*x509.Certificate, error) {
 	serial, err := rand.Int(rand.Reader, new(big.Int).SetInt64(math.MaxInt64))
 	if err != nil {
@@ -160,7 +149,7 @@ func signedCertificate(
 		Version:               3,
 		BasicConstraintsValid: true,
 	}
-	pub := caCert.PublicKey.(*rsa.PublicKey)
+	pub := caCert.PublicKey
 	certTmpl.SubjectKeyId, err = generateSubjectKeyID(pub)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to set subject key identifier")
@@ -174,35 +163,47 @@ func signedCertificate(
 
 // generateSubjectKeyID generates a SHA-1 hash of the subject public key.
 func generateSubjectKeyID(pub crypto.PublicKey) ([]byte, error) {
-	var publicKeyBytes []byte
-	var err error
-
-	switch pub := pub.(type) {
-	case *rsa.PublicKey:
-		publicKeyBytes, err = asn1.Marshal(rsaPublicKey{N: pub.N, E: pub.E})
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to Marshal ans1 public key")
-		}
-	case *ecdsa.PublicKey:
-		publicKeyBytes = elliptic.Marshal(pub.Curve, pub.X, pub.Y)
-	default:
-		return nil, errors.New("only RSA and ECDSA public keys supported")
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal public key: %w", err)
 	}
 
 	hash := sha1.Sum(publicKeyBytes)
 	return hash[:], nil
 }
 
-// PrivateKeyToPem converts an rsa.PrivateKey object to pem string
-func PrivateKeyToPem(key *rsa.PrivateKey) []byte {
-	keyInBytes := x509.MarshalPKCS1PrivateKey(key)
-	keyinPem := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: keyInBytes,
-		},
-	)
-	return keyinPem
+// PrivateKeyToPem converts a PrivateKey object to a byte slice
+func PrivateKeyToPem(key crypto.Signer) ([]byte, error) {
+	switch key := key.(type) {
+	case *rsa.PrivateKey:
+		keyInBytes := x509.MarshalPKCS1PrivateKey(key)
+		return pem.EncodeToMemory(
+			&pem.Block{
+				Type:  "RSA PRIVATE KEY",
+				Bytes: keyInBytes,
+			},
+		), nil
+	case *ecdsa.PrivateKey:
+		derKey, err := x509.MarshalECPrivateKey(key)
+		if err != nil {
+			return nil, err
+		}
+		return pem.EncodeToMemory(&pem.Block{
+			Type:  "EC PRIVATE KEY",
+			Bytes: derKey,
+		}), nil
+	case ed25519.PrivateKey:
+		b, err := x509.MarshalPKCS8PrivateKey(key)
+		if err != nil {
+			return nil, err
+		}
+		return pem.EncodeToMemory(&pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: b,
+		}), nil
+	default:
+		return nil, fmt.Errorf("unknown private key type %T", key)
+	}
 }
 
 // CertToPem converts an x509.Certificate object to a pem string
@@ -228,27 +229,47 @@ func CSRToPem(cert *x509.CertificateRequest) []byte {
 }
 
 // PublicKeyToPem converts an rsa.PublicKey object to pem string
-func PublicKeyToPem(key *rsa.PublicKey) ([]byte, error) {
+func PublicKeyToPem(key crypto.PublicKey) ([]byte, error) {
 	keyInBytes, err := x509.MarshalPKIXPublicKey(key)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to MarshalPKIXPublicKey")
 	}
 	keyinPem := pem.EncodeToMemory(
 		&pem.Block{
-			Type:  "RSA PUBLIC KEY",
+			Type:  "PUBLIC KEY",
 			Bytes: keyInBytes,
 		},
 	)
 	return keyinPem, nil
 }
 
-// PemToPrivateKey converts a data block to rsa.PrivateKey.
-func PemToPrivateKey(data []byte) (*rsa.PrivateKey, error) {
+// PemToPrivateKey converts a data block to private key
+func PemToPrivateKey(data []byte) (crypto.Signer, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
 		return nil, errors.Errorf("could not find a PEM block in the private key")
 	}
-	return x509.ParsePKCS1PrivateKey(block.Bytes)
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "EC PRIVATE KEY":
+		return x509.ParseECPrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		keyRaw, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		// I can not see a success codepath in x509.ParsePKCS8PrivateKey
+		// that does not return a crypto.Signer, it seems to be done to
+		// futureproof it.
+		cryptoSigner, ok := keyRaw.(crypto.Signer)
+		if !ok {
+			return nil, fmt.Errorf("private key was not of type crypto.Signer but %T", keyRaw)
+		}
+		return cryptoSigner, nil
+	default:
+		return nil, fmt.Errorf("unknown key type %q", block.Type)
+	}
 }
 
 // PemToCertificate converts a data block to x509.Certificate.
@@ -264,32 +285,17 @@ func Base64(data []byte) string {
 	return base64.StdEncoding.EncodeToString(data)
 }
 
-func parsePemKeypair(key, certificate []byte) (*rsa.PrivateKey, *x509.Certificate, error) {
-	privKey, err := PemToPrivateKey(key)
-	if err != nil {
-		return nil, nil, err
-	}
-	cert, err := PemToCertificate(certificate)
-	if err != nil {
-		return nil, nil, err
-	}
-	rsaPublicKey, ok := cert.PublicKey.(*rsa.PublicKey)
-	if !ok {
-		return nil, nil, fmt.Errorf("certificate does not have a RSA public key but a %T, not supported", cert.PublicKey)
-	}
-
-	// https://cs.opensource.google/go/go/+/refs/tags/go1.17.5:src/crypto/tls/tls.go;drc=860704317e02d699e4e4a24103853c4782d746c1;l=310
-	if rsaPublicKey.N.Cmp(privKey.N) != 0 {
-		return nil, nil, errors.New("private key does not match certificate")
-	}
-
-	return privKey, cert, nil
-}
-
 func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemainingValidity time.Duration) error {
-	_, cert, err := parsePemKeypair(pemKey, pemCertificate)
+	tlsCert, err := tls.X509KeyPair(pemCertificate, pemKey)
 	if err != nil {
-		return fmt.Errorf("failed to parse keypair: %w", err)
+		return fmt.Errorf("failed to load keypair: %w", err)
+	}
+	if n := len(tlsCert.Certificate); n != 1 {
+		return fmt.Errorf("expected exactly one certificate, got %d", n)
+	}
+	cert, err := x509.ParseCertificate(tlsCert.Certificate[0])
+	if err != nil {
+		return fmt.Errorf("failed to parse certificate: %w", err)
 	}
 
 	var errs []error

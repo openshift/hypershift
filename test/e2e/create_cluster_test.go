@@ -13,10 +13,10 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
 // TestKubeVirtCreateCluster implements a test that mimics the operation described in the
@@ -32,7 +32,7 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 		t.Skip("Skipping testing because environment doesn't support KubeVirt")
 	}
 
-	ctx, cancel := context.WithCancel(testContext)
+	ctx, cancel := context.WithTimeout(testContext, 35*time.Minute)
 	defer cancel()
 
 	t.Parallel()
@@ -40,33 +40,21 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 	client, err := e2eutil.GetClient()
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
-	clusterOpts := globalOpts.DefaultClusterOptions()
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.KubevirtPlatform, globalOpts.ArtifactDir)
-
-	waitForHostedClusterAvailable := func() {
-		start := time.Now()
-
-		localCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		defer cancel()
-		t.Logf("Waiting for hosted cluster to become available")
-		err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
-			latest := hostedCluster.DeepCopy()
-			err = client.Get(ctx, crclient.ObjectKeyFromObject(latest), latest)
-			if err != nil {
-				t.Errorf("Failed to get hostedcluster: %v", err)
-				return false, nil
-			}
-
-			isAvailable := meta.IsStatusConditionTrue(latest.Status.Conditions, string(hyperv1.HostedClusterAvailable))
-			if isAvailable {
-				return true, nil
-			}
-			return false, nil
-		}, localCtx.Done())
-		g.Expect(err).NotTo(HaveOccurred(), "timeout waiting for hosted cluster to become available")
-
-		t.Logf("Hosted cluster is available in %s", time.Since(start).Round(time.Second))
+	// get base domain from default ingress of management cluster
+	defaultIngressOperator := &operatorv1.IngressController{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "openshift-ingress-operator",
+		},
 	}
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(defaultIngressOperator), defaultIngressOperator)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get default '*.apps' ingress of management cluster")
+
+	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts.BaseDomain = defaultIngressOperator.Status.Domain
+
+	t.Logf("Using base domain %s", clusterOpts.BaseDomain)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.KubevirtPlatform, globalOpts.ArtifactDir)
 
 	// Get the newly created nodepool
 	nodepool := &hyperv1.NodePool{
@@ -75,26 +63,32 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 			Name:      hostedCluster.Name,
 		},
 	}
-	err = client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 	t.Logf("Created nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
 
-	// Wait for hosted cluster to become ready
-	// TODO: replace this with WaitForImageRollout once we can achieve a full
-	// image roll out out consistently
-	waitForHostedClusterAvailable()
-
-	// Wait for kubevirt machines to come online
-	// TODO: Replace this with the generic WaitForNReadyNodes() function
-	// once we get better ingress support for KubeVirt platform
-	// that allows us to use the guest cluster's client to view
-	// node status.
-	e2eutil.WaitForKubeVirtMachines(t, testContext, client, hostedCluster, *nodepool.Spec.NodeCount)
+	t.Logf("Waiting for KubeVirtMachines to be marked as ready")
+	e2eutil.WaitForKubeVirtMachines(t, ctx, client, hostedCluster, *nodepool.Spec.NodeCount)
 
 	// Wait for kubevirt cluster to be marked as available
-	e2eutil.WaitForKubeVirtCluster(t, testContext, client, hostedCluster)
+	t.Logf("Waiting for KubeVirtCluster to be marked as ready")
+	e2eutil.WaitForKubeVirtCluster(t, ctx, client, hostedCluster)
 
-	// TODO verify introspecting guest cluster once ingress is sorted out.
+	// Get a client for the cluster
+	t.Logf("Waiting for guest client to become available")
+	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
+
+	// Using the guest client, introspect that the nodes for the tenant cluster become ready
+	t.Logf("Waiting for nodes to become ready")
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, *nodepool.Spec.NodeCount)
+
+	// Setup wildcard *.apps route for nested kubevirt cluster
+	t.Logf("Setting up wildcard *.apps route for nested kubevirt tenant cluster")
+	e2eutil.CreateKubeVirtClusterWildcardRoute(t, ctx, client, guestClient, hostedCluster, clusterOpts.BaseDomain)
+
+	// Verify the cluster rolls out completely
+	t.Logf("Waiting for cluster operators to become available")
+	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.LatestReleaseImage)
 }
 
 func TestNoneCreateCluster(t *testing.T) {

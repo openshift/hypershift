@@ -1132,9 +1132,11 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	})))
 
 	for _, hc := range hostedClusters {
-		if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}); err != nil {
-			t.Fatalf("Reconcile failed: %v", err)
-		}
+		t.Run(hc.Name, func(t *testing.T) {
+			if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}); err != nil {
+				t.Fatalf("Reconcile failed: %v", err)
+			}
+		})
 	}
 	watchedResources := sets.String{}
 	for _, resource := range r.managedResources() {
