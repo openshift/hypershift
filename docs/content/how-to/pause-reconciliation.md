@@ -9,7 +9,7 @@ Pause reconciliation for a given `HostedCluster/HostedControlPlane` pair by popu
 #Can be boolean or RFC339 timestamp
 # PAUSED_UNTIL="true"
 PAUSED_UNTIL="2022-03-03T03:28:48Z"
-kubectl patch -n HOSTED_CLUSTERS_NAMESPACE hostedclusters/HOSTED_CLUSTER_NAME -p '{"spec":{"pausedUntil":"'${PAUSEDUNTIL}'"}}' --type=merge
+kubectl patch -n HOSTED_CLUSTERS_NAMESPACE hostedclusters/HOSTED_CLUSTER_NAME -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
 ```
 
 Two formats are accepted:
