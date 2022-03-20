@@ -745,6 +745,16 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"agents"},
 				Verbs:     []string{"*"},
 			},
+			{
+				APIGroups: []string{"extensions.hive.openshift.io"},
+				Resources: []string{"agentclusterinstalls"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"hive.openshift.io"},
+				Resources: []string{"clusterdeployments"},
+				Verbs:     []string{"*"},
+			},
 		},
 	}
 	return role
