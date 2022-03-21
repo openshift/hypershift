@@ -8,9 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/events"
-
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -58,11 +55,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
-	cpoutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -467,12 +466,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 		}
 	}
-	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, cpoutil.GenerateReconciliationPausedCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationPausedCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
 	if err := r.Client.Status().Update(ctx, hostedControlPlane); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	if cpoutil.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil) {
+	if util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil) {
 		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
 		return ctrl.Result{}, nil
 	}
@@ -654,7 +653,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile private IngressController
-	if cpoutil.IsPrivateHCP(hostedControlPlane) {
+	if util.IsPrivateHCP(hostedControlPlane) {
 		r.Log.Info("Reconciling private IngressController")
 		if err = r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
 			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
@@ -696,7 +695,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 }
 
 func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	if cpoutil.IsPrivateHCP(hcp) {
+	if util.IsPrivateHCP(hcp) {
 		ic := manifests.IngressPrivateIngressController(hcp.Namespace)
 		if err := r.Delete(ctx, ic); err != nil {
 			return fmt.Errorf("unable to delete private ingress controller: %w", err)
@@ -717,7 +716,7 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedControlPlane, svcType hy
 func (r *HostedControlPlaneReconciler) reconcileDefaultServiceAccount(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	defaultSA := common.DefaultServiceAccount(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, defaultSA, func() error {
-		cpoutil.EnsurePullSecret(defaultSA, common.PullSecret(hcp.Namespace).Name)
+		util.EnsurePullSecret(defaultSA, common.PullSecret(hcp.Namespace).Name)
 		return nil
 	}); err != nil {
 		return err
@@ -733,12 +732,12 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, cpoutil.IsPublicHCP(hcp))
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, util.IsPublicHCP(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
 
-	if cpoutil.IsPrivateHCP(hcp) {
+	if util.IsPrivateHCP(hcp) {
 		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		if _, err := r.CreateOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
 			return kas.ReconcilePrivateService(apiServerPrivateService, p.OwnerReference)
@@ -768,7 +767,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	}
 	kasRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, kasRoute, func() error {
-		return konnectivity.ReconcileRoute(kasRoute, p.OwnerRef, cpoutil.IsPrivateHCP(hcp), serviceStrategy)
+		return konnectivity.ReconcileRoute(kasRoute, p.OwnerRef, util.IsPrivateHCP(hcp), serviceStrategy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity server route: %w", err)
 	}
@@ -909,7 +908,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return
 	}
 
-	if cpoutil.IsPublicHCP(hcp) {
+	if util.IsPublicHCP(hcp) {
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
 		if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 			if apierrors.IsNotFound(err) {
@@ -1324,7 +1323,7 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 
 	serviceMonitor := manifests.EtcdServiceMonitor(hcp.Namespace)
 	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
-		return etcd.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+		return etcd.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd servicemonitor: %w", err)
 	} else {
@@ -1457,7 +1456,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	externalKubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
 	if _, err := r.CreateOrUpdate(ctx, r, externalKubeconfigSecret, func() error {
-		if cpoutil.IsPublicHCP(hcp) {
+		if util.IsPublicHCP(hcp) {
 			return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
 		}
 		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalURL(), p.ExternalKubeconfigKey())
@@ -1467,7 +1466,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	bootstrapKubeconfigSecret := manifests.KASBootstrapKubeconfigSecret(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, bootstrapKubeconfigSecret, func() error {
-		if cpoutil.IsPrivateHCP(hcp) {
+		if util.IsPrivateHCP(hcp) {
 			return kas.ReconcileBootstrapKubeconfigSecret(bootstrapKubeconfigSecret, bootstrapClientCertSecret, rootCA, p.OwnerRef, p.InternalURL())
 		}
 		return kas.ReconcileBootstrapKubeconfigSecret(bootstrapKubeconfigSecret, bootstrapClientCertSecret, rootCA, p.OwnerRef, p.ExternalURL())
@@ -1582,7 +1581,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
 	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
-		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp))
+		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp), hcp.Spec.ClusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas service monitor: %w", err)
 	} else {
@@ -1636,7 +1635,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 
 	serviceMonitor := manifests.KCMServiceMonitor(hcp.Namespace)
 	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
-		return kcm.ReconcileServiceMonitor(serviceMonitor, config.OwnerRefFrom(hcp))
+		return kcm.ReconcileServiceMonitor(serviceMonitor, config.OwnerRefFrom(hcp), hcp.Spec.ClusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm service monitor: %w", err)
 	} else {
@@ -1706,7 +1705,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 
 	serviceMonitor := manifests.OpenShiftAPIServerServiceMonitor(hcp.Namespace)
 	if result, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
-		return oapi.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+		return oapi.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver servicemonitor: %w", err)
 	} else {
@@ -1828,7 +1827,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 
 	serviceMonitor := manifests.OpenShiftControllerServiceMonitor(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
-		return ocm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+		return ocm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager service monitor: %w", err)
 	}
@@ -1873,14 +1872,14 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	serviceMonitor := manifests.ClusterVersionOperatorServiceMonitor(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, serviceMonitor, func() error {
-		return cvo.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef)
+		return cvo.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator service monitor: %w", err)
 	}
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.APIPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
@@ -2033,7 +2032,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	}
 	catalogOperatorServiceMonitor := manifests.CatalogOperatorServiceMonitor(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, catalogOperatorServiceMonitor, func() error {
-		return olm.ReconcileCatalogServiceMonitor(catalogOperatorServiceMonitor, p.OwnerRef)
+		return olm.ReconcileCatalogServiceMonitor(catalogOperatorServiceMonitor, p.OwnerRef, hcp.Spec.ClusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile catalog operator service monitor: %w", err)
 	}
@@ -2053,7 +2052,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 	olmOperatorServiceMonitor := manifests.OLMOperatorServiceMonitor(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, olmOperatorServiceMonitor, func() error {
-		return olm.ReconcileOLMOperatorServiceMonitor(olmOperatorServiceMonitor, p.OwnerRef)
+		return olm.ReconcileOLMOperatorServiceMonitor(olmOperatorServiceMonitor, p.OwnerRef, hcp.Spec.ClusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator service monitor: %w", err)
 	}
@@ -2281,6 +2280,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 			Name:       hcp.Name,
 			UID:        hcp.UID,
 		}})
+		util.ApplyClusterIDLabelToPodMonitor(&podMonitor.Spec.PodMetricsEndpoints[0], hcp.Spec.ClusterID)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile pod monitor for config operator: %w", err)

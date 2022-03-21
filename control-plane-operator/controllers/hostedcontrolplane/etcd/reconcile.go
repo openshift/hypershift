@@ -253,7 +253,7 @@ func ReconcileClientService(service *corev1.Service, ownerRef config.OwnerRef) e
 // ReconcileServiceMonitor
 // TODO: Exposing the client cert to monitoring isn't great, but metrics
 // TLS can't yet be independently configured. See: https://github.com/etcd-io/etcd/pull/10504
-func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef) error {
+func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string) error {
 	ownerRef.ApplyTo(sm)
 
 	sm.Spec.Selector.MatchLabels = etcdPodSelector()
@@ -294,6 +294,8 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			},
 		},
 	}
+
+	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], clusterID)
 
 	return nil
 }

@@ -100,6 +100,19 @@ type HostedClusterSpec struct {
 	// and InfrastructureAvailabilityPolicy.
 	Release Release `json:"release"`
 
+	// ClusterID uniquely identifies this cluster. This is expected to be
+	// an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
+	// hexadecimal values).
+	// As with a Kubernetes metadata.uid, this ID uniquely identifies this
+	// cluster in space and time.
+	// This value identifies the cluster in metrics pushed to telemetry and
+	// metrics produced by the control plane operators. If a value is not
+	// specified, an ID is generated. After initial creation, the value is
+	// immutable.
+	// +kubebuilder:validation:Pattern:="[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
+
 	// InfraID is a globally unique identifier for the cluster. This identifier
 	// will be used to associate various cloud resources with the HostedCluster
 	// and its associated NodePools.

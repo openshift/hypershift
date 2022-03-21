@@ -7,20 +7,25 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type CVOParams struct {
-	Image            string
-	CLIImage         string
-	OwnerRef         config.OwnerRef
-	DeploymentConfig config.DeploymentConfig
+	Image                   string
+	CLIImage                string
+	AvailabilityProberImage string
+	ClusterID               string
+	OwnerRef                config.OwnerRef
+	DeploymentConfig        config.DeploymentConfig
 }
 
 func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *CVOParams {
 	p := &CVOParams{
-		CLIImage: images["cli"],
-		Image:    hcp.Spec.ReleaseImage,
-		OwnerRef: config.OwnerRefFrom(hcp),
+		CLIImage:                images["cli"],
+		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		Image:                   hcp.Spec.ReleaseImage,
+		OwnerRef:                config.OwnerRefFrom(hcp),
+		ClusterID:               hcp.Spec.ClusterID,
 	}
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		cvoContainerPrepPayload().Name: {
