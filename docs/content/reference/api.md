@@ -2844,6 +2844,11 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>ClusterID is the unique id that identifies the cluster externally.
+Making it optional here allows us to keep compatibility with previous
+versions of the control-plane-operator that have no knowledge of this
+field.</p>
 </td>
 </tr>
 <tr>
