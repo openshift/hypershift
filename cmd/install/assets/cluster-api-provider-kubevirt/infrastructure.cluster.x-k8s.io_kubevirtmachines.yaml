@@ -1,10 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.5.0
+    controller-gen.kubebuilder.io/version: v0.8.0
   creationTimestamp: null
   name: kubevirtmachines.infrastructure.cluster.x-k8s.io
 spec:
@@ -181,12 +180,12 @@ spec:
                                         the other is non-empty. There are two important
                                         differences between DataSource and DataSourceRef:
                                         * While DataSource only allows two specific
-                                        types of objects, DataSourceRef   allows any
+                                        types of objects, DataSourceRef allows any
                                         non-core object, as well as PersistentVolumeClaim
                                         objects. * While DataSource ignores disallowed
-                                        values (dropping them), DataSourceRef   preserves
+                                        values (dropping them), DataSourceRef preserves
                                         all values, and generates an error if a disallowed
-                                        value is   specified. (Alpha) Using this field
+                                        value is specified. (Alpha) Using this field
                                         requires the AnyVolumeDataSource feature gate
                                         to be enabled.'
                                       properties:

@@ -1,10 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.5.0
+    controller-gen.kubebuilder.io/version: v0.8.0
   creationTimestamp: null
   name: hostedcontrolplanes.hypershift.openshift.io
 spec:
@@ -71,6 +70,25 @@ spec:
                   with previous versions of the control-plane-operator that have no
                   knowledge of this field.
                 type: string
+              clusterNetwork:
+                items:
+                  description: ClusterNetworkEntry is a single IP address block for
+                    pod IP blocks. IP blocks are allocated with size 2^HostSubnetLength.
+                  properties:
+                    cidr:
+                      description: CIDR is the IP block address pool.
+                      type: string
+                    hostPrefix:
+                      description: HostPrefix is the prefix size to allocate to each
+                        node from the CIDR. For example, 24 would allocate 2^8=256
+                        adresses to each node. If this field is not used by the plugin,
+                        it can be left unset.
+                      format: int32
+                      type: integer
+                  required:
+                  - cidr
+                  type: object
+                type: array
               configuration:
                 description: 'Configuration embeds resources that correspond to the
                   openshift configuration API: https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html'
@@ -190,8 +208,8 @@ spec:
                     properties:
                       endpoint:
                         description: "Endpoint is the full etcd cluster client endpoint
-                          URL. For example: \n     https://etcd-client:2379 \n If
-                          the URL uses an HTTPS scheme, the TLS field is required."
+                          URL. For example: \n https://etcd-client:2379 \n If the
+                          URL uses an HTTPS scheme, the TLS field is required."
                         pattern: ^https://
                         type: string
                       tls:
@@ -201,9 +219,9 @@ spec:
                           clientSecret:
                             description: "ClientSecret refers to a secret for client
                               mTLS authentication with the etcd cluster. It may have
-                              the following key/value pairs: \n     etcd-client-ca.crt:
-                              Certificate Authority value     etcd-client.crt: Client
-                              certificate value     etcd-client.key: Client certificate
+                              the following key/value pairs: \n etcd-client-ca.crt:
+                              Certificate Authority value etcd-client.crt: Client
+                              certificate value etcd-client.key: Client certificate
                               key value"
                             properties:
                               name:
@@ -271,8 +289,19 @@ spec:
                 - key
                 - name
                 type: object
-              machineCIDR:
-                type: string
+              machineNetwork:
+                items:
+                  description: MachineNetworkEntry is a single IP address block for
+                    node IP blocks.
+                  properties:
+                    cidr:
+                      description: CIDR is the IP block address pool for machines
+                        within the cluster.
+                      type: string
+                  required:
+                  - cidr
+                  type: object
+                type: array
               networkType:
                 description: NetworkType specifies the SDN provider used for cluster
                   networking.
@@ -567,8 +596,6 @@ spec:
                 required:
                 - type
                 type: object
-              podCIDR:
-                type: string
               pullSecret:
                 description: LocalObjectReference contains enough information to let
                   you locate the referenced object inside the same namespace.
@@ -781,8 +808,18 @@ spec:
                 required:
                 - type
                 type: object
-              serviceCIDR:
-                type: string
+              serviceNetwork:
+                items:
+                  description: ServiceNetworkEntry is a single IP address block for
+                    service IPs
+                  properties:
+                    cidr:
+                      description: CIDR is the IP block address pool for service IPs
+                      type: string
+                  required:
+                  - cidr
+                  type: object
+                type: array
               services:
                 description: Services defines metadata about how control plane services
                   are published in the management cluster.
@@ -867,17 +904,17 @@ spec:
                     type: string
                 type: object
             required:
+            - clusterNetwork
             - dns
             - etcd
             - infraID
             - issuerURL
-            - machineCIDR
+            - machineNetwork
             - networkType
             - platform
-            - podCIDR
             - pullSecret
             - releaseImage
-            - serviceCIDR
+            - serviceNetwork
             - services
             - sshKey
             type: object
@@ -891,13 +928,12 @@ spec:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
                     use as an array at the field path .status.conditions.  For example,
-                    type FooStatus struct{     // Represents the observations of a
-                    foo's current state.     // Known .status.conditions.type are:
-                    \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type
-                    \    // +patchStrategy=merge     // +listType=map     // +listMapKey=type
-                    \    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                    \n     // other fields }"
+                    type FooStatus struct{ // Represents the observations of a foo's
+                    current state. // Known .status.conditions.type are: \"Available\",
+                    \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
+                    // +listType=map // +listMapKey=type Conditions []metav1.Condition
+                    `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
+                    protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
                   properties:
                     lastTransitionTime:
                       description: lastTransitionTime is the last time the condition

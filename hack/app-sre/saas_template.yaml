@@ -440,7 +440,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: clusterresourcesetbindings.addons.cluster.x-k8s.io
   spec:
@@ -554,7 +554,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: clusterresourcesets.addons.cluster.x-k8s.io
   spec:
@@ -745,7 +745,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: clusterclasses.cluster.x-k8s.io
   spec:
@@ -1137,7 +1137,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: clusters.cluster.x-k8s.io
   spec:
@@ -1560,7 +1560,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: machinedeployments.cluster.x-k8s.io
   spec:
@@ -2059,7 +2059,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: machinehealthchecks.cluster.x-k8s.io
   spec:
@@ -2358,7 +2358,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: machinepools.cluster.x-k8s.io
   spec:
@@ -2698,26 +2698,26 @@ objects:
                     description: 'ObjectReference contains enough information to let
                       you inspect or modify the referred object. --- New uses of this
                       type are discouraged because of difficulty describing its usage
-                      when embedded in APIs.  1. Ignored fields.  It includes many
+                      when embedded in APIs. 1. Ignored fields.  It includes many
                       fields which are not generally honored.  For instance, ResourceVersion
-                      and FieldPath are both very rarely valid in actual usage.  2.
+                      and FieldPath are both very rarely valid in actual usage. 2.
                       Invalid usage help.  It is impossible to add specific help for
-                      individual usage.  In most embedded usages, there are particular     restrictions
-                      like, "must refer only to types A and B" or "UID not honored"
-                      or "name must be restricted".     Those cannot be well described
-                      when embedded.  3. Inconsistent validation.  Because the usages
-                      are different, the validation rules are different by usage,
-                      which makes it hard for users to predict what will happen.  4.
-                      The fields are both imprecise and overly precise.  Kind is not
-                      a precise mapping to a URL. This can produce ambiguity     during
-                      interpretation and require a REST mapping.  In most cases, the
-                      dependency is on the group,resource tuple     and the version
-                      of the actual struct is irrelevant.  5. We cannot easily change
+                      individual usage.  In most embedded usages, there are particular
+                      restrictions like, "must refer only to types A and B" or "UID
+                      not honored" or "name must be restricted". Those cannot be well
+                      described when embedded. 3. Inconsistent validation.  Because
+                      the usages are different, the validation rules are different
+                      by usage, which makes it hard for users to predict what will
+                      happen. 4. The fields are both imprecise and overly precise.  Kind
+                      is not a precise mapping to a URL. This can produce ambiguity
+                      during interpretation and require a REST mapping.  In most cases,
+                      the dependency is on the group,resource tuple and the version
+                      of the actual struct is irrelevant. 5. We cannot easily change
                       it.  Because this type is embedded in many locations, updates
-                      to this type     will affect numerous schemas.  Don''t make
-                      new APIs embed an underspecified API type they do not control.
-                      Instead of using this type, create a locally provided and used
-                      type that is well-focused on your reference. For example, ServiceReferences
+                      to this type will affect numerous schemas.  Don''t make new
+                      APIs embed an underspecified API type they do not control. Instead
+                      of using this type, create a locally provided and used type
+                      that is well-focused on your reference. For example, ServiceReferences
                       for admission registration: https://github.com/kubernetes/api/blob/release-1.17/admissionregistration/v1/types.go#L533
                       .'
                     properties:
@@ -2802,7 +2802,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: machines.cluster.x-k8s.io
   spec:
@@ -3220,7 +3220,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: machinesets.cluster.x-k8s.io
   spec:
@@ -3651,7 +3651,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -3829,7 +3829,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -4045,7 +4045,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -4164,7 +4164,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: awsclustercontrolleridentities.infrastructure.cluster.x-k8s.io
   spec:
@@ -4281,7 +4281,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: awsclusterroleidentities.infrastructure.cluster.x-k8s.io
   spec:
@@ -4457,7 +4457,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -5270,7 +5270,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: awsclusterstaticidentities.infrastructure.cluster.x-k8s.io
   spec:
@@ -5375,9 +5375,9 @@ objects:
                   type: object
                 secretRef:
                   description: 'Reference to a secret containing the credentials.
-                    The secret should contain the following data keys:  AccessKeyID:
-                    AKIAIOSFODNN7EXAMPLE  SecretAccessKey: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY  SessionToken:
-                    Optional'
+                    The secret should contain the following data keys: AccessKeyID:
+                    AKIAIOSFODNN7EXAMPLE SecretAccessKey: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+                    SessionToken: Optional'
                   type: string
               required:
               - secretRef
@@ -5395,7 +5395,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: awsclustertemplates.infrastructure.cluster.x-k8s.io
   spec:
@@ -5780,7 +5780,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: awsfargateprofiles.infrastructure.cluster.x-k8s.io
   spec:
@@ -5982,7 +5982,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: awsmachinepools.infrastructure.cluster.x-k8s.io
   spec:
@@ -6478,7 +6478,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -6972,7 +6972,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -7379,7 +7379,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: awsmanagedmachinepools.infrastructure.cluster.x-k8s.io
   spec:
@@ -7672,7 +7672,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: azureclusteridentities.infrastructure.cluster.x-k8s.io
   spec:
@@ -7877,7 +7877,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -8800,7 +8800,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -9355,7 +9355,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -9803,7 +9803,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: ibmpowervsclusters.infrastructure.cluster.x-k8s.io
   spec:
@@ -9897,7 +9897,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: ibmpowervsmachines.infrastructure.cluster.x-k8s.io
   spec:
@@ -10056,7 +10056,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: ibmpowervsmachinetemplates.infrastructure.cluster.x-k8s.io
   spec:
@@ -10179,7 +10179,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha4
@@ -10322,7 +10322,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: ibmvpcmachines.infrastructure.cluster.x-k8s.io
   spec:
@@ -10449,7 +10449,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: ibmvpcmachinetemplates.infrastructure.cluster.x-k8s.io
   spec:
@@ -10556,7 +10556,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -10786,7 +10786,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -10970,13 +10970,13 @@ objects:
                                           the other is non-empty. There are two important
                                           differences between DataSource and DataSourceRef:
                                           * While DataSource only allows two specific
-                                          types of objects, DataSourceRef   allows
-                                          any non-core object, as well as PersistentVolumeClaim
+                                          types of objects, DataSourceRef allows any
+                                          non-core object, as well as PersistentVolumeClaim
                                           objects. * While DataSource ignores disallowed
-                                          values (dropping them), DataSourceRef   preserves
+                                          values (dropping them), DataSourceRef preserves
                                           all values, and generates an error if a
-                                          disallowed value is   specified. (Alpha)
-                                          Using this field requires the AnyVolumeDataSource
+                                          disallowed value is specified. (Alpha) Using
+                                          this field requires the AnyVolumeDataSource
                                           feature gate to be enabled.'
                                         properties:
                                           apiGroup:
@@ -14866,7 +14866,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -15073,16 +15073,15 @@ objects:
                                                   differences between DataSource and
                                                   DataSourceRef: * While DataSource
                                                   only allows two specific types of
-                                                  objects, DataSourceRef   allows
-                                                  any non-core object, as well as
-                                                  PersistentVolumeClaim objects. *
-                                                  While DataSource ignores disallowed
-                                                  values (dropping them), DataSourceRef   preserves
-                                                  all values, and generates an error
-                                                  if a disallowed value is   specified.
-                                                  (Alpha) Using this field requires
-                                                  the AnyVolumeDataSource feature
-                                                  gate to be enabled.'
+                                                  objects, DataSourceRef allows any
+                                                  non-core object, as well as PersistentVolumeClaim
+                                                  objects. * While DataSource ignores
+                                                  disallowed values (dropping them),
+                                                  DataSourceRef preserves all values,
+                                                  and generates an error if a disallowed
+                                                  value is specified. (Alpha) Using
+                                                  this field requires the AnyVolumeDataSource
+                                                  feature gate to be enabled.'
                                                 properties:
                                                   apiGroup:
                                                     description: APIGroup is the group
@@ -19442,7 +19441,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: awsendpointservices.hypershift.openshift.io
   spec:
@@ -19529,13 +19528,13 @@ objects:
                     description: "Condition contains details for one aspect of the
                       current state of this API Resource. --- This struct is intended
                       for direct use as an array at the field path .status.conditions.
-                      \ For example, type FooStatus struct{     // Represents the
-                      observations of a foo's current state.     // Known .status.conditions.type
-                      are: \"Available\", \"Progressing\", and \"Degraded\"     //
-                      +patchMergeKey=type     // +patchStrategy=merge     // +listType=map
-                      \    // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                      \ For example, type FooStatus struct{ // Represents the observations
+                      of a foo's current state. // Known .status.conditions.type are:
+                      \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type
+                      // +patchStrategy=merge // +listType=map // +listMapKey=type
+                      Conditions []metav1.Condition `json:\"conditions,omitempty\"
                       patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                      \n     // other fields }"
+                      \n // other fields }"
                     properties:
                       lastTransitionTime:
                         description: lastTransitionTime is the last time the condition
@@ -19627,7 +19626,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: hostedclusters.hypershift.openshift.io
   spec:
@@ -19877,8 +19876,8 @@ objects:
                       properties:
                         endpoint:
                           description: "Endpoint is the full etcd cluster client endpoint
-                            URL. For example: \n     https://etcd-client:2379 \n If
-                            the URL uses an HTTPS scheme, the TLS field is required."
+                            URL. For example: \n https://etcd-client:2379 \n If the
+                            URL uses an HTTPS scheme, the TLS field is required."
                           pattern: ^https://
                           type: string
                         tls:
@@ -19888,9 +19887,9 @@ objects:
                             clientSecret:
                               description: "ClientSecret refers to a secret for client
                                 mTLS authentication with the etcd cluster. It may
-                                have the following key/value pairs: \n     etcd-client-ca.crt:
-                                Certificate Authority value     etcd-client.crt: Client
-                                certificate value     etcd-client.key: Client certificate
+                                have the following key/value pairs: \n etcd-client-ca.crt:
+                                Certificate Authority value etcd-client.crt: Client
+                                certificate value etcd-client.key: Client certificate
                                 key value"
                               properties:
                                 name:
@@ -19966,10 +19965,11 @@ objects:
                         a cluster node.
                       properties:
                         advertiseAddress:
-                          description: AdvertiseAddress is the address that nodes
+                          description: 'AdvertiseAddress is the address that nodes
                             will use to talk to the API server. This is an address
                             associated with the loopback adapter of each node. If
-                            not specified, 172.20.0.1 is used.
+                            not specified, 172.20.0.1 is used. TODO: add dual-stack
+                            support'
                           type: string
                         port:
                           description: Port is the port at which the APIServer is
@@ -19979,9 +19979,42 @@ objects:
                           format: int32
                           type: integer
                       type: object
-                    machineCIDR:
-                      description: "MachineCIDR is... \n TODO(dan): document it"
-                      type: string
+                    clusterNetwork:
+                      description: ClusterNetwork is the list of IP address pools
+                        for pods.
+                      items:
+                        description: ClusterNetworkEntry is a single IP address block
+                          for pod IP blocks. IP blocks are allocated with size 2^HostSubnetLength.
+                        properties:
+                          cidr:
+                            description: CIDR is the IP block address pool.
+                            type: string
+                          hostPrefix:
+                            description: HostPrefix is the prefix size to allocate
+                              to each node from the CIDR. For example, 24 would allocate
+                              2^8=256 adresses to each node. If this field is not
+                              used by the plugin, it can be left unset.
+                            format: int32
+                            type: integer
+                        required:
+                        - cidr
+                        type: object
+                      type: array
+                    machineNetwork:
+                      description: MachineNetwork is the list of IP address pools
+                        for machines.
+                      items:
+                        description: MachineNetworkEntry is a single IP address block
+                          for node IP blocks.
+                        properties:
+                          cidr:
+                            description: CIDR is the IP block address pool for machines
+                              within the cluster.
+                            type: string
+                        required:
+                        - cidr
+                        type: object
+                      type: array
                     networkType:
                       default: OpenShiftSDN
                       description: NetworkType specifies the SDN provider used for
@@ -19990,17 +20023,24 @@ objects:
                       - OpenShiftSDN
                       - Calico
                       type: string
-                    podCIDR:
-                      description: "PodCIDR is... \n TODO(dan): document it"
-                      type: string
-                    serviceCIDR:
-                      description: "ServiceCIDR is... \n TODO(dan): document it"
-                      type: string
+                    serviceNetwork:
+                      description: 'ServiceNetwork is the list of IP address pools
+                        for services. NOTE: currently only one entry per family (v4,
+                        v6) is supported.'
+                      items:
+                        description: ServiceNetworkEntry is a single IP address block
+                          for service IPs
+                        properties:
+                          cidr:
+                            description: CIDR is the IP block address pool for service
+                              IPs
+                            type: string
+                        required:
+                        - cidr
+                        type: object
+                      type: array
                   required:
-                  - machineCIDR
                   - networkType
-                  - podCIDR
-                  - serviceCIDR
                   type: object
                 olmCatalogPlacement:
                   default: management
@@ -20624,13 +20664,13 @@ objects:
                     description: "Condition contains details for one aspect of the
                       current state of this API Resource. --- This struct is intended
                       for direct use as an array at the field path .status.conditions.
-                      \ For example, type FooStatus struct{     // Represents the
-                      observations of a foo's current state.     // Known .status.conditions.type
-                      are: \"Available\", \"Progressing\", and \"Degraded\"     //
-                      +patchMergeKey=type     // +patchStrategy=merge     // +listType=map
-                      \    // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                      \ For example, type FooStatus struct{ // Represents the observations
+                      of a foo's current state. // Known .status.conditions.type are:
+                      \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type
+                      // +patchStrategy=merge // +listType=map // +listMapKey=type
+                      Conditions []metav1.Condition `json:\"conditions,omitempty\"
                       patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                      \n     // other fields }"
+                      \n // other fields }"
                     properties:
                       lastTransitionTime:
                         description: lastTransitionTime is the last time the condition
@@ -20827,7 +20867,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -20897,6 +20937,25 @@ objects:
                     with previous versions of the control-plane-operator that have
                     no knowledge of this field.
                   type: string
+                clusterNetwork:
+                  items:
+                    description: ClusterNetworkEntry is a single IP address block
+                      for pod IP blocks. IP blocks are allocated with size 2^HostSubnetLength.
+                    properties:
+                      cidr:
+                        description: CIDR is the IP block address pool.
+                        type: string
+                      hostPrefix:
+                        description: HostPrefix is the prefix size to allocate to
+                          each node from the CIDR. For example, 24 would allocate
+                          2^8=256 adresses to each node. If this field is not used
+                          by the plugin, it can be left unset.
+                        format: int32
+                        type: integer
+                    required:
+                    - cidr
+                    type: object
+                  type: array
                 configuration:
                   description: 'Configuration embeds resources that correspond to
                     the openshift configuration API: https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html'
@@ -21020,8 +21079,8 @@ objects:
                       properties:
                         endpoint:
                           description: "Endpoint is the full etcd cluster client endpoint
-                            URL. For example: \n     https://etcd-client:2379 \n If
-                            the URL uses an HTTPS scheme, the TLS field is required."
+                            URL. For example: \n https://etcd-client:2379 \n If the
+                            URL uses an HTTPS scheme, the TLS field is required."
                           pattern: ^https://
                           type: string
                         tls:
@@ -21031,9 +21090,9 @@ objects:
                             clientSecret:
                               description: "ClientSecret refers to a secret for client
                                 mTLS authentication with the etcd cluster. It may
-                                have the following key/value pairs: \n     etcd-client-ca.crt:
-                                Certificate Authority value     etcd-client.crt: Client
-                                certificate value     etcd-client.key: Client certificate
+                                have the following key/value pairs: \n etcd-client-ca.crt:
+                                Certificate Authority value etcd-client.crt: Client
+                                certificate value etcd-client.key: Client certificate
                                 key value"
                               properties:
                                 name:
@@ -21101,8 +21160,19 @@ objects:
                   - key
                   - name
                   type: object
-                machineCIDR:
-                  type: string
+                machineNetwork:
+                  items:
+                    description: MachineNetworkEntry is a single IP address block
+                      for node IP blocks.
+                    properties:
+                      cidr:
+                        description: CIDR is the IP block address pool for machines
+                          within the cluster.
+                        type: string
+                    required:
+                    - cidr
+                    type: object
+                  type: array
                 networkType:
                   description: NetworkType specifies the SDN provider used for cluster
                     networking.
@@ -21401,8 +21471,6 @@ objects:
                   required:
                   - type
                   type: object
-                podCIDR:
-                  type: string
                 pullSecret:
                   description: LocalObjectReference contains enough information to
                     let you locate the referenced object inside the same namespace.
@@ -21616,8 +21684,19 @@ objects:
                   required:
                   - type
                   type: object
-                serviceCIDR:
-                  type: string
+                serviceNetwork:
+                  items:
+                    description: ServiceNetworkEntry is a single IP address block
+                      for service IPs
+                    properties:
+                      cidr:
+                        description: CIDR is the IP block address pool for service
+                          IPs
+                        type: string
+                    required:
+                    - cidr
+                    type: object
+                  type: array
                 services:
                   description: Services defines metadata about how control plane services
                     are published in the management cluster.
@@ -21703,17 +21782,17 @@ objects:
                       type: string
                   type: object
               required:
+              - clusterNetwork
               - dns
               - etcd
               - infraID
               - issuerURL
-              - machineCIDR
+              - machineNetwork
               - networkType
               - platform
-              - podCIDR
               - pullSecret
               - releaseImage
-              - serviceCIDR
+              - serviceNetwork
               - services
               - sshKey
               type: object
@@ -21729,13 +21808,13 @@ objects:
                     description: "Condition contains details for one aspect of the
                       current state of this API Resource. --- This struct is intended
                       for direct use as an array at the field path .status.conditions.
-                      \ For example, type FooStatus struct{     // Represents the
-                      observations of a foo's current state.     // Known .status.conditions.type
-                      are: \"Available\", \"Progressing\", and \"Degraded\"     //
-                      +patchMergeKey=type     // +patchStrategy=merge     // +listType=map
-                      \    // +listMapKey=type     Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                      \ For example, type FooStatus struct{ // Represents the observations
+                      of a foo's current state. // Known .status.conditions.type are:
+                      \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type
+                      // +patchStrategy=merge // +listType=map // +listMapKey=type
+                      Conditions []metav1.Condition `json:\"conditions,omitempty\"
                       patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                      \n     // other fields }"
+                      \n // other fields }"
                     properties:
                       lastTransitionTime:
                         description: lastTransitionTime is the last time the condition
@@ -21883,7 +21962,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.5.0
+      controller-gen.kubebuilder.io/version: v0.8.0
     creationTimestamp: null
     name: nodepools.hypershift.openshift.io
   spec:
@@ -22495,16 +22574,15 @@ objects:
                                                   differences between DataSource and
                                                   DataSourceRef: * While DataSource
                                                   only allows two specific types of
-                                                  objects, DataSourceRef   allows
-                                                  any non-core object, as well as
-                                                  PersistentVolumeClaim objects. *
-                                                  While DataSource ignores disallowed
-                                                  values (dropping them), DataSourceRef   preserves
-                                                  all values, and generates an error
-                                                  if a disallowed value is   specified.
-                                                  (Alpha) Using this field requires
-                                                  the AnyVolumeDataSource feature
-                                                  gate to be enabled.'
+                                                  objects, DataSourceRef allows any
+                                                  non-core object, as well as PersistentVolumeClaim
+                                                  objects. * While DataSource ignores
+                                                  disallowed values (dropping them),
+                                                  DataSourceRef preserves all values,
+                                                  and generates an error if a disallowed
+                                                  value is specified. (Alpha) Using
+                                                  this field requires the AnyVolumeDataSource
+                                                  feature gate to be enabled.'
                                                 properties:
                                                   apiGroup:
                                                     description: APIGroup is the group

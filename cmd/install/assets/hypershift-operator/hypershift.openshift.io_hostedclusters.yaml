@@ -1,10 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.5.0
+    controller-gen.kubebuilder.io/version: v0.8.0
   creationTimestamp: null
   name: hostedclusters.hypershift.openshift.io
 spec:
@@ -249,8 +248,8 @@ spec:
                     properties:
                       endpoint:
                         description: "Endpoint is the full etcd cluster client endpoint
-                          URL. For example: \n     https://etcd-client:2379 \n If
-                          the URL uses an HTTPS scheme, the TLS field is required."
+                          URL. For example: \n https://etcd-client:2379 \n If the
+                          URL uses an HTTPS scheme, the TLS field is required."
                         pattern: ^https://
                         type: string
                       tls:
@@ -260,9 +259,9 @@ spec:
                           clientSecret:
                             description: "ClientSecret refers to a secret for client
                               mTLS authentication with the etcd cluster. It may have
-                              the following key/value pairs: \n     etcd-client-ca.crt:
-                              Certificate Authority value     etcd-client.crt: Client
-                              certificate value     etcd-client.key: Client certificate
+                              the following key/value pairs: \n etcd-client-ca.crt:
+                              Certificate Authority value etcd-client.crt: Client
+                              certificate value etcd-client.key: Client certificate
                               key value"
                             properties:
                               name:
@@ -337,10 +336,10 @@ spec:
                       a cluster node.
                     properties:
                       advertiseAddress:
-                        description: AdvertiseAddress is the address that nodes will
+                        description: 'AdvertiseAddress is the address that nodes will
                           use to talk to the API server. This is an address associated
                           with the loopback adapter of each node. If not specified,
-                          172.20.0.1 is used.
+                          172.20.0.1 is used. TODO: add dual-stack support'
                         type: string
                       port:
                         description: Port is the port at which the APIServer is exposed
@@ -349,9 +348,42 @@ spec:
                         format: int32
                         type: integer
                     type: object
-                  machineCIDR:
-                    description: "MachineCIDR is... \n TODO(dan): document it"
-                    type: string
+                  clusterNetwork:
+                    description: ClusterNetwork is the list of IP address pools for
+                      pods.
+                    items:
+                      description: ClusterNetworkEntry is a single IP address block
+                        for pod IP blocks. IP blocks are allocated with size 2^HostSubnetLength.
+                      properties:
+                        cidr:
+                          description: CIDR is the IP block address pool.
+                          type: string
+                        hostPrefix:
+                          description: HostPrefix is the prefix size to allocate to
+                            each node from the CIDR. For example, 24 would allocate
+                            2^8=256 adresses to each node. If this field is not used
+                            by the plugin, it can be left unset.
+                          format: int32
+                          type: integer
+                      required:
+                      - cidr
+                      type: object
+                    type: array
+                  machineNetwork:
+                    description: MachineNetwork is the list of IP address pools for
+                      machines.
+                    items:
+                      description: MachineNetworkEntry is a single IP address block
+                        for node IP blocks.
+                      properties:
+                        cidr:
+                          description: CIDR is the IP block address pool for machines
+                            within the cluster.
+                          type: string
+                      required:
+                      - cidr
+                      type: object
+                    type: array
                   networkType:
                     default: OpenShiftSDN
                     description: NetworkType specifies the SDN provider used for cluster
@@ -360,17 +392,24 @@ spec:
                     - OpenShiftSDN
                     - Calico
                     type: string
-                  podCIDR:
-                    description: "PodCIDR is... \n TODO(dan): document it"
-                    type: string
-                  serviceCIDR:
-                    description: "ServiceCIDR is... \n TODO(dan): document it"
-                    type: string
+                  serviceNetwork:
+                    description: 'ServiceNetwork is the list of IP address pools for
+                      services. NOTE: currently only one entry per family (v4, v6)
+                      is supported.'
+                    items:
+                      description: ServiceNetworkEntry is a single IP address block
+                        for service IPs
+                      properties:
+                        cidr:
+                          description: CIDR is the IP block address pool for service
+                            IPs
+                          type: string
+                      required:
+                      - cidr
+                      type: object
+                    type: array
                 required:
-                - machineCIDR
                 - networkType
-                - podCIDR
-                - serviceCIDR
                 type: object
               olmCatalogPlacement:
                 default: management
@@ -987,13 +1026,12 @@ spec:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
                     use as an array at the field path .status.conditions.  For example,
-                    type FooStatus struct{     // Represents the observations of a
-                    foo's current state.     // Known .status.conditions.type are:
-                    \"Available\", \"Progressing\", and \"Degraded\"     // +patchMergeKey=type
-                    \    // +patchStrategy=merge     // +listType=map     // +listMapKey=type
-                    \    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`
-                    \n     // other fields }"
+                    type FooStatus struct{ // Represents the observations of a foo's
+                    current state. // Known .status.conditions.type are: \"Available\",
+                    \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
+                    // +listType=map // +listMapKey=type Conditions []metav1.Condition
+                    `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
+                    protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
                   properties:
                     lastTransitionTime:
                       description: lastTransitionTime is the last time the condition
