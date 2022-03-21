@@ -3103,7 +3103,7 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 }
 
 func deleteClusterAPIClusterRoleBinding(ctx context.Context, c client.Client, controlPlaneNamespace string) error {
-	if _, err := deleteIfNeeded(ctx, c, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "cluster-api-" + controlPlaneNamespace}}); err != nil {
+	if _, err := deleteIfNeeded(ctx, c, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "hypershift-cluster-api-" + controlPlaneNamespace}}); err != nil {
 		return err
 	}
 	return nil
