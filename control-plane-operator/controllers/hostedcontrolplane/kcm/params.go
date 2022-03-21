@@ -24,8 +24,8 @@ type KubeControllerManagerParams struct {
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 	Port                int32                        `json:"port"`
-	ServiceCIDR         string
-	PodCIDR             string
+	ServiceCIDRs        string                       // comma-separated list of CIDRs
+	PodCIDRs            string                       // comma-separated list of CIDRs
 
 	config.DeploymentConfig
 	config.OwnerRef
@@ -46,8 +46,8 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		HyperkubeImage:          images["hyperkube"],
 		TokenMinterImage:        images["token-minter"],
 		Port:                    DefaultPort,
-		ServiceCIDR:             hcp.Spec.ServiceCIDR,
-		PodCIDR:                 hcp.Spec.PodCIDR,
+		ServiceCIDRs:            hcp.Spec.ServiceNetwork.IPNets().CSVString(),
+		PodCIDRs:                hcp.Spec.ClusterNetwork.IPNets().CSVString(),
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 	}
 	params.Scheduling = config.Scheduling{

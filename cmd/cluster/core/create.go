@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -148,6 +149,13 @@ func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ssh keys: %w", err)
 		}
+	}
+
+	if _, _, err := net.ParseCIDR(opts.PodCIDR); err != nil {
+		return nil, fmt.Errorf("invalid PodCIDR %s: %w", opts.PodCIDR, err)
+	}
+	if _, _, err := net.ParseCIDR(opts.ServiceCIDR); err != nil {
+		return nil, fmt.Errorf("invalid ServiceCIDR %s: %w", opts.ServiceCIDR, err)
 	}
 
 	return &apifixtures.ExampleOptions{

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
@@ -101,7 +102,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 		ImagePolicyConfig:            imagePolicyConfig(p.InternalRegistryHostName, p.ExternalRegistryHostNames),
 		ProjectConfig:                projectConfig(p.DefaultNodeSelector),
 		ServiceAccountPublicKeyFiles: []string{cpath(kasVolumeServiceAccountKey().Name, pki.ServiceSignerPublicKey)},
-		ServicesSubnet:               p.ServiceNetwork,
+		ServicesSubnet:               strings.Join(p.ServiceNetwork, ","),
 	}
 	args := kubeAPIServerArgs{}
 	args.Set("advertise-address", p.AdvertiseAddress)
@@ -198,11 +199,12 @@ func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime
 	return cfg
 }
 
-func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork string) runtime.Object {
+func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) runtime.Object {
 	cfg := &unstructured.Unstructured{}
 	cfg.SetAPIVersion("network.openshift.io/v1")
 	cfg.SetKind("RestrictedEndpointsAdmissionConfig")
-	restrictedCIDRs := []string{clusterNetwork, serviceNetwork}
+	restrictedCIDRs := append([]string{}, clusterNetwork...)
+	restrictedCIDRs = append(restrictedCIDRs, serviceNetwork...)
 	unstructured.SetNestedStringSlice(cfg.Object, restrictedCIDRs, "restrictedCIDRs")
 	return cfg
 }

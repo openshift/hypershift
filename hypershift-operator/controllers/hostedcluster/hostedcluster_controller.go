@@ -1118,9 +1118,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	hcp.Spec.FIPS = hcluster.Spec.FIPS
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
-	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
-	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
-	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
+	hcp.Spec.ServiceNetwork = hcluster.Spec.Networking.ServiceNetwork
+	hcp.Spec.ClusterNetwork = hcluster.Spec.Networking.ClusterNetwork
+	hcp.Spec.MachineNetwork = hcluster.Spec.Networking.MachineNetwork
 	hcp.Spec.NetworkType = hcluster.Spec.Networking.NetworkType
 	if hcluster.Spec.Networking.APIServer != nil {
 		hcp.Spec.APIAdvertiseAddress = hcluster.Spec.Networking.APIServer.AdvertiseAddress

@@ -7,6 +7,7 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 )
 
 func init() {
@@ -406,26 +407,19 @@ type DNSSpec struct {
 
 // ClusterNetworking specifies network configuration for a cluster.
 type ClusterNetworking struct {
-	// ServiceCIDR is...
-	//
-	// TODO(dan): document it
-	//
+	// MachineNetwork is the list of IP address pools for machines.
 	// +immutable
-	ServiceCIDR string `json:"serviceCIDR"`
+	MachineNetwork MachineNetworkEntries `json:"machineNetwork,omitempty"`
 
-	// PodCIDR is...
-	//
-	// TODO(dan): document it
-	//
+	// ClusterNetwork is the list of IP address pools for pods.
 	// +immutable
-	PodCIDR string `json:"podCIDR"`
+	ClusterNetwork ClusterNetworkEntries `json:"clusterNetwork,omitempty"`
 
-	// MachineCIDR is...
-	//
-	// TODO(dan): document it
+	// ServiceNetwork is the list of IP address pools for services.
+	// NOTE: currently only one entry per family (v4, v6) is supported.
 	//
 	// +immutable
-	MachineCIDR string `json:"machineCIDR"`
+	ServiceNetwork ServiceNetworkEntries `json:"serviceNetwork,omitempty"`
 
 	// NetworkType specifies the SDN provider used for cluster networking.
 	//
@@ -446,6 +440,7 @@ type APIServerNetworking struct {
 	// AdvertiseAddress is the address that nodes will use to talk to the API
 	// server. This is an address associated with the loopback adapter of each
 	// node. If not specified, 172.20.0.1 is used.
+	// TODO: add dual-stack support
 	AdvertiseAddress *string `json:"advertiseAddress,omitempty"`
 
 	// Port is the port at which the APIServer is exposed inside a node. Other
@@ -466,6 +461,37 @@ const (
 	// Calico specifies Calico as the SDN provider
 	Calico NetworkType = "Calico"
 )
+
+// MachineNetworkEntry is a single IP address block for node IP blocks.
+type MachineNetworkEntry struct {
+	// CIDR is the IP block address pool for machines within the cluster.
+	CIDR ipnet.IPNet `json:"cidr"`
+}
+
+type MachineNetworkEntries []MachineNetworkEntry
+
+// ClusterNetworkEntry is a single IP address block for pod IP blocks. IP blocks
+// are allocated with size 2^HostSubnetLength.
+type ClusterNetworkEntry struct {
+	// CIDR is the IP block address pool.
+	CIDR ipnet.IPNet `json:"cidr"`
+
+	// HostPrefix is the prefix size to allocate to each node from the CIDR.
+	// For example, 24 would allocate 2^8=256 adresses to each node. If this
+	// field is not used by the plugin, it can be left unset.
+	// +optional
+	HostPrefix int32 `json:"hostPrefix,omitempty"`
+}
+
+type ClusterNetworkEntries []ClusterNetworkEntry
+
+// ServiceNetworkEntry is a single IP address block for service IPs
+type ServiceNetworkEntry struct {
+	// CIDR is the IP block address pool for service IPs
+	CIDR ipnet.IPNet `json:"cidr"`
+}
+
+type ServiceNetworkEntries []ServiceNetworkEntry
 
 // PlatformType is a specific supported infrastructure provider.
 //

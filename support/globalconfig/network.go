@@ -16,17 +16,14 @@ func NetworkConfig() *configv1.Network {
 }
 
 func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPlane, globalConfig GlobalConfig) {
-	cfg.Spec.ClusterNetwork = []configv1.ClusterNetworkEntry{
-		{
-			CIDR: hcp.Spec.PodCIDR,
-			// TODO: expose this in the API
-			HostPrefix: 23,
-		},
+	for _, entry := range hcp.Spec.ClusterNetwork {
+		cfg.Spec.ClusterNetwork = append(cfg.Spec.ClusterNetwork, configv1.ClusterNetworkEntry{
+			CIDR:       entry.CIDR.String(),
+			HostPrefix: uint32(entry.HostPrefix),
+		})
 	}
 	cfg.Spec.NetworkType = string(hcp.Spec.NetworkType)
-	cfg.Spec.ServiceNetwork = []string{
-		hcp.Spec.ServiceCIDR,
-	}
+	cfg.Spec.ServiceNetwork = hcp.Spec.ServiceNetwork.IPNets().StringSlice()
 	if globalConfig.Network != nil {
 		cfg.Spec.ExternalIP = globalConfig.Network.Spec.ExternalIP
 		cfg.Spec.ServiceNodePortRange = globalConfig.Network.Spec.ServiceNodePortRange

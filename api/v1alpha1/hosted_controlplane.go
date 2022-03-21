@@ -25,12 +25,12 @@ type HostedControlPlane struct {
 
 // HostedControlPlaneSpec defines the desired state of HostedControlPlane
 type HostedControlPlaneSpec struct {
-	ReleaseImage string                      `json:"releaseImage"`
-	PullSecret   corev1.LocalObjectReference `json:"pullSecret"`
-	IssuerURL    string                      `json:"issuerURL"`
-	ServiceCIDR  string                      `json:"serviceCIDR"`
-	PodCIDR      string                      `json:"podCIDR"`
-	MachineCIDR  string                      `json:"machineCIDR"`
+	ReleaseImage   string                      `json:"releaseImage"`
+	PullSecret     corev1.LocalObjectReference `json:"pullSecret"`
+	IssuerURL      string                      `json:"issuerURL"`
+	MachineNetwork MachineNetworkEntries       `json:"machineNetwork"`
+	ClusterNetwork ClusterNetworkEntries       `json:"clusterNetwork"`
+	ServiceNetwork ServiceNetworkEntries       `json:"serviceNetwork"`
 	// NetworkType specifies the SDN provider used for cluster networking.
 	NetworkType NetworkType                 `json:"networkType"`
 	SSHKey      corev1.LocalObjectReference `json:"sshKey"`

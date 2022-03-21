@@ -11,15 +11,15 @@ import (
 // Abbreviated version of the installer's InstallConfig type
 // Bare minimum required to support MCS
 type InstallConfig struct {
-	MachineCIDR string
-	Platform    string
-	Region      string
+	MachineCIDRs []string
+	Platform     string
+	Region       string
 }
 
 func NewInstallConfig(hcp *hyperv1.HostedControlPlane) *InstallConfig {
 	cfg := &InstallConfig{
-		MachineCIDR: hcp.Spec.MachineCIDR,
-		Platform:    string(hcp.Spec.Platform.Type),
+		MachineCIDRs: hcp.Spec.MachineNetwork.IPNets().StringSlice(),
+		Platform:     string(hcp.Spec.Platform.Type),
 	}
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -36,7 +36,9 @@ controlPlane:
   replicas: 1
 networking:
   machineNetwork:
-  - cidr: {{ .MachineCIDR }}
+{{ range $c := .MachineCIDRs }}
+  - cidr: {{ $c }}
+{{ end }}
 platform:
 {{- if eq .Platform "AWS" }}
   aws:

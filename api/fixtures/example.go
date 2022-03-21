@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -54,7 +55,7 @@ type ExampleOptions struct {
 	NodePoolReplicas                 int32
 	InfraID                          string
 	ComputeCIDR                      string
-	ServiceCIDR                      string
+	ServiceCIDR                      string // Note: not dual-stack capable
 	PodCIDR                          string
 	BaseDomain                       string
 	PublicZoneID                     string
@@ -399,9 +400,21 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			},
 			SecretEncryption: secretEncryption,
 			Networking: hyperv1.ClusterNetworking{
-				ServiceCIDR: o.ServiceCIDR,
-				PodCIDR:     o.PodCIDR,
-				MachineCIDR: o.ComputeCIDR,
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{
+					{
+						CIDR: *ipnet.MustParseCIDR(o.ServiceCIDR),
+					},
+				},
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+					{
+						CIDR: *ipnet.MustParseCIDR(o.PodCIDR),
+					},
+				},
+				MachineNetwork: []hyperv1.MachineNetworkEntry{
+					{
+						CIDR: *ipnet.MustParseCIDR(o.ComputeCIDR),
+					},
+				},
 				NetworkType: o.NetworkType,
 			},
 			Services:   services,

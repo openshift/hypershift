@@ -9,6 +9,8 @@ import (
 )
 
 type PKIParams struct {
+	// TODO: make this dual-stack aware
+
 	// ServiceCIDR
 	// Subnet for cluster services
 	ServiceCIDR string `json:"serviceCIDR"`
@@ -53,8 +55,8 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 	oauthExternalAddress,
 	konnectivityExternalAddress string) *PKIParams {
 	p := &PKIParams{
-		ServiceCIDR:                  hcp.Spec.ServiceCIDR,
-		PodCIDR:                      hcp.Spec.PodCIDR,
+		ServiceCIDR:                  hcp.Spec.ServiceNetwork[0].CIDR.String(),
+		PodCIDR:                      hcp.Spec.ClusterNetwork[0].CIDR.String(),
 		Namespace:                    hcp.Namespace,
 		ExternalAPIAddress:           apiExternalAddress,
 		InternalAPIAddress:           fmt.Sprintf("api.%s.hypershift.local", hcp.Name),

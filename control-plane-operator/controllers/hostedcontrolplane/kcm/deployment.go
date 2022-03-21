@@ -304,7 +304,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	}
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
-		fmt.Sprintf("--cluster-cidr=%s", p.PodCIDR),
+		fmt.Sprintf("--cluster-cidr=%s", p.PodCIDRs),
 		fmt.Sprintf("--cluster-signing-cert-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--cluster-signing-key-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerKeyMapKey)),
 		"--configure-cloud-routes=false",
@@ -323,7 +323,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeCombinedCA().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
-		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),
+		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDRs),
 		"--use-service-account-credentials=true",
 		"--experimental-cluster-signing-duration=17520h",
 		fmt.Sprintf("--tls-cert-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSCertKey)),

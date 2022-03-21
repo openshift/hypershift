@@ -39,8 +39,8 @@ type KubeAPIServerParams struct {
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 
 	ServiceAccountIssuer string                       `json:"serviceAccountIssuer"`
-	ServiceCIDR          string                       `json:"serviceCIDR"`
-	PodCIDR              string                       `json:"podCIDR"`
+	ServiceCIDRs         []string                     `json:"serviceCIDRs"`
+	PodCIDRs             []string                     `json:"podCIDRs"`
 	AdvertiseAddress     string                       `json:"advertiseAddress"`
 	ExternalAddress      string                       `json:"externalAddress"`
 	ExternalPort         int32                        `json:"externalPort"`
@@ -69,6 +69,7 @@ type KubeAPIServerServiceParams struct {
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
+
 	params := &KubeAPIServerParams{
 		APIServer:            globalConfig.APIServer,
 		FeatureGate:          globalConfig.FeatureGate,
@@ -82,8 +83,8 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
-		ServiceCIDR:          hcp.Spec.ServiceCIDR,
-		PodCIDR:              hcp.Spec.PodCIDR,
+		ServiceCIDRs:         hcp.Spec.ServiceNetwork.IPNets().StringSlice(),
+		PodCIDRs:             hcp.Spec.ClusterNetwork.IPNets().StringSlice(),
 		Availability:         hcp.Spec.ControllerAvailabilityPolicy,
 		ConsolePublicURL:     fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
 
@@ -352,12 +353,12 @@ func (p *KubeAPIServerParams) ExternalIPConfig() *configv1.ExternalIPConfig {
 	}
 }
 
-func (p *KubeAPIServerParams) ClusterNetwork() string {
-	return p.PodCIDR
+func (p *KubeAPIServerParams) ClusterNetwork() []string {
+	return p.PodCIDRs
 }
 
-func (p *KubeAPIServerParams) ServiceNetwork() string {
-	return p.ServiceCIDR
+func (p *KubeAPIServerParams) ServiceNetwork() []string {
+	return p.ServiceCIDRs
 }
 
 func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
@@ -386,8 +387,8 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 
 type KubeAPIServerConfigParams struct {
 	ExternalIPConfig             *configv1.ExternalIPConfig
-	ClusterNetwork               string
-	ServiceNetwork               string
+	ClusterNetwork               []string
+	ServiceNetwork               []string
 	NamedCertificates            []configv1.APIServerNamedServingCert
 	APIServerPort                int32
 	TLSSecurityProfile           *configv1.TLSSecurityProfile
