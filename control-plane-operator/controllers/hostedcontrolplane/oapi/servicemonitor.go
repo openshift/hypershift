@@ -3,12 +3,13 @@ package oapi
 import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef) error {
+func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string) error {
 	ownerRef.ApplyTo(sm)
 
 	sm.Spec.Selector.MatchLabels = openshiftAPIServerLabels()
@@ -72,6 +73,8 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			},
 		},
 	}
+
+	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], clusterID)
 
 	return nil
 }

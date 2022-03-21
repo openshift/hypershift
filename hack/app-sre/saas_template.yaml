@@ -19740,6 +19740,16 @@ objects:
                       format: int32
                       type: integer
                   type: object
+                clusterID:
+                  description: ClusterID uniquely identifies this cluster. This is
+                    expected to be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                    in hexadecimal values). As with a Kubernetes metadata.uid, this
+                    ID uniquely identifies this cluster in space and time. This value
+                    identifies the cluster in metrics pushed to telemetry and metrics
+                    produced by the control plane operators. If a value is not specified,
+                    an ID is generated. After initial creation, the value is immutable.
+                  pattern: '[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}'
+                  type: string
                 configuration:
                   description: Configuration specifies configuration for individual
                     OCP components in the cluster, represented as embedded resources
@@ -20881,6 +20891,8 @@ objects:
                         TODO: Add other useful fields. apiVersion, kind, uid?'
                       type: string
                   type: object
+                clusterID:
+                  type: string
                 configuration:
                   description: 'Configuration embeds resources that correspond to
                     the openshift configuration API: https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html'
@@ -21687,6 +21699,7 @@ objects:
                       type: string
                   type: object
               required:
+              - clusterID
               - dns
               - etcd
               - infraID
