@@ -175,7 +175,8 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
 		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
