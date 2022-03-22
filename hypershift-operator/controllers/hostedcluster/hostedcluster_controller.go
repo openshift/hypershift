@@ -36,6 +36,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
@@ -595,12 +596,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	// Default the infraID if unset
-	if hcluster.Spec.InfraID == "" {
-		hcluster.Spec.InfraID = infraid.New(hcluster.Name)
-		if err := r.Update(ctx, hcluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster after defaulting the InfraID: %w", err)
-		}
+	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if err := r.defaultAPIPortIfNeeded(ctx, hcluster); err != nil {
@@ -1129,6 +1126,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.APIPort = hcluster.Spec.Networking.APIServer.Port
 	}
 
+	hcp.Spec.ClusterID = hcluster.Spec.ClusterID
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
 	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.Services = hcluster.Spec.Services
@@ -1490,6 +1488,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 			podMonitor.Annotations = map[string]string{}
 		}
 		podMonitor.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+		util.ApplyClusterIDLabelToPodMonitor(&podMonitor.Spec.PodMetricsEndpoints[0], hcluster.Spec.ClusterID)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator pod monitor: %w", err)
@@ -3409,6 +3408,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
+	if err := validateClusterID(hc); err != nil {
+		errs = append(errs, err)
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
@@ -4086,5 +4089,37 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 		return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
 	}
 
+	return nil
+}
+
+func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	// Default the ClusterID if unset
+	needsUpdate := false
+	if hcluster.Spec.ClusterID == "" {
+		hcluster.Spec.ClusterID = uuid.NewString()
+		needsUpdate = true
+	}
+
+	// Default the infraID if unset
+	if hcluster.Spec.InfraID == "" {
+		hcluster.Spec.InfraID = infraid.New(hcluster.Name)
+		needsUpdate = true
+	}
+
+	if needsUpdate {
+		if err := r.Update(ctx, hcluster); err != nil {
+			return fmt.Errorf("failed to update hostedcluster after defaulting IDs: %w", err)
+		}
+	}
+	return nil
+}
+
+func validateClusterID(hc *hyperv1.HostedCluster) error {
+	if len(hc.Spec.ClusterID) > 0 {
+		_, err := uuid.Parse(hc.Spec.ClusterID)
+		if err != nil {
+			return fmt.Errorf("cannot parse cluster ID %q: %w", hc.Spec.ClusterID, err)
+		}
+	}
 	return nil
 }
