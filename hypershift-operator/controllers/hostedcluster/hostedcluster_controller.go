@@ -237,7 +237,7 @@ func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 
 // pauseHostedControlPlane will handle adding the pausedUntil field to the hostedControlPlane object if it exists.
 // If it doesn't exist: it returns as there's no need to add it
-func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseAnnotationValue *string) error {
+func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseValue *string) error {
 	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -246,10 +246,14 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 			return fmt.Errorf("failed to get hostedcontrolplane: %w", err)
 		}
 	}
-	hcp.Spec.PausedUntil = pauseAnnotationValue
-	if err := c.Update(ctx, hcp); err != nil {
-		return fmt.Errorf("failed to pause hostedcontrolplane: %w", err)
+
+	if hcp.Spec.PausedUntil != pauseValue {
+		hcp.Spec.PausedUntil = pauseValue
+		if err := c.Update(ctx, hcp); err != nil {
+			return fmt.Errorf("failed to pause hostedcontrolplane: %w", err)
+		}
 	}
+
 	return nil
 }
 
@@ -586,15 +590,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// if paused: ensure associated hostedcontrolplane (if it exists) is also paused and stop reconciliation
-	if util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil) {
+	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
+	if isPaused, duration := util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
