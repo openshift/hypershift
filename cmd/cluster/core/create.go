@@ -175,7 +175,7 @@ func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, erro
 		SSHPublicKey:                     sshKey,
 		EtcdStorageClass:                 opts.EtcdStorageClass,
 		ServiceCIDR:                      opts.ServiceCIDR,
-		PodCIDR:                          opts.PodCIDR,
+		ClusterCIDR:                      opts.PodCIDR,
 	}, nil
 }
 

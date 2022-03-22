@@ -54,9 +54,9 @@ type ExampleOptions struct {
 	SSHPrivateKey                    []byte
 	NodePoolReplicas                 int32
 	InfraID                          string
-	ComputeCIDR                      string
+	MachineCIDR                      string
 	ServiceCIDR                      string // Note: not dual-stack capable
-	PodCIDR                          string
+	ClusterCIDR                      string
 	BaseDomain                       string
 	PublicZoneID                     string
 	PrivateZoneID                    string
@@ -407,12 +407,12 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
 					{
-						CIDR: *ipnet.MustParseCIDR(o.PodCIDR),
+						CIDR: *ipnet.MustParseCIDR(o.ClusterCIDR),
 					},
 				},
 				MachineNetwork: []hyperv1.MachineNetworkEntry{
 					{
-						CIDR: *ipnet.MustParseCIDR(o.ComputeCIDR),
+						CIDR: *ipnet.MustParseCIDR(o.MachineCIDR),
 					},
 				},
 				NetworkType: o.NetworkType,
