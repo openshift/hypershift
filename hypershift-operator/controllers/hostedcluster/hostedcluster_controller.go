@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/blang/semver"
@@ -1062,7 +1063,23 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.OIDCConfigurationInvalid),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.OIDCConfigurationInvalidReason,
+				ObservedGeneration: hcluster.Generation,
+				Message:            err.Error(),
+			})
+			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile AWS OIDC documents: %s, failed to update status: %w", err, statusErr)
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile the AWS OIDC documents: %w", err)
+		}
+		if meta.IsStatusConditionTrue(hcluster.Status.Conditions, string(hyperv1.OIDCConfigurationInvalid)) {
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.OIDCConfigurationInvalid))
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+			}
 		}
 	}
 
@@ -3947,7 +3964,21 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 			Key:    aws.String(hcluster.Spec.InfraID + path),
 		})
 		if err != nil {
-			return fmt.Errorf("failed to upload %s to the %s s3 bucket: %w", path, r.OIDCStorageProviderS3BucketName, err)
+			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, r.OIDCStorageProviderS3BucketName)
+			if awsErr := awserr.Error(nil); errors.As(err, &awsErr) {
+				switch awsErr.Code() {
+				case s3.ErrCodeNoSuchBucket:
+					wrapped = fmt.Errorf("%w: %s: this could be a misconfiguration of the hypershift operator; check the --aws-oidc-bucket-name flag", wrapped, awsErr.Code())
+				default:
+					// Generally, the underlying message from AWS has unique per-request
+					// info not suitable for publishing as condition messages, so just
+					// return the code. If other specific error types can be handled, add
+					// new switch cases and try to provide more actionable info to the
+					// user.
+					wrapped = fmt.Errorf("%w: aws returned an error: %s", wrapped, awsErr.Code())
+				}
+			}
+			return wrapped
 		}
 	}
 

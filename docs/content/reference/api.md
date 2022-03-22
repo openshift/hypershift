@@ -2039,6 +2039,10 @@ HostedCluster is available to handle ignition requests.</p>
 <td></td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;OIDCConfigurationInvalid&#34;</p></td>
+<td><p>OIDCConfigurationInvalid indicates if an AWS cluster&rsquo;s OIDC condition is
+detected as invalid.</p>
+</td>
 </tr><tr><td><p>&#34;ReconciliationPaused&#34;</p></td>
 <td><p>ReconciliationPaused indicates if reconciliation of the hostedcluster is
 paused.</p>
