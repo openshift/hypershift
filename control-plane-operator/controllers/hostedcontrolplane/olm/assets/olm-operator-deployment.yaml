@@ -61,6 +61,7 @@ spec:
             - containerPort: 8443
               name: metrics
           livenessProbe:
+            initialDelaySeconds: 60
             httpGet:
               path: /healthz
               port: 8443
