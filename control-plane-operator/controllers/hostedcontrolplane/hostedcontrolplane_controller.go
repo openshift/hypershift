@@ -159,8 +159,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, err
 		}
 		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
+			originalHCP := hostedControlPlane.DeepCopy()
 			controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
-			if err := r.Update(ctx, hostedControlPlane); err != nil {
+			if err := r.Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
 		}
@@ -169,8 +170,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Ensure the hostedControlPlane has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
+		originalHCP := hostedControlPlane.DeepCopy()
 		controllerutil.AddFinalizer(hostedControlPlane, finalizer)
-		if err := r.Update(ctx, hostedControlPlane); err != nil {
+		if err := r.Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
 	}
@@ -179,6 +181,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hostedControlPlane.Spec.ReleaseImage, r.OperateOnReleaseImage)
 		return ctrl.Result{}, nil
 	}
+
+	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 
 	// Reconcile global configuration validation status
 	{
@@ -468,7 +472,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationPausedCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
-	if err := r.Client.Status().Update(ctx, hostedControlPlane); err != nil {
+	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
 	if util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil) {
