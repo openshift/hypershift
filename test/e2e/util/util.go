@@ -377,12 +377,12 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "control-plane-operator read",
 				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="GET", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
-				budget: 800,
+				budget: 1500,
 			},
 			{
 				name:   "control-plane-operator mutate",
 				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method!="GET", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
-				budget: 400,
+				budget: 600,
 			},
 			{
 				name:   "control-plane-operator no 404 deletes",
@@ -401,7 +401,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "hypershift-operator mutate",
 				query:  `sum(hypershift:operator:component_api_requests_total{method!="GET"})`,
-				budget: 2000,
+				budget: 3000,
 			},
 			{
 				name:   "hypershift-operator no 404 deletes",
