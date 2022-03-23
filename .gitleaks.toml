@@ -1,5 +1,0 @@
-[allowlist]
-  description = "Allowlist"
-  paths = [
-    '''control-plane-operator\/controllers\/hostedcontrolplane\/pki\/cert_test\.go''',
-  ]
