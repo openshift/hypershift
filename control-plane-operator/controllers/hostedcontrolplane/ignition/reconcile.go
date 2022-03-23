@@ -109,7 +109,10 @@ func apiServerHAProxyConfig(haProxyImage, externalAPIAddress, internalAPIAddress
 			name:     "/usr/local/bin/setup-apiserver-ip.sh",
 			mode:     0755,
 			params: map[string]string{
+				"ExternalAPIAddress": externalAPIAddress,
+				"ExternalAPIPort":    strconv.FormatInt(int64(externalAPIPort), 10),
 				"InternalAPIAddress": internalAPIAddress,
+				"InternalAPIPort":    strconv.FormatInt(int64(internalAPIPort), 10),
 			},
 		},
 		{
