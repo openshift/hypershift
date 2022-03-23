@@ -6,11 +6,7 @@ require (
 	github.com/openshift/api v0.0.0-20220124143425-d74727069f6f
 	k8s.io/api v0.23.3
 	k8s.io/apimachinery v0.23.3
-	sigs.k8s.io/cluster-api v1.0.2
-	sigs.k8s.io/cluster-api-provider-aws v1.1.0
-	sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.0-alpha.1
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.0.0-00010101000000-000000000000
-	sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211208212546-f236f0345ad2
 )
 
 require (
@@ -41,7 +37,6 @@ require (
 	github.com/prometheus/common v0.28.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
 	golang.org/x/net v0.0.0-20211209124913-491a49abca63 // indirect
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f // indirect
 	golang.org/x/sys v0.0.0-20211029165221-6e7872819dc8 // indirect
@@ -64,6 +59,8 @@ require (
 	kubevirt.io/api v0.0.0-20211117075245-c94ce62baf5a // indirect
 	kubevirt.io/containerized-data-importer-api v1.41.0 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk v0.2.1 // indirect
+	sigs.k8s.io/cluster-api v1.0.2 // indirect
+	sigs.k8s.io/controller-runtime v0.11.0-beta.0.0.20211208212546-f236f0345ad2 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect

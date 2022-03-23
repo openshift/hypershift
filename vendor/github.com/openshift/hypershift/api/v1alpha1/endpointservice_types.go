@@ -4,10 +4,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func init() {
-	SchemeBuilder.Register(&AWSEndpointService{}, &AWSEndpointServiceList{})
-}
-
 // The following are reasons for the IgnitionEndpointAvailable condition.
 const (
 	// AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service

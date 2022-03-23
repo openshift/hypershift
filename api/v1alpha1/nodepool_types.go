@@ -33,11 +33,6 @@ const (
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
 )
 
-func init() {
-	SchemeBuilder.Register(&NodePool{})
-	SchemeBuilder.Register(&NodePoolList{})
-}
-
 // +genclient
 
 // NodePool is a scalable set of worker nodes attached to a HostedCluster.

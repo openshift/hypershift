@@ -1,6 +1,7 @@
-package v1alpha1
+package dependencymagnet
 
 // These imports are used to explicitly declare external API dependencies
+// to ensure they arrive in /vendor
 import (
 	_ "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	_ "sigs.k8s.io/cluster-api-provider-aws/exp/api/v1beta1"

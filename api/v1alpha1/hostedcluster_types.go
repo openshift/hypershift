@@ -9,10 +9,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 )
 
-func init() {
-	SchemeBuilder.Register(&HostedCluster{}, &HostedClusterList{})
-}
-
 const (
 	// AuditWebhookKubeconfigKey is the key name in the AuditWebhook secret that stores audit webhook kubeconfig
 	AuditWebhookKubeconfigKey                 = "webhook-kubeconfig"
