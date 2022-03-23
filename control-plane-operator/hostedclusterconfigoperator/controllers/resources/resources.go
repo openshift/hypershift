@@ -136,40 +136,36 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
-	return ctrl.Result{}, r.reconcile(ctx)
-}
-
-func (r *reconciler) reconcile(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling")
 
 	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
-		return fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
 	}
 
-	if util.IsReconciliationPaused(log, hcp.Spec.PausedUntil) {
+	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
-		return nil
+		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 	if r.operateOnReleaseImage != "" && r.operateOnReleaseImage != hcp.Spec.ReleaseImage {
 		log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hcp.Spec.ReleaseImage, r.operateOnReleaseImage)
-		return nil
+		return ctrl.Result{}, nil
 	}
 
 	globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hcp.Spec.Configuration)
 	if err != nil {
-		return fmt.Errorf("failed to parse global config for control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
+		return ctrl.Result{}, fmt.Errorf("failed to parse global config for control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
 	}
 
 	pullSecret := manifests.PullSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
 	releaseImage, err := r.releaseProvider.Lookup(ctx, hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
-		return fmt.Errorf("failed to get lookup release image %s: %w", hcp.Spec.ReleaseImage, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get lookup release image %s: %w", hcp.Spec.ReleaseImage, err)
 	}
 
 	var errs []error
@@ -372,7 +368,7 @@ func (r *reconciler) reconcile(ctx context.Context) error {
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 
-	return errors.NewAggregate(errs)
+	return ctrl.Result{}, errors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileCRDs(ctx context.Context) error {
