@@ -3,15 +3,16 @@ package agent
 import (
 	"context"
 	"fmt"
+
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/examples/fixtures"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -50,7 +51,7 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
 }
 
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
+func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *fixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
 	if opts.AgentPlatform.APIServerAddress == "" {
 		opts.AgentPlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx)
 		if err != nil {
@@ -65,7 +66,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		exampleOptions.BaseDomain = "example.com"
 	}
 
-	exampleOptions.Agent = &apifixtures.ExampleAgentOptions{
+	exampleOptions.Agent = &fixtures.ExampleAgentOptions{
 		APIServerAddress: opts.AgentPlatform.APIServerAddress,
 		AgentNamespace:   opts.AgentPlatform.AgentNamespace,
 	}

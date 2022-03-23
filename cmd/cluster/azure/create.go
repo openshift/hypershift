@@ -8,10 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/examples/fixtures"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
@@ -65,7 +65,7 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
 }
 
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) error {
+func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *fixtures.ExampleOptions, opts *core.CreateOptions) error {
 	var infra *azureinfra.CreateInfraOutput
 	var err error
 	if opts.InfrastructureJSON != "" {
@@ -94,7 +94,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PublicZoneID = infra.PublicZoneID
 	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.InfraID = infra.InfraID
-	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
+	exampleOptions.Azure = &fixtures.ExampleAzureOptions{
 		Location:          infra.Location,
 		ResourceGroupName: infra.ResourceGroupName,
 		VnetName:          infra.VnetName,

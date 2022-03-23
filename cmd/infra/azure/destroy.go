@@ -7,8 +7,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-10-01/resources"
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/log"
+	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	"github.com/spf13/cobra"
 )
 
