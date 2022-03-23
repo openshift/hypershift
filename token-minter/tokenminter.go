@@ -1,8 +1,7 @@
-package main
+package tokenminter
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,64 +32,64 @@ type options struct {
 
 const ErrorRetryPeriod = 10 * time.Second
 
-func main() {
+func NewStartCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use: "token-minter",
+	}
 	var opts options
 
-	flag.StringVar(&opts.serviceAccountNamespace, "service-account-namespace", "kube-system", "namespace of the service account for which to mint a token")
-	flag.StringVar(&opts.serviceAccountName, "service-account-name", "", "name of the service account for which to mint a token")
-	flag.StringVar(&opts.tokenAudience, "token-audience", "openshift", "audience for the token")
-	flag.StringVar(&opts.tokenFile, "token-file", "/var/run/secrets/openshift/serviceaccount/token", "path to the file where the token will be written")
-	flag.StringVar(&opts.kubeconfigPath, "kubeconfig", "/etc/kubernetes/kubeconfig", "path to the kubeconfig file")
-	flag.StringVar(&opts.kubeconfigSecretName, "kubeconfig-secret-name", "", "name of a secret containing a kubeconfig key")
-	flag.StringVar(&opts.kubeconfigSecretNamespace, "kubeconfig-secret-namespace", "", "namespace of a secret containing a kubeconfig key")
-	flag.BoolVar(&opts.oneshot, "oneshot", false, "Exit after minting the token")
-	flag.Parse()
+	cmd.Flags().StringVar(&opts.serviceAccountNamespace, "service-account-namespace", "kube-system", "namespace of the service account for which to mint a token")
+	cmd.Flags().StringVar(&opts.serviceAccountName, "service-account-name", "", "name of the service account for which to mint a token")
+	cmd.Flags().StringVar(&opts.tokenAudience, "token-audience", "openshift", "audience for the token")
+	cmd.Flags().StringVar(&opts.tokenFile, "token-file", "/var/run/secrets/openshift/serviceaccount/token", "path to the file where the token will be written")
+	cmd.Flags().StringVar(&opts.kubeconfigPath, "kubeconfig", "/etc/kubernetes/kubeconfig", "path to the kubeconfig file")
+	cmd.Flags().StringVar(&opts.kubeconfigSecretName, "kubeconfig-secret-name", "", "name of a secret containing a kubeconfig key")
+	cmd.Flags().StringVar(&opts.kubeconfigSecretNamespace, "kubeconfig-secret-namespace", "", "namespace of a secret containing a kubeconfig key")
+	cmd.Flags().BoolVar(&opts.oneshot, "oneshot", false, "Exit after minting the token")
 
-	if opts.serviceAccountNamespace == "" ||
-		opts.serviceAccountName == "" ||
-		opts.tokenAudience == "" ||
-		opts.tokenFile == "" ||
-		opts.kubeconfigPath == "" {
-		flag.Usage()
-		os.Exit(1)
-	}
+	cmd.MarkFlagRequired("service-account-namespace")
+	cmd.MarkFlagRequired("service-account-name")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		ctx, cancel := context.WithCancel(cmd.Context())
 
-	c := make(chan os.Signal, 2)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		cancel()
-		<-c
-		os.Exit(1) // second signal. Exit directly.
-	}()
+		c := make(chan os.Signal, 2)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-c
+			cancel()
+			<-c
+			os.Exit(1) // second signal. Exit directly.
+		}()
 
-	if opts.oneshot {
-		_, err := mintToken(ctx, opts)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		os.Exit(0)
-	}
-
-	var renewDuration time.Duration
-	for {
-		select {
-		case <-time.After(renewDuration):
-			log.Println("minting token")
-			expirationTimestamp, err := mintToken(ctx, opts)
+		if opts.oneshot {
+			_, err := mintToken(ctx, opts)
 			if err != nil {
-				log.Println("error minting token, will retry in", ErrorRetryPeriod.String(), err)
-				renewDuration = ErrorRetryPeriod
-			} else {
-				renewDuration = renewDurationFromExpiration(expirationTimestamp)
-				log.Println("renew delay set for", renewDuration.String())
+				log.Fatalln(err)
 			}
-		case <-ctx.Done():
-			return
+			os.Exit(0)
+		}
+
+		var renewDuration time.Duration
+		for {
+			select {
+			case <-time.After(renewDuration):
+				log.Println("minting token")
+				expirationTimestamp, err := mintToken(ctx, opts)
+				if err != nil {
+					log.Println("error minting token, will retry in", ErrorRetryPeriod.String(), err)
+					renewDuration = ErrorRetryPeriod
+				} else {
+					renewDuration = renewDurationFromExpiration(expirationTimestamp)
+					log.Println("renew delay set for", renewDuration.String())
+				}
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
+
+	return cmd
 }
 
 func renewDurationFromExpiration(expirationTimestamp metav1.Time) time.Duration {
