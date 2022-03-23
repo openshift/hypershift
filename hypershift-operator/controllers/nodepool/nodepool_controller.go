@@ -19,11 +19,11 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
-	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -714,7 +714,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32Ptr(int32(0))
 
-	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
+	gvk, err := apiutil.GVKForObject(machineTemplateCR, apisupport.Scheme)
 	if err != nil {
 		return err
 	}
@@ -1241,22 +1241,22 @@ func (r *NodePoolReconciler) listMachineTemplates(nodePool *hyperv1.NodePool) ([
 	switch nodePool.Spec.Platform.Type {
 	// Define the desired template type and mutateTemplate function.
 	case hyperv1.AWSPlatform:
-		gvk, err = apiutil.GVKForObject(&capiaws.AWSMachineTemplate{}, api.Scheme)
+		gvk, err = apiutil.GVKForObject(&capiaws.AWSMachineTemplate{}, apisupport.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	case hyperv1.KubevirtPlatform:
-		gvk, err = apiutil.GVKForObject(&capikubevirt.KubevirtMachineTemplate{}, api.Scheme)
+		gvk, err = apiutil.GVKForObject(&capikubevirt.KubevirtMachineTemplate{}, apisupport.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	case hyperv1.AgentPlatform:
-		gvk, err = apiutil.GVKForObject(&agentv1.AgentMachine{}, api.Scheme)
+		gvk, err = apiutil.GVKForObject(&agentv1.AgentMachine{}, apisupport.Scheme)
 		if err != nil {
 			return nil, err
 		}
 	case hyperv1.AzurePlatform:
-		gvk, err = apiutil.GVKForObject(&capiazure.AzureMachineTemplate{}, api.Scheme)
+		gvk, err = apiutil.GVKForObject(&capiazure.AzureMachineTemplate{}, apisupport.Scheme)
 		if err != nil {
 			return nil, err
 		}

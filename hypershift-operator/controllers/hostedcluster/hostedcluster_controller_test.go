@@ -10,13 +10,13 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -963,7 +963,7 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				Spec: tc.in,
 			}
 
-			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cluster).Build()
+			client := fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects(cluster).Build()
 			r := &HostedClusterReconciler{
 				Client: client,
 			}
@@ -1118,7 +1118,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		objects = append(objects, cluster)
 	}
 
-	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
+	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects(objects...).Build()}
 	r := &HostedClusterReconciler{
 		Client:                        client,
 		Clock:                         clock.RealClock{},
@@ -1210,7 +1210,7 @@ func TestReconcileAWSSubnets(t *testing.T) {
 		Spec: capiawsv1.AWSClusterSpec{},
 	}
 
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
+	client := fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
 	r := &HostedClusterReconciler{
 		Client:         client,
 		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
@@ -1381,7 +1381,7 @@ func TestPauseHostedControlPlane(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.inputObjects...).Build()
+			c := fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects(tc.inputObjects...).Build()
 			err := pauseHostedControlPlane(context.Background(), c, tc.inputHostedControlPlane, &fakePauseAnnotationValue)
 			g.Expect(err).ToNot(HaveOccurred())
 			finalHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
@@ -1433,7 +1433,7 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			r := &HostedClusterReconciler{
-				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.hc).Build(),
+				Client: fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects(test.hc).Build(),
 			}
 			g := NewGomegaWithT(t)
 			previousInfraID := test.hc.Spec.InfraID

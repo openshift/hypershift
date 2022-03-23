@@ -34,11 +34,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	imageapi "github.com/openshift/api/image/v1"
-	hyperapi "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperapi "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
+	apisupport "github.com/openshift/hypershift/support/api"
 )
 
 type Options struct {
@@ -70,14 +70,14 @@ type Options struct {
 func (o *Options) Validate() error {
 	var errs []error
 
-	switch hyperv1.PlatformType(o.PrivatePlatform) {
-	case hyperv1.AWSPlatform:
+	switch hyperapi.PlatformType(o.PrivatePlatform) {
+	case hyperapi.AWSPlatform:
 		if o.AWSPrivateCreds == "" || o.AWSPrivateRegion == "" {
-			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds are required with --private-platform=%s", hyperv1.AWSPlatform))
+			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds are required with --private-platform=%s", hyperapi.AWSPlatform))
 		}
-	case hyperv1.NonePlatform:
+	case hyperapi.NonePlatform:
 	default:
-		errs = append(errs, fmt.Errorf("--private-platform must be either %s or %s", hyperv1.AWSPlatform, hyperv1.NonePlatform))
+		errs = append(errs, fmt.Errorf("--private-platform must be either %s or %s", hyperapi.AWSPlatform, hyperapi.NonePlatform))
 	}
 
 	if len(o.OIDCStorageProviderS3CredentialsSecret) > 0 && len(o.OIDCStorageProviderS3Credentials) > 0 {
@@ -129,7 +129,7 @@ func NewCommand() *cobra.Command {
 		opts.EnableOCPClusterMonitoring = true
 		opts.EnableCIDebugOutput = true
 	}
-	opts.PrivatePlatform = string(hyperv1.NonePlatform)
+	opts.PrivatePlatform = string(hyperapi.NonePlatform)
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
@@ -184,7 +184,7 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 	}
 	for _, object := range objects {
 		var objectBytes bytes.Buffer
-		err := hyperapi.YamlSerializer.Encode(object, &objectBytes)
+		err := apisupport.YamlSerializer.Encode(object, &objectBytes)
 		if err != nil {
 			return err
 		}
@@ -393,8 +393,8 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	objects = append(objects, recordingRule)
 
 	var credBytes []byte
-	switch hyperv1.PlatformType(opts.PrivatePlatform) {
-	case hyperv1.AWSPlatform:
+	switch hyperapi.PlatformType(opts.PrivatePlatform) {
+	case hyperapi.AWSPlatform:
 		var err error
 		credBytes, err = ioutil.ReadFile(opts.AWSPrivateCreds)
 		if err != nil {
@@ -456,7 +456,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}
 
 	for idx := range objects {
-		gvk, err := apiutil.GVKForObject(objects[idx], hyperapi.Scheme)
+		gvk, err := apiutil.GVKForObject(objects[idx], apisupport.Scheme)
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up gvk for %T: %w", objects[idx], err)
 		}

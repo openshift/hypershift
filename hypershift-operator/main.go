@@ -25,7 +25,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
@@ -33,6 +32,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -132,7 +132,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	renewDeadline := time.Second * 40
 	retryPeriod := time.Second * 15
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:                        hyperapi.Scheme,
+		Scheme:                        apisupport.Scheme,
 		MetricsBindAddress:            opts.MetricsAddr,
 		Port:                          9443,
 		LeaderElection:                true,

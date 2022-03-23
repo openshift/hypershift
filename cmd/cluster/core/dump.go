@@ -23,11 +23,11 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	apisupport "github.com/openshift/hypershift/support/api"
 )
 
 type DumpOptions struct {
@@ -276,7 +276,7 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 
 func objectType(obj client.Object) string {
 	var kind, group string
-	gvks, _, err := hyperapi.Scheme.ObjectKinds(obj)
+	gvks, _, err := apisupport.Scheme.ObjectKinds(obj)
 	if err != nil || len(gvks) == 0 {
 		kind = "unknown"
 		group = "unknown"

@@ -8,7 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
-	hyperapi "github.com/openshift/hypershift/support/api"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -99,7 +99,7 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 	}
 
 	if o.Render {
-		err := hyperapi.YamlSerializer.Encode(nodePool, os.Stdout)
+		err := apisupport.YamlSerializer.Encode(nodePool, os.Stdout)
 		if err != nil {
 			panic(err)
 		}

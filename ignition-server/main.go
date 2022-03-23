@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/ignition-server/controllers"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
@@ -98,7 +98,7 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "ignition-server-manager"
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme: hyperapi.Scheme,
+		Scheme: apisupport.Scheme,
 		Port:   9443,
 		// TODO (alberto): expose this flags?
 		// MetricsBindAddress: opts.MetricsAddr,

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -817,7 +817,7 @@ func TestValidateManagement(t *testing.T) {
 // and a template and mutateTemplate able to produce an expected target template.
 func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool) {
 	g := NewWithT(t)
-	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
+	c := fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
 		Client:                 c,
 		CreateOrUpdateProvider: upsert.New(false),
@@ -946,7 +946,7 @@ func TestMachineTemplateBuildersPreexisting(t *testing.T) {
 
 func TestListMachineTemplatesAWS(t *testing.T) {
 	g := NewWithT(t)
-	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
+	c := fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
 		Client:                 c,
 		CreateOrUpdateProvider: upsert.New(false),
@@ -993,7 +993,7 @@ func TestListMachineTemplatesAWS(t *testing.T) {
 
 func TestListMachineTemplatesIBMCloud(t *testing.T) {
 	g := NewWithT(t)
-	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
+	c := fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
 		Client:                 c,
 		CreateOrUpdateProvider: upsert.New(false),

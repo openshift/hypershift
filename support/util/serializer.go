@@ -6,7 +6,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 
-	hyperapi "github.com/openshift/hypershift/support/api"
+	apisupport "github.com/openshift/hypershift/support/api"
 )
 
 func DeserializeResource(data string, resource runtime.Object, objectTyper runtime.ObjectTyper) error {
@@ -14,7 +14,7 @@ func DeserializeResource(data string, resource runtime.Object, objectTyper runti
 	if err != nil || len(gvks) == 0 {
 		return fmt.Errorf("cannot determine GVK of resource of type %T: %w", resource, err)
 	}
-	_, _, err = hyperapi.YamlSerializer.Decode([]byte(data), &gvks[0], resource)
+	_, _, err = apisupport.YamlSerializer.Decode([]byte(data), &gvks[0], resource)
 	return err
 }
 
@@ -25,7 +25,7 @@ func SerializeResource(resource runtime.Object, objectTyper runtime.ObjectTyper)
 		return "", fmt.Errorf("cannot determine GVK of resource of type %T: %w", resource, err)
 	}
 	resource.GetObjectKind().SetGroupVersionKind(gvks[0])
-	if err = hyperapi.YamlSerializer.Encode(resource, out); err != nil {
+	if err = apisupport.YamlSerializer.Encode(resource, out); err != nil {
 		return "", err
 	}
 	return out.String(), nil

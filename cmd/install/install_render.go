@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/cmd/version"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -170,7 +170,7 @@ func render(objects []crclient.Object, format string, out io.Writer) error {
 	switch format {
 	case RenderFormatYaml:
 		for i, object := range objects {
-			err := hyperapi.YamlSerializer.Encode(object, out)
+			err := apisupport.YamlSerializer.Encode(object, out)
 			if err != nil {
 				return err
 			}
@@ -181,7 +181,7 @@ func render(objects []crclient.Object, format string, out io.Writer) error {
 		return nil
 	case RenderFormatJson:
 		if len(objects) == 1 {
-			err := hyperapi.JsonSerializer.Encode(objects[0], out)
+			err := apisupport.JsonSerializer.Encode(objects[0], out)
 			if err != nil {
 				return err
 			}
@@ -194,7 +194,7 @@ func render(objects []crclient.Object, format string, out io.Writer) error {
 					"items":      objects,
 				},
 			}
-			err := hyperapi.JsonSerializer.Encode(list, out)
+			err := apisupport.JsonSerializer.Encode(list, out)
 			if err != nil {
 				return err
 			}

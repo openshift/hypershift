@@ -2,8 +2,9 @@ package util
 
 import (
 	"context"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"strings"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -15,7 +16,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
+	apisupport "github.com/openshift/hypershift/support/api"
 )
 
 const HypershiftRouteLabel = "hypershift.openshift.io/hosted-control-plane"
@@ -44,7 +45,7 @@ func ReconcileWorkerManifest(cm *corev1.ConfigMap, resource client.Object) error
 		cm.Labels = map[string]string{}
 	}
 	cm.Labels["worker-manifest"] = "true"
-	serialized, err := serializeResource(resource, hyperapi.Scheme)
+	serialized, err := serializeResource(resource, apisupport.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize resource of type %T: %w", resource, err)
 	}
@@ -59,7 +60,7 @@ func serializeResource(resource client.Object, objectTyper runtime.ObjectTyper) 
 		return "", fmt.Errorf("cannot determine GVK of resource of type %T: %w", resource, err)
 	}
 	resource.GetObjectKind().SetGroupVersionKind(gvks[0])
-	if err = hyperapi.YamlSerializer.Encode(resource, out); err != nil {
+	if err = apisupport.YamlSerializer.Encode(resource, out); err != nil {
 		return "", err
 	}
 	return out.String(), nil

@@ -41,7 +41,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -53,6 +52,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/machineapprover"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -2367,7 +2367,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	if !cluster.CreationTimestamp.IsZero() {
 		return nil
 	}
-	infraCRGVK, err := apiutil.GVKForObject(infraCR, api.Scheme)
+	infraCRGVK, err := apiutil.GVKForObject(infraCR, apisupport.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to get gvk for %T: %w", infraCR, err)
 	}

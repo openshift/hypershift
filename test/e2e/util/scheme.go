@@ -1,7 +1,7 @@
 package util
 
 import (
-	hyperapi "github.com/openshift/hypershift/support/api"
+	apisupport "github.com/openshift/hypershift/support/api"
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -12,7 +12,7 @@ var (
 	// This scheme was born out of the requirement of certain
 	// GVKs in the testing environment that are not required by
 	// the client used by a running HyperShift instance.
-	scheme = hyperapi.Scheme
+	scheme = apisupport.Scheme
 )
 
 func init() {

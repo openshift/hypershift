@@ -8,7 +8,7 @@ import (
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperapi "github.com/openshift/hypershift/api"
+	apisupport "github.com/openshift/hypershift/support/api"
 )
 
 const (
@@ -32,7 +32,7 @@ func GetClient() (crclient.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
-	client, err := crclient.New(config, crclient.Options{Scheme: hyperapi.Scheme})
+	client, err := crclient.New(config, crclient.Options{Scheme: apisupport.Scheme})
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
 	}

@@ -34,7 +34,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
-	hyperapi "github.com/openshift/hypershift/support/api"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -124,7 +124,7 @@ func NewStartCommand() *cobra.Command {
 		renewDeadline := time.Second * 40
 		retryPeriod := time.Second * 15
 		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-			Scheme:                        hyperapi.Scheme,
+			Scheme:                        apisupport.Scheme,
 			MetricsBindAddress:            metricsAddr,
 			Port:                          9443,
 			LeaderElection:                true,

@@ -26,7 +26,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
-	hyperapi "github.com/openshift/hypershift/support/api"
+	apisupport "github.com/openshift/hypershift/support/api"
 )
 
 // ApplyPlatformSpecifics can be used to create platform specific values as well as enriching the fixure with additional values
@@ -199,7 +199,7 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, rend
 	switch {
 	case render:
 		for _, object := range exampleObjects {
-			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+			err := apisupport.YamlSerializer.Encode(object, os.Stdout)
 			if err != nil {
 				return fmt.Errorf("failed to encode objects: %w", err)
 			}

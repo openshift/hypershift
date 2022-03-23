@@ -8,8 +8,8 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	apisupport "github.com/openshift/hypershift/support/api"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap/zaptest"
@@ -78,7 +78,7 @@ func TestMetrics(t *testing.T) {
 					},
 				},
 			}
-			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cluster).Build()
+			client := fake.NewClientBuilder().WithScheme(apisupport.Scheme).WithObjects(cluster).Build()
 
 			metrics := newMetrics(client, zapr.NewLogger(zaptest.NewLogger(t)))
 			if err := metrics.collect(context.Background()); err != nil {
