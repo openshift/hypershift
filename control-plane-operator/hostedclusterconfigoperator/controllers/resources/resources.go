@@ -199,17 +199,13 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile rbac: %w", err))
 	}
 
-	// IBMCloud platform should not be constantly reconciled as we allow customers to change initial deployment.
-	// Initial deployment handled by managed service wrapping hypershift
-	if r.platformType != hyperv1.IBMCloudPlatform {
-		log.Info("reconciling registry config")
-		registryConfig := manifests.Registry()
-		if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-			registry.ReconcileRegistryConfig(registryConfig, r.platformType)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
-		}
+	log.Info("reconciling registry config")
+	registryConfig := manifests.Registry()
+	if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+		registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
 	}
 
 	log.Info("reconciling ingress controller")
