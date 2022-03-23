@@ -1,4 +1,4 @@
-package main
+package konnectivitysocks5proxy
 
 import (
 	"bufio"

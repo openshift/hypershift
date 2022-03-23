@@ -1057,6 +1057,10 @@ const (
 	// ReconciliationPaused indicates if reconciliation of the hostedcluster is
 	// paused.
 	ReconciliationPaused ConditionType = "ReconciliationPaused"
+
+	// OIDCConfigurationInvalid indicates if an AWS cluster's OIDC condition is
+	// detected as invalid.
+	OIDCConfigurationInvalid ConditionType = "OIDCConfigurationInvalid"
 )
 
 const (
@@ -1091,6 +1095,8 @@ const (
 	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"
 
 	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
+
+	OIDCConfigurationInvalidReason = "OIDCConfigurationInvalid"
 )
 
 // HostedClusterStatus is the latest observed status of a HostedCluster.

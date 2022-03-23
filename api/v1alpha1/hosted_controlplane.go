@@ -34,10 +34,15 @@ type HostedControlPlaneSpec struct {
 	// NetworkType specifies the SDN provider used for cluster networking.
 	NetworkType NetworkType                 `json:"networkType"`
 	SSHKey      corev1.LocalObjectReference `json:"sshKey"`
-	ClusterID   string                      `json:"clusterID"`
-	InfraID     string                      `json:"infraID"`
-	Platform    PlatformSpec                `json:"platform"`
-	DNS         DNSSpec                     `json:"dns"`
+	// ClusterID is the unique id that identifies the cluster externally.
+	// Making it optional here allows us to keep compatibility with previous
+	// versions of the control-plane-operator that have no knowledge of this
+	// field.
+	// +optional
+	ClusterID string       `json:"clusterID,omitempty"`
+	InfraID   string       `json:"infraID"`
+	Platform  PlatformSpec `json:"platform"`
+	DNS       DNSSpec      `json:"dns"`
 
 	// APIPort is the port at which the APIServer listens inside a worker
 	// +optional

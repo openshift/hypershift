@@ -175,7 +175,7 @@ func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
 func buildOASSocks5ProxyContainer(socks5ProxyImage string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = socks5ProxyImage
-		c.Command = []string{"/usr/bin/konnectivity-socks5-proxy"}
+		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"}
 		c.Args = []string{"run"}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),

@@ -17,7 +17,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -337,7 +336,6 @@ func buildKASContainerMain(image string, port int32) func(c *corev1.Container) {
 			Name:      "HOST_IP",
 			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"}},
 		}}
-		proxy.SetEnvVars(&c.Env)
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.Ports = []corev1.ContainerPort{

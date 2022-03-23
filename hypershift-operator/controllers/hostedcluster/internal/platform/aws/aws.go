@@ -29,16 +29,14 @@ const (
 	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
 )
 
-func New(availabilityProberImage string, tokenMinterImage string) *AWS {
+func New(controlPlaneOperatorImage string) *AWS {
 	return &AWS{
-		avaiabilityProberImage: availabilityProberImage,
-		tokenMinterImage:       tokenMinterImage,
+		controlPlaneOperatorImage: controlPlaneOperatorImage,
 	}
 }
 
 type AWS struct {
-	avaiabilityProberImage string
-	tokenMinterImage       string
+	controlPlaneOperatorImage string
 }
 
 func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -194,7 +192,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 					},
 					{
 						Name:            "token-minter",
-						Image:           p.tokenMinterImage,
+						Image:           p.controlPlaneOperatorImage,
 						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{
@@ -206,13 +204,13 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 								MountPath: "/etc/kubernetes",
 							},
 						},
-						Command: []string{"/usr/bin/token-minter"},
+						Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
 						Args: []string{
-							"-service-account-namespace=kube-system",
-							"-service-account-name=capa-controller-manager",
-							"-token-audience=openshift",
-							"-token-file=/var/run/secrets/openshift/serviceaccount/token",
-							"-kubeconfig=/etc/kubernetes/kubeconfig",
+							"--service-account-namespace=kube-system",
+							"--service-account-name=capa-controller-manager",
+							"--token-audience=openshift",
+							"--token-file=/var/run/secrets/openshift/serviceaccount/token",
+							"--kubeconfig=/etc/kubernetes/kubeconfig",
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -225,7 +223,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 			},
 		},
 	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, hcp.Spec.APIPort), p.avaiabilityProberImage, &deploymentSpec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, hcp.Spec.APIPort), p.controlPlaneOperatorImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 
