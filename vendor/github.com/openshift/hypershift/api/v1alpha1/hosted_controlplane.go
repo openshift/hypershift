@@ -5,11 +5,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func init() {
-	SchemeBuilder.Register(&HostedControlPlane{})
-	SchemeBuilder.Register(&HostedControlPlaneList{})
-}
-
 // HostedControlPlane defines the desired state of HostedControlPlane
 // +kubebuilder:resource:path=hostedcontrolplanes,shortName=hcp;hcps,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion
