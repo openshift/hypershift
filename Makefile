@@ -80,9 +80,9 @@ api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ib
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+	cd api; $(CONTROLLER_GEN) object:headerFile="../hack/boilerplate.go.txt" paths="./v1alpha1/..."
 	rm -rf cmd/install/assets/hypershift-operator/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/openshift/hypershift/api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
 .PHONY: cluster-api
 cluster-api: $(CONTROLLER_GEN)
