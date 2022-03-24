@@ -20577,6 +20577,7 @@ objects:
                         - OIDC
                         - Konnectivity
                         - Ignition
+                        - OVNSbDb
                         type: string
                       servicePublishingStrategy:
                         description: ServicePublishingStrategy specifies how to publish
@@ -21685,6 +21686,7 @@ objects:
                         - OIDC
                         - Konnectivity
                         - Ignition
+                        - OVNSbDb
                         type: string
                       servicePublishingStrategy:
                         description: ServicePublishingStrategy specifies how to publish

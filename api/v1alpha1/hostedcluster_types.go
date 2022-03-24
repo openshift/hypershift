@@ -301,7 +301,7 @@ type ImageContentSource struct {
 type ServicePublishingStrategyMapping struct {
 	// Service identifies the type of service being published.
 	//
-	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition
+	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition;OVNSbDb
 	// +immutable
 	Service ServiceType `json:"service"`
 
@@ -362,6 +362,9 @@ var (
 
 	// Ignition is the control plane ignition service for nodes.
 	Ignition ServiceType = "Ignition"
+
+	// OVNSbDb is the optional control plane ovn southbound database service used by OVNKubernetes CNI.
+	OVNSbDb ServiceType = "OVNSbDb"
 )
 
 // NodePortPublishingStrategy specifies a NodePort used to expose a service.
