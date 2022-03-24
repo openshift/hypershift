@@ -475,9 +475,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	if util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil) {
+	if isPaused, duration := util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
 		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
-		return ctrl.Result{}, nil
+		return ctrl.Result{
+			RequeueAfter: duration,
+		}, nil
 	}
 
 	// Perform the hosted control plane reconciliation

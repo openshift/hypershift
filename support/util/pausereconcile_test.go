@@ -2,53 +2,64 @@ package util
 
 import (
 	"fmt"
-	"github.com/go-logr/logr"
+	"testing"
+	"time"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
-	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
 )
 
-func TestIsReconciliationPaused(t *testing.T) {
+func TestProcessPausedUntilField(t *testing.T) {
+	now := time.Now()
 	testsCases := []struct {
 		name             string
 		inputPausedField *string
-		expectedResult   bool
+		expectedPaused   bool
+		expectedDuration time.Duration
+		expectedError    bool
 	}{
 		{
 			name:             "if the pausedUntil field does not exist then reconciliation is not paused",
 			inputPausedField: nil,
-			expectedResult:   false,
+			expectedPaused:   false,
+			expectedDuration: time.Duration(0),
 		},
 		{
 			name:             "if pausedUntil field is later than time.Now then reconciliation is paused",
-			inputPausedField: pointer.StringPtr(time.Now().Add(4 * time.Hour).Format(time.RFC3339)),
-			expectedResult:   true,
+			inputPausedField: pointer.StringPtr(now.Add(4 * time.Hour).Format(time.RFC3339Nano)),
+			expectedPaused:   true,
+			expectedDuration: 4 * time.Hour,
 		},
 		{
 			name:             "if pausedUntil field is before time.Now then reconciliation is not paused",
-			inputPausedField: pointer.StringPtr(time.Now().Add(-4 * time.Hour).Format(time.RFC3339)),
-			expectedResult:   false,
+			inputPausedField: pointer.StringPtr(now.Add(-4 * time.Hour).Format(time.RFC3339Nano)),
+			expectedPaused:   false,
+			expectedDuration: -(4 * time.Hour),
 		},
 		{
 			name:             "if pausedUntil field is true then reconciliation is paused",
 			inputPausedField: pointer.StringPtr("true"),
-			expectedResult:   true,
+			expectedPaused:   true,
+			expectedDuration: time.Duration(0),
 		},
 		{
 			name:             "if pausedUntil field has an improper value then reconciliation is not paused",
 			inputPausedField: pointer.StringPtr("badValue"),
-			expectedResult:   false,
+			expectedPaused:   false,
+			expectedDuration: time.Duration(0),
+			expectedError:    true,
 		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			actualIsPaused := IsReconciliationPaused(logr.Discard(), tc.inputPausedField)
-			g.Expect(actualIsPaused).To(Equal(tc.expectedResult))
+			actualIsPaused, actualDuration, err := processPausedUntilField(tc.inputPausedField, now)
+			g.Expect(actualIsPaused).To(Equal(tc.expectedPaused))
+			g.Expect(actualDuration).To(Equal(tc.expectedDuration))
+			g.Expect(err != nil).To(Equal(tc.expectedError))
 		})
 	}
 }

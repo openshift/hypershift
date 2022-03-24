@@ -226,7 +226,7 @@ func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 
 // pauseHostedControlPlane will handle adding the pausedUntil field to the hostedControlPlane object if it exists.
 // If it doesn't exist: it returns as there's no need to add it
-func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseAnnotationValue *string) error {
+func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseValue *string) error {
 	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -235,10 +235,14 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 			return fmt.Errorf("failed to get hostedcontrolplane: %w", err)
 		}
 	}
-	hcp.Spec.PausedUntil = pauseAnnotationValue
-	if err := c.Update(ctx, hcp); err != nil {
-		return fmt.Errorf("failed to pause hostedcontrolplane: %w", err)
+
+	if hcp.Spec.PausedUntil != pauseValue {
+		hcp.Spec.PausedUntil = pauseValue
+		if err := c.Update(ctx, hcp); err != nil {
+			return fmt.Errorf("failed to pause hostedcontrolplane: %w", err)
+		}
 	}
+
 	return nil
 }
 
@@ -575,15 +579,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// if paused: ensure associated hostedcontrolplane (if it exists) is also paused and stop reconciliation
-	if util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil) {
+	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
+	if isPaused, duration := util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
@@ -1216,12 +1220,8 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 		if capiWebhooksTLSSecret.Data == nil {
 			capiWebhooksTLSSecret.Data = map[string][]byte{}
 		}
-		privKeyPem, err := certs.PrivateKeyToPem(key)
-		if err != nil {
-			return fmt.Errorf("failed to conver private key to pem: %w", err)
-		}
 		capiWebhooksTLSSecret.Data[corev1.TLSCertKey] = certs.CertToPem(crt)
-		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = privKeyPem
+		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = certs.PrivateKeyToPem(key)
 		return nil
 	})
 	if err != nil {
@@ -1640,14 +1640,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			if err != nil {
 				return fmt.Errorf("failed to generate CA: %w", err)
 			}
-			privKeyPem, err := certs.PrivateKeyToPem(key)
-			if err != nil {
-				return fmt.Errorf("failed to conver private key to pem: %w", err)
-			}
 			caCertSecret.Type = corev1.SecretTypeTLS
 			caCertSecret.Data = map[string][]byte{
 				corev1.TLSCertKey:       certs.CertToPem(crt),
-				corev1.TLSPrivateKeyKey: privKeyPem,
+				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
 			}
 		}
 		return nil
@@ -1685,14 +1681,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			if err != nil {
 				return fmt.Errorf("failed to generate ignition serving cert: %w", err)
 			}
-			privKeyPem, err := certs.PrivateKeyToPem(key)
-			if err != nil {
-				return fmt.Errorf("failed to conver private key to pem: %w", err)
-			}
 			servingCertSecret.Type = corev1.SecretTypeTLS
 			servingCertSecret.Data = map[string][]byte{
 				corev1.TLSCertKey:       certs.CertToPem(crt),
-				corev1.TLSPrivateKeyKey: privKeyPem,
+				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
 			}
 		}
 		return nil
@@ -3869,8 +3861,8 @@ type KeyResponse struct {
 
 func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
 	block, _ := pem.Decode(params.pubKey)
-	if block == nil || (block.Type != "RSA PUBLIC KEY" && block.Type != "PUBLIC KEY") {
-		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key, block had type %q", block.Type)
+	if block == nil || block.Type != "RSA PUBLIC KEY" {
+		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key")
 	}
 	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
@@ -3878,7 +3870,7 @@ func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
 	}
 	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("public key is not RSA but %T", pubKey)
+		return nil, fmt.Errorf("public key is not RSA")
 	}
 
 	hasher := crypto.SHA256.New()
