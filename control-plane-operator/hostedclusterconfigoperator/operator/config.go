@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -103,6 +104,7 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&configv1.Infrastructure{}: allSelector,
 				&configv1.DNS{}:            allSelector,
 				&configv1.Ingress{}:        allSelector,
+				&operatorv1.Network{}:      allSelector,
 				&configv1.Network{}:        allSelector,
 				&configv1.Proxy{}:          allSelector,
 				&configv1.Build{}:          allSelector,
