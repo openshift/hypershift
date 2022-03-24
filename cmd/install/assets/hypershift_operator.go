@@ -3,6 +3,7 @@ package assets
 import (
 	"fmt"
 
+	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/images"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -175,8 +176,9 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								"--source=openshift-route",
 								fmt.Sprintf("--domain-filter=%s", o.DomainFilter),
 								fmt.Sprintf("--provider=%s", o.Provider),
-								"--registry=noop",
-								"--txt-owner-id=hypershift",
+								"--registry=txt",
+								"--txt-suffix=-external-dns",
+								fmt.Sprintf("--txt-owner-id=%s", uuid.NewString()),
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
 							LivenessProbe: &corev1.Probe{
