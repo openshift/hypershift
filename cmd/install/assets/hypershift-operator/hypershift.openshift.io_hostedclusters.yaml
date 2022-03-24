@@ -903,6 +903,7 @@ spec:
                       - OIDC
                       - Konnectivity
                       - Ignition
+                      - OVNSbDb
                       type: string
                     servicePublishingStrategy:
                       description: ServicePublishingStrategy specifies how to publish
