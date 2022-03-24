@@ -1611,6 +1611,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			aesCBCBackupKey,
 			hcp.Spec.Etcd.ManagementType,
 			p.APIServerPort,
+			hcp.Spec.PodCIDR,
+			hcp.Spec.ServiceCIDR,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
