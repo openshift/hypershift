@@ -6,14 +6,18 @@ import (
 	"os"
 	"time"
 
+	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
+	ignitionserver "github.com/openshift/hypershift/ignition-server"
+	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/util"
+	tokenminter "github.com/openshift/hypershift/token-minter"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,6 +59,10 @@ func main() {
 	}
 	cmd.AddCommand(NewStartCommand())
 	cmd.AddCommand(hostedclusterconfigoperator.NewCommand())
+	cmd.AddCommand(konnectivitysocks5proxy.NewStartCommand())
+	cmd.AddCommand(availabilityprober.NewStartCommand())
+	cmd.AddCommand(tokenminter.NewStartCommand())
+	cmd.AddCommand(ignitionserver.NewStartCommand())
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

@@ -2039,6 +2039,10 @@ HostedCluster is available to handle ignition requests.</p>
 <td></td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;OIDCConfigurationInvalid&#34;</p></td>
+<td><p>OIDCConfigurationInvalid indicates if an AWS cluster&rsquo;s OIDC condition is
+detected as invalid.</p>
+</td>
 </tr><tr><td><p>&#34;ReconciliationPaused&#34;</p></td>
 <td><p>ReconciliationPaused indicates if reconciliation of the hostedcluster is
 paused.</p>
@@ -2844,6 +2848,11 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>ClusterID is the unique id that identifies the cluster externally.
+Making it optional here allows us to keep compatibility with previous
+versions of the control-plane-operator that have no knowledge of this
+field.</p>
 </td>
 </tr>
 <tr>

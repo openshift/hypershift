@@ -94,7 +94,8 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
 		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig)).
 		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			MaxConcurrentReconciles: 10,
 		}).
 		Build(r)
 	if err != nil {

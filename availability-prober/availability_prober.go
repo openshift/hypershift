@@ -1,8 +1,7 @@
-package main
+package availabilityprober
 
 import (
 	"crypto/tls"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -28,52 +28,58 @@ type options struct {
 	requiredAPIsParsed []schema.GroupVersionKind
 }
 
-func main() {
+func NewStartCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use: "availability-prober",
+	}
 	opts := options{}
-	flag.StringVar(&opts.target, "target", "", "A http url to probe. The program will continue until it gets a http 2XX back.")
-	flag.StringVar(&opts.kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Required when --required-api is set")
-	flag.Var(&opts.requiredAPIs, "required-api", "An api that must be up before the program will be end. Can be passed multiple times, must be in group,version,kind format (e.G. operators.coreos.com,v1alpha1,CatalogSource)")
-	flag.Parse()
+	cmd.Flags().StringVar(&opts.target, "target", "", "A http url to probe. The program will continue until it gets a http 2XX back.")
+	cmd.Flags().StringVar(&opts.kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Required when --required-api is set")
+	cmd.Flags().Var(&opts.requiredAPIs, "required-api", "An api that must be up before the program will be end. Can be passed multiple times, must be in group,version,kind format (e.G. operators.coreos.com,v1alpha1,CatalogSource)")
 
 	log := zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
 
-	url, err := url.Parse(opts.target)
-	if err != nil {
-		log.Error(err, fmt.Sprintf("failed to parse %q as url", opts.target))
-		os.Exit(1)
-	}
-
-	if len(opts.requiredAPIs.val) > 0 && opts.kubeconfig == "" {
-		log.Info("--kubeconfig is mandatory when --required-api is passed")
-		os.Exit(1)
-
-	}
-	opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.val.List())
-	if err != nil {
-		log.Error(err, "failed to parse --required-api arguments")
-		os.Exit(1)
-	}
-
-	var discoveryClient discovery.DiscoveryInterface
-	if opts.kubeconfig != "" {
-		restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			&clientcmd.ClientConfigLoadingRules{ExplicitPath: opts.kubeconfig},
-			&clientcmd.ConfigOverrides{},
-		).ClientConfig()
+	cmd.Run = func(cmd *cobra.Command, args []string) {
+		url, err := url.Parse(opts.target)
 		if err != nil {
-			log.Error(err, "failed to get kubeconfig")
+			log.Error(err, fmt.Sprintf("failed to parse %q as url", opts.target))
 			os.Exit(1)
 		}
-		discoveryClient, err = discovery.NewDiscoveryClientForConfig(restConfig)
+
+		if len(opts.requiredAPIs.val) > 0 && opts.kubeconfig == "" {
+			log.Info("--kubeconfig is mandatory when --required-api is passed")
+			os.Exit(1)
+
+		}
+		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.val.List())
 		if err != nil {
-			log.Error(err, "failed to construct discovery client")
+			log.Error(err, "failed to parse --required-api arguments")
 			os.Exit(1)
 		}
+
+		var discoveryClient discovery.DiscoveryInterface
+		if opts.kubeconfig != "" {
+			restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+				&clientcmd.ClientConfigLoadingRules{ExplicitPath: opts.kubeconfig},
+				&clientcmd.ConfigOverrides{},
+			).ClientConfig()
+			if err != nil {
+				log.Error(err, "failed to get kubeconfig")
+				os.Exit(1)
+			}
+			discoveryClient, err = discovery.NewDiscoveryClientForConfig(restConfig)
+			if err != nil {
+				log.Error(err, "failed to construct discovery client")
+				os.Exit(1)
+			}
+		}
+
+		check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, discoveryClient)
 	}
 
-	check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, discoveryClient)
+	return cmd
 }
 
 func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, discoveryClient discovery.DiscoveryInterface) {
@@ -134,6 +140,9 @@ func (s *stringSetFlag) Set(v string) error {
 
 func (s *stringSetFlag) String() string {
 	return fmt.Sprintf("%v", s.val.List())
+}
+func (s *stringSetFlag) Type() string {
+	return "stringSetFlag"
 }
 
 func parseGroupVersionKindArgValues(vals []string) ([]schema.GroupVersionKind, error) {

@@ -20892,6 +20892,10 @@ objects:
                       type: string
                   type: object
                 clusterID:
+                  description: ClusterID is the unique id that identifies the cluster
+                    externally. Making it optional here allows us to keep compatibility
+                    with previous versions of the control-plane-operator that have
+                    no knowledge of this field.
                   type: string
                 configuration:
                   description: 'Configuration embeds resources that correspond to
@@ -21699,7 +21703,6 @@ objects:
                       type: string
                   type: object
               required:
-              - clusterID
               - dns
               - etcd
               - infraID

@@ -195,19 +195,19 @@ press `ctrl-c` to terminate and delete the pod.
     The default arguments to `control-plane-operator run` should be sufficient to
     get started.
 
-## Launch a custom `ignition-server` image interactively
+## Launch a custom ignition server interactively
 
-To iterate on the `ignition-server` binary in-cluster interactively, first
+To iterate on the ignition server in-cluster interactively, first
 [configure the HostedCluster](#configure-a-hostedcluster-for-iterative-control-plane-development)
 to scale down the `ignition-server` deployment.
 
-Now, you can build and publish the `ignition-server` image and run it interactively
-in a single shot using `publish-ocp.sh` together with the `oc debug` command. Be
-sure to replace `$NAMESPACE` with the namespace of the control plane that was deployed
-for the `HostedCluster`.
+Now, you can build and publish the `control-plane-operator` image and run the
+`ignition-server` command interactively in a single shot using `publish-ocp.sh`
+together with the `oc debug` command. Be sure to replace `$NAMESPACE` with the
+namespace of the control plane that was deployed for the `HostedCluster`.
 
 ```shell
-oc debug --namespace $NAMESPACE deployments/ignition-server --image $(hack/publish-ocp.sh ./ignition-server) -- /ko-app/ignition-server start
+oc debug --namespace $NAMESPACE deployments/ignition-server --image $(hack/publish-ocp.sh ./control-plane-operator) -- /ko-app/control-plane-operator ignition-server
 ```
 
 Your latest code should be deployed and logs should soon begin streaming. Just
@@ -215,5 +215,5 @@ press `ctrl-c` to terminate and delete the pod.
 
 !!! note
 
-    The default arguments to `ignition-server start` should be sufficient to
+    The default arguments to `ignition-server` should be sufficient to
     get started.

@@ -224,6 +224,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			buildAWSCreds(o.Name+"-cpo-creds", o.AWS.ControlPlaneOperatorRoleARN),
 			kmsCredsSecret,
 		}
+		endpointAccess := hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess)
 		resources = awsResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
@@ -241,7 +242,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: awsResources.NodePoolManagementAWSCreds.Name},
 				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: awsResources.ControlPlaneOperatorAWSCreds.Name},
 				ResourceTags:              o.AWS.ResourceTags,
-				EndpointAccess:            hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess),
+				EndpointAccess:            endpointAccess,
 			},
 		}
 
@@ -264,10 +265,40 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
+		services = getIngressServicePublishingStrategyMapping()
 		if o.ExternalDNSDomain != "" {
-			services = getIngressWithHostnameServicePublishingStrategyMapping(o.Name, o.ExternalDNSDomain)
-		} else {
-			services = getIngressServicePublishingStrategyMapping()
+			for i, svc := range services {
+				switch svc.Service {
+				case hyperv1.APIServer:
+					if endpointAccess != hyperv1.Private {
+						services[i].LoadBalancer = &hyperv1.LoadBalancerPublishingStrategy{
+							Hostname: fmt.Sprintf("api-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
+
+				case hyperv1.OAuthServer:
+					if endpointAccess != hyperv1.Private {
+						services[i].Route = &hyperv1.RoutePublishingStrategy{
+							Hostname: fmt.Sprintf("oauth-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
+
+				case hyperv1.Konnectivity:
+					if endpointAccess == hyperv1.Public {
+						services[i].Route = &hyperv1.RoutePublishingStrategy{
+							Hostname: fmt.Sprintf("konnectivity-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
+
+				case hyperv1.Ignition:
+					if endpointAccess == hyperv1.Public {
+						services[i].Route = &hyperv1.RoutePublishingStrategy{
+							Hostname: fmt.Sprintf("ignition-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
+				}
+			}
+
 		}
 	case o.None != nil:
 		platformSpec = hyperv1.PlatformSpec{
@@ -608,7 +639,7 @@ func getIngressServicePublishingStrategyMapping() []hyperv1.ServicePublishingStr
 	}
 }
 
-func getIngressWithHostnameServicePublishingStrategyMapping(name, domain string) []hyperv1.ServicePublishingStrategyMapping {
+func getIngressWithHostnameServicePublishingStrategyMapping(name, domain string, endpointAcesss hyperv1.AWSEndpointAccessType) []hyperv1.ServicePublishingStrategyMapping {
 	return []hyperv1.ServicePublishingStrategyMapping{
 		{
 			Service: hyperv1.APIServer,
