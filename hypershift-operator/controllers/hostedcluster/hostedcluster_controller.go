@@ -3311,7 +3311,8 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		}
 		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, controlPlaneOperatorImage, r.SetDefaultSecurityContext)
+			// TODO: we can move back to using the control-plane-operator when the breaking change is removed
+			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, r.HypershiftOperatorImage, r.SetDefaultSecurityContext)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}
