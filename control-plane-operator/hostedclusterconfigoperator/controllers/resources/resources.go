@@ -23,6 +23,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -33,6 +34,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/monitoring"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/namespaces"
+	networkoperator "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/network"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/olm"
@@ -123,6 +125,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.ClusterOperator{},
 		&configv1.ClusterVersion{},
 		&apiregistrationv1.APIService{},
+		&operatorv1.Network{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
@@ -297,6 +300,15 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile kubeadmin password hash secret: %w", err))
 	}
 
+	log.Info("reconciling network operator")
+	networkOperator := networkoperator.NetworkOperator()
+	if _, err := r.CreateOrUpdate(ctx, r.client, networkOperator, func() error {
+		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.NetworkType, hcp.Spec.Platform.Type)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
+	}
+
 	log.Info("reconciling monitoring configuration")
 	monitoringConfig := manifests.MonitoringConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, monitoringConfig, func() error {
@@ -424,9 +436,9 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress config: %w", err))
 	}
 
-	network := globalconfig.NetworkConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, network, func() error {
-		globalconfig.ReconcileNetworkConfig(network, hcp, globalConfig)
+	networkConfig := globalconfig.NetworkConfig()
+	if _, err := r.CreateOrUpdate(ctx, r.client, networkConfig, func() error {
+		globalconfig.ReconcileNetworkConfig(networkConfig, hcp, globalConfig)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
