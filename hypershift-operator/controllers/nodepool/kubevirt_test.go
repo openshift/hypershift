@@ -27,7 +27,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				},
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: "",
-					NodeCount:   nil,
+					Replicas:    nil,
 					Config:      nil,
 					Management:  hyperv1.NodePoolManagement{},
 					AutoScaling: nil,

@@ -36,7 +36,7 @@ Upon scaling down a NodePool, Agents will be unbound from the corresponding clus
 
 > **NOTE**: Instead of deploying Assisted Service and Hive, RHACM can be deployed (as those are part of RHACM) but at the time of writting this document, there were some issues if using RHACM that's why only the required bits are used.
 
-We will leverage [`tasty`](https://github.com/karmab/tasty) to deploy the required operators easily. 
+We will leverage [`tasty`](https://github.com/karmab/tasty) to deploy the required operators easily.
 
 * Install tasty:
 
@@ -111,7 +111,7 @@ RHEL8 doesn't include go1.17 officially but it can be installed via `gvm` by fol
 sudo dnf install -y curl git make bison gcc glibc-devel
 git clone https://github.com/openshift/hypershift.git
 pushd hypershift
- 
+
 # Install gvm to install go 1.17
 bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
 source ${HOME}/.gvm/scripts/gvm
@@ -156,7 +156,7 @@ podman login -u ${QUAY_ACCOUNT} -p testpassword quay.io
 sudo dnf install -y curl git make bison gcc glibc-devel
 git clone https://github.com/openshift/hypershift.git
 pushd hypershift
- 
+
 # Install gvm to install go 1.17
 bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
 source ${HOME}/.gvm/scripts/gvm
@@ -261,7 +261,7 @@ metadata:
  namespace: ${CLUSTERS_NAMESPACE}
 type: kubernetes.io/dockerconfigjson
 EOF
- 
+
 envsubst <<"EOF" | oc apply -f -
 apiVersion: v1
 kind: Secret
@@ -336,7 +336,7 @@ metadata:
   namespace: ${CLUSTERS_NAMESPACE}
 spec:
   clusterName: ${HOSTED}
-  nodeCount: 0
+  replicas: 0
   management:
     autoRepair: false
     upgradeType: Replace
@@ -540,7 +540,7 @@ oc patch ${AGENT} -n ${HOSTED_CLUSTER_NS} -p '{"spec":{"installation_disk_id":"/
 * Finally, scaling up the nodepool will trigger the installation:
 
 ~~~sh
-oc patch nodepool/${HOSTED}-workers -n ${CLUSTERS_NAMESPACE} -p '{"spec":{"nodeCount": 1}}' --type merge
+oc patch nodepool/${HOSTED}-workers -n ${CLUSTERS_NAMESPACE} -p '{"spec":{"replicas": 1}}' --type merge
 ~~~
 
 * Then the worker is added to the cluster:
@@ -553,25 +553,25 @@ ocp-worker-0.hosted0.krnl.es   Ready    worker   63m   v1.22.3+fdba464
 oc get co --kubeconfig=${HOSTED}-kubeconfig
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
 console                                    4.9.21    False       False         False      62m     RouteHealthAvailable: failed to GET route (https://console-openshift-console.apps.hosted0.krnl.es): Get "https://console-openshift-console.apps.hosted0.krnl.es": x509: certificate is valid for *.apps.ocp.krnl.es, not console-openshift-console.apps.hosted0.krnl.es
-csi-snapshot-controller                    4.9.21    True        False         False      61m     
-dns                                        4.9.21    True        False         False      61m     
-image-registry                             4.9.21    True        False         False      61m     
+csi-snapshot-controller                    4.9.21    True        False         False      61m
+dns                                        4.9.21    True        False         False      61m
+image-registry                             4.9.21    True        False         False      61m
 ingress                                    4.9.21    True        False         True       51m     The "default" ingress controller reports Degraded=True: DegradedConditions: One or more other status conditions indicate a degraded state: PodsScheduled=False (PodsNotScheduled: Some pods are not scheduled: Pod "router-default-7f9dc784cb-mlg9m" cannot be scheduled: 0/1 nodes are available: 1 node(s) didn't have free ports for the requested pod ports. Make sure you have sufficient worker nodes.), CanaryChecksSucceeding=False (CanaryChecksRepetitiveFailures: Canary route checks for the default ingress controller are failing)
-kube-apiserver                             4.9.21    True        False         False      4h27m   
-kube-controller-manager                    4.9.21    True        False         False      4h27m   
-kube-scheduler                             4.9.21    True        False         False      4h27m   
-kube-storage-version-migrator              4.9.21    True        False         False      61m     
+kube-apiserver                             4.9.21    True        False         False      4h27m
+kube-controller-manager                    4.9.21    True        False         False      4h27m
+kube-scheduler                             4.9.21    True        False         False      4h27m
+kube-storage-version-migrator              4.9.21    True        False         False      61m
 monitoring                                           False       True          True       45m     Rollout of the monitoring stack failed and is degraded. Please investigate the degraded status error.
-network                                    4.9.21    True        False         False      63m     
-node-tuning                                4.9.21    True        False         False      61m     
-openshift-apiserver                        4.9.21    True        False         False      4h27m   
-openshift-controller-manager               4.9.21    True        False         False      4h27m   
-openshift-samples                          4.9.21    True        False         False      60m     
-operator-lifecycle-manager                 4.9.21    True        False         False      4h26m   
-operator-lifecycle-manager-catalog         4.9.21    True        False         False      4h26m   
-operator-lifecycle-manager-packageserver   4.9.21    True        False         False      4h27m   
-service-ca                                 4.9.21    True        False         False      62m     
-storage                                    4.9.21    True        False         False      62m    
+network                                    4.9.21    True        False         False      63m
+node-tuning                                4.9.21    True        False         False      61m
+openshift-apiserver                        4.9.21    True        False         False      4h27m
+openshift-controller-manager               4.9.21    True        False         False      4h27m
+openshift-samples                          4.9.21    True        False         False      60m
+operator-lifecycle-manager                 4.9.21    True        False         False      4h26m
+operator-lifecycle-manager-catalog         4.9.21    True        False         False      4h26m
+operator-lifecycle-manager-packageserver   4.9.21    True        False         False      4h27m
+service-ca                                 4.9.21    True        False         False      62m
+storage                                    4.9.21    True        False         False      62m
 
 oc get clusterversion --kubeconfig=${HOSTED}-kubeconfig
 NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
@@ -630,11 +630,11 @@ export AGENT=$(oc get agent -n ${HOSTED_CLUSTER_NS} ${UUID} -o name)
 
 oc patch ${AGENT} -n ${HOSTED_CLUSTER_NS} -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"ocp-worker-1.hosted0.krnl.es","role":"worker"}}' --type merge
 
-oc patch nodepool/${HOSTED}-workers -n ${CLUSTERS_NAMESPACE} -p '{"spec":{"nodeCount": 2}}' --type merge
+oc patch nodepool/${HOSTED}-workers -n ${CLUSTERS_NAMESPACE} -p '{"spec":{"replicas": 2}}' --type merge
 ~~~
 
 ~~~sh
-oc get nodes --kubeconfig=hosted0-kubeconfig  
+oc get nodes --kubeconfig=hosted0-kubeconfig
 NAME                           STATUS   ROLES    AGE    VERSION
 ocp-worker-0.hosted0.krnl.es   Ready    worker   19h    v1.22.3+fdba464
 ocp-worker-1.hosted0.krnl.es   Ready    worker   2m2s   v1.22.3+fdba464
@@ -643,30 +643,30 @@ oc get hostedcluster -n clusters hosted0
 NAME      VERSION   KUBECONFIG                 PROGRESS    AVAILABLE   REASON
 hosted0   4.9.21    hosted0-admin-kubeconfig   Completed   True        HostedClusterAsExpected
 
-oc get co --kubeconfig=hosted0-kubeconfig  
+oc get co --kubeconfig=hosted0-kubeconfig
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.9.21    True        False         False      68s     
-csi-snapshot-controller                    4.9.21    True        False         False      19h     
-dns                                        4.9.21    True        False         False      19h     
-image-registry                             4.9.21    True        False         False      19h     
-ingress                                    4.9.21    True        False         False      19h     
-kube-apiserver                             4.9.21    True        False         False      22h     
-kube-controller-manager                    4.9.21    True        False         False      22h     
-kube-scheduler                             4.9.21    True        False         False      22h     
-kube-storage-version-migrator              4.9.21    True        False         False      19h     
-monitoring                                 4.9.21    True        False         False      6m26s   
-network                                    4.9.21    True        False         False      19h     
-node-tuning                                4.9.21    True        False         False      19h     
-openshift-apiserver                        4.9.21    True        False         False      22h     
-openshift-controller-manager               4.9.21    True        False         False      22h     
-openshift-samples                          4.9.21    True        False         False      19h     
-operator-lifecycle-manager                 4.9.21    True        False         False      22h     
-operator-lifecycle-manager-catalog         4.9.21    True        False         False      22h     
-operator-lifecycle-manager-packageserver   4.9.21    True        False         False      22h     
-service-ca                                 4.9.21    True        False         False      19h     
+console                                    4.9.21    True        False         False      68s
+csi-snapshot-controller                    4.9.21    True        False         False      19h
+dns                                        4.9.21    True        False         False      19h
+image-registry                             4.9.21    True        False         False      19h
+ingress                                    4.9.21    True        False         False      19h
+kube-apiserver                             4.9.21    True        False         False      22h
+kube-controller-manager                    4.9.21    True        False         False      22h
+kube-scheduler                             4.9.21    True        False         False      22h
+kube-storage-version-migrator              4.9.21    True        False         False      19h
+monitoring                                 4.9.21    True        False         False      6m26s
+network                                    4.9.21    True        False         False      19h
+node-tuning                                4.9.21    True        False         False      19h
+openshift-apiserver                        4.9.21    True        False         False      22h
+openshift-controller-manager               4.9.21    True        False         False      22h
+openshift-samples                          4.9.21    True        False         False      19h
+operator-lifecycle-manager                 4.9.21    True        False         False      22h
+operator-lifecycle-manager-catalog         4.9.21    True        False         False      22h
+operator-lifecycle-manager-packageserver   4.9.21    True        False         False      22h
+service-ca                                 4.9.21    True        False         False      19h
 storage                                    4.9.21    True        False         False      19h
 
-oc get clusterversion --kubeconfig=hosted0-kubeconfig  
+oc get clusterversion --kubeconfig=hosted0-kubeconfig
 NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.9.21    True        False         94s     Cluster version is 4.9.21
 ~~~

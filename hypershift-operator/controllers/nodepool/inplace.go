@@ -710,7 +710,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		// Before persisting, if the NodePool is brand new we want to make sure the replica number is set so the MachineSet controller
 		// does not panic.
 		if machineSet.Spec.Replicas == nil {
-			machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
+			machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
 		}
 		return nil
 	}
@@ -718,7 +718,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	setMachineSetReplicas(nodePool, machineSet)
 
 	// Bubble up AvailableReplicas and Ready condition from MachineSet.
-	nodePool.Status.NodeCount = machineSet.Status.AvailableReplicas
+	nodePool.Status.Replicas = machineSet.Status.AvailableReplicas
 	for _, c := range machineSet.Status.Conditions {
 		// This condition should aggregate and summarise readiness from underlying MachineSets and Machines
 		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
@@ -765,6 +765,6 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 	if !isAutoscalingEnabled(nodePool) {
 		machineSet.Annotations[autoscalerMaxAnnotation] = "0"
 		machineSet.Annotations[autoscalerMinAnnotation] = "0"
-		machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
+		machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
 	}
 }

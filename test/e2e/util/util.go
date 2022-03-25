@@ -314,9 +314,9 @@ func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, h
 		if err := hostClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: nodePoolNamespace}); err != nil {
 			t.Fatalf("failed to list nodepools: %v", err)
 		}
-		nodeCount := 0
+		replicas := 0
 		for _, nodePool := range nodePoolList.Items {
-			nodeCount = nodeCount + int(*nodePool.Spec.NodeCount)
+			replicas = replicas + int(*nodePool.Spec.Replicas)
 		}
 
 		var nodes corev1.NodeList
@@ -324,8 +324,8 @@ func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, h
 			t.Fatalf("failed to list nodes in guest cluster: %v", err)
 		}
 
-		if nodeCount != len(nodes.Items) {
-			t.Errorf("nodepool replicas %d does not match number of nodes in cluster %d", nodeCount, len(nodes.Items))
+		if replicas != len(nodes.Items) {
+			t.Errorf("nodepool replicas %d does not match number of nodes in cluster %d", replicas, len(nodes.Items))
 		}
 	})
 }

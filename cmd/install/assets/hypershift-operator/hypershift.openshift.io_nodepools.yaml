@@ -25,11 +25,11 @@ spec:
       name: Cluster
       type: string
     - description: Desired Nodes
-      jsonPath: .spec.nodeCount
+      jsonPath: .spec.replicas
       name: Desired Nodes
       type: integer
     - description: Available Nodes
-      jsonPath: .status.nodeCount
+      jsonPath: .status.replicas
       name: Current Nodes
       type: integer
     - description: Autoscaling Enabled
@@ -197,8 +197,8 @@ spec:
                 - upgradeType
                 type: object
               nodeCount:
-                description: NodeCount is the desired number of nodes the pool should
-                  maintain. If unset, the default value is 0.
+                description: 'Deprecated: Use Replicas instead. NodeCount will be
+                  dropped in the next api release.'
                 format: int32
                 type: integer
               nodeDrainTimeout:
@@ -4909,6 +4909,11 @@ spec:
                 required:
                 - image
                 type: object
+              replicas:
+                description: Replicas is the desired number of nodes the pool should
+                  maintain. If unset, the default value is 0.
+                format: int32
+                type: integer
             required:
             - clusterName
             - management
@@ -4970,8 +4975,8 @@ spec:
                   - type
                   type: object
                 type: array
-              nodeCount:
-                description: NodeCount is the latest observed number of nodes in the
+              replicas:
+                description: Replicas is the latest observed number of nodes in the
                   pool.
                 format: int32
                 type: integer
@@ -4987,8 +4992,8 @@ spec:
     storage: true
     subresources:
       scale:
-        specReplicasPath: .spec.nodeCount
-        statusReplicasPath: .status.nodeCount
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
       status: {}
 status:
   acceptedNames:

@@ -157,7 +157,7 @@ func TestValidateAutoscaling(t *testing.T) {
 			name: "fails when both nodeCount and autoscaling are set",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
-					NodeCount: k8sutilspointer.Int32Ptr(1),
+					Replicas: k8sutilspointer.Int32Ptr(1),
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: 1,
 						Max: 2,
@@ -572,7 +572,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					NodeCount: k8sutilspointer.Int32Ptr(5),
+					Replicas: k8sutilspointer.Int32Ptr(5),
 				},
 			},
 			machineDeployment: &capiv1.MachineDeployment{

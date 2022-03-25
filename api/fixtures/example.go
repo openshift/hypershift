@@ -529,7 +529,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					AutoRepair:  o.AutoRepair,
 					UpgradeType: hyperv1.UpgradeTypeReplace,
 				},
-				NodeCount:   &o.NodePoolReplicas,
+				Replicas:    &o.NodePoolReplicas,
 				ClusterName: o.Name,
 				Release: hyperv1.Release{
 					Image: o.ReleaseImage,
