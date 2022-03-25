@@ -117,7 +117,7 @@ following steps will reference elements of the steps you already performed.
 
     !!! note
 
-        Even if you already installed HyperShift using the [Getting started guide](../getting-started.md), you
+        Even if you already installed HyperShift using the [Getting started guide](../../getting-started.md), you
         can safely run `hypershift install` again with private cluster support to update the existing installation.
 
     !!! important
