@@ -207,6 +207,26 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		}
 		log.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
 	}
+
+	files, err := ioutil.ReadDir(opts.ArtifactDir)
+	if err != nil {
+		return fmt.Errorf("failed to list artifactDir %s: %w", opts.ArtifactDir, err)
+	}
+	args := []string{"-cvzf", "hypershift-dump.tar.gz"}
+	for _, file := range files {
+		args = append(args, file.Name())
+	}
+
+	tarCMD := exec.CommandContext(ctx, "tar", args...)
+	tarCMD.Dir = opts.ArtifactDir
+
+	log.Log.Info("Archiving dump", "command", "tar", "args", args)
+	startArchivingDump := time.Now()
+	if out, err := tarCMD.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to run tar with %v args: got err %w and out \n%s", args, err, string(out))
+	}
+	log.Log.Info("Successfully archied dump", "duration", time.Since(startArchivingDump).String())
+
 	return nil
 }
 
