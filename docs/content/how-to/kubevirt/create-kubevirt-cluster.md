@@ -13,14 +13,14 @@ Install a nested OCP cluster running on VMs within a management OCP cluster
 
 * Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
 * The management OCP cluster must have Openshift Virtualization installed on it (More info:
-  https://docs.openshift.com/container-platform/4.9/virt/about-virt.html?extIdCarryOver=true&sc_cid=7013a0000026OSTAA2)
+  https://docs.openshift.com/container-platform/4.10/virt/about-virt.html?extIdCarryOver=true&sc_cid=7013a0000026OSTAA2)
 * The management OCP cluster must have valid storage class (More info:
-  https://docs.openshift.com/container-platform/4.9/post_installation_configuration/storage-configuration.html)
+  https://docs.openshift.com/container-platform/4.10/post_installation_configuration/storage-configuration.html)
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository.
 * A valid RHCOS container disk image. Currently there is no officially supported RHCOS container disk image, therefore
   it must be provided when creating the cluster (The following image can be used, but currently there is no guarenty
-that it works properly quay.io/containerdisks/rhcos:4.9 - Work in progress)
+that it works properly quay.io/containerdisks/rhcos:4.10 - Work in progress)
 
 ## Before you begin
 
@@ -38,7 +38,7 @@ provided in the [Prerequisites](#prerequisites):
 ```shell linenums="1"
 export CLUSTER_NAME=example
 export PULL_SECRET="$HOME/pull-secret"
-export CONTAINER_DISK=quay.io/containerdisks/rhcos:4.9
+export CONTAINER_DISK=quay.io/containerdisks/rhcos:4.10
 
 hypershift create cluster kubevirt \
 --name $CLUSTER_NAME \
@@ -58,7 +58,7 @@ namespace and when ready it will look similar to the following:
 ```
 oc get --namespace clusters hostedclusters
 NAME      VERSION   KUBECONFIG                 AVAILABLE
-example   4.8.0     example-admin-kubeconfig   True
+example   4.10.0     example-admin-kubeconfig   True
 ```
 
 Eventually the cluster's kubeconfig will become available and can be printed to
