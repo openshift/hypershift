@@ -7,7 +7,7 @@ build:
 
 .PHONY: build-containerized
 build-containerized:
-	$(RUNTIME run --rm -it -v ${PWD}:/docs $(IMG) build
+	$(RUNTIME) run --rm -it -v ${PWD}:/docs $(IMG) build
 
 .PHONY: serve-containerized
 serve-containerized:
