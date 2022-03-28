@@ -357,6 +357,21 @@ nodes to pull content.</p>
 </tr>
 <tr>
 <td>
+<code>additionalTrustBundle</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalTrustBundle is a reference to a ConfigMap containing a
+PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>secretEncryption</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.SecretEncryptionSpec">
@@ -2580,6 +2595,21 @@ nodes to pull content.</p>
 </tr>
 <tr>
 <td>
+<code>additionalTrustBundle</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalTrustBundle is a reference to a ConfigMap containing a
+PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>secretEncryption</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.SecretEncryptionSpec">
@@ -3054,6 +3084,20 @@ ClusterConfiguration
 <td>
 <em>(Optional)</em>
 <p>ImageContentSources lists sources/repositories for the release-image content.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalTrustBundle</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle</p>
 </td>
 </tr>
 <tr>
