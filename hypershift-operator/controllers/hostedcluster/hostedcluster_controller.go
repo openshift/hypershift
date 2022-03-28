@@ -1109,8 +1109,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	mirroredAnnotations := []string{
 		hyperv1.DisablePKIReconciliationAnnotation,
 		hyperv1.OauthLoginURLOverrideAnnotation,
-		hyperv1.KonnectivityAgentImageAnnotation,
-		hyperv1.KonnectivityServerImageAnnotation,
 		hyperv1.RestartDateAnnotation,
 		hyperv1.IBMCloudKMSProviderImage,
 		hyperv1.AWSKMSProviderImage,

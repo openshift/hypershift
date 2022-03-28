@@ -19,12 +19,6 @@ const (
 	DisablePKIReconciliationAnnotation        = "hypershift.openshift.io/disable-pki-reconciliation"
 	IdentityProviderOverridesAnnotationPrefix = "idpoverrides.hypershift.openshift.io/"
 	OauthLoginURLOverrideAnnotation           = "oauth.hypershift.openshift.io/login-url-override"
-	// KonnectivityServerImageAnnotation is a temporary annotation that allows the specification of the konnectivity server image.
-	// This will be removed when Konnectivity is added to the Openshift release payload
-	KonnectivityServerImageAnnotation = "hypershift.openshift.io/konnectivity-server-image"
-	// KonnectivityAgentImageAnnotation is a temporary annotation that allows the specification of the konnectivity agent image.
-	// This will be removed when Konnectivity is added to the Openshift release payload
-	KonnectivityAgentImageAnnotation = "hypershift.openshift.io/konnectivity-agent-image"
 	// ControlPlaneOperatorImageAnnotation is a annotation that allows the specification of the control plane operator image.
 	// This is used for development and e2e workflows
 	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"

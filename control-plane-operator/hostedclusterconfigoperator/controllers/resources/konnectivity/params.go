@@ -54,8 +54,9 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			SuccessThreshold:    1,
 		},
 	}
-	if _, ok := hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
-		p.Image = hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]
+	// check apiserver-network-proxy image in ocp payload and use it
+	if _, ok := images["apiserver-network-proxy"]; ok {
+		p.Image = images["apiserver-network-proxy"]
 	}
 	p.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
