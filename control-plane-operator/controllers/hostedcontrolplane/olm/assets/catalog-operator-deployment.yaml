@@ -44,13 +44,13 @@ spec:
           command:
             - /bin/catalog
           args:
-            - '-namespace'
+            - --namespace
             - openshift-marketplace
-            - -configmapServerImage=$(OPERATOR_REGISTRY_IMAGE)
-            - -opmImage=$(OPERATOR_REGISTRY_IMAGE)
-            - -util-image
+            - --configmapServerImage=$(OPERATOR_REGISTRY_IMAGE)
+            - --opmImage=$(OPERATOR_REGISTRY_IMAGE)
+            - --util-image
             - $(OLM_OPERATOR_IMAGE)
-            - -writeStatusName
+            - --writeStatusName
             - operator-lifecycle-manager-catalog
             - --tls-cert
             - /srv-cert/tls.crt
@@ -58,7 +58,7 @@ spec:
             - /srv-cert/tls.key
             - --client-ca
             - /client-ca/ca.crt
-            - -kubeconfig
+            - --kubeconfig
             - /etc/openshift/kubeconfig/kubeconfig
           image: OLM_OPERATOR_IMAGE
           imagePullPolicy: IfNotPresent
