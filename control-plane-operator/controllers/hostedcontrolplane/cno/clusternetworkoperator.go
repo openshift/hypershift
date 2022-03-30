@@ -3,6 +3,7 @@ package cno
 import (
 	"fmt"
 
+	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -56,7 +57,6 @@ type Params struct {
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
-
 	p := Params{
 		Images: Images{
 			NetworkOperator:              images["cluster-network-operator"],
@@ -176,7 +176,7 @@ func ReconcileRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.OwnerRef) erro
 	return nil
 }
 
-func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) {
+func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) error {
 	params.OwnerRef.ApplyTo(dep)
 
 	dep.Spec.Replicas = utilpointer.Int32(1)
@@ -190,14 +190,30 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		dep.Spec.Template.Labels = map[string]string{}
 	}
 	dep.Spec.Template.Labels["name"] = operatorName
+	cnoArgs := []string{"start",
+		"--listen=0.0.0.0:9104",
+	}
+	var cnoEnv []corev1.EnvVar
+	ver, err := semver.Parse(params.ReleaseVersion)
+	if err != nil {
+		return fmt.Errorf("failed to parse release version %w", err)
+	}
+
+	// This is a hack for hypershift CI
+	if ver.Minor < 11 {
+		// CNO <4.11 doesn't support APISERVER_OVERRIDE_[HOST/PORT]
+		cnoEnv = append(cnoEnv,
+			corev1.EnvVar{Name: "KUBERNETES_SERVICE_HOST", Value: params.APIServerAddress},
+			corev1.EnvVar{Name: "KUBERNETES_SERVICE_PORT", Value: fmt.Sprint(params.APIServerPort)})
+		cnoArgs = append(cnoArgs, "--kubeconfig=/etc/hosted-kubernetes/kubeconfig", "--namespace=openshift-network-operator")
+	} else {
+		cnoArgs = append(cnoArgs, "--in-cluster-client-name=management", "--extra-clusters=default=/etc/hosted-kubernetes/kubeconfig")
+	}
+
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{"/usr/bin/cluster-network-operator"},
-		Args: []string{"start",
-			"--in-cluster-client-name=management",
-			"--extra-clusters=default=/etc/hosted-kubernetes/kubeconfig",
-			"--listen=0.0.0.0:9104",
-		},
-		Env: []corev1.EnvVar{
+		Args:    cnoArgs,
+		Env: append(cnoEnv, []corev1.EnvVar{
 			{Name: "HYPERSHIFT", Value: "true"},
 			{Name: "HOSTED_CLUSTER_NAME", Value: params.HostedClusterName},
 			{Name: "TOKEN_AUDIENCE", Value: params.TokenAudience},
@@ -240,7 +256,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 			{Name: "NETWORK_CHECK_TARGET_IMAGE", Value: params.Images.NetworkCheckTarget},
 			{Name: "CLOUD_NETWORK_CONFIG_CONTROLLER_IMAGE", Value: params.Images.CloudNetworkConfigController},
 			{Name: "TOKEN_MINTER_IMAGE", Value: params.Images.TokenMinter},
-		},
+		}...),
 		Name:            operatorName,
 		Image:           params.Images.NetworkOperator,
 		ImagePullPolicy: corev1.PullIfNotPresent,
@@ -266,4 +282,5 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 			{Group: "network.operator.openshift.io", Version: "v1", Kind: "OperatorPKI"},
 		}
 	})
+	return nil
 }
