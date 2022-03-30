@@ -1922,8 +1922,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 
 	deployment := manifests.ClusterNetworkOperatorDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		cno.ReconcileDeployment(deployment, p, hcp.Spec.APIPort)
-		return nil
+		return cno.ReconcileDeployment(deployment, p, hcp.Spec.APIPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator deployment: %w", err)
 	}
