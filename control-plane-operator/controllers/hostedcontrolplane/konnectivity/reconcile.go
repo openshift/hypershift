@@ -211,16 +211,18 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	return nil
 }
 
-func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool, strategy *hyperv1.ServicePublishingStrategy) error {
+func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool, strategy *hyperv1.ServicePublishingStrategy, defaultIngressDomain string) error {
 	ownerRef.ApplyTo(route)
-	if !private && strategy.Route != nil && strategy.Route.Hostname != "" {
+	switch {
+	case !private && strategy.Route != nil && strategy.Route.Hostname != "":
 		if route.Annotations == nil {
 			route.Annotations = map[string]string{}
 		}
 		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.Route.Hostname
 		route.Spec.Host = strategy.Route.Hostname
-	}
-	if private {
+	case !private && (strategy.Route == nil || strategy.Route.Hostname == ""):
+		route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
+	case private:
 		if route.Labels == nil {
 			route.Labels = map[string]string{}
 		}
