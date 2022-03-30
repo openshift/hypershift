@@ -14,6 +14,7 @@ import (
 	ignitionserver "github.com/openshift/hypershift/ignition-server"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/util"
@@ -271,6 +272,8 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)
+
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                        mgr.GetClient(),
 			ManagementClusterCapabilities: mgmtClusterCaps,
@@ -279,6 +282,7 @@ func NewStartCommand() *cobra.Command {
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
 			EnableCIDebugOutput:           enableCIDebugOutput,
 			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
+			DefaultIngressDomain:          defaultIngressDomain,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

@@ -107,6 +107,7 @@ type HostedControlPlaneReconciler struct {
 	upsert.CreateOrUpdateProvider
 	EnableCIDebugOutput   bool
 	OperateOnReleaseImage string
+	DefaultIngressDomain  string
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -771,9 +772,9 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	if serviceStrategy.Type != hyperv1.Route {
 		return nil
 	}
-	kasRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r.Client, kasRoute, func() error {
-		return konnectivity.ReconcileRoute(kasRoute, p.OwnerRef, util.IsPrivateHCP(hcp), serviceStrategy)
+	konnectivityRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, konnectivityRoute, func() error {
+		return konnectivity.ReconcileRoute(konnectivityRoute, p.OwnerRef, util.IsPrivateHCP(hcp), serviceStrategy, r.DefaultIngressDomain)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity server route: %w", err)
 	}
@@ -797,7 +798,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	}
 	oauthRoute := manifests.OauthServerRoute(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, oauthRoute, func() error {
-		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, serviceStrategy)
+		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, serviceStrategy, r.DefaultIngressDomain)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth route: %w", err)
 	}
