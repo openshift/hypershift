@@ -33,6 +33,7 @@ import (
 type ApplyPlatformSpecifics = func(ctx context.Context, fixture *apifixtures.ExampleOptions, options *CreateOptions) error
 
 type CreateOptions struct {
+	AdditionalTrustBundle            string
 	Annotations                      []string
 	AutoRepair                       bool
 	ControlPlaneAvailabilityPolicy   string
@@ -150,7 +151,16 @@ func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, erro
 		}
 	}
 
+	var userCABundle []byte
+	if len(opts.AdditionalTrustBundle) > 0 {
+		userCABundle, err = ioutil.ReadFile(opts.AdditionalTrustBundle)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read additional trust bundle file: %w", err)
+		}
+	}
+
 	return &apifixtures.ExampleOptions{
+		AdditionalTrustBundle:            string(userCABundle),
 		InfraID:                          opts.InfraID,
 		Annotations:                      annotations,
 		AutoRepair:                       opts.AutoRepair,

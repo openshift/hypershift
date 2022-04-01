@@ -39,7 +39,7 @@ endif
 
 all: build e2e
 
-build: ignition-server hypershift-operator control-plane-operator konnectivity-socks5-proxy hypershift availability-prober token-minter
+build: hypershift-operator control-plane-operator hypershift
 
 .PHONY: update
 update: deps api api-docs app-sre-saas-template
@@ -60,11 +60,6 @@ $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
-# Build ignition-server binary
-.PHONY: ignition-server
-ignition-server:
-	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/ignition-server ./ignition-server
-
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
 hypershift-operator:
@@ -74,22 +69,9 @@ hypershift-operator:
 control-plane-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-operator ./control-plane-operator
 
-# Build konnectivity-socks5-proxy binary
-.PHONY: konnectivity-socks5-proxy
-konnectivity-socks5-proxy:
-	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/konnectivity-socks5-proxy ./konnectivity-socks5-proxy
-
 .PHONY: hypershift
 hypershift:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift .
-
-.PHONY: availability-prober
-availability-prober:
-	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/availability-prober ./availability-prober
-
-.PHONY: token-minter
-token-minter:
-	$(GO_BUILD_RECIPE) -o bin/token-minter ./token-minter
 
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
@@ -229,4 +211,7 @@ ci-install-hypershift-private:
 		--oidc-storage-provider-s3-region=us-east-1 \
 		--private-platform=AWS \
 		--aws-private-creds=/etc/hypershift-pool-aws-credentials/credentials \
-		--aws-private-region=us-east-1
+		--aws-private-region=us-east-1 \
+		--external-dns-provider=aws \
+		--external-dns-credentials=/etc/hypershift-pool-aws-credentials/credentials \
+		--external-dns-domain-filter=service.ci.hypershift.devcluster.openshift.com

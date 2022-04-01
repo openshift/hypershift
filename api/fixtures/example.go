@@ -19,12 +19,13 @@ import (
 )
 
 type ExampleResources struct {
-	Namespace  *corev1.Namespace
-	PullSecret *corev1.Secret
-	Resources  []crclient.Object
-	SSHKey     *corev1.Secret
-	Cluster    *hyperv1.HostedCluster
-	NodePools  []*hyperv1.NodePool
+	AdditionalTrustBundle *corev1.ConfigMap
+	Namespace             *corev1.Namespace
+	PullSecret            *corev1.Secret
+	Resources             []crclient.Object
+	SSHKey                *corev1.Secret
+	Cluster               *hyperv1.HostedCluster
+	NodePools             []*hyperv1.NodePool
 }
 
 func (o *ExampleResources) AsObjects() []crclient.Object {
@@ -37,6 +38,9 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	if o.SSHKey != nil {
 		objects = append(objects, o.SSHKey)
 	}
+	if o.AdditionalTrustBundle != nil {
+		objects = append(objects, o.AdditionalTrustBundle)
+	}
 	for _, nodePool := range o.NodePools {
 		objects = append(objects, nodePool)
 	}
@@ -44,6 +48,7 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 }
 
 type ExampleOptions struct {
+	AdditionalTrustBundle            string
 	Namespace                        string
 	Name                             string
 	ReleaseImage                     string
@@ -224,6 +229,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			buildAWSCreds(o.Name+"-cpo-creds", o.AWS.ControlPlaneOperatorRoleARN),
 			kmsCredsSecret,
 		}
+		endpointAccess := hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess)
 		resources = awsResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
@@ -241,7 +247,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: awsResources.NodePoolManagementAWSCreds.Name},
 				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: awsResources.ControlPlaneOperatorAWSCreds.Name},
 				ResourceTags:              o.AWS.ResourceTags,
-				EndpointAccess:            hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess),
+				EndpointAccess:            endpointAccess,
 			},
 		}
 
@@ -264,10 +270,40 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
+		services = getIngressServicePublishingStrategyMapping()
 		if o.ExternalDNSDomain != "" {
-			services = getIngressWithHostnameServicePublishingStrategyMapping(o.Name, o.ExternalDNSDomain)
-		} else {
-			services = getIngressServicePublishingStrategyMapping()
+			for i, svc := range services {
+				switch svc.Service {
+				case hyperv1.APIServer:
+					if endpointAccess != hyperv1.Private {
+						services[i].LoadBalancer = &hyperv1.LoadBalancerPublishingStrategy{
+							Hostname: fmt.Sprintf("api-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
+
+				case hyperv1.OAuthServer:
+					if endpointAccess != hyperv1.Private {
+						services[i].Route = &hyperv1.RoutePublishingStrategy{
+							Hostname: fmt.Sprintf("oauth-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
+
+				case hyperv1.Konnectivity:
+					if endpointAccess == hyperv1.Public {
+						services[i].Route = &hyperv1.RoutePublishingStrategy{
+							Hostname: fmt.Sprintf("konnectivity-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
+
+				case hyperv1.Ignition:
+					if endpointAccess == hyperv1.Public {
+						services[i].Route = &hyperv1.RoutePublishingStrategy{
+							Hostname: fmt.Sprintf("ignition-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
+				}
+			}
+
 		}
 	case o.None != nil:
 		platformSpec = hyperv1.PlatformSpec{
@@ -421,14 +457,33 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		},
 	}
 
+	var userCABundleCM *corev1.ConfigMap
+	if len(o.AdditionalTrustBundle) > 0 {
+		userCABundleCM = &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ConfigMap",
+				APIVersion: corev1.SchemeGroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-ca-bundle",
+				Namespace: namespace.Name,
+			},
+			Data: map[string]string{
+				"ca-bundle.crt": string(o.AdditionalTrustBundle),
+			},
+		}
+		cluster.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: userCABundleCM.Name}
+	}
+
 	if o.NodePoolReplicas <= -1 {
 		return &ExampleResources{
-			Namespace:  namespace,
-			PullSecret: pullSecret,
-			Resources:  resources,
-			SSHKey:     sshKeySecret,
-			Cluster:    cluster,
-			NodePools:  []*hyperv1.NodePool{},
+			AdditionalTrustBundle: userCABundleCM,
+			Namespace:             namespace,
+			PullSecret:            pullSecret,
+			Resources:             resources,
+			SSHKey:                sshKeySecret,
+			Cluster:               cluster,
+			NodePools:             []*hyperv1.NodePool{},
 		}
 	}
 
@@ -570,12 +625,13 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	}
 
 	return &ExampleResources{
-		Namespace:  namespace,
-		PullSecret: pullSecret,
-		Resources:  resources,
-		SSHKey:     sshKeySecret,
-		Cluster:    cluster,
-		NodePools:  nodePools,
+		AdditionalTrustBundle: userCABundleCM,
+		Namespace:             namespace,
+		PullSecret:            pullSecret,
+		Resources:             resources,
+		SSHKey:                sshKeySecret,
+		Cluster:               cluster,
+		NodePools:             nodePools,
 	}
 }
 
@@ -608,7 +664,7 @@ func getIngressServicePublishingStrategyMapping() []hyperv1.ServicePublishingStr
 	}
 }
 
-func getIngressWithHostnameServicePublishingStrategyMapping(name, domain string) []hyperv1.ServicePublishingStrategyMapping {
+func getIngressWithHostnameServicePublishingStrategyMapping(name, domain string, endpointAcesss hyperv1.AWSEndpointAccessType) []hyperv1.ServicePublishingStrategyMapping {
 	return []hyperv1.ServicePublishingStrategyMapping{
 		{
 			Service: hyperv1.APIServer,

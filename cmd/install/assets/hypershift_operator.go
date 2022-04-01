@@ -3,8 +3,10 @@ package assets
 import (
 	"fmt"
 
+	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -175,8 +177,9 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								"--source=openshift-route",
 								fmt.Sprintf("--domain-filter=%s", o.DomainFilter),
 								fmt.Sprintf("--provider=%s", o.Provider),
-								"--registry=noop",
-								"--txt-owner-id=hypershift",
+								"--registry=txt",
+								"--txt-suffix=-external-dns",
+								fmt.Sprintf("--txt-owner-id=%s", uuid.NewString()),
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
 							LivenessProbe: &corev1.Probe{
@@ -243,6 +246,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 }
 
 type HyperShiftOperatorDeployment struct {
+	AdditionalTrustBundle          *corev1.ConfigMap
 	Namespace                      *corev1.Namespace
 	OperatorImage                  string
 	Images                         map[string]string
@@ -305,6 +309,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			},
 		}
 	}
+
 	image := o.OperatorImage
 
 	if mapImage, ok := o.Images["hypershift-operator"]; ok {
@@ -406,6 +411,11 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		},
+	}
+
+	if o.AdditionalTrustBundle != nil {
+		// Add trusted-ca mount with optional configmap
+		util.DeploymentAddTrustBundleVolume(&corev1.LocalObjectReference{Name: o.AdditionalTrustBundle.Name}, deployment)
 	}
 
 	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)

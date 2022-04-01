@@ -1,4 +1,4 @@
-package main
+package konnectivitysocks5proxy
 
 import (
 	"bufio"
@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 
 	socks5 "github.com/armon/go-socks5"
@@ -21,25 +20,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func main() {
-	cmd := &cobra.Command{
-		Use: "konnectivity-socks5-proxy",
-		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
-			os.Exit(1)
-		},
-	}
-	cmd.AddCommand(NewStartCommand())
-
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
-}
-
 func NewStartCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "run",
+		Use:   "konnectivity-socks5-proxy",
 		Short: "Runs the konnectivity socks5 proxy server.",
 		Long: ` Runs the konnectivity socks5 proxy server.
 		This proxy accepts request and tunnels them through the designated Konnectivity Server.
@@ -73,7 +56,7 @@ func NewStartCommand() *cobra.Command {
 
 		conf := &socks5.Config{
 			Dial: dialFunc(caCertPath, clientCertPath, clientKeyPath, proxyHostname, proxyPort),
-			Resolver: K8sServiceResolver{
+			Resolver: k8sServiceResolver{
 				client: client,
 			},
 		}
@@ -137,12 +120,12 @@ func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
 	return proxy.Dial(ctx, network, addr)
 }
 
-// K8sServiceResolver attempts to resolve the hostname by matching it to a Kubernetes Service, but will fallback to the system DNS if an error is encountered.
-type K8sServiceResolver struct {
+// k8sServiceResolver attempts to resolve the hostname by matching it to a Kubernetes Service, but will fallback to the system DNS if an error is encountered.
+type k8sServiceResolver struct {
 	client client.Client
 }
 
-func (d K8sServiceResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
+func (d k8sServiceResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
 	// Preserve the host so we can recognize it
 	if shouldGoDirect(name) {
 		return ctx, nil, nil
@@ -156,7 +139,7 @@ func (d K8sServiceResolver) Resolve(ctx context.Context, name string) (context.C
 	return ctx, ip, nil
 }
 
-func (d K8sServiceResolver) ResolveK8sService(ctx context.Context, name string) (context.Context, net.IP, error) {
+func (d k8sServiceResolver) ResolveK8sService(ctx context.Context, name string) (context.Context, net.IP, error) {
 	namespaceNamedService := strings.Split(name, ".")
 	if len(namespaceNamedService) < 2 {
 		return nil, nil, fmt.Errorf("unable to derive namespacedName from %v", name)

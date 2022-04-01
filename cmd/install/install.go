@@ -42,6 +42,7 @@ import (
 )
 
 type Options struct {
+	AdditionalTrustBundle                     string
 	Namespace                                 string
 	HyperShiftImage                           string
 	ImageRefsFile                             string
@@ -151,6 +152,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
+	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -299,6 +301,24 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		}
 	}
 
+	var userCABundleCM *corev1.ConfigMap
+	if opts.AdditionalTrustBundle != "" {
+		userCABundle, err := ioutil.ReadFile(opts.AdditionalTrustBundle)
+		if err != nil {
+			return nil, err
+		}
+		userCABundleCM = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-ca-bundle",
+				Namespace: operatorNamespace.Name,
+			},
+			Data: map[string]string{
+				"ca-bundle.crt": string(userCABundle),
+			},
+		}
+		objects = append(objects, userCABundleCM)
+	}
+
 	if len(opts.ExternalDNSProvider) > 0 {
 		externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
 			Namespace: operatorNamespace,
@@ -348,6 +368,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}
 
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
+		AdditionalTrustBundle:          userCABundleCM,
 		Namespace:                      operatorNamespace,
 		OperatorImage:                  opts.HyperShiftImage,
 		ServiceAccount:                 operatorServiceAccount,

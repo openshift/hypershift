@@ -159,8 +159,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, err
 		}
 		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
+			originalHCP := hostedControlPlane.DeepCopy()
 			controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
-			if err := r.Update(ctx, hostedControlPlane); err != nil {
+			if err := r.Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
 		}
@@ -169,8 +170,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Ensure the hostedControlPlane has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
+		originalHCP := hostedControlPlane.DeepCopy()
 		controllerutil.AddFinalizer(hostedControlPlane, finalizer)
-		if err := r.Update(ctx, hostedControlPlane); err != nil {
+		if err := r.Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
 	}
@@ -179,6 +181,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hostedControlPlane.Spec.ReleaseImage, r.OperateOnReleaseImage)
 		return ctrl.Result{}, nil
 	}
+
+	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 
 	// Reconcile global configuration validation status
 	{
@@ -468,12 +472,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationPausedCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
-	if err := r.Client.Status().Update(ctx, hostedControlPlane); err != nil {
+	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	if util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil) {
+	if isPaused, duration := util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
 		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
-		return ctrl.Result{}, nil
+		return ctrl.Result{
+			RequeueAfter: duration,
+		}, nil
 	}
 
 	// Perform the hosted control plane reconciliation
@@ -1605,6 +1611,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			aesCBCBackupKey,
 			hcp.Spec.Etcd.ManagementType,
 			p.APIServerPort,
+			hcp.Spec.PodCIDR,
+			hcp.Spec.ServiceCIDR,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
@@ -2135,7 +2143,16 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret: %w", err)
 	}
-	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, globalConfig)
+
+	var userCA *corev1.ConfigMap
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		userCA = manifests.UserCAConfigMap(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(userCA), userCA); err != nil {
+			return fmt.Errorf("failed to get user ca: %w", err)
+		}
+	}
+
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, userCA, globalConfig)
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
@@ -2261,7 +2278,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage, hcp.Spec.AdditionalTrustBundle)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}

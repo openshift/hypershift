@@ -39,6 +39,7 @@ nav:
   - how-to/upgrades.md
   - how-to/restart-control-plane-components.md
   - how-to/pause-reconciliation.md
+  - how-to/external-dns.md
   - 'AWS':
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md

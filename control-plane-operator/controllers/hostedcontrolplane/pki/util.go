@@ -1,8 +1,8 @@
 package pki
 
 import (
-	"crypto"
 	"crypto/md5"
+	"crypto/rsa"
 	"crypto/x509"
 	"fmt"
 
@@ -37,11 +37,7 @@ func signCertificate(cfg *certs.CertCfg, ca *corev1.Secret) (crtBytes []byte, ke
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to generate etcd client secret: %w", err)
 	}
-	privKeyPem, err := certs.PrivateKeyToPem(key)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to serialize private key to PEM: %w", err)
-	}
-	return certs.CertToPem(crt), privKeyPem, certs.CertToPem(caCert), nil
+	return certs.CertToPem(crt), certs.PrivateKeyToPem(key), certs.CertToPem(caCert), nil
 }
 
 func hasCAHash(secret *corev1.Secret, ca *corev1.Secret) bool {
@@ -60,7 +56,7 @@ func computeCAHash(ca *corev1.Secret) string {
 	return fmt.Sprintf("%x", md5.Sum(append(ca.Data[CASignerCertMapKey], ca.Data[CASignerKeyMapKey]...)))
 }
 
-func decodeCA(ca *corev1.Secret) (*x509.Certificate, crypto.Signer, error) {
+func decodeCA(ca *corev1.Secret) (*x509.Certificate, *rsa.PrivateKey, error) {
 	crt, err := certs.PemToCertificate(ca.Data[CASignerCertMapKey])
 	if err != nil {
 		return nil, nil, err

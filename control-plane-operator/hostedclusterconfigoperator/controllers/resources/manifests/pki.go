@@ -13,3 +13,21 @@ func RootCASecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func ControlPlaneUserCABundle(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-ca-bundle",
+			Namespace: ns,
+		},
+	}
+}
+
+func UserCABundle() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-ca-bundle",
+			Namespace: "openshift-config",
+		},
+	}
+}
