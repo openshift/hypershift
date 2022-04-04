@@ -654,6 +654,107 @@ spec:
                           provider within IBM Cloud.
                         type: string
                     type: object
+                  powervs:
+                    description: IBMCloud defines IBMCloud specific settings for components
+                    properties:
+                      controlPlaneOperatorCreds:
+                        description: "ControlPlaneOperatorCreds is a reference to
+                          a secret containing cloud credentials with permissions matching
+                          the control-plane-operator policy. The secret should have
+                          exactly one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"control plane operator
+                          policy\""
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      kubeCloudControllerCreds:
+                        description: "KubeCloudControllerCreds is a reference to a
+                          secret containing cloud credentials with permissions matching
+                          the cloud controller policy. The secret should have exactly
+                          one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"cloud controller policy\""
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      nodePoolManagementCreds:
+                        description: "NodePoolManagementCreds is a reference to a
+                          secret containing cloud credentials with permissions matching
+                          the node pool management policy. The secret should have
+                          exactly one key, `credentials`, whose value is an AWS credentials
+                          file. \n TODO(dan): document the \"node pool management
+                          policy\""
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      region:
+                        description: Region is the IBMCloud region in which the cluster
+                          resides. This configures the OCP control plane cloud integrations,
+                          and is used by NodePool to resolve the correct boot image
+                          for a given release.
+                        type: string
+                      resourceGroup:
+                        description: ResourceGroup is the IBMCloud Resource Group
+                          in which the cluster resides. If not specified then default
+                          resource group of the account will be used.
+                        type: string
+                      serviceInstanceID:
+                        description: ServiceInstanceID is the ServiceInstance to use
+                          for control plane cloud resources.
+                        type: string
+                      subnet:
+                        description: Subnet is the subnet to use for control plane
+                          cloud resources.
+                        properties:
+                          id:
+                            description: ID of resource
+                            type: string
+                          name:
+                            description: Name of resource
+                            type: string
+                        type: object
+                      vpc:
+                        description: VPC specifies IBM Cloud PowerVS Load Balancing
+                          configuration for the control plane.
+                        properties:
+                          name:
+                            description: Name for VPC to used for all the service
+                              load balancer.
+                            type: string
+                          region:
+                            description: Region is the IBMCloud region in which VPC
+                              gets created, this VPC used for all the ingress traffic
+                              into the OCP cluster.
+                            type: string
+                          subnet:
+                            description: Subnet is the subnet to use for load balancer.
+                            type: string
+                          zone:
+                            description: Zone is the availability zone where load
+                              balancer cloud resources are created.
+                            type: string
+                        required:
+                        - name
+                        - region
+                        type: object
+                      zone:
+                        description: Zone is the availability zone where control plane
+                          cloud resources are created.
+                        type: string
+                    required:
+                    - controlPlaneOperatorCreds
+                    - kubeCloudControllerCreds
+                    - nodePoolManagementCreds
+                    - region
+                    type: object
                   type:
                     description: Type is the type of infrastructure provider for the
                       cluster.
@@ -664,6 +765,7 @@ spec:
                     - Agent
                     - KubeVirt
                     - Azure
+                    - PowerVS
                     type: string
                 required:
                 - type

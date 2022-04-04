@@ -4775,6 +4775,59 @@ spec:
                             type: object
                         type: object
                     type: object
+                  powervs:
+                    description: PowerVS specifies the configuration used when using
+                      IBMCloud PowerVS platform.
+                    properties:
+                      deletePolicy:
+                        description: DeletePolicy for the image
+                        type: string
+                      image:
+                        description: Image used for deploying the nodes
+                        properties:
+                          id:
+                            description: ID of resource
+                            type: string
+                          name:
+                            description: Name of resource
+                            type: string
+                        type: object
+                      memory:
+                        description: Memory specifies the amount of memory specified
+                          in GBs
+                        type: string
+                      procType:
+                        description: ProcType (dedicated, shared, capped)
+                        type: string
+                      processors:
+                        description: Processors specifies the number of processors
+                          allocated
+                        type: string
+                      serviceInstanceID:
+                        description: ServiceInstanceID is the ServiceInstance to use
+                          for control plane cloud resources.
+                        type: string
+                      storageType:
+                        description: StorageType for the image and nodes
+                        type: string
+                      subnet:
+                        description: Subnet is the subnet to use for control plane
+                          cloud resources.
+                        properties:
+                          id:
+                            description: ID of resource
+                            type: string
+                          name:
+                            description: Name of resource
+                            type: string
+                        type: object
+                      sysType:
+                        description: 'SysType used to host the instance(e.g: s922,
+                          e980, e880)'
+                        type: string
+                    required:
+                    - serviceInstanceID
+                    type: object
                   type:
                     description: Type specifies the platform name.
                     enum:
@@ -4784,6 +4837,7 @@ spec:
                     - Agent
                     - KubeVirt
                     - Azure
+                    - PowerVS
                     type: string
                 required:
                 - type
