@@ -326,16 +326,13 @@ func destroyPowerVsDhcpServer(infra *Infra, cloudInstanceID string, session *ibm
 		return fmt.Errorf("no dhcp servers available to delete in powervs")
 	}
 
-	dhcpID := ""
-	for _, dhcp := range dhcpServers {
-		log.Log.WithName(infraID).Info("Deleting DHCP server", "id", *dhcp.ID)
-		dhcpID = *dhcp.ID
-		err = client.Delete(*dhcp.ID)
-		if err != nil {
-			return
-		}
-		break
+	dhcpID := *dhcpServers[0].ID
+	log.Log.WithName(infraID).Info("Deleting DHCP server", "id", dhcpID)
+	err = client.Delete(dhcpID)
+	if err != nil {
+		return
 	}
+
 	instanceClient := instance.NewIBMPIInstanceClient(context.Background(), session, cloudInstanceID)
 
 	// TO-DO: need to replace the logic of waiting for dhcp service deletion by using jobReference.

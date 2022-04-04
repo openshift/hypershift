@@ -139,6 +139,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			PowerVSCloudConnection: opts.PowerVSPlatform.PowerVSCloudConnection,
 			VpcRegion:              opts.PowerVSPlatform.VpcRegion,
 			Vpc:                    opts.PowerVSPlatform.Vpc,
+			Debug:                  true,
 		}
 		infra = &powervsinfra.Infra{}
 		err = infra.SetupInfra(opt)

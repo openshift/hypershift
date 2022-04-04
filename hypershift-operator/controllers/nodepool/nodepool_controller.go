@@ -518,6 +518,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// Reconcile PowerVSImage only for the PowerVS platform
 	if nodePool.Spec.Platform.Type == hyperv1.PowerVSPlatform {
 		powervsImage, region, err := getPowerVSImage(nodePool, hcluster.Spec.Platform.PowerVS.Region, releaseImage)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 
 		// Reconcile (Platform)MachineTemplate.
 		image, mutateImage, _, err := ibmPowerVSImageBuilder(hcluster, nodePool, infraID, region, powervsImage)
@@ -1460,12 +1463,12 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 				return err
 			}
 			o.Spec = *spec
-                        if o.Annotations == nil {
-                                o.Annotations = make(map[string]string)
-                        }
-                        o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-                        return nil
-                }
+			if o.Annotations == nil {
+				o.Annotations = make(map[string]string)
+			}
+			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+			return nil
+		}
 
 	case hyperv1.PowerVSPlatform:
 		template = &capipowervs.IBMPowerVSMachineTemplate{}

@@ -104,8 +104,7 @@ func getPowerVSImage(pool *hyperv1.NodePool, region string, releaseImage *releas
 }
 
 func ibmPowerVSImageBuilder(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, infraID, region string, img *releaseinfo.CoreOSPowerVSImage) (client.Object, func(object client.Object) error, string, error) {
-	var image client.Object
-	image = &capipowervs.IBMPowerVSImage{}
+	image := &capipowervs.IBMPowerVSImage{}
 	imageSpec := ibmPowerVSImageSpec(hcluster.Name, region, img, nodePool)
 	mutateImage := func(object client.Object) error {
 		o, _ := object.(*capipowervs.IBMPowerVSImage)

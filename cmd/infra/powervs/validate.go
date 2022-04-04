@@ -1,10 +1,15 @@
 package powervs
 
 import (
+	"errors"
 	"fmt"
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+)
+
+var (
+	errorCCNotFound = errors.New("cloud connection not found")
 )
 
 // validateCloudInstanceByID ...
@@ -154,7 +159,7 @@ func listAndGetCloudConnection(cloudConnName string, client *instance.IBMPICloud
 		}
 	}
 
-	err = fmt.Errorf("%s cloud connection not found", cloudConnName)
+	err = errorCCNotFound
 	return
 }
 
@@ -170,6 +175,11 @@ func validateCloudConnectionByName(name string, client *instance.IBMPICloudConne
 // with respect to powervs zone's existing cloud connections
 func validateCloudConnectionInPowerVSZone(name string, client *instance.IBMPICloudConnectionClient) (cloudConnID string, err error) {
 	cloudConnCount, cloudConnID, err := listAndGetCloudConnection(name, client)
+
+	if err != nil && err != errorCCNotFound {
+		err = fmt.Errorf("failed to list cloud connections %w", err)
+		return
+	}
 
 	if cloudConnCount == 2 || (cloudConnCount == 1 && cloudConnID == "") {
 		err = fmt.Errorf("powervs zone has more than one cloud connection, make sure only one cloud connection present per powervs zone")

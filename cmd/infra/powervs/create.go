@@ -299,6 +299,11 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
 	// getting list of resource instance of type cis
 	serviceID, _, err := getServiceInfo(cisService, "")
 
+	if err != nil {
+		err = fmt.Errorf("error retrieving cis service %w", err)
+		return
+	}
+
 	f := func(start string) (isDone bool, nextUrl string, err error) {
 		listResourceOpt := resourcecontrollerv2.ListResourceInstancesOptions{ResourceID: &serviceID}
 
