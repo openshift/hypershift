@@ -21,7 +21,6 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 const (
@@ -36,6 +35,7 @@ type IBMPowerVSClusterSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// ServiceInstanceID is the id of the power cloud instance where the vsi instance will get deployed
+	// +kubebuilder:validation:MinLength=1
 	ServiceInstanceID string `json:"serviceInstanceID"`
 
 	// Network is the reference to the Network to use for this cluster.

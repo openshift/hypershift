@@ -21,7 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 const (
 	// MachineFinalizer allows IBMVPCMachineReconciler to clean up resources associated with IBMVPCMachine before
@@ -48,7 +47,8 @@ type IBMVPCMachineSpec struct {
 
 	// Profile indicates the flavor of instance. Example: bx2-8x32	means 8 vCPUs	32 GB RAM	16 Gbps
 	// TODO: add a reference link of profile
-	Profile string `json:"profile"`
+	// +optional
+	Profile string `json:"profile,omitempty"`
 
 	// ProviderID is the unique identifier as specified by the cloud provider.
 	// +optional
