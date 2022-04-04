@@ -19,6 +19,9 @@ import (
 )
 
 const (
+	// HypershiftOperatorPriortyClass is the priority class for the HO
+	HypershiftOperatorPriortyClass = "hypershift-operator"
+
 	// EtcdPriorityClass is for etcd pods.
 	EtcdPriorityClass = "hypershift-etcd"
 
@@ -350,6 +353,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					},
 				},
 				Spec: corev1.PodSpec{
+					PriorityClassName:  HypershiftOperatorPriortyClass,
 					ServiceAccountName: o.ServiceAccount.Name,
 					Containers: []corev1.Container{
 						{
@@ -858,9 +862,7 @@ func (o HyperShiftOperatorRoleBinding) Build() *rbacv1.RoleBinding {
 	return binding
 }
 
-type HyperShiftControlPlanePriorityClass struct{}
-
-func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass {
+func HyperShiftControlPlanePriorityClass() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -875,9 +877,7 @@ func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass
 	}
 }
 
-type HyperShiftAPICriticalPriorityClass struct{}
-
-func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass {
+func HyperShiftAPICriticalPriorityClass() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -892,9 +892,7 @@ func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass 
 	}
 }
 
-type HyperShiftEtcdPriorityClass struct{}
-
-func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
+func HyperShiftEtcdPriorityClass() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -906,6 +904,17 @@ func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
 		Value:         100002000,
 		GlobalDefault: false,
 		Description:   "This priority class should be used for hypershift etcd pods.",
+	}
+}
+
+func HypershiftOperatorPriorityClass() *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: HypershiftOperatorPriortyClass,
+		},
+		Value:         100003000,
+		GlobalDefault: false,
+		Description:   "This priority class is used for hypershift operator pods",
 	}
 }
 
