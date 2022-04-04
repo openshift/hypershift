@@ -207,7 +207,7 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 		cp := &hyperv1.HostedControlPlane{}
 		err = client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, cp)
 		if err != nil {
-			t.Errorf("Failed to get hostedcontrolplane: %v", err)
+			t.Logf("Failed to get hostedcontrolplane: %v", err)
 			return false, nil
 		}
 
@@ -229,9 +229,9 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 		}
 
 		if isAvailable {
-			t.Logf("Waiting for all conditions to be ready: Image: %s, conditions: %v", image, conditions)
 			return true, nil
 		}
+		t.Logf("Waiting for all conditions to be ready: Image: %s, conditions: %v", image, conditions)
 		return false, nil
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
