@@ -1611,6 +1611,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			aesCBCBackupKey,
 			hcp.Spec.Etcd.ManagementType,
 			p.APIServerPort,
+			hcp.Spec.PodCIDR,
+			hcp.Spec.ServiceCIDR,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
@@ -2141,7 +2143,16 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret: %w", err)
 	}
-	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, globalConfig)
+
+	var userCA *corev1.ConfigMap
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		userCA = manifests.UserCAConfigMap(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(userCA), userCA); err != nil {
+			return fmt.Errorf("failed to get user ca: %w", err)
+		}
+	}
+
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, userCA, globalConfig)
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
@@ -2267,7 +2278,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage, hcp.Spec.AdditionalTrustBundle)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}

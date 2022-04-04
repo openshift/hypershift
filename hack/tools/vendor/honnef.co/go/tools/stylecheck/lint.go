@@ -1,4 +1,4 @@
-package stylecheck // import "honnef.co/go/tools/stylecheck"
+package stylecheck
 
 import (
 	"fmt"
@@ -12,20 +12,31 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"honnef.co/go/tools/code"
+	"honnef.co/go/tools/analysis/code"
+	"honnef.co/go/tools/analysis/edit"
+	"honnef.co/go/tools/analysis/lint"
+	"honnef.co/go/tools/analysis/report"
 	"honnef.co/go/tools/config"
-	"honnef.co/go/tools/edit"
+	"honnef.co/go/tools/go/ast/astutil"
+	"honnef.co/go/tools/go/ir"
+	"honnef.co/go/tools/go/ir/irutil"
+	"honnef.co/go/tools/go/types/typeutil"
 	"honnef.co/go/tools/internal/passes/buildir"
-	"honnef.co/go/tools/ir"
-	. "honnef.co/go/tools/lint/lintdsl"
 	"honnef.co/go/tools/pattern"
-	"honnef.co/go/tools/report"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"golang.org/x/tools/go/types/typeutil"
 )
+
+func docText(doc *ast.CommentGroup) (string, bool) {
+	if doc == nil {
+		return "", false
+	}
+	// We trim spaces primarily because of /**/ style comments, which often have leading space.
+	text := strings.TrimSpace(doc.Text())
+	return text, text != ""
+}
 
 func CheckPackageComment(pass *analysis.Pass) (interface{}, error) {
 	// - At least one file in a non-main package should have a package comment
@@ -44,13 +55,13 @@ func CheckPackageComment(pass *analysis.Pass) (interface{}, error) {
 		if code.IsInTest(pass, f) {
 			continue
 		}
-		if f.Doc != nil && len(f.Doc.List) > 0 {
+		text, ok := docText(f.Doc)
+		if ok {
 			hasDocs = true
 			prefix := "Package " + f.Name.Name + " "
-			if !strings.HasPrefix(strings.TrimSpace(f.Doc.Text()), prefix) {
+			if !strings.HasPrefix(text, prefix) {
 				report.Report(pass, f.Doc, fmt.Sprintf(`package comment should be of the form "%s..."`, prefix))
 			}
-			f.Doc.Text()
 		}
 	}
 
@@ -152,7 +163,7 @@ func CheckBlankImports(pass *analysis.Pass) (interface{}, error) {
 		for i, imp := range f.Imports {
 			pos := fset.Position(imp.Pos())
 
-			if !code.IsBlank(imp.Name) {
+			if !astutil.IsBlank(imp.Name) {
 				continue
 			}
 			// Only flag the first blank import in a group of imports,
@@ -161,7 +172,7 @@ func CheckBlankImports(pass *analysis.Pass) (interface{}, error) {
 			if i > 0 {
 				prev := f.Imports[i-1]
 				prevPos := fset.Position(prev.Pos())
-				if pos.Line-1 == prevPos.Line && code.IsBlank(prev.Name) {
+				if pos.Line-1 == prevPos.Line && astutil.IsBlank(prev.Name) {
 					continue
 				}
 			}
@@ -174,6 +185,8 @@ func CheckBlankImports(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
+var checkIncDecQ = pattern.MustParse(`(AssignStmt x tok@(Or "+=" "-=") (BasicLit "INT" "1"))`)
+
 func CheckIncDec(pass *analysis.Pass) (interface{}, error) {
 	// TODO(dh): this can be noisy for function bodies that look like this:
 	// 	x += 3
@@ -182,24 +195,19 @@ func CheckIncDec(pass *analysis.Pass) (interface{}, error) {
 	// 	...
 	// 	x += 1
 	fn := func(node ast.Node) {
-		assign := node.(*ast.AssignStmt)
-		if assign.Tok != token.ADD_ASSIGN && assign.Tok != token.SUB_ASSIGN {
+		m, ok := code.Match(pass, checkIncDecQ, node)
+		if !ok {
 			return
 		}
-		if (len(assign.Lhs) != 1 || len(assign.Rhs) != 1) ||
-			!code.IsIntLiteral(assign.Rhs[0], "1") {
-			return
-		}
-
 		suffix := ""
-		switch assign.Tok {
+		switch m.State["tok"].(token.Token) {
 		case token.ADD_ASSIGN:
 			suffix = "++"
 		case token.SUB_ASSIGN:
 			suffix = "--"
 		}
 
-		report.Report(pass, assign, fmt.Sprintf("should replace %s with %s%s", report.Render(pass, assign), report.Render(pass, assign.Lhs[0]), suffix))
+		report.Report(pass, node, fmt.Sprintf("should replace %s with %s%s", report.Render(pass, node), report.Render(pass, m.State["x"].(ast.Node)), suffix))
 	}
 	code.Preorder(pass, fn, (*ast.AssignStmt)(nil))
 	return nil, nil
@@ -219,6 +227,11 @@ fnLoop:
 			// errors in other positions, that's fine.
 			continue
 		}
+
+		if rets.Len() >= 2 && rets.At(rets.Len()-1).Type() == types.Universe.Lookup("bool").Type() && rets.At(rets.Len()-2).Type() == types.Universe.Lookup("error").Type() {
+			// Accept (..., error, bool) and assume it's a comma-ok function. It's not clear whether the bool should come last or not for these kinds of functions.
+			continue
+		}
 		for i := rets.Len() - 2; i >= 0; i-- {
 			if rets.At(i).Type() == types.Universe.Lookup("error").Type() {
 				report.Report(pass, rets.At(i), "error should be returned as the last argument", report.ShortRange())
@@ -233,19 +246,19 @@ fnLoop:
 // types do not return unexported types.
 func CheckUnexportedReturn(pass *analysis.Pass) (interface{}, error) {
 	for _, fn := range pass.ResultOf[buildir.Analyzer].(*buildir.IR).SrcFuncs {
-		if fn.Synthetic != "" || fn.Parent() != nil {
+		if fn.Synthetic != 0 || fn.Parent() != nil {
 			continue
 		}
 		if !ast.IsExported(fn.Name()) || code.IsMain(pass) || code.IsInTest(pass, fn) {
 			continue
 		}
 		sig := fn.Type().(*types.Signature)
-		if sig.Recv() != nil && !ast.IsExported(code.Dereference(sig.Recv().Type()).(*types.Named).Obj().Name()) {
+		if sig.Recv() != nil && !ast.IsExported(typeutil.Dereference(sig.Recv().Type()).(*types.Named).Obj().Name()) {
 			continue
 		}
 		res := sig.Results()
 		for i := 0; i < res.Len(); i++ {
-			if named, ok := code.DereferenceR(res.At(i).Type()).(*types.Named); ok &&
+			if named, ok := typeutil.DereferenceR(res.At(i).Type()).(*types.Named); ok &&
 				!ast.IsExported(named.Obj().Name()) &&
 				named != types.Universe.Lookup("error").Type() {
 				report.Report(pass, fn, "should not return unexported type")
@@ -263,7 +276,7 @@ func CheckReceiverNames(pass *analysis.Pass) (interface{}, error) {
 			for _, sel := range ms {
 				fn := sel.Obj().(*types.Func)
 				recv := fn.Type().(*types.Signature).Recv()
-				if code.Dereference(recv.Type()) != T.Type() {
+				if typeutil.Dereference(recv.Type()) != T.Type() {
 					// skip embedded methods
 					continue
 				}
@@ -294,7 +307,7 @@ func CheckReceiverNamesIdentical(pass *analysis.Pass) (interface{}, error) {
 					// Don't concern ourselves with methods in generated code
 					continue
 				}
-				if code.Dereference(recv.Type()) != T.Type() {
+				if typeutil.Dereference(recv.Type()) != T.Type() {
 					// skip embedded methods
 					continue
 				}
@@ -325,7 +338,7 @@ func CheckContextFirstArg(pass *analysis.Pass) (interface{}, error) {
 	// 	func helperCommandContext(t *testing.T, ctx context.Context, s ...string) (cmd *exec.Cmd) {
 fnLoop:
 	for _, fn := range pass.ResultOf[buildir.Analyzer].(*buildir.IR).SrcFuncs {
-		if fn.Synthetic != "" || fn.Parent() != nil {
+		if fn.Synthetic != 0 || fn.Parent() != nil {
 			continue
 		}
 		params := fn.Signature.Params()
@@ -373,7 +386,7 @@ func CheckErrorStrings(pass *analysis.Pass) (interface{}, error) {
 				if !ok {
 					continue
 				}
-				if !code.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf") {
+				if !irutil.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf") {
 					continue
 				}
 
@@ -388,7 +401,7 @@ func CheckErrorStrings(pass *analysis.Pass) (interface{}, error) {
 				}
 				switch s[len(s)-1] {
 				case '.', ':', '!', '\n':
-					report.Report(pass, call, "error strings should not end with punctuation or a newline")
+					report.Report(pass, call, "error strings should not end with punctuation or newlines")
 				}
 				idx := strings.IndexByte(s, ' ')
 				if idx == -1 {
@@ -410,6 +423,10 @@ func CheckErrorStrings(pass *analysis.Pass) (interface{}, error) {
 					}
 				}
 
+				if strings.ContainsRune(word, '(') {
+					// Might be a function call
+					continue instrLoop
+				}
 				word = strings.TrimRightFunc(word, func(r rune) bool { return unicode.IsPunct(r) })
 				if objNames[fn.Package()][word] {
 					// Word is probably the name of a function or type in this package
@@ -443,7 +460,7 @@ func CheckTimeNames(pass *analysis.Pass) (interface{}, error) {
 				continue
 			}
 			T := pass.TypesInfo.TypeOf(name)
-			if !code.IsType(T, "time.Duration") && !code.IsType(T, "*time.Duration") {
+			if !typeutil.IsType(T, "time.Duration") && !typeutil.IsType(T, "*time.Duration") {
 				continue
 			}
 			for _, suffix := range suffixes {
@@ -496,7 +513,7 @@ func CheckErrorVarNames(pass *analysis.Pass) (interface{}, error) {
 
 				for i, name := range spec.Names {
 					val := spec.Values[i]
-					if !code.IsCallToAnyAST(pass, val, "errors.New", "fmt.Errorf") {
+					if !code.IsCallToAny(pass, val, "errors.New", "fmt.Errorf") {
 						continue
 					}
 
@@ -519,7 +536,7 @@ func CheckErrorVarNames(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-var httpStatusCodes = map[int]string{
+var httpStatusCodes = map[int64]string{
 	100: "StatusContinue",
 	101: "StatusSwitchingProtocols",
 	102: "StatusProcessing",
@@ -590,7 +607,7 @@ func CheckHTTPStatusCodes(pass *analysis.Pass) (interface{}, error) {
 		call := node.(*ast.CallExpr)
 
 		var arg int
-		switch code.CallNameAST(pass, call) {
+		switch code.CallName(pass, call) {
 		case "net/http.Error":
 			arg = 2
 		case "net/http.Redirect":
@@ -602,25 +619,29 @@ func CheckHTTPStatusCodes(pass *analysis.Pass) (interface{}, error) {
 		default:
 			return
 		}
-		lit, ok := call.Args[arg].(*ast.BasicLit)
+		if arg >= len(call.Args) {
+			return
+		}
+		tv, ok := code.IntegerLiteral(pass, call.Args[arg])
 		if !ok {
 			return
 		}
-		if whitelist[lit.Value] {
+		n, ok := constant.Int64Val(tv.Value)
+		if !ok {
+			return
+		}
+		if whitelist[strconv.FormatInt(n, 10)] {
 			return
 		}
 
-		n, err := strconv.Atoi(lit.Value)
-		if err != nil {
-			return
-		}
 		s, ok := httpStatusCodes[n]
 		if !ok {
 			return
 		}
+		lit := call.Args[arg]
 		report.Report(pass, lit, fmt.Sprintf("should use constant http.%s instead of numeric literal %d", s, n),
 			report.FilterGenerated(),
-			report.Fixes(edit.Fix(fmt.Sprintf("use http.%s instead of %d", s, n), edit.ReplaceWithString(pass.Fset, lit, "http."+s))))
+			report.Fixes(edit.Fix(fmt.Sprintf("use http.%s instead of %d", s, n), edit.ReplaceWithString(lit, "http."+s))))
 	}
 	code.Preorder(pass, fn, (*ast.CallExpr)(nil))
 	return nil, nil
@@ -642,13 +663,13 @@ func CheckDefaultCaseOrder(pass *analysis.Pass) (interface{}, error) {
 }
 
 var (
-	checkYodaConditionsQ = pattern.MustParse(`(BinaryExpr left@(BasicLit _ _) tok@(Or "==" "!=") right@(Not (BasicLit _ _)))`)
+	checkYodaConditionsQ = pattern.MustParse(`(BinaryExpr left@(TrulyConstantExpression _) tok@(Or "==" "!=") right@(Not (TrulyConstantExpression _)))`)
 	checkYodaConditionsR = pattern.MustParse(`(BinaryExpr right tok left)`)
 )
 
 func CheckYodaConditions(pass *analysis.Pass) (interface{}, error) {
 	fn := func(node ast.Node) {
-		if _, edits, ok := MatchAndEdit(pass, checkYodaConditionsQ, checkYodaConditionsR, node); ok {
+		if _, edits, ok := code.MatchAndEdit(pass, checkYodaConditionsQ, checkYodaConditionsR, node); ok {
 			report.Report(pass, node, "don't use Yoda conditions",
 				report.FilterGenerated(),
 				report.Fixes(edit.Fix("un-Yoda-fy", edits...)))
@@ -672,14 +693,21 @@ func CheckInvisibleCharacters(pass *analysis.Pass) (interface{}, error) {
 		var invalids []invalid
 		hasFormat := false
 		hasControl := false
+		prev := rune(-1)
+		const zwj = '\u200d'
 		for off, r := range lit.Value {
 			if unicode.Is(unicode.Cf, r) {
-				invalids = append(invalids, invalid{r, off})
-				hasFormat = true
+				// Don't flag joined emojis. These are multiple emojis joined with ZWJ, which some platform render as single composite emojis.
+				// For the purpose of this check, we consider all symbols, including all symbol modifiers, emoji.
+				if r != zwj || (r == zwj && !unicode.Is(unicode.S, prev)) {
+					invalids = append(invalids, invalid{r, off})
+					hasFormat = true
+				}
 			} else if unicode.Is(unicode.Cc, r) && r != '\n' && r != '\t' && r != '\r' {
 				invalids = append(invalids, invalid{r, off})
 				hasControl = true
 			}
+			prev = r
 		}
 
 		switch len(invalids) {
@@ -709,7 +737,7 @@ func CheckInvisibleCharacters(pass *analysis.Pass) (interface{}, error) {
 				}},
 			}
 			delete := analysis.SuggestedFix{
-				Message: fmt.Sprintf("delete %s character %U", kind, r),
+				Message: fmt.Sprintf("delete %s character %U", kind, r.r),
 				TextEdits: []analysis.TextEdit{{
 					Pos: lit.Pos() + token.Pos(r.off),
 					End: lit.Pos() + token.Pos(r.off) + token.Pos(utf8.RuneLen(r.r)),
@@ -766,7 +794,8 @@ func CheckExportedFunctionDocs(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		decl := node.(*ast.FuncDecl)
-		if decl.Doc == nil {
+		text, ok := docText(decl.Doc)
+		if !ok {
 			return
 		}
 		if !ast.IsExported(decl.Name.Name) {
@@ -785,11 +814,11 @@ func CheckExportedFunctionDocs(pass *analysis.Pass) (interface{}, error) {
 					return
 				}
 			default:
-				ExhaustiveTypeSwitch(T)
+				lint.ExhaustiveTypeSwitch(T)
 			}
 		}
 		prefix := decl.Name.Name + " "
-		if !strings.HasPrefix(decl.Doc.Text(), prefix) {
+		if !strings.HasPrefix(text, prefix) {
 			report.Report(pass, decl.Doc, fmt.Sprintf(`comment on exported %s %s should be of the form "%s..."`, kind, decl.Name.Name, prefix), report.FilterGenerated())
 		}
 	}
@@ -822,7 +851,8 @@ func CheckExportedTypeDocs(pass *analysis.Pass) (interface{}, error) {
 			}
 
 			doc := node.Doc
-			if doc == nil {
+			text, ok := docText(doc)
+			if !ok {
 				if len(genDecl.Specs) != 1 {
 					// more than one spec in the GenDecl, don't validate the
 					// docstring
@@ -833,12 +863,13 @@ func CheckExportedTypeDocs(pass *analysis.Pass) (interface{}, error) {
 					return false
 				}
 				doc = genDecl.Doc
-				if doc == nil {
+				text, ok = docText(doc)
+				if !ok {
 					return false
 				}
 			}
 
-			s := doc.Text()
+			s := text
 			articles := [...]string{"A", "An", "The"}
 			for _, a := range articles {
 				if strings.HasPrefix(s, a+" ") {
@@ -853,7 +884,7 @@ func CheckExportedTypeDocs(pass *analysis.Pass) (interface{}, error) {
 		case *ast.FuncLit, *ast.FuncDecl:
 			return false
 		default:
-			ExhaustiveTypeSwitch(node)
+			lint.ExhaustiveTypeSwitch(node)
 			return false
 		}
 	}
@@ -889,11 +920,12 @@ func CheckExportedVarDocs(pass *analysis.Pass) (interface{}, error) {
 			if !ast.IsExported(name) {
 				return false
 			}
-			if genDecl.Doc == nil {
+			text, ok := docText(genDecl.Doc)
+			if !ok {
 				return false
 			}
 			prefix := name + " "
-			if !strings.HasPrefix(genDecl.Doc.Text(), prefix) {
+			if !strings.HasPrefix(text, prefix) {
 				kind := "var"
 				if genDecl.Tok == token.CONST {
 					kind = "const"
@@ -904,7 +936,7 @@ func CheckExportedVarDocs(pass *analysis.Pass) (interface{}, error) {
 		case *ast.FuncLit, *ast.FuncDecl:
 			return false
 		default:
-			ExhaustiveTypeSwitch(node)
+			lint.ExhaustiveTypeSwitch(node)
 			return false
 		}
 	}

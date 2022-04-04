@@ -41,6 +41,15 @@ func MetricsClientCertSecret(ns string) *corev1.Secret {
 	}
 }
 
+func UserCAConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-ca-bundle",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdClientSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

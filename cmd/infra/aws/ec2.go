@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	invalidNATGatewayError = "InvalidNatGatewayID.NotFound"
-	invalidRouteTableID    = "InvalidRouteTableId.NotFound"
+	invalidNATGatewayError   = "InvalidNatGatewayID.NotFound"
+	invalidRouteTableID      = "InvalidRouteTableId.NotFound"
+	invalidElasticIPNotFound = "InvalidElasticIpID.NotFound"
 )
 
 var (
@@ -326,9 +327,18 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 
 	// NOTE: there's a potential to leak EIP addresses if the following tag operation fails, since we have no way of
 	// recognizing the EIP as belonging to the cluster
-	_, err = client.CreateTags(&ec2.CreateTagsInput{
-		Resources: []*string{aws.String(allocationID)},
-		Tags:      append(ec2Tags(o.InfraID, fmt.Sprintf("%s-eip-%s", o.InfraID, availabilityZone)), o.additionalEC2Tags...),
+	isRetriable := func(err error) bool {
+		if awsErr, ok := err.(awserr.Error); ok {
+			return strings.EqualFold(awsErr.Code(), invalidElasticIPNotFound)
+		}
+		return false
+	}
+	err = retry.OnError(retryBackoff, isRetriable, func() error {
+		_, err = client.CreateTags(&ec2.CreateTagsInput{
+			Resources: []*string{aws.String(allocationID)},
+			Tags:      append(ec2Tags(o.InfraID, fmt.Sprintf("%s-eip-%s", o.InfraID, availabilityZone)), o.additionalEC2Tags...),
+		})
+		return err
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot tag NAT gateway EIP: %w", err)

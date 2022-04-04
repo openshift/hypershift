@@ -46,6 +46,55 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
 			},
 		},
+		"additional-trust-bundle parameter mounts ca bundle volume": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:        3,
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				AdditionalTrustBundle: &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			expectedVolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "trusted-ca",
+					ReadOnly:  true,
+					MountPath: "/etc/pki/ca-trust/extracted/pem",
+				},
+			},
+			expectedVolumes: []corev1.Volume{
+				{
+					Name: "trusted-ca",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{Name: "user-ca-bundle"},
+							Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--deployment-name=operator",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
+			},
+		},
 		"specify oidc parameters result in appropriate volumes and volumeMounts": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
 				Namespace: &corev1.Namespace{
