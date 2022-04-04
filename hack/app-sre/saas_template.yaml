@@ -26,6 +26,13 @@ objects:
     creationTimestamp: null
     name: hypershift-api-critical
   value: 100001000
+- apiVersion: scheduling.k8s.io/v1
+  description: This priority class is used for hypershift operator pods
+  kind: PriorityClass
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+  value: 100003000
 - apiVersion: v1
   kind: Namespace
   metadata:
@@ -331,6 +338,7 @@ objects:
           volumeMounts:
           - mountPath: /etc/oidc-storage-provider-s3-creds
             name: oidc-storage-provider-s3-creds
+        priorityClassName: hypershift-operator
         serviceAccountName: operator
         volumes:
         - name: oidc-storage-provider-s3-creds

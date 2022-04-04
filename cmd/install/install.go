@@ -239,14 +239,10 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		}
 	}
 
-	controlPlanePriorityClass := assets.HyperShiftControlPlanePriorityClass{}.Build()
-	objects = append(objects, controlPlanePriorityClass)
-
-	etcdPriorityClass := assets.HyperShiftEtcdPriorityClass{}.Build()
-	objects = append(objects, etcdPriorityClass)
-
-	apiCriticalPriorityClass := assets.HyperShiftAPICriticalPriorityClass{}.Build()
-	objects = append(objects, apiCriticalPriorityClass)
+	objects = append(objects, assets.HyperShiftControlPlanePriorityClass())
+	objects = append(objects, assets.HyperShiftEtcdPriorityClass())
+	objects = append(objects, assets.HyperShiftAPICriticalPriorityClass())
+	objects = append(objects, assets.HypershiftOperatorPriorityClass())
 
 	operatorNamespace := assets.HyperShiftNamespace{
 		Name:                       opts.Namespace,
