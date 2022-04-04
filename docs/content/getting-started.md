@@ -18,10 +18,13 @@ you should adjust to your own environment.
 
 * The HyperShift CLI (`hypershift`).
 
-    Install it using Go 1.17+:
-       ```shell
-       go get -u github.com/openshift/hypershift@latest
-       ```
+    Install it using Go 1.17:
+        ```shell linenums="1"
+        git clone https://github.com/openshift/hypershift.git
+        cd hypershift
+        make build
+        sudo install -m 0755 bin/hypershift /usr/local/bin/hypershift
+        ```
 
 * Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
@@ -32,8 +35,8 @@ you should adjust to your own environment.
 
     To create a public zone:
         ```shell linenums="1"
-        DOMAIN=www.example.com
-        aws route53 create-hosted-zone --name $DOMAIN --caller-reference $(whoami)-$(date --rfc-3339=date)
+        BASE_DOMAIN=www.example.com
+        aws route53 create-hosted-zone --name $BASE_DOMAIN --caller-reference $(whoami)-$(date --rfc-3339=date)
         ```
 
     !!! important
@@ -91,7 +94,8 @@ hypershift create cluster aws \
 --base-domain $BASE_DOMAIN \
 --pull-secret $PULL_SECRET \
 --aws-creds $AWS_CREDS \
---region $REGION
+--region $REGION \
+--generate-ssh
 ```
 
 !!! important
@@ -103,6 +107,11 @@ hypershift create cluster aws \
 
     A default NodePool will be created for the cluster with 3 replicas per the
     `--node-pool-replicas` flag.
+
+!!! note
+
+    The `--generate-ssh` flag is not strictly necessary but it will help in
+    debugging why a node has not joined your cluster.
 
 After a few minutes, check the `hostedclusters` resources in the `clusters`
 namespace and when ready it will look similar to the following:
