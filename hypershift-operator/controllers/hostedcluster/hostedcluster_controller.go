@@ -99,17 +99,12 @@ const (
 	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration = 5 * time.Second
 
-	// Image built from https://github.com/openshift/kubernetes-autoscaler/tree/release-4.10
-	// Upstream canonical image is k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
-	imageClusterAutoscaler = "quay.io/openshift/origin-cluster-autoscaler:4.10.0"
-
-	// Image built from https://github.com/openshift/cluster-machine-approver/tree/release-4.10
-	imageMachineApprover = "quay.io/openshift/origin-cluster-machine-approver:4.10.0"
-
 	// Image built from https://github.com/openshift/cluster-api/tree/release-1.0
 	// Upstream canonical image comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
 	// us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0
-	imageCAPI = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
+	imageCAPI                              = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
+	ImageStreamAutoscalerImage             = "cluster-autoscaler"
+	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -1064,6 +1059,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
 	}
 
+	// Reconcile the machine approver
+	if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
+	}
+
 	// Reconcile the control plane operator
 	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage)
 	if err != nil {
@@ -1078,10 +1078,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the machine config server
 	if err = r.reconcileMachineConfigServer(ctx, createOrUpdate, hcluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine config server: %w", err)
-	}
-
-	if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 	}
 
 	// Reconcile the network policies
@@ -1977,13 +1973,14 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 		}
 
 		// Reconcile autoscaler deployment
-		clusterAutoScalerImage := imageClusterAutoscaler
-		if _, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
-			clusterAutoScalerImage = hcluster.Annotations[hyperv1.ClusterAutoscalerImage]
+		clusterAutoscalerImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamAutoscalerImage)
+		if err != nil {
+			return fmt.Errorf("failed to get image for cluster autoscaler: %w", err)
 		}
+
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoScalerImage, controlPlaneOperatorImage, r.SetDefaultSecurityContext)
+			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoscalerImage, controlPlaneOperatorImage, r.SetDefaultSecurityContext)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -2709,7 +2706,7 @@ func reconcileCAPIProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.
 	return nil
 }
 
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoScalerImage string, availabilityProberImage string, setDefaultSecurityContext bool) error {
+func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -2792,7 +2789,7 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 				Containers: []corev1.Container{
 					{
 						Name:            "cluster-autoscaler",
-						Image:           clusterAutoScalerImage,
+						Image:           clusterAutoscalerImage,
 						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{
@@ -2865,6 +2862,7 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 		}
 	}
 
+	hyperutil.SetReleaseImageAnnotation(deployment, hc.Spec.Release.Image)
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
@@ -3343,13 +3341,14 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		kubeconfigSecretName := machineapprover.KASServiceKubeconfigSecret(controlPlaneNamespaceName).Name
 
 		// Reconcile machine-approver deployment
-		image := imageMachineApprover
-		if _, ok := hcluster.Annotations[hyperv1.MachineApproverImage]; ok {
-			image = hcluster.Annotations[hyperv1.MachineApproverImage]
+		machineApproverImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamClusterMachineApproverImage)
+		if err != nil {
+			return fmt.Errorf("failed to get image for machine approver: %w", err)
 		}
+
 		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, image, controlPlaneOperatorImage, r.SetDefaultSecurityContext)
+			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, machineApproverImage, controlPlaneOperatorImage, r.SetDefaultSecurityContext)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}
@@ -3707,6 +3706,7 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 		}
 	}
 
+	hyperutil.SetReleaseImageAnnotation(deployment, hc.Spec.Release.Image)
 	hyperutil.SetColocation(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc, deployment)
 	hyperutil.SetControlPlaneIsolation(hc, deployment)
@@ -4175,4 +4175,25 @@ func validateClusterID(hc *hyperv1.HostedCluster) error {
 		}
 	}
 	return nil
+}
+
+// getPayloadImage get an image from the payload for a particular component.
+func (r HostedClusterReconciler) getPayloadImage(ctx context.Context, hc *hyperv1.HostedCluster, component string) (string, error) {
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return "", fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	image, exists := releaseInfo.ComponentImages()[component]
+	if !exists {
+		return "", fmt.Errorf("image does not exist for release: %q", image)
+	}
+	return image, nil
 }
