@@ -95,7 +95,7 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 	}
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"/usr/bin/proxy-server",
 		}
@@ -355,7 +355,7 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 	}
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"/usr/bin/proxy-agent",
 		}
