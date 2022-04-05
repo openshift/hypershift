@@ -33,7 +33,7 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 	globalconfig.ReconcileNetworkConfig(network, hcp, globalConfig)
 
 	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfig(proxy, hcp, globalConfig)
+	globalconfig.ReconcileProxyConfigWithStatus(proxy, hcp, globalConfig)
 
 	return &MCSParams{
 		OwnerRef:       config.OwnerRefFrom(hcp),

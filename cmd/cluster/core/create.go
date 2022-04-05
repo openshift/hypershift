@@ -97,6 +97,7 @@ type AWSPlatformOptions struct {
 	EndpointAccess     string
 	Zones              []string
 	EtcdKMSKeyARN      string
+	EnableProxy        bool
 }
 
 type AzurePlatformOptions struct {

@@ -44,6 +44,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.AdditionalTags, "additional-tags", opts.AWSPlatform.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().StringVar(&opts.AWSPlatform.EndpointAccess, "endpoint-access", opts.AWSPlatform.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
 	cmd.Flags().StringVar(&opts.AWSPlatform.EtcdKMSKeyARN, "kms-key-arn", opts.AWSPlatform.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
+	cmd.Flags().BoolVar(&opts.AWSPlatform.EnableProxy, "enable-proxy", opts.AWSPlatform.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 
 	cmd.MarkFlagRequired("aws-creds")
 
@@ -110,6 +111,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			BaseDomain:         opts.BaseDomain,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
 			Zones:              opts.AWSPlatform.Zones,
+			EnableProxy:        opts.AWSPlatform.EnableProxy,
+			SSHKeyFile:         opts.SSHKeyFile,
 		}
 		infra, err = opt.CreateInfra(ctx)
 		if err != nil {
@@ -186,6 +189,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		RootVolumeIOPS:              opts.AWSPlatform.RootVolumeIOPS,
 		ResourceTags:                tags,
 		EndpointAccess:              opts.AWSPlatform.EndpointAccess,
+		ProxyAddress:                infra.ProxyAddr,
 	}
 	return nil
 }

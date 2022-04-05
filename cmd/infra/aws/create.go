@@ -2,18 +2,25 @@ package aws
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/spf13/cobra"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 )
 
 type CreateInfraOptions struct {
@@ -27,6 +34,8 @@ type CreateInfraOptions struct {
 	Zones              []string
 	OutputFile         string
 	AdditionalTags     []string
+	EnableProxy        bool
+	SSHKeyFile         string
 
 	additionalEC2Tags []*ec2.Tag
 }
@@ -49,6 +58,7 @@ type CreateInfraOutput struct {
 	PublicZoneID    string                   `json:"publicZoneID"`
 	PrivateZoneID   string                   `json:"privateZoneID"`
 	LocalZoneID     string                   `json:"localZoneID"`
+	ProxyAddr       string                   `json:"proxyAddr"`
 }
 
 const (
@@ -80,6 +90,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availablity zones in which NodePool can be created")
+	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
@@ -185,10 +196,13 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 		if err != nil {
 			return nil, err
 		}
+		var natGatewayID string
 		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
-		natGatewayID, err := o.CreateNATGateway(ec2Client, publicSubnetID, zone)
-		if err != nil {
-			return nil, err
+		if !o.EnableProxy {
+			natGatewayID, err = o.CreateNATGateway(ec2Client, publicSubnetID, zone)
+			if err != nil {
+				return nil, err
+			}
 		}
 		privateRouteTable, err := o.CreatePrivateRouteTable(ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
 		if err != nil {
@@ -225,5 +239,120 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 		return nil, err
 	}
 
+	if o.EnableProxy {
+		var sshKeyFile []byte
+		if o.SSHKeyFile != "" {
+			sshKeyFile, err = ioutil.ReadFile(o.SSHKeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read ssh-key-file from %s: %w", o.SSHKeyFile, err)
+			}
+		}
+		result.ProxyAddr, err = o.createProxyHost(ctx, ec2Client, result.Zones[0].SubnetID, result.VPCID, string(sshKeyFile))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create proxy host: %w", err)
+		}
+
+	}
 	return result, nil
 }
+
+func (o *CreateInfraOptions) createProxyHost(ctx context.Context, client ec2iface.EC2API, subnetID, vpcID string, sshKeys string) (string, error) {
+	const securityGroupName = "proxy-sg"
+	sgCreateResult, err := client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
+		GroupName:         aws.String(securityGroupName),
+		Description:       aws.String("proxy security group"),
+		VpcId:             aws.String(vpcID),
+		TagSpecifications: o.ec2TagSpecifications("security-group", securityGroupName),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create bastion security group: %w", err)
+	}
+
+	var sgResult *ec2.DescribeSecurityGroupsOutput
+	err = retry.OnError(ec2Backoff(), func(error) bool { return true }, func() error {
+		var err error
+		sgResult, err = client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
+			GroupIds: []*string{sgCreateResult.GroupId},
+		})
+		if err != nil || len(sgResult.SecurityGroups) == 0 {
+			return errors.New("not found yet")
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(sgCreateResult.GroupId))
+	}
+	sg := sgResult.SecurityGroups[0]
+	log.Log.Info("Created security group", "name", securityGroupName, "id", aws.StringValue(sg.GroupId))
+
+	permissions := []*ec2.IpPermission{
+		{
+			IpProtocol: aws.String("tcp"),
+			IpRanges: []*ec2.IpRange{{
+				CidrIp: aws.String("0.0.0.0/0"),
+			}},
+			FromPort: aws.Int64(22),
+			ToPort:   aws.Int64(22),
+		},
+		{
+			IpProtocol: aws.String("-1"),
+			IpRanges: []*ec2.IpRange{{
+				CidrIp: aws.String("10.0.0.0/8"),
+			}},
+			FromPort: aws.Int64(-1),
+			ToPort:   aws.Int64(-1),
+		},
+	}
+	_, err = client.AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+		GroupId:       sg.GroupId,
+		IpPermissions: permissions,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to authorize security group: %w", err)
+	}
+	log.Log.Info("Authorized security group for proxy")
+
+	result, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
+		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
+		MaxCount:     aws.Int64(1),
+		MinCount:     aws.Int64(1),
+		InstanceType: aws.String("t2.micro"),
+		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(proxyConfigurationScript, sshKeys)))),
+		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
+			{
+				DeviceIndex:              aws.Int64(0),
+				AssociatePublicIpAddress: aws.Bool(true),
+				SubnetId:                 aws.String(subnetID),
+				Groups:                   []*string{sg.GroupId},
+			},
+		},
+		TagSpecifications: o.ec2TagSpecifications("instance", o.Name+"-"+o.InfraID+"-http-proxy"),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to launch proxy host: %w", err)
+	}
+	log.Log.Info("Created proxy host")
+
+	return fmt.Sprintf("http://%s:3128", *result.Instances[0].PrivateIpAddress), nil
+}
+
+func ec2Backoff() wait.Backoff {
+	return wait.Backoff{
+		Steps:    10,
+		Duration: 3 * time.Second,
+		Factor:   1.0,
+		Jitter:   0.1,
+	}
+}
+
+const proxyConfigurationScript = `#!/bin/bash
+yum install -y squid
+# By default, squid only allows connect on port 443
+sed -E 's/(^http_access deny CONNECT.*)/#\1/' -i /etc/squid/squid.conf
+systemctl enable --now squid
+mkdir -p /home/ec2-user/.ssh
+chmod 0700 /home/ec2-user/.ssh
+echo -e '%s' >/home/ec2-user/.ssh/authorized_keys
+chmod 0600 /home/ec2-user/.ssh/authorized_keys
+chown -R ec2-user:ec2-user /home/ec2-user/.ssh
+`
