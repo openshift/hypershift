@@ -147,7 +147,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -173,6 +173,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 			},
 		},
 	}
+	if additionalTrustBundle != nil {
+		util.DeploymentAddTrustBundleVolume(additionalTrustBundle, deployment)
+	}
+
 	config.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiInternalPort), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "kubeconfig"

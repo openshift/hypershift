@@ -207,7 +207,7 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 		cp := &hyperv1.HostedControlPlane{}
 		err = client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, cp)
 		if err != nil {
-			t.Errorf("Failed to get hostedcontrolplane: %v", err)
+			t.Logf("Failed to get hostedcontrolplane: %v", err)
 			return false, nil
 		}
 
@@ -229,9 +229,9 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 		}
 
 		if isAvailable {
-			t.Logf("Waiting for all conditions to be ready: Image: %s, conditions: %v", image, conditions)
 			return true, nil
 		}
+		t.Logf("Waiting for all conditions to be ready: Image: %s, conditions: %v", image, conditions)
 		return false, nil
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
@@ -264,6 +264,24 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				if containerStatus.RestartCount > 0 {
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
 				}
+			}
+		}
+	})
+}
+
+func EnsureNoPodsWithTooHighPriority(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	// Priority of the etcd priority class, nothing should ever exceed this.
+	const maxAllowedPriority = 100002000
+	t.Run("EnsureNoPodsWithTooHighPriority", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+		}
+		for _, pod := range podList.Items {
+			if pod.Spec.Priority != nil && *pod.Spec.Priority > maxAllowedPriority {
+				t.Errorf("pod %s with priorityClassName %s has a priority of %d with exceeds the max allowed of %d", pod.Name, pod.Spec.PriorityClassName, *pod.Spec.Priority, maxAllowedPriority)
 			}
 		}
 	})

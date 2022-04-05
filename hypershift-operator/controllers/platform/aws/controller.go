@@ -19,6 +19,7 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -32,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 )
 
 const (
@@ -79,6 +81,10 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
 		Watches(&source.Kind{Type: &hyperv1.NodePool{}}, handler.EnqueueRequestsFromMapFunc(mapNodePoolToAWSEndpointServicesFunc(r))).
+		WithOptions(controller.Options{
+			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(3*time.Second, 30*time.Second),
+			MaxConcurrentReconciles: 10,
+		}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
