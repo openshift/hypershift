@@ -269,6 +269,24 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
+func EnsureNoPodsWithTooHighPriority(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	// Priority of the etcd priority class, nothing should ever exceed this.
+	const maxAllowedPriority = 100002000
+	t.Run("EnsureNoPodsWithTooHighPriority", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+		}
+		for _, pod := range podList.Items {
+			if pod.Spec.Priority != nil && *pod.Spec.Priority > maxAllowedPriority {
+				t.Errorf("pod %s with priorityClassName %s has a priority of %d with exceeds the max allowed of %d", pod.Name, pod.Spec.PriorityClassName, *pod.Spec.Priority, maxAllowedPriority)
+			}
+		}
+	})
+}
+
 func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
 		var nodePoolList hyperv1.NodePoolList
