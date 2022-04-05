@@ -8,13 +8,10 @@ import (
 	"io/ioutil"
 	"os"
 	"text/template"
-	"time"
 
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,10 +29,6 @@ var (
 //go:embed cluster-monitoring-config.yaml
 var clusterMonitoringConfigTemplateString string
 var clusterMonitoringConfigTemplate = template.Must(template.New("config").Parse(clusterMonitoringConfigTemplateString))
-
-//go:embed user-workload-monitoring-config.yaml
-var userWorkloadMonitoringConfigTemplateString string
-var userWorkloadMonitoringConfigTemplate = template.Must(template.New("config").Parse(userWorkloadMonitoringConfigTemplateString))
 
 func main() {
 	cmd := &cobra.Command{
@@ -104,10 +97,6 @@ func (o *MonitoringOptions) Configure(ctx context.Context, k client.Client) erro
 	if err := clusterMonitoringConfigTemplate.Execute(&clusterMonitoringConfigYAML, o); err != nil {
 		return err
 	}
-	var userWorkloadMonitoringConfigYAML bytes.Buffer
-	if err := userWorkloadMonitoringConfigTemplate.Execute(&userWorkloadMonitoringConfigYAML, o); err != nil {
-		return err
-	}
 
 	// Collect remote write config if specified
 	var username, password string
@@ -156,8 +145,7 @@ func (o *MonitoringOptions) Configure(ctx context.Context, k client.Client) erro
 		log.Info("updated cluster monitoring remote write secret", "result", result)
 	}
 
-	// Enable user workload monitoring and remote write from the cluster monitoring
-	// stack
+	// Enable remote write for the cluster monitoring stack
 	clusterMonitoringConfig := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "openshift-monitoring",
@@ -173,65 +161,6 @@ func (o *MonitoringOptions) Configure(ctx context.Context, k client.Client) erro
 		return err
 	} else {
 		log.Info("updated cluster monitoring config", "result", result)
-	}
-
-	// Wait for the user workload namespace to exist, which is a loose indicator
-	// that user workload monitoring was enabled
-	userWorkloadMonitoringNamespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "openshift-user-workload-monitoring",
-		},
-	}
-	err := wait.PollUntil(1*time.Second, func() (done bool, err error) {
-		err = k.Get(ctx, client.ObjectKeyFromObject(userWorkloadMonitoringNamespace), userWorkloadMonitoringNamespace)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				log.Info("waiting for user workload monitoring namespace to exist", "namespace", userWorkloadMonitoringNamespace.Name)
-				return false, nil
-			}
-			return false, err
-		}
-		return true, nil
-	}, ctx.Done())
-	if err != nil {
-		return fmt.Errorf("failed waiting for user workload monitoring namespace")
-	}
-
-	// Install the remote write secret referenced by the remote write configuration
-	userWorkloadMonitoringRemoteWriteSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "openshift-user-workload-monitoring",
-			Name:      "remote-write-creds",
-		},
-	}
-	if result, err := controllerutil.CreateOrUpdate(ctx, k, userWorkloadMonitoringRemoteWriteSecret, func() error {
-		userWorkloadMonitoringRemoteWriteSecret.Data = map[string][]byte{
-			"username": []byte(username),
-			"password": []byte(password),
-		}
-		return nil
-	}); err != nil {
-		return err
-	} else {
-		log.Info("updated user workload monitoring remote write secret", "result", result)
-	}
-
-	// Configure user workload monitoring for remote write
-	userWorkloadMonitoringConfig := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "openshift-user-workload-monitoring",
-			Name:      "user-workload-monitoring-config",
-		},
-	}
-	if result, err := controllerutil.CreateOrUpdate(ctx, k, userWorkloadMonitoringConfig, func() error {
-		userWorkloadMonitoringConfig.Data = map[string]string{
-			"config.yaml": userWorkloadMonitoringConfigYAML.String(),
-		}
-		return nil
-	}); err != nil {
-		return err
-	} else {
-		log.Info("updated user workload monitoring config", "result", result)
 	}
 
 	return nil
