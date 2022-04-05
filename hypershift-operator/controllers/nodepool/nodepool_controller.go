@@ -330,26 +330,32 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if hcluster.Spec.Platform.AWS == nil {
 			return ctrl.Result{}, fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
 		}
-		// TODO: Should the region be included in the NodePool platform information?
-		ami, err = getAMI(nodePool, hcluster.Spec.Platform.AWS.Region, releaseImage)
-		if err != nil {
+		if nodePool.Spec.Platform.AWS.AMI != "" {
+			ami = nodePool.Spec.Platform.AWS.AMI
+			// User-defined AMIs cannot be validated
+			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidAMIConditionType)
+		} else {
+			// TODO: Should the region be included in the NodePool platform information?
+			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, releaseImage)
+			if err != nil {
+				setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               hyperv1.NodePoolValidAMIConditionType,
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+					Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+					ObservedGeneration: nodePool.Generation,
+				})
+				return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
+			}
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidAMIConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
-				Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+				Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
 				ObservedGeneration: nodePool.Generation,
 			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 		}
 	}
-	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidAMIConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-		Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
-		ObservedGeneration: nodePool.Generation,
-	})
 
 	// Validate config input.
 	// 3 generic core config resoures: fips, ssh and haproxy.
@@ -903,14 +909,6 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
 		machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
 	}
-}
-
-func getAMI(nodePool *hyperv1.NodePool, region string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	if nodePool.Spec.Platform.AWS.AMI != "" {
-		return nodePool.Spec.Platform.AWS.AMI, nil
-	}
-
-	return defaultNodePoolAMI(region, releaseImage)
 }
 
 func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config {
