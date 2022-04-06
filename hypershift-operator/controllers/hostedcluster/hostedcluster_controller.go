@@ -3169,13 +3169,9 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 	}
 
-	exists, err = hyperutil.DeleteIfNeeded(ctx, r.Client, clusterapi.CAPIManagerClusterRoleBinding(controlPlaneNamespace))
+	_, err = hyperutil.DeleteIfNeeded(ctx, r.Client, clusterapi.CAPIManagerClusterRoleBinding(controlPlaneNamespace))
 	if err != nil {
 		return false, err
-	}
-	if exists {
-		log.Info("Waiting for Cluster API ClusterRoleBinding deletion", "controlPlaneNamespace", controlPlaneNamespace)
-		return false, nil
 	}
 
 	// There are scenarios where CAPI might not be operational e.g None Platform.
