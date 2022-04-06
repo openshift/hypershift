@@ -24,6 +24,16 @@ func machineDeployment(nodePool *hyperv1.NodePool, clusterName string, controlPl
 	}
 }
 
+func machineSet(nodePool *hyperv1.NodePool, clusterName string, controlPlaneNamespace string) *capiv1.MachineSet {
+	resourcesName := generateName(clusterName, nodePool.Spec.ClusterName, nodePool.GetName())
+	return &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resourcesName,
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
 func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string) *capiv1.MachineHealthCheck {
 	return &capiv1.MachineHealthCheck{
 		TypeMeta: metav1.TypeMeta{},

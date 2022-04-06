@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -76,12 +77,19 @@ type NodePoolReconciler struct {
 	client.Client
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
-
+	controller      controller.Controller
+	// hostedClusterCachesTracker stores hosted cluster caches.
+	hostedClusterCachesTracker hostedClusterCachesTracker
 	upsert.CreateOrUpdateProvider
 }
 
+type hostedClusterCachesTracker struct {
+	sync.RWMutex
+	caches map[client.ObjectKey]bool
+}
+
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	_, err := ctrl.NewControllerManagedBy(mgr).
+	controller, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.NodePool{}).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
 		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
@@ -102,6 +110,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
 
+	r.controller = controller
 	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
 
 	return nil
@@ -520,20 +529,44 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Info("Reconciled Machine template", "result", result)
 	}
 
-	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
-	if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
-		return r.reconcileMachineDeployment(
-			log,
-			md, nodePool,
-			userDataSecret,
-			template,
-			infraID,
-			targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
-			client.ObjectKeyFromObject(md).String(), err)
-	} else {
-		log.Info("Reconciled MachineDeployment", "result", result)
+	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+		ms := machineSet(nodePool, infraID, controlPlaneNamespace)
+		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, ms, func() error {
+			return r.reconcileMachineSet(
+				ctx,
+				ms, hcluster, nodePool,
+				userDataSecret,
+				template,
+				infraID,
+				targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineSet %q: %w",
+				client.ObjectKeyFromObject(ms).String(), err)
+		} else {
+			log.Info("Reconciled MachineSet", "result", result)
+		}
+
+		if err := r.reconcileInPlaceUpgrade(ctx, hcluster, nodePool, ms, targetConfigHash, targetVersion, targetConfigVersionHash); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+		md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
+		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
+			return r.reconcileMachineDeployment(
+				log,
+				md, nodePool,
+				userDataSecret,
+				template,
+				infraID,
+				targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
+				client.ObjectKeyFromObject(md).String(), err)
+		} else {
+			log.Info("Reconciled MachineDeployment", "result", result)
+		}
 	}
 
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
@@ -593,6 +626,27 @@ func deleteMachineDeployment(ctx context.Context, c client.Client, md *capiv1.Ma
 	return nil
 }
 
+func deleteMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSet) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(ms), ms)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineSet: %w", err)
+	}
+	if ms.DeletionTimestamp != nil {
+		return nil
+	}
+	err = c.Delete(ctx, ms)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error deleting MachineSet: %w", err)
+	}
+	return nil
+}
+
 func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.MachineHealthCheck) error {
 	err := c.Get(ctx, client.ObjectKeyFromObject(mhc), mhc)
 	if err != nil {
@@ -615,7 +669,12 @@ func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.
 }
 
 func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, infraID, controlPlaneNamespace string) error {
+	r.hostedClusterCachesTracker.Lock()
+	delete(r.hostedClusterCachesTracker.caches, client.ObjectKeyFromObject(nodePool))
+	r.hostedClusterCachesTracker.Unlock()
+
 	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
+	ms := machineSet(nodePool, infraID, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 	machineTemplates, err := r.listMachineTemplates(nodePool)
 	if err != nil {
@@ -640,6 +699,10 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 
 	if err := deleteMachineDeployment(ctx, r.Client, md); err != nil {
 		return fmt.Errorf("failed to delete MachineDeployment: %w", err)
+	}
+
+	if err := deleteMachineSet(ctx, r.Client, ms); err != nil {
+		return fmt.Errorf("failed to delete MachineSet: %w", err)
 	}
 
 	if err := deleteMachineHealthCheck(ctx, r.Client, mhc); err != nil {
