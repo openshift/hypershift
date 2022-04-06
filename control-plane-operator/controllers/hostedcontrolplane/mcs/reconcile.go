@@ -44,6 +44,14 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 		return err
 	}
 
+	if p.UserCA != nil {
+		serializedUserCA, err := serialize(p.UserCA)
+		if err != nil {
+			return err
+		}
+		cm.Data["user-ca-bundle-config.yaml"] = serializedUserCA
+	}
+
 	cm.Data["root-ca.crt"] = string(p.RootCA.Data[pki.CASignerCertMapKey])
 	cm.Data["combined-ca.crt"] = p.CombinedCA.Data[pki.CASignerCertMapKey]
 	cm.Data["cluster-dns-02-config.yaml"] = serializedDNS

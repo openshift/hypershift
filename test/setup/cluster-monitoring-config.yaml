@@ -1,4 +1,3 @@
-enableUserWorkload: true
 prometheusk8s:
 {{- if .RemoteWriteURL }}
   remoteWrite:

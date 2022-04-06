@@ -405,7 +405,7 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 			hc := &hyperv1.HostedCluster{}
 			hc.Name = "name"
 			hc.Namespace = "namespace"
-			err := reconcileAutoScalerDeployment(deployment, hc, sa, secret, test.AutoscalerOptions, imageClusterAutoscaler, "availability-prober:latest", false)
+			err := reconcileAutoScalerDeployment(deployment, hc, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false)
 			if err != nil {
 				t.Error(err)
 			}

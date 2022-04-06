@@ -3,8 +3,10 @@ package assets
 import (
 	"fmt"
 
+	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +19,9 @@ import (
 )
 
 const (
+	// HypershiftOperatorPriortyClass is the priority class for the HO
+	HypershiftOperatorPriortyClass = "hypershift-operator"
+
 	// EtcdPriorityClass is for etcd pods.
 	EtcdPriorityClass = "hypershift-etcd"
 
@@ -175,8 +180,9 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								"--source=openshift-route",
 								fmt.Sprintf("--domain-filter=%s", o.DomainFilter),
 								fmt.Sprintf("--provider=%s", o.Provider),
-								"--registry=noop",
-								"--txt-owner-id=hypershift",
+								"--registry=txt",
+								"--txt-suffix=-external-dns",
+								fmt.Sprintf("--txt-owner-id=%s", uuid.NewString()),
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
 							LivenessProbe: &corev1.Probe{
@@ -243,6 +249,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 }
 
 type HyperShiftOperatorDeployment struct {
+	AdditionalTrustBundle          *corev1.ConfigMap
 	Namespace                      *corev1.Namespace
 	OperatorImage                  string
 	Images                         map[string]string
@@ -305,6 +312,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			},
 		}
 	}
+
 	image := o.OperatorImage
 
 	if mapImage, ok := o.Images["hypershift-operator"]; ok {
@@ -345,6 +353,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					},
 				},
 				Spec: corev1.PodSpec{
+					PriorityClassName:  HypershiftOperatorPriortyClass,
 					ServiceAccountName: o.ServiceAccount.Name,
 					Containers: []corev1.Container{
 						{
@@ -406,6 +415,11 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		},
+	}
+
+	if o.AdditionalTrustBundle != nil {
+		// Add trusted-ca mount with optional configmap
+		util.DeploymentAddTrustBundleVolume(&corev1.LocalObjectReference{Name: o.AdditionalTrustBundle.Name}, deployment)
 	}
 
 	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
@@ -848,9 +862,7 @@ func (o HyperShiftOperatorRoleBinding) Build() *rbacv1.RoleBinding {
 	return binding
 }
 
-type HyperShiftControlPlanePriorityClass struct{}
-
-func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass {
+func HyperShiftControlPlanePriorityClass() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -865,9 +877,7 @@ func (o HyperShiftControlPlanePriorityClass) Build() *schedulingv1.PriorityClass
 	}
 }
 
-type HyperShiftAPICriticalPriorityClass struct{}
-
-func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass {
+func HyperShiftAPICriticalPriorityClass() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -882,9 +892,7 @@ func (o HyperShiftAPICriticalPriorityClass) Build() *schedulingv1.PriorityClass 
 	}
 }
 
-type HyperShiftEtcdPriorityClass struct{}
-
-func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
+func HyperShiftEtcdPriorityClass() *schedulingv1.PriorityClass {
 	return &schedulingv1.PriorityClass{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PriorityClass",
@@ -896,6 +904,17 @@ func (o HyperShiftEtcdPriorityClass) Build() *schedulingv1.PriorityClass {
 		Value:         100002000,
 		GlobalDefault: false,
 		Description:   "This priority class should be used for hypershift etcd pods.",
+	}
+}
+
+func HypershiftOperatorPriorityClass() *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: HypershiftOperatorPriortyClass,
+		},
+		Value:         100003000,
+		GlobalDefault: false,
+		Description:   "This priority class is used for hypershift operator pods",
 	}
 }
 

@@ -97,6 +97,10 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
+	// AdditionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle
+	// +optional
+	AdditionalTrustBundle *corev1.LocalObjectReference `json:"additionalTrustBundle,omitempty"`
+
 	// SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
 	// cluster when applicable.
 	// +optional
