@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -257,6 +258,7 @@ type HyperShiftOperatorDeployment struct {
 	Replicas                       int32
 	EnableOCPClusterMonitoring     bool
 	EnableCIDebugOutput            bool
+	EnableWebhook                  bool
 	PrivatePlatform                string
 	AWSPrivateCreds                string
 	AWSPrivateRegion               string
@@ -276,9 +278,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
 	}
-	var oidcVolumeMount []corev1.VolumeMount
-	var oidcVolumeCred []corev1.Volume
-	var envVars = []corev1.EnvVar{
+
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+	envVars := []corev1.EnvVar{
 		{
 			Name: "MY_NAMESPACE",
 			ValueFrom: &corev1.EnvVarSource{
@@ -288,6 +291,25 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			},
 		},
 	}
+
+	if o.EnableWebhook {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "serving-cert",
+			MountPath: "/var/run/secrets/serving-cert",
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: "serving-cert",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: "manager-serving-cert",
+				},
+			},
+		})
+		args = append(args,
+			"--cert-dir=/var/run/secrets/serving-cert",
+		)
+	}
+
 	if len(o.OIDCBucketName) > 0 && len(o.OIDCBucketRegion) > 0 && len(o.OIDCStorageProviderS3SecretKey) > 0 &&
 		o.OIDCStorageProviderS3Secret != nil && len(o.OIDCStorageProviderS3Secret.Name) > 0 {
 		args = append(args,
@@ -295,22 +317,18 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			"--oidc-storage-provider-s3-region="+o.OIDCBucketRegion,
 			"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+o.OIDCStorageProviderS3SecretKey,
 		)
-		oidcVolumeMount = []corev1.VolumeMount{
-			{
-				Name:      "oidc-storage-provider-s3-creds",
-				MountPath: "/etc/oidc-storage-provider-s3-creds",
-			},
-		}
-		oidcVolumeCred = []corev1.Volume{
-			{
-				Name: "oidc-storage-provider-s3-creds",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: o.OIDCStorageProviderS3Secret.Name,
-					},
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "oidc-storage-provider-s3-creds",
+			MountPath: "/etc/oidc-storage-provider-s3-creds",
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: "oidc-storage-provider-s3-creds",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: o.OIDCStorageProviderS3Secret.Name,
 				},
 			},
-		}
+		})
 	}
 
 	image := o.OperatorImage
@@ -324,6 +342,56 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			envVars = append(envVars, corev1.EnvVar{
 				Name:  envVar,
 				Value: ref,
+			})
+		}
+	}
+
+	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
+	if privatePlatformType != hyperv1.NonePlatform {
+		// Add generic provider credentials secret volume
+		volumes = append(volumes, corev1.Volume{
+			Name: "credentials",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: awsCredsSecretName,
+				},
+			},
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "credentials",
+			MountPath: "/etc/provider",
+		})
+
+		// Add platform specific settings
+		switch privatePlatformType {
+		case hyperv1.AWSPlatform:
+			envVars = append(envVars,
+				corev1.EnvVar{
+					Name:  "AWS_SHARED_CREDENTIALS_FILE",
+					Value: "/etc/provider/credentials",
+				},
+				corev1.EnvVar{
+					Name:  "AWS_REGION",
+					Value: o.AWSPrivateRegion,
+				})
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      "token",
+				MountPath: "/var/run/secrets/openshift/serviceaccount",
+			})
+			volumes = append(volumes, corev1.Volume{
+				Name: "token",
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources: []corev1.VolumeProjection{
+							{
+								ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+									Audience: "openshift",
+									Path:     "token",
+								},
+							},
+						},
+					},
+				},
 			})
 		}
 	}
@@ -353,6 +421,24 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					},
 				},
 				Spec: corev1.PodSpec{
+					Affinity: &corev1.Affinity{
+						PodAntiAffinity: &corev1.PodAntiAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{
+										MatchExpressions: []metav1.LabelSelectorRequirement{
+											{
+												Key:      "name",
+												Operator: metav1.LabelSelectorOpIn,
+												Values:   []string{"operator"},
+											},
+										},
+									},
+									TopologyKey: "kubernetes.io/hostname",
+								},
+							},
+						},
+					},
 					PriorityClassName:  HypershiftOperatorPriortyClass,
 					ServiceAccountName: o.ServiceAccount.Name,
 					Containers: []corev1.Container{
@@ -401,6 +487,11 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									ContainerPort: 9000,
 									Protocol:      corev1.ProtocolTCP,
 								},
+								{
+									Name:          "manager",
+									ContainerPort: 9443,
+									Protocol:      corev1.ProtocolTCP,
+								},
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
@@ -408,10 +499,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									corev1.ResourceCPU:    resource.MustParse("10m"),
 								},
 							},
-							VolumeMounts: oidcVolumeMount,
+							VolumeMounts: volumeMounts,
 						},
 					},
-					Volumes: oidcVolumeCred,
+					Volumes: volumes,
 				},
 			},
 		},
@@ -422,59 +513,6 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		util.DeploymentAddTrustBundleVolume(&corev1.LocalObjectReference{Name: o.AdditionalTrustBundle.Name}, deployment)
 	}
 
-	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
-	if privatePlatformType == hyperv1.NonePlatform {
-		return deployment
-	}
-
-	// Add generic provider credentials secret volume
-	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
-		Name: "credentials",
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: awsCredsSecretName,
-			},
-		},
-	})
-	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-		Name:      "credentials",
-		MountPath: "/etc/provider",
-	})
-
-	// Add platform specific settings
-	switch privatePlatformType {
-	case hyperv1.AWSPlatform:
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  "AWS_SHARED_CREDENTIALS_FILE",
-				Value: "/etc/provider/credentials",
-			},
-			corev1.EnvVar{
-				Name:  "AWS_REGION",
-				Value: o.AWSPrivateRegion,
-			})
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
-			corev1.VolumeMount{
-				Name:      "token",
-				MountPath: "/var/run/secrets/openshift/serviceaccount",
-			})
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
-			corev1.Volume{
-				Name: "token",
-				VolumeSource: corev1.VolumeSource{
-					Projected: &corev1.ProjectedVolumeSource{
-						Sources: []corev1.VolumeProjection{
-							{
-								ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-									Audience: "openshift",
-									Path:     "token",
-								},
-							},
-						},
-					},
-				},
-			})
-	}
 	return deployment
 }
 
@@ -494,6 +532,9 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 			Labels: map[string]string{
 				"name": "operator",
 			},
+			Annotations: map[string]string{
+				"service.beta.openshift.io/serving-cert-secret-name": "manager-serving-cert",
+			},
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
@@ -506,6 +547,12 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 					Protocol:   corev1.ProtocolTCP,
 					Port:       9393,
 					TargetPort: intstr.FromString("metrics"),
+				},
+				{
+					Name:       "manager",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       443,
+					TargetPort: intstr.FromString("manager"),
 				},
 			},
 		},
@@ -1247,4 +1294,59 @@ func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 		},
 	}
 	return binding
+}
+
+type HyperShiftValidatingWebhookConfiguration struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistrationv1.ValidatingWebhookConfiguration {
+	scope := admissionregistrationv1.NamespacedScope
+	path := "/validate-hypershift-openshift-io-v1alpha1-hostedcluster"
+	sideEffects := admissionregistrationv1.SideEffectClassNone
+	timeout := int32(10)
+	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ValidatingWebhookConfiguration",
+			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      hyperv1.GroupVersion.Group,
+			Annotations: map[string]string{
+				"service.beta.openshift.io/inject-cabundle": "true",
+			},
+		},
+		Webhooks: []admissionregistrationv1.ValidatingWebhook{
+			{
+				Name: "hostedclusters.hypershift.openshift.io",
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							// NOTE: uncomment if we want to do create time validation
+							//admissionregistrationv1.Create,
+							admissionregistrationv1.Update,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"hypershift.openshift.io"},
+							APIVersions: []string{"v1alpha1"},
+							Resources:   []string{"hostedclusters"},
+							Scope:       &scope,
+						},
+					},
+				},
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service: &admissionregistrationv1.ServiceReference{
+						Namespace: "hypershift",
+						Name:      "operator",
+						Path:      &path,
+					},
+				},
+				SideEffects:             &sideEffects,
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          &timeout,
+			},
+		},
+	}
+	return validatingWebhookConfiguration
 }

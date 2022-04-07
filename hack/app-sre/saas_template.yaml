@@ -283,6 +283,16 @@ objects:
           hypershift.openshift.io/operator-component: operator
           name: operator
       spec:
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                - key: name
+                  operator: In
+                  values:
+                  - operator
+              topologyKey: kubernetes.io/hostname
         containers:
         - args:
           - run
@@ -319,6 +329,9 @@ objects:
           - containerPort: 9000
             name: metrics
             protocol: TCP
+          - containerPort: 9443
+            name: manager
+            protocol: TCP
           readinessProbe:
             failureThreshold: 3
             httpGet:
@@ -348,6 +361,8 @@ objects:
 - apiVersion: v1
   kind: Service
   metadata:
+    annotations:
+      service.beta.openshift.io/serving-cert-secret-name: manager-serving-cert
     creationTimestamp: null
     labels:
       name: operator
@@ -359,6 +374,10 @@ objects:
       port: 9393
       protocol: TCP
       targetPort: metrics
+    - name: manager
+      port: 443
+      protocol: TCP
+      targetPort: manager
     selector:
       name: operator
     type: ClusterIP

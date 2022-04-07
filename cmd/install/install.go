@@ -48,6 +48,7 @@ type Options struct {
 	ImageRefsFile                             string
 	HyperShiftOperatorReplicas                int32
 	Development                               bool
+	EnableWebhook                             bool
 	Template                                  bool
 	Format                                    string
 	ExcludeEtcdManifests                      bool
@@ -113,6 +114,8 @@ func (o *Options) ApplyDefaults() {
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
+	case o.EnableWebhook:
+		o.HyperShiftOperatorReplicas = 2
 	default:
 		o.HyperShiftOperatorReplicas = 1
 	}
@@ -135,6 +138,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
+	cmd.PersistentFlags().BoolVar(&opts.EnableWebhook, "enable-webhook", false, "Enable webhook for hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.PersistentFlags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -275,6 +279,13 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}.Build()
 	objects = append(objects, operatorRoleBinding)
 
+	if opts.EnableWebhook {
+		validatingWebhookConfiguration := assets.HyperShiftValidatingWebhookConfiguration{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, validatingWebhookConfiguration)
+	}
+
 	var oidcSecret *corev1.Secret
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := ioutil.ReadFile(opts.OIDCStorageProviderS3Credentials)
@@ -371,6 +382,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		Replicas:                       opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:     opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
+		EnableWebhook:                  opts.EnableWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,
 		AWSPrivateRegion:               opts.AWSPrivateRegion,
 		AWSPrivateCreds:                opts.AWSPrivateCreds,
