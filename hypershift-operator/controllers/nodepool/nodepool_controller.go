@@ -215,6 +215,29 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// 1. - Reconcile conditions according to current state of the world.
 
+	// Validate the HostedCluster cluster config is valid.
+	// This config is used to set the proxy config for ignition.
+	gConfig, err := globalconfig.ParseGlobalConfig(ctx, hcluster.Spec.Configuration)
+	if err != nil {
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               string(hyperv1.NodePoolValidHostedClusterConditionType),
+			Status:             corev1.ConditionFalse,
+			Message:            err.Error(),
+			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			ObservedGeneration: nodePool.Generation,
+		})
+		log.Info("Invalid cluster config for HostedCluster, aborting reconciliation")
+		return reconcile.Result{}, nil
+	}
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidHostedClusterConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		ObservedGeneration: nodePool.Generation,
+	})
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster, gConfig)
+
 	// Validate autoscaling input.
 	if err := validateAutoscaling(nodePool); err != nil {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -490,7 +513,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetConfigVersionHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		return reconcileUserDataSecret(ctx, userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, hcluster)
+		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, proxy)
 	}); err != nil {
 		return ctrl.Result{}, err
 	} else {
@@ -712,7 +735,7 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 	return nil
 }
 
-func reconcileUserDataSecret(ctx context.Context, userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string, hc *hyperv1.HostedCluster) error {
+func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string, proxy *configv1.Proxy) error {
 	// The token secret controller deletes expired token Secrets.
 	// When that happens the NodePool controller reconciles and create a new one.
 	// Then it reconciles the userData Secret with the new generated token.
@@ -723,13 +746,6 @@ func reconcileUserDataSecret(ctx context.Context, userDataSecret *corev1.Secret,
 		userDataSecret.Annotations = make(map[string]string)
 	}
 	userDataSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-
-	globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
-	if err != nil {
-		return fmt.Errorf("failed to parse global config: %w", err)
-	}
-	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hc, globalConfig)
 
 	encodedCACert := base64.StdEncoding.EncodeToString(CA)
 	encodedToken := base64.StdEncoding.EncodeToString(token)
