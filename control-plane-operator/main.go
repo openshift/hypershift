@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
@@ -51,6 +53,58 @@ var (
 )
 
 func main() {
+	basename := filepath.Base(os.Args[0])
+	cmd := commandFor(basename)
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+
+}
+
+func commandFor(name string) *cobra.Command {
+	var cmd *cobra.Command
+	switch name {
+	case "ignition-server":
+		cmd = ignitionserver.NewStartCommand()
+	case "konnectivity-socks5-proxy":
+		cmd = konnectivitysocks5proxy.NewStartCommand()
+	case "availability-prober":
+		cmd = availabilityprober.NewStartCommand()
+	case "token-minter":
+		cmd = tokenminter.NewStartCommand()
+	default:
+		// for the default case, there is no need
+		// to convert flags, return immediately
+		return defaultCommand()
+	}
+	convertArgsIfNecessary(cmd)
+	return cmd
+}
+
+// convertArgsIfNecessary will convert go-style single dash flags
+// to POSIX compliant flags that work with spf13/pflag
+func convertArgsIfNecessary(cmd *cobra.Command) {
+	commandArgs := []string{}
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if !strings.HasPrefix(arg, "--") && strings.HasPrefix(arg, "-") {
+			flagName := arg[1:]
+			if strings.Contains(flagName, "=") {
+				parts := strings.SplitN(flagName, "=", 2)
+				flagName = parts[0]
+			}
+			if flag := cmd.Flags().Lookup(flagName); flag != nil {
+				commandArgs = append(commandArgs, "-"+arg)
+				continue
+			}
+		}
+		commandArgs = append(commandArgs, arg)
+	}
+	cmd.SetArgs(commandArgs)
+}
+
+func defaultCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "control-plane-operator",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -64,11 +118,8 @@ func main() {
 	cmd.AddCommand(availabilityprober.NewStartCommand())
 	cmd.AddCommand(tokenminter.NewStartCommand())
 	cmd.AddCommand(ignitionserver.NewStartCommand())
+	return cmd
 
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
 }
 
 const (

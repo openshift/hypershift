@@ -29,14 +29,14 @@ const (
 	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
 )
 
-func New(controlPlaneOperatorImage string) *AWS {
+func New(utilitiesImage string) *AWS {
 	return &AWS{
-		controlPlaneOperatorImage: controlPlaneOperatorImage,
+		utilitiesImage: utilitiesImage,
 	}
 }
 
 type AWS struct {
-	controlPlaneOperatorImage string
+	utilitiesImage string
 }
 
 func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -192,7 +192,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 					},
 					{
 						Name:            "token-minter",
-						Image:           p.controlPlaneOperatorImage,
+						Image:           p.utilitiesImage,
 						ImagePullPolicy: corev1.PullAlways,
 						VolumeMounts: []corev1.VolumeMount{
 							{
@@ -223,7 +223,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 			},
 		},
 	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, hcp.Spec.APIPort), p.controlPlaneOperatorImage, &deploymentSpec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, hcp.Spec.APIPort), p.utilitiesImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 

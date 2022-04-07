@@ -12,3 +12,4 @@ COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plan
 ENTRYPOINT /usr/bin/control-plane-operator
 
 LABEL io.openshift.release.operator=true
+LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
