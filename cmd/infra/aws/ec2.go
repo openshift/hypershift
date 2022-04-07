@@ -386,6 +386,12 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(client ec2iface.EC2API, vpc
 			return "", err
 		}
 	}
+
+	// Everything below this is only needed if direct internet access is used
+	if o.EnableProxy {
+		return aws.StringValue(routeTable.RouteTableId), nil
+	}
+
 	if !o.hasNATGatewayRoute(routeTable, natGatewayID) {
 		isRetriable := func(err error) bool {
 			if awsErr, ok := err.(awserr.Error); ok {

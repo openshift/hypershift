@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -489,7 +490,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetConfigVersionHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint)
+		return reconcileUserDataSecret(ctx, userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, hcluster)
 	}); err != nil {
 		return ctrl.Result{}, err
 	} else {
@@ -711,7 +712,7 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 	return nil
 }
 
-func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string) error {
+func reconcileUserDataSecret(ctx context.Context, userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string, hc *hyperv1.HostedCluster) error {
 	// The token secret controller deletes expired token Secrets.
 	// When that happens the NodePool controller reconciles and create a new one.
 	// Then it reconciles the userData Secret with the new generated token.
@@ -723,9 +724,16 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 	}
 	userDataSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 
+	globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
+	if err != nil {
+		return fmt.Errorf("failed to parse global config: %w", err)
+	}
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hc, globalConfig)
+
 	encodedCACert := base64.StdEncoding.EncodeToString(CA)
 	encodedToken := base64.StdEncoding.EncodeToString(token)
-	ignConfig := ignConfig(encodedCACert, encodedToken, ignEndpoint)
+	ignConfig := ignConfig(encodedCACert, encodedToken, ignEndpoint, proxy)
 	userDataValue, err := json.Marshal(ignConfig)
 	if err != nil {
 		return fmt.Errorf("failed to marshal ignition config: %w", err)
@@ -974,8 +982,8 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	}
 }
 
-func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config {
-	return ignitionapi.Config{
+func ignConfig(encodedCACert, encodedToken, endpoint string, proxy *configv1.Proxy) ignitionapi.Config {
+	cfg := ignitionapi.Config{
 		Ignition: ignitionapi.Ignition{
 			Version: "3.2.0",
 			Security: ignitionapi.Security{
@@ -1002,6 +1010,18 @@ func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config 
 			},
 		},
 	}
+	if proxy.Status.HTTPProxy != "" {
+		cfg.Ignition.Proxy.HTTPProxy = k8sutilspointer.String(proxy.Status.HTTPProxy)
+	}
+	if proxy.Status.HTTPSProxy != "" {
+		cfg.Ignition.Proxy.HTTPSProxy = k8sutilspointer.String(proxy.Status.HTTPSProxy)
+	}
+	if proxy.Status.NoProxy != "" {
+		for _, item := range strings.Split(proxy.Status.NoProxy, ",") {
+			cfg.Ignition.Proxy.NoProxy = append(cfg.Ignition.Proxy.NoProxy, ignitionapi.NoProxyItem(item))
+		}
+	}
+	return cfg
 }
 
 func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int, controlPlaneResource string) (configsRaw string, missingConfigs bool, err error) {

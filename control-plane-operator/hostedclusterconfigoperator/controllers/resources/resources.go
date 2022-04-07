@@ -451,7 +451,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 
 	proxy := globalconfig.ProxyConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, proxy, func() error {
-		globalconfig.ReconcileProxyConfig(proxy, hcp, globalConfig)
+		globalconfig.ReconcileProxyConfig(proxy, globalConfig)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
