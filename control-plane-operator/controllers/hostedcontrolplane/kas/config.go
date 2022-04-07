@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -31,12 +32,13 @@ const (
 func ReconcileConfig(config *corev1.ConfigMap,
 	ownerRef hcpconfig.OwnerRef,
 	p KubeAPIServerConfigParams,
+	version semver.Version,
 ) error {
 	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	kasConfig := generateConfig(p)
+	kasConfig := generateConfig(p, version)
 	serializedConfig, err := json.Marshal(kasConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver config: %w", err)
@@ -53,7 +55,7 @@ func (a kubeAPIServerArgs) Set(name string, values ...string) {
 	a[name] = v
 }
 
-func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
+func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.KubeAPIServerConfig {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
 	}
@@ -129,6 +131,11 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	}
 	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
+	if version.Minor == 11 {
+		// This is enabled by default in 4.11 but currently disabled by OCP. It is planned to get re-enabled but currently
+		// breaks conformance testing, ref: https://github.com/openshift/cluster-kube-apiserver-operator/pull/1262
+		args.Set("disable-admission-plugins", "PodSecurity")
+	}
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
 	args.Set("enable-swagger-ui", "true")

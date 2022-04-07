@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -1420,6 +1421,11 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthAddress string, oauthPort int32) error {
+	ocpVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return fmt.Errorf("failed to parse release version: %w", err)
+	}
+
 	p := kas.NewKubeAPIServerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), oauthAddress, oauthPort, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCASecret(hcp.Namespace)
@@ -1492,7 +1498,9 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if _, err := r.CreateOrUpdate(ctx, r, kubeAPIServerConfig, func() error {
 		return kas.ReconcileConfig(kubeAPIServerConfig,
 			p.OwnerRef,
-			p.ConfigParams())
+			p.ConfigParams(),
+			ocpVersion,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server config: %w", err)
 	}
