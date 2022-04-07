@@ -4846,6 +4846,22 @@ etcd member (either 1 or 3 depending on the HostedCluster control plane
 availability configuration).</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>restoreSnapshotURL</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>RestoreSnapshotURL allows an optional list of URLs to be provided where
+an etcd snapshot can be downloaded, for example a pre-signed URL
+referencing a storage service, one URL per replica.
+This snapshot will be restored on initial startup, only when the etcd PV
+is empty.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ManagedEtcdStorageType { #hypershift.openshift.io/v1alpha1.ManagedEtcdStorageType }
