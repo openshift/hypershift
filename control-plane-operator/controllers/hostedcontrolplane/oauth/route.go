@@ -11,15 +11,25 @@ import (
 
 func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, defaultIngressDomain string) error {
 	ownerRef.ApplyTo(route)
+
+	// The route host is considered immutable, so set it only once upon creation
+	// and ignore updates.
+	if route.CreationTimestamp.IsZero() {
+		switch {
+		case strategy.Route != nil && strategy.Route.Hostname != "":
+			route.Spec.Host = strategy.Route.Hostname
+		default:
+			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
+		}
+	}
+
 	if strategy.Route != nil && strategy.Route.Hostname != "" {
 		if route.Annotations == nil {
 			route.Annotations = map[string]string{}
 		}
 		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.Route.Hostname
-		route.Spec.Host = strategy.Route.Hostname
-	} else {
-		route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
 	}
+
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
 		Name: manifests.OauthServerService(route.Namespace).Name,

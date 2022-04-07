@@ -1612,6 +1612,21 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		// Reconcile route
 		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.Name)
 		if _, err := createOrUpdate(ctx, r.Client, ignitionServerRoute, func() error {
+			// The route host is considered immutable, so set it only once upon creation
+			// and ignore updates.
+			if ignitionServerRoute.CreationTimestamp.IsZero() {
+				switch {
+				case hcluster.Spec.Platform.Type == hyperv1.AWSPlatform &&
+					(hcluster.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate ||
+						hcluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private):
+					ignitionServerRoute.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", ignitionServerRoute.Name, hcluster.Name)
+				case serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "":
+					ignitionServerRoute.Spec.Host = serviceStrategy.Route.Hostname
+				default:
+					ignitionServerRoute.Spec.Host = util.ShortenRouteHostnameIfNeeded(ignitionServerRoute.Name, ignitionServerRoute.Namespace, defaultIngressDomain)
+				}
+			}
+
 			if ignitionServerRoute.Annotations == nil {
 				ignitionServerRoute.Annotations = map[string]string{}
 			}
@@ -1622,12 +1637,8 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 					ignitionServerRoute.Labels = map[string]string{}
 				}
 				ignitionServerRoute.Labels[hyperutil.HypershiftRouteLabel] = controlPlaneNamespace.Name
-				ignitionServerRoute.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", ignitionServerRoute.Name, hcluster.Name)
 			} else if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 				ignitionServerRoute.ObjectMeta.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = serviceStrategy.Route.Hostname
-				ignitionServerRoute.Spec.Host = serviceStrategy.Route.Hostname
-			} else {
-				ignitionServerRoute.Spec.Host = util.ShortenRouteHostnameIfNeeded(ignitionServerRoute.Name, ignitionServerRoute.Namespace, defaultIngressDomain)
 			}
 			ignitionServerRoute.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{

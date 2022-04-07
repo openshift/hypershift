@@ -213,22 +213,33 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 
 func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool, strategy *hyperv1.ServicePublishingStrategy, defaultIngressDomain string) error {
 	ownerRef.ApplyTo(route)
+
+	// The route host is considered immutable, so set it only once upon creation
+	// and ignore updates.
+	if route.CreationTimestamp.IsZero() {
+		switch {
+		case !private && strategy.Route != nil && strategy.Route.Hostname != "":
+			route.Spec.Host = strategy.Route.Hostname
+		case private:
+			route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", route.Name, ownerRef.Reference.Name)
+		default:
+			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
+		}
+	}
+
 	switch {
 	case !private && strategy.Route != nil && strategy.Route.Hostname != "":
 		if route.Annotations == nil {
 			route.Annotations = map[string]string{}
 		}
 		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.Route.Hostname
-		route.Spec.Host = strategy.Route.Hostname
-	case !private && (strategy.Route == nil || strategy.Route.Hostname == ""):
-		route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
 	case private:
 		if route.Labels == nil {
 			route.Labels = map[string]string{}
 		}
 		route.Labels[ingress.HypershiftRouteLabel] = route.GetNamespace()
-		route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", route.Name, ownerRef.Reference.Name)
 	}
+
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
 		Name: manifests.KonnectivityServerRoute(route.Namespace).Name,
