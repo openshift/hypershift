@@ -31,6 +31,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/hypershift/support/globalconfig"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -3462,6 +3464,11 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 
 	if err := validateClusterID(hc); err != nil {
 		errs = append(errs, err)
+	}
+
+	_, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to parse cluster configuration: %w", err))
 	}
 
 	return utilerrors.NewAggregate(errs)

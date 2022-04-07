@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
 	NodePoolValidAMIConditionType                = "ValidAMI"
 	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
