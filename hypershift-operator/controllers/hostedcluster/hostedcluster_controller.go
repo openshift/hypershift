@@ -209,6 +209,9 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		managedResources = append(managedResources, &routev1.Route{})
 	}
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+		managedResources = append(managedResources, &configv1.Ingress{})
+	}
 	return managedResources
 }
 
@@ -1064,14 +1067,18 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 	}
 
+	defaultIngressDomain, err := r.defaultIngressDomain(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to determine default ingress domain: %w", err)
+	}
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, defaultIngressDomain)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
 
 	// Reconcile the Ignition server
-	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster, controlPlaneOperatorImage); err != nil {
+	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster, controlPlaneOperatorImage, defaultIngressDomain); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
 
@@ -1421,7 +1428,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage string) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, defaultIngressDomain string) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -1494,7 +1501,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()))
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()), defaultIngressDomain)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1578,7 +1585,7 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) error {
+func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage, defaultIngressDomain string) error {
 
 	log := ctrl.LoggerFrom(ctx)
 
@@ -1619,6 +1626,8 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			} else if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 				ignitionServerRoute.ObjectMeta.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = serviceStrategy.Route.Hostname
 				ignitionServerRoute.Spec.Host = serviceStrategy.Route.Hostname
+			} else {
+				ignitionServerRoute.Spec.Host = util.ShortenRouteHostnameIfNeeded(ignitionServerRoute.Name, ignitionServerRoute.Namespace, defaultIngressDomain)
 			}
 			ignitionServerRoute.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
@@ -2026,7 +2035,7 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	return hypershiftOperatorImage, nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine string) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("44Mi"),
@@ -2138,6 +2147,15 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			},
 		)
 	}
+	if len(defaultIngressDomain) > 0 {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  config.DefaultIngressDomainEnvVar,
+				Value: defaultIngressDomain,
+			},
+		)
+	}
+
 	mainContainer = util.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
 	proxy.SetEnvVars(&mainContainer.Env)
 
@@ -4139,6 +4157,21 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 	}
 
 	return nil
+}
+
+func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (string, error) {
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+		return "", nil
+	}
+	ingress := &configv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ingress), ingress); err != nil {
+		return "", fmt.Errorf("failed to retrieve ingress: %w", err)
+	}
+	return ingress.Spec.Domain, nil
 }
 
 func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {

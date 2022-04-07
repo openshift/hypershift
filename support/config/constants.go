@@ -20,4 +20,6 @@ const (
 	DefaultAPIServerPort         = 6443
 	DefaultServiceNodePortRange  = "30000-32767"
 	DefaultSecurityContextUser   = 1001
+
+	DefaultIngressDomainEnvVar = "DEFAULT_INGRESS_DOMAIN"
 )
