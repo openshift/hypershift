@@ -75,5 +75,9 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 		}
 	}
 
+	if len(hcp.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
+		p.StorageSpec.RestoreSnapshotURL = hcp.Spec.Etcd.Managed.Storage.RestoreSnapshotURL
+	}
+
 	return p
 }
