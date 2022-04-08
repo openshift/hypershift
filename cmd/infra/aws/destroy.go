@@ -384,8 +384,10 @@ func (o *DestroyInfraOptions) destroyInstances(ctx context.Context, client ec2if
 				instanceIDs = append(instanceIDs, aws.String(*instance.InstanceId))
 			}
 		}
-		if _, err := client.TerminateInstances(&ec2.TerminateInstancesInput{InstanceIds: instanceIDs}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to terminate instances: %w", err))
+		if len(instanceIDs) > 0 {
+			if _, err := client.TerminateInstances(&ec2.TerminateInstancesInput{InstanceIds: instanceIDs}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to terminate instances: %w", err))
+			}
 		}
 
 		return true
