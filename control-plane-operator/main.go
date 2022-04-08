@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	ignitionserver "github.com/openshift/hypershift/ignition-server"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
+	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -53,6 +54,9 @@ var (
 )
 
 func main() {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
 	basename := filepath.Base(os.Args[0])
 	cmd := commandFor(basename)
 	if err := cmd.Execute(); err != nil {
@@ -118,6 +122,8 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(availabilityprober.NewStartCommand())
 	cmd.AddCommand(tokenminter.NewStartCommand())
 	cmd.AddCommand(ignitionserver.NewStartCommand())
+	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
+
 	return cmd
 
 }
@@ -165,9 +171,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
-			o.EncodeTime = zapcore.RFC3339TimeEncoder
-		})))
 		ctx := ctrl.SetupSignalHandler()
 
 		restConfig := ctrl.GetConfigOrDie()
@@ -280,6 +283,13 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using token minter image", "image", tokenMinterImage)
 
+		cpoImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, "")
+		if err != nil {
+			setupLog.Error(err, "failed to find controlplane-operator-image")
+			os.Exit(1)
+		}
+		setupLog.Info("Using CPO image", "image", cpoImage)
+
 		konnectivityServerImage := defaultKonnectivityImage
 		konnectivityAgentImage := defaultKonnectivityImage
 		if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
@@ -306,6 +316,7 @@ func NewStartCommand() *cobra.Command {
 					"socks5-proxy":                   socks5ProxyImage,
 					"token-minter":                   tokenMinterImage,
 					"aws-kms-provider":               awsKMSProviderImage,
+					util.CPOImageName:                cpoImage,
 				},
 			},
 			RegistryOverrides: registryOverrides,
