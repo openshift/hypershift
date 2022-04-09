@@ -36,6 +36,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -206,6 +207,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
+		ImageMetadataProvider:      &util.RegistryClientImageMetadataProvider{},
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
