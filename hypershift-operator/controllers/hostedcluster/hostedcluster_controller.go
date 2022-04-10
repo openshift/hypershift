@@ -2016,6 +2016,10 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 		if err != nil {
 			return fmt.Errorf("failed to get image for cluster autoscaler: %w", err)
 		}
+		// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
+		if imageVal, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
+			clusterAutoscalerImage = imageVal
+		}
 
 		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
@@ -3401,6 +3405,10 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		machineApproverImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamClusterMachineApproverImage)
 		if err != nil {
 			return fmt.Errorf("failed to get image for machine approver: %w", err)
+		}
+		// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
+		if imageVal, ok := hcluster.Annotations[hyperv1.MachineApproverImage]; ok {
+			machineApproverImage = imageVal
 		}
 
 		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
