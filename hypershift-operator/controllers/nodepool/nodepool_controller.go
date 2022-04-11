@@ -607,7 +607,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			log.Info("Reconciled MachineSet", "result", result)
 		}
 
-		if err := r.reconcileInPlaceUpgrade(ctx, hcluster, nodePool, ms, targetConfigHash, targetVersion, targetConfigVersionHash); err != nil {
+		if err := r.reconcileInPlaceUpgrade(ctx, hcluster, nodePool, ms, targetConfigHash, targetVersion, targetConfigVersionHash, ignEndpoint, caCertBytes, tokenBytes); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -1131,6 +1131,11 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.No
 // validateManagement does additional backend validation. API validation/default should
 // prevent this from ever fail.
 func validateManagement(nodePool *hyperv1.NodePool) error {
+	// TODO actually validate the inplace upgrade type
+	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+		return nil
+	}
+
 	// Only upgradeType "Replace" is supported atm.
 	if nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeReplace ||
 		nodePool.Spec.Management.Replace == nil {
