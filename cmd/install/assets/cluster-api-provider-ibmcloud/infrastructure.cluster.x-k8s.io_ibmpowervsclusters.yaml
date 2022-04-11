@@ -57,14 +57,17 @@ spec:
                 properties:
                   id:
                     description: ID of resource
+                    minLength: 1
                     type: string
                   name:
                     description: Name of resource
+                    minLength: 1
                     type: string
                 type: object
               serviceInstanceID:
                 description: ServiceInstanceID is the id of the power cloud instance
                   where the vsi instance will get deployed
+                minLength: 1
                 type: string
             required:
             - network
