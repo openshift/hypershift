@@ -27,6 +27,10 @@ func SetReleaseImageAnnotation(deployment *appsv1.Deployment, releaseImage strin
 		deployment.Annotations = make(map[string]string)
 	}
 	deployment.Annotations[hyperv1.ReleaseImageAnnotation] = releaseImage
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+	}
+	deployment.Spec.Template.ObjectMeta.Annotations[hyperv1.ReleaseImageAnnotation] = releaseImage
 }
 
 func SetDefaultPriorityClass(deployment *appsv1.Deployment) {
