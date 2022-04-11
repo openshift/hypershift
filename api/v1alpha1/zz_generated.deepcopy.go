@@ -746,6 +746,11 @@ func (in *HostedClusterSpec) DeepCopyInto(out *HostedClusterSpec) {
 	}
 	out.PullSecret = in.PullSecret
 	out.SSHKey = in.SSHKey
+	if in.ServiceAccountSigningKey != nil {
+		in, out := &in.ServiceAccountSigningKey, &out.ServiceAccountSigningKey
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
+	}
 	if in.Configuration != nil {
 		in, out := &in.Configuration, &out.Configuration
 		*out = new(ClusterConfiguration)
@@ -893,6 +898,11 @@ func (in *HostedControlPlaneSpec) DeepCopyInto(out *HostedControlPlaneSpec) {
 	out.SSHKey = in.SSHKey
 	in.Platform.DeepCopyInto(&out.Platform)
 	out.DNS = in.DNS
+	if in.ServiceAccountSigningKey != nil {
+		in, out := &in.ServiceAccountSigningKey, &out.ServiceAccountSigningKey
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
+	}
 	if in.APIPort != nil {
 		in, out := &in.APIPort, &out.APIPort
 		*out = new(int32)

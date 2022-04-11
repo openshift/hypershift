@@ -306,6 +306,24 @@ validation.</p>
 </tr>
 <tr>
 <td>
+<code>serviceAccountSigningKey</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ServiceAccountSigningKey is a reference to a secret containing the private key
+used by the service account token issuer. The secret is expected to contain
+a single key named &ldquo;key&rdquo;. If not specified, a service account signing key will
+be generated automatically for the cluster. When specifying a service account
+signing key, a IssuerURL must also be specified.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>configuration</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.ClusterConfiguration">
@@ -2544,6 +2562,24 @@ validation.</p>
 </tr>
 <tr>
 <td>
+<code>serviceAccountSigningKey</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ServiceAccountSigningKey is a reference to a secret containing the private key
+used by the service account token issuer. The secret is expected to contain
+a single key named &ldquo;key&rdquo;. If not specified, a service account signing key will
+be generated automatically for the cluster. When specifying a service account
+signing key, a IssuerURL must also be specified.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>configuration</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.ClusterConfiguration">
@@ -2917,6 +2953,23 @@ DNSSpec
 </em>
 </td>
 <td>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAccountSigningKey</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ServiceAccountSigningKey is a reference to a secret containing the private key
+used by the service account token issuer. The secret is expected to contain
+a single key named &ldquo;key&rdquo;. If not specified, a service account signing key will
+be generated automatically for the cluster.</p>
 </td>
 </tr>
 <tr>

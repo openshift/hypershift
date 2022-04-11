@@ -94,6 +94,10 @@ const (
 	// Any components specified in this list will have profiling disabled. Profiling is disabled by default for etcd and konnectivity.
 	// Components this annotation can apply to: kube-scheduler, kube-controller-manager, kube-apiserver.
 	DisableProfilingAnnotation = "hypershift.openshift.io/disable-profiling"
+
+	// ServiceAccountSigningKeySecretKey is the name of the secret key that should contain the service account signing
+	// key if specified.
+	ServiceAccountSigningKeySecretKey = "key"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -202,6 +206,17 @@ type HostedClusterSpec struct {
 	// +immutable
 	// +optional
 	IssuerURL string `json:"issuerURL,omitempty"`
+
+	// ServiceAccountSigningKey is a reference to a secret containing the private key
+	// used by the service account token issuer. The secret is expected to contain
+	// a single key named "key". If not specified, a service account signing key will
+	// be generated automatically for the cluster. When specifying a service account
+	// signing key, a IssuerURL must also be specified.
+	//
+	// +immutable
+	// +kubebuilder:validation:Optional
+	// +optional
+	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
 
 	// Configuration specifies configuration for individual OCP components in the
 	// cluster, represented as embedded resources that correspond to the openshift
