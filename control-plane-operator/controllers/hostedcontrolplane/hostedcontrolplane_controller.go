@@ -682,7 +682,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile Ignition
 	r.Log.Info("Reconciling core machine configs")
-	if err = r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort); err != nil {
+	if err = r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort, globalConfig); err != nil {
 		return fmt.Errorf("failed to reconcile ignition: %w", err)
 	}
 
@@ -2172,7 +2172,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
+func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32, globalConfig globalconfig.GlobalConfig) error {
 	sshKey := ""
 	if len(hcp.Spec.SSHKey.Name) > 0 {
 		var sshKeySecret corev1.Secret
@@ -2203,15 +2203,23 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return fmt.Errorf("failed to reconcile ssh key ignition config: %w", err)
 	}
 
+	var apiserverProxy string
+	if globalConfig.Proxy != nil && globalConfig.Proxy.Spec.HTTPSProxy != "" && (hcp.Spec.Platform.AWS == nil || hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Public) {
+		apiserverProxy = globalConfig.Proxy.Spec.HTTPSProxy
+	}
+
 	haProxyConfig := manifests.IgnitionAPIServerHAProxyConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, haProxyConfig, func() error {
-		return ignition.ReconcileAPIServerHAProxyIgnitionConfig(haProxyConfig,
+		return ignition.ReconcileAPIServerProxyIgnitionConfig(haProxyConfig,
 			p.OwnerRef,
 			p.HAProxyImage,
+			p.CPOImage,
 			p.APIServerExternalAddress,
 			p.APIServerInternalAddress,
 			p.APIServerExternalPort,
-			p.APIServerInternalPort)
+			p.APIServerInternalPort,
+			apiserverProxy,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server ha proxy ignition config: %w", err)
 	}

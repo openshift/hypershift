@@ -3,6 +3,7 @@ package ignition
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type IgnitionConfigParams struct {
@@ -10,6 +11,7 @@ type IgnitionConfigParams struct {
 	FIPSEnabled                 bool
 	SSHKey                      string
 	HAProxyImage                string
+	CPOImage                    string
 	APIServerExternalAddress    string
 	APIServerExternalPort       int32
 	APIServerInternalAddress    string
@@ -23,6 +25,7 @@ func NewIgnitionConfigParams(hcp *hyperv1.HostedControlPlane, images map[string]
 		FIPSEnabled:                 hcp.Spec.FIPS,
 		SSHKey:                      sshKey,
 		HAProxyImage:                images["haproxy-router"],
+		CPOImage:                    images[util.CPOImageName],
 		APIServerExternalAddress:    apiServerAddress,
 		APIServerExternalPort:       apiServerPort,
 		HasImageContentSourcePolicy: len(hcp.Spec.ImageContentSources) > 0,
