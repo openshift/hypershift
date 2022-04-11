@@ -355,6 +355,21 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile oauth challenging client: %w", err))
 	}
 
+	log.Info("reconciling oauth serving cert rbac")
+	oauthServingCertRole := manifests.OAuthServingCertRole()
+	if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRole, func() error {
+		return oauth.ReconcileOauthServingCertRole(oauthServingCertRole)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert role: %w", err))
+	}
+
+	oauthServingCertRoleBinding := manifests.OAuthServingCertRoleBinding()
+	if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRoleBinding, func() error {
+		return oauth.ReconcileOauthServingCertRoleBinding(oauthServingCertRoleBinding)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert rolebinding: %w", err))
+	}
+
 	log.Info("reconciling cloud credential secrets")
 	errs = append(errs, r.reconcileCloudCredentialSecrets(ctx, hcp, log)...)
 
