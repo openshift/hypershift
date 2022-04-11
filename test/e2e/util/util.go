@@ -239,6 +239,27 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 	t.Logf("Observed hostedcluster to have successfully rolled out image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 }
 
+// WaitForNodePoolVersion blocks until the NodePool status indicates the given
+// version. If the context is closed before the version is observed, the given
+// test will get an error.
+func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool, version string) {
+	g := NewWithT(t)
+
+	t.Logf("Waiting for nodepool %s/%s to report version %s (currently %s)", nodePool.Namespace, nodePool.Name, version, nodePool.Status.Version)
+	err := wait.PollImmediateUntil(10*time.Second, func() (done bool, err error) {
+		latest := nodePool.DeepCopy()
+		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), latest)
+		if err != nil {
+			t.Logf("Failed to get nodepool: %v", err)
+			return false, nil
+		}
+		return latest.Status.Version == version, nil
+	}, ctx.Done())
+	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for nodepool version")
+
+	t.Logf("Observed nodepool %s/%s to report version %s", nodePool.Namespace, nodePool.Name, version)
+}
+
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
@@ -486,4 +507,37 @@ func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, 
 			}
 		}
 	})
+}
+
+// WaitForNodePoolConditionsNotToBePresent blocks until the given conditions are
+// not present in the NodePool.
+func WaitForNodePoolConditionsNotToBePresent(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool, conditions ...string) {
+	g := NewWithT(t)
+
+	t.Logf("Waiting for nodepool %s conditions to not be present: %v", nodePool.Name, conditions)
+	err := wait.PollImmediateUntil(10*time.Second, func() (done bool, err error) {
+		latest := nodePool.DeepCopy()
+		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), latest)
+		if err != nil {
+			t.Logf("Failed to get nodepool: %v", err)
+			return false, nil
+		}
+
+		var exists []hyperv1.NodePoolCondition
+		for _, actual := range nodePool.Status.Conditions {
+			for _, cond := range conditions {
+				if actual.Type == cond {
+					exists = append(exists, actual)
+					break
+				}
+			}
+		}
+		if len(exists) == 0 {
+			return true, nil
+		}
+
+		t.Logf("Waiting for nodepool conditions to not be present: %v", exists)
+		return false, nil
+	}, ctx.Done())
+	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for nodepool conditions")
 }

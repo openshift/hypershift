@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
@@ -182,6 +183,11 @@ type options struct {
 	IsRunningInCI        bool
 	ArtifactDir          string
 
+	// BeforeApply is a function passed to the CLI create command giving the test
+	// code an opportunity to inspect or mutate the resources the CLI will create
+	// before they're applied.
+	BeforeApply func(crclient.Object) `json:"-"`
+
 	configurableClusterOptions configurableClusterOptions
 	additionalTags             stringSliceVar
 }
@@ -226,6 +232,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		},
 		ServiceCIDR: "172.31.0.0/16",
 		PodCIDR:     "10.132.0.0/14",
+		BeforeApply: o.BeforeApply,
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
