@@ -128,7 +128,6 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 			{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "Subscription"},
 			{Group: "operators.coreos.com", Version: "v2", Kind: "OperatorCondition"},
 			{Group: "operators.coreos.com", Version: "v1", Kind: "OperatorGroup"},
-			{Group: "operators.coreos.com", Version: "v1", Kind: "OLMConfig"},
 		}
 	})
 	return nil
