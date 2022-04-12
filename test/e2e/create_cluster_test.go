@@ -19,6 +19,43 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
+// TestCreateCluster implements a test that creates a cluster with the code under test
+// vs upgrading to the code under test as TestUpgradeControlPlane does.
+func TestCreateCluster(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
+
+	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
+
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+
+	// Sanity check the cluster by waiting for the nodes to report ready
+	t.Logf("Waiting for guest client to become available")
+	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
+
+	// Wait for Nodes to be Ready
+	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
+
+	// Wait for the rollout to be complete
+	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
+	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
+	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
+	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, client, hostedCluster)
+}
+
 // TestKubeVirtCreateCluster implements a test that mimics the operation described in the
 // HyperShift quick start (creating a basic guest cluster).
 //
