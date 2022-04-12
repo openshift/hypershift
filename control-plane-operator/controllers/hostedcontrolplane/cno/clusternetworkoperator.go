@@ -194,6 +194,8 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	dep.Spec.Template.Labels["name"] = operatorName
 	cnoArgs := []string{"start",
 		"--listen=0.0.0.0:9104",
+		"--kubeconfig=/etc/hosted-kubernetes/kubeconfig",
+		"--namespace=openshift-network-operator",
 	}
 	var cnoEnv []corev1.EnvVar
 	ver, err := semver.Parse(params.ReleaseVersion)
@@ -203,39 +205,70 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 
 	// This is a hack for hypershift CI
 	if ver.Minor < 11 {
-		// CNO <4.11 doesn't support APISERVER_OVERRIDE_[HOST/PORT]
+		// CNO <4.11 doesn't support APISERVER_OVERRIDE_[HOST/PORT] or extra-clusters
 		cnoEnv = append(cnoEnv,
 			corev1.EnvVar{Name: "KUBERNETES_SERVICE_HOST", Value: params.APIServerAddress},
 			corev1.EnvVar{Name: "KUBERNETES_SERVICE_PORT", Value: fmt.Sprint(params.APIServerPort)})
-		cnoArgs = append(cnoArgs, "--kubeconfig=/etc/hosted-kubernetes/kubeconfig", "--namespace=openshift-network-operator")
 	} else {
-		cnoArgs = append(cnoArgs, "--in-cluster-client-name=management", "--extra-clusters=default=/etc/hosted-kubernetes/kubeconfig")
+		cnoArgs = append(cnoArgs, "--extra-clusters=management=/configs/management")
 	}
 
-	// Hack: add an initContainer that deletes the old (in-cluster) CNO first
-	// This is because the CVO doesn't "delete" objects, and we need to
-	// handle adopting existing clusters
-	dep.Spec.Template.Spec.InitContainers = []corev1.Container{{
-		Command: []string{"/usr/bin/kubectl"},
-		Args: []string{
-			"--kubeconfig=/etc/hosted-kubernetes/kubeconfig",
-			"-n=openshift-network-operator",
-			"delete",
-			"--ignore-not-found=true",
-			"deployment",
-			"network-operator",
+	dep.Spec.Template.Spec.InitContainers = []corev1.Container{
+		// Hack: add an initContainer that deletes the old (in-cluster) CNO first
+		// This is because the CVO doesn't "delete" objects, and we need to
+		// handle adopting existing clusters
+		{
+			Command: []string{"/usr/bin/kubectl"},
+			Args: []string{
+				"--kubeconfig=/etc/hosted-kubernetes/kubeconfig",
+				"-n=openshift-network-operator",
+				"delete",
+				"--ignore-not-found=true",
+				"deployment",
+				"network-operator",
+			},
+			Name:  "remove-old-cno",
+			Image: params.Images.CLI,
+			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+			}},
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "hosted-etc-kube", MountPath: "/etc/hosted-kubernetes"},
+			},
 		},
-		Name:  "remove-old-cno",
-		Image: params.Images.CLI,
-		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("50Mi"),
-		}},
-		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: "hosted-etc-kube", MountPath: "/etc/hosted-kubernetes"},
+
+		// Add an InitContainer that transmutes the in-cluster config to a Kubeconfig
+		// So CNO thinks the "default" config is the hosted cluster
+		{
+			Command: []string{"/bin/bash"},
+			Args: []string{
+				"-c",
+				`
+set -xeuo pipefail
+kc=/configs/management
+kubectl --kubeconfig $kc config set clusters.default.server "https://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}"
+kubectl --kubeconfig $kc config set clusters.default.certificate-authority /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+kubectl --kubeconfig $kc config set users.admin.tokenFile /var/run/secrets/kubernetes.io/serviceaccount/token
+kubectl --kubeconfig $kc config set contexts.default.cluster default
+kubectl --kubeconfig $kc config set contexts.default.user admin
+kubectl --kubeconfig $kc config set contexts.default.namespace $(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+kubectl --kubeconfig $kc config use-context default`,
+			},
+			Name:  "rewrite-config",
+			Image: params.Images.CLI,
+			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+			}},
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "hosted-etc-kube", MountPath: "/etc/hosted-kubernetes"},
+				{Name: "configs", MountPath: "/configs"},
+			},
 		},
-	}}
+	}
 
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{"/usr/bin/cluster-network-operator"},
@@ -246,7 +279,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 			{Name: "TOKEN_AUDIENCE", Value: params.TokenAudience},
 
 			{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
-			{Name: "APISERVER_OVERRIDE_HOST", Value: params.APIServerAddress},
+			{Name: "APISERVER_OVERRIDE_HOST", Value: params.APIServerAddress}, // We need to pass this down to networking components on the nodes
 			{Name: "APISERVER_OVERRIDE_PORT", Value: fmt.Sprint(params.APIServerPort)},
 			{Name: "OVN_NB_RAFT_ELECTION_TIMER", Value: "10"},
 			{Name: "OVN_SB_RAFT_ELECTION_TIMER", Value: "16"},
@@ -294,10 +327,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "hosted-etc-kube", MountPath: "/etc/hosted-kubernetes"},
+			{Name: "configs", MountPath: "/configs"},
 		},
 	}}
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{Name: "hosted-etc-kube", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KASServiceKubeconfigSecret("").Name}}},
+		{Name: "configs", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 	}
 
 	params.DeploymentConfig.ApplyTo(dep)
