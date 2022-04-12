@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -107,6 +108,7 @@ type HostedControlPlaneReconciler struct {
 	upsert.CreateOrUpdateProvider
 	EnableCIDebugOutput   bool
 	OperateOnReleaseImage string
+	DefaultIngressDomain  string
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -475,9 +477,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	if util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil) {
+	if isPaused, duration := util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
 		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
-		return ctrl.Result{}, nil
+		return ctrl.Result{
+			RequeueAfter: duration,
+		}, nil
 	}
 
 	// Perform the hosted control plane reconciliation
@@ -678,7 +682,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile Ignition
 	r.Log.Info("Reconciling core machine configs")
-	if err = r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort); err != nil {
+	if err = r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort, globalConfig); err != nil {
 		return fmt.Errorf("failed to reconcile ignition: %w", err)
 	}
 
@@ -769,9 +773,9 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	if serviceStrategy.Type != hyperv1.Route {
 		return nil
 	}
-	kasRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r.Client, kasRoute, func() error {
-		return konnectivity.ReconcileRoute(kasRoute, p.OwnerRef, util.IsPrivateHCP(hcp), serviceStrategy)
+	konnectivityRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, konnectivityRoute, func() error {
+		return konnectivity.ReconcileRoute(konnectivityRoute, p.OwnerRef, util.IsPrivateHCP(hcp), serviceStrategy, r.DefaultIngressDomain)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity server route: %w", err)
 	}
@@ -795,7 +799,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	}
 	oauthRoute := manifests.OauthServerRoute(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, oauthRoute, func() error {
-		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, serviceStrategy)
+		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, serviceStrategy, r.DefaultIngressDomain)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth route: %w", err)
 	}
@@ -1417,6 +1421,11 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, releaseImage *releaseinfo.ReleaseImage, oauthAddress string, oauthPort int32) error {
+	ocpVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return fmt.Errorf("failed to parse release version: %w", err)
+	}
+
 	p := kas.NewKubeAPIServerParams(ctx, hcp, globalConfig, releaseImage.ComponentImages(), oauthAddress, oauthPort, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCASecret(hcp.Namespace)
@@ -1489,7 +1498,9 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if _, err := r.CreateOrUpdate(ctx, r, kubeAPIServerConfig, func() error {
 		return kas.ReconcileConfig(kubeAPIServerConfig,
 			p.OwnerRef,
-			p.ConfigParams())
+			p.ConfigParams(),
+			ocpVersion,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server config: %w", err)
 	}
@@ -1609,6 +1620,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			aesCBCBackupKey,
 			hcp.Spec.Etcd.ManagementType,
 			p.APIServerPort,
+			hcp.Spec.PodCIDR,
+			hcp.Spec.ServiceCIDR,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
@@ -2139,7 +2152,16 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret: %w", err)
 	}
-	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, globalConfig)
+
+	var userCA *corev1.ConfigMap
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		userCA = manifests.UserCAConfigMap(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(userCA), userCA); err != nil {
+			return fmt.Errorf("failed to get user ca: %w", err)
+		}
+	}
+
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, userCA, globalConfig)
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
@@ -2150,7 +2172,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32) error {
+func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, apiServerAddress string, apiServerPort int32, globalConfig globalconfig.GlobalConfig) error {
 	sshKey := ""
 	if len(hcp.Spec.SSHKey.Name) > 0 {
 		var sshKeySecret corev1.Secret
@@ -2181,15 +2203,23 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return fmt.Errorf("failed to reconcile ssh key ignition config: %w", err)
 	}
 
+	var apiserverProxy string
+	if globalConfig.Proxy != nil && globalConfig.Proxy.Spec.HTTPSProxy != "" && (hcp.Spec.Platform.AWS == nil || hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Public) {
+		apiserverProxy = globalConfig.Proxy.Spec.HTTPSProxy
+	}
+
 	haProxyConfig := manifests.IgnitionAPIServerHAProxyConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, haProxyConfig, func() error {
-		return ignition.ReconcileAPIServerHAProxyIgnitionConfig(haProxyConfig,
+		return ignition.ReconcileAPIServerProxyIgnitionConfig(haProxyConfig,
 			p.OwnerRef,
 			p.HAProxyImage,
+			p.CPOImage,
 			p.APIServerExternalAddress,
 			p.APIServerInternalAddress,
 			p.APIServerExternalPort,
-			p.APIServerInternalPort)
+			p.APIServerInternalPort,
+			apiserverProxy,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server ha proxy ignition config: %w", err)
 	}
@@ -2265,7 +2295,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, hcp.Spec.APIPort, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage, hcp.Spec.AdditionalTrustBundle)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}

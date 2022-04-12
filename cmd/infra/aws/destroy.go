@@ -91,7 +91,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
 	s3Client := s3.New(awsSession, awsConfig)
 
-	var errs []error
+	errs := o.destroyInstances(ctx, ec2Client)
 	errs = append(errs, o.DestroyInternetGateways(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
@@ -372,6 +372,31 @@ func (o *DestroyInfraOptions) DestroyNATGateways(ctx context.Context, client ec2
 	if err != nil {
 		errs = append(errs, err)
 	}
+	return errs
+}
+
+func (o *DestroyInfraOptions) destroyInstances(ctx context.Context, client ec2iface.EC2API) []error {
+	var errs []error
+	deleteInstances := func(out *ec2.DescribeInstancesOutput, _ bool) bool {
+		var instanceIDs []*string
+		for _, reservation := range out.Reservations {
+			for _, instance := range reservation.Instances {
+				instanceIDs = append(instanceIDs, aws.String(*instance.InstanceId))
+			}
+		}
+		if len(instanceIDs) > 0 {
+			if _, err := client.TerminateInstances(&ec2.TerminateInstancesInput{InstanceIds: instanceIDs}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to terminate instances: %w", err))
+			}
+		}
+
+		return true
+	}
+
+	if err := client.DescribeInstancesPagesWithContext(ctx, &ec2.DescribeInstancesInput{Filters: o.ec2Filters()}, deleteInstances); err != nil {
+		errs = append(errs, fmt.Errorf("failed to describe instances: %w", err))
+	}
+
 	return errs
 }
 

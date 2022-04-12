@@ -22,9 +22,15 @@ func FindContainer(name string, containers []corev1.Container) *corev1.Container
 	return nil
 }
 
-// AvailabilityProberImageName is the name under which components can find the availability prober
-// image in the release image.
-const AvailabilityProberImageName = "availability-prober"
+const (
+
+	// CPOImageName is the name under which components can find the CPO image in the release image..
+	CPOImageName = "controlplane-operator"
+
+	// AvailabilityProberImageName is the name under which components can find the availability prober
+	// image in the release image.
+	AvailabilityProberImageName = "availability-prober"
+)
 
 func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...AvailabilityProberOpt) {
 	opts := AvailabilityProberOpts{}
@@ -36,7 +42,8 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 		Image:           image,
 		ImagePullPolicy: corev1.PullAlways,
 		Command: []string{
-			"/usr/bin/availability-prober",
+			"/usr/bin/control-plane-operator",
+			"availability-prober",
 			"--target",
 			target,
 		},

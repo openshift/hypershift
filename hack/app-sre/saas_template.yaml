@@ -26,6 +26,13 @@ objects:
     creationTimestamp: null
     name: hypershift-api-critical
   value: 100001000
+- apiVersion: scheduling.k8s.io/v1
+  description: This priority class is used for hypershift operator pods
+  kind: PriorityClass
+  metadata:
+    creationTimestamp: null
+    name: hypershift-operator
+  value: 100003000
 - apiVersion: v1
   kind: Namespace
   metadata:
@@ -276,6 +283,16 @@ objects:
           hypershift.openshift.io/operator-component: operator
           name: operator
       spec:
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                - key: name
+                  operator: In
+                  values:
+                  - operator
+              topologyKey: kubernetes.io/hostname
         containers:
         - args:
           - run
@@ -312,6 +329,9 @@ objects:
           - containerPort: 9000
             name: metrics
             protocol: TCP
+          - containerPort: 9443
+            name: manager
+            protocol: TCP
           readinessProbe:
             failureThreshold: 3
             httpGet:
@@ -331,6 +351,7 @@ objects:
           volumeMounts:
           - mountPath: /etc/oidc-storage-provider-s3-creds
             name: oidc-storage-provider-s3-creds
+        priorityClassName: hypershift-operator
         serviceAccountName: operator
         volumes:
         - name: oidc-storage-provider-s3-creds
@@ -340,6 +361,8 @@ objects:
 - apiVersion: v1
   kind: Service
   metadata:
+    annotations:
+      service.beta.openshift.io/serving-cert-secret-name: manager-serving-cert
     creationTimestamp: null
     labels:
       name: operator
@@ -351,6 +374,10 @@ objects:
       port: 9393
       protocol: TCP
       targetPort: metrics
+    - name: manager
+      port: 443
+      protocol: TCP
+      targetPort: manager
     selector:
       name: operator
     type: ClusterIP
@@ -19692,6 +19719,16 @@ objects:
             spec:
               description: Spec is the desired behavior of the HostedCluster.
               properties:
+                additionalTrustBundle:
+                  description: AdditionalTrustBundle is a reference to a ConfigMap
+                    containing a PEM-encoded X.509 certificate bundle that will be
+                    added to the hosted controlplane and nodes
+                  properties:
+                    name:
+                      description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        TODO: Add other useful fields. apiVersion, kind, uid?'
+                      type: string
+                  type: object
                 auditWebhook:
                   description: "AuditWebhook contains metadata for configuring an
                     audit webhook endpoint for a cluster to process cluster audit
@@ -20867,6 +20904,15 @@ objects:
             spec:
               description: HostedControlPlaneSpec defines the desired state of HostedControlPlane
               properties:
+                additionalTrustBundle:
+                  description: AdditionalTrustBundle references a ConfigMap containing
+                    a PEM-encoded X.509 certificate bundle
+                  properties:
+                    name:
+                      description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        TODO: Add other useful fields. apiVersion, kind, uid?'
+                      type: string
+                  type: object
                 apiAdvertiseAddress:
                   description: APIAdvertiseAddress is the address at which the APIServer
                     listens inside a worker.

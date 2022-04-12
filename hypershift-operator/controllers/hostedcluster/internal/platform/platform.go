@@ -56,11 +56,11 @@ type Platform interface {
 	DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error
 }
 
-func GetPlatform(hcluster *hyperv1.HostedCluster, availabilityProberImage string, tokenMinterImage string) (Platform, error) {
+func GetPlatform(hcluster *hyperv1.HostedCluster, utilitiesImage string) (Platform, error) {
 	var platform Platform
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		platform = aws.New(availabilityProberImage, tokenMinterImage)
+		platform = aws.New(utilitiesImage)
 	case hyperv1.IBMCloudPlatform:
 		platform = &ibmcloud.IBMCloud{}
 	case hyperv1.NonePlatform:

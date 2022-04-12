@@ -7,24 +7,8 @@ builds:
   main: ./control-plane-operator
   flags:
   - -mod=vendor
-- id: ignition-server
-  main: ./ignition-server
-  flags:
-  - -mod=vendor
-- id: konnectivity-socks5-proxy
-  main: ./konnectivity-socks5-proxy
-  flags:
-  - -mod=vendor
 - id: hypershift
   main: .
-  flags:
-  - -mod=vendor
-- id: availability-prober
-  main: ./availability-prober
-  flags:
-  - -mod=vendor
-- id: token-minter
-  main: ./token-minter
   flags:
   - -mod=vendor
 defaultBaseImage: gcr.io/distroless/static:debug-nonroot

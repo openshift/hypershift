@@ -161,12 +161,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		)
 		dep.Spec.Template.Spec.Containers = append(dep.Spec.Template.Spec.Containers, corev1.Container{
 			Name:    "token-minter",
-			Command: []string{"/usr/bin/token-minter"},
+			Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
 			Args: []string{
-				"-service-account-namespace=openshift-ingress-operator",
-				"-service-account-name=ingress-operator",
-				"-token-file=/var/run/secrets/openshift/serviceaccount/token",
-				"-kubeconfig=/etc/kubernetes/kubeconfig",
+				"--service-account-namespace=openshift-ingress-operator",
+				"--service-account-name=ingress-operator",
+				"--token-file=/var/run/secrets/openshift/serviceaccount/token",
+				"--kubeconfig=/etc/kubernetes/kubeconfig",
 			},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
@@ -203,7 +203,7 @@ func ingressOperatorSocks5ProxyContainer(socks5ProxyImage string) corev1.Contain
 	c := corev1.Container{
 		Name:    socks5ProxyContainerName,
 		Image:   socks5ProxyImage,
-		Command: []string{"/usr/bin/konnectivity-socks5-proxy"},
+		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"},
 		Args:    []string{"run"},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",

@@ -294,3 +294,69 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileUserCertCABundle(t *testing.T) {
+	testNamespace := "master-cluster1"
+	testHCPName := "cluster1"
+	tests := map[string]struct {
+		inputHCP              *hyperv1.HostedControlPlane
+		inputObjects          []client.Object
+		expectUserCAConfigMap bool
+	}{
+		"No AdditionalTrustBundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects:          []client.Object{},
+			expectUserCAConfigMap: false,
+		},
+		"AdditionalTrustBundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: manifests.ControlPlaneUserCABundle(testNamespace).Name,
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: manifests.ControlPlaneUserCABundle(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						"ca-bundle.crt": "acertxyz",
+					},
+				},
+			},
+			expectUserCAConfigMap: true,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
+				hcpName:                testHCPName,
+				hcpNamespace:           testNamespace,
+			}
+			err := r.reconcileUserCertCABundle(context.Background(), test.inputHCP)
+			g.Expect(err).To(BeNil())
+			guestUserCABundle := manifests.UserCABundle()
+			if test.expectUserCAConfigMap {
+				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
+				g.Expect(err).To(BeNil())
+				g.Expect(len(guestUserCABundle.Data["ca-bundle.crt"]) > 0).To(BeTrue())
+			} else {
+				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
+				g.Expect(errors.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
+}

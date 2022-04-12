@@ -54,11 +54,7 @@ func TestValidateKeyPairConsidersAllFields(t *testing.T) {
 			for current := val.Field(i).Interface(); reflect.DeepEqual(current, val.Field(i).Interface()); fuzzer.Fuzz(val.Field(i).Addr().Interface()) {
 			}
 
-			privKey, err := certs.PrivateKeyToPem(key)
-			if err != nil {
-				t.Fatalf("failed to convert private key to pem: %v", err)
-			}
-			err = certs.ValidateKeyPair(privKey, certs.CertToPem(cert), cfg, 0)
+			err = certs.ValidateKeyPair(certs.PrivateKeyToPem(key), certs.CertToPem(cert), cfg, 0)
 			if err == nil {
 				t.Error("ValidateKeyPair returned a nil error, should have detected the change")
 			}
@@ -101,11 +97,7 @@ func TestValidateKeyPairConsidersExpiration(t *testing.T) {
 				t.Fatalf("GenerateSelfSignedCertificate failed: %v", err)
 			}
 
-			privKey, err := certs.PrivateKeyToPem(key)
-			if err != nil {
-				t.Fatalf("failed to convert private key to pem: %v", err)
-			}
-			err = certs.ValidateKeyPair(privKey, certs.CertToPem(cert), cfg, time.Minute)
+			err = certs.ValidateKeyPair(certs.PrivateKeyToPem(key), certs.CertToPem(cert), cfg, time.Minute)
 			isValid := err == nil
 			if isValid != tc.expectValid {
 				t.Errorf("expected valid: %t, actual valid: %t, error from ValidateKeyPair: %v", tc.expectValid, isValid, err)
@@ -161,16 +153,13 @@ func TestValidateKeyPairItempotency(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			cfg := &certs.CertCfg{}
 			fuzzer.Fuzz(cfg)
+
 			key, cert, err := certs.GenerateSignedCertificate(caKey, caCert, cfg)
 			if err != nil {
 				t.Fatalf("GenerateSelfSignedCertificate failed: %v", err)
 			}
 
-			privKey, err := certs.PrivateKeyToPem(key)
-			if err != nil {
-				t.Fatalf("failed to convert private key to pem: %v", err)
-			}
-			if err := certs.ValidateKeyPair(privKey, certs.CertToPem(cert), cfg, 0); err != nil {
+			if err := certs.ValidateKeyPair(certs.PrivateKeyToPem(key), certs.CertToPem(cert), cfg, 0); err != nil {
 				t.Errorf("validation failed when config was unchanged: %v", err)
 			}
 		})

@@ -42,11 +42,13 @@ import (
 )
 
 type Options struct {
+	AdditionalTrustBundle                     string
 	Namespace                                 string
 	HyperShiftImage                           string
 	ImageRefsFile                             string
 	HyperShiftOperatorReplicas                int32
 	Development                               bool
+	EnableWebhook                             bool
 	Template                                  bool
 	Format                                    string
 	ExcludeEtcdManifests                      bool
@@ -112,6 +114,8 @@ func (o *Options) ApplyDefaults() {
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
+	case o.EnableWebhook:
+		o.HyperShiftOperatorReplicas = 2
 	default:
 		o.HyperShiftOperatorReplicas = 1
 	}
@@ -134,6 +138,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
+	cmd.PersistentFlags().BoolVar(&opts.EnableWebhook, "enable-webhook", false, "Enable webhook for hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.PersistentFlags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -151,6 +156,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
+	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -237,14 +243,10 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		}
 	}
 
-	controlPlanePriorityClass := assets.HyperShiftControlPlanePriorityClass{}.Build()
-	objects = append(objects, controlPlanePriorityClass)
-
-	etcdPriorityClass := assets.HyperShiftEtcdPriorityClass{}.Build()
-	objects = append(objects, etcdPriorityClass)
-
-	apiCriticalPriorityClass := assets.HyperShiftAPICriticalPriorityClass{}.Build()
-	objects = append(objects, apiCriticalPriorityClass)
+	objects = append(objects, assets.HyperShiftControlPlanePriorityClass())
+	objects = append(objects, assets.HyperShiftEtcdPriorityClass())
+	objects = append(objects, assets.HyperShiftAPICriticalPriorityClass())
+	objects = append(objects, assets.HypershiftOperatorPriorityClass())
 
 	operatorNamespace := assets.HyperShiftNamespace{
 		Name:                       opts.Namespace,
@@ -277,6 +279,13 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}.Build()
 	objects = append(objects, operatorRoleBinding)
 
+	if opts.EnableWebhook {
+		validatingWebhookConfiguration := assets.HyperShiftValidatingWebhookConfiguration{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, validatingWebhookConfiguration)
+	}
+
 	var oidcSecret *corev1.Secret
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := ioutil.ReadFile(opts.OIDCStorageProviderS3Credentials)
@@ -297,6 +306,24 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 				Name:      opts.OIDCStorageProviderS3CredentialsSecret,
 			},
 		}
+	}
+
+	var userCABundleCM *corev1.ConfigMap
+	if opts.AdditionalTrustBundle != "" {
+		userCABundle, err := ioutil.ReadFile(opts.AdditionalTrustBundle)
+		if err != nil {
+			return nil, err
+		}
+		userCABundleCM = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-ca-bundle",
+				Namespace: operatorNamespace.Name,
+			},
+			Data: map[string]string{
+				"ca-bundle.crt": string(userCABundle),
+			},
+		}
+		objects = append(objects, userCABundleCM)
 	}
 
 	if len(opts.ExternalDNSProvider) > 0 {
@@ -348,12 +375,14 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}
 
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
+		AdditionalTrustBundle:          userCABundleCM,
 		Namespace:                      operatorNamespace,
 		OperatorImage:                  opts.HyperShiftImage,
 		ServiceAccount:                 operatorServiceAccount,
 		Replicas:                       opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:     opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
+		EnableWebhook:                  opts.EnableWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,
 		AWSPrivateRegion:               opts.AWSPrivateRegion,
 		AWSPrivateCreds:                opts.AWSPrivateCreds,

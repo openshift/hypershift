@@ -4,16 +4,24 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
+	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
+	ignitionserver "github.com/openshift/hypershift/ignition-server"
+	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
+	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/util"
+	tokenminter "github.com/openshift/hypershift/token-minter"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,6 +54,61 @@ var (
 )
 
 func main() {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+	basename := filepath.Base(os.Args[0])
+	cmd := commandFor(basename)
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+
+}
+
+func commandFor(name string) *cobra.Command {
+	var cmd *cobra.Command
+	switch name {
+	case "ignition-server":
+		cmd = ignitionserver.NewStartCommand()
+	case "konnectivity-socks5-proxy":
+		cmd = konnectivitysocks5proxy.NewStartCommand()
+	case "availability-prober":
+		cmd = availabilityprober.NewStartCommand()
+	case "token-minter":
+		cmd = tokenminter.NewStartCommand()
+	default:
+		// for the default case, there is no need
+		// to convert flags, return immediately
+		return defaultCommand()
+	}
+	convertArgsIfNecessary(cmd)
+	return cmd
+}
+
+// convertArgsIfNecessary will convert go-style single dash flags
+// to POSIX compliant flags that work with spf13/pflag
+func convertArgsIfNecessary(cmd *cobra.Command) {
+	commandArgs := []string{}
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if !strings.HasPrefix(arg, "--") && strings.HasPrefix(arg, "-") {
+			flagName := arg[1:]
+			if strings.Contains(flagName, "=") {
+				parts := strings.SplitN(flagName, "=", 2)
+				flagName = parts[0]
+			}
+			if flag := cmd.Flags().Lookup(flagName); flag != nil {
+				commandArgs = append(commandArgs, "-"+arg)
+				continue
+			}
+		}
+		commandArgs = append(commandArgs, arg)
+	}
+	cmd.SetArgs(commandArgs)
+}
+
+func defaultCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "control-plane-operator",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -55,11 +118,14 @@ func main() {
 	}
 	cmd.AddCommand(NewStartCommand())
 	cmd.AddCommand(hostedclusterconfigoperator.NewCommand())
+	cmd.AddCommand(konnectivitysocks5proxy.NewStartCommand())
+	cmd.AddCommand(availabilityprober.NewStartCommand())
+	cmd.AddCommand(tokenminter.NewStartCommand())
+	cmd.AddCommand(ignitionserver.NewStartCommand())
+	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
+	return cmd
+
 }
 
 const (
@@ -105,9 +171,6 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
-			o.EncodeTime = zapcore.RFC3339TimeEncoder
-		})))
 		ctx := ctrl.SetupSignalHandler()
 
 		restConfig := ctrl.GetConfigOrDie()
@@ -220,6 +283,13 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using token minter image", "image", tokenMinterImage)
 
+		cpoImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, "")
+		if err != nil {
+			setupLog.Error(err, "failed to find controlplane-operator-image")
+			os.Exit(1)
+		}
+		setupLog.Info("Using CPO image", "image", cpoImage)
+
 		konnectivityServerImage := defaultKonnectivityImage
 		konnectivityAgentImage := defaultKonnectivityImage
 		if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
@@ -246,6 +316,7 @@ func NewStartCommand() *cobra.Command {
 					"socks5-proxy":                   socks5ProxyImage,
 					"token-minter":                   tokenMinterImage,
 					"aws-kms-provider":               awsKMSProviderImage,
+					util.CPOImageName:                cpoImage,
 				},
 			},
 			RegistryOverrides: registryOverrides,
@@ -263,6 +334,8 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)
+
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                        mgr.GetClient(),
 			ManagementClusterCapabilities: mgmtClusterCaps,
@@ -271,6 +344,7 @@ func NewStartCommand() *cobra.Command {
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
 			EnableCIDebugOutput:           enableCIDebugOutput,
 			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
+			DefaultIngressDomain:          defaultIngressDomain,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

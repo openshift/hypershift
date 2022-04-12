@@ -763,6 +763,11 @@ func (in *HostedClusterSpec) DeepCopyInto(out *HostedClusterSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.AdditionalTrustBundle != nil {
+		in, out := &in.AdditionalTrustBundle, &out.AdditionalTrustBundle
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
+	}
 	if in.SecretEncryption != nil {
 		in, out := &in.SecretEncryption, &out.SecretEncryption
 		*out = new(SecretEncryptionSpec)
@@ -927,6 +932,11 @@ func (in *HostedControlPlaneSpec) DeepCopyInto(out *HostedControlPlaneSpec) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.AdditionalTrustBundle != nil {
+		in, out := &in.AdditionalTrustBundle, &out.AdditionalTrustBundle
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
 	}
 	if in.SecretEncryption != nil {
 		in, out := &in.SecretEncryption, &out.SecretEncryption

@@ -112,7 +112,7 @@ func buildCloudProviderTokenMinterContainer(image string, args []string) func(c 
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullAlways
-		c.Command = []string{"/usr/bin/token-minter"}
+		c.Command = []string{"/usr/bin/control-plane-operator", "token-minter"}
 		c.Args = args
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -127,11 +127,11 @@ func tokenMinterArgs() []string {
 		return path.Join(cloudProviderTokenVolumeMount("").Path(cloudProviderInitContainerTokenMinter().Name, vol), file)
 	}
 	return []string{
-		"-service-account-namespace=kube-system",
-		"-service-account-name=kube-controller-manager",
-		"-token-audience=openshift",
-		fmt.Sprintf("-token-file=%s", cpath(cloudProviderTokenVolume().Name, "token")),
-		fmt.Sprintf("-kubeconfig=%s", cpath(cloudProviderTokenKubeconfigVolume().Name, KubeconfigKey)),
+		"--service-account-namespace=kube-system",
+		"--service-account-name=kube-controller-manager",
+		"--token-audience=openshift",
+		fmt.Sprintf("--token-file=%s", cpath(cloudProviderTokenVolume().Name, "token")),
+		fmt.Sprintf("--kubeconfig=%s", cpath(cloudProviderTokenKubeconfigVolume().Name, KubeconfigKey)),
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	rbacv1 "k8s.io/api/rbac/v1"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -39,6 +41,34 @@ func reconcileOAuthClient(client *oauthv1.OAuthClient, redirectURIs []string, re
 	client.GrantMethod = oauthv1.GrantHandlerAuto
 	if setSecret && len(client.Secret) == 0 {
 		client.Secret = randomString(32)
+	}
+	return nil
+}
+
+func ReconcileOauthServingCertRole(role *rbacv1.Role) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups:     []string{""},
+			ResourceNames: []string{"oauth-serving-cert"},
+			Resources:     []string{"configmaps"},
+			Verbs:         []string{"get", "list", "watch"},
+		},
+	}
+	return nil
+}
+
+func ReconcileOauthServingCertRoleBinding(role *rbacv1.RoleBinding) error {
+	role.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "Role",
+		Name:     manifests.OAuthServingCertRole().Name,
+	}
+	role.Subjects = []rbacv1.Subject{
+		{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Group",
+			Name:     "system:authenticated",
+		},
 	}
 	return nil
 }

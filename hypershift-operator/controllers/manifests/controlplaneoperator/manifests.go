@@ -118,6 +118,15 @@ func SSHKey(controlPlaneNamespace string) *corev1.Secret {
 	}
 }
 
+func UserCABundle(controlPlaneNamespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-ca-bundle",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
 func PodMonitor(controlPlaneNamespace string) *prometheusoperatorv1.PodMonitor {
 	return &prometheusoperatorv1.PodMonitor{
 		ObjectMeta: metav1.ObjectMeta{

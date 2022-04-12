@@ -95,7 +95,7 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 	}
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"/usr/bin/proxy-server",
 		}
@@ -211,22 +211,35 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	return nil
 }
 
-func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool, strategy *hyperv1.ServicePublishingStrategy) error {
+func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool, strategy *hyperv1.ServicePublishingStrategy, defaultIngressDomain string) error {
 	ownerRef.ApplyTo(route)
-	if !private && strategy.Route != nil && strategy.Route.Hostname != "" {
+
+	// The route host is considered immutable, so set it only once upon creation
+	// and ignore updates.
+	if route.CreationTimestamp.IsZero() {
+		switch {
+		case !private && strategy.Route != nil && strategy.Route.Hostname != "":
+			route.Spec.Host = strategy.Route.Hostname
+		case private:
+			route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", route.Name, ownerRef.Reference.Name)
+		default:
+			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
+		}
+	}
+
+	switch {
+	case !private && strategy.Route != nil && strategy.Route.Hostname != "":
 		if route.Annotations == nil {
 			route.Annotations = map[string]string{}
 		}
 		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.Route.Hostname
-		route.Spec.Host = strategy.Route.Hostname
-	}
-	if private {
+	case private:
 		if route.Labels == nil {
 			route.Labels = map[string]string{}
 		}
 		route.Labels[ingress.HypershiftRouteLabel] = route.GetNamespace()
-		route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", route.Name, ownerRef.Reference.Name)
 	}
+
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
 		Name: manifests.KonnectivityServerRoute(route.Namespace).Name,
@@ -355,7 +368,7 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 	}
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"/usr/bin/proxy-agent",
 		}

@@ -9,7 +9,7 @@ spec:
       template:
         spec:
           serviceAccountName: olm-collect-profiles
-          priorityClassName: openshift-user-critical
+          priorityClassName: hypershift-control-plane
           containers:
             - name: collect-profiles
               image: OLM_OPERATOR_IMAGE

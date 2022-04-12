@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -24,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -76,12 +78,19 @@ type NodePoolReconciler struct {
 	client.Client
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
-
+	controller      controller.Controller
+	// hostedClusterCachesTracker stores hosted cluster caches.
+	hostedClusterCachesTracker hostedClusterCachesTracker
 	upsert.CreateOrUpdateProvider
 }
 
+type hostedClusterCachesTracker struct {
+	sync.RWMutex
+	caches map[client.ObjectKey]bool
+}
+
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	_, err := ctrl.NewControllerManagedBy(mgr).
+	controller, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.NodePool{}).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
 		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
@@ -102,6 +111,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
 
+	r.controller = controller
 	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
 
 	return nil
@@ -204,6 +214,29 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 1. - Reconcile conditions according to current state of the world.
+
+	// Validate the HostedCluster cluster config is valid.
+	// This config is used to set the proxy config for ignition.
+	gConfig, err := globalconfig.ParseGlobalConfig(ctx, hcluster.Spec.Configuration)
+	if err != nil {
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               string(hyperv1.NodePoolValidHostedClusterConditionType),
+			Status:             corev1.ConditionFalse,
+			Message:            err.Error(),
+			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			ObservedGeneration: nodePool.Generation,
+		})
+		log.Info("Invalid cluster config for HostedCluster, aborting reconciliation")
+		return reconcile.Result{}, nil
+	}
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidHostedClusterConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		ObservedGeneration: nodePool.Generation,
+	})
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster, gConfig)
 
 	// Validate autoscaling input.
 	if err := validateAutoscaling(nodePool); err != nil {
@@ -330,26 +363,32 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if hcluster.Spec.Platform.AWS == nil {
 			return ctrl.Result{}, fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
 		}
-		// TODO: Should the region be included in the NodePool platform information?
-		ami, err = getAMI(nodePool, hcluster.Spec.Platform.AWS.Region, releaseImage)
-		if err != nil {
+		if nodePool.Spec.Platform.AWS.AMI != "" {
+			ami = nodePool.Spec.Platform.AWS.AMI
+			// User-defined AMIs cannot be validated
+			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidAMIConditionType)
+		} else {
+			// TODO: Should the region be included in the NodePool platform information?
+			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, releaseImage)
+			if err != nil {
+				setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               hyperv1.NodePoolValidAMIConditionType,
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+					Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+					ObservedGeneration: nodePool.Generation,
+				})
+				return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
+			}
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidAMIConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
-				Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+				Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
 				ObservedGeneration: nodePool.Generation,
 			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 		}
 	}
-	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidAMIConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-		Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
-		ObservedGeneration: nodePool.Generation,
-	})
 
 	// Validate config input.
 	// 3 generic core config resoures: fips, ssh and haproxy.
@@ -474,7 +513,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetConfigVersionHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint)
+		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, proxy)
 	}); err != nil {
 		return ctrl.Result{}, err
 	} else {
@@ -514,20 +553,44 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Info("Reconciled Machine template", "result", result)
 	}
 
-	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
-	if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
-		return r.reconcileMachineDeployment(
-			log,
-			md, nodePool,
-			userDataSecret,
-			template,
-			infraID,
-			targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
-			client.ObjectKeyFromObject(md).String(), err)
-	} else {
-		log.Info("Reconciled MachineDeployment", "result", result)
+	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+		ms := machineSet(nodePool, infraID, controlPlaneNamespace)
+		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, ms, func() error {
+			return r.reconcileMachineSet(
+				ctx,
+				ms, hcluster, nodePool,
+				userDataSecret,
+				template,
+				infraID,
+				targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineSet %q: %w",
+				client.ObjectKeyFromObject(ms).String(), err)
+		} else {
+			log.Info("Reconciled MachineSet", "result", result)
+		}
+
+		if err := r.reconcileInPlaceUpgrade(ctx, hcluster, nodePool, ms, targetConfigHash, targetVersion, targetConfigVersionHash); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+		md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
+		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
+			return r.reconcileMachineDeployment(
+				log,
+				md, nodePool,
+				userDataSecret,
+				template,
+				infraID,
+				targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
+				client.ObjectKeyFromObject(md).String(), err)
+		} else {
+			log.Info("Reconciled MachineDeployment", "result", result)
+		}
 	}
 
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
@@ -587,6 +650,27 @@ func deleteMachineDeployment(ctx context.Context, c client.Client, md *capiv1.Ma
 	return nil
 }
 
+func deleteMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSet) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(ms), ms)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineSet: %w", err)
+	}
+	if ms.DeletionTimestamp != nil {
+		return nil
+	}
+	err = c.Delete(ctx, ms)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error deleting MachineSet: %w", err)
+	}
+	return nil
+}
+
 func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.MachineHealthCheck) error {
 	err := c.Get(ctx, client.ObjectKeyFromObject(mhc), mhc)
 	if err != nil {
@@ -609,7 +693,12 @@ func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.
 }
 
 func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, infraID, controlPlaneNamespace string) error {
+	r.hostedClusterCachesTracker.Lock()
+	delete(r.hostedClusterCachesTracker.caches, client.ObjectKeyFromObject(nodePool))
+	r.hostedClusterCachesTracker.Unlock()
+
 	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
+	ms := machineSet(nodePool, infraID, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 	machineTemplates, err := r.listMachineTemplates(nodePool)
 	if err != nil {
@@ -636,13 +725,17 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 		return fmt.Errorf("failed to delete MachineDeployment: %w", err)
 	}
 
+	if err := deleteMachineSet(ctx, r.Client, ms); err != nil {
+		return fmt.Errorf("failed to delete MachineSet: %w", err)
+	}
+
 	if err := deleteMachineHealthCheck(ctx, r.Client, mhc); err != nil {
 		return fmt.Errorf("failed to delete MachineHealthCheck: %w", err)
 	}
 	return nil
 }
 
-func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string) error {
+func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.NodePool, CA, token []byte, ignEndpoint string, proxy *configv1.Proxy) error {
 	// The token secret controller deletes expired token Secrets.
 	// When that happens the NodePool controller reconciles and create a new one.
 	// Then it reconciles the userData Secret with the new generated token.
@@ -656,7 +749,7 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 
 	encodedCACert := base64.StdEncoding.EncodeToString(CA)
 	encodedToken := base64.StdEncoding.EncodeToString(token)
-	ignConfig := ignConfig(encodedCACert, encodedToken, ignEndpoint)
+	ignConfig := ignConfig(encodedCACert, encodedToken, ignEndpoint, proxy)
 	userDataValue, err := json.Marshal(ignConfig)
 	if err != nil {
 		return fmt.Errorf("failed to marshal ignition config: %w", err)
@@ -905,16 +998,8 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	}
 }
 
-func getAMI(nodePool *hyperv1.NodePool, region string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	if nodePool.Spec.Platform.AWS.AMI != "" {
-		return nodePool.Spec.Platform.AWS.AMI, nil
-	}
-
-	return defaultNodePoolAMI(region, releaseImage)
-}
-
-func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config {
-	return ignitionapi.Config{
+func ignConfig(encodedCACert, encodedToken, endpoint string, proxy *configv1.Proxy) ignitionapi.Config {
+	cfg := ignitionapi.Config{
 		Ignition: ignitionapi.Ignition{
 			Version: "3.2.0",
 			Security: ignitionapi.Security{
@@ -941,6 +1026,18 @@ func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config 
 			},
 		},
 	}
+	if proxy.Status.HTTPProxy != "" {
+		cfg.Ignition.Proxy.HTTPProxy = k8sutilspointer.String(proxy.Status.HTTPProxy)
+	}
+	if proxy.Status.HTTPSProxy != "" {
+		cfg.Ignition.Proxy.HTTPSProxy = k8sutilspointer.String(proxy.Status.HTTPSProxy)
+	}
+	if proxy.Status.NoProxy != "" {
+		for _, item := range strings.Split(proxy.Status.NoProxy, ",") {
+			cfg.Ignition.Proxy.NoProxy = append(cfg.Ignition.Proxy.NoProxy, ignitionapi.NoProxyItem(item))
+		}
+	}
+	return cfg
 }
 
 func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int, controlPlaneResource string) (configsRaw string, missingConfigs bool, err error) {
