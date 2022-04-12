@@ -19,7 +19,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -39,6 +41,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
+	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
@@ -49,6 +52,8 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 func main() {
@@ -224,9 +229,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 	if opts.CertDir != "" {
-		if err = (&hyperv1.HostedCluster{}).SetupWebhookWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to create controller: %w", err)
-		}
+		hookServer := mgr.GetWebhookServer()
+		hookServer.Register("/validate-hypershift-openshift-io-v1alpha1-hostedcluster", &webhook.Admission{Handler: &hostedClusterValidator{}})
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
@@ -310,4 +314,75 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Start the controllers
 	log.Info("starting manager")
 	return mgr.Start(ctx)
+}
+
+type hostedClusterValidator struct {
+	decoder *admission.Decoder
+}
+
+var _ admission.Handler = &hostedClusterValidator{}
+
+func (v *hostedClusterValidator) Handle(_ context.Context, req admission.Request) admission.Response {
+	new := &hyperv1.HostedCluster{}
+	err := v.decoder.DecodeRaw(req.Object, new)
+	if err != nil {
+		return admission.Errored(http.StatusBadRequest, err)
+	}
+	old := &hyperv1.HostedCluster{}
+	err = v.decoder.DecodeRaw(req.OldObject, old)
+	if err != nil {
+		return admission.Errored(http.StatusBadRequest, err)
+	}
+	switch req.Operation {
+	case admissionv1.Create:
+		return validateHostedClusterCreate(new.DeepCopy())
+	case admissionv1.Update:
+		return validateHostedClusterUpdate(old.DeepCopy(), new.DeepCopy())
+	case admissionv1.Delete:
+		return validateHostedClusterDelete(old.DeepCopy())
+	default:
+		return admission.Errored(http.StatusBadRequest, fmt.Errorf("bad operation"))
+	}
+}
+
+var _ admission.DecoderInjector = &hostedClusterValidator{}
+
+func (v *hostedClusterValidator) InjectDecoder(d *admission.Decoder) error {
+	v.decoder = d
+	return nil
+}
+
+func validateHostedClusterCreate(hc *hyperv1.HostedCluster) admission.Response {
+	return admission.Allowed("")
+}
+
+func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
+	spec.Release.Image = ""
+	spec.ClusterID = ""
+	spec.Configuration = nil
+	spec.AdditionalTrustBundle = nil
+	spec.SecretEncryption = nil
+	spec.PausedUntil = nil
+	for i, svc := range spec.Services {
+		if svc.Type == hyperv1.NodePort && svc.NodePort != nil {
+			spec.Services[i].NodePort.Address = ""
+			spec.Services[i].NodePort.Port = 0
+		}
+	}
+	if spec.Platform.Type == hyperv1.AWSPlatform && spec.Platform.AWS != nil {
+		spec.Platform.AWS.ResourceTags = nil
+	}
+}
+
+func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.HostedCluster) admission.Response {
+	filterMutableHostedClusterSpecFields(&new.Spec)
+	filterMutableHostedClusterSpecFields(&old.Spec)
+	if !reflect.DeepEqual(new.Spec, old.Spec) {
+		return admission.Denied("attempted change to immutable field(s)")
+	}
+	return admission.Allowed("")
+}
+
+func validateHostedClusterDelete(hc *hyperv1.HostedCluster) admission.Response {
+	return admission.Allowed("")
 }
