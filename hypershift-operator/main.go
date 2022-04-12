@@ -71,6 +71,7 @@ type StartOptions struct {
 	Namespace                        string
 	DeploymentName                   string
 	MetricsAddr                      string
+	CertDir                          string
 	EnableOCPClusterMonitoring       bool
 	EnableCIDebugOutput              bool
 	ControlPlaneOperatorImage        string
@@ -95,6 +96,7 @@ func NewStartCommand() *cobra.Command {
 		Namespace:                        "hypershift",
 		DeploymentName:                   "operator",
 		MetricsAddr:                      "0",
+		CertDir:                          "",
 		ControlPlaneOperatorImage:        "",
 		RegistryOverrides:                map[string]string{},
 		PrivatePlatform:                  string(hyperv1.NonePlatform),
@@ -105,6 +107,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
 	cmd.Flags().StringVar(&opts.DeploymentName, "deployment-name", opts.DeploymentName, "The name of the deployment of this operator")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
+	cmd.Flags().StringVar(&opts.CertDir, "cert-dir", opts.CertDir, "Path to the serving key and cert for manager")
 	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
@@ -136,6 +139,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		Scheme:                        hyperapi.Scheme,
 		MetricsBindAddress:            opts.MetricsAddr,
 		Port:                          9443,
+		CertDir:                       opts.CertDir,
 		LeaderElection:                true,
 		LeaderElectionID:              "hypershift-operator-leader-elect",
 		LeaderElectionResourceLock:    "leases",
@@ -218,6 +222,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	if err := hostedClusterReconciler.SetupWithManager(mgr, createOrUpdate); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
+	}
+	if opts.CertDir != "" {
+		if err = (&hyperv1.HostedCluster{}).SetupWebhookWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller: %w", err)
+		}
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
