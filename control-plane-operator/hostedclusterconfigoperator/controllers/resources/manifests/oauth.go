@@ -5,6 +5,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	oauthv1 "github.com/openshift/api/oauth/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 func OAuthCABundle() *corev1.ConfigMap {
@@ -37,6 +38,24 @@ func OAuthServerBrowserClient() *oauthv1.OAuthClient {
 	return &oauthv1.OAuthClient{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "openshift-browser-client",
+		},
+	}
+}
+
+func OAuthServingCertRoleBinding() *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "system:openshift:oauth-servercert-trust",
+			Namespace: "openshift-config-managed",
+		},
+	}
+}
+
+func OAuthServingCertRole() *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "system:openshift:oauth-servercert-trust",
+			Namespace: "openshift-config-managed",
 		},
 	}
 }
