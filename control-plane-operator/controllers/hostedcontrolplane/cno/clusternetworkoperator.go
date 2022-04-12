@@ -42,6 +42,7 @@ type Images struct {
 	NetworkCheckTarget           string
 	CloudNetworkConfigController string
 	TokenMinter                  string
+	CLI                          string
 }
 
 type Params struct {
@@ -79,6 +80,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 			NetworkCheckTarget:           images["cluster-network-operator"],
 			CloudNetworkConfigController: images["cloud-network-config-controller"],
 			TokenMinter:                  images["token-minter"],
+			CLI:                          images["cli"],
 		},
 		ReleaseVersion:          version,
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
@@ -209,6 +211,31 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	} else {
 		cnoArgs = append(cnoArgs, "--in-cluster-client-name=management", "--extra-clusters=default=/etc/hosted-kubernetes/kubeconfig")
 	}
+
+	// Hack: add an initContainer that deletes the old (in-cluster) CNO first
+	// This is because the CVO doesn't "delete" objects, and we need to
+	// handle adopting existing clusters
+	dep.Spec.Template.Spec.InitContainers = []corev1.Container{{
+		Command: []string{"/usr/bin/kubectl"},
+		Args: []string{
+			"--kubeconfig=/etc/hosted-kubernetes/kubeconfig",
+			"-n=openshift-network-operator",
+			"delete",
+			"--ignore-not-found=true",
+			"deployment",
+			"network-operator",
+		},
+		Name:  "remove-old-cno",
+		Image: params.Images.CLI,
+		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("50Mi"),
+		}},
+		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "hosted-etc-kube", MountPath: "/etc/hosted-kubernetes"},
+		},
+	}}
 
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{"/usr/bin/cluster-network-operator"},
