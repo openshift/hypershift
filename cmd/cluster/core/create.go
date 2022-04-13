@@ -63,6 +63,11 @@ type CreateOptions struct {
 	AzurePlatform                    AzurePlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
+
+	// BeforeApply is called immediately before resources are applied to the
+	// server, giving the user an opportunity to inspect or mutate the resources.
+	// This is intended primarily for e2e testing and should be used with care.
+	BeforeApply func(crclient.Object) `json:"-"`
 }
 
 type AgentPlatformCreateOptions struct {
@@ -204,57 +209,50 @@ func generateSSHKeys() ([]byte, []byte, error) {
 	return publicBytes, privatePEM, nil
 }
 
-func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, render bool, waitForRollout bool) error {
-
+func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, waitForRollout bool, mutate func(crclient.Object)) error {
 	exampleObjects := exampleOptions.Resources().AsObjects()
-	switch {
-	case render:
-		for _, object := range exampleObjects {
-			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
-			if err != nil {
-				return fmt.Errorf("failed to encode objects: %w", err)
-			}
-			fmt.Println("---")
-		}
-	default:
-		client, err := util.GetClient()
-		if err != nil {
-			return err
-		}
-		var hostedCluster *hyperv1.HostedCluster
-		for _, object := range exampleObjects {
-			key := crclient.ObjectKeyFromObject(object)
-			object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
-			var err error
-			if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
-				hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}
-				err = client.Create(ctx, object)
-			} else {
-				err = client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
-			}
-			if err != nil {
-				return fmt.Errorf("failed to apply object %q: %w", key, err)
-			}
-			log.Log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
-		}
 
-		if waitForRollout {
-			log.Log.Info("Waiting for cluster rollout")
-			return wait.PollInfiniteWithContext(ctx, 30*time.Second, func(ctx context.Context) (bool, error) {
-				hostedCluster := hostedCluster.DeepCopy()
-				if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
-					return false, fmt.Errorf("failed to get hostedcluster %s: %w", crclient.ObjectKeyFromObject(hostedCluster), err)
-				}
-				rolledOut := len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
-				if !rolledOut {
-					log.Log.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
-				}
-				return rolledOut, nil
-			})
-		}
-
-		return nil
+	client, err := util.GetClient()
+	if err != nil {
+		return err
 	}
+	if mutate != nil {
+		for _, object := range exampleObjects {
+			mutate(object)
+		}
+	}
+	var hostedCluster *hyperv1.HostedCluster
+	for _, object := range exampleObjects {
+		key := crclient.ObjectKeyFromObject(object)
+		object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
+		var err error
+		if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
+			hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}
+			err = client.Create(ctx, object)
+		} else {
+			err = client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
+		}
+		if err != nil {
+			return fmt.Errorf("failed to apply object %q: %w", key, err)
+		}
+		log.Log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
+	}
+
+	if waitForRollout {
+		log.Log.Info("Waiting for cluster rollout")
+		return wait.PollInfiniteWithContext(ctx, 30*time.Second, func(ctx context.Context) (bool, error) {
+			hostedCluster := hostedCluster.DeepCopy()
+			if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+				return false, fmt.Errorf("failed to get hostedcluster %s: %w", crclient.ObjectKeyFromObject(hostedCluster), err)
+			}
+			rolledOut := len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
+			if !rolledOut {
+				log.Log.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
+			}
+			return rolledOut, nil
+		})
+	}
+
 	return nil
 }
 
@@ -331,5 +329,18 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 		return err
 	}
 
-	return apply(ctx, exampleOptions, opts.Render, opts.Wait)
+	// In render mode, print the objects and return early
+	if opts.Render {
+		for _, object := range exampleOptions.Resources().AsObjects() {
+			err := hyperapi.YamlSerializer.Encode(object, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("failed to encode objects: %w", err)
+			}
+			fmt.Println("---")
+		}
+		return nil
+	}
+
+	// Otherwise, apply the objects
+	return apply(ctx, exampleOptions, opts.Wait, opts.BeforeApply)
 }

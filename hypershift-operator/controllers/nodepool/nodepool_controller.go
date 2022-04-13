@@ -118,7 +118,6 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling")
 
@@ -521,9 +520,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Store new template hash.
-	if nodePool.Annotations == nil {
-		nodePool.Annotations = make(map[string]string)
-	}
 
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
@@ -897,6 +893,9 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 			nodePool.Status.Version = targetVersion
 		}
 
+		if nodePool.Annotations == nil {
+			nodePool.Annotations = make(map[string]string)
+		}
 		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
 			log.Info("Config update complete",
 				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
