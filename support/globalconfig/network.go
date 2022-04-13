@@ -31,4 +31,18 @@ func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPla
 		cfg.Spec.ExternalIP = globalConfig.Network.Spec.ExternalIP
 		cfg.Spec.ServiceNodePortRange = globalConfig.Network.Spec.ServiceNodePortRange
 	}
+
+	// Without this, the CNOs proxy controller refuses to reconcile the proxy status
+	// The CNO only populates this after MTU probing and it is required for the proxy
+	// controller to populate proxy status. Proxy not being populated makes the MTU
+	// probing fail if there is a proxy. Get out of the deadlock by initially populating
+	// it if unset.
+	if globalConfig.Proxy != nil {
+		if len(cfg.Status.ClusterNetwork) == 0 {
+			cfg.Status.ClusterNetwork = cfg.Spec.ClusterNetwork
+		}
+		if len(cfg.Status.ServiceNetwork) == 0 {
+			cfg.Status.ServiceNetwork = cfg.Spec.ServiceNetwork
+		}
+	}
 }
