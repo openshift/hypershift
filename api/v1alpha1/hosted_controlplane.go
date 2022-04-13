@@ -44,6 +44,14 @@ type HostedControlPlaneSpec struct {
 	Platform  PlatformSpec `json:"platform"`
 	DNS       DNSSpec      `json:"dns"`
 
+	// ServiceAccountSigningKey is a reference to a secret containing the private key
+	// used by the service account token issuer. The secret is expected to contain
+	// a single key named "key". If not specified, a service account signing key will
+	// be generated automatically for the cluster.
+	//
+	// +optional
+	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
+
 	// APIPort is the port at which the APIServer listens inside a worker
 	// +optional
 	APIPort *int32 `json:"apiPort,omitempty"`
