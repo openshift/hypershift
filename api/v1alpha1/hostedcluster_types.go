@@ -499,7 +499,7 @@ const (
 
 // PlatformType is a specific supported infrastructure provider.
 //
-// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure
+// +kubebuilder:validation:Enum=AWS;None;IBMCloud;Agent;KubeVirt;Azure;PowerVS
 type PlatformType string
 
 const (
@@ -520,6 +520,9 @@ const (
 
 	// AzurePlatform represents Azure infrastructure.
 	AzurePlatform PlatformType = "Azure"
+
+	// PowerVSPlatform represents PowerVS infrastructure.
+	PowerVSPlatform PlatformType = "PowerVS"
 )
 
 // PlatformSpec specifies the underlying infrastructure provider for the cluster
@@ -548,6 +551,13 @@ type PlatformSpec struct {
 
 	// Azure defines azure specific settings
 	Azure *AzurePlatformSpec `json:"azure,omitempty"`
+
+	// PowerVS specifies configuration for clusters running on IBMCloud Power VS Service.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +optional
+	// +immutable
+	PowerVS *PowerVSPlatformSpec `json:"powervs,omitempty"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
@@ -560,6 +570,134 @@ type AgentPlatformSpec struct {
 type IBMCloudPlatformSpec struct {
 	// ProviderType is a specific supported infrastructure provider within IBM Cloud.
 	ProviderType configv1.IBMCloudProviderType `json:"providerType,omitempty"`
+}
+
+// PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components
+type PowerVSPlatformSpec struct {
+	// ResourceGroup is the IBMCloud Resource Group in which the cluster resides.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	ResourceGroup string `json:"resourceGroup"`
+
+	// Region is the IBMCloud region in which the cluster resides. This configures the
+	// OCP control plane cloud integrations, and is used by NodePool to resolve
+	// the correct boot image for a given release.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	Region string `json:"region"`
+
+	// Zone is the availability zone where control plane cloud resources are
+	// created.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	Zone string `json:"zone"`
+
+	// Subnet is the subnet to use for control plane cloud resources.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	Subnet *PowerVSResourceReference `json:"subnet"`
+
+	// ServiceInstance is the reference to the Power VS service on which the server instance(VM) will be created.
+	// Power VS service is a container for all Power VS instances at a specific geographic region.
+	// serviceInstance can be created via IBM Cloud catalog or CLI.
+	// ServiceInstanceID is the unique identifier that can be obtained from IBM Cloud UI or IBM Cloud cli.
+	//
+	// More detail about Power VS service instance.
+	// https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
+	//
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	ServiceInstanceID string `json:"serviceInstanceID"`
+
+	// VPC specifies IBM Cloud PowerVS Load Balancing configuration for the control
+	// plane.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	VPC *PowerVSVPC `json:"vpc"`
+
+	// KubeCloudControllerCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the cloud controller policy. The
+	// secret should have exactly one key, `credentials`, whose value is an AWS
+	// credentials file.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// TODO(dan): document the "cloud controller policy"
+	//
+	// +immutable
+	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
+
+	// NodePoolManagementCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the node pool management policy. The
+	// secret should have exactly one key, `credentials`, whose value is an AWS
+	// credentials file.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// TODO(dan): document the "node pool management policy"
+	//
+	// +immutable
+	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
+
+	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
+	// credentials with permissions matching the control-plane-operator policy.
+	// The secret should have exactly one key, `credentials`, whose value is
+	// an AWS credentials file.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// TODO(dan): document the "control plane operator policy"
+	//
+	// +immutable
+	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
+}
+
+// PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control
+// plane.
+type PowerVSVPC struct {
+	// Name for VPC to used for all the service load balancer.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	Name string `json:"name"`
+
+	// Region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
+	// into the OCP cluster.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	Region string `json:"region"`
+
+	// Zone is the availability zone where load balancer cloud resources are
+	// created.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	// +optional
+	Zone string `json:"zone,omitempty"`
+
+	// Subnet is the subnet to use for load balancer.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	// +optional
+	Subnet string `json:"subnet,omitempty"`
+}
+
+// PowerVSResourceReference is a reference to a specific IBMCloud PowerVS resource by ID, or Name.
+// Only one of ID, or Name may be specified. Specifying more than one will result in
+// a validation error.
+type PowerVSResourceReference struct {
+	// ID of resource
+	// +optional
+	ID *string `json:"id,omitempty"`
+
+	// Name of resource
+	// +optional
+	Name *string `json:"name,omitempty"`
 }
 
 // AWSCloudProviderConfig specifies AWS networking configuration.

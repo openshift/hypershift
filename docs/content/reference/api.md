@@ -4248,7 +4248,8 @@ Value must be one of:
 &#34;Azure&#34;, 
 &#34;IBMCloud&#34;, 
 &#34;KubeVirt&#34;, 
-&#34;None&#34;
+&#34;None&#34;, 
+&#34;PowerVS&#34;
 </p>
 </td>
 </tr>
@@ -4317,6 +4318,20 @@ AzureNodePoolPlatform
 </em>
 </td>
 <td>
+</td>
+</tr>
+<tr>
+<td>
+<code>powervs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSNodePoolPlatform">
+PowerVSNodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PowerVS specifies the configuration used when using IBMCloud PowerVS platform.</p>
 </td>
 </tr>
 </tbody>
@@ -4667,7 +4682,8 @@ Value must be one of:
 &#34;Azure&#34;, 
 &#34;IBMCloud&#34;, 
 &#34;KubeVirt&#34;, 
-&#34;None&#34;
+&#34;None&#34;, 
+&#34;PowerVS&#34;
 </p>
 </td>
 </tr>
@@ -4725,6 +4741,21 @@ AzurePlatformSpec
 <p>Azure defines azure specific settings</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>powervs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec">
+PowerVSPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PowerVS specifies configuration for clusters running on IBMCloud Power VS Service.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PlatformType { #hypershift.openshift.io/v1alpha1.PlatformType }
@@ -4761,7 +4792,429 @@ AzurePlatformSpec
 </tr><tr><td><p>&#34;None&#34;</p></td>
 <td><p>NonePlatform represents user supplied (e.g. bare metal) infrastructure.</p>
 </td>
+</tr><tr><td><p>&#34;PowerVS&#34;</p></td>
+<td><p>PowerVSPlatform represents PowerVS infrastructure.</p>
+</td>
 </tr></tbody>
+</table>
+###PowerVSNodePoolPlatform { #hypershift.openshift.io/v1alpha1.PowerVSNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+<p>PowerVSNodePoolPlatform specifies the configuration of a NodePool when operating
+on IBMCloud PowerVS platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>systemType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>SystemType is the System type used to host the instance.
+systemType determines the number of cores and memory that is available.
+Few of the supported SystemTypes are s922,e880,e980.
+e880 systemType available only in Dallas Datacenters.
+e980 systemType available in Datacenters except Dallas and Washington.
+When omitted, this means that the user has no opinion and the platform is left to choose a
+reasonable default. The current default is s922 which is generally available.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>processorType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ProcessorType is the VM instance processor type.
+It must be set to one of the following values: Dedicated, Capped or Shared.</p>
+<p>Dedicated: resources are allocated for a specific client, The hypervisor makes a 1:1 binding of a partition’s processor to a physical processor core.
+Shared: Shared among other clients.
+Capped: Shared, but resources do not expand beyond those that are requested, the amount of CPU time is Capped to the value specified for the entitlement.</p>
+<p>if the processorType is selected as Dedicated, then Processors value cannot be fractional.
+When omitted, this means that the user has no opinion and the platform is left to choose a
+reasonable default. The current default is Shared.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>processors</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#intorstring-intstr-util">
+k8s.io/apimachinery/pkg/util/intstr.IntOrString
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Processors is the number of virtual processors in a virtual machine.
+when the processorType is selected as Dedicated the processors value cannot be fractional.
+maximum value for the Processors depends on the selected SystemType.
+when SystemType is set to e880 or e980 maximum Processors value is 143.
+when SystemType is set to s922 maximum Processors value is 15.
+minimum value for Processors depends on the selected ProcessorType.
+when ProcessorType is set as Shared or Capped, The minimum processors is 0.5.
+when ProcessorType is set as Dedicated, The minimum processors is 1.
+When omitted, this means that the user has no opinion and the platform is left to choose a
+reasonable default. The default is set based on the selected ProcessorType.
+when ProcessorType selected as Dedicated, the default is set to 1.
+when ProcessorType selected as Shared or Capped, the default is set to 0.5.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>memoryGiB</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MemoryGiB is the size of a virtual machine&rsquo;s memory, in GiB.
+maximum value for the MemoryGiB depends on the selected SystemType.
+when SystemType is set to e880 maximum MemoryGiB value is 7463 GiB.
+when SystemType is set to e980 maximum MemoryGiB value is 15307 GiB.
+when SystemType is set to s922 maximum MemoryGiB value is 942 GiB.
+The minimum memory is 32 GiB.</p>
+<p>When omitted, this means the user has no opinion and the platform is left to choose a reasonable
+default. The current default is 32.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSResourceReference">
+PowerVSResourceReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Image used for deploying the nodes. If unspecified, the default
+is chosen based on the NodePool release payload image.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageType for the image and nodes, this will be ignored if Image is specified.
+The storage tiers in PowerVS are based on I/O operations per second (IOPS).
+It means that the performance of your storage volumes is limited to the maximum number of IOPS based on volume size and storage tier.
+Although, the exact numbers might change over time, the Tier 3 storage is currently set to 3 IOPS/GB, and the Tier 1 storage is currently set to 10 IOPS/GB.</p>
+<p>The default is tier1</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageDeletePolicy</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ImageDeletePolicy is policy for the image deletion.</p>
+<p>delete: delete the image from the infrastructure.
+retain: delete the image from the openshift but retain in the infrastructure.</p>
+<p>The default is delete</p>
+</td>
+</tr>
+</tbody>
+</table>
+###PowerVSPlatformSpec { #hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>resourceGroup</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ResourceGroup is the IBMCloud Resource Group in which the cluster resides.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Region is the IBMCloud region in which the cluster resides. This configures the
+OCP control plane cloud integrations, and is used by NodePool to resolve
+the correct boot image for a given release.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Zone is the availability zone where control plane cloud resources are
+created.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subnet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSResourceReference">
+PowerVSResourceReference
+</a>
+</em>
+</td>
+<td>
+<p>Subnet is the subnet to use for control plane cloud resources.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceInstanceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ServiceInstance is the reference to the Power VS service on which the server instance(VM) will be created.
+Power VS service is a container for all Power VS instances at a specific geographic region.
+serviceInstance can be created via IBM Cloud catalog or CLI.
+ServiceInstanceID is the unique identifier that can be obtained from IBM Cloud UI or IBM Cloud cli.</p>
+<p>More detail about Power VS service instance.
+<a href="https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server">https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server</a></p>
+<p>This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>vpc</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSVPC">
+PowerVSVPC
+</a>
+</em>
+</td>
+<td>
+<p>VPC specifies IBM Cloud PowerVS Load Balancing configuration for the control
+plane.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeCloudControllerCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>KubeCloudControllerCreds is a reference to a secret containing cloud
+credentials with permissions matching the cloud controller policy. The
+secret should have exactly one key, <code>credentials</code>, whose value is an AWS
+credentials file.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagementCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>NodePoolManagementCreds is a reference to a secret containing cloud
+credentials with permissions matching the node pool management policy. The
+secret should have exactly one key, <code>credentials</code>, whose value is an AWS
+credentials file.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperatorCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
+credentials with permissions matching the control-plane-operator policy.
+The secret should have exactly one key, <code>credentials</code>, whose value is
+an AWS credentials file.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+<p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
+</td>
+</tr>
+</tbody>
+</table>
+###PowerVSResourceReference { #hypershift.openshift.io/v1alpha1.PowerVSResourceReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSNodePoolPlatform">PowerVSNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec">PowerVSPlatformSpec</a>)
+</p>
+<p>
+<p>PowerVSResourceReference is a reference to a specific IBMCloud PowerVS resource by ID, or Name.
+Only one of ID, or Name may be specified. Specifying more than one will result in
+a validation error.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>id</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ID of resource</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Name of resource</p>
+</td>
+</tr>
+</tbody>
+</table>
+###PowerVSVPC { #hypershift.openshift.io/v1alpha1.PowerVSVPC }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec">PowerVSPlatformSpec</a>)
+</p>
+<p>
+<p>PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control
+plane.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Name for VPC to used for all the service load balancer.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
+into the OCP cluster.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Zone is the availability zone where load balancer cloud resources are
+created.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Subnet is the subnet to use for load balancer.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###PublishingStrategyType { #hypershift.openshift.io/v1alpha1.PublishingStrategyType }
 <p>
