@@ -359,6 +359,7 @@ func validateHostedClusterCreate(hc *hyperv1.HostedCluster) admission.Response {
 func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 	spec.Release.Image = ""
 	spec.ClusterID = ""
+	spec.InfraID = ""
 	spec.Configuration = nil
 	spec.AdditionalTrustBundle = nil
 	spec.SecretEncryption = nil
