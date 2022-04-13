@@ -609,9 +609,15 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 		}
 	}
 
+	proxy := &configv1.Proxy{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(proxy), proxy); err != nil {
+		// If the cluster doesn't use a proxy this is irrelevant, so we don't return.
+		errs = append(errs, fmt.Errorf("failed to get proxy config: %w", err))
+	}
+
 	agentDaemonset := manifests.KonnectivityAgentDaemonSet()
 	if _, err := r.CreateOrUpdate(ctx, r.client, agentDaemonset, func() error {
-		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p.DeploymentConfig, p.Image, p.ExternalAddress, p.ExternalPort, hcp.Spec.Platform.Type)
+		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p.DeploymentConfig, p.Image, p.ExternalAddress, p.ExternalPort, hcp.Spec.Platform.Type, proxy.Status)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent daemonset: %w", err))

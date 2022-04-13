@@ -6,6 +6,7 @@ import (
 
 	"k8s.io/utils/pointer"
 
+	configv1 "github.com/openshift/api/config/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,7 +36,7 @@ func konnectivityAgentLabels() map[string]string {
 	}
 }
 
-func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32, platform hyperv1.PlatformType) {
+func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32, platform hyperv1.PlatformType, proxy configv1.ProxyStatus) {
 	daemonset.Spec = appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: konnectivityAgentLabels(),
@@ -50,7 +51,7 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 					RunAsUser: pointer.Int64Ptr(1000),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port)),
+					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port, proxy)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
@@ -78,7 +79,7 @@ func konnectivityVolumeAgentCerts() *corev1.Volume {
 	}
 }
 
-func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(c *corev1.Container) {
+func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy configv1.ProxyStatus) func(c *corev1.Container) {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(konnectivityAgentContainer().Name, volume), file)
 	}
@@ -111,6 +112,20 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(
 			"1m",
 			"--sync-interval-cap",
 			"5m",
+		}
+		c.Env = []corev1.EnvVar{
+			{
+				Name:  "HTTP_PROXY",
+				Value: proxy.HTTPProxy,
+			},
+			{
+				Name:  "HTTPS_PROXY",
+				Value: proxy.HTTPSProxy,
+			},
+			{
+				Name:  "NO_PROXY",
+				Value: proxy.NoProxy,
+			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
