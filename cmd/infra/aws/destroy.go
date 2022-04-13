@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
+	"github.com/aws/aws-sdk-go/service/elbv2"
+	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -76,7 +78,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 			if !awsutil.IsErrorRetryable(err) {
 				return false, err
 			}
-			log.Log.Info("WARNING: error during destroy, will retry", "error", err.Error(), "type", fmt.Sprintf("%T,%+v", err, err))
+			log.Log.Info("WARNING: error during destroy, will retry", "error", err.Error())
 			return false, nil
 		}
 		return true, nil
@@ -88,17 +90,21 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 	elbClient := elb.New(awsSession, awsConfig)
+	elbv2Client := elbv2.New(awsSession, awsConfig)
 	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
 	s3Client := s3.New(awsSession, awsConfig)
 
 	errs := o.destroyInstances(ctx, ec2Client)
 	errs = append(errs, o.DestroyInternetGateways(ctx, ec2Client)...)
-	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
-	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyDNS(ctx, route53Client)...)
 	errs = append(errs, o.DestroyS3Buckets(ctx, s3Client)...)
 	errs = append(errs, o.DestroyVPCEndpointServices(ctx, ec2Client)...)
-	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient, route53Client)...)
+	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient, elbv2Client, route53Client)...)
+	if len(errs) > 0 {
+		return utilerrors.NewAggregate(errs)
+	}
+	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
+	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
 
 	return utilerrors.NewAggregate(errs)
 }
@@ -136,7 +142,7 @@ func emptyBucket(ctx context.Context, client s3iface.S3API, name string) error {
 	return s3manager.NewBatchDeleteWithClient(client).Delete(ctx, iter)
 }
 
-func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
+func (o *DestroyInfraOptions) DestroyV1ELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
 	var errs []error
 	deleteLBs := func(out *elb.DescribeLoadBalancersOutput, _ bool) bool {
 		for _, lb := range out.LoadBalancerDescriptions {
@@ -156,6 +162,33 @@ func (o *DestroyInfraOptions) DestroyELBs(ctx context.Context, client elbiface.E
 	}
 	err := client.DescribeLoadBalancersPagesWithContext(ctx,
 		&elb.DescribeLoadBalancersInput{},
+		deleteLBs)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	return errs
+}
+
+func (o *DestroyInfraOptions) DestroyV2ELBs(ctx context.Context, client elbv2iface.ELBV2API, vpcID *string) []error {
+	var errs []error
+	deleteLBs := func(out *elbv2.DescribeLoadBalancersOutput, _ bool) bool {
+		for _, lb := range out.LoadBalancers {
+			if *lb.VpcId != *vpcID {
+				continue
+			}
+			_, err := client.DeleteLoadBalancerWithContext(ctx, &elbv2.DeleteLoadBalancerInput{
+				LoadBalancerArn: lb.LoadBalancerArn,
+			})
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				log.Log.Info("Deleted ELB", "name", lb.LoadBalancerName)
+			}
+		}
+		return true
+	}
+	err := client.DescribeLoadBalancersPagesWithContext(ctx,
+		&elbv2.DescribeLoadBalancersInput{},
 		deleteLBs)
 	if err != nil {
 		errs = append(errs, err)
@@ -355,13 +388,20 @@ func (o *DestroyInfraOptions) DestroyNATGateways(ctx context.Context, client ec2
 	var errs []error
 	deleteNATGateways := func(out *ec2.DescribeNatGatewaysOutput, _ bool) bool {
 		for _, natGateway := range out.NatGateways {
+			if natGateway.State != nil && *natGateway.State == "deleted" {
+				continue
+			}
+			if natGateway.State != nil && *natGateway.State == "deleting" {
+				errs = append(errs, fmt.Errorf("NAT gateway %s still deleting", aws.StringValue(natGateway.NatGatewayId)))
+				continue
+			}
 			_, err := client.DeleteNatGatewayWithContext(ctx, &ec2.DeleteNatGatewayInput{
 				NatGatewayId: natGateway.NatGatewayId,
 			})
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				log.Log.Info("Deleted NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
+				errs = append(errs, fmt.Errorf("deleting NAT gateway %s", aws.StringValue(natGateway.NatGatewayId)))
 			}
 		}
 		return true
@@ -465,18 +505,23 @@ func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2ifac
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2iface.EC2API, elbclient elbiface.ELBAPI, route53client route53iface.Route53API) []error {
+func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2iface.EC2API, elbclient elbiface.ELBAPI, elbv2client elbv2iface.ELBV2API, route53client route53iface.Route53API) []error {
 	var errs []error
 	deleteVPC := func(out *ec2.DescribeVpcsOutput, _ bool) bool {
 		for _, vpc := range out.Vpcs {
 			var childErrs []error
-			childErrs = append(childErrs, o.DestroyELBs(ctx, elbclient, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyV1ELBs(ctx, elbclient, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyV2ELBs(ctx, elbv2client, vpc.VpcId)...)
 			childErrs = append(childErrs, o.DestroyVPCEndpoints(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroyRouteTables(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroyNATGateways(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroySubnets(ctx, ec2client, vpc.VpcId)...)
 			childErrs = append(childErrs, o.DestroyPrivateZones(ctx, route53client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyRouteTables(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyNATGateways(ctx, ec2client, vpc.VpcId)...)
+			if len(childErrs) > 0 {
+				errs = append(errs, childErrs...)
+				continue
+			}
+			childErrs = append(childErrs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroySubnets(ctx, ec2client, vpc.VpcId)...)
 			if len(childErrs) > 0 {
 				errs = append(errs, childErrs...)
 				continue
