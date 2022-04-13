@@ -20537,6 +20537,19 @@ objects:
                   required:
                   - type
                   type: object
+                serviceAccountSigningKey:
+                  description: ServiceAccountSigningKey is a reference to a secret
+                    containing the private key used by the service account token issuer.
+                    The secret is expected to contain a single key named "key". If
+                    not specified, a service account signing key will be generated
+                    automatically for the cluster. When specifying a service account
+                    signing key, a IssuerURL must also be specified.
+                  properties:
+                    name:
+                      description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        TODO: Add other useful fields. apiVersion, kind, uid?'
+                      type: string
+                  type: object
                 services:
                   description: "Services specifies how individual control plane services
                     are published from the hosting cluster of the control plane. \n
@@ -21642,6 +21655,18 @@ objects:
                       type: string
                   required:
                   - type
+                  type: object
+                serviceAccountSigningKey:
+                  description: ServiceAccountSigningKey is a reference to a secret
+                    containing the private key used by the service account token issuer.
+                    The secret is expected to contain a single key named "key". If
+                    not specified, a service account signing key will be generated
+                    automatically for the cluster.
+                  properties:
+                    name:
+                      description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        TODO: Add other useful fields. apiVersion, kind, uid?'
+                      type: string
                   type: object
                 serviceCIDR:
                   type: string

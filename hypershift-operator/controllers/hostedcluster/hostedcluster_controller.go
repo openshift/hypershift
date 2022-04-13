@@ -849,6 +849,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile the service account signing key if set
+	if hcluster.Spec.ServiceAccountSigningKey != nil {
+		if err := r.reconcileServiceAccountSigningKey(ctx, hcluster, controlPlaneNamespace.Name, createOrUpdate); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile service account signing key: %w", err)
+		}
+	}
+
 	// Reconcile etcd client MTLS secret if the control plane is using an unmanaged etcd cluster
 	if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		unmanagedEtcdTLSClientSecret := &corev1.Secret{
@@ -1168,6 +1175,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	hcp.Spec.FIPS = hcluster.Spec.FIPS
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
+	hcp.Spec.ServiceAccountSigningKey = hcluster.Spec.ServiceAccountSigningKey
 	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
 	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
 	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
@@ -3467,6 +3475,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		}
 	}
 
+	if err := r.validateServiceAccountSigningKey(ctx, hc); err != nil {
+		errs = append(errs, fmt.Errorf("invalid service account signing key: %w", err))
+	}
+
 	if err := r.validateAzureConfig(ctx, hc); err != nil {
 		errs = append(errs, err)
 	}
@@ -3973,6 +3985,13 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		return nil
 	}
 
+	// Skip creating documents if a service account signer key was set. Although technically it is possible for us
+	// to use a specified service account signing key and still create discovery documents, the presence of the
+	// signing key is what will indicate that the documents are generated and stored elsewhere.
+	if hcluster.Spec.ServiceAccountSigningKey != nil && hcluster.Spec.ServiceAccountSigningKey.Name != "" {
+		return nil
+	}
+
 	// We use the presence of the finalizer to short-circuit the document upload to avoid
 	// constantly re-uploading it.
 	if controllerutil.ContainsFinalizer(hcluster, oidcDocumentsFinalizer) {
@@ -4222,7 +4241,7 @@ func validateClusterID(hc *hyperv1.HostedCluster) error {
 }
 
 // getPayloadImage get an image from the payload for a particular component.
-func (r HostedClusterReconciler) getPayloadImage(ctx context.Context, hc *hyperv1.HostedCluster, component string) (string, error) {
+func (r *HostedClusterReconciler) getPayloadImage(ctx context.Context, hc *hyperv1.HostedCluster, component string) (string, error) {
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return "", fmt.Errorf("failed to get pull secret: %w", err)
@@ -4240,4 +4259,78 @@ func (r HostedClusterReconciler) getPayloadImage(ctx context.Context, hc *hyperv
 		return "", fmt.Errorf("image does not exist for release: %q", image)
 	}
 	return image, nil
+}
+
+func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.Context, hc *hyperv1.HostedCluster, targetNamespace string, createOrUpdate upsert.CreateOrUpdateFN) error {
+	privateBytes, publicBytes, err := r.serviceAccountSigningKeyBytes(ctx, hc)
+	if err != nil {
+		return err
+	}
+	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(targetNamespace)
+	_, err = createOrUpdate(ctx, r.Client, cpSigningKeySecret, func() error {
+		// Only set the signing key when the key does not already exist
+		if _, hasKey := cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey]; hasKey {
+			return nil
+		}
+		if cpSigningKeySecret.Data == nil {
+			cpSigningKeySecret.Data = map[string][]byte{}
+		}
+		cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey] = privateBytes
+		cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPublicKey] = publicBytes
+		return nil
+	})
+	return err
+}
+
+func (r *HostedClusterReconciler) validateServiceAccountSigningKey(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	// Skip if service account signing key is not set
+	if hc.Spec.ServiceAccountSigningKey == nil || hc.Spec.ServiceAccountSigningKey.Name == "" {
+		return nil
+	}
+	if hc.Spec.IssuerURL == "" {
+		return fmt.Errorf("the IssuerURL must be set when specifying a service account signing key")
+	}
+
+	privateBytes, _, err := r.serviceAccountSigningKeyBytes(ctx, hc)
+	if err != nil {
+		return err
+	}
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
+	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(controlPlaneNamespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(cpSigningKeySecret), cpSigningKeySecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("cannot get control plane signing key secret %s/%s: %w", cpSigningKeySecret.Namespace, cpSigningKeySecret.Name, err)
+		}
+		return nil
+	}
+	if cpSigningKeySecret.Data != nil {
+		existingKeyBytes, hasKey := cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey]
+		if !hasKey {
+			return nil
+		}
+		if !bytes.Equal(existingKeyBytes, privateBytes) {
+			return fmt.Errorf("existing control plane service account signing key does not match private key")
+		}
+	}
+	return nil
+}
+
+func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Context, hc *hyperv1.HostedCluster) ([]byte, []byte, error) {
+	signingKeySecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hc.Namespace, Name: hc.Spec.ServiceAccountSigningKey.Name}, signingKeySecret); err != nil {
+		return nil, nil, fmt.Errorf("failed to get hostedcluster ServiceAccountSigningKey secret %s: %w", hc.Spec.ServiceAccountSigningKey.Name, err)
+	}
+	privateKeyPEMBytes, hasKey := signingKeySecret.Data[hyperv1.ServiceAccountSigningKeySecretKey]
+	if !hasKey {
+		return nil, nil, fmt.Errorf("cannot find service account key %q in secret %s", hyperv1.ServiceAccountSigningKeySecretKey, signingKeySecret.Name)
+	}
+	privateKey, err := certs.PemToPrivateKey(privateKeyPEMBytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot decode private key in secret %s: %w", signingKeySecret.Name, err)
+	}
+	publicKeyPEMBytes, err := certs.PublicKeyToPem(&privateKey.PublicKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot serialize public key from private key %s: %w", signingKeySecret.Name, err)
+	}
+	return privateKeyPEMBytes, publicKeyPEMBytes, nil
 }
