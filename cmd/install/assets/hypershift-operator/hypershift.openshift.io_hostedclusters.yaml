@@ -363,7 +363,7 @@ spec:
                     description: "MachineCIDR is... \n TODO(dan): document it"
                     type: string
                   networkType:
-                    default: OpenShiftSDN
+                    default: OVNKubernetes
                     description: NetworkType specifies the SDN provider used for cluster
                       networking.
                     enum:
