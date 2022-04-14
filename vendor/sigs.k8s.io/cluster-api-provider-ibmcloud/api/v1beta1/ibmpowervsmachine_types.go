@@ -19,9 +19,10 @@ package v1beta1
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/errors"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 const (
@@ -36,25 +37,36 @@ type IBMPowerVSMachineSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// ServiceInstanceID is the id of the power cloud instance where the vsi instance will get deployed
+	// +kubebuilder:validation:MinLength=1
 	ServiceInstanceID string `json:"serviceInstanceID"`
 
 	// SSHKey is the name of the SSH key pair provided to the vsi for authenticating users
 	SSHKey string `json:"sshKey,omitempty"`
 
 	// Image is the reference to the Image from which to create the machine instance.
-	Image IBMPowerVSResourceReference `json:"image"`
+	// +optional
+	Image *IBMPowerVSResourceReference `json:"image,omitempty"`
+
+	// ImageRef is an optional reference to a provider-specific resource that holds
+	// the details for provisioning the Image for a Cluster.
+	// +optional
+	ImageRef *v1.LocalObjectReference `json:"imageRef,omitempty"`
 
 	// SysType is the System type used to host the vsi
-	SysType string `json:"sysType"`
+	// +optional
+	SysType string `json:"sysType,omitempty"`
 
 	// ProcType is the processor type, e.g: dedicated, shared, capped
-	ProcType string `json:"procType"`
+	// +optional
+	ProcType string `json:"procType,omitempty"`
 
 	// Processors is Number of processors allocated
-	Processors string `json:"processors"`
+	// +optional
+	Processors string `json:"processors,omitempty"`
 
 	// Memory is Amount of memory allocated (in GB)
-	Memory string `json:"memory"`
+	// +optional
+	Memory string `json:"memory,omitempty"`
 
 	// Network is the reference to the Network to use for this instance.
 	Network IBMPowerVSResourceReference `json:"network"`
@@ -69,10 +81,12 @@ type IBMPowerVSMachineSpec struct {
 // a validation error.
 type IBMPowerVSResourceReference struct {
 	// ID of resource
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	ID *string `json:"id,omitempty"`
 
 	// Name of resource
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Name *string `json:"name,omitempty"`
 }
@@ -96,11 +110,60 @@ type IBMPowerVSMachineStatus struct {
 	Health string `json:"health,omitempty"`
 
 	// InstanceState is the status of the vsi
-	InstanceState string `json:"instanceState"`
+	// +optional
+	InstanceState PowerVSInstanceState `json:"instanceState,omitempty"`
 
 	// Fault will report if any fault messages for the vsi
 	// +optional
 	Fault string `json:"fault,omitempty"`
+
+	// FailureReason will be set in the event that there is a terminal problem
+	// reconciling the Machine and will contain a succinct value suitable
+	// for machine interpretation.
+	//
+	// This field should not be set for transitive errors that a controller
+	// faces that are expected to be fixed automatically over
+	// time (like service outages), but instead indicate that something is
+	// fundamentally wrong with the Machine's spec or the configuration of
+	// the controller, and that manual intervention is required. Examples
+	// of terminal errors would be invalid combinations of settings in the
+	// spec, values that are unsupported by the controller, or the
+	// responsible controller itself being critically misconfigured.
+	//
+	// Any transient errors that occur during the reconciliation of Machines
+	// can be added as events to the Machine object and/or logged in the
+	// controller's output.
+	// +optional
+	FailureReason *errors.MachineStatusError `json:"failureReason,omitempty"`
+
+	// FailureMessage will be set in the event that there is a terminal problem
+	// reconciling the Machine and will contain a more verbose string suitable
+	// for logging and human consumption.
+	//
+	// This field should not be set for transitive errors that a controller
+	// faces that are expected to be fixed automatically over
+	// time (like service outages), but instead indicate that something is
+	// fundamentally wrong with the Machine's spec or the configuration of
+	// the controller, and that manual intervention is required. Examples
+	// of terminal errors would be invalid combinations of settings in the
+	// spec, values that are unsupported by the controller, or the
+	// responsible controller itself being critically misconfigured.
+	//
+	// Any transient errors that occur during the reconciliation of Machines
+	// can be added as events to the Machine object and/or logged in the
+	// controller's output.
+	// +optional
+	FailureMessage *string `json:"failureMessage,omitempty"`
+
+	// Conditions defines current service state of the IBMPowerVSMachine.
+	// +optional
+	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+
+	// Region specifies the Power VS Service instance region
+	Region *string `json:"region,omitempty"`
+
+	// Zone specifies the Power VS Service instance zone
+	Zone *string `json:"zone,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -118,6 +181,16 @@ type IBMPowerVSMachine struct {
 
 	Spec   IBMPowerVSMachineSpec   `json:"spec,omitempty"`
 	Status IBMPowerVSMachineStatus `json:"status,omitempty"`
+}
+
+// GetConditions returns the observations of the operational state of the IBMPowerVSMachine resource.
+func (r *IBMPowerVSMachine) GetConditions() clusterv1.Conditions {
+	return r.Status.Conditions
+}
+
+// SetConditions sets the underlying service state of the IBMPowerVSMachine to the predescribed clusterv1.Conditions.
+func (r *IBMPowerVSMachine) SetConditions(conditions clusterv1.Conditions) {
+	r.Status.Conditions = conditions
 }
 
 //+kubebuilder:object:root=true
