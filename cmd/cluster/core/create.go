@@ -21,12 +21,14 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/blang/semver"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
 // ApplyPlatformSpecifics can be used to create platform specific values as well as enriching the fixure with additional values
@@ -113,13 +115,24 @@ type AzurePlatformOptions struct {
 	AvailabilityZones []string
 }
 
-func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
+func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
 	if len(opts.ReleaseImage) == 0 {
 		defaultVersion, err := version.LookupDefaultOCPVersion()
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}
 		opts.ReleaseImage = defaultVersion.PullSpec
+	}
+	if opts.NetworkType == "" {
+		version, err := getReleaseSemanticVersion(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get version for release image %s: %w", opts.ReleaseImage, err)
+		}
+		if version.Minor > 10 {
+			opts.NetworkType = string(hyperv1.OVNKubernetes)
+		} else {
+			opts.NetworkType = string(hyperv1.OpenShiftSDN)
+		}
 	}
 
 	annotations := map[string]string{}
@@ -319,7 +332,7 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 		return errors.New("--wait requires --node-pool-replicas > 0")
 	}
 
-	exampleOptions, err := createCommonFixture(opts)
+	exampleOptions, err := createCommonFixture(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -343,4 +356,21 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 
 	// Otherwise, apply the objects
 	return apply(ctx, exampleOptions, opts.Wait, opts.BeforeApply)
+}
+
+func getReleaseSemanticVersion(ctx context.Context, opts *CreateOptions) (*semver.Version, error) {
+	provider := &releaseinfo.RegistryClientProvider{}
+	pullSecretBytes, err := ioutil.ReadFile(opts.PullSecretFile)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read pull secret file %s: %w", opts.PullSecretFile, err)
+	}
+	releaseImage, err := provider.Lookup(ctx, opts.ReleaseImage, pullSecretBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get version information from %s: %w", opts.ReleaseImage, err)
+	}
+	semanticVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return nil, err
+	}
+	return &semanticVersion, nil
 }
