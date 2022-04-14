@@ -11,6 +11,7 @@ const (
 	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
 	NodePoolValidAMIConditionType                = "ValidAMI"
+	NodePoolValidPowerVSImageConditionType       = "ValidPowerVSImage"
 	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"

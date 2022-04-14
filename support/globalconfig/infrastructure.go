@@ -75,5 +75,10 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			CloudName:         configv1.AzurePublicCloud,
 			ResourceGroupName: hcp.Spec.Platform.Azure.ResourceGroupName,
 		}
+	case hyperv1.PowerVSPlatform:
+		infra.Status.PlatformStatus.PowerVS = &configv1.PowerVSPlatformStatus{
+			Region: hcp.Spec.Platform.PowerVS.Region,
+			Zone:   hcp.Spec.Platform.PowerVS.Zone,
+		}
 	}
 }
