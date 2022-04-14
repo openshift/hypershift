@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -22,7 +21,6 @@ func NewCreateCommands() *cobra.Command {
 		PullSecretFile:                 "",
 		ControlPlaneAvailabilityPolicy: "SingleReplica",
 		Render:                         false,
-		NetworkType:                    string(hyperv1.OVNKubernetes),
 		InfrastructureJSON:             "",
 		InfraID:                        "",
 		ServiceCIDR:                    "172.31.0.0/16",
