@@ -22,7 +22,7 @@ func NewCreateCommands() *cobra.Command {
 		PullSecretFile:                 "",
 		ControlPlaneAvailabilityPolicy: "SingleReplica",
 		Render:                         false,
-		NetworkType:                    string(hyperv1.OpenShiftSDN),
+		NetworkType:                    string(hyperv1.OVNKubernetes),
 		InfrastructureJSON:             "",
 		InfraID:                        "",
 		ServiceCIDR:                    "172.31.0.0/16",

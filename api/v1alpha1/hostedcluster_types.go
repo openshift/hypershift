@@ -453,7 +453,7 @@ type ClusterNetworking struct {
 
 	// NetworkType specifies the SDN provider used for cluster networking.
 	//
-	// +kubebuilder:default:="OpenShiftSDN"
+	// +kubebuilder:default:="OVNKubernetes"
 	// +immutable
 	NetworkType NetworkType `json:"networkType"`
 
