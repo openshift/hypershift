@@ -287,7 +287,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
-		services = getIngressServicePublishingStrategyMapping()
+		services = getIngressServicePublishingStrategyMapping(o.NetworkType)
 		if o.ExternalDNSDomain != "" {
 			for i, svc := range services {
 				switch svc.Service {
@@ -318,6 +318,12 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 							Hostname: fmt.Sprintf("ignition-%s.%s", o.Name, o.ExternalDNSDomain),
 						}
 					}
+				case hyperv1.OVNSbDb:
+					if endpointAccess == hyperv1.Public {
+						services[i].Route = &hyperv1.RoutePublishingStrategy{
+							Hostname: fmt.Sprintf("ovn-sbdb-%s.%s", o.Name, o.ExternalDNSDomain),
+						}
+					}
 				}
 			}
 
@@ -326,7 +332,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.NonePlatform,
 		}
-		services = getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress)
+		services = getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress, o.NetworkType)
 	case o.Agent != nil:
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AgentPlatform,
@@ -354,16 +360,16 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			},
 		}
 		resources = agentResources.AsObjects()
-		services = getServicePublishingStrategyMappingByAPIServerAddress(o.Agent.APIServerAddress)
+		services = getServicePublishingStrategyMappingByAPIServerAddress(o.Agent.APIServerAddress, o.NetworkType)
 	case o.Kubevirt != nil:
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.KubevirtPlatform,
 		}
 		switch o.Kubevirt.ServicePublishingStrategy {
 		case "NodePort":
-			services = getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress)
+			services = getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress, o.NetworkType)
 		case "Ingress":
-			services = getIngressServicePublishingStrategyMapping()
+			services = getIngressServicePublishingStrategyMapping(o.NetworkType)
 		default:
 			panic(fmt.Sprintf("service publishing type %s is not supported", o.Kubevirt.ServicePublishingStrategy))
 		}
@@ -400,7 +406,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				SecurityGroupName: o.Azure.SecurityGroupName,
 			},
 		}
-		services = getIngressServicePublishingStrategyMapping()
+		services = getIngressServicePublishingStrategyMapping(o.NetworkType)
 
 	default:
 		panic("no platform specified")
@@ -656,8 +662,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	}
 }
 
-func getIngressServicePublishingStrategyMapping() []hyperv1.ServicePublishingStrategyMapping {
-	return []hyperv1.ServicePublishingStrategyMapping{
+func getIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType) []hyperv1.ServicePublishingStrategyMapping {
+
+	ret := []hyperv1.ServicePublishingStrategyMapping{
 		{
 			Service: hyperv1.APIServer,
 			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
@@ -683,10 +690,19 @@ func getIngressServicePublishingStrategyMapping() []hyperv1.ServicePublishingStr
 			},
 		},
 	}
+	if netType == hyperv1.OVNKubernetes {
+		ret = append(ret, hyperv1.ServicePublishingStrategyMapping{
+			Service: hyperv1.OVNSbDb,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		})
+	}
+	return ret
 }
 
-func getIngressWithHostnameServicePublishingStrategyMapping(name, domain string, endpointAcesss hyperv1.AWSEndpointAccessType) []hyperv1.ServicePublishingStrategyMapping {
-	return []hyperv1.ServicePublishingStrategyMapping{
+func getIngressWithHostnameServicePublishingStrategyMapping(name, domain string, endpointAcesss hyperv1.AWSEndpointAccessType, netType hyperv1.NetworkType) []hyperv1.ServicePublishingStrategyMapping {
+	ret := []hyperv1.ServicePublishingStrategyMapping{
 		{
 			Service: hyperv1.APIServer,
 			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
@@ -724,10 +740,19 @@ func getIngressWithHostnameServicePublishingStrategyMapping(name, domain string,
 			},
 		},
 	}
+	if netType == hyperv1.OVNKubernetes {
+		ret = append(ret, hyperv1.ServicePublishingStrategyMapping{
+			Service: hyperv1.OVNSbDb,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		})
+	}
+	return ret
 }
 
-func getServicePublishingStrategyMappingByAPIServerAddress(APIServerAddress string) []hyperv1.ServicePublishingStrategyMapping {
-	return []hyperv1.ServicePublishingStrategyMapping{
+func getServicePublishingStrategyMappingByAPIServerAddress(APIServerAddress string, netType hyperv1.NetworkType) []hyperv1.ServicePublishingStrategyMapping {
+	ret := []hyperv1.ServicePublishingStrategyMapping{
 		{
 			Service: hyperv1.APIServer,
 			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
@@ -764,6 +789,16 @@ func getServicePublishingStrategyMappingByAPIServerAddress(APIServerAddress stri
 			},
 		},
 	}
+	if netType == hyperv1.OVNKubernetes {
+		ret = append(ret, hyperv1.ServicePublishingStrategyMapping{
+			Service: hyperv1.OVNSbDb,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:     hyperv1.NodePort,
+				NodePort: &hyperv1.NodePortPublishingStrategy{Address: APIServerAddress},
+			},
+		})
+	}
+	return ret
 }
 
 func (o ExampleOptions) EtcdEncryptionKeySecret() *corev1.Secret {

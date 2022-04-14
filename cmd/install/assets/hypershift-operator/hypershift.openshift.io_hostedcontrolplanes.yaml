@@ -288,6 +288,8 @@ spec:
                 enum:
                 - OpenShiftSDN
                 - Calico
+                - OVNKubernetes
+                - Other
                 type: string
               olmCatalogPlacement:
                 default: management
@@ -820,6 +822,7 @@ spec:
                       - OIDC
                       - Konnectivity
                       - Ignition
+                      - OVNSbDb
                       type: string
                     servicePublishingStrategy:
                       description: ServicePublishingStrategy specifies how to publish

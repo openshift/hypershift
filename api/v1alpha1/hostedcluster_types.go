@@ -316,7 +316,7 @@ type ImageContentSource struct {
 type ServicePublishingStrategyMapping struct {
 	// Service identifies the type of service being published.
 	//
-	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition
+	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition;OVNSbDb
 	// +immutable
 	Service ServiceType `json:"service"`
 
@@ -377,6 +377,9 @@ var (
 
 	// Ignition is the control plane ignition service for nodes.
 	Ignition ServiceType = "Ignition"
+
+	// OVNSbDb is the optional control plane ovn southbound database service used by OVNKubernetes CNI.
+	OVNSbDb ServiceType = "OVNSbDb"
 )
 
 // NodePortPublishingStrategy specifies a NodePort used to expose a service.
@@ -477,7 +480,7 @@ type APIServerNetworking struct {
 
 // NetworkType specifies the SDN provider used for cluster networking.
 //
-// +kubebuilder:validation:Enum=OpenShiftSDN;Calico
+// +kubebuilder:validation:Enum=OpenShiftSDN;Calico;OVNKubernetes;Other
 type NetworkType string
 
 const (
@@ -486,6 +489,12 @@ const (
 
 	// Calico specifies Calico as the SDN provider
 	Calico NetworkType = "Calico"
+
+	// OVNKubernetes specifies OVN as the SDN provider
+	OVNKubernetes NetworkType = "OVNKubernetes"
+
+	// Other specifies an undefined SDN provider
+	Other NetworkType = "Other"
 )
 
 // PlatformType is a specific supported infrastructure provider.

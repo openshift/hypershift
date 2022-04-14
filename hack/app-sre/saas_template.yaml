@@ -20026,6 +20026,8 @@ objects:
                       enum:
                       - OpenShiftSDN
                       - Calico
+                      - OVNKubernetes
+                      - Other
                       type: string
                     podCIDR:
                       description: "PodCIDR is... \n TODO(dan): document it"
@@ -20588,6 +20590,7 @@ objects:
                         - OIDC
                         - Konnectivity
                         - Ignition
+                        - OVNSbDb
                         type: string
                       servicePublishingStrategy:
                         description: ServicePublishingStrategy specifies how to publish
@@ -21168,6 +21171,8 @@ objects:
                   enum:
                   - OpenShiftSDN
                   - Calico
+                  - OVNKubernetes
+                  - Other
                   type: string
                 olmCatalogPlacement:
                   default: management
@@ -21706,6 +21711,7 @@ objects:
                         - OIDC
                         - Konnectivity
                         - Ignition
+                        - OVNSbDb
                         type: string
                       servicePublishingStrategy:
                         description: ServicePublishingStrategy specifies how to publish
