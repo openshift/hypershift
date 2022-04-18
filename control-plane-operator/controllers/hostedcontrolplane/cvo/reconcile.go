@@ -192,6 +192,28 @@ func preparePayloadScript() string {
 		fmt.Sprintf("rm %s/manifests/*_deployment.yaml", payloadDir),
 		fmt.Sprintf("rm %s/manifests/*_servicemonitor.yaml", payloadDir),
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
+		// Add a manifest that cleans up CNO resources
+		// so that they won't conflict with the CNO running in
+		// the control plane.
+		fmt.Sprintf("cat > %s/release-manifests/cno-cleanup.yaml <<EOF", payloadDir),
+		"apiVersion: apps/v1",
+		"kind: Deployment",
+		"metadata:",
+		"  name: network-operator",
+		"  namespace: openshift-network-operator",
+		"  annotations:",
+		"    include.release.openshift.io/ibm-cloud-managed: \"true\"",
+		"    release.openshift.io/delete: \"true\"",
+		"---",
+		"apiVersion: rbac.authorization.k8s.io/v1",
+		"kind: ClusterRoleBinding",
+		"metadata:",
+		"  name: default-account-cluster-network-operator",
+		"  annotations:",
+		"    include.release.openshift.io/ibm-cloud-managed: \"true\"",
+		"    release.openshift.io/delete: \"true\"",
+		"    include.release.openshift.io/single-node-developer: \"true\"",
+		"EOF",
 	)
 	for _, manifest := range manifestsToOmit {
 		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
