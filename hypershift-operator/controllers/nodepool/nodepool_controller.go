@@ -44,6 +44,7 @@ import (
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
@@ -389,6 +390,32 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
+	// Validate PowerVS platform specific input.
+	var coreOSPowerVSImage *releaseinfo.CoreOSPowerVSImage
+	var powervsImageRegion string
+	var powervsBootImage string
+	if nodePool.Spec.Platform.Type == hyperv1.PowerVSPlatform {
+		coreOSPowerVSImage, powervsImageRegion, err = getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
+		if err != nil {
+			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidPowerVSImageConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+				Message:            fmt.Sprintf("Couldn't discover an PowerVS Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("couldn't discover PowerVS Image for release image: %w", err)
+		}
+		powervsBootImage = coreOSPowerVSImage.Release
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPowerVSImageConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+
 	// Validate config input.
 	// 3 generic core config resoures: fips, ssh and haproxy.
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
@@ -536,8 +563,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
+	// CoreOS images in the IBM Cloud are hosted in the IBM Cloud Object Storage for PowerVS platform, these images
+	// needs to be imported into the PowerVS service instance needed for the machines. IBMPowerVSImage is the spec
+	// controlled by the CAPIBM to import these images and used in the machine deployments.
+	if nodePool.Spec.Platform.Type == hyperv1.PowerVSPlatform {
+		ibmPowerVSImage := IBMPowerVSImage(controlPlaneNamespace, coreOSPowerVSImage.Release)
+		if result, err := r.CreateOrUpdate(ctx, r.Client, ibmPowerVSImage, func() error {
+			return reconcileIBMPowerVSImage(ibmPowerVSImage, hcluster, nodePool, infraID, powervsImageRegion, coreOSPowerVSImage)
+		}); err != nil {
+			return ctrl.Result{}, err
+		} else {
+			log.Info("Reconciled IBMPowerVSImage", "result", result)
+		}
+	}
+
 	// Reconcile (Platform)MachineTemplate.
-	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami)
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, powervsBootImage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1472,7 +1513,7 @@ func isPlatformNone(nodePool *hyperv1.NodePool) bool {
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
 func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool,
-	infraID, ami string) (client.Object, func(object client.Object) error, string, error) {
+	infraID, ami, powervsBootImage string) (client.Object, func(object client.Object) error, string, error) {
 	var mutateTemplate func(object client.Object) error
 	var template client.Object
 	var machineTemplateSpec interface{}
@@ -1524,6 +1565,19 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 				return err
 			}
 			o.Spec = *spec
+			if o.Annotations == nil {
+				o.Annotations = make(map[string]string)
+			}
+			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+			return nil
+		}
+
+	case hyperv1.PowerVSPlatform:
+		template = &capipowervs.IBMPowerVSMachineTemplate{}
+		machineTemplateSpec = ibmPowerVSMachineTemplateSpec(hcluster, nodePool, powervsBootImage)
+		mutateTemplate = func(object client.Object) error {
+			o, _ := object.(*capipowervs.IBMPowerVSMachineTemplate)
+			o.Spec = *machineTemplateSpec.(*capipowervs.IBMPowerVSMachineTemplateSpec)
 			if o.Annotations == nil {
 				o.Annotations = make(map[string]string)
 			}

@@ -52,9 +52,21 @@ spec:
                         properties:
                           id:
                             description: ID of resource
+                            minLength: 1
                             type: string
                           name:
                             description: Name of resource
+                            minLength: 1
+                            type: string
+                        type: object
+                      imageRef:
+                        description: ImageRef is an optional reference to a provider-specific
+                          resource that holds the details for provisioning the Image
+                          for a Cluster.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
                             type: string
                         type: object
                       memory:
@@ -66,9 +78,11 @@ spec:
                         properties:
                           id:
                             description: ID of resource
+                            minLength: 1
                             type: string
                           name:
                             description: Name of resource
+                            minLength: 1
                             type: string
                         type: object
                       procType:
@@ -85,6 +99,7 @@ spec:
                       serviceInstanceID:
                         description: ServiceInstanceID is the id of the power cloud
                           instance where the vsi instance will get deployed
+                        minLength: 1
                         type: string
                       sshKey:
                         description: SSHKey is the name of the SSH key pair provided
@@ -94,13 +109,8 @@ spec:
                         description: SysType is the System type used to host the vsi
                         type: string
                     required:
-                    - image
-                    - memory
                     - network
-                    - procType
-                    - processors
                     - serviceInstanceID
-                    - sysType
                     type: object
                 required:
                 - spec

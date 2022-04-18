@@ -11,6 +11,7 @@ const (
 	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
 	NodePoolValidAMIConditionType                = "ValidAMI"
+	NodePoolValidPowerVSImageConditionType       = "ValidPowerVSImage"
 	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
@@ -317,6 +318,104 @@ type NodePoolPlatform struct {
 	Agent *AgentNodePoolPlatform `json:"agent,omitempty"`
 
 	Azure *AzureNodePoolPlatform `json:"azure,omitempty"`
+
+	// PowerVS specifies the configuration used when using IBMCloud PowerVS platform.
+	//
+	// +optional
+	PowerVS *PowerVSNodePoolPlatform `json:"powervs,omitempty"`
+}
+
+// PowerVSNodePoolPlatform specifies the configuration of a NodePool when operating
+// on IBMCloud PowerVS platform.
+type PowerVSNodePoolPlatform struct {
+	// SystemType is the System type used to host the instance.
+	// systemType determines the number of cores and memory that is available.
+	// Few of the supported SystemTypes are s922,e880,e980.
+	// e880 systemType available only in Dallas Datacenters.
+	// e980 systemType available in Datacenters except Dallas and Washington.
+	// When omitted, this means that the user has no opinion and the platform is left to choose a
+	// reasonable default. The current default is s922 which is generally available.
+	//
+	// +optional
+	// +kubebuilder:default=s922
+	SystemType string `json:"systemType,omitempty"`
+
+	// ProcessorType is the VM instance processor type.
+	// It must be set to one of the following values: Dedicated, Capped or Shared.
+	//
+	// Dedicated: resources are allocated for a specific client, The hypervisor makes a 1:1 binding of a partition’s processor to a physical processor core.
+	// Shared: Shared among other clients.
+	// Capped: Shared, but resources do not expand beyond those that are requested, the amount of CPU time is Capped to the value specified for the entitlement.
+	//
+	// if the processorType is selected as Dedicated, then Processors value cannot be fractional.
+	// When omitted, this means that the user has no opinion and the platform is left to choose a
+	// reasonable default. The current default is Shared.
+	//
+	// +kubebuilder:default=shared
+	// +kubebuilder:validation:Enum=dedicated;shared;capped
+	// +optional
+	ProcessorType string `json:"processorType,omitempty"`
+
+	// Processors is the number of virtual processors in a virtual machine.
+	// when the processorType is selected as Dedicated the processors value cannot be fractional.
+	// maximum value for the Processors depends on the selected SystemType.
+	// when SystemType is set to e880 or e980 maximum Processors value is 143.
+	// when SystemType is set to s922 maximum Processors value is 15.
+	// minimum value for Processors depends on the selected ProcessorType.
+	// when ProcessorType is set as Shared or Capped, The minimum processors is 0.5.
+	// when ProcessorType is set as Dedicated, The minimum processors is 1.
+	// When omitted, this means that the user has no opinion and the platform is left to choose a
+	// reasonable default. The default is set based on the selected ProcessorType.
+	// when ProcessorType selected as Dedicated, the default is set to 1.
+	// when ProcessorType selected as Shared or Capped, the default is set to 0.5.
+	//
+	// +optional
+	// +kubebuilder:default="0.5"
+	Processors intstr.IntOrString `json:"processors,omitempty"`
+
+	// MemoryGiB is the size of a virtual machine's memory, in GiB.
+	// maximum value for the MemoryGiB depends on the selected SystemType.
+	// when SystemType is set to e880 maximum MemoryGiB value is 7463 GiB.
+	// when SystemType is set to e980 maximum MemoryGiB value is 15307 GiB.
+	// when SystemType is set to s922 maximum MemoryGiB value is 942 GiB.
+	// The minimum memory is 32 GiB.
+	//
+	// When omitted, this means the user has no opinion and the platform is left to choose a reasonable
+	// default. The current default is 32.
+	//
+	// +optional
+	// +kubebuilder:default=32
+	MemoryGiB int32 `json:"memoryGiB,omitempty"`
+
+	// Image used for deploying the nodes. If unspecified, the default
+	// is chosen based on the NodePool release payload image.
+	//
+	// +optional
+	Image *PowerVSResourceReference `json:"image,omitempty"`
+
+	// StorageType for the image and nodes, this will be ignored if Image is specified.
+	// The storage tiers in PowerVS are based on I/O operations per second (IOPS).
+	// It means that the performance of your storage volumes is limited to the maximum number of IOPS based on volume size and storage tier.
+	// Although, the exact numbers might change over time, the Tier 3 storage is currently set to 3 IOPS/GB, and the Tier 1 storage is currently set to 10 IOPS/GB.
+	//
+	// The default is tier1
+	//
+	// +kubebuilder:default=tier1
+	// +kubebuilder:validation:Enum=tier1;tier3
+	// +optional
+	StorageType string `json:"storageType,omitempty"`
+
+	// ImageDeletePolicy is policy for the image deletion.
+	//
+	// delete: delete the image from the infrastructure.
+	// retain: delete the image from the openshift but retain in the infrastructure.
+	//
+	// The default is delete
+	//
+	// +kubebuilder:default=delete
+	// +kubebuilder:validation:Enum=delete;retain
+	// +optional
+	ImageDeletePolicy string `json:"imageDeletePolicy,omitempty"`
 }
 
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
