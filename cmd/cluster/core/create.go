@@ -123,16 +123,8 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		}
 		opts.ReleaseImage = defaultVersion.PullSpec
 	}
-	if opts.NetworkType == "" {
-		version, err := getReleaseSemanticVersion(ctx, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get version for release image %s: %w", opts.ReleaseImage, err)
-		}
-		if version.Minor > 10 {
-			opts.NetworkType = string(hyperv1.OVNKubernetes)
-		} else {
-			opts.NetworkType = string(hyperv1.OpenShiftSDN)
-		}
+	if err := defaultNetworkType(ctx, opts, &releaseinfo.RegistryClientProvider{}, ioutil.ReadFile); err != nil {
+		return nil, fmt.Errorf("failed to default network: %w", err)
 	}
 
 	annotations := map[string]string{}
@@ -358,9 +350,25 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 	return apply(ctx, exampleOptions, opts.Wait, opts.BeforeApply)
 }
 
-func getReleaseSemanticVersion(ctx context.Context, opts *CreateOptions) (*semver.Version, error) {
-	provider := &releaseinfo.RegistryClientProvider{}
-	pullSecretBytes, err := ioutil.ReadFile(opts.PullSecretFile)
+func defaultNetworkType(ctx context.Context, opts *CreateOptions, releaseProvider releaseinfo.Provider, readFile func(string) ([]byte, error)) error {
+	if opts.NetworkType != "" {
+		return nil
+	}
+	version, err := getReleaseSemanticVersion(ctx, opts, releaseProvider, readFile)
+	if err != nil {
+		return fmt.Errorf("failed to get version for release image %s: %w", opts.ReleaseImage, err)
+	}
+	if version.Minor > 10 {
+		opts.NetworkType = string(hyperv1.OVNKubernetes)
+	} else {
+		opts.NetworkType = string(hyperv1.OpenShiftSDN)
+	}
+
+	return nil
+}
+
+func getReleaseSemanticVersion(ctx context.Context, opts *CreateOptions, provider releaseinfo.Provider, readFile func(string) ([]byte, error)) (*semver.Version, error) {
+	pullSecretBytes, err := readFile(opts.PullSecretFile)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read pull secret file %s: %w", opts.PullSecretFile, err)
 	}

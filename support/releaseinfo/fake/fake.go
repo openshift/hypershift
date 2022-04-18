@@ -12,10 +12,13 @@ import (
 
 var _ releaseinfo.ProviderWithRegistryOverrides = &FakeReleaseProvider{}
 
-type FakeReleaseProvider struct{}
+type FakeReleaseProvider struct {
+	// Version of the returned release iamge. Defaults to 4.10.0 if unset.
+	Version string
+}
 
-func (*FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
-	return &releaseinfo.ReleaseImage{
+func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+	releaseImage := &releaseinfo.ReleaseImage{
 		ImageStream: &imagev1.ImageStream{
 			ObjectMeta: metav1.ObjectMeta{Name: "4.10.0"},
 			Spec: imagev1.ImageStreamSpec{
@@ -31,7 +34,12 @@ func (*FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret
 				},
 			},
 		},
-	}, nil
+	}
+	if f.Version != "" {
+		releaseImage.ImageStream.Name = f.Version
+	}
+
+	return releaseImage, nil
 }
 
 func (*FakeReleaseProvider) GetRegistryOverrides() map[string]string {
