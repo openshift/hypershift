@@ -37,6 +37,8 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.DeploymentConfig.Scheduling = config.Scheduling{
 		PriorityClass: systemNodeCriticalPriorityClass,
+		// Always run, even if nodes are not ready e.G. because there are networking issues as this helps a lot in debugging
+		Tolerations: []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 	}
 	p.DeploymentConfig.LivenessProbes = config.LivenessProbes{
 		konnectivityAgentContainer().Name: {
