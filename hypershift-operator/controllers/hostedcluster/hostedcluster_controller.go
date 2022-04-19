@@ -1643,9 +1643,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			// and ignore updates.
 			if ignitionServerRoute.CreationTimestamp.IsZero() {
 				switch {
-				case hcluster.Spec.Platform.Type == hyperv1.AWSPlatform &&
-					(hcluster.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate ||
-						hcluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private):
+				case !util.ConnectsThroughInternetToControlplane(hcluster.Spec.Platform):
 					ignitionServerRoute.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", ignitionServerRoute.Name, hcluster.Name)
 				case serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "":
 					ignitionServerRoute.Spec.Host = serviceStrategy.Route.Hostname

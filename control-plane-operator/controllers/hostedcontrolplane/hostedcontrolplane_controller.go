@@ -2236,7 +2236,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 	}
 
 	var apiserverProxy string
-	if globalConfig.Proxy != nil && globalConfig.Proxy.Spec.HTTPSProxy != "" && (hcp.Spec.Platform.AWS == nil || hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Public) {
+	if globalConfig.Proxy != nil && globalConfig.Proxy.Spec.HTTPSProxy != "" && util.ConnectsThroughInternetToControlplane(hcp.Spec.Platform) {
 		apiserverProxy = globalConfig.Proxy.Spec.HTTPSProxy
 	}
 
