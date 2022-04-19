@@ -107,10 +107,7 @@ spec:
                   configurations of nodes in the NodePool. The MachineConfig API schema
                   is defined here: \n https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172
                   \n Each ConfigMap must have a single key named \"config\" whose
-                  value is the JSON or YAML of a serialized MachineConfig. \n TODO
-                  (alberto): this ConfigMaps are meant to contain MachineConfig, KubeletConfig
-                  and ContainerRuntimeConfig but MCO only supports MachineConfig in
-                  bootstrap mode atm. See: https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119"
+                  value is the JSON or YAML of a serialized MachineConfig."
                 items:
                   description: LocalObjectReference contains enough information to
                     let you locate the referenced object inside the same namespace.
