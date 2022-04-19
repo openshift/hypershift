@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -29,6 +30,7 @@ func NewCreateCommands() *cobra.Command {
 		Timeout:                        0,
 		ExternalDNSDomain:              "",
 		AdditionalTrustBundle:          "",
+		NetworkType:                    string(hyperv1.OpenShiftSDN),
 	}
 	cmd := &cobra.Command{
 		Use:          "cluster",
