@@ -22,12 +22,6 @@ func InfrastructureConfig() *configv1.Infrastructure {
 func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.HostedControlPlane) {
 
 	platformType := hcp.Spec.Platform.Type
-	switch hcp.Spec.Platform.Type {
-	// In case of KubeVirtPlatform, set the Infrastructure to NonePlatform
-	// This is done in order to prevent error in machine-config-server
-	case hyperv1.KubevirtPlatform:
-		platformType = hyperv1.NonePlatform
-	}
 
 	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
 	apiServerPort := hcp.Status.ControlPlaneEndpoint.Port
