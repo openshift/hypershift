@@ -3828,6 +3828,79 @@ AWSKMSSpec
 </tr>
 </tbody>
 </table>
+###KubevirtCompute { #hypershift.openshift.io/v1alpha1.KubevirtCompute }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtNodePoolPlatform">KubevirtNodePoolPlatform</a>)
+</p>
+<p>
+<p>KubevirtCompute contains values associated with the virtual compute hardware requested for the VM.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>memory</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#quantity-resource-api">
+k8s.io/apimachinery/pkg/api/resource.Quantity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Memory represents how much guest memory the VM should have</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cores</code></br>
+<em>
+uint32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Cores represents how many cores the guest VM should have</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtDiskImage { #hypershift.openshift.io/v1alpha1.KubevirtDiskImage }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtRootVolume">KubevirtRootVolume</a>)
+</p>
+<p>
+<p>KubevirtDiskImage contains values representing where the rhcos image is located</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>containerDiskImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ContainerDiskImage is a string representing the container image that holds the root disk</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KubevirtNodePoolPlatform { #hypershift.openshift.io/v1alpha1.KubevirtNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -3847,16 +3920,195 @@ on KubeVirt platform.</p>
 <tbody>
 <tr>
 <td>
-<code>nodeTemplate</code></br>
+<code>rootVolume</code></br>
 <em>
-sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1.VirtualMachineTemplateSpec
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtRootVolume">
+KubevirtRootVolume
+</a>
 </em>
 </td>
 <td>
-<p>NodeTemplate Spec contains the VirtualMachineInstance specification.</p>
+<p>RootVolume represents values associated with the VM volume that will host rhcos</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>compute</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtCompute">
+KubevirtCompute
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Compute contains values representing the virtual hardware requested for the VM</p>
 </td>
 </tr>
 </tbody>
+</table>
+###KubevirtPersistentVolume { #hypershift.openshift.io/v1alpha1.KubevirtPersistentVolume }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtVolume">KubevirtVolume</a>)
+</p>
+<p>
+<p>KubevirtPersistentVolume containes the values involved with provisioning persistent storage for a KubeVirt VM.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>size</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#quantity-resource-api">
+k8s.io/apimachinery/pkg/api/resource.Quantity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Size is the size of the persistent storage volume</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageClass</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageClass is the storageClass used for the underlying PVC that hosts the volume</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtRootVolume { #hypershift.openshift.io/v1alpha1.KubevirtRootVolume }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtNodePoolPlatform">KubevirtNodePoolPlatform</a>)
+</p>
+<p>
+<p>KubevirtRootVolume represents the volume that the rhcos disk will be stored and run from.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>diskImage</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtDiskImage">
+KubevirtDiskImage
+</a>
+</em>
+</td>
+<td>
+<p>Image represents what rhcos image to use for the node pool</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>KubevirtVolume</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtVolume">
+KubevirtVolume
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>KubevirtVolume</code> are embedded into this type.)
+</p>
+<p>KubevirtVolume represents of type of storage to run the image on</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtVolume { #hypershift.openshift.io/v1alpha1.KubevirtVolume }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtRootVolume">KubevirtRootVolume</a>)
+</p>
+<p>
+<p>KubevirtVolume represents what kind of storage to use for a KubeVirt VM volume</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtVolumeType">
+KubevirtVolumeType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Type represents the type of storage to associate with the kubevirt VMs.</p>
+<p>
+Value must be one of:
+&#34;Persistent&#34;
+</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>persistent</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtPersistentVolume">
+KubevirtPersistentVolume
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Persistent volume type means the VM&rsquo;s storage is backed by a PVC
+VMs that use persistent volumes can survive disruption events like restart and eviction
+This is the default type used when no storage type is defined.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtVolumeType { #hypershift.openshift.io/v1alpha1.KubevirtVolumeType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtVolume">KubevirtVolume</a>)
+</p>
+<p>
+<p>KubevirtVolumeType is a specific supported KubeVirt volumes</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Persistent&#34;</p></td>
+<td><p>KubevirtVolumeTypePersistent represents persistent volume for kubevirt VMs</p>
+</td>
+</tr></tbody>
 </table>
 ###LoadBalancerPublishingStrategy { #hypershift.openshift.io/v1alpha1.LoadBalancerPublishingStrategy }
 <p>

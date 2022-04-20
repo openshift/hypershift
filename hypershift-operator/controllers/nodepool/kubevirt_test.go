@@ -1,15 +1,18 @@
 package nodepool
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 )
 
@@ -32,10 +35,8 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Management:  hyperv1.NodePoolManagement{},
 					AutoScaling: nil,
 					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.KubevirtPlatform,
-						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
-							NodeTemplate: generateNodeTemplate("5Gi", 4, "testimage"),
-						},
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi"),
 					},
 					Release: hyperv1.Release{},
 				},
@@ -44,7 +45,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "testimage"),
+						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "testimage", "32Gi"),
 					},
 				},
 			},
@@ -52,6 +53,11 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			err := kubevirtPlatformValidation(tc.nodePool)
+			g.Expect(err).ToNot(HaveOccurred())
+
 			result := kubevirtMachineTemplateSpec(tc.nodePool)
 			if !equality.Semantic.DeepEqual(tc.expected, result) {
 				t.Errorf(cmp.Diff(tc.expected, result))
@@ -60,10 +66,40 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 	}
 }
 
-func generateNodeTemplate(memory string, cpu uint32, image string) *capikubevirt.VirtualMachineTemplateSpec {
+func generateKubevirtPlatform(memory string, cores uint32, image string, volumeSize string) *hyperv1.KubevirtNodePoolPlatform {
+	memoryQuantity := apiresource.MustParse(memory)
+	volumeSizeQuantity := apiresource.MustParse(volumeSize)
+
+	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{
+		RootVolume: &hyperv1.KubevirtRootVolume{
+			Image: &hyperv1.KubevirtDiskImage{
+				ContainerDiskImage: &image,
+			},
+			KubevirtVolume: hyperv1.KubevirtVolume{
+				Type: hyperv1.KubevirtVolumeTypePersistent,
+				Persistent: &hyperv1.KubevirtPersistentVolume{
+					Size:         &volumeSizeQuantity,
+					StorageClass: nil,
+				},
+			},
+		},
+		Compute: &hyperv1.KubevirtCompute{
+			Memory: &memoryQuantity,
+			Cores:  &cores,
+		},
+	}
+
+	return exampleTemplate
+}
+
+func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize string) *capikubevirt.VirtualMachineTemplateSpec {
 	runAlways := kubevirtv1.RunStrategyAlways
 	guestQuantity := apiresource.MustParse(memory)
+	imageContainerURL := fmt.Sprintf("docker://%s", image)
+	volumeSizeQuantity := apiresource.MustParse(volumeSize)
 	nodePoolNameLabelKey := "hypershift.kubevirt.io/node-pool-name"
+	pullMethod := v1beta1.RegistryPullNode
+
 	return &capikubevirt.VirtualMachineTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
@@ -72,6 +108,29 @@ func generateNodeTemplate(memory string, cpu uint32, image string) *capikubevirt
 		},
 		Spec: kubevirtv1.VirtualMachineSpec{
 			RunStrategy: &runAlways,
+			DataVolumeTemplates: []kubevirtv1.DataVolumeTemplateSpec{
+				kubevirtv1.DataVolumeTemplateSpec{
+					TypeMeta: metav1.TypeMeta{},
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "rhcos",
+					},
+					Spec: v1beta1.DataVolumeSpec{
+						Source: &v1beta1.DataVolumeSource{
+							Registry: &v1beta1.DataVolumeSourceRegistry{
+								URL:        &imageContainerURL,
+								PullMethod: &pullMethod,
+							},
+						},
+						Storage: &v1beta1.StorageSpec{
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]apiresource.Quantity{
+									corev1.ResourceStorage: volumeSizeQuantity,
+								},
+							},
+						},
+					},
+				},
+			},
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -108,7 +167,7 @@ func generateNodeTemplate(memory string, cpu uint32, image string) *capikubevirt
 						Devices: kubevirtv1.Devices{
 							Disks: []kubevirtv1.Disk{
 								{
-									Name: "containervolume",
+									Name: "rhcos",
 									DiskDevice: kubevirtv1.DiskDevice{
 										Disk: &kubevirtv1.DiskTarget{
 											Bus: "virtio",
@@ -116,14 +175,31 @@ func generateNodeTemplate(memory string, cpu uint32, image string) *capikubevirt
 									},
 								},
 							},
+							Interfaces: []kubevirtv1.Interface{
+								{
+									Name: "default",
+									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+										Bridge: &kubevirtv1.InterfaceBridge{},
+									},
+								},
+							},
+						},
+					},
+
+					Networks: []kubevirtv1.Network{
+						{
+							Name: "default",
+							NetworkSource: kubevirtv1.NetworkSource{
+								Pod: &kubevirtv1.PodNetwork{},
+							},
 						},
 					},
 					Volumes: []kubevirtv1.Volume{
 						{
-							Name: "containervolume",
+							Name: "rhcos",
 							VolumeSource: kubevirtv1.VolumeSource{
-								ContainerDisk: &kubevirtv1.ContainerDiskSource{
-									Image: image,
+								DataVolume: &kubevirtv1.DataVolumeSource{
+									Name: "rhcos",
 								},
 							},
 						},
