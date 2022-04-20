@@ -29,10 +29,13 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		Memory:                    "4Gi",
 		Cores:                     2,
 		ContainerDiskImage:        "",
+		RootVolumeSize:            16,
 	}
 
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.Memory, "memory", opts.KubevirtPlatform.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
 	cmd.Flags().Uint32Var(&opts.KubevirtPlatform.Cores, "cores", opts.KubevirtPlatform.Cores, "The number of cores inside the vmi, Must be a value greater or equal 1")
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.RootVolumeStorageClass, "root-volume-storage-class", opts.KubevirtPlatform.RootVolumeStorageClass, "The storage class to use for machines in the NodePool")
+	cmd.Flags().Uint32Var(&opts.KubevirtPlatform.RootVolumeSize, "root-volume-size", opts.KubevirtPlatform.RootVolumeSize, "The size of the root volume for machines in the NodePool in Gi")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.ContainerDiskImage, "containerdisk", opts.KubevirtPlatform.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.ServicePublishingStrategy, "service-publishing-strategy", opts.KubevirtPlatform.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through)", IngressServicePublishingStrategy, NodePortServicePublishingStrategy))
 
@@ -85,6 +88,10 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return errors.New("the number of cores inside the machine must be a value greater or equal 1")
 	}
 
+	if opts.KubevirtPlatform.RootVolumeSize < 8 {
+		return fmt.Errorf("the root volume size [%d] must be greater than or equal to 8", opts.KubevirtPlatform.RootVolumeSize)
+	}
+
 	infraID := opts.InfraID
 	exampleOptions.InfraID = infraID
 
@@ -100,6 +107,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		Memory:                    opts.KubevirtPlatform.Memory,
 		Cores:                     opts.KubevirtPlatform.Cores,
 		Image:                     opts.KubevirtPlatform.ContainerDiskImage,
+		RootVolumeSize:            opts.KubevirtPlatform.RootVolumeSize,
+		RootVolumeStorageClass:    opts.KubevirtPlatform.RootVolumeStorageClass,
 	}
 	return nil
 }

@@ -69,7 +69,7 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 		t.Skip("Skipping testing because environment doesn't support KubeVirt")
 	}
 
-	ctx, cancel := context.WithTimeout(testContext, 35*time.Minute)
+	ctx, cancel := context.WithTimeout(testContext, 45*time.Minute)
 	defer cancel()
 
 	t.Parallel()
@@ -90,6 +90,7 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.BaseDomain = defaultIngressOperator.Status.Domain
 	clusterOpts.NetworkType = string(hyperv1.OVNKubernetes)
+	clusterOpts.KubevirtPlatform.RootVolumeSize = 16
 
 	t.Logf("Using base domain %s", clusterOpts.BaseDomain)
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.KubevirtPlatform, globalOpts.ArtifactDir)
