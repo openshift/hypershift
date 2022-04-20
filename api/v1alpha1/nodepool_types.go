@@ -115,12 +115,6 @@ type NodePoolSpec struct {
 	//
 	// Each ConfigMap must have a single key named "config" whose value is the
 	// JSON or YAML of a serialized MachineConfig.
-	//
-	// TODO (alberto): this ConfigMaps are meant to contain MachineConfig,
-	// KubeletConfig and ContainerRuntimeConfig but MCO only supports
-	// MachineConfig in bootstrap mode atm. See:
-	// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119
-	//
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 

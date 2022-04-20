@@ -629,10 +629,6 @@ nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172">https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
 JSON or YAML of a serialized MachineConfig.</p>
-<p>TODO (alberto): this ConfigMaps are meant to contain MachineConfig,
-KubeletConfig and ContainerRuntimeConfig but MCO only supports
-MachineConfig in bootstrap mode atm. See:
-<a href="https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119">https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119</a></p>
 </td>
 </tr>
 <tr>
@@ -4450,10 +4446,6 @@ nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172">https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
 JSON or YAML of a serialized MachineConfig.</p>
-<p>TODO (alberto): this ConfigMaps are meant to contain MachineConfig,
-KubeletConfig and ContainerRuntimeConfig but MCO only supports
-MachineConfig in bootstrap mode atm. See:
-<a href="https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119">https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/controller/bootstrap/bootstrap.go#L104-L119</a></p>
 </td>
 </tr>
 <tr>
