@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	podsecurityadmissionv1beta1 "k8s.io/pod-security-admission/admission/api/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
@@ -79,6 +80,24 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 							Object: restrictedEndpointsAdmission(p.ClusterNetwork, p.ServiceNetwork),
 						},
 					},
+					"PodSecurity": {
+						Configuration: runtime.RawExtension{
+							Object: &podsecurityadmissionv1beta1.PodSecurityConfiguration{
+								TypeMeta: metav1.TypeMeta{
+									APIVersion: podsecurityadmissionv1beta1.SchemeGroupVersion.String(),
+									Kind:       "PodSecurityConfiguration",
+								},
+								Defaults: podsecurityadmissionv1beta1.PodSecurityDefaults{
+									Enforce:        "privileged",
+									EnforceVersion: "latest",
+									Audit:          "restricted",
+									AuditVersion:   "latest",
+									Warn:           "restricted",
+									WarnVersion:    "latest",
+								},
+							},
+						},
+					},
 				},
 			},
 			ServingInfo: configv1.HTTPServingInfo{
@@ -131,7 +150,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	}
 	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
-	if version.Minor == 10 || version.Minor == 11 {
+	if version.Minor == 10 {
 		// This is explicitly disabled in OCP 4.10
 		// This is enabled by default in 4.11 but currently disabled by OCP. It is planned to get re-enabled but currently
 		// breaks conformance testing, ref: https://github.com/openshift/cluster-kube-apiserver-operator/pull/1262

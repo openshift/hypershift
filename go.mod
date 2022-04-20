@@ -39,14 +39,15 @@ require (
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	gopkg.in/square/go-jose.v2 v2.5.1
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.23.3
+	k8s.io/api v0.23.5
 	k8s.io/apiextensions-apiserver v0.23.0
-	k8s.io/apimachinery v0.23.3
-	k8s.io/apiserver v0.23.3
-	k8s.io/client-go v0.23.3
-	k8s.io/component-base v0.23.3
+	k8s.io/apimachinery v0.23.5
+	k8s.io/apiserver v0.23.5
+	k8s.io/client-go v0.23.5
+	k8s.io/component-base v0.23.5
 	k8s.io/kube-aggregator v0.20.2
 	k8s.io/kube-scheduler v0.23.1
+	k8s.io/pod-security-admission v0.23.5
 	k8s.io/utils v0.0.0-20211116205334-6203023598ed
 	kubevirt.io/api v0.0.0-20211117075245-c94ce62baf5a
 	sigs.k8s.io/apiserver-network-proxy v0.0.24
