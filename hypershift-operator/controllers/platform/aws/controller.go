@@ -29,6 +29,7 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/upsert"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -164,6 +165,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Reconcile the AWSEndpointService Status
+	oldStatus := awsEndpointService.Status.DeepCopy()
 	if err = reconcileAWSEndpointServiceStatus(ctx, awsEndpointService, r.ec2Client, r.elbv2Client); err != nil {
 		meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
 			Type:    string(hyperv1.AWSEndpointServiceAvailable),
@@ -171,8 +173,11 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Reason:  hyperv1.AWSErrorReason,
 			Message: err.Error(),
 		})
-		if err := r.Status().Update(ctx, awsEndpointService); err != nil {
-			return ctrl.Result{}, err
+
+		if !equality.Semantic.DeepEqual(*oldStatus, awsEndpointService.Status) {
+			if err := r.Status().Update(ctx, awsEndpointService); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 		// Most likely cause of error here is the NLB is not yet active.  This can take ~2m so
 		// a longer requeue time is warranted.  This ratelimits AWS calls and updates to the CR.
@@ -187,8 +192,10 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		Message: "",
 	})
 
-	if err := r.Status().Update(ctx, awsEndpointService); err != nil {
-		return ctrl.Result{}, err
+	if !equality.Semantic.DeepEqual(*oldStatus, awsEndpointService.Status) {
+		if err := r.Status().Update(ctx, awsEndpointService); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	log.Info("reconcilation complete")

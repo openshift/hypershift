@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -279,6 +280,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	hcp := &hcpList.Items[0]
 
 	// Reconcile the AWSEndpointService
+	oldStatus := awsEndpointService.Status.DeepCopy()
 	if err := reconcileAWSEndpointService(ctx, awsEndpointService, hcp, r.ec2Client, r.route53Client); err != nil {
 		meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
 			Type:    string(hyperv1.AWSEndpointAvailable),
@@ -286,8 +288,10 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Reason:  hyperv1.AWSErrorReason,
 			Message: err.Error(),
 		})
-		if err := r.Status().Update(ctx, awsEndpointService); err != nil {
-			return ctrl.Result{}, err
+		if !equality.Semantic.DeepEqual(*oldStatus, awsEndpointService.Status) {
+			if err := r.Status().Update(ctx, awsEndpointService); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 		return ctrl.Result{}, err
 	}
@@ -299,8 +303,10 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		Message: "",
 	})
 
-	if err := r.Status().Update(ctx, awsEndpointService); err != nil {
-		return ctrl.Result{}, err
+	if !equality.Semantic.DeepEqual(*oldStatus, awsEndpointService.Status) {
+		if err := r.Status().Update(ctx, awsEndpointService); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	log.Info("reconcilation complete")
