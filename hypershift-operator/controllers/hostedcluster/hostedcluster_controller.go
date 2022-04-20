@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/support/globalconfig"
+	"k8s.io/apimachinery/pkg/api/equality"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -4090,9 +4091,12 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		}
 	}
 
+	orig := hcluster.DeepCopy()
 	hcluster.Finalizers = append(hcluster.Finalizers, oidcDocumentsFinalizer)
-	if err := r.Client.Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update the hosted cluster after adding the %s finalizer: %w", oidcDocumentsFinalizer, err)
+	if !equality.Semantic.DeepEqual(orig, hcluster) {
+		if err := r.Client.Update(ctx, hcluster); err != nil {
+			return fmt.Errorf("failed to update the hosted cluster after adding the %s finalizer: %w", oidcDocumentsFinalizer, err)
+		}
 	}
 
 	log.Info("Successfully uploaded the OIDC documents to the S3 bucket")
@@ -4123,9 +4127,12 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 		return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
 	}
 
+	orig := hcluster.DeepCopy()
 	controllerutil.RemoveFinalizer(hcluster, oidcDocumentsFinalizer)
-	if err := r.Client.Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update hostedcluster after removing %s finalizer: %w", oidcDocumentsFinalizer, err)
+	if !equality.Semantic.DeepEqual(orig, hcluster) {
+		if err := r.Client.Update(ctx, hcluster); err != nil {
+			return fmt.Errorf("failed to update hostedcluster after removing %s finalizer: %w", oidcDocumentsFinalizer, err)
+		}
 	}
 
 	log.Info("Successfully deleted the OIDC documents from the S3 bucket")
@@ -4137,6 +4144,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 		return nil
 	}
 
+	orig := hcluster.DeepCopy()
 	var existing *hyperv1.AWSResourceTag
 	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
 		if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.InfraID {
@@ -4157,8 +4165,10 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 		})
 	}
 
-	if err := r.Client.Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update AWS resource tags: %w", err)
+	if !equality.Semantic.DeepEqual(orig, hcluster) {
+		if err := r.Client.Update(ctx, hcluster); err != nil {
+			return fmt.Errorf("failed to update AWS resource tags: %w", err)
+		}
 	}
 
 	return nil
@@ -4205,6 +4215,7 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 // defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
 // for https://bugzilla.redhat.com/show_bug.cgi?id=2060650: Azure LBs with port 6443 don't work
 func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	orig := hcluster.DeepCopy()
 	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
 		return nil
 	}
@@ -4225,8 +4236,10 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 	}
 
 	hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32Ptr(7443)
-	if err := r.Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
+	if !equality.Semantic.DeepEqual(orig, hcluster) {
+		if err := r.Update(ctx, hcluster); err != nil {
+			return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
+		}
 	}
 
 	return nil
@@ -4248,6 +4261,7 @@ func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (str
 }
 
 func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	orig := hcluster.DeepCopy()
 	// Default the ClusterID if unset
 	needsUpdate := false
 	if hcluster.Spec.ClusterID == "" {
@@ -4262,8 +4276,10 @@ func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context,
 	}
 
 	if needsUpdate {
-		if err := r.Update(ctx, hcluster); err != nil {
-			return fmt.Errorf("failed to update hostedcluster after defaulting IDs: %w", err)
+		if !equality.Semantic.DeepEqual(orig, hcluster) {
+			if err := r.Update(ctx, hcluster); err != nil {
+				return fmt.Errorf("failed to update hostedcluster after defaulting IDs: %w", err)
+			}
 		}
 	}
 	return nil
