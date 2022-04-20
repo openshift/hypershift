@@ -2,12 +2,7 @@ package nodepool
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -40,6 +35,8 @@ const (
 	// MachineConfigDaemonStateDegraded is set by daemon when an error not caused by a bad MachineConfig
 	// is thrown during an upgrade.
 	MachineConfigDaemonStateDegraded = "Degraded"
+	// MachineConfigDaemonStateDone is set by daemon when the upgrade is done.
+	MachineConfigDaemonStateDone = "Done"
 	// MachineConfigDaemonMessageAnnotationKey is set by the daemon when it needs to report a human readable reason for its state. E.g. when state flips to degraded/unreconcilable.
 	MachineConfigDaemonMessageAnnotationKey = "machineconfiguration.openshift.io/reason"
 	// DesiredDrainerAnnotationKey is set by the MCD to indicate drain/uncordon requests
@@ -50,14 +47,22 @@ const (
 	DrainerStateUncordon = "uncordon"
 	// TODO (yuqi-zhang): implement drain
 	// DrainerStateDrain = "drain"
+
+	TokenSecretPayloadKey = "payload"
 )
 
 // reconcileInPlaceUpgrade loops over all Nodes that belong to a NodePool and performs an in place upgrade if necessary.
-func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, machineSet *capiv1.MachineSet, targetConfigHash, targetVersion, targetConfigVersionHash, ignEndpoint string, caCertBytes, tokenBytes []byte) error {
+func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, machineSet *capiv1.MachineSet, targetConfigHash, targetVersion, targetConfigVersionHash string, tokenSecret *corev1.Secret) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	// If there's no guest cluster yet return early.
 	if hc.Status.KubeConfig == nil {
+		log.Info("HostedCluster has no Kubeconfig yet")
+		return nil
+	}
+
+	if _, ok := tokenSecret.Data[TokenSecretPayloadKey]; !ok {
+		log.Info("TokenSecret has not payload yet")
 		return nil
 	}
 
@@ -107,9 +112,13 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 			nodePool.Status.Version = targetVersion
 		}
 
+		if nodePool.Annotations == nil {
+			nodePool.Annotations = make(map[string]string)
+		}
 		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
 			log.Info("Config upgrade complete",
 				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
+
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
@@ -126,6 +135,7 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 	// whatever reason, we will not know until the next upgrade, at which point hopefully the MCD is able
 	// to reconcile
 	// TODO (jerzhang): differenciate between NodePoolUpdatingVersionConditionType and NodePoolUpdatingConfigConditionType
+	nodeNeedUpgradeCount := 0
 	for _, node := range nodes {
 		if node.Annotations[MachineConfigDaemonStateAnnotationKey] == MachineConfigDaemonStateDegraded {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -137,10 +147,21 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 			})
 			return fmt.Errorf("degraded node found, cannot progress in-place upgrade. Degraded reason: %v", node.Annotations[MachineConfigDaemonMessageAnnotationKey])
 		}
+
+		if nodeNeedsUpgrade(node, nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion], targetConfigVersionHash) {
+			nodeNeedUpgradeCount++
+		}
 	}
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolUpdatingVersionConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		Message:            fmt.Sprintf("Updating version in progress. Target version: %s. Total Nodes: %d. Upgraded: %d", targetVersion, len(nodes), len(nodes)-nodeNeedUpgradeCount),
+		ObservedGeneration: nodePool.Generation,
+	})
 
 	// Create necessary upgrade manifests, if they do not exist
-	err = r.reconcileInPlaceUpgradeManifests(ctx, hostedClusterClient, targetConfigVersionHash, ignEndpoint, caCertBytes, tokenBytes, nodePool)
+	err = r.reconcileInPlaceUpgradeManifests(ctx, hostedClusterClient, targetConfigVersionHash, tokenSecret.Data[TokenSecretPayloadKey], nodePool)
 	if err != nil {
 		return fmt.Errorf("failed to create upgrade manifests in hosted cluster: %w", err)
 	}
@@ -376,11 +397,10 @@ func (r *NodePoolReconciler) reconcileNodeAnnotations(ctx context.Context, node 
 	return nil
 }
 
-func (r *NodePoolReconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash, ignEndpoint string, caCertBytes, tokenBytes []byte, nodePool *hyperv1.NodePool) error {
+func (r *NodePoolReconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash string, payload []byte, nodePool *hyperv1.NodePool) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	namespace := inPlaceUpgradeNamespace(nodePool)
-
 	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, namespace, func() error {
 		return nil
 	}); err != nil {
@@ -390,13 +410,9 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgradeManifests(ctx context.Contex
 	}
 
 	configmap := inPlaceUpgradeConfigMap(nodePool, namespace.Name)
-
 	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, configmap, func() error {
 		return r.reconcileUpgradeConfigmap(
-			ctx,
-			configmap,
-			targetConfigVersionHash, ignEndpoint,
-			caCertBytes, tokenBytes,
+			ctx, configmap, targetConfigVersionHash, payload,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile upgrade ConfigMap for hash %s: %w", targetConfigVersionHash, err)
@@ -406,54 +422,16 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgradeManifests(ctx context.Contex
 	return nil
 }
 
-func (r *NodePoolReconciler) reconcileUpgradeConfigmap(ctx context.Context,
-	configmap *corev1.ConfigMap,
-	targetConfigVersionHash, ignEndpoint string,
-	caCertBytes, tokenBytes []byte) error {
-
+func (r *NodePoolReconciler) reconcileUpgradeConfigmap(ctx context.Context, configmap *corev1.ConfigMap, targetConfigVersionHash string, payload []byte) error {
 	log := ctrl.LoggerFrom(ctx)
-	// fetch desired config off our ign endpoint and then stuff into configmap
-	// TODO (jerzhang): reconsider this workflow. Either split this into multiple functions,
-	// or have the Ignition server eventually create the CM
-	ignURL := fmt.Sprintf("https://%s/ignition", ignEndpoint)
-	req, err := http.NewRequest("GET", ignURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to construct request: %w", err)
-	}
-	req.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
-	encodedToken := base64.StdEncoding.EncodeToString(tokenBytes)
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", encodedToken))
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCertBytes)
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				RootCAs: caCertPool,
-			},
-		},
-		Timeout: 5 * time.Second,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to get desired config from MCS endpoint: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("request to the machine config server returned a bad status")
-	}
-	defer resp.Body.Close()
-
-	respData, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
 
 	// TODO (jerzhang): should probably parse the data here to reduce size/compress
 	configmap.Data = map[string]string{
-		"config": string(respData),
+		"config": string(payload),
 		"hash":   targetConfigVersionHash,
 	}
 
-	log.Info("NodePool inplace upgrade configmap synced", "target", targetConfigVersionHash)
+	log.Info("NodePool in place upgrade configmap synced", "target", targetConfigVersionHash)
 	return nil
 }
 
@@ -545,19 +523,30 @@ func getNodesForMachineSet(ctx context.Context, c client.Reader, hostedClusterCl
 	return nodes, nil
 }
 
+func nodeNeedsUpgrade(node *corev1.Node, currentConfigVersion, targetConfigVersion string) bool {
+	if node.Annotations[DesiredDrainerAnnotationKey] != node.Annotations[LastAppliedDrainerAnnotationKey] {
+		// Node needs drain/cordon (last node not yet cordoned, but versions are all upgraded)
+		return true
+	}
+
+	if node.Annotations[CurrentMachineConfigAnnotationKey] == "" && currentConfigVersion == targetConfigVersion {
+		// No previous upgrade and no upgrade required
+		return false
+	}
+
+	if node.Annotations[CurrentMachineConfigAnnotationKey] != targetConfigVersion {
+		return true
+	}
+
+	return node.Annotations[MachineConfigDaemonStateAnnotationKey] != MachineConfigDaemonStateDone
+}
+
 // This tracks annotations written by the MCD pod
-func inPlaceUpgradeComplete(nodes []*corev1.Node, currentVersionConfig string, targetVersionConfig string) bool {
+func inPlaceUpgradeComplete(nodes []*corev1.Node, currentConfigVersion string, targetConfigVersion string) bool {
+	// TODO (Alberto): account for number of expected Nodes here otherwise a brand new NodePool which yet has no Nodes
+	// reports complete.
 	for _, node := range nodes {
-		if node.Annotations[DesiredDrainerAnnotationKey] != node.Annotations[LastAppliedDrainerAnnotationKey] {
-			// Node needs drain/cordon (last node not yet cordoned, but versions are all upgraded)
-			return false
-		}
-		if node.Annotations[CurrentMachineConfigAnnotationKey] == "" && currentVersionConfig == targetVersionConfig {
-			// No previous upgrade and no upgrade required
-			continue
-		}
-		if node.Annotations[CurrentMachineConfigAnnotationKey] != targetVersionConfig {
-			// Node is updating
+		if nodeNeedsUpgrade(node, currentConfigVersion, targetConfigVersion) {
 			return false
 		}
 	}

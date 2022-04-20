@@ -29,6 +29,7 @@ const (
 	TokenSecretConfigKey           = "config"
 	TokenSecretTokenKey            = "token"
 	TokenSecretOldTokenKey         = "old_token"
+	TokenSecretPayloadKey          = "payload"
 	TokenSecretAnnotation          = "hypershift.openshift.io/ignition-config"
 	TokenSecretTokenGenerationTime = "hypershift.openshift.io/last-token-generation-time"
 	// Set the ttl 1h above the reconcile resync period so every existing
@@ -260,6 +261,14 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// So Machines that were given that token right before the restart can succeed.
 		r.PayloadStore.Set(string(oldToken), CacheValue{Payload: payload, SecretName: tokenSecret.Name})
 	}
+
+	// Store the cached payload in the secret to be consumed by in place upgrades.
+	patch := tokenSecret.DeepCopy()
+	patch.Data[TokenSecretPayloadKey] = payload
+	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content")
+	}
+
 	return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 }
 

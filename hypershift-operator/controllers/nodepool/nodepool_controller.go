@@ -607,7 +607,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			log.Info("Reconciled MachineSet", "result", result)
 		}
 
-		if err := r.reconcileInPlaceUpgrade(ctx, hcluster, nodePool, ms, targetConfigHash, targetVersion, targetConfigVersionHash, ignEndpoint, caCertBytes, tokenBytes); err != nil {
+		if err := r.reconcileInPlaceUpgrade(ctx, hcluster, nodePool, ms, targetConfigHash, targetVersion, targetConfigVersionHash, tokenSecret); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
