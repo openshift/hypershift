@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -253,7 +254,7 @@ func ReconcileClientService(service *corev1.Service, ownerRef config.OwnerRef) e
 // ReconcileServiceMonitor
 // TODO: Exposing the client cert to monitoring isn't great, but metrics
 // TLS can't yet be independently configured. See: https://github.com/etcd-io/etcd/pull/10504
-func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string) error {
+func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
 	ownerRef.ApplyTo(sm)
 
 	sm.Spec.Selector.MatchLabels = etcdPodSelector()
@@ -292,6 +293,7 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 					},
 				},
 			},
+			MetricRelabelConfigs: metrics.EtcdRelabelConfigs(metricsSet),
 		},
 	}
 

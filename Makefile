@@ -135,6 +135,7 @@ app-sre-saas-template: hypershift
 		--aws-private-region=eu-east-1 \
 		--aws-private-secret=aws-credentials \
 		--aws-private-secret-key=credentials \
+		--metrics-set=SRE \
 		render --template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
 
 # Run tests
