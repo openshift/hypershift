@@ -46,15 +46,16 @@ type Images struct {
 }
 
 type Params struct {
-	ReleaseVersion          string
-	AvailabilityProberImage string
-	HostedClusterName       string
-	APIServerAddress        string
-	APIServerPort           int32
-	TokenAudience           string
-	Images                  Images
-	OwnerRef                config.OwnerRef
-	DeploymentConfig        config.DeploymentConfig
+	ReleaseVersion                        string
+	AvailabilityProberImage               string
+	HostedClusterName                     string
+	APIServerAddress                      string
+	APIServerPort                         int32
+	TokenAudience                         string
+	Images                                Images
+	OwnerRef                              config.OwnerRef
+	DeploymentConfig                      config.DeploymentConfig
+	ConnectsThroughInternetToControlplane bool
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
@@ -82,9 +83,10 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 			TokenMinter:                  images["token-minter"],
 			CLI:                          images["cli"],
 		},
-		ReleaseVersion:          version,
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
-		OwnerRef:                config.OwnerRefFrom(hcp),
+		ReleaseVersion:                        version,
+		AvailabilityProberImage:               images[util.AvailabilityProberImageName],
+		OwnerRef:                              config.OwnerRefFrom(hcp),
+		ConnectsThroughInternetToControlplane: util.ConnectsThroughInternetToControlplane(hcp.Spec.Platform),
 	}
 
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
@@ -211,6 +213,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 			corev1.EnvVar{Name: "KUBERNETES_SERVICE_PORT", Value: fmt.Sprint(params.APIServerPort)})
 	} else {
 		cnoArgs = append(cnoArgs, "--extra-clusters=management=/configs/management")
+	}
+
+	if params.ConnectsThroughInternetToControlplane {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name: "PROXY_INTERNAL_APISERVER_ADDRESS", Value: "true",
+		})
 	}
 
 	dep.Spec.Template.Spec.InitContainers = []corev1.Container{
