@@ -21,6 +21,7 @@ const (
 	NodePoolUpdatingConfigConditionType          = "UpdatingConfig"
 	NodePoolAsExpectedConditionReason            = "AsExpected"
 	NodePoolValidationFailedConditionReason      = "ValidationFailed"
+	NodePoolInplaceUpgradeFailedConditionReason  = "InplaceUpgradeFailed"
 )
 
 // The following are reasons for the IgnitionEndpointAvailable condition.

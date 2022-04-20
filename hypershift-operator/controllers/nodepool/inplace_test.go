@@ -136,3 +136,251 @@ func TestGetNodesForMachineSet(t *testing.T) {
 		}
 	}
 }
+
+func TestInPlaceUpgradeComplete(t *testing.T) {
+	var currentConfigHash = "aaa"
+	var desiredConfigHash = "bbb"
+	var drainRequest = "drain-xxx"
+	var uncordonRequest = "uncordon-xxx"
+	testCases := []struct {
+		name          string
+		currentConfig string
+		desiredConfig string
+		nodes         []*corev1.Node
+		complete      bool
+	}{
+		{
+			name:          "freshly installed nodepool",
+			currentConfig: currentConfigHash,
+			desiredConfig: currentConfigHash,
+			nodes: []*corev1.Node{
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: map[string]string{},
+					},
+				},
+			},
+			complete: true,
+		},
+		{
+			name:          "update starting",
+			currentConfig: currentConfigHash,
+			desiredConfig: desiredConfigHash,
+			nodes: []*corev1.Node{
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: map[string]string{},
+					},
+				},
+			},
+			complete: false,
+		},
+		{
+			name:          "update in progress",
+			currentConfig: currentConfigHash,
+			desiredConfig: desiredConfigHash,
+			nodes: []*corev1.Node{
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "node1",
+						Annotations: map[string]string{},
+					},
+				},
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node2",
+						Annotations: map[string]string{
+							DesiredMachineConfigAnnotationKey: desiredConfigHash,
+						},
+					},
+				},
+			},
+			complete: false,
+		},
+		{
+			name:          "update completed but uncordon not yet finished",
+			currentConfig: currentConfigHash,
+			desiredConfig: desiredConfigHash,
+			nodes: []*corev1.Node{
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							CurrentMachineConfigAnnotationKey: desiredConfigHash,
+							DesiredMachineConfigAnnotationKey: desiredConfigHash,
+						},
+					},
+				},
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node2",
+						Annotations: map[string]string{
+							CurrentMachineConfigAnnotationKey: desiredConfigHash,
+							DesiredMachineConfigAnnotationKey: desiredConfigHash,
+							DesiredDrainerAnnotationKey:       drainRequest,
+							LastAppliedDrainerAnnotationKey:   uncordonRequest,
+						},
+					},
+				},
+			},
+			complete: false,
+		},
+		{
+			name:          "fully completed update",
+			currentConfig: currentConfigHash,
+			desiredConfig: desiredConfigHash,
+			nodes: []*corev1.Node{
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node1",
+						Annotations: map[string]string{
+							CurrentMachineConfigAnnotationKey: desiredConfigHash,
+							DesiredMachineConfigAnnotationKey: desiredConfigHash,
+							DesiredDrainerAnnotationKey:       uncordonRequest,
+							LastAppliedDrainerAnnotationKey:   uncordonRequest,
+						},
+					},
+				},
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node2",
+						Annotations: map[string]string{
+							CurrentMachineConfigAnnotationKey: desiredConfigHash,
+							DesiredMachineConfigAnnotationKey: desiredConfigHash,
+							DesiredDrainerAnnotationKey:       uncordonRequest,
+							LastAppliedDrainerAnnotationKey:   uncordonRequest,
+						},
+					},
+				},
+			},
+			complete: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(inPlaceUpgradeComplete(tc.nodes, tc.currentConfig, tc.desiredConfig)).To(Equal(tc.complete))
+		})
+	}
+}
+
+func TestGetNodesToUpgrade(t *testing.T) {
+	// TODO (jerzhang): should be updated once we have better logic, maxSurge, single node pools
+	desiredConfigHash := "aaa"
+	awaitingNode1 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "node1",
+			Annotations: map[string]string{},
+		},
+	}
+	awaitingNode2 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "node2",
+			Annotations: map[string]string{},
+		},
+	}
+	inProgressNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node3",
+			Annotations: map[string]string{
+				DesiredMachineConfigAnnotationKey: desiredConfigHash,
+			},
+		},
+	}
+	completedNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node4",
+			Annotations: map[string]string{
+				CurrentMachineConfigAnnotationKey: desiredConfigHash,
+				DesiredMachineConfigAnnotationKey: desiredConfigHash,
+			},
+		},
+	}
+	testCases := []struct {
+		name           string
+		inputNodes     []*corev1.Node
+		targetConfig   string
+		maxUnavailable int
+		selectedNodes  []*corev1.Node
+	}{
+		{
+			name: "pick first node to upgrade",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				awaitingNode2,
+			},
+			targetConfig:   desiredConfigHash,
+			maxUnavailable: 1,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+			},
+		},
+		{
+			name: "select multiple nodes to upgrade",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				awaitingNode2,
+			},
+			targetConfig:   desiredConfigHash,
+			maxUnavailable: 2,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+				awaitingNode2,
+			},
+		},
+		{
+			name: "maxUnavailable reached",
+			inputNodes: []*corev1.Node{
+				inProgressNode,
+			},
+			targetConfig:   desiredConfigHash,
+			maxUnavailable: 1,
+			selectedNodes:  nil,
+		},
+		{
+			name: "all nodes comeplete",
+			inputNodes: []*corev1.Node{
+				completedNode,
+			},
+			targetConfig:   desiredConfigHash,
+			maxUnavailable: 1,
+			selectedNodes:  nil,
+		},
+		{
+			name: "pick 1 ready node if possible",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				inProgressNode,
+				completedNode,
+			},
+			targetConfig:   desiredConfigHash,
+			maxUnavailable: 2,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+			},
+		},
+		{
+			name: "pick correct nodes to upgrade",
+			inputNodes: []*corev1.Node{
+				inProgressNode,
+				completedNode,
+				awaitingNode1,
+				awaitingNode2,
+			},
+			targetConfig:   desiredConfigHash,
+			maxUnavailable: 3,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+				awaitingNode2,
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(getNodesToUpgrade(tc.inputNodes, tc.targetConfig, tc.maxUnavailable)).To(Equal(tc.selectedNodes))
+		})
+	}
+}

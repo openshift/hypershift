@@ -44,6 +44,32 @@ func machineHealthCheck(nodePool *hyperv1.NodePool, controlPlaneNamespace string
 	}
 }
 
+func inPlaceUpgradePod(namespace, nodeName string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      fmt.Sprintf("machine-config-daemon-%s", nodeName),
+		},
+	}
+}
+
+func inPlaceUpgradeNamespace(nodePool *hyperv1.NodePool) *corev1.Namespace {
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-upgrade", nodePool.GetName()),
+		},
+	}
+}
+
+func inPlaceUpgradeConfigMap(nodePool *hyperv1.NodePool, namespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      fmt.Sprintf("%s-upgrade", nodePool.GetName()),
+		},
+	}
+}
+
 func IgnitionUserDataSecret(namespace, name, payloadInputHash string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
