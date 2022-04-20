@@ -131,7 +131,8 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	}
 	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
-	if version.Minor == 11 {
+	if version.Minor == 10 || version.Minor == 11 {
+		// This is explicitly disabled in OCP 4.10
 		// This is enabled by default in 4.11 but currently disabled by OCP. It is planned to get re-enabled but currently
 		// breaks conformance testing, ref: https://github.com/openshift/cluster-kube-apiserver-operator/pull/1262
 		args.Set("disable-admission-plugins", "PodSecurity")
