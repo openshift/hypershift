@@ -31,8 +31,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/hypershift/support/globalconfig"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -58,6 +56,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/proxy"
@@ -230,7 +229,7 @@ func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 
 // pauseHostedControlPlane will handle adding the pausedUntil field to the hostedControlPlane object if it exists.
 // If it doesn't exist: it returns as there's no need to add it
-func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseValue *string) error {
+func pauseHostedControlPlane(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane, pauseValue *string) error {
 	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -240,20 +239,17 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 		}
 	}
 
-	if hcp.Spec.PausedUntil != pauseValue {
+	_, err = createOrUpdate(ctx, c, hcp, func() error {
 		hcp.Spec.PausedUntil = pauseValue
-		if err := c.Update(ctx, hcp); err != nil {
-			return fmt.Errorf("failed to pause hostedcontrolplane: %w", err)
-		}
-	}
-
-	return nil
+		return nil
+	})
+	return err
 }
 
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling")
+	createOrUpdate := r.createOrUpdate(req)
 
 	// Look up the HostedCluster instance to reconcile
 	hcluster := &hyperv1.HostedCluster{}
@@ -269,7 +265,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
 		// Keep trying to delete until we know it's safe to finalize.
-		completed, err := r.delete(ctx, hcluster)
+		completed, err := r.delete(ctx, createOrUpdate, hcluster)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
 		}
@@ -278,11 +274,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
 		}
 		// Now we can remove the finalizer.
-		if controllerutil.ContainsFinalizer(hcluster, finalizer) {
+		_, err = createOrUpdate(ctx, r.Client, hcluster, func() error {
 			controllerutil.RemoveFinalizer(hcluster, finalizer)
-			if err := r.Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
-			}
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 		}
 		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
@@ -573,37 +570,38 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Part two: reconcile the state of the world
 
 	// Ensure the cluster has a finalizer for cleanup and update right away.
-	if !controllerutil.ContainsFinalizer(hcluster, finalizer) {
+	_, err = createOrUpdate(ctx, r.Client, hcluster, func() error {
 		controllerutil.AddFinalizer(hcluster, finalizer)
-		if err := r.Update(ctx, hcluster); err != nil {
-			if apierrors.IsConflict(err) {
-				return ctrl.Result{Requeue: true}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
+		return nil
+	})
+	if err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
 		}
+		return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
 	}
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
 	if isPaused, duration := util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
-		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
+		if err := pauseHostedControlPlane(ctx, r.Client, createOrUpdate, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
-	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
+	if err := r.defaultClusterIDsIfNeeded(ctx, createOrUpdate, hcluster); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err := r.defaultAPIPortIfNeeded(ctx, hcluster); err != nil {
+	if err := r.defaultAPIPortIfNeeded(ctx, createOrUpdate, hcluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to default the apiserver port: %w", err)
 	}
 
 	// Set the infraID as Tag on all created AWS
-	if err := r.reconcileAWSResourceTags(ctx, hcluster); err != nil {
+	if err := r.reconcileAWSResourceTags(ctx, createOrUpdate, hcluster); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -620,8 +618,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, nil
 		}
 	}
-
-	createOrUpdate := r.createOrUpdate(req)
 
 	// Reconcile the hosted cluster namespace
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -1121,7 +1117,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the AWS OIDC discovery
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
+		if err := r.reconcileAWSOIDCDocuments(ctx, log, createOrUpdate, hcluster, hcp); err != nil {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 				Type:               string(hyperv1.OIDCConfigurationInvalid),
 				Status:             metav1.ConditionTrue,
@@ -3183,7 +3179,7 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 	return nil
 }
 
-func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+func (r *HostedClusterReconciler) delete(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hc *hyperv1.HostedCluster) (bool, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
 	log := ctrl.LoggerFrom(ctx)
 
@@ -3258,7 +3254,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, nil
 	}
 
-	if err := r.cleanupOIDCBucketData(ctx, log, hc); err != nil {
+	if err := r.cleanupOIDCBucketData(ctx, log, createOrUpdate, hc); err != nil {
 		return false, fmt.Errorf("failed to clean up OIDC bucket data: %w", err)
 	}
 
@@ -4019,7 +4015,7 @@ func oidcDocumentGenerators() map[string]oidcDocumentGeneratorFunc {
 	}
 }
 
-func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	if hcp.Status.KubeConfig == nil {
 		return nil
 	}
@@ -4090,8 +4086,11 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		}
 	}
 
-	hcluster.Finalizers = append(hcluster.Finalizers, oidcDocumentsFinalizer)
-	if err := r.Client.Update(ctx, hcluster); err != nil {
+	_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+		hcluster.Finalizers = append(hcluster.Finalizers, oidcDocumentsFinalizer)
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to update the hosted cluster after adding the %s finalizer: %w", oidcDocumentsFinalizer, err)
 	}
 
@@ -4100,7 +4099,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 	return nil
 }
 
-func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log logr.Logger, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	if !controllerutil.ContainsFinalizer(hcluster, oidcDocumentsFinalizer) {
 		return nil
 	}
@@ -4123,8 +4122,11 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 		return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
 	}
 
-	controllerutil.RemoveFinalizer(hcluster, oidcDocumentsFinalizer)
-	if err := r.Client.Update(ctx, hcluster); err != nil {
+	_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+		controllerutil.RemoveFinalizer(hcluster, oidcDocumentsFinalizer)
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to update hostedcluster after removing %s finalizer: %w", oidcDocumentsFinalizer, err)
 	}
 
@@ -4132,36 +4134,34 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	if hcluster.Spec.Platform.AWS == nil {
 		return nil
 	}
 
-	var existing *hyperv1.AWSResourceTag
-	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
-		if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.InfraID {
-			existing = &hcluster.Spec.Platform.AWS.ResourceTags[idx]
-			break
+	_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+		var existing *hyperv1.AWSResourceTag
+		for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
+			if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.InfraID {
+				existing = &hcluster.Spec.Platform.AWS.ResourceTags[idx]
+				break
+			}
 		}
-	}
-	if existing != nil && existing.Value == "owned" {
+		if existing != nil && existing.Value == "owned" {
+			return nil
+		}
+
+		if existing != nil {
+			existing.Value = "owned"
+		} else {
+			hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+				Key:   "kubernetes.io/cluster/" + hcluster.Spec.InfraID,
+				Value: "owned",
+			})
+		}
 		return nil
-	}
-
-	if existing != nil {
-		existing.Value = "owned"
-	} else {
-		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
-			Key:   "kubernetes.io/cluster/" + hcluster.Spec.InfraID,
-			Value: "owned",
-		})
-	}
-
-	if err := r.Client.Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update AWS resource tags: %w", err)
-	}
-
-	return nil
+	})
+	return err
 }
 
 func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
@@ -4204,7 +4204,7 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 
 // defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
 // for https://bugzilla.redhat.com/show_bug.cgi?id=2060650: Azure LBs with port 6443 don't work
-func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
 		return nil
 	}
@@ -4212,24 +4212,21 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(infra), infra); err != nil {
 		return fmt.Errorf("failed to retrieve infra: %w", err)
 	}
-
 	if infra.Spec.PlatformSpec.Type != configv1.AzurePlatformType {
 		return nil
 	}
-	if hcluster.Spec.Networking.APIServer == nil {
-		hcluster.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
-	}
 
-	if hcluster.Spec.Networking.APIServer.Port != nil {
+	_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+		if hcluster.Spec.Networking.APIServer == nil {
+			hcluster.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
+		}
+		if hcluster.Spec.Networking.APIServer.Port != nil {
+			return nil
+		}
+		hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32Ptr(7443)
 		return nil
-	}
-
-	hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32Ptr(7443)
-	if err := r.Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
-	}
-
-	return nil
+	})
+	return err
 }
 
 func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (string, error) {
@@ -4247,26 +4244,17 @@ func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (str
 	return ingress.Spec.Domain, nil
 }
 
-func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	// Default the ClusterID if unset
-	needsUpdate := false
-	if hcluster.Spec.ClusterID == "" {
-		hcluster.Spec.ClusterID = uuid.NewString()
-		needsUpdate = true
-	}
-
-	// Default the infraID if unset
-	if hcluster.Spec.InfraID == "" {
-		hcluster.Spec.InfraID = infraid.New(hcluster.Name)
-		needsUpdate = true
-	}
-
-	if needsUpdate {
-		if err := r.Update(ctx, hcluster); err != nil {
-			return fmt.Errorf("failed to update hostedcluster after defaulting IDs: %w", err)
+func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+		if hcluster.Spec.ClusterID == "" {
+			hcluster.Spec.ClusterID = uuid.NewString()
 		}
-	}
-	return nil
+		if hcluster.Spec.InfraID == "" {
+			hcluster.Spec.InfraID = infraid.New(hcluster.Name)
+		}
+		return nil
+	})
+	return err
 }
 
 func validateClusterID(hc *hyperv1.HostedCluster) error {

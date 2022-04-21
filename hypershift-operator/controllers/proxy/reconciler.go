@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,16 +19,17 @@ import (
 	proxypkg "github.com/openshift/hypershift/support/proxy"
 )
 
-func Setup(mgr manager.Manager, deploymentNamespace string, deploymentName string) error {
+func Setup(mgr manager.Manager, createOrUpdate upsert.CreateOrUpdateProvider, deploymentNamespace string, deploymentName string) error {
 
 	// We do not want this controller to require leader election, as that slows things down drastically when there is a proxy
 	// and if we have multiple instances running, they should all attempt to do the same change. This means we can not use
 	// the builder and have to wrap the controller.
 	c, err := controller.NewUnmanaged("proxy", mgr, controller.Options{
 		Reconciler: &reconciler{
-			client:              mgr.GetClient(),
-			deploymentNamespace: deploymentNamespace,
-			deploymentName:      deploymentName,
+			client:                 mgr.GetClient(),
+			CreateOrUpdateProvider: createOrUpdate,
+			deploymentNamespace:    deploymentNamespace,
+			deploymentName:         deploymentName,
 		},
 	})
 	if err != nil {
@@ -53,7 +55,8 @@ func (*noLeaderElectionRunnable) NeedLeaderElection() bool {
 }
 
 type reconciler struct {
-	client              crclient.Client
+	client crclient.Client
+	upsert.CreateOrUpdateProvider
 	deploymentNamespace string
 	deploymentName      string
 }
@@ -80,19 +83,20 @@ func (r *reconciler) reconcile(ctx context.Context, req reconcile.Request) error
 		Namespace: r.deploymentNamespace,
 		Name:      r.deploymentName,
 	}}
-	if err := r.client.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
-		return fmt.Errorf("failed to get deployment %s: %w", crclient.ObjectKeyFromObject(deployment), err)
-	}
-	for idx := range deployment.Spec.Template.Spec.Containers {
-		if deployment.Spec.Template.Spec.Containers[idx].Name == operatorContainerName {
-			proxypkg.SetEnvVarsTo(&deployment.Spec.Template.Spec.Containers[idx].Env,
-				proxy.Status.HTTPProxy,
-				proxy.Status.HTTPSProxy,
-				proxy.Status.NoProxy,
-			)
-			return r.client.Update(ctx, deployment)
+	if _, err := r.CreateOrUpdate(ctx, r.client, deployment, func() error {
+		for idx := range deployment.Spec.Template.Spec.Containers {
+			if deployment.Spec.Template.Spec.Containers[idx].Name == operatorContainerName {
+				proxypkg.SetEnvVarsTo(&deployment.Spec.Template.Spec.Containers[idx].Env,
+					proxy.Status.HTTPProxy,
+					proxy.Status.HTTPSProxy,
+					proxy.Status.NoProxy,
+				)
+				return nil
+			}
 		}
+		return fmt.Errorf("deployment %s doesn't have a container %s", crclient.ObjectKeyFromObject(deployment), operatorContainerName)
+	}); err != nil {
+		return fmt.Errorf("failed to update deployment: %w", err)
 	}
-
-	return fmt.Errorf("deployment %s doesn't have a container %s", crclient.ObjectKeyFromObject(deployment), operatorContainerName)
+	return nil
 }

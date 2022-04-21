@@ -146,22 +146,22 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, fmt.Errorf("failed to delete nodepool: %w", err)
 		}
 		// Now we can remove the finalizer.
-		if controllerutil.ContainsFinalizer(nodePool, finalizer) {
+		if _, err := r.CreateOrUpdate(ctx, r.Client, nodePool, func() error {
 			controllerutil.RemoveFinalizer(nodePool, finalizer)
-			if err := r.Update(ctx, nodePool); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from nodepool: %w", err)
-			}
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove nodepool finalizer: %w", err)
 		}
 		log.Info("Deleted nodepool", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
 
 	// Ensure the nodePool has a finalizer for cleanup
-	if !controllerutil.ContainsFinalizer(nodePool, finalizer) {
+	if _, err := r.CreateOrUpdate(ctx, r.Client, nodePool, func() error {
 		controllerutil.AddFinalizer(nodePool, finalizer)
-		if err := r.Update(ctx, nodePool); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to nodepool: %w", err)
-		}
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to add nodepool finalizer: %w", err)
 	}
 
 	// Initialize the patch helper
@@ -505,7 +505,16 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return reconcile.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
 		}
 		if err == nil {
-			if err := setExpirationTimestampOnToken(ctx, r.Client, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
+			_, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
+				// this should be a reasonable value to allow all in flight provisions to complete.
+				timeUntilExpiry := 2 * time.Hour
+				if tokenSecret.Annotations == nil {
+					tokenSecret.Annotations = map[string]string{}
+				}
+				tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation] = time.Now().Add(timeUntilExpiry).Format(time.RFC3339)
+				return nil
+			})
+			if err != nil && !apierrors.IsNotFound(err) {
 				return reconcile.Result{}, fmt.Errorf("failed to set expiration on token Secret: %w", err)
 			}
 		}
@@ -1609,14 +1618,4 @@ func validateInfraID(infraID string) error {
 		return fmt.Errorf("infraID can't be empty")
 	}
 	return nil
-}
-
-func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSecret *corev1.Secret) error {
-	// this should be a reasonable value to allow all in flight provisions to complete.
-	timeUntilExpiry := 2 * time.Hour
-	if tokenSecret.Annotations == nil {
-		tokenSecret.Annotations = map[string]string{}
-	}
-	tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation] = time.Now().Add(timeUntilExpiry).Format(time.RFC3339)
-	return c.Update(ctx, tokenSecret)
 }

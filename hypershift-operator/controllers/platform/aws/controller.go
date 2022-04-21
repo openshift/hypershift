@@ -137,24 +137,21 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if !completed {
 			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
 		}
-		if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		if _, err := r.CreateOrUpdate(ctx, r.Client, awsEndpointService, func() error {
 			controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
-			if err := r.Update(ctx, awsEndpointService); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
-			}
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
 		}
 		return ctrl.Result{}, nil
 	}
 
 	// Ensure the awsEndpointService has a finalizer for cleanup
-	if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+	if _, err := r.CreateOrUpdate(ctx, r.Client, awsEndpointService, func() error {
 		controllerutil.AddFinalizer(awsEndpointService, finalizer)
-		if err := r.Update(ctx, awsEndpointService); err != nil {
-			if apierrors.IsConflict(err) {
-				return ctrl.Result{Requeue: true}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to add finalizer: %w", err)
-		}
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to add finalizer: %w", err)
 	}
 
 	// Reconcile the AWSEndpointService Spec

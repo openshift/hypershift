@@ -248,7 +248,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	if mgmtClusterCaps.Has(capabilities.CapabilityConfigOpenshiftIO) {
-		if err := proxy.Setup(mgr, opts.Namespace, opts.DeploymentName); err != nil {
+		if err := proxy.Setup(mgr, createOrUpdate, opts.Namespace, opts.DeploymentName); err != nil {
 			return fmt.Errorf("failed to set up the proxy controller: %w", err)
 		}
 	}
