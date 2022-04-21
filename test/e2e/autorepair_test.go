@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -39,7 +38,7 @@ func TestAutoRepair(t *testing.T) {
 	}
 	clusterOpts.AutoRepair = true
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 
 	// Perform some very basic assertions about the guest cluster
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)

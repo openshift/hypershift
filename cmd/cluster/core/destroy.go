@@ -108,7 +108,7 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 			return done, nil
 		}, clusterDeleteCtx.Done())
 		if err != nil {
-			return fmt.Errorf("hostedcluster was't finalized, aborting delete: %w", err)
+			return fmt.Errorf("hostedcluster wasn't finalized, aborting delete: %w", err)
 		}
 	}
 

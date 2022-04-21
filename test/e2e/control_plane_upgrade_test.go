@@ -29,7 +29,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
 	t.Logf("Waiting for guest client to become available")

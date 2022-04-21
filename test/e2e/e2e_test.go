@@ -68,8 +68,13 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.BaseDomain, "e2e.base-domain", "", "The ingress base domain for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ControlPlaneOperatorImage, "e2e.control-plane-operator-image", "", "The image to use for the control plane operator. If none specified, the default is used.")
 	flag.Var(&globalOpts.additionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
+	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
 
 	flag.Parse()
+
+	globalOpts.Platform = hyperv1.PlatformType(globalOpts.platformRaw)
 
 	// Set defaults for the test options
 	if err := globalOpts.Complete(); err != nil {
@@ -188,12 +193,17 @@ type options struct {
 	// before they're applied.
 	BeforeApply func(crclient.Object) `json:"-"`
 
+	Platform    hyperv1.PlatformType
+	platformRaw string
+
 	configurableClusterOptions configurableClusterOptions
 	additionalTags             stringSliceVar
 }
 
 type configurableClusterOptions struct {
 	AWSCredentialsFile         string
+	AzureCredentialsFile       string
+	AzureLocation              string
 	Region                     string
 	Zone                       stringSliceVar
 	PullSecretFile             string
@@ -229,6 +239,12 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			ContainerDiskImage:        o.configurableClusterOptions.KubeVirtContainerDiskImage,
 			Cores:                     2,
 			Memory:                    "4Gi",
+		},
+		AzurePlatform: core.AzurePlatformOptions{
+			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
+			Location:        o.configurableClusterOptions.AzureLocation,
+			InstanceType:    "Standard_D4s_v4",
+			DiskSizeGB:      120,
 		},
 		ServiceCIDR: "172.31.0.0/16",
 		PodCIDR:     "10.132.0.0/14",

@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
+	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
@@ -187,38 +188,41 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 		return none.CreateCluster(ctx, opts)
 	case hyperv1.KubevirtPlatform:
 		return kubevirt.CreateCluster(ctx, opts)
+	case hyperv1.AzurePlatform:
+		return azure.CreateCluster(ctx, opts)
 	default:
-		return fmt.Errorf("unsupported platform")
+		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
 }
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
 // cluster platform and the options used to create the cluster.
 func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions) error {
+	opts := &core.DestroyOptions{
+		Namespace:          hc.Namespace,
+		Name:               hc.Name,
+		InfraID:            createOpts.InfraID,
+		ClusterGracePeriod: 15 * time.Minute,
+	}
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		opts := &core.DestroyOptions{
-			Namespace: hc.Namespace,
-			Name:      hc.Name,
-			InfraID:   createOpts.InfraID,
-			AWSPlatform: core.AWSPlatformDestroyOptions{
-				BaseDomain:         createOpts.BaseDomain,
-				AWSCredentialsFile: createOpts.AWSPlatform.AWSCredentialsFile,
-				PreserveIAM:        false,
-				Region:             createOpts.AWSPlatform.Region,
-			},
-			ClusterGracePeriod: 15 * time.Minute,
+		opts.AWSPlatform = core.AWSPlatformDestroyOptions{
+			BaseDomain:         createOpts.BaseDomain,
+			AWSCredentialsFile: createOpts.AWSPlatform.AWSCredentialsFile,
+			PreserveIAM:        false,
+			Region:             createOpts.AWSPlatform.Region,
 		}
 		return aws.DestroyCluster(ctx, opts)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
-		opts := &core.DestroyOptions{
-			Namespace:          hc.Namespace,
-			Name:               hc.Name,
-			ClusterGracePeriod: 15 * time.Minute,
-		}
 		return none.DestroyCluster(ctx, opts)
+	case hyperv1.AzurePlatform:
+		opts.AzurePlatform = core.AzurePlatformDestroyOptions{
+			CredentialsFile: createOpts.AzurePlatform.CredentialsFile,
+			Location:        createOpts.AzurePlatform.Location,
+		}
+		return azure.DestroyCluster(ctx, opts)
 	default:
-		return fmt.Errorf("unsupported cluster platform")
+		return fmt.Errorf("unsupported cluster platform %s", hc.Spec.Platform.Type)
 	}
 }
 
