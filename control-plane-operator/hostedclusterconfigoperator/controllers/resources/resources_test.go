@@ -50,6 +50,7 @@ var initialObjects = []client.Object{
 			"kubeadmin": []byte("something"),
 		},
 	},
+	manifests.NodeTuningClusterOperator(),
 }
 
 func shouldNotError(key client.ObjectKey) bool {
