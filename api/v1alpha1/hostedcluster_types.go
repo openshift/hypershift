@@ -1239,6 +1239,12 @@ const (
 	// OIDCConfigurationInvalid indicates if an AWS cluster's OIDC condition is
 	// detected as invalid.
 	OIDCConfigurationInvalid ConditionType = "OIDCConfigurationInvalid"
+
+	// ValidReleaseImage indicates if the release image set in the spec is valid
+	// for the HostedCluster. For example, this can be set false if the
+	// HostedCluster itself attempts an unsupported version before 4.9 or an
+	// unsupported upgrade e.g y-stream upgrade before 4.11.
+	ValidReleaseImage ConditionType = "ValidReleaseImage"
 )
 
 const (
@@ -1275,6 +1281,8 @@ const (
 	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
 
 	OIDCConfigurationInvalidReason = "OIDCConfigurationInvalid"
+
+	InvalidImageReason = "InvalidImage"
 )
 
 // HostedClusterStatus is the latest observed status of a HostedCluster.

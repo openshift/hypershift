@@ -1200,6 +1200,341 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 	}
 }
 
+func TestValidateReleaseImage(t *testing.T) {
+	testCases := []struct {
+		name           string
+		other          []crclient.Object
+		hostedCluster  *hyperv1.HostedCluster
+		expectedResult error
+	}{
+		{
+			name: "no pull secret, error",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+			},
+			expectedResult: errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+		},
+		{
+			name: "invalid pull secret, error",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data:       map[string][]byte{},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+			},
+			expectedResult: errors.New("expected .dockerconfigjson key in pull secret"),
+		},
+		{
+			name: "unable to pull release image, error",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.nope.0",
+					},
+				},
+			},
+			expectedResult: errors.New("failed to lookup release image: unable to lookup release image"),
+		},
+		{
+			name: "unsupported release, error",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.7.0",
+					},
+				},
+			},
+			expectedResult: errors.New("releases before 4.8 are not supported"),
+		},
+		{
+			name: "unsupported y-stream downgrade, error",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.10.0",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "image-4.11.0",
+						},
+					},
+				},
+			},
+			expectedResult: errors.New("y-stream downgrade is not supported"),
+		},
+		{
+			name: "unsupported y-stream upgrade, error",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OpenShiftSDN,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.11.0",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "image-4.10.0",
+						},
+					},
+				},
+			},
+			expectedResult: errors.New("y-stream upgrade is not for OpenShiftSDN"),
+		},
+		{
+			name: "supported y-stream upgrade, success",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.11.0",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "image-4.10.0",
+						},
+					},
+				},
+			},
+			expectedResult: nil,
+		},
+		{
+			name: "valid create, success",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OpenShiftSDN,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.10.0",
+					},
+				},
+			},
+			expectedResult: nil,
+		},
+		{
+			name: "no-op, success",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.10.0",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "image-4.10.0",
+						},
+					},
+				},
+			},
+			expectedResult: nil,
+		},
+		{
+			name: "z-stream upgrade, success",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.10.0",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "image-4.10.1",
+						},
+					},
+				},
+			},
+			expectedResult: nil,
+		},
+		{
+			name: "y-stream upgrade, success",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.12.0",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "image-4.11.0",
+						},
+					},
+				},
+			},
+			expectedResult: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &HostedClusterReconciler{
+				Client: fake.NewClientBuilder().WithObjects(tc.other...).Build(),
+				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+					ImageVersion: map[string]string{
+						"image-4.7.0":  "4.7.0",
+						"image-4.9.0":  "4.9.0",
+						"image-4.10.0": "4.10.0",
+						"image-4.10.1": "4.10.1",
+						"image-4.11.0": "4.11.0",
+						"image-4.12.0": "4.12.0",
+					},
+				},
+			}
+
+			ctx := context.Background()
+			actual := r.validateReleaseImage(ctx, tc.hostedCluster)
+			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
+				t.Errorf("actual validation result differs from expected: %s", diff)
+			}
+		})
+	}
+}
+
 var equateErrorMessage = cmp.FilterValues(func(x, y interface{}) bool {
 	_, ok1 := x.(error)
 	_, ok2 := y.(error)
