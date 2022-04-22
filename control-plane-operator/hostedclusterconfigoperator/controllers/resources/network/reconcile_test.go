@@ -9,7 +9,8 @@ import (
 )
 
 func TestReconcileDefaultIngressController(t *testing.T) {
-	port := kubevirtDefaultVXLANPort
+	vxlanPort := kubevirtDefaultVXLANPort
+	genevePort := kubevirtDefaultGenevePort
 	fakePort := uint32(11111)
 	testsCases := []struct {
 		name              string
@@ -18,6 +19,25 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		inputPlatformType hyperv1.PlatformType
 		expectedNetwork   *operatorv1.Network
 	}{
+		{
+			name:              "KubeVirt with OVNKubernetes uses unique default geneve port",
+			inputNetwork:      NetworkOperator(),
+			inputNetworkType:  hyperv1.OVNKubernetes,
+			inputPlatformType: hyperv1.KubevirtPlatform,
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort: &genevePort,
+						},
+					},
+				},
+			},
+		},
 		{
 			name:              "KubeVirt with OpenshiftSDN uses unique default vxlan port",
 			inputNetwork:      NetworkOperator(),
@@ -31,7 +51,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 					},
 					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
 						OpenShiftSDNConfig: &operatorv1.OpenShiftSDNConfig{
-							VXLANPort: &port,
+							VXLANPort: &vxlanPort,
 						},
 					},
 				},
@@ -63,6 +83,37 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
 						OpenShiftSDNConfig: &operatorv1.OpenShiftSDNConfig{
 							VXLANPort: &fakePort,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "KubeVirt with OVNKubernetes when geneve port already exists",
+			inputNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort: &fakePort,
+						},
+					},
+				},
+			},
+			inputNetworkType:  hyperv1.OVNKubernetes,
+			inputPlatformType: hyperv1.KubevirtPlatform,
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort: &fakePort,
 						},
 					},
 				},

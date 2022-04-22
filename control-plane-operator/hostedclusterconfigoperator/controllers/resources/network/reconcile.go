@@ -20,6 +20,10 @@ func NetworkOperator() *operatorv1.Network {
 // 9879 is a currently unassigned IANA port in the user port range.
 const kubevirtDefaultVXLANPort = uint32(9879)
 
+// The default OVN geneve port is 6081. We need to avoid that for kubernetes which runs nested.
+// 9880 is a currently unassigned IANA port in the user port range.
+const kubevirtDefaultGenevePort = uint32(9880)
+
 func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
 	switch platformType {
 	case hyperv1.KubevirtPlatform:
@@ -31,6 +35,14 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 			}
 			if network.Spec.DefaultNetwork.OpenShiftSDNConfig.VXLANPort == nil {
 				network.Spec.DefaultNetwork.OpenShiftSDNConfig.VXLANPort = &port
+			}
+		} else if networkType == hyperv1.OVNKubernetes {
+			port := kubevirtDefaultGenevePort
+			if network.Spec.DefaultNetwork.OVNKubernetesConfig == nil {
+				network.Spec.DefaultNetwork.OVNKubernetesConfig = &operatorv1.OVNKubernetesConfig{}
+			}
+			if network.Spec.DefaultNetwork.OVNKubernetesConfig.GenevePort == nil {
+				network.Spec.DefaultNetwork.OVNKubernetesConfig.GenevePort = &port
 			}
 		}
 
