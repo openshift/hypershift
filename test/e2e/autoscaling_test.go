@@ -31,7 +31,7 @@ func TestAutoscaling(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 
 	// Get one of the newly created NodePools
 	zone := clusterOpts.AWSPlatform.Zones[0]
