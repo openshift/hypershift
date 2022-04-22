@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,17 +23,16 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	tokenminter "github.com/openshift/hypershift/token-minter"
 	"go.uber.org/zap/zapcore"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/spf13/cobra"
-	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
@@ -158,7 +156,7 @@ func NewStartCommand() *cobra.Command {
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
-	cmd.Flags().StringVar(&deploymentName, "deployment-name", "control-plane-operator", "The name of the deployment of this operator")
+	cmd.Flags().StringVar(&deploymentName, "deployment-name", "control-plane-operator", "The name of the deployment of this operator. If possible, submit the podName through the POD_NAME env var instead to allow resolving to a sha256 reference.")
 	cmd.Flags().StringVar(&metricsAddr, "metrics-addr", "0.0.0.0:8080", "The address the metric endpoint binds to.")
 	cmd.Flags().StringVar(&healthProbeAddr, "health-probe-addr", "0.0.0.0:6060", "The address for the health probe endpoint.")
 	cmd.Flags().StringVar(&hostedClusterConfigOperatorImage, "hosted-cluster-config-operator-image", "", "A specific operator image. (defaults to match this operator if running in a deployment)")
@@ -216,16 +214,6 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		// For now, since the hosted cluster config operator is treated like any other
-		// release payload component but isn't actually part of a release payload,
-		// enable the user to specify an image directly as a flag, and otherwise
-		// try and detect the control plane operator's image to use instead.
-		kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
-		if err != nil {
-			setupLog.Error(err, "unable to create kube client")
-			os.Exit(1)
-		}
-
 		kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
 		if err != nil {
 			setupLog.Error(err, "unable to create discovery client")
@@ -238,13 +226,31 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name, userSpecifiedImage string) (string, error) {
+		// For now, since the hosted cluster config operator is treated like any other
+		// release payload component but isn't actually part of a release payload,
+		// enable the user to specify an image directly as a flag, and otherwise
+		// try and detect the control plane operator's image to use instead.
+		lookupOperatorImage := func(userSpecifiedImage string) (string, error) {
 			if len(userSpecifiedImage) > 0 {
 				setupLog.Info("using image from arguments", "image", userSpecifiedImage)
 				return userSpecifiedImage, nil
 			}
-			deployment, err := deployments.Get(context.TODO(), name, metav1.GetOptions{})
-			if err != nil {
+			if podName := os.Getenv("POD_NAME"); podName != "" {
+				me := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: podName}}
+				if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(me), me); err != nil {
+					return "", fmt.Errorf("failed to get operator pod %s: %w", crclient.ObjectKeyFromObject(me), err)
+				}
+				// Use the container status to make sure we get the sha256 reference rather than a potentially
+				// floating tag.
+				for _, container := range me.Status.ContainerStatuses {
+					// TODO: could use downward API for this too, overkill?
+					if container.Name == "control-plane-operator" {
+						return container.ImageID, nil
+					}
+				}
+			}
+			deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: deploymentName}}
+			if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
 				return "", fmt.Errorf("failed to get operator deployment: %w", err)
 			}
 			for _, container := range deployment.Spec.Template.Spec.Containers {
@@ -256,35 +262,35 @@ func NewStartCommand() *cobra.Command {
 			}
 			return "", fmt.Errorf("couldn't locate operator container on deployment")
 		}
-		hostedClusterConfigOperatorImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, hostedClusterConfigOperatorImage)
+		hostedClusterConfigOperatorImage, err = lookupOperatorImage(hostedClusterConfigOperatorImage)
 		if err != nil {
 			setupLog.Error(err, fmt.Sprintf("failed to find operator image: %s", err), "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
 		setupLog.Info("using operator image", "image", hostedClusterConfigOperatorImage)
 
-		socks5ProxyImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, socks5ProxyImage)
+		socks5ProxyImage, err = lookupOperatorImage(socks5ProxyImage)
 		if err != nil {
 			setupLog.Error(err, fmt.Sprintf("failed to find socks5 proxy image: %s", err), "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
 		setupLog.Info("using socks5 proxy image", "image", socks5ProxyImage)
 
-		availabilityProberImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, availabilityProberImage)
+		availabilityProberImage, err = lookupOperatorImage(availabilityProberImage)
 		if err != nil {
 			setupLog.Error(err, fmt.Sprintf("failed to find availability prober image: %s", err), "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
 		setupLog.Info("using availability prober image", "image", availabilityProberImage)
 
-		tokenMinterImage, err = lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, tokenMinterImage)
+		tokenMinterImage, err = lookupOperatorImage(tokenMinterImage)
 		if err != nil {
 			setupLog.Error(err, fmt.Sprintf("failed to find token minter image: %s", err), "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
 		setupLog.Info("using token minter image", "image", tokenMinterImage)
 
-		cpoImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(namespace), deploymentName, "")
+		cpoImage, err := lookupOperatorImage("")
 		if err != nil {
 			setupLog.Error(err, "failed to find controlplane-operator-image")
 			os.Exit(1)

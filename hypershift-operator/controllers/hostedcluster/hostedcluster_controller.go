@@ -2215,6 +2215,14 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 								},
 							},
 							{
+								Name: "POD_NAME",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.name",
+									},
+								},
+							},
+							{
 								Name:  "OPERATE_ON_RELEASE_IMAGE",
 								Value: hc.Spec.Release.Image,
 							},

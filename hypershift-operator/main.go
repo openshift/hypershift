@@ -40,11 +40,10 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/kubernetes"
-	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,6 +70,7 @@ func main() {
 type StartOptions struct {
 	Namespace                        string
 	DeploymentName                   string
+	PodName                          string
 	MetricsAddr                      string
 	CertDir                          string
 	EnableOCPClusterMonitoring       bool
@@ -106,7 +106,8 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace this operator lives in")
-	cmd.Flags().StringVar(&opts.DeploymentName, "deployment-name", opts.DeploymentName, "The name of the deployment of this operator")
+	cmd.Flags().StringVar(&opts.DeploymentName, "deployment-name", opts.DeploymentName, "Legacy flag, does nothing. Use --pod-name instead.")
+	cmd.Flags().StringVar(&opts.PodName, "pod-name", opts.PodName, "The name of the pod the operator runs in")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
 	cmd.Flags().StringVar(&opts.CertDir, "cert-dir", opts.CertDir, "Path to the serving key and cert for manager")
 	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
@@ -154,15 +155,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
 
-	// Add some flexibility to getting the operator image. Use the flag if given,
-	// but if that's empty and we're running in a deployment, use the
-	// hypershift operator's image by default.
-	// TODO: There needs to be some strategy for specifying images everywhere
-	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		return fmt.Errorf("unable to create kube client: %w", err)
-	}
-
 	kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("unable to create discovery client: %w", err)
@@ -173,25 +165,26 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to detect cluster capabilities: %w", err)
 	}
 
-	lookupOperatorImage := func(deployments appsv1client.DeploymentInterface, name string, userSpecifiedImage string) (string, error) {
+	lookupOperatorImage := func(userSpecifiedImage string) (string, error) {
 		if len(userSpecifiedImage) > 0 {
 			log.Info("using image from arguments", "image", userSpecifiedImage)
 			return userSpecifiedImage, nil
 		}
-		deployment, err := deployments.Get(context.TODO(), name, metav1.GetOptions{})
-		if err != nil {
-			return "", fmt.Errorf("failed to get operator deployment: %w", err)
+		me := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.PodName}}
+		if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(me), me); err != nil {
+			return "", fmt.Errorf("failed to get operator pod %s: %w", crclient.ObjectKeyFromObject(me), err)
 		}
-		for _, container := range deployment.Spec.Template.Spec.Containers {
+		// Use the container status to make sure we get the sha256 reference rather than a potentially
+		// floating tag.
+		for _, container := range me.Status.ContainerStatuses {
 			// TODO: could use downward API for this too, overkill?
 			if container.Name == "operator" {
-				log.Info("using image from operator deployment", "image", container.Image)
-				return container.Image, nil
+				return container.ImageID, nil
 			}
 		}
 		return "", fmt.Errorf("couldn't locate operator container on deployment")
 	}
-	operatorImage, err := lookupOperatorImage(kubeClient.AppsV1().Deployments(opts.Namespace), opts.DeploymentName, opts.ControlPlaneOperatorImage)
+	operatorImage, err := lookupOperatorImage(opts.ControlPlaneOperatorImage)
 	if err != nil {
 		return fmt.Errorf("failed to find operator image: %w", err)
 	}
