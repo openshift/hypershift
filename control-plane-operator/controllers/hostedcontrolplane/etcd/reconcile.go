@@ -121,7 +121,7 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 		initialCluster := strings.Join(members, ",")
 
 		c.Image = p.EtcdImage
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{"/bin/sh", "-c", script}
 		c.VolumeMounts = []corev1.VolumeMount{
 			{
