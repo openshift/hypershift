@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	jose "gopkg.in/square/go-jose.v2"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 )
 
@@ -395,11 +394,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	if err != nil {
 		return nil, err
 	}
-	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
-		ARN:       arn,
-		Namespace: "openshift-ingress-operator",
-		Name:      "cloud-credentials",
-	})
+	output.Roles.IngressOIDC = arn
 
 	registryTrustPolicy := oidcTrustPolicy(providerARN, providerName,
 		"system:serviceaccount:openshift-image-registry:cluster-image-registry-operator",
@@ -408,22 +403,14 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	if err != nil {
 		return nil, err
 	}
-	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
-		ARN:       arn,
-		Namespace: "openshift-image-registry",
-		Name:      "installer-cloud-credentials",
-	})
+	output.Roles.ImageRegistryOIDC = arn
 
 	csiTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-controller-sa")
 	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-controller", csiTrustPolicy, awsEBSCSIPermPolicy)
 	if err != nil {
 		return nil, err
 	}
-	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
-		ARN:       arn,
-		Namespace: "openshift-cluster-csi-drivers",
-		Name:      "ebs-cloud-credentials",
-	})
+	output.Roles.StorageOIDC = arn
 
 	kubeCloudControllerTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kube-controller-manager")
 	arn, err = o.CreateOIDCRole(iamClient, "cloud-controller", kubeCloudControllerTrustPolicy, cloudControllerPolicy)
@@ -460,11 +447,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	if err != nil {
 		return nil, err
 	}
-	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
-		ARN:       arn,
-		Namespace: "openshift-cloud-network-config-controller",
-		Name:      "cloud-credentials",
-	})
+	output.Roles.NetworkOIDC = arn
 
 	return output, nil
 }

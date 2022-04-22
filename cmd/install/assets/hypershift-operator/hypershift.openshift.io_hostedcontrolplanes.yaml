@@ -463,28 +463,73 @@ spec:
                         maxItems: 25
                         type: array
                       roles:
-                        description: "Roles must contain exactly 4 entries representing
-                          the locators for roles supporting the following OCP services:
-                          \n - openshift-ingress-operator/cloud-credentials - openshift-image-registry/installer-cloud-credentials
-                          - openshift-cluster-csi-drivers/ebs-cloud-credentials -
-                          cloud-network-config-controller/cloud-credentials \n Each
-                          role has unique permission requirements whose documentation
-                          is TBD. \n TODO(dan): revisit this field; it's really 3
-                          required fields with specific content requirements"
-                        items:
-                          properties:
-                            arn:
-                              type: string
-                            name:
-                              type: string
-                            namespace:
-                              type: string
-                          required:
-                          - arn
-                          - name
-                          - namespace
-                          type: object
-                        type: array
+                        description: Roles contains references to various AWS IAM
+                          roles required to enable integrations such as OIDC.
+                        properties:
+                          imageRegistryOidc:
+                            description: "ImageRegistryOIDC is an ARN value referencing
+                              a role used for image registry OIDC integration. \n
+                              The following is an example of a valid policy document:
+                              \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
+                              [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
+                              [ \t\t\t\t\"s3:CreateBucket\", \t\t\t\t\"s3:DeleteBucket\",
+                              \t\t\t\t\"s3:PutBucketTagging\", \t\t\t\t\"s3:GetBucketTagging\",
+                              \t\t\t\t\"s3:PutBucketPublicAccessBlock\", \t\t\t\t\"s3:GetBucketPublicAccessBlock\",
+                              \t\t\t\t\"s3:PutEncryptionConfiguration\", \t\t\t\t\"s3:GetEncryptionConfiguration\",
+                              \t\t\t\t\"s3:PutLifecycleConfiguration\", \t\t\t\t\"s3:GetLifecycleConfiguration\",
+                              \t\t\t\t\"s3:GetBucketLocation\", \t\t\t\t\"s3:ListBucket\",
+                              \t\t\t\t\"s3:GetObject\", \t\t\t\t\"s3:PutObject\",
+                              \t\t\t\t\"s3:DeleteObject\", \t\t\t\t\"s3:ListBucketMultipartUploads\",
+                              \t\t\t\t\"s3:AbortMultipartUpload\", \t\t\t\t\"s3:ListMultipartUploadParts\"
+                              \t\t\t], \t\t\t\"Resource\": \"*\" \t\t} \t] }"
+                            type: string
+                          ingressOidc:
+                            description: "IngressOIDC is an ARN value referencing
+                              a role used for ingress OIDC integration. \n The following
+                              is an example of a valid policy document: \n { \t\"Version\":
+                              \"2012-10-17\", \t\"Statement\": [ \t\t{ \t\t\t\"Effect\":
+                              \"Allow\", \t\t\t\"Action\": [ \t\t\t\t\"elasticloadbalancing:DescribeLoadBalancers\",
+                              \t\t\t\t\"tag:GetResources\", \t\t\t\t\"route53:ListHostedZones\"
+                              \t\t\t], \t\t\t\"Resource\": \"*\" \t\t}, \t\t{ \t\t\t\"Effect\":
+                              \"Allow\", \t\t\t\"Action\": [ \t\t\t\t\"route53:ChangeResourceRecordSets\"
+                              \t\t\t], \t\t\t\"Resource\": [ \t\t\t\t\"arn:aws:route53:::PUBLIC_ZONE_ID\",
+                              \t\t\t\t\"arn:aws:route53:::PRIVATE_ZONE_ID\" \t\t\t]
+                              \t\t} \t] }"
+                            type: string
+                          networkOidc:
+                            description: "NetworkOIDC is an ARN value referencing
+                              a role used for networking OIDC integration. \n The
+                              following is an example of a valid policy document:
+                              \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
+                              [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
+                              [ \t\t\t\t\"ec2:DescribeInstances\",        \"ec2:DescribeInstanceStatus\",
+                              \       \"ec2:DescribeInstanceTypes\",        \"ec2:UnassignPrivateIpAddresses\",
+                              \       \"ec2:AssignPrivateIpAddresses\",        \"ec2:UnassignIpv6Addresses\",
+                              \       \"ec2:AssignIpv6Addresses\",        \"ec2:DescribeSubnets\",
+                              \       \"ec2:DescribeNetworkInterfaces\" \t\t\t], \t\t\t\"Resource\":
+                              \"*\" \t\t} \t] }"
+                            type: string
+                          storageOidc:
+                            description: "StorageOIDC is an ARN value referencing
+                              a role used for storage driver OIDC integration. \n
+                              The following is an example of a valid policy document:
+                              \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
+                              [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
+                              [ \t\t\t\t\"ec2:AttachVolume\", \t\t\t\t\"ec2:CreateSnapshot\",
+                              \t\t\t\t\"ec2:CreateTags\", \t\t\t\t\"ec2:CreateVolume\",
+                              \t\t\t\t\"ec2:DeleteSnapshot\", \t\t\t\t\"ec2:DeleteTags\",
+                              \t\t\t\t\"ec2:DeleteVolume\", \t\t\t\t\"ec2:DescribeInstances\",
+                              \t\t\t\t\"ec2:DescribeSnapshots\", \t\t\t\t\"ec2:DescribeTags\",
+                              \t\t\t\t\"ec2:DescribeVolumes\", \t\t\t\t\"ec2:DescribeVolumesModifications\",
+                              \t\t\t\t\"ec2:DetachVolume\", \t\t\t\t\"ec2:ModifyVolume\"
+                              \t\t\t], \t\t\t\"Resource\": \"*\" \t\t} \t] }"
+                            type: string
+                        required:
+                        - imageRegistryOidc
+                        - ingressOidc
+                        - networkOidc
+                        - storageOidc
+                        type: object
                       serviceEndpoints:
                         description: "ServiceEndpoints specifies optional custom endpoints
                           which will override the default service endpoint of specific
@@ -515,6 +560,7 @@ spec:
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds
                     - region
+                    - roles
                     type: object
                   azure:
                     description: Azure defines azure specific settings

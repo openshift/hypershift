@@ -110,7 +110,7 @@ type ExampleAWSOptions struct {
 	SecurityGroupID             string
 	InstanceProfile             string
 	InstanceType                string
-	Roles                       []hyperv1.AWSRoleCredentials
+	Roles                       hyperv1.AWSRoles
 	KubeCloudControllerRoleARN  string
 	NodePoolManagementRoleARN   string
 	ControlPlaneOperatorRoleARN string
