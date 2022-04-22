@@ -848,6 +848,14 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster cloud-network-config-controller secret: %w", err))
 		}
+
+		csiDriverSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, csiDriverSecret, func() error {
+			csiDriverSecret.Data = secretData
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile csi driver secret: %w", err))
+		}
 	}
 	return errs
 }
