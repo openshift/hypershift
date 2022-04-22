@@ -158,7 +158,7 @@ func kasContainerAWSKMSTokenMinter() *corev1.Container {
 func buildKASContainerAWSKMS(image string, arn string, region string, unixSocketPath string, healthPort int32) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Ports = []corev1.ContainerPort{
 			{
 				Name:          "http",
@@ -205,7 +205,7 @@ func buildVolumeAWSKMSCredentials(secretName string) func(*corev1.Volume) {
 func buildKASContainerAWSKMSTokenMinter(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{"/usr/bin/control-plane-operator", "token-minter"}
 		c.Args = []string{
 			"--service-account-namespace=kube-system",

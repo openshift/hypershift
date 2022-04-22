@@ -111,7 +111,7 @@ func cloudProviderTokenKubeconfigVolume() *corev1.Volume {
 func buildCloudProviderTokenMinterContainer(image string, args []string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{"/usr/bin/control-plane-operator", "token-minter"}
 		c.Args = args
 		c.Resources.Requests = corev1.ResourceList{

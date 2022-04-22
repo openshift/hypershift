@@ -89,7 +89,7 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 					{
 						Name:            "manager",
 						Image:           providerImage,
-						ImagePullPolicy: corev1.PullAlways,
+						ImagePullPolicy: corev1.PullIfNotPresent,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "capi-webhooks-tls",

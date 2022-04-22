@@ -155,7 +155,7 @@ func buildVolumeIBMCloudKMSKP(v *corev1.Volume) {
 func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, customerAPIKeyReference *corev1.EnvVarSource) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "LOG_LEVEL",
