@@ -1187,22 +1187,14 @@ the default service endpoint of specific AWS Services.</p>
 <td>
 <code>roles</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1alpha1.AWSRoleCredentials">
-[]AWSRoleCredentials
+<a href="#hypershift.openshift.io/v1alpha1.AWSRoles">
+AWSRoles
 </a>
 </em>
 </td>
 <td>
-<p>Roles must contain exactly 4 entries representing the locators for roles
-supporting the following OCP services:</p>
-<ul>
-<li>openshift-ingress-operator/cloud-credentials</li>
-<li>openshift-image-registry/installer-cloud-credentials</li>
-<li>openshift-cluster-csi-drivers/ebs-cloud-credentials</li>
-<li>cloud-network-config-controller/cloud-credentials</li>
-</ul>
-<p>Each role has unique permission requirements whose documentation is TBD.</p>
-<p>TODO(dan): revisit this field; it&rsquo;s really 3 required fields with specific content requirements</p>
+<p>Roles contains references to various AWS IAM roles required to enable
+integrations such as OIDC.</p>
 </td>
 </tr>
 <tr>
@@ -1403,12 +1395,14 @@ requirements of all services.</p>
 </tr>
 </tbody>
 </table>
-###AWSRoleCredentials { #hypershift.openshift.io/v1alpha1.AWSRoleCredentials }
+###AWSRoles { #hypershift.openshift.io/v1alpha1.AWSRoles }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
+<p>AWSRoles contains references to various AWS IAM roles required to enable
+integrations such as OIDC.</p>
 </p>
 <table>
 <thead>
@@ -1420,32 +1414,172 @@ requirements of all services.</p>
 <tbody>
 <tr>
 <td>
-<code>arn</code></br>
+<code>ingressARN</code></br>
 <em>
 string
 </em>
 </td>
 <td>
+<p>The referenced role must have a trust relationship that allows it to be assumed via web identity.
+<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html">https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html</a>.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;Federated&rdquo;: &ldquo;{{ .ProviderARN }}&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;{{ .ProviderName }}:sub&rdquo;: {{ .ServiceAccounts }}
+}
+}
+}
+]
+}</p>
+<p>IngressARN is an ARN value referencing a role used for ingress OIDC
+integration.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;elasticloadbalancing:DescribeLoadBalancers&rdquo;,
+&ldquo;tag:GetResources&rdquo;,
+&ldquo;route53:ListHostedZones&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;route53:ChangeResourceRecordSets&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:aws:route53:::PUBLIC_ZONE_ID&rdquo;,
+&ldquo;arn:aws:route53:::PRIVATE_ZONE_ID&rdquo;
+]
+}
+]
+}</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>namespace</code></br>
+<code>imageRegistryARN</code></br>
 <em>
 string
 </em>
 </td>
 <td>
+<p>ImageRegistryARN is an ARN value referencing a role used for image
+registry OIDC integration.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;s3:CreateBucket&rdquo;,
+&ldquo;s3:DeleteBucket&rdquo;,
+&ldquo;s3:PutBucketTagging&rdquo;,
+&ldquo;s3:GetBucketTagging&rdquo;,
+&ldquo;s3:PutBucketPublicAccessBlock&rdquo;,
+&ldquo;s3:GetBucketPublicAccessBlock&rdquo;,
+&ldquo;s3:PutEncryptionConfiguration&rdquo;,
+&ldquo;s3:GetEncryptionConfiguration&rdquo;,
+&ldquo;s3:PutLifecycleConfiguration&rdquo;,
+&ldquo;s3:GetLifecycleConfiguration&rdquo;,
+&ldquo;s3:GetBucketLocation&rdquo;,
+&ldquo;s3:ListBucket&rdquo;,
+&ldquo;s3:GetObject&rdquo;,
+&ldquo;s3:PutObject&rdquo;,
+&ldquo;s3:DeleteObject&rdquo;,
+&ldquo;s3:ListBucketMultipartUploads&rdquo;,
+&ldquo;s3:AbortMultipartUpload&rdquo;,
+&ldquo;s3:ListMultipartUploadParts&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>name</code></br>
+<code>storageARN</code></br>
 <em>
 string
 </em>
 </td>
 <td>
+<p>StorageOIDC is an ARN value referencing a role used for storage driver OIDC
+integration.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:AttachVolume&rdquo;,
+&ldquo;ec2:CreateSnapshot&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;ec2:CreateVolume&rdquo;,
+&ldquo;ec2:DeleteSnapshot&rdquo;,
+&ldquo;ec2:DeleteTags&rdquo;,
+&ldquo;ec2:DeleteVolume&rdquo;,
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeSnapshots&rdquo;,
+&ldquo;ec2:DescribeTags&rdquo;,
+&ldquo;ec2:DescribeVolumes&rdquo;,
+&ldquo;ec2:DescribeVolumesModifications&rdquo;,
+&ldquo;ec2:DetachVolume&rdquo;,
+&ldquo;ec2:ModifyVolume&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>NetworkOIDC is an ARN value referencing a role used for networking OIDC
+integration.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInstanceStatus&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;,
+&ldquo;ec2:UnassignPrivateIpAddresses&rdquo;,
+&ldquo;ec2:AssignPrivateIpAddresses&rdquo;,
+&ldquo;ec2:UnassignIpv6Addresses&rdquo;,
+&ldquo;ec2:AssignIpv6Addresses&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;,
+&ldquo;ec2:DescribeNetworkInterfaces&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>

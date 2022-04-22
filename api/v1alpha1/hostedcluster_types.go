@@ -793,20 +793,11 @@ type AWSPlatformSpec struct {
 	// +immutable
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
-	// Roles must contain exactly 4 entries representing the locators for roles
-	// supporting the following OCP services:
-	//
-	// - openshift-ingress-operator/cloud-credentials
-	// - openshift-image-registry/installer-cloud-credentials
-	// - openshift-cluster-csi-drivers/ebs-cloud-credentials
-	// - cloud-network-config-controller/cloud-credentials
-	//
-	// Each role has unique permission requirements whose documentation is TBD.
-	//
-	// TODO(dan): revisit this field; it's really 3 required fields with specific content requirements
+	// Roles contains references to various AWS IAM roles required to enable
+	// integrations such as OIDC.
 	//
 	// +immutable
-	Roles []AWSRoleCredentials `json:"roles,omitempty"`
+	Roles AWSRoles `json:"roles"`
 
 	// KubeCloudControllerCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the cloud controller policy. The
@@ -878,10 +869,155 @@ type AWSResourceTag struct {
 	Value string `json:"value"`
 }
 
-type AWSRoleCredentials struct {
-	ARN       string `json:"arn"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+// AWSRoles contains references to various AWS IAM roles required to enable
+// integrations such as OIDC.
+type AWSRoles struct {
+	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
+	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+	// Example:
+	// {
+	//		"Version": "2012-10-17",
+	//		"Statement": [
+	//			{
+	//				"Effect": "Allow",
+	//				"Principal": {
+	//					"Federated": "{{ .ProviderARN }}"
+	//				},
+	//					"Action": "sts:AssumeRoleWithWebIdentity",
+	//				"Condition": {
+	//					"StringEquals": {
+	//						"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
+	//					}
+	//				}
+	//			}
+	//		]
+	//	}
+	//
+	// IngressARN is an ARN value referencing a role used for ingress OIDC
+	// integration.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"elasticloadbalancing:DescribeLoadBalancers",
+	//				"tag:GetResources",
+	//				"route53:ListHostedZones"
+	//			],
+	//			"Resource": "*"
+	//		},
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"route53:ChangeResourceRecordSets"
+	//			],
+	//			"Resource": [
+	//				"arn:aws:route53:::PUBLIC_ZONE_ID",
+	//				"arn:aws:route53:::PRIVATE_ZONE_ID"
+	//			]
+	//		}
+	//	]
+	// }
+	IngressARN string `json:"ingressARN"`
+
+	// ImageRegistryARN is an ARN value referencing a role used for image
+	// registry OIDC integration.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"s3:CreateBucket",
+	//				"s3:DeleteBucket",
+	//				"s3:PutBucketTagging",
+	//				"s3:GetBucketTagging",
+	//				"s3:PutBucketPublicAccessBlock",
+	//				"s3:GetBucketPublicAccessBlock",
+	//				"s3:PutEncryptionConfiguration",
+	//				"s3:GetEncryptionConfiguration",
+	//				"s3:PutLifecycleConfiguration",
+	//				"s3:GetLifecycleConfiguration",
+	//				"s3:GetBucketLocation",
+	//				"s3:ListBucket",
+	//				"s3:GetObject",
+	//				"s3:PutObject",
+	//				"s3:DeleteObject",
+	//				"s3:ListBucketMultipartUploads",
+	//				"s3:AbortMultipartUpload",
+	//				"s3:ListMultipartUploadParts"
+	//			],
+	//			"Resource": "*"
+	//		}
+	//	]
+	// }
+	ImageRegistryARN string `json:"imageRegistryARN"`
+
+	// StorageOIDC is an ARN value referencing a role used for storage driver OIDC
+	// integration.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"ec2:AttachVolume",
+	//				"ec2:CreateSnapshot",
+	//				"ec2:CreateTags",
+	//				"ec2:CreateVolume",
+	//				"ec2:DeleteSnapshot",
+	//				"ec2:DeleteTags",
+	//				"ec2:DeleteVolume",
+	//				"ec2:DescribeInstances",
+	//				"ec2:DescribeSnapshots",
+	//				"ec2:DescribeTags",
+	//				"ec2:DescribeVolumes",
+	//				"ec2:DescribeVolumesModifications",
+	//				"ec2:DetachVolume",
+	//				"ec2:ModifyVolume"
+	//			],
+	//			"Resource": "*"
+	//		}
+	//	]
+	// }
+	StorageARN string `json:"storageARN"`
+
+	// NetworkOIDC is an ARN value referencing a role used for networking OIDC
+	// integration.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"ec2:DescribeInstances",
+	//        "ec2:DescribeInstanceStatus",
+	//        "ec2:DescribeInstanceTypes",
+	//        "ec2:UnassignPrivateIpAddresses",
+	//        "ec2:AssignPrivateIpAddresses",
+	//        "ec2:UnassignIpv6Addresses",
+	//        "ec2:AssignIpv6Addresses",
+	//        "ec2:DescribeSubnets",
+	//        "ec2:DescribeNetworkInterfaces"
+	//			],
+	//			"Resource": "*"
+	//		}
+	//	]
+	// }
+	NetworkARN string `json:"networkARN"`
 }
 
 // AWSServiceEndpoint stores the configuration for services to

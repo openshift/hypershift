@@ -42,12 +42,12 @@ type CreateIAMOptions struct {
 }
 
 type CreateIAMOutput struct {
-	Region      string                       `json:"region"`
-	ProfileName string                       `json:"profileName"`
-	InfraID     string                       `json:"infraID"`
-	IssuerURL   string                       `json:"issuerURL"`
-	Roles       []hyperv1.AWSRoleCredentials `json:"roles"`
-	KMSKeyARN   string                       `json:"kmsKeyARN"`
+	Region      string           `json:"region"`
+	ProfileName string           `json:"profileName"`
+	InfraID     string           `json:"infraID"`
+	IssuerURL   string           `json:"issuerURL"`
+	Roles       hyperv1.AWSRoles `json:"roles"`
+	KMSKeyARN   string           `json:"kmsKeyARN"`
 
 	KubeCloudControllerRoleARN  string `json:"kubeCloudControllerRoleARN"`
 	NodePoolManagementRoleARN   string `json:"nodePoolManagementRoleARN"`
