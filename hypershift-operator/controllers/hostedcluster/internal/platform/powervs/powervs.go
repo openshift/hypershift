@@ -98,7 +98,7 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 					{
 						Name:            "manager",
 						Image:           imageCAPIBM,
-						ImagePullPolicy: corev1.PullAlways,
+						ImagePullPolicy: corev1.PullIfNotPresent,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "credentials",

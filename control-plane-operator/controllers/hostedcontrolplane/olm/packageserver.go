@@ -26,7 +26,7 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
-			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullAlways
+			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 			deployment.Spec.Template.Spec.Containers[i].Resources.Requests = corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("15Mi"),
