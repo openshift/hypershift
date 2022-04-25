@@ -1104,7 +1104,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the Ignition server
-	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster, utilitiesImage, defaultIngressDomain); err != nil {
+	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster, utilitiesImage, hcp, defaultIngressDomain); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
 
@@ -1612,8 +1612,7 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, utilitiesImage, defaultIngressDomain string) error {
-
+func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, utilitiesImage string, hcp *hyperv1.HostedControlPlane, defaultIngressDomain string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -1764,7 +1763,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 	}
 
 	role := ignitionserver.Role(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
+	if result, err := createOrUpdate(ctx, r.Client, role, func() error {
 		role.Rules = []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{""},
@@ -1786,18 +1785,22 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition role: %w", err)
+	} else {
+		log.Info("Reconciled ignition role", "result", result)
 	}
 
 	sa := ignitionserver.ServiceAccount(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+	if result, err := createOrUpdate(ctx, r.Client, sa, func() error {
 		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
+	} else {
+		log.Info("Reconciled ignition server service account", "result", result)
 	}
 
 	roleBinding := ignitionserver.RoleBinding(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, roleBinding, func() error {
+	if result, err := createOrUpdate(ctx, r.Client, roleBinding, func() error {
 		roleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
@@ -1814,11 +1817,13 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition RoleBinding: %w", err)
+	} else {
+		log.Info("Reconciled ignition server rolebinding", "result", result)
 	}
 
 	// Reconcile deployment
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, ignitionServerDeployment, func() error {
+	if result, err := createOrUpdate(ctx, r.Client, ignitionServerDeployment, func() error {
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
@@ -1851,6 +1856,12 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 								Secret: &corev1.SecretVolumeSource{
 									SecretName: servingCertSecret.Name,
 								},
+							},
+						},
+						{
+							Name: "payloads",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
 					},
@@ -1906,6 +1917,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 									Name:          "https",
 									ContainerPort: 9090,
 								},
+								{
+									Name:          "metrics",
+									ContainerPort: 8080,
+								},
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
@@ -1917,6 +1932,10 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 								{
 									Name:      "serving-cert",
 									MountPath: "/var/run/secrets/ignition/serving-cert",
+								},
+								{
+									Name:      "payloads",
+									MountPath: "/payloads",
 								},
 							},
 						},
@@ -1959,6 +1978,34 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
+	} else {
+		log.Info("Reconciled ignition server deployment", "result", result)
+	}
+
+	// Reconcile PodMonitor
+	podMonitor := ignitionserver.PodMonitor(controlPlaneNamespace.Name)
+	if result, err := createOrUpdate(ctx, r.Client, podMonitor, func() error {
+		podMonitor.Spec.Selector = *ignitionServerDeployment.Spec.Selector
+		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
+			Interval: "15s",
+			Port:     "metrics",
+		}}
+		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace.Name}}
+		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
+			APIVersion: hyperv1.GroupVersion.String(),
+			Kind:       "HostedControlPlane",
+			Name:       hcp.Name,
+			UID:        hcp.UID,
+		}})
+		if podMonitor.Annotations == nil {
+			podMonitor.Annotations = map[string]string{}
+		}
+		podMonitor.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition server pod monitor: %w", err)
+	} else {
+		log.Info("Reconciled ignition server podmonitor", "result", result)
 	}
 
 	return nil

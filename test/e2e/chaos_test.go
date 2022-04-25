@@ -82,7 +82,7 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 
 		// Get a client for the cluster
 		t.Logf("Waiting for guest client to become available")
-		guestClient := e2eutil.WaitForGuestClient(t, testContext, client, cluster)
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, cluster)
 
 		// Create data in the cluster which should survive the ensuring chaos
 		value, _ := time.Now().MarshalText()
@@ -170,7 +170,7 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 
 		// Get a client for the cluster
 		t.Logf("Waiting for guest client to become available")
-		guestClient := e2eutil.WaitForGuestClient(t, testContext, client, cluster)
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, client, cluster)
 
 		// Create data in the cluster which should survive the ensuring chaos
 		value, _ := time.Now().MarshalText()

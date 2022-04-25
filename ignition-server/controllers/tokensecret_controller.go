@@ -14,11 +14,13 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
@@ -35,6 +37,29 @@ const (
 	// https://github.com/kubernetes-sigs/controller-runtime/blob/1e4d87c9f9e15e4a58bb81909dd787f30ede7693/pkg/cache/cache.go#L118
 	ttl = time.Hour * 11
 )
+
+var (
+	TokenRotationTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "ign_server_token_rotation_total",
+	})
+
+	PayloadCacheMissTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "ign_server_payload_cache_miss_total",
+	})
+
+	PayloadGenerationSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "ign_server_payload_generation_seconds",
+		Buckets: []float64{5, 15, 30, 45, 60},
+	})
+)
+
+func init() {
+	metrics.Registry.MustRegister(
+		TokenRotationTotal,
+		PayloadCacheMissTotal,
+		PayloadGenerationSeconds,
+	)
+}
 
 func NewPayloadStore() *ExpiringCache {
 	return &ExpiringCache{
@@ -199,20 +224,32 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			if err := r.rotateToken(ctx, tokenSecret, value, now); err != nil {
 				return ctrl.Result{}, err
 			}
+			TokenRotationTotal.Inc()
 		}
 		return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 	}
 
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
 	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
-	config, err := decompress(compressedConfig)
+	config, err := Decompress(compressedConfig)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, string(config))
+	PayloadCacheMissTotal.Inc()
+	payload, err := func() ([]byte, error) {
+		start := time.Now()
+		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, string(config))
+		if err != nil {
+			return nil, fmt.Errorf("error getting ignition payload: %v", err)
+		}
+		duration := time.Since(start).Round(time.Second).Seconds()
+		log.Info("got ignition payload", "duration", duration)
+		PayloadGenerationSeconds.Observe(duration)
+		return payload, err
+	}()
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("error getting ignition payload: %v", err)
+		return ctrl.Result{}, err
 	}
 
 	log.Info("IgnitionProvider generated payload")
@@ -226,7 +263,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 }
 
-func decompress(content []byte) ([]byte, error) {
+func Decompress(content []byte) ([]byte, error) {
 	if len(content) == 0 {
 		return nil, nil
 	}

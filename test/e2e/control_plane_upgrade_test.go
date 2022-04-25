@@ -33,33 +33,33 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	// Sanity check the cluster by waiting for the nodes to report ready
 	t.Logf("Waiting for guest client to become available")
-	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
+	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
 
 	// Wait for the first rollout to be complete
 	t.Logf("Waiting for initial cluster rollout. Image: %s", globalOpts.PreviousReleaseImage)
-	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.PreviousReleaseImage)
-	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.PreviousReleaseImage)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
 	// Update the cluster image
 	t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
-	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 	hostedCluster.Spec.Release.Image = globalOpts.LatestReleaseImage
-	err = client.Update(testContext, hostedCluster)
+	err = client.Update(ctx, hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
 	// Wait for the new rollout to be complete
 	t.Logf("waiting for updated cluster image rollout. Image: %s", globalOpts.LatestReleaseImage)
-	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
-	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.LatestReleaseImage)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
+	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, client, hostedCluster)

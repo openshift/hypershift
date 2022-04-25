@@ -41,22 +41,22 @@ func TestAutoscaling(t *testing.T) {
 			Name:      e2eutil.NodePoolName(hostedCluster.Name, zone),
 		},
 	}
-	err = client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 	t.Logf("Created nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
 
 	// Perform some very basic assertions about the guest cluster
-	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
+	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 	// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	nodes := e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
+	nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
-	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.LatestReleaseImage)
 
 	// Enable autoscaling.
-	err = client.Get(testContext, crclient.ObjectKeyFromObject(nodepool), nodepool)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 	var max int32 = 2
 
@@ -70,7 +70,7 @@ func TestAutoscaling(t *testing.T) {
 		Max: max,
 	}
 	nodepool.Spec.NodeCount = nil
-	err = client.Update(testContext, nodepool)
+	err = client.Update(ctx, nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool")
 	t.Logf("Enabled autoscaling. Namespace: %s, name: %s, min: %v, max: %v", nodepool.Namespace, nodepool.Name, min, max)
 
@@ -89,18 +89,18 @@ func TestAutoscaling(t *testing.T) {
 	// node.
 	workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.6*float32(bytes)))
 	workload := newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage, zone)
-	err = guestClient.Create(testContext, workload)
+	err = guestClient.Create(ctx, workload)
 	g.Expect(err).NotTo(HaveOccurred())
 	t.Logf("Created workload. Node: %s, memcapacity: %s", nodes[0].Name, memCapacity.String())
 
 	// Wait for one more node.
 	// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
 	numNodes = numNodes + 1
-	_ = e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
+	_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
 
 	// Delete workload.
 	cascadeDelete := metav1.DeletePropagationForeground
-	err = guestClient.Delete(testContext, workload, &crclient.DeleteOptions{
+	err = guestClient.Delete(ctx, workload, &crclient.DeleteOptions{
 		PropagationPolicy: &cascadeDelete,
 	})
 	g.Expect(err).NotTo(HaveOccurred())
@@ -108,7 +108,7 @@ func TestAutoscaling(t *testing.T) {
 
 	// Wait for one less node.
 	numNodes = numNodes - 1
-	_ = e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
+	_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
 
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }
