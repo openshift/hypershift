@@ -133,6 +133,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
 	g := NewWithT(t)
+	start := time.Now()
 
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
@@ -163,12 +164,13 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
-	t.Logf("All nodes for nodepool appear to be ready. Count: %v", n)
+	t.Logf("All nodes for nodepool appear to be ready in %s. Count: %v", time.Since(start).Round(time.Second), n)
 	return nodes.Items
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	g := NewWithT(t)
+	start := time.Now()
 
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
@@ -195,11 +197,12 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
 
-	t.Logf("Observed hostedcluster to have successfully rolled out image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
+	t.Logf("Observed hostedcluster to have successfully rolled out image in %s. Namespace: %s, name: %s, image: %s", time.Since(start).Round(time.Second), hostedCluster.Namespace, hostedCluster.Name, image)
 }
 
 func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	g := NewWithT(t)
+	start := time.Now()
 
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
@@ -236,7 +239,7 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
 
-	t.Logf("Observed hostedcluster to have successfully rolled out image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
+	t.Logf("Observed hostedcluster to have successfully rolled out image in %s. Namespace: %s, name: %s, image: %s", time.Since(start).Round(time.Second), hostedCluster.Namespace, hostedCluster.Name, image)
 }
 
 // WaitForNodePoolVersion blocks until the NodePool status indicates the given
@@ -244,6 +247,7 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 // test will get an error.
 func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool, version string) {
 	g := NewWithT(t)
+	start := time.Now()
 
 	t.Logf("Waiting for nodepool %s/%s to report version %s (currently %s)", nodePool.Namespace, nodePool.Name, version, nodePool.Status.Version)
 	err := wait.PollImmediateUntil(10*time.Second, func() (done bool, err error) {
@@ -257,7 +261,7 @@ func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.C
 	}, ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for nodepool version")
 
-	t.Logf("Observed nodepool %s/%s to report version %s", nodePool.Namespace, nodePool.Name, version)
+	t.Logf("Observed nodepool %s/%s to report version %s in %s", nodePool.Namespace, nodePool.Name, version, time.Since(start).Round(time.Second))
 }
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
