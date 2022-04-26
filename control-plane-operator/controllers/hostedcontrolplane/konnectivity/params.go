@@ -33,22 +33,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		ExternalPort:            externalPort,
 		OwnerRef:                config.OwnerRefFrom(hcp),
 	}
-	p.ServerDeploymentConfig.LivenessProbes = config.LivenessProbes{
-		konnectivityServerContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
-	}
 	p.ServerDeploymentConfig.ReadinessProbes = config.ReadinessProbes{
 		konnectivityServerContainer().Name: {
 			ProbeHandler: corev1.ProbeHandler{
@@ -89,22 +73,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.AgentDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.AgentDeploymentConfig.LivenessProbes = config.LivenessProbes{
-		konnectivityAgentContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
-	}
 	p.AgentDeploymentConfig.Replicas = 1
 	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
 		p.AgentDeploymentConfig.Replicas = 3
@@ -125,22 +93,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 	p.AgentDeamonSetConfig.Scheduling = config.Scheduling{
 		PriorityClass: systemNodeCriticalPriorityClass,
-	}
-	p.AgentDeamonSetConfig.LivenessProbes = config.LivenessProbes{
-		konnectivityAgentContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
 	}
 
 	// non root security context if scc capability is missing

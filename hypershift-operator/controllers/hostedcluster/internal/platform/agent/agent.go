@@ -93,16 +93,6 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 							"--leader-elect",
 							"--agent-namespace", hcluster.Spec.Platform.Agent.AgentNamespace,
 						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path: "/healthz",
-									Port: intstr.FromInt(8081),
-								},
-							},
-							InitialDelaySeconds: 15,
-							PeriodSeconds:       20,
-						},
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{

@@ -70,22 +70,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 			TimeoutSeconds:      5,
 		},
 	}
-	p.DeploymentConfig.LivenessProbes = config.LivenessProbes{
-		ingressOperatorContainerName: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/metrics",
-					Port:   intstr.FromInt(ingressOperatorMetricsPort),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 60,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    5,
-			TimeoutSeconds:      5,
-		},
-	}
 
 	return p
 }

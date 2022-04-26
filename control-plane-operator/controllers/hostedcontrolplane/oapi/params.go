@@ -61,22 +61,6 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 		Scheduling: config.Scheduling{
 			PriorityClass: config.APICriticalPriorityClass,
 		},
-		LivenessProbes: config.LivenessProbes{
-			oasContainerMain().Name: {
-				ProbeHandler: corev1.ProbeHandler{
-					HTTPGet: &corev1.HTTPGetAction{
-						Scheme: corev1.URISchemeHTTPS,
-						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
-						Path:   "healthz",
-					},
-				},
-				InitialDelaySeconds: 30,
-				TimeoutSeconds:      10,
-				PeriodSeconds:       10,
-				FailureThreshold:    3,
-				SuccessThreshold:    1,
-			},
-		},
 		ReadinessProbes: config.ReadinessProbes{
 			oasContainerMain().Name: {
 				ProbeHandler: corev1.ProbeHandler{
@@ -108,22 +92,6 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
 			PriorityClass: config.APICriticalPriorityClass,
-		},
-		LivenessProbes: config.LivenessProbes{
-			oauthContainerMain().Name: {
-				ProbeHandler: corev1.ProbeHandler{
-					HTTPGet: &corev1.HTTPGetAction{
-						Scheme: corev1.URISchemeHTTPS,
-						Port:   intstr.FromInt(int(OpenShiftOAuthAPIServerPort)),
-						Path:   "healthz",
-					},
-				},
-				InitialDelaySeconds: 30,
-				TimeoutSeconds:      1,
-				PeriodSeconds:       10,
-				FailureThreshold:    3,
-				SuccessThreshold:    1,
-			},
 		},
 		ReadinessProbes: config.ReadinessProbes{
 			oauthContainerMain().Name: {

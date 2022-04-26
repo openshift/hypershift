@@ -43,23 +43,6 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 			},
 		},
 	}
-
-	params.LivenessProbes = config.LivenessProbes{
-		hccContainerMain().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
-					Port:   intstr.FromInt(6060),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 60,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    5,
-			TimeoutSeconds:      5,
-		},
-	}
 	params.ReadinessProbes = config.ReadinessProbes{
 		hccContainerMain().Name: {
 			ProbeHandler: corev1.ProbeHandler{

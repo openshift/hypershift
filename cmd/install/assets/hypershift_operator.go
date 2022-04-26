@@ -188,20 +188,6 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								fmt.Sprintf("--txt-owner-id=%s", uuid.NewString()),
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path:   "/healthz",
-										Port:   intstr.FromInt(7979),
-										Scheme: corev1.URISchemeHTTP,
-									},
-								},
-								InitialDelaySeconds: 60,
-								PeriodSeconds:       60,
-								SuccessThreshold:    1,
-								FailureThreshold:    5,
-								TimeoutSeconds:      5,
-							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceMemory: resource.MustParse("20Mi"),
@@ -471,20 +457,6 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							Env:             envVars,
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            args,
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path:   "/metrics",
-										Port:   intstr.FromInt(9000),
-										Scheme: corev1.URISchemeHTTP,
-									},
-								},
-								InitialDelaySeconds: int32(60),
-								PeriodSeconds:       int32(60),
-								SuccessThreshold:    int32(1),
-								FailureThreshold:    int32(5),
-								TimeoutSeconds:      int32(5),
-							},
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{

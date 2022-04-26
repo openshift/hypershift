@@ -3,7 +3,6 @@ package konnectivity
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/config"
@@ -39,22 +38,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		PriorityClass: systemNodeCriticalPriorityClass,
 		// Always run, even if nodes are not ready e.G. because there are networking issues as this helps a lot in debugging
 		Tolerations: []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
-	}
-	p.DeploymentConfig.LivenessProbes = config.LivenessProbes{
-		konnectivityAgentContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
 	}
 	// check apiserver-network-proxy image in ocp payload and use it
 	if _, ok := images["apiserver-network-proxy"]; ok {
