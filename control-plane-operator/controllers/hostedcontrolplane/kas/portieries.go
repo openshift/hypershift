@@ -30,7 +30,7 @@ func kasContainerPortieries() *corev1.Container {
 func buildKASContainerPortieries(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"/portieris",
 		}

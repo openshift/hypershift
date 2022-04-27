@@ -52,6 +52,7 @@ func TestCreateCluster(t *testing.T) {
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, client, hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, client, hostedCluster)
 }

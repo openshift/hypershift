@@ -1869,7 +1869,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 						{
 							Name:            ignitionserver.ResourceName,
 							Image:           utilitiesImage,
-							ImagePullPolicy: corev1.PullAlways,
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
 								{
 									Name: "MY_NAMESPACE",
@@ -2306,7 +2306,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 			Name:            "token-minter",
 			Image:           utilitiesImage,
-			ImagePullPolicy: corev1.PullAlways,
+			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/usr/bin/control-plane-operator", "token-minter"},
 			Args: []string{
 				"--service-account-namespace=kube-system",
@@ -2908,7 +2908,7 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 					{
 						Name:            "cluster-autoscaler",
 						Image:           clusterAutoscalerImage,
-						ImagePullPolicy: corev1.PullAlways,
+						ImagePullPolicy: corev1.PullIfNotPresent,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "target-kubeconfig",
@@ -3768,7 +3768,7 @@ func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyper
 					{
 						Name:            "machine-approver-controller",
 						Image:           machineApproverImage,
-						ImagePullPolicy: corev1.PullAlways,
+						ImagePullPolicy: corev1.PullIfNotPresent,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "kubeconfig",
