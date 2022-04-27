@@ -2,11 +2,12 @@ package assets
 
 import (
 	"fmt"
+	"testing"
+
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"testing"
 )
 
 func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
@@ -110,7 +111,14 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				},
 				Replicas:         3,
 				PrivatePlatform:  string(hyperv1.AWSPlatform),
-				OIDCBucketRegion: "us-east-1",
+				AWSPrivateRegion: "us-east-1",
+				AWSPrivateSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: awsCredsSecretName,
+					},
+				},
+				AWSPrivateSecretKey: "mykey",
+				OIDCBucketRegion:    "us-east-1",
 				OIDCStorageProviderS3Secret: &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "oidc-s3-secret",
