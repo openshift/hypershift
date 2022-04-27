@@ -111,7 +111,7 @@ func TestNoneCreateCluster(t *testing.T) {
 	// Since the None platform has no workers, CVO will not have expectations set,
 	// which in turn means that the ClusterVersion object will never be populated.
 	// Therefore only test if the control plane comes up (etc, apiserver, ...)
-	e2eutil.WaitForConditionsOnHostedControlPlane(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
+	e2eutil.WaitForConditionsOnHostedControlPlane(t, ctx, client, hostedCluster, globalOpts.LatestReleaseImage)
 
 	// etcd restarts for me once always and apiserver two times before running stable
 	// e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
