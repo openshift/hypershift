@@ -61,7 +61,6 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 
 const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
-	awsCredsSecretKey             = "credentials"
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
 	externaDNSCredsSecretName     = "external-dns-credentials"
 )
@@ -69,6 +68,7 @@ const (
 type HyperShiftOperatorCredentialsSecret struct {
 	Namespace  *corev1.Namespace
 	CredsBytes []byte
+	CredsKey   string
 }
 
 func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
@@ -82,7 +82,7 @@ func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 			Namespace: o.Namespace.Name,
 		},
 		Data: map[string][]byte{
-			awsCredsSecretKey: o.CredsBytes,
+			o.CredsKey: o.CredsBytes,
 		},
 	}
 	return secret
@@ -260,7 +260,8 @@ type HyperShiftOperatorDeployment struct {
 	EnableCIDebugOutput            bool
 	EnableWebhook                  bool
 	PrivatePlatform                string
-	AWSPrivateCreds                string
+	AWSPrivateSecret               *corev1.Secret
+	AWSPrivateSecretKey            string
 	AWSPrivateRegion               string
 	OIDCBucketName                 string
 	OIDCBucketRegion               string
@@ -353,7 +354,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Name: "credentials",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: awsCredsSecretName,
+					SecretName: o.AWSPrivateSecret.Name,
 				},
 			},
 		})
@@ -368,11 +369,15 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			envVars = append(envVars,
 				corev1.EnvVar{
 					Name:  "AWS_SHARED_CREDENTIALS_FILE",
-					Value: "/etc/provider/credentials",
+					Value: "/etc/provider/" + o.AWSPrivateSecretKey,
 				},
 				corev1.EnvVar{
 					Name:  "AWS_REGION",
 					Value: o.AWSPrivateRegion,
+				},
+				corev1.EnvVar{
+					Name:  "AWS_SDK_LOAD_CONFIG",
+					Value: "1",
 				})
 			volumeMounts = append(volumeMounts, corev1.VolumeMount{
 				Name:      "token",

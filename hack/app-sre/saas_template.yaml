@@ -301,7 +301,7 @@ objects:
           - --metrics-addr=:9000
           - --enable-ocp-cluster-monitoring=false
           - --enable-ci-debug-output=false
-          - --private-platform=None
+          - --private-platform=AWS
           - --oidc-storage-provider-s3-bucket-name=${OIDC_S3_NAME}
           - --oidc-storage-provider-s3-region=${OIDC_S3_REGION}
           - --oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/${OIDC_S3_CREDS_SECRET_KEY}
@@ -312,6 +312,12 @@ objects:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          - name: AWS_SHARED_CREDENTIALS_FILE
+            value: /etc/provider/${AWS_PRIVATE_CREDS_SECRET_KEY}
+          - name: AWS_REGION
+            value: ${AWS_PRIVATE_CREDS_SECRET}
+          - name: AWS_SDK_LOAD_CONFIG
+            value: "1"
           image: ${OPERATOR_IMG}:${IMAGE_TAG}
           imagePullPolicy: Always
           livenessProbe:
@@ -351,12 +357,25 @@ objects:
           volumeMounts:
           - mountPath: /etc/oidc-storage-provider-s3-creds
             name: oidc-storage-provider-s3-creds
+          - mountPath: /etc/provider
+            name: credentials
+          - mountPath: /var/run/secrets/openshift/serviceaccount
+            name: token
         priorityClassName: hypershift-operator
         serviceAccountName: operator
         volumes:
         - name: oidc-storage-provider-s3-creds
           secret:
             secretName: ${OIDC_S3_CREDS_SECRET}
+        - name: credentials
+          secret:
+            secretName: ${AWS_PRIVATE_CREDS_SECRET}
+        - name: token
+          projected:
+            sources:
+            - serviceAccountToken:
+                audience: openshift
+                path: token
   status: {}
 - apiVersion: v1
   kind: Service
@@ -27881,6 +27900,12 @@ parameters:
 - name: OIDC_S3_CREDS_SECRET
   value: oidc-s3-creds
 - name: OIDC_S3_CREDS_SECRET_KEY
+  value: credentials
+- name: AWS_PRIVATE_REGION
+  value: eu-east-1
+- name: AWS_PRIVATE_CREDS_SECRET
+  value: aws-credentials
+- name: AWS_PRIVATE_CREDS_SECRET_KEY
   value: credentials
 - name: OPERATOR_REPLICAS
   value: "1"

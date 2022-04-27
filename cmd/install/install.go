@@ -56,6 +56,8 @@ type Options struct {
 	EnableCIDebugOutput                       bool
 	PrivatePlatform                           string
 	AWSPrivateCreds                           string
+	AWSPrivateCredentialsSecret               string
+	AWSPrivateCredentialsSecretKey            string
 	AWSPrivateRegion                          string
 	OIDCStorageProviderS3Region               string
 	OIDCStorageProviderS3BucketName           string
@@ -74,8 +76,8 @@ func (o *Options) Validate() error {
 
 	switch hyperv1.PlatformType(o.PrivatePlatform) {
 	case hyperv1.AWSPlatform:
-		if o.AWSPrivateCreds == "" || o.AWSPrivateRegion == "" {
-			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds are required with --private-platform=%s", hyperv1.AWSPlatform))
+		if (o.AWSPrivateCreds == "" && o.AWSPrivateCredentialsSecret == "") || o.AWSPrivateRegion == "" {
+			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds or --aws-private-secret are required with --private-platform=%s", hyperv1.AWSPlatform))
 		}
 	case hyperv1.NonePlatform:
 	default:
@@ -144,6 +146,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
 	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
+	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecret, "aws-private-secret", "", "Name of an existing secret containing the AWS private link credentials.")
+	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecretKey, "aws-private-secret-key", "credentials", "Name of the secret key containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegion, "aws-private-region", opts.AWSPrivateRegion, "AWS region where private clusters are supported by this operator")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "Region of the OIDC bucket. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
@@ -308,6 +312,31 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		}
 	}
 
+	var operatorCredentialsSecret *corev1.Secret
+	switch hyperv1.PlatformType(opts.PrivatePlatform) {
+	case hyperv1.AWSPlatform:
+		if opts.AWSPrivateCreds != "" {
+			credBytes, err := ioutil.ReadFile(opts.AWSPrivateCreds)
+			if err != nil {
+				return objects, err
+			}
+
+			operatorCredentialsSecret = assets.HyperShiftOperatorCredentialsSecret{
+				Namespace:  operatorNamespace,
+				CredsBytes: credBytes,
+				CredsKey:   opts.AWSPrivateCredentialsSecretKey,
+			}.Build()
+			objects = append(objects, operatorCredentialsSecret)
+		} else if opts.AWSPrivateCredentialsSecret != "" {
+			operatorCredentialsSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: operatorNamespace.Name,
+					Name:      opts.AWSPrivateCredentialsSecret,
+				},
+			}
+		}
+	}
+
 	var userCABundleCM *corev1.ConfigMap
 	if opts.AdditionalTrustBundle != "" {
 		userCABundle, err := ioutil.ReadFile(opts.AdditionalTrustBundle)
@@ -385,7 +414,8 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		EnableWebhook:                  opts.EnableWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,
 		AWSPrivateRegion:               opts.AWSPrivateRegion,
-		AWSPrivateCreds:                opts.AWSPrivateCreds,
+		AWSPrivateSecret:               operatorCredentialsSecret,
+		AWSPrivateSecretKey:            opts.AWSPrivateCredentialsSecretKey,
 		OIDCBucketName:                 opts.OIDCStorageProviderS3BucketName,
 		OIDCBucketRegion:               opts.OIDCStorageProviderS3Region,
 		OIDCStorageProviderS3Secret:    oidcSecret,
@@ -420,21 +450,6 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		Namespace: operatorNamespace,
 	}.Build()
 	objects = append(objects, recordingRule)
-
-	var credBytes []byte
-	switch hyperv1.PlatformType(opts.PrivatePlatform) {
-	case hyperv1.AWSPlatform:
-		var err error
-		credBytes, err = ioutil.ReadFile(opts.AWSPrivateCreds)
-		if err != nil {
-			return objects, err
-		}
-		operatorCredentialsSecret := assets.HyperShiftOperatorCredentialsSecret{
-			Namespace:  operatorNamespace,
-			CredsBytes: credBytes,
-		}.Build()
-		objects = append(objects, operatorCredentialsSecret)
-	}
 
 	objects = append(objects, assets.CustomResourceDefinitions(func(path string) bool {
 		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
