@@ -61,6 +61,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "container disk image to use for kubevirt nodes")
+	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "4Gi", "the amount of memory to provide to each workload node")
 	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
 	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
@@ -212,6 +213,7 @@ type configurableClusterOptions struct {
 	AWSEndpointAccess          string
 	ExternalDNSDomain          string
 	KubeVirtContainerDiskImage string
+	KubeVirtNodeMemory         string
 	NodePoolReplicas           int
 }
 
@@ -238,7 +240,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
 			ContainerDiskImage:        o.configurableClusterOptions.KubeVirtContainerDiskImage,
 			Cores:                     2,
-			Memory:                    "4Gi",
+			Memory:                    o.configurableClusterOptions.KubeVirtNodeMemory,
 		},
 		AzurePlatform: core.AzurePlatformOptions{
 			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
