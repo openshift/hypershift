@@ -117,9 +117,11 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	var guestClient crclient.Client
 	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	err = wait.PollUntil(5*time.Second, func() (done bool, err error) {
+	// SOA TTL is 60s. If DNS lookup fails on the api-* name, it is unlikely to succeed in less than 60s.
+	err = wait.PollUntil(35*time.Second, func() (done bool, err error) {
 		kubeClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 		if err != nil {
+			t.Logf("attempt to connect failed: %s", err)
 			return false, nil
 		}
 		guestClient = kubeClient
