@@ -20,7 +20,7 @@ PROMTOOL=GO111MODULE=on GOFLAGS=-mod=vendor go run github.com/prometheus/prometh
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOFLAGS=-mod=vendor go
-GO_BUILD_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS)
+GO_BUILD_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) $(GO_LD_FLAGS)
 GO_E2E_RECIPE=CGO_ENABLED=0 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
 OUT_DIR ?= bin
@@ -36,6 +36,11 @@ endif
 ifeq ("/","${HOME}")
 HOME=/tmp
 endif
+
+# Include the library makefile
+include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/lib/, \
+	golang.mk \
+)
 
 all: build e2e
 

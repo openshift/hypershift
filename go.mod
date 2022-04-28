@@ -23,6 +23,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/openshift/api v0.0.0-20220124143425-d74727069f6f
+	github.com/openshift/build-machinery-go v0.0.0-20220429084610-baff9f8d23b3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
