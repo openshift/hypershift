@@ -216,6 +216,7 @@ func run(ctx context.Context, opts Options) error {
 		}
 
 		w.WriteHeader(http.StatusOK)
+		log.Println(string(value.Payload))
 		w.Write(value.Payload)
 	})
 
