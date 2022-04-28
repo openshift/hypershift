@@ -108,6 +108,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		return err
 	}
 	var machineIPs []string
+	var machineInstances []*ec2.Instance
 	for _, reservation := range result.Reservations {
 		for _, instance := range reservation.Instances {
 			skip := false
@@ -121,6 +122,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 				continue
 			}
 			machineIPs = append(machineIPs, aws.StringValue(instance.PrivateIpAddress))
+			machineInstances = append(machineInstances, instance)
 		}
 	}
 
@@ -142,6 +144,9 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	err = scriptCmd.Run()
 	if err != nil {
 		t.Logf("Error copying machine journals to artifacts directory: %v", err)
+		for _, instance := range machineInstances {
+			os.WriteFile(filepath.Join(outputDir, fmt.Sprintf("instance-%s.txt", aws.StringValue(instance.InstanceId))), []byte(instance.String()), 0644)
+		}
 	} else {
 		t.Logf("Successfully copied machine journals to %s", outputDir)
 	}
