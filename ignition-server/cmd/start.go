@@ -116,10 +116,25 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return nil, fmt.Errorf("unable to set up ready check: %w", err)
 	}
-	if err = (&controllers.TokenSecretReconciler{
-		Client:       mgr.GetClient(),
-		PayloadStore: payloadStore,
-		IgnitionProvider: &controllers.LocalIgnitionProvider{
+
+	var ignProvider controllers.IgnitionProvider
+	switch cloudProvider {
+	case hyperv1.AWSPlatform:
+		// TODO: Fix the LocalIgnitionProvider perf regression on AWS
+		ignProvider = &controllers.MCSIgnitionProvider{
+			ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+				RegistryOverrides: registryOverrides,
+			},
+			Client:        mgr.GetClient(),
+			Namespace:     os.Getenv(namespaceEnvVariableName),
+			CloudProvider: cloudProvider,
+		}
+	default:
+		ignProvider = &controllers.LocalIgnitionProvider{
 			ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
 				Delegate: &releaseinfo.CachedProvider{
 					Inner: &releaseinfo.RegistryClientProvider{},
@@ -131,7 +146,13 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 			Namespace:     os.Getenv(namespaceEnvVariableName),
 			CloudProvider: cloudProvider,
 			WorkDir:       cacheDir,
-		},
+		}
+	}
+
+	if err = (&controllers.TokenSecretReconciler{
+		Client:           mgr.GetClient(),
+		PayloadStore:     payloadStore,
+		IgnitionProvider: ignProvider,
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)
 	}
