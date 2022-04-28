@@ -66,7 +66,7 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 	params := &KubeAPIServerParams{
@@ -75,8 +75,8 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		Network:              globalConfig.Network,
 		Image:                globalConfig.Image,
 		Scheduler:            globalConfig.Scheduler,
-		ExternalAddress:      hcp.Status.ControlPlaneEndpoint.Host,
-		ExternalPort:         hcp.Status.ControlPlaneEndpoint.Port,
+		ExternalAddress:      externalAPIAddress,
+		ExternalPort:         externalAPIPort,
 		InternalAddress:      fmt.Sprintf("api.%s.hypershift.local", hcp.Name),
 		InternalPort:         6443,
 		ExternalOAuthAddress: externalOAuthAddress,
