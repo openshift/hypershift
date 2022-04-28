@@ -20,6 +20,7 @@ const (
 	invalidNATGatewayError   = "InvalidNatGatewayID.NotFound"
 	invalidRouteTableID      = "InvalidRouteTableId.NotFound"
 	invalidElasticIPNotFound = "InvalidElasticIpID.NotFound"
+	invalidSubnet            = "InvalidSubnet"
 )
 
 var (
@@ -344,16 +345,28 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 		return "", fmt.Errorf("cannot tag NAT gateway EIP: %w", err)
 	}
 
-	gatewayResult, err := client.CreateNatGateway(&ec2.CreateNatGatewayInput{
-		AllocationId:      aws.String(allocationID),
-		SubnetId:          aws.String(publicSubnetID),
-		TagSpecifications: o.ec2TagSpecifications("natgateway", natGatewayName),
+	isNATGatewayRetriable := func(err error) bool {
+		if awsErr, ok := err.(awserr.Error); ok {
+			return strings.EqualFold(awsErr.Code(), invalidSubnet)
+		}
+		return false
+	}
+	err = retry.OnError(retryBackoff, isNATGatewayRetriable, func() error {
+		gatewayResult, err := client.CreateNatGateway(&ec2.CreateNatGatewayInput{
+			AllocationId:      aws.String(allocationID),
+			SubnetId:          aws.String(publicSubnetID),
+			TagSpecifications: o.ec2TagSpecifications("natgateway", natGatewayName),
+		})
+		if err != nil {
+			return err
+		}
+		natGateway = gatewayResult.NatGateway
+		log.Log.Info("Created NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
+		return nil
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create NAT gateway: %w", err)
 	}
-	natGateway = gatewayResult.NatGateway
-	log.Log.Info("Created NAT gateway", "id", aws.StringValue(natGateway.NatGatewayId))
 
 	natGatewayID := aws.StringValue(natGateway.NatGatewayId)
 	return natGatewayID, nil
