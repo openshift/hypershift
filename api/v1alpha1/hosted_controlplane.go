@@ -195,6 +195,13 @@ type HostedControlPlaneStatus struct {
 	// +kubebuilder:validation:Optional
 	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
+	// OAuthCallbackURLTemplate contains a template for the URL to use as a callback
+	// for identity providers. The [identity-provider-name] placeholder must be replaced
+	// with the name of an identity provider defined on the HostedCluster.
+	// This is populated after the infrastructure is ready.
+	// +kubebuilder:validation:Optional
+	OAuthCallbackURLTemplate string `json:"oauthCallbackURLTemplate,omitempty"`
+
 	// Version is the semantic version of the release applied by
 	// the hosted control plane operator
 	// +kubebuilder:validation:Optional

@@ -1225,6 +1225,13 @@ spec:
                       TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
+              oauthCallbackURLTemplate:
+                description: OAuthCallbackURLTemplate contains a template for the
+                  URL to use as a callback for identity providers. The [identity-provider-name]
+                  placeholder must be replaced with the name of an identity provider
+                  defined on the HostedCluster. This is populated after the infrastructure
+                  is ready.
+                type: string
               version:
                 description: Version is the status of the release version applied
                   to the HostedCluster.
