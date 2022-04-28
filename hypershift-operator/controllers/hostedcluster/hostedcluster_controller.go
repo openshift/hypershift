@@ -512,6 +512,23 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Set the OAuth URL
+	{
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				hcp = nil
+			} else {
+				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+			}
+		}
+		if hcp != nil {
+			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
+		}
+	}
+
 	// Set the ignition server availability condition by checking its deployment.
 	{
 		// Assume the server is unavailable unless proven otherwise.
