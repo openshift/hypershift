@@ -133,6 +133,8 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	outputDir := filepath.Join(artifactDir, "machine-journals")
 	scriptCmd := exec.Command(copyJournalFile.Name(), outputDir)
 	env := os.Environ()
+	env = append(env, fmt.Sprintf("AWS_SHARED_CREDENTIALS_FILE=%s", awsCreds))
+	env = append(env, fmt.Sprintf("INFRAID=%s", hc.Spec.InfraID))
 	env = append(env, fmt.Sprintf("BASTION_IP=%s", bastionIP))
 	env = append(env, fmt.Sprintf("INSTANCE_IPS=%s", strings.Join(machineIPs, " ")))
 	env = append(env, fmt.Sprintf("SSH_PRIVATE_KEY=%s", privateKeyFile))

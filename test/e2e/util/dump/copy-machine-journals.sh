@@ -47,6 +47,27 @@ if [[ -z "${INSTANCE_IPS}" ]]; then
   fi
 fi
 
+function retryonfailure {
+  for i in $(seq 1 10); do
+    echo "Attempt #${i}: $@"
+    if ! "$@"; then
+      sleep 1
+    else 
+      return 0
+    fi
+  done
+  return 1
+}
+
+function dump_instance_info {
+  echo "Failed to ssh to AWS instance, dumping instance information"
+  machine_ip="${1:-}"
+  config_file="${2:-}"
+  cat "${2}" > "${DEST_DIR}/ssh-config-${machine_ip}.txt"
+  aws ec2 describe-instances --filters "Name=tag:kubernetes.io/cluster/${INFRAID},Values=owned" > ${DEST_DIR}/instance-info-${machine_ip}.json
+  return 1
+}
+
 function copylog {
   local machine_ip="${1}"
   local config_file="$(mktemp)"
@@ -67,8 +88,8 @@ Host machine
     ProxyJump              bastion
 EOF
 
-  ssh -F "${config_file}" -n machine "sudo journalctl > /tmp/journal.log && gzip -f /tmp/journal.log"
-  scp -F "${config_file}" machine:/tmp/journal.log.gz "${DEST_DIR}/journal_${machine_ip}.log.gz"
+  retryonfailure ssh -F "${config_file}" -n machine "sudo journalctl > /tmp/journal.log && gzip -f /tmp/journal.log" || dump_instance_info "${machine_ip}" "${config_file}"
+  retryonfailure scp -F "${config_file}" machine:/tmp/journal.log.gz "${DEST_DIR}/journal_${machine_ip}.log.gz"
 }
 
 eval "$(ssh-agent)"
