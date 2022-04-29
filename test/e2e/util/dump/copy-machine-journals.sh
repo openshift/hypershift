@@ -47,6 +47,28 @@ if [[ -z "${INSTANCE_IPS}" ]]; then
   fi
 fi
 
+function retryonfailure {
+  for i in $(seq 1 10); do
+    echo "Attempt #${i}: $@"
+    if ! "$@"; then
+      sleep 1
+    else 
+      return 0
+    fi
+  done
+  return 1
+}
+
+function dump_config {
+  echo "Failed to ssh to AWS instance, dumping ssh configuration"
+  machine_ip="${1:-}"
+  config_file="${2:-}"
+  cat "${config_file}" > "${DEST_DIR}/ssh-config-${machine_ip}.txt"
+  return 1
+}
+
+failed_copy=0
+
 function copylog {
   local machine_ip="${1}"
   local config_file="$(mktemp)"
@@ -67,8 +89,11 @@ Host machine
     ProxyJump              bastion
 EOF
 
-  ssh -F "${config_file}" -n machine "sudo journalctl > /tmp/journal.log && gzip -f /tmp/journal.log"
-  scp -F "${config_file}" machine:/tmp/journal.log.gz "${DEST_DIR}/journal_${machine_ip}.log.gz"
+  if retryonfailure ssh -F "${config_file}" -n machine "sudo journalctl > /tmp/journal.log && gzip -f /tmp/journal.log" || dump_config "${machine_ip}" "${config_file}"; then
+    retryonfailure scp -F "${config_file}" machine:/tmp/journal.log.gz "${DEST_DIR}/journal_${machine_ip}.log.gz"
+  else
+    failed_copy=1
+  fi
 }
 
 eval "$(ssh-agent)"
@@ -82,3 +107,7 @@ mkdir -p "${DEST_DIR}"
 for ip in "${IP_ARRAY[@]}"; do 
   copylog "${ip}"
 done
+
+if [[ "${failed_copy}" == "1" ]]; then
+  exit 1
+fi
