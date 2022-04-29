@@ -71,6 +71,7 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.additionalTags, "e2e.additional-tags", "Additional tags to set on AWS resources")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
+	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
 	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
 
 	flag.Parse()
@@ -215,13 +216,12 @@ type configurableClusterOptions struct {
 	KubeVirtContainerDiskImage string
 	KubeVirtNodeMemory         string
 	NodePoolReplicas           int
+	SSHKeyFile                 string
 }
 
 func (o *options) DefaultClusterOptions() core.CreateOptions {
 	createOption := core.CreateOptions{
 		ReleaseImage:              o.LatestReleaseImage,
-		GenerateSSH:               true,
-		SSHKeyFile:                "",
 		NodePoolReplicas:          int32(o.configurableClusterOptions.NodePoolReplicas),
 		NetworkType:               string(hyperv1.OpenShiftSDN),
 		BaseDomain:                o.configurableClusterOptions.BaseDomain,
@@ -258,6 +258,12 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		createOption.AWSPlatform.Zones = []string{"us-east-1a"}
 	} else {
 		createOption.AWSPlatform.Zones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+	}
+
+	if o.configurableClusterOptions.SSHKeyFile == "" {
+		createOption.GenerateSSH = true
+	} else {
+		createOption.SSHKeyFile = o.configurableClusterOptions.SSHKeyFile
 	}
 
 	return createOption
