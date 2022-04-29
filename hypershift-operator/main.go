@@ -62,11 +62,7 @@ func main() {
 		},
 	}
 
-	if v := version.Get().String(); len(v) == 0 {
-		cmd.Version = "<unknown>"
-	} else {
-		cmd.Version = v
-	}
+	cmd.Version = version.GetRevision()
 
 	cmd.AddCommand(NewStartCommand())
 

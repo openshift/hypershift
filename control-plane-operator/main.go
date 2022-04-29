@@ -62,11 +62,7 @@ func main() {
 	basename := filepath.Base(os.Args[0])
 	cmd := commandFor(basename)
 
-	if v := version.Get().String(); len(v) == 0 {
-		cmd.Version = "<unknown>"
-	} else {
-		cmd.Version = v
-	}
+	cmd.Version = version.GetRevision()
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

@@ -304,9 +304,6 @@ github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
-# github.com/openshift/build-machinery-go v0.0.0-20220429084610-baff9f8d23b3
-## explicit; go 1.13
-github.com/openshift/build-machinery-go/make/lib
 # github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc
 ## explicit; go 1.16
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
