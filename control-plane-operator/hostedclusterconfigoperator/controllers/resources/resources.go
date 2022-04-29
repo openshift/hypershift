@@ -121,6 +121,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.Build{},
 		&configv1.Image{},
 		&configv1.Project{},
+		&configv1.ClusterOperator{},
 		&appsv1.DaemonSet{},
 		&configv1.ClusterOperator{},
 		&configv1.ClusterVersion{},
@@ -399,6 +400,17 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
+
+	// The node tuning cluster operator resource cannot be removed with an annotation in the CVO
+	// like other resources. The CVO treats cluster operator resources differently and attempts to
+	// pre-create them regardless of the annotations. By removing the manifest from the payload, the
+	// CVO should no longer try to sync the node tuning cluster operator. However, we still need to
+	// remove it if upgrading a cluster that had it before.
+	nodeTuningCO := manifests.NodeTuningClusterOperator()
+	if err = r.client.Get(ctx, client.ObjectKeyFromObject(nodeTuningCO), nodeTuningCO); err == nil {
+		log.Info("removing existing node tuning cluster operator")
+		errs = append(errs, r.client.Delete(ctx, nodeTuningCO))
+	}
 
 	return ctrl.Result{}, errors.NewAggregate(errs)
 }
