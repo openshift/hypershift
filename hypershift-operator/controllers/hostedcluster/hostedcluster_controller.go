@@ -2125,8 +2125,8 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, utilitiesImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string, cpoHasUtilities bool) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("44Mi"),
-			corev1.ResourceCPU:    resource.MustParse("1m"),
+			corev1.ResourceMemory: resource.MustParse("80Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
 		},
 	}
 	// preserve existing resource requirements for main cpo container
