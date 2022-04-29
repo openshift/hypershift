@@ -76,7 +76,7 @@ func (o *Options) Validate() error {
 
 	switch hyperv1.PlatformType(o.PrivatePlatform) {
 	case hyperv1.AWSPlatform:
-		if (o.AWSPrivateCreds == "" && o.AWSPrivateCredentialsSecret == "") || o.AWSPrivateRegion == "" {
+		if (len(o.AWSPrivateCreds) == 0 && len(o.AWSPrivateCredentialsSecret) == 0) || len(o.AWSPrivateRegion) == 0 {
 			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds or --aws-private-secret are required with --private-platform=%s", hyperv1.AWSPlatform))
 		}
 	case hyperv1.NonePlatform:
