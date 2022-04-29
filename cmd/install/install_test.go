@@ -12,11 +12,27 @@ func TestOptions_Validate(t *testing.T) {
 		inputOptions Options
 		expectError  bool
 	}{
-		"when aws private platform without private creds and region it errors": {
+		"when aws private platform without private creds or secret reference and region it errors": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.AWSPlatform),
 			},
 			expectError: true,
+		},
+		"when aws private platform with private creds and region there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:  string(hyperv1.AWSPlatform),
+				AWSPrivateCreds:  "/path/to/credentials",
+				AWSPrivateRegion: "us-east-1",
+			},
+			expectError: false,
+		},
+		"when aws private platform with secret and region there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:             string(hyperv1.AWSPlatform),
+				AWSPrivateCredentialsSecret: "my-secret",
+				AWSPrivateRegion:            "us-east-1",
+			},
+			expectError: false,
 		},
 		"when empty private platform is specified it errors": {
 			inputOptions: Options{},

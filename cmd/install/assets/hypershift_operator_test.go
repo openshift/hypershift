@@ -2,11 +2,12 @@ package assets
 
 import (
 	"fmt"
+	"testing"
+
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"testing"
 )
 
 func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
@@ -109,8 +110,68 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 					},
 				},
 				Replicas:         3,
-				PrivatePlatform:  string(hyperv1.AWSPlatform),
+				PrivatePlatform:  string(hyperv1.NonePlatform),
 				OIDCBucketRegion: "us-east-1",
+				OIDCStorageProviderS3Secret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "oidc-s3-secret",
+					},
+				},
+				OIDCBucketName:                 "oidc-bucket",
+				OIDCStorageProviderS3SecretKey: "mykey",
+			},
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--deployment-name=operator",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
+				"--oidc-storage-provider-s3-bucket-name=" + "oidc-bucket",
+				"--oidc-storage-provider-s3-region=" + "us-east-1",
+				"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/" + "mykey",
+			},
+			expectedVolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "oidc-storage-provider-s3-creds",
+					MountPath: "/etc/oidc-storage-provider-s3-creds",
+				},
+			},
+			expectedVolumes: []corev1.Volume{
+				{
+					Name: "oidc-storage-provider-s3-creds",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: "oidc-s3-secret",
+						},
+					},
+				},
+			},
+		},
+		"specify aws private creds and oidc parameters result in appropriate volumes and volumeMounts": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:         3,
+				PrivatePlatform:  string(hyperv1.AWSPlatform),
+				AWSPrivateRegion: "us-east-1",
+				AWSPrivateSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: awsCredsSecretName,
+					},
+				},
+				AWSPrivateSecretKey: "mykey",
+				OIDCBucketRegion:    "us-east-1",
 				OIDCStorageProviderS3Secret: &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "oidc-s3-secret",

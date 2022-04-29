@@ -131,6 +131,10 @@ app-sre-saas-template: hypershift
 		--enable-ocp-cluster-monitoring=false \
 		--enable-ci-debug-output=false \
 		--enable-admin-rbac-generation=true \
+		--private-platform=AWS \
+		--aws-private-region=eu-east-1 \
+		--aws-private-secret=aws-credentials \
+		--aws-private-secret-key=credentials \
 		render --template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
 
 # Run tests

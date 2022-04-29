@@ -16,14 +16,17 @@ var (
 	RenderFormatYaml = "yaml"
 	RenderFormatJson = "json"
 
-	TemplateParamHyperShiftImage      = "OPERATOR_IMG"
-	TemplateParamHyperShiftImageTag   = "IMAGE_TAG"
-	TemplateParamNamespace            = "NAMESPACE"
-	TemplateParamOIDCS3Name           = "OIDC_S3_NAME"
-	TemplateParamOIDCS3Region         = "OIDC_S3_REGION"
-	TemplateParamOIDCS3CredsSecret    = "OIDC_S3_CREDS_SECRET"
-	TemplateParamOIDCS3CredsSecretKey = "OIDC_S3_CREDS_SECRET_KEY"
-	TemplateParamOperatorReplicas     = "OPERATOR_REPLICAS"
+	TemplateParamHyperShiftImage          = "OPERATOR_IMG"
+	TemplateParamHyperShiftImageTag       = "IMAGE_TAG"
+	TemplateParamNamespace                = "NAMESPACE"
+	TemplateParamOIDCS3Name               = "OIDC_S3_NAME"
+	TemplateParamOIDCS3Region             = "OIDC_S3_REGION"
+	TemplateParamOIDCS3CredsSecret        = "OIDC_S3_CREDS_SECRET"
+	TemplateParamOIDCS3CredsSecretKey     = "OIDC_S3_CREDS_SECRET_KEY"
+	TemplateParamAWSPrivateRegion         = "AWS_PRIVATE_REGION"
+	TemplateParamAWSPrivateCredsSecret    = "AWS_PRIVATE_CREDS_SECRET"
+	TemplateParamAWSPrivateCredsSecretKey = "AWS_PRIVATE_CREDS_SECRET_KEY"
+	TemplateParamOperatorReplicas         = "OPERATOR_REPLICAS"
 )
 
 func NewRenderCommand(opts *Options) *cobra.Command {
@@ -112,6 +115,19 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 		opts.OIDCStorageProviderS3Region = fmt.Sprintf("${%s}", TemplateParamOIDCS3Region)
 		opts.OIDCStorageProviderS3CredentialsSecret = fmt.Sprintf("${%s}", TemplateParamOIDCS3CredsSecret)
 		opts.OIDCStorageProviderS3CredentialsSecretKey = fmt.Sprintf("${%s}", TemplateParamOIDCS3CredsSecretKey)
+	}
+
+	// aws private credentials
+	if opts.AWSPrivateCredentialsSecret != "" {
+		templateParameters = append(
+			templateParameters,
+			map[string]string{"name": TemplateParamAWSPrivateRegion, "value": opts.AWSPrivateRegion},
+			map[string]string{"name": TemplateParamAWSPrivateCredsSecret, "value": opts.AWSPrivateCredentialsSecret},
+			map[string]string{"name": TemplateParamAWSPrivateCredsSecretKey, "value": opts.AWSPrivateCredentialsSecretKey},
+		)
+		opts.AWSPrivateRegion = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecret)
+		opts.AWSPrivateCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecret)
+		opts.AWSPrivateCredentialsSecretKey = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecretKey)
 	}
 
 	// create manifests
