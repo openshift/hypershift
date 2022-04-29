@@ -6,7 +6,7 @@ Install a nested OCP cluster running on VMs within a management OCP cluster
 
 * The HyperShift CLI (`hypershift`).
 
-    Install it using Go 1.17+:
+    Install it using Go 1.18+:
        ```shell
        go get -u github.com/openshift/hypershift@latest
        ```
