@@ -90,7 +90,6 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
 	clusterOpts.BaseDomain = defaultIngressOperator.Status.Domain
-	clusterOpts.NetworkType = string(hyperv1.OVNKubernetes)
 
 	t.Logf("Using base domain %s", clusterOpts.BaseDomain)
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.KubevirtPlatform, globalOpts.ArtifactDir)
