@@ -1287,7 +1287,14 @@ type HostedClusterStatus struct {
 	// IgnitionEndpoint is the endpoint injected in the ign config userdata.
 	// It exposes the config for instances to become kubernetes nodes.
 	// +optional
-	IgnitionEndpoint string `json:"ignitionEndpoint"`
+	IgnitionEndpoint string `json:"ignitionEndpoint,omitempty"`
+
+	// OAuthCallbackURLTemplate contains a template for the URL to use as a callback
+	// for identity providers. The [identity-provider-name] placeholder must be replaced
+	// with the name of an identity provider defined on the HostedCluster.
+	// This is populated after the infrastructure is ready.
+	// +kubebuilder:validation:Optional
+	OAuthCallbackURLTemplate string `json:"oauthCallbackURLTemplate,omitempty"`
 
 	// Conditions represents the latest available observations of a control
 	// plane's current state.

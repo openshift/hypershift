@@ -1159,6 +1159,13 @@ spec:
                   update to the current releaseImage property.
                 format: date-time
                 type: string
+              oauthCallbackURLTemplate:
+                description: OAuthCallbackURLTemplate contains a template for the
+                  URL to use as a callback for identity providers. The [identity-provider-name]
+                  placeholder must be replaced with the name of an identity provider
+                  defined on the HostedCluster. This is populated after the infrastructure
+                  is ready.
+                type: string
               ready:
                 default: false
                 description: Ready denotes that the HostedControlPlane API Server

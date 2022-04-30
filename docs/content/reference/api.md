@@ -2799,6 +2799,20 @@ It exposes the config for instances to become kubernetes nodes.</p>
 </tr>
 <tr>
 <td>
+<code>oauthCallbackURLTemplate</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>OAuthCallbackURLTemplate contains a template for the URL to use as a callback
+for identity providers. The [identity-provider-name] placeholder must be replaced
+with the name of an identity provider defined on the HostedCluster.
+This is populated after the infrastructure is ready.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>conditions</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
@@ -3286,6 +3300,20 @@ APIEndpoint
 <p>ControlPlaneEndpoint contains the endpoint information by which
 external clients can access the control plane.  This is populated
 after the infrastructure is ready.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>oauthCallbackURLTemplate</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>OAuthCallbackURLTemplate contains a template for the URL to use as a callback
+for identity providers. The [identity-provider-name] placeholder must be replaced
+with the name of an identity provider defined on the HostedCluster.
+This is populated after the infrastructure is ready.</p>
 </td>
 </tr>
 <tr>
