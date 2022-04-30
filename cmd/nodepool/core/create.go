@@ -84,7 +84,7 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 				UpgradeType: hyperv1.UpgradeTypeReplace,
 			},
 			ClusterName: o.ClusterName,
-			NodeCount:   &o.NodeCount,
+			Replicas:    &o.NodeCount,
 			Release: hyperv1.Release{
 				Image: releaseImage,
 			},

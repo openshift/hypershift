@@ -581,7 +581,20 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeCount is the desired number of nodes the pool should maintain. If
+<p>Deprecated: Use Replicas instead. NodeCount will be dropped in the next
+api release.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>replicas</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Replicas is the desired number of nodes the pool should maintain. If
 unset, the default value is 0.</p>
 </td>
 </tr>
@@ -4398,7 +4411,20 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeCount is the desired number of nodes the pool should maintain. If
+<p>Deprecated: Use Replicas instead. NodeCount will be dropped in the next
+api release.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>replicas</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Replicas is the desired number of nodes the pool should maintain. If
 unset, the default value is 0.</p>
 </td>
 </tr>
@@ -4487,14 +4513,14 @@ the purpose of the change. In future we plan to propagate this field in-place.
 <tbody>
 <tr>
 <td>
-<code>nodeCount</code></br>
+<code>replicas</code></br>
 <em>
 int32
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeCount is the latest observed number of nodes in the pool.</p>
+<p>Replicas is the latest observed number of nodes in the pool.</p>
 </td>
 </tr>
 <tr>

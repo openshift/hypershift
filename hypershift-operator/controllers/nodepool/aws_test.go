@@ -29,7 +29,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			name: "ebs size",
 			nodePool: hyperv1.NodePoolSpec{
 				ClusterName: "",
-				NodeCount:   nil,
+				Replicas:    nil,
 				Config:      nil,
 				Management:  hyperv1.NodePoolManagement{},
 				AutoScaling: nil,

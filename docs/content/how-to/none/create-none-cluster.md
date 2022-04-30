@@ -22,7 +22,7 @@ RHEL8 doesn't include go1.17 officially but it can be installed via `gvm` by fol
 sudo dnf install -y curl git make bison gcc glibc-devel
 git clone https://github.com/openshift/hypershift.git
 pushd hypershift
- 
+
 # Install gvm to install go 1.17
 bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
 source ${HOME}/.gvm/scripts/gvm
@@ -67,7 +67,7 @@ podman login -u ${QUAY_ACCOUNT} -p testpassword quay.io
 sudo dnf install -y curl git make bison gcc glibc-devel
 git clone https://github.com/openshift/hypershift.git
 pushd hypershift
- 
+
 # Install gvm to install go 1.17
 bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
 source ${HOME}/.gvm/scripts/gvm
@@ -174,7 +174,7 @@ metadata:
  namespace: ${CLUSTERS_NAMESPACE}
 type: kubernetes.io/dockerconfigjson
 EOF
- 
+
 envsubst <<"EOF" | oc apply -f -
 apiVersion: v1
 kind: Secret
@@ -247,7 +247,7 @@ metadata:
   namespace: ${CLUSTERS_NAMESPACE}
 spec:
   clusterName: ${HOSTED}
-  nodeCount: 0
+  replicas: 0
   management:
     autoRepair: false
     upgradeType: Replace
@@ -373,26 +373,26 @@ kni1-worker-0.cloud.lab.eng.bos.redhat.com   Ready    worker   28m   v1.22.3+e79
 
 oc get co --kubeconfig=${HOSTED}-kubeconfig
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.9.17    True        False         False      17m     
-csi-snapshot-controller                    4.9.17    True        False         False      24m     
-dns                                        4.9.17    True        False         False      24m     
+console                                    4.9.17    True        False         False      17m
+csi-snapshot-controller                    4.9.17    True        False         False      24m
+dns                                        4.9.17    True        False         False      24m
 image-registry                             4.9.17    False       False         False      4m49s   NodeCADaemonAvailable: The daemon set node-ca does not have available replicas...
-ingress                                    4.9.17    True        False         False      14m     
-kube-apiserver                             4.9.17    True        False         False      3h45m   
-kube-controller-manager                    4.9.17    True        False         False      3h45m   
-kube-scheduler                             4.9.17    True        False         False      3h45m   
-kube-storage-version-migrator              4.9.17    True        False         False      24m     
+ingress                                    4.9.17    True        False         False      14m
+kube-apiserver                             4.9.17    True        False         False      3h45m
+kube-controller-manager                    4.9.17    True        False         False      3h45m
+kube-scheduler                             4.9.17    True        False         False      3h45m
+kube-storage-version-migrator              4.9.17    True        False         False      24m
 monitoring                                           False       True          True       9m      Rollout of the monitoring stack failed and is degraded. Please investigate the degraded status error.
-network                                    4.9.17    True        False         False      25m     
-node-tuning                                4.9.17    True        False         False      24m     
-openshift-apiserver                        4.9.17    True        False         False      3h45m   
-openshift-controller-manager               4.9.17    True        False         False      3h45m   
-openshift-samples                          4.9.17    True        False         False      23m     
-operator-lifecycle-manager                 4.9.17    True        False         False      3h45m   
-operator-lifecycle-manager-catalog         4.9.17    True        False         False      3h45m   
-operator-lifecycle-manager-packageserver   4.9.17    True        False         False      3h45m   
-service-ca                                 4.9.17    True        False         False      25m     
-storage                                    4.9.17    True        False         False      25m     
+network                                    4.9.17    True        False         False      25m
+node-tuning                                4.9.17    True        False         False      24m
+openshift-apiserver                        4.9.17    True        False         False      3h45m
+openshift-controller-manager               4.9.17    True        False         False      3h45m
+openshift-samples                          4.9.17    True        False         False      23m
+operator-lifecycle-manager                 4.9.17    True        False         False      3h45m
+operator-lifecycle-manager-catalog         4.9.17    True        False         False      3h45m
+operator-lifecycle-manager-packageserver   4.9.17    True        False         False      3h45m
+service-ca                                 4.9.17    True        False         False      25m
+storage                                    4.9.17    True        False         False      25m
 
 oc get clusterversion --kubeconfig=${HOSTED}-kubeconfig
 NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
@@ -410,25 +410,25 @@ hosted0   4.9.17    hosted0-admin-kubeconfig   Completed   True        HostedClu
 
 KUBECONFIG=./hosted0-kubeconfig oc get co
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.9.17    True        False         False      64m     
-csi-snapshot-controller                    4.9.17    True        False         False      71m     
-dns                                        4.9.17    True        False         False      71m     
-image-registry                             4.9.17    True        False         False      11m     
-ingress                                    4.9.17    True        False         False      61m     
-kube-apiserver                             4.9.17    True        False         False      4h32m   
-kube-controller-manager                    4.9.17    True        False         False      4h32m   
-kube-scheduler                             4.9.17    True        False         False      4h32m   
-kube-storage-version-migrator              4.9.17    True        False         False      71m     
-monitoring                                 4.9.17    True        False         False      6m51s   
-network                                    4.9.17    True        False         False      72m     
-node-tuning                                4.9.17    True        False         False      71m     
-openshift-apiserver                        4.9.17    True        False         False      4h32m   
-openshift-controller-manager               4.9.17    True        False         False      4h32m   
-openshift-samples                          4.9.17    True        False         False      70m     
-operator-lifecycle-manager                 4.9.17    True        False         False      4h32m   
-operator-lifecycle-manager-catalog         4.9.17    True        False         False      4h32m   
-operator-lifecycle-manager-packageserver   4.9.17    True        False         False      4h32m   
-service-ca                                 4.9.17    True        False         False      72m     
+console                                    4.9.17    True        False         False      64m
+csi-snapshot-controller                    4.9.17    True        False         False      71m
+dns                                        4.9.17    True        False         False      71m
+image-registry                             4.9.17    True        False         False      11m
+ingress                                    4.9.17    True        False         False      61m
+kube-apiserver                             4.9.17    True        False         False      4h32m
+kube-controller-manager                    4.9.17    True        False         False      4h32m
+kube-scheduler                             4.9.17    True        False         False      4h32m
+kube-storage-version-migrator              4.9.17    True        False         False      71m
+monitoring                                 4.9.17    True        False         False      6m51s
+network                                    4.9.17    True        False         False      72m
+node-tuning                                4.9.17    True        False         False      71m
+openshift-apiserver                        4.9.17    True        False         False      4h32m
+openshift-controller-manager               4.9.17    True        False         False      4h32m
+openshift-samples                          4.9.17    True        False         False      70m
+operator-lifecycle-manager                 4.9.17    True        False         False      4h32m
+operator-lifecycle-manager-catalog         4.9.17    True        False         False      4h32m
+operator-lifecycle-manager-packageserver   4.9.17    True        False         False      4h32m
+service-ca                                 4.9.17    True        False         False      72m
 storage                                    4.9.17    True        False         False      72m
 
 KUBECONFIG=./hosted0-kubeconfig oc get clusterversion

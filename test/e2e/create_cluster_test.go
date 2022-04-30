@@ -106,7 +106,7 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 	t.Logf("Created nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
 
 	t.Logf("Waiting for KubeVirtMachines to be marked as ready")
-	e2eutil.WaitForKubeVirtMachines(t, ctx, client, hostedCluster, *nodepool.Spec.NodeCount)
+	e2eutil.WaitForKubeVirtMachines(t, ctx, client, hostedCluster, *nodepool.Spec.Replicas)
 
 	// Wait for kubevirt cluster to be marked as available
 	t.Logf("Waiting for KubeVirtCluster to be marked as ready")
@@ -118,7 +118,7 @@ func TestKubeVirtCreateCluster(t *testing.T) {
 
 	// Using the guest client, introspect that the nodes for the tenant cluster become ready
 	t.Logf("Waiting for nodes to become ready")
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, *nodepool.Spec.NodeCount)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, *nodepool.Spec.Replicas)
 
 	// Setup wildcard *.apps route for nested kubevirt cluster
 	t.Logf("Setting up wildcard *.apps route for nested kubevirt tenant cluster")

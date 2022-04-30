@@ -1435,6 +1435,11 @@ func (in *NodePoolSpec) DeepCopyInto(out *NodePoolSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.Replicas != nil {
+		in, out := &in.Replicas, &out.Replicas
+		*out = new(int32)
+		**out = **in
+	}
 	in.Management.DeepCopyInto(&out.Management)
 	if in.AutoScaling != nil {
 		in, out := &in.AutoScaling, &out.AutoScaling

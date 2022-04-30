@@ -193,6 +193,13 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
+	// The nodeCount field got renamed, copy the old field for compatibility purposes if the
+	// new one is unset.
+	if nodePool.Spec.Replicas == nil {
+		//lint:ignore SA1019 maintain backward compatibility
+		nodePool.Spec.Replicas = nodePool.Spec.NodeCount
+	}
+
 	// HostedCluster owns NodePools. This should ensure orphan NodePools are garbage collected when cascading deleting.
 	nodePool.OwnerReferences = util.EnsureOwnerRef(nodePool.OwnerReferences, metav1.OwnerReference{
 		APIVersion: hyperv1.GroupVersion.String(),
@@ -920,7 +927,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		// Before persisting, if the NodePool is brand new we want to make sure the replica number is set so the machineDeployment controller
 		// does not panic.
 		if machineDeployment.Spec.Replicas == nil {
-			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
+			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
 		}
 		return nil
 	}
@@ -948,7 +955,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	setMachineDeploymentReplicas(nodePool, machineDeployment)
 
 	// Bubble up AvailableReplicas and Ready condition from MachineDeployment.
-	nodePool.Status.NodeCount = machineDeployment.Status.AvailableReplicas
+	nodePool.Status.Replicas = machineDeployment.Status.AvailableReplicas
 	for _, c := range machineDeployment.Status.Conditions {
 		// This condition should aggregate and summarise readiness from underlying MachineSets and Machines
 		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
@@ -1034,7 +1041,7 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	if !isAutoscalingEnabled(nodePool) {
 		machineDeployment.Annotations[autoscalerMaxAnnotation] = "0"
 		machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
-		machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.NodeCount, 0))
+		machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
 	}
 }
 
@@ -1218,8 +1225,8 @@ func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 }
 
 func validateAutoscaling(nodePool *hyperv1.NodePool) error {
-	if nodePool.Spec.NodeCount != nil && nodePool.Spec.AutoScaling != nil {
-		return fmt.Errorf("only one of nodePool.Spec.NodeCount or nodePool.Spec.AutoScaling can be set")
+	if nodePool.Spec.Replicas != nil && nodePool.Spec.AutoScaling != nil {
+		return fmt.Errorf("only one of nodePool.Spec.Replicas or nodePool.Spec.AutoScaling can be set")
 	}
 
 	if nodePool.Spec.AutoScaling != nil {

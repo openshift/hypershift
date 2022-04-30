@@ -69,8 +69,8 @@ func TestAutoscaling(t *testing.T) {
 		Min: min,
 		Max: max,
 	}
-	nodepool.Spec.NodeCount = nil
-	err = client.Update(ctx, nodepool)
+	nodepool.Spec.Replicas = nil
+	err = client.Update(testContext, nodepool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool")
 	t.Logf("Enabled autoscaling. Namespace: %s, name: %s, min: %v, max: %v", nodepool.Namespace, nodepool.Name, min, max)
 

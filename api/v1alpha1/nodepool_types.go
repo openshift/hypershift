@@ -51,10 +51,10 @@ func init() {
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
-// +kubebuilder:subresource:scale:specpath=.spec.nodeCount,statuspath=.status.nodeCount
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
-// +kubebuilder:printcolumn:name="Desired Nodes",type="integer",JSONPath=".spec.nodeCount",description="Desired Nodes"
-// +kubebuilder:printcolumn:name="Current Nodes",type="integer",JSONPath=".status.nodeCount",description="Available Nodes"
+// +kubebuilder:printcolumn:name="Desired Nodes",type="integer",JSONPath=".spec.replicas",description="Desired Nodes"
+// +kubebuilder:printcolumn:name="Current Nodes",type="integer",JSONPath=".status.replicas",description="Available Nodes"
 // +kubebuilder:printcolumn:name="Autoscaling",type="string",JSONPath=".status.conditions[?(@.type==\"AutoscalingEnabled\")].status",description="Autoscaling Enabled"
 // +kubebuilder:printcolumn:name="Autorepair",type="string",JSONPath=".status.conditions[?(@.type==\"AutorepairEnabled\")].status",description="Node Autorepair Enabled"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version",description="Current version"
@@ -92,11 +92,17 @@ type NodePoolSpec struct {
 	// +immutable
 	Platform NodePoolPlatform `json:"platform"`
 
-	// NodeCount is the desired number of nodes the pool should maintain. If
+	// Deprecated: Use Replicas instead. NodeCount will be dropped in the next
+	// api release.
+	//
+	// +optional
+	NodeCount *int32 `json:"nodeCount,omitempty"`
+
+	// Replicas is the desired number of nodes the pool should maintain. If
 	// unset, the default value is 0.
 	//
 	// +optional
-	NodeCount *int32 `json:"nodeCount"`
+	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Management specifies behavior for managing nodes in the pool, such as
 	// upgrade strategies and auto-repair behaviors.
@@ -130,10 +136,10 @@ type NodePoolSpec struct {
 
 // NodePoolStatus is the latest observed status of a NodePool.
 type NodePoolStatus struct {
-	// NodeCount is the latest observed number of nodes in the pool.
+	// Replicas is the latest observed number of nodes in the pool.
 	//
 	// +optional
-	NodeCount int32 `json:"nodeCount"`
+	Replicas int32 `json:"replicas"`
 
 	// Version is the semantic version of the latest applied release specified by
 	// the NodePool.
