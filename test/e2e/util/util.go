@@ -455,6 +455,11 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="DELETE", code="404", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
 				budget: 5,
 			},
+			{
+				name:   "ignition-server p90 payload generation time",
+				query:  fmt.Sprintf(`sum by (namespace) (max_over_time(hypershift:controlplane:ign_payload_generation_seconds_p90{namespace="%s"}[%dm]))`, namespace, clusterAgeMinutes),
+				budget: 45,
+			},
 			// hypershift-operator budget can not be per HC so metric will be
 			// significantly under budget for all but the last test(s) to complete on
 			// a particular test cluster These budgets will also need to scale up with

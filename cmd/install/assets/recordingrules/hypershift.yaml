@@ -16,6 +16,9 @@ groups:
             label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
           )
 
+  - record: hypershift:controlplane:ign_payload_generation_seconds_p90
+    expr: histogram_quantile(0.9, sum by (namespace, le) (rate(ign_server_payload_generation_seconds_bucket{container="ignition-server"}[3m])))
+
   - record: hypershift:controlplane:component_cpu_usage_seconds
     expr: avg by (app, namespace, pod) (
             sum(
