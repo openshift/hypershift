@@ -378,6 +378,14 @@ func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.HostedCluster) admission.Response {
 	filterMutableHostedClusterSpecFields(&new.Spec)
 	filterMutableHostedClusterSpecFields(&old.Spec)
+
+	// We default the port in Azure management cluster  so we allow setting it from being unset, but no updates.
+	if new.Spec.Networking.APIServer != nil && (old.Spec.Networking.APIServer == nil || old.Spec.Networking.APIServer.Port == nil) {
+		if old.Spec.Networking.APIServer == nil {
+			old.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
+		}
+		old.Spec.Networking.APIServer.Port = new.Spec.Networking.APIServer.Port
+	}
 	if !reflect.DeepEqual(new.Spec, old.Spec) {
 		return admission.Denied("attempted change to immutable field(s)")
 	}
