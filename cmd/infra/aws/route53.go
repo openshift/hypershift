@@ -56,6 +56,10 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route
 	id, err := lookupZone(ctx, client, name, true)
 	if err == nil {
 		log.Log.Info("Found existing private zone", "name", name, "id", id)
+		err := setSOAMinimum(ctx, client, id, name)
+		if err != nil {
+			return "", err
+		}
 		return id, err
 	}
 
@@ -86,6 +90,11 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, client route
 	}
 	id = cleanZoneID(*res.HostedZone.Id)
 	log.Log.Info("Created private zone", "name", name, "id", id)
+
+	err = setSOAMinimum(ctx, client, id, name)
+	if err != nil {
+		return "", err
+	}
 
 	return id, nil
 }
@@ -133,6 +142,36 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client rout
 		log.Log.Info("Deleted wildcard record from public hosted zone", "id", id, "name", recordName)
 	}
 	return nil
+}
+
+func setSOAMinimum(ctx context.Context, client route53iface.Route53API, id, name string) error {
+	recordSet, err := findRecord(ctx, client, id, name, "SOA")
+	if err != nil {
+		return err
+	}
+	if recordSet == nil || recordSet.ResourceRecords[0] == nil || recordSet.ResourceRecords[0].Value == nil {
+		return fmt.Errorf("SOA record for private zone %s not found: %w", name, err)
+	}
+	record := recordSet.ResourceRecords[0]
+	fields := strings.Split(*record.Value, " ")
+	if len(fields) != 7 {
+		return fmt.Errorf("SOA record value has %d fields, expected 7", len(fields))
+	}
+	fields[6] = "60"
+	record.Value = aws.String(strings.Join(fields, " "))
+	input := &route53.ChangeResourceRecordSetsInput{
+		HostedZoneId: aws.String(id),
+		ChangeBatch: &route53.ChangeBatch{
+			Changes: []*route53.Change{
+				{
+					Action:            aws.String("UPSERT"),
+					ResourceRecordSet: recordSet,
+				},
+			},
+		},
+	}
+	_, err = client.ChangeResourceRecordSetsWithContext(ctx, input)
+	return err
 }
 
 func deleteZone(ctx context.Context, id string, client route53iface.Route53API) error {
@@ -192,7 +231,7 @@ func deleteRecords(ctx context.Context, client route53iface.Route53API, id strin
 }
 
 func deleteRecord(ctx context.Context, client route53iface.Route53API, id, recordName string) error {
-	record, err := findRecord(ctx, client, id, recordName)
+	record, err := findRecord(ctx, client, id, recordName, "A")
 	if err != nil {
 		return err
 	}
@@ -216,9 +255,8 @@ func deleteRecord(ctx context.Context, client route53iface.Route53API, id, recor
 	return err
 }
 
-func findRecord(ctx context.Context, client route53iface.Route53API, id, name string) (*route53.ResourceRecordSet, error) {
+func findRecord(ctx context.Context, client route53iface.Route53API, id, name string, recordType string) (*route53.ResourceRecordSet, error) {
 	recordName := fqdn(strings.ToLower(name))
-	recordType := "A"
 	input := &route53.ListResourceRecordSetsInput{
 		HostedZoneId:    aws.String(id),
 		StartRecordName: aws.String(recordName),
