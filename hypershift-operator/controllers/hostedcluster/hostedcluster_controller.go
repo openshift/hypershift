@@ -1424,6 +1424,11 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		// Enforce provider specifics.
 		deployment.Spec = *capiProviderDeploymentSpec
 
+		// Enforce pull policy.
+		for i := range deployment.Spec.Template.Spec.Containers {
+			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
+		}
+
 		// Enforce labels.
 		deployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: labels,
