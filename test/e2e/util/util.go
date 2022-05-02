@@ -170,6 +170,41 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	return nodes.Items
 }
 
+func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
+	g := NewWithT(t)
+
+	t.Logf("Waiting for Nodes to become unready. Want: %v", n)
+	nodes := &corev1.NodeList{}
+	readyNodeCount := 0
+	err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
+		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
+		err = client.List(ctx, nodes)
+		if err != nil {
+			return false, nil
+		}
+		if len(nodes.Items) == 0 {
+			return false, nil
+		}
+		var readyNodes []string
+		for _, node := range nodes.Items {
+			for _, cond := range node.Status.Conditions {
+				if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
+					readyNodes = append(readyNodes, node.Name)
+				}
+			}
+		}
+		if len(readyNodes) != int(n) {
+			readyNodeCount = len(readyNodes)
+			return false, nil
+		}
+		return true, nil
+	}, ctx.Done())
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
+
+	t.Logf("Wanted Nodes are unready. Count: %v", n)
+	return nodes.Items
+}
+
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	g := NewWithT(t)
 	start := time.Now()

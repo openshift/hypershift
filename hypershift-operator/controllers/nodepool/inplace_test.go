@@ -236,10 +236,11 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
-							CurrentMachineConfigAnnotationKey: desiredConfigHash,
-							DesiredMachineConfigAnnotationKey: desiredConfigHash,
-							DesiredDrainerAnnotationKey:       uncordonRequest,
-							LastAppliedDrainerAnnotationKey:   uncordonRequest,
+							CurrentMachineConfigAnnotationKey:     desiredConfigHash,
+							DesiredMachineConfigAnnotationKey:     desiredConfigHash,
+							DesiredDrainerAnnotationKey:           uncordonRequest,
+							LastAppliedDrainerAnnotationKey:       uncordonRequest,
+							MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDone,
 						},
 					},
 				},
@@ -247,10 +248,11 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node2",
 						Annotations: map[string]string{
-							CurrentMachineConfigAnnotationKey: desiredConfigHash,
-							DesiredMachineConfigAnnotationKey: desiredConfigHash,
-							DesiredDrainerAnnotationKey:       uncordonRequest,
-							LastAppliedDrainerAnnotationKey:   uncordonRequest,
+							CurrentMachineConfigAnnotationKey:     desiredConfigHash,
+							DesiredMachineConfigAnnotationKey:     desiredConfigHash,
+							DesiredDrainerAnnotationKey:           uncordonRequest,
+							LastAppliedDrainerAnnotationKey:       uncordonRequest,
+							MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDone,
 						},
 					},
 				},
