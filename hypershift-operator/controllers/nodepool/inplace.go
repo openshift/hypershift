@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,7 +57,7 @@ const (
 )
 
 // reconcileInPlaceUpgrade loops over all Nodes that belong to a NodePool and performs an in place upgrade if necessary.
-func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, machineSet *capiv1.MachineSet, targetConfigHash, targetVersion, targetConfigVersionHash string, tokenSecret *corev1.Secret) error {
+func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, machineSet *capiv1.MachineSet, targetConfigHash, targetVersion, targetConfigVersionHash string, tokenSecret *corev1.Secret, releaseImage *releaseinfo.ReleaseImage) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	// If there's no guest cluster yet return early.
@@ -210,10 +211,14 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 		// TODO (jerzhang): in the future, consider exiting here and let future syncs handle post-drain functions
 	}
 
+	mcoImage, hasMcoImage := releaseImage.ComponentImages()["machine-config-operator"]
+	if !hasMcoImage {
+		return fmt.Errorf("failed to get machine-config-operator image from release payload. (existing images: %v)", releaseImage.ComponentImages())
+	}
 	// Find nodes that can be upgraded
 	// TODO (jerzhang): add logic to honor maxUnavailable/maxSurge
 	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, 1)
-	err = r.performNodesUpgrade(ctx, hostedClusterClient, nodePool, nodesToUpgrade, targetConfigVersionHash)
+	err = r.performNodesUpgrade(ctx, hostedClusterClient, nodePool, nodesToUpgrade, targetConfigVersionHash, mcoImage)
 	if err != nil {
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
 	}
@@ -221,7 +226,7 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 	return nil
 }
 
-func (r *NodePoolReconciler) performNodesUpgrade(ctx context.Context, hostedClusterClient client.Client, nodePool *hyperv1.NodePool, nodes []*corev1.Node, targetConfigVersionHash string) error {
+func (r *NodePoolReconciler) performNodesUpgrade(ctx context.Context, hostedClusterClient client.Client, nodePool *hyperv1.NodePool, nodes []*corev1.Node, targetConfigVersionHash, mcoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	for idx, node := range nodes {
@@ -235,6 +240,7 @@ func (r *NodePoolReconciler) performNodesUpgrade(ctx context.Context, hostedClus
 			return r.reconcileUpgradePod(
 				pod,
 				node.Name,
+				mcoImage,
 				nodePool,
 			)
 		}); err != nil {
@@ -256,14 +262,14 @@ func (r *NodePoolReconciler) performNodesUpgrade(ctx context.Context, hostedClus
 	return nil
 }
 
-func (r *NodePoolReconciler) reconcileUpgradePod(pod *corev1.Pod, nodeName string, nodePool *hyperv1.NodePool) error {
-	// TODO (jerzhang): unhardcode some of this
+func (r *NodePoolReconciler) reconcileUpgradePod(pod *corev1.Pod, nodeName, mcoImage string, nodePool *hyperv1.NodePool) error {
+	// TODO (jerzhang): The arguments for this pod perhaps should be a bit more dynamic.
+	// We would need to consider cases where a new upgrade comes in while a current one is reconciling
 	configmap := inPlaceUpgradeConfigMap(nodePool, pod.Namespace)
 	pod.Spec.Containers = []corev1.Container{
 		{
-			Name: "machine-config-daemon",
-			// TODO (jerzhang): switch this to MCO image once we have it ready
-			Image: "quay.io/jerzhang/hypershiftdaemon:latest",
+			Name:  "machine-config-daemon",
+			Image: mcoImage,
 			Command: []string{
 				"/usr/bin/machine-config-daemon",
 			},
