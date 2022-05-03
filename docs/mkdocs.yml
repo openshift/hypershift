@@ -59,6 +59,7 @@ nav:
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md
+  - reference/versioning-support.md
 - 'Contribute':
   - contribute/index.md
   - contribute/develop-in-cluster.md
