@@ -11,11 +11,14 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -245,19 +248,28 @@ func DumpGuestCluster(ctx context.Context, kubeconfig string, destDir string) er
 		kubeconfig:  kubeconfig,
 	}
 	resources := []client.Object{
+		&apiextensionsv1.CustomResourceDefinition{},
+		&appsv1.ControllerRevision{},
 		&appsv1.DaemonSet{},
 		&appsv1.Deployment{},
 		&appsv1.ReplicaSet{},
 		&appsv1.StatefulSet{},
 		&batchv1.Job{},
+		&configv1.ClusterOperator{},
 		&corev1.ConfigMap{},
 		&corev1.Endpoints{},
 		&corev1.Event{},
+		&corev1.Namespace{},
+		&corev1.Node{},
 		&corev1.PersistentVolumeClaim{},
 		&corev1.Pod{},
 		&corev1.ReplicationController{},
-		&corev1.Node{},
-		&configv1.ClusterOperator{},
+		&corev1.Service{},
+		&rbacv1.ClusterRole{},
+		&rbacv1.ClusterRoleBinding{},
+		&rbacv1.Role{},
+		&rbacv1.RoleBinding{},
+		&securityv1.SecurityContextConstraints{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	cmd.Run(ctx, resourceList)
