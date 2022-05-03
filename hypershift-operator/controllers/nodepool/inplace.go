@@ -75,15 +75,21 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 	// TODO (alberto): cache by HC instead so we reduce the cache size.
 	r.hostedClusterCachesTracker.Lock()
 	defer r.hostedClusterCachesTracker.Unlock()
-	if !r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(nodePool)] {
+	if _, ok := r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(nodePool)]; !ok {
 		hostedClusterCache, err := newHostedClusterCache(ctx, r.Client, hc)
 		if err != nil {
 			return fmt.Errorf("failed to create hosted cluster cache: %w", err)
 		}
 
-		// TODO (alberto): cancel the ctx on exit.
-		go hostedClusterCache.Start(ctx)
-		if !hostedClusterCache.WaitForCacheSync(ctx) {
+		cacheCtx, cacheCtxCancel := context.WithCancel(ctx)
+		// TODO: index by HC here instead?
+		if r.hostedClusterCachesTracker.caches == nil {
+			r.hostedClusterCachesTracker.caches = make(map[client.ObjectKey]context.CancelFunc)
+		}
+		r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(nodePool)] = cacheCtxCancel
+
+		go hostedClusterCache.Start(cacheCtx)
+		if !hostedClusterCache.WaitForCacheSync(cacheCtx) {
 			return fmt.Errorf("failed waiting for hosted cluster cache to sync: %w", err)
 		}
 
@@ -91,11 +97,6 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 			return fmt.Errorf("error adding watcher for hosted cluster nodes: %w", err)
 		}
 
-		// TODO: index by HC here instead?
-		if r.hostedClusterCachesTracker.caches == nil {
-			r.hostedClusterCachesTracker.caches = make(map[client.ObjectKey]bool)
-		}
-		r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(nodePool)] = true
 		log.Info("Created hosted cluster cache")
 	}
 
