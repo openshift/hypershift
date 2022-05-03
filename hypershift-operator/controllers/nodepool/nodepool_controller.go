@@ -80,14 +80,14 @@ type NodePoolReconciler struct {
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
 	controller      controller.Controller
-	// hostedClusterCachesTracker stores hosted cluster caches.
+	// hostedClusterCachesTracker maintains an index of NodePool key/cancelFunc for every NodePool running a hosted cluster cache.
 	hostedClusterCachesTracker hostedClusterCachesTracker
 	upsert.CreateOrUpdateProvider
 }
 
 type hostedClusterCachesTracker struct {
 	sync.RWMutex
-	caches map[client.ObjectKey]bool
+	caches map[client.ObjectKey]context.CancelFunc
 }
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -738,6 +738,9 @@ func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.
 
 func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, infraID, controlPlaneNamespace string) error {
 	r.hostedClusterCachesTracker.Lock()
+	if cacheContextCancelFunc, ok := r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(nodePool)]; ok {
+		cacheContextCancelFunc()
+	}
 	delete(r.hostedClusterCachesTracker.caches, client.ObjectKeyFromObject(nodePool))
 	r.hostedClusterCachesTracker.Unlock()
 
