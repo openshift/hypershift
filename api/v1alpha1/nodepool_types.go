@@ -224,6 +224,7 @@ type RollingUpdate struct {
 	// update is at least 70% of desired nodes.
 	//
 	// +optional
+	// +kubebuilder:default=0
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 
 	// MaxSurge is the maximum number of nodes that can be provisioned above the
@@ -245,6 +246,7 @@ type RollingUpdate struct {
 	// running at any time during the update is at most 130% of desired nodes.
 	//
 	// +optional
+	// +kubebuilder:default=1
 	MaxSurge *intstr.IntOrString `json:"maxSurge,omitempty"`
 }
 
@@ -263,7 +265,6 @@ type NodePoolManagement struct {
 	// Replace is the configuration for rolling upgrades.
 	//
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={strategy: "RollingUpdate", rollingUpdate: {maxSurge: 1, maxUnavailable: 0 }}
 	Replace *ReplaceUpgrade `json:"replace,omitempty"`
 
 	// InPlace is the configuration for in-place upgrades.

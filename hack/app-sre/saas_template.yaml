@@ -22650,11 +22650,6 @@ objects:
                       description: InPlace is the configuration for in-place upgrades.
                       type: object
                     replace:
-                      default:
-                        rollingUpdate:
-                          maxSurge: 1
-                          maxUnavailable: 0
-                        strategy: RollingUpdate
                       description: Replace is the configuration for rolling upgrades.
                       properties:
                         rollingUpdate:
@@ -22666,6 +22661,7 @@ objects:
                               anyOf:
                               - type: integer
                               - type: string
+                              default: 1
                               description: "MaxSurge is the maximum number of nodes
                                 that can be provisioned above the desired number of
                                 nodes. \n Value can be an absolute number (ex: 5)
@@ -22685,6 +22681,7 @@ objects:
                               anyOf:
                               - type: integer
                               - type: string
+                              default: 0
                               description: "MaxUnavailable is the maximum number of
                                 nodes that can be unavailable during the update. \n
                                 Value can be an absolute number (ex: 5) or a percentage

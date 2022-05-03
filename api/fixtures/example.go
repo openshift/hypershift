@@ -4,17 +4,15 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	rbacv1 "k8s.io/api/rbac/v1"
-
+	configv1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-
-	configv1 "github.com/openshift/api/config/v1"
-	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -514,6 +512,8 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		}
 	}
 
+	intstr0 := intstr.FromInt(0)
+	intstr1 := intstr.FromInt(1)
 	defaultNodePool := func(name string) *hyperv1.NodePool {
 		return &hyperv1.NodePool{
 			TypeMeta: metav1.TypeMeta{
@@ -528,6 +528,13 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				Management: hyperv1.NodePoolManagement{
 					AutoRepair:  o.AutoRepair,
 					UpgradeType: hyperv1.UpgradeTypeReplace,
+					Replace: &hyperv1.ReplaceUpgrade{
+						Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+						RollingUpdate: &hyperv1.RollingUpdate{
+							MaxUnavailable: &intstr0,
+							MaxSurge:       &intstr1,
+						},
+					},
 				},
 				Replicas:    &o.NodePoolReplicas,
 				ClusterName: o.Name,
