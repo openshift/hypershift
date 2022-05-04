@@ -87,7 +87,13 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	// Everything went well, so register the async cleanup handler and allow tests
 	// to proceed.
 	t.Logf("Successfully created hostedcluster %s/%s in %s", hc.Namespace, hc.Name, time.Since(start).Round(time.Second))
+
 	t.Cleanup(func() { teardown(context.Background(), t, client, hc, opts, artifactDir) })
+
+	t.Cleanup(func() { EnsureNoCrashingPods(t, context.Background(), client, hc) })
+	t.Cleanup(func() { EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), client, hc) })
+	t.Cleanup(func() { EnsureHCPContainersHaveResourceRequests(t, context.Background(), client, hc) })
+	t.Cleanup(func() { EnsureNoPodsWithTooHighPriority(t, context.Background(), client, hc) })
 
 	return hc
 }
