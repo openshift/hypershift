@@ -69,7 +69,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.KeyFile, "key-file", opts.KeyFile, "Path to the serving key")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.Flags().StringVar(&opts.Platform, "platform", "", "The cloud provider platform name")
-	cmd.Flags().StringVar(&opts.WorkDir, "work-dir", "", "Directory in which to store transient working data")
+	cmd.Flags().StringVar(&opts.WorkDir, "work-dir", opts.WorkDir, "Directory in which to store transient working data")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -98,9 +98,6 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
-		o.EncodeTime = zapcore.RFC3339TimeEncoder
-	})))
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "ignition-server-manager"
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
@@ -143,6 +140,10 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 }
 
 func run(ctx context.Context, opts Options) error {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+
 	certWatcher, err := certwatcher.New(opts.CertFile, opts.KeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to load serving cert: %w", err)
@@ -156,6 +157,8 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to add certWatcher to manager: %w", err)
 	}
 	go mgr.Start(ctx)
+
+	mgr.GetLogger().Info("Using opts", "opts", fmt.Sprintf("%+v", opts))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
