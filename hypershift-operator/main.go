@@ -36,6 +36,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -203,6 +204,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)
 
+	metricsSet, err := metrics.MetricsSetFromEnv()
+	if err != nil {
+		return err
+	}
+	log.Info("Using metrics set", "set", metricsSet.String())
+
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
@@ -217,6 +224,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
 		ImageMetadataProvider:      &util.RegistryClientImageMetadataProvider{},
+		MetricsSet:                 metricsSet,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

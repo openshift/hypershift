@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -267,6 +268,7 @@ type HyperShiftOperatorDeployment struct {
 	OIDCBucketRegion               string
 	OIDCStorageProviderS3Secret    *corev1.Secret
 	OIDCStorageProviderS3SecretKey string
+	MetricsSet                     metrics.MetricsSet
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -291,6 +293,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		},
+		metrics.MetricsSetToEnv(o.MetricsSet),
 	}
 
 	if o.EnableWebhook {

@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/metrics"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -147,6 +148,8 @@ type HostedClusterReconciler struct {
 	S3Client                        s3iface.S3API
 
 	ImageMetadataProvider util.ImageMetadataProvider
+
+	MetricsSet metrics.MetricsSet
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -1550,7 +1553,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, utilitiesImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()), defaultIngressDomain, cpoHasUtilities)
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, utilitiesImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()), defaultIngressDomain, cpoHasUtilities, r.MetricsSet)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1561,8 +1564,9 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	if _, err := createOrUpdate(ctx, r.Client, podMonitor, func() error {
 		podMonitor.Spec.Selector = *controlPlaneOperatorDeployment.Spec.Selector
 		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
-			Interval: "15s",
-			Port:     "metrics",
+			Interval:             "15s",
+			Port:                 "metrics",
+			MetricRelabelConfigs: metrics.ControlPlaneOperatorRelabelConfigs(r.MetricsSet),
 		}}
 		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace.Name}}
 		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
@@ -2144,7 +2148,7 @@ func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	return hypershiftOperatorImage, nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, utilitiesImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string, cpoHasUtilities bool) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, utilitiesImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string, cpoHasUtilities bool, metricsSet metrics.MetricsSet) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -2214,6 +2218,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 								Name:  "OPERATE_ON_RELEASE_IMAGE",
 								Value: hc.Spec.Release.Image,
 							},
+							metrics.MetricsSetToEnv(metricsSet),
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
 						Args:    args,

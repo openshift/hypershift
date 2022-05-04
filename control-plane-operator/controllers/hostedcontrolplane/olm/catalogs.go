@@ -16,6 +16,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -151,7 +152,7 @@ func ReconcileCatalogRolloutRoleBinding(roleBinding *rbacv1.RoleBinding, ownerRe
 	return nil
 }
 
-func ReconcileCatalogServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string) error {
+func ReconcileCatalogServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
 	ownerRef.ApplyTo(sm)
 
 	sm.Spec.Selector.MatchLabels = catalogLabels()
@@ -191,13 +192,7 @@ func ReconcileCatalogServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, own
 					},
 				},
 			},
-			MetricRelabelConfigs: []*prometheusoperatorv1.RelabelConfig{
-				{
-					Action:       "drop",
-					Regex:        "etcd_(debugging|disk|server).*",
-					SourceLabels: []string{"__name__"},
-				},
-			},
+			MetricRelabelConfigs: metrics.CatalogOperatorRelabelConfigs(metricsSet),
 		},
 	}
 

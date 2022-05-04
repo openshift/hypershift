@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
+	"github.com/openshift/hypershift/support/metrics"
 )
 
 type Options struct {
@@ -69,6 +70,7 @@ type Options struct {
 	ExternalDNSCredentialsSecret              string
 	ExternalDNSDomainFilter                   string
 	EnableAdminRBACGeneration                 bool
+	MetricsSet                                metrics.MetricsSet
 }
 
 func (o *Options) Validate() error {
@@ -136,6 +138,7 @@ func NewCommand() *cobra.Command {
 		opts.EnableCIDebugOutput = true
 	}
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
+	opts.MetricsSet = metrics.DefaultMetricsSet
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
@@ -161,6 +164,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
+	cmd.PersistentFlags().Var(&opts.MetricsSet, "metrics-set", "The set of metrics to produce for each HyperShift control plane. Valid values are: Telemetry, SRE, All")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -421,6 +425,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		OIDCStorageProviderS3Secret:    oidcSecret,
 		OIDCStorageProviderS3SecretKey: opts.OIDCStorageProviderS3CredentialsSecretKey,
 		Images:                         images,
+		MetricsSet:                     opts.MetricsSet,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 

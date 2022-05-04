@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -416,7 +417,7 @@ func ReconcileService(svc *corev1.Service, owner config.OwnerRef) error {
 	return nil
 }
 
-func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string) error {
+func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
 	ownerRef.ApplyTo(sm)
 
 	sm.Spec.Selector.MatchLabels = cvoLabels()
@@ -456,13 +457,7 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 					},
 				},
 			},
-			MetricRelabelConfigs: []*prometheusoperatorv1.RelabelConfig{
-				{
-					Action:       "drop",
-					Regex:        "etcd_(debugging|disk|server).*",
-					SourceLabels: []string{"__name__"},
-				},
-			},
+			MetricRelabelConfigs: metrics.CVORelabelConfigs(metricsSet),
 		},
 	}
 
