@@ -1,4 +1,4 @@
-package main
+package hostedcluster
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -24,7 +23,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -83,7 +81,7 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 				MapperProvider: func(*rest.Config) (meta.RESTMapper, error) {
 					return restmapper.NewDiscoveryRESTMapper(nil), nil
 				},
-				NewClient: func(cache.Cache, *rest.Config, client.Options, ...client.Object) (client.Client, error) {
+				NewClient: func(cache.Cache, *rest.Config, crclient.Options, ...crclient.Object) (crclient.Client, error) {
 					return &hostedClusterUpdateValidatingClient{
 						Client: fake.NewClientBuilder().
 							WithScheme(hyperapi.Scheme).
@@ -99,7 +97,7 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to construct manager: %v", err)
 			}
-			hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
+			hostedClusterReconciler := &HostedClusterReconciler{
 				Client:                        mgr.GetClient(),
 				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 				ImageMetadataProvider: imageMetadataProviderFunc(func(context.Context, string, []byte) (*dockerv1client.DockerImageConfig, error) {
@@ -137,9 +135,8 @@ func (h *hostedClusterUpdateValidatingClient) Update(ctx context.Context, obj cr
 		return fmt.Errorf("failed to validate hostedcluster update: failed to get old hosted cluster: %w", err)
 	}
 
-	result := validateHostedClusterUpdate(hcluster.DeepCopy(), oldCluster.DeepCopy())
-	if !result.Allowed {
-		return fmt.Errorf("update rejected by admission: %s", result.AdmissionResponse.Result.Reason)
+	if err := validateHostedClusterUpdate(hcluster.DeepCopy(), oldCluster.DeepCopy()); err != nil {
+		return fmt.Errorf("update rejected by admission: %w", err)
 	}
 
 	return h.Client.Update(ctx, obj, opts...)
@@ -158,7 +155,7 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 		old  *hyperv1.HostedCluster
 		new  *hyperv1.HostedCluster
 
-		expectAllowed bool
+		expectError bool
 	}{
 		{
 			name: "APIServer port was unset and gets set, allowed",
@@ -166,7 +163,7 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			new: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{Networking: hyperv1.ClusterNetworking{APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(7443)}}},
 			},
-			expectAllowed: true,
+			expectError: false,
 		},
 		{
 			name: "APIServer port remains unchanged, allowed",
@@ -176,7 +173,7 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			new: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{Networking: hyperv1.ClusterNetworking{APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(7443)}}},
 			},
-			expectAllowed: true,
+			expectError: false,
 		},
 		{
 			name: "APIServer port gets updated, not allowed",
@@ -186,14 +183,15 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			new: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{Networking: hyperv1.ClusterNetworking{APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(8443)}}},
 			},
+			expectError: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := validateHostedClusterUpdate(tc.new, tc.old)
-			if result.Allowed != tc.expectAllowed {
-				t.Errorf("expected allowd to be %t, was %t", tc.expectAllowed, result.Allowed)
+
+			if err := validateHostedClusterUpdate(tc.new, tc.old); (err != nil) != tc.expectError {
+				t.Errorf("expected error to be %t, was %t", tc.expectError, err != nil)
 			}
 		})
 	}
