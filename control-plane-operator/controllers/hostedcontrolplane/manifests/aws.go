@@ -13,3 +13,12 @@ func AWSProviderConfig(ns string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func AWSPodIdentityWebhookKubeconfig(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "aws-pod-identity-webhook-kubeconfig",
+			Namespace: ns,
+		},
+	}
+}

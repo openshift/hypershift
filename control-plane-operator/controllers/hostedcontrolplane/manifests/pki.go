@@ -301,3 +301,12 @@ func ClusterVersionOperatorServerCertSecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func AWSPodIdentityWebhookServingCert(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "aws-pod-identity-webhook-serving-cert",
+			Namespace: ns,
+		},
+	}
+}

@@ -19,13 +19,14 @@ import (
 )
 
 type KubeAPIServerImages struct {
-	ClusterConfigOperator string `json:"clusterConfigOperator"`
-	CLI                   string `json:"cli"`
-	HyperKube             string `json:"hyperKube"`
-	IBMCloudKMS           string `json:"ibmcloudKMS"`
-	AWSKMS                string `json:"awsKMS"`
-	Portieris             string `json:"portieris"`
-	TokenMinterImage      string
+	ClusterConfigOperator      string `json:"clusterConfigOperator"`
+	CLI                        string `json:"cli"`
+	HyperKube                  string `json:"hyperKube"`
+	IBMCloudKMS                string `json:"ibmcloudKMS"`
+	AWSKMS                     string `json:"awsKMS"`
+	Portieris                  string `json:"portieris"`
+	TokenMinterImage           string
+	AWSPodIdentityWebhookImage string
 }
 
 type KubeAPIServerParams struct {
@@ -88,11 +89,12 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ConsolePublicURL:     fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
 
 		Images: KubeAPIServerImages{
-			HyperKube:             images["hyperkube"],
-			CLI:                   images["cli"],
-			ClusterConfigOperator: images["cluster-config-operator"],
-			TokenMinterImage:      images["token-minter"],
-			AWSKMS:                images["aws-kms-provider"],
+			HyperKube:                  images["hyperkube"],
+			CLI:                        images["cli"],
+			ClusterConfigOperator:      images["cluster-config-operator"],
+			TokenMinterImage:           images["token-minter"],
+			AWSKMS:                     images["aws-kms-provider"],
+			AWSPodIdentityWebhookImage: images["aws-pod-identity-webhook"],
 		},
 	}
 	if hcp.Spec.APIAdvertiseAddress != nil {

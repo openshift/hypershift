@@ -14,6 +14,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
@@ -22,8 +23,10 @@ import (
 )
 
 const (
-	kasNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
-	configHashAnnotation               = "kube-apiserver.hypershift.openshift.io/config-hash"
+	kasNamedCertificateMountPathPrefix         = "/etc/kubernetes/certs/named"
+	configHashAnnotation                       = "kube-apiserver.hypershift.openshift.io/config-hash"
+	awsPodIdentityWebhookServingCertVolumeName = "aws-pod-identity-webhook-serving-certs"
+	awsPodIdentityWebhookKubeconfigVolumeName  = "aws-pod-identity-webhook-kubeconfig"
 )
 
 var (
@@ -82,6 +85,7 @@ func kasLabels() map[string]string {
 }
 
 func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
+	hcp *hyperv1.HostedControlPlane,
 	ownerRef config.OwnerRef,
 	deploymentConfig config.DeploymentConfig,
 	namedCertificates []configv1.APIServerNamedServingCert,
@@ -91,14 +95,15 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	images KubeAPIServerImages,
 	config *corev1.ConfigMap,
 	auditWebhookRef *corev1.LocalObjectReference,
-	secretEncryptionData *hyperv1.SecretEncryptionSpec,
 	aesCBCActiveKey []byte,
 	aesCBCBackupKey []byte,
-	etcdMgmtType hyperv1.EtcdManagementType,
 	port int32,
-	podCIDR string,
-	serviceCIDR string,
 ) error {
+
+	secretEncryptionData := hcp.Spec.SecretEncryption
+	etcdMgmtType := hcp.Spec.Etcd.ManagementType
+	podCIDR := hcp.Spec.PodCIDR
+	serviceCIDR := hcp.Spec.ServiceCIDR
 
 	configBytes, ok := config.Data[KubeAPIServerConfigKey]
 	if !ok {
@@ -209,6 +214,40 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
 	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec, cloudProviderName)
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, cloudProviderName, cloudProviderCreds, images.TokenMinterImage, kasContainerMain().Name)
+
+	if cloudProviderName == aws.Provider {
+		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            "aws-pod-identity-webhook",
+			Image:           images.AWSPodIdentityWebhookImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{
+				"/usr/bin/aws-pod-identity-webhook",
+				"--annotation-prefix=eks.amazonaws.com",
+				"--in-cluster=false",
+				"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
+				"--logtostderr",
+				"--port=4443",
+				"--aws-default-region=" + hcp.Spec.Platform.AWS.Region,
+				"--tls-cert=/var/run/app/certs/tls.crt",
+				"--tls-key=/var/run/app/certs/tls.key",
+				"--token-audience=openshift",
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("25Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: awsPodIdentityWebhookServingCertVolumeName, MountPath: "/var/run/app/certs"},
+				{Name: awsPodIdentityWebhookKubeconfigVolumeName, MountPath: "/var/run/app/kubeconfig"},
+			},
+		})
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			corev1.Volume{Name: awsPodIdentityWebhookServingCertVolumeName, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.AWSPodIdentityWebhookServingCert("").Name}}},
+			corev1.Volume{Name: awsPodIdentityWebhookKubeconfigVolumeName, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.AWSPodIdentityWebhookKubeconfig("").Name}}},
+		)
+	}
 
 	if auditWebhookRef != nil {
 		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, auditWebhookRef)
