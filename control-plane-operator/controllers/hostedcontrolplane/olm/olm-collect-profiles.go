@@ -2,7 +2,7 @@ package olm
 
 import (
 	"github.com/openshift/hypershift/support/config"
-	batchv1beta1 "k8s.io/api/batch/v1beta1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 )
@@ -15,7 +15,7 @@ var (
 	olmCollectProfilesSecret      = MustSecret("assets/olm-collect-profiles.secret.yaml")
 )
 
-func ReconcileCollectProfilesCronJob(cronJob *batchv1beta1.CronJob, ownerRef config.OwnerRef, olmImage, namespace string) {
+func ReconcileCollectProfilesCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, olmImage, namespace string) {
 	ownerRef.ApplyTo(cronJob)
 	cronJob.Spec = olmCollectProfilesCronJob.DeepCopy().Spec
 	cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image = olmImage

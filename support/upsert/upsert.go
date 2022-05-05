@@ -8,8 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
-	//TODO: Switch to k8s.io/api/batch/v1 when all management clusters at 1.21+ OR 4.8_openshift+
-	batchv1beta1 "k8s.io/api/batch/v1beta1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -94,8 +93,8 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 		defaultDaemonSetSpec(&existingTyped.Spec, &obj.(*appsv1.DaemonSet).Spec)
 	case *appsv1.StatefulSet:
 		defaultStatefulSetSpec(&existingTyped.Spec, &obj.(*appsv1.StatefulSet).Spec)
-	case *batchv1beta1.CronJob:
-		defaultCronJobSpec(&existingTyped.Spec, &obj.(*batchv1beta1.CronJob).Spec)
+	case *batchv1.CronJob:
+		defaultCronJobSpec(&existingTyped.Spec, &obj.(*batchv1.CronJob).Spec)
 	case *corev1.Service:
 		defaultServiceSpec(&existingTyped.Spec, &obj.(*corev1.Service).Spec)
 	case *routev1.Route:
@@ -187,7 +186,7 @@ func defaultServiceSpec(original, mutated *corev1.ServiceSpec) {
 	}
 }
 
-func defaultCronJobSpec(original, mutated *batchv1beta1.CronJobSpec) {
+func defaultCronJobSpec(original, mutated *batchv1.CronJobSpec) {
 	if mutated.ConcurrencyPolicy == "" {
 		mutated.ConcurrencyPolicy = original.ConcurrencyPolicy
 	}
