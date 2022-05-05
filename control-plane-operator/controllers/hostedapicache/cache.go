@@ -189,13 +189,13 @@ func (h *hostedAPICache) update(requestCtx context.Context, triggerObj client.Ob
 	h.kubeConfig = newKubeConfig
 
 	// Start the new cache
-	go func() {
-		if err := h.cache.Start(newCacheCtx); err != nil {
+	go func(cache cache.Cache) {
+		if err := cache.Start(newCacheCtx); err != nil {
 			h.log.Error(err, "failed to start hosted api cache")
 		} else {
 			h.log.Info("hosted api cache gracefully stopped")
 		}
-	}()
+	}(h.cache)
 
 	h.log.Info("rebuilt api cache")
 	return nil
