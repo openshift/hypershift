@@ -156,7 +156,8 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 		old  *hyperv1.HostedCluster
 		new  *hyperv1.HostedCluster
 
-		expectError bool
+		expectedErrorString string
+		expectError         bool
 	}{
 		{
 			name: "APIServer port was unset and gets set, allowed",
@@ -164,7 +165,8 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			new: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{Networking: hyperv1.ClusterNetworking{APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(7443)}}},
 			},
-			expectError: false,
+			expectError:         false,
+			expectedErrorString: "",
 		},
 		{
 			name: "APIServer port remains unchanged, allowed",
@@ -174,7 +176,8 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			new: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{Networking: hyperv1.ClusterNetworking{APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(7443)}}},
 			},
-			expectError: false,
+			expectError:         false,
+			expectedErrorString: "",
 		},
 		{
 			name: "APIServer port gets updated, not allowed",
@@ -184,7 +187,8 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			new: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{Networking: hyperv1.ClusterNetworking{APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(8443)}}},
 			},
-			expectError: true,
+			expectError:         true,
+			expectedErrorString: "HostedCluster.spec.networking.apiServer.port: Invalid value: 8443: Attempted to change an immutable field",
 		},
 		{
 			name: "when .AWSPlatformSpec.RolesRef, .AWSPlatformSpec.roles .AWSPlatformSpec.*Creds are changed it should be allowed",
@@ -236,14 +240,67 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name: "Changing immutable slice of services, not allowed",
+			new: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+			},
+			old: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: "HostedCluster.spec.services.servicePublishingStrategy.type: Invalid value: \"Route\": Attempted to change an immutable field",
+		},
+		{
+			name: "Multiple immutable fields changed, not allowed",
+			old: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(7443)},
+					},
+				},
+			},
+			new: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(8443)},
+					},
+					DNS: hyperv1.DNSSpec{BaseDomain: "hypershift2"},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: "[HostedCluster.spec.dns.baseDomain: Invalid value: \"hypershift2\": Attempted to change an immutable field, HostedCluster.spec.networking.apiServer.port: Invalid value: 8443: Attempted to change an immutable field]",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
-			if err := validateHostedClusterUpdate(tc.new, tc.old); (err != nil) != tc.expectError {
+			err := validateHostedClusterUpdate(tc.new, tc.old)
+			if (err != nil) != tc.expectError {
 				t.Errorf("expected error to be %t, was %t", tc.expectError, err != nil)
 			}
+			if len(tc.expectedErrorString) > 0 && tc.expectedErrorString != err.Error() {
+				t.Errorf("expected error to be %s, was %s", tc.expectedErrorString, err)
+			}
+
 		})
 	}
 }
