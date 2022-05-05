@@ -32,7 +32,7 @@ func TestMetrics(t *testing.T) {
 			}},
 			expected: []*dto.MetricFamily{{
 				Name: utilpointer.StringPtr("hypershift_cluster_initial_rollout_duration_seconds"),
-				Help: utilpointer.StringPtr(""),
+				Help: utilpointer.StringPtr("Time in seconds it took from initial cluster creation and rollout of initial version"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{{Name: utilpointer.StringPtr("name"), Value: utilpointer.StringPtr("/hc")}},
@@ -56,7 +56,7 @@ func TestMetrics(t *testing.T) {
 			},
 			expected: []*dto.MetricFamily{{
 				Name: utilpointer.StringPtr("hypershift_cluster_initial_rollout_duration_seconds"),
-				Help: utilpointer.StringPtr(""),
+				Help: utilpointer.StringPtr("Time in seconds it took from initial cluster creation and rollout of initial version"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{{Name: utilpointer.StringPtr("name"), Value: utilpointer.StringPtr("/hc")}},
