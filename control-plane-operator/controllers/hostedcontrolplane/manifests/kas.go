@@ -7,8 +7,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
-	// TODO: Switch to k8s.io/api/policy/v1 when all management clusters at 1.21+ OR 4.8_openshift+
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -86,8 +85,8 @@ func KASBootstrapKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
 	}
 }
 
-func KASPodDisruptionBudget(ns string) *policyv1beta1.PodDisruptionBudget {
-	return &policyv1beta1.PodDisruptionBudget{
+func KASPodDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
+	return &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kube-apiserver",
 			Namespace: ns,
