@@ -5,8 +5,7 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
-	//TODO: Switch to k8s.io/api/batch/v1 when all management clusters at 1.21+ OR 4.8_openshift+
-	batchv1beta1 "k8s.io/api/batch/v1beta1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -68,8 +67,8 @@ func MustDeployment(fileName string) *appsv1.Deployment {
 	return deployment
 }
 
-func MustCronJob(fileName string) *batchv1beta1.CronJob {
-	cronJob := &batchv1beta1.CronJob{}
+func MustCronJob(fileName string) *batchv1.CronJob {
+	cronJob := &batchv1.CronJob{}
 	deserializeResource(fileName, cronJob)
 	return cronJob
 }
