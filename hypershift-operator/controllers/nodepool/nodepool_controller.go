@@ -424,6 +424,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Validate KubeVirt platform specific format
+	var kubevirtBootImage string
 	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 		if err := kubevirtPlatformValidation(nodePool); err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -436,6 +437,25 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
 		}
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidKubevirtConfigConditionType)
+
+		kubevirtBootImage, err = getKubeVirtImage(nodePool, releaseImage)
+		if err != nil {
+			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidKubeVirtImageConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+				Message:            fmt.Sprintf("Couldn't discover an KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("couldn't discover an KubeVirt disk image in release payload image: %w", err)
+		}
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidKubeVirtImageConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
+			ObservedGeneration: nodePool.Generation,
+		})
 	}
 
 	// Validate config input.
@@ -600,7 +620,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Reconcile (Platform)MachineTemplate.
-	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, powervsBootImage)
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, powervsBootImage, kubevirtBootImage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1280,6 +1300,27 @@ func defaultNodePoolAMI(region string, releaseImage *releaseinfo.ReleaseImage) (
 	return regionData.Image, nil
 }
 
+func defaultKubeVirtImage(releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+	if !foundArch {
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+	}
+	openStack, exists := arch.Artifacts["openstack"]
+	if !exists {
+		return "", fmt.Errorf("couldn't find OS metadata for openstack")
+	}
+	artifact, exists := openStack.Formats["qcow2.gz"]
+	if !exists {
+		return "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
+	}
+	disk, exists := artifact["disk"]
+	if !exists {
+		return "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
+	}
+
+	return disk.Location, nil
+}
+
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
@@ -1543,7 +1584,7 @@ func isPlatformNone(nodePool *hyperv1.NodePool) bool {
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
 func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool,
-	infraID, ami, powervsBootImage string) (client.Object, func(object client.Object) error, string, error) {
+	infraID, ami, powervsBootImage, kubevirtBootImage string) (client.Object, func(object client.Object) error, string, error) {
 	var mutateTemplate func(object client.Object) error
 	var template client.Object
 	var machineTemplateSpec interface{}
@@ -1576,7 +1617,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		}
 	case hyperv1.KubevirtPlatform:
 		template = &capikubevirt.KubevirtMachineTemplate{}
-		machineTemplateSpec = kubevirtMachineTemplateSpec(nodePool)
+		machineTemplateSpec = kubevirtMachineTemplateSpec(kubevirtBootImage, nodePool)
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)

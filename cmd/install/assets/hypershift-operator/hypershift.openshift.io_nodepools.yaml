@@ -485,8 +485,6 @@ spec:
                                 description: ContainerDiskImage is a string representing
                                   the container image that holds the root disk
                                 type: string
-                            required:
-                            - containerDiskImage
                             type: object
                           persistent:
                             description: Persistent volume type means the VM's storage
@@ -516,8 +514,6 @@ spec:
                             enum:
                             - Persistent
                             type: string
-                        required:
-                        - diskImage
                         type: object
                     required:
                     - rootVolume

@@ -74,16 +74,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 
-	if opts.NodePoolReplicas > -1 {
-		// TODO (nargaman): replace with official container image, after RFE-2501 is completed
-		// As long as there is no official container image
-		// The image must be provided by user
-		// Otherwise it must fail
-		if opts.KubevirtPlatform.ContainerDiskImage == "" {
-			return errors.New("the container disk image for the Kubevirt machine must be provided by user (\"--containerdisk\" flag)")
-		}
-	}
-
 	if opts.KubevirtPlatform.Cores < 1 {
 		return errors.New("the number of cores inside the machine must be a value greater or equal 1")
 	}

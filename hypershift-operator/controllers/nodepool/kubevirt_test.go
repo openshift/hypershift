@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -45,7 +44,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "testimage", "32Gi"),
+						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "docker://testimage", "32Gi"),
 					},
 				},
 			},
@@ -58,7 +57,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			err := kubevirtPlatformValidation(tc.nodePool)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			result := kubevirtMachineTemplateSpec(tc.nodePool)
+			result := kubevirtMachineTemplateSpec("", tc.nodePool)
 			if !equality.Semantic.DeepEqual(tc.expected, result) {
 				t.Errorf(cmp.Diff(tc.expected, result))
 			}
@@ -95,7 +94,6 @@ func generateKubevirtPlatform(memory string, cores uint32, image string, volumeS
 func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize string) *capikubevirt.VirtualMachineTemplateSpec {
 	runAlways := kubevirtv1.RunStrategyAlways
 	guestQuantity := apiresource.MustParse(memory)
-	imageContainerURL := fmt.Sprintf("docker://%s", image)
 	volumeSizeQuantity := apiresource.MustParse(volumeSize)
 	nodePoolNameLabelKey := "hypershift.kubevirt.io/node-pool-name"
 	pullMethod := v1beta1.RegistryPullNode
@@ -117,7 +115,7 @@ func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize st
 					Spec: v1beta1.DataVolumeSpec{
 						Source: &v1beta1.DataVolumeSource{
 							Registry: &v1beta1.DataVolumeSourceRegistry{
-								URL:        &imageContainerURL,
+								URL:        &image,
 								PullMethod: &pullMethod,
 							},
 						},

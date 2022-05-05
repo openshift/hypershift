@@ -12,6 +12,7 @@ const (
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
 	NodePoolValidAMIConditionType                = "ValidAMI"
 	NodePoolValidPowerVSImageConditionType       = "ValidPowerVSImage"
+	NodePoolValidKubeVirtImageConditionType      = "ValidKubeVirtImage"
 	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
 	NodePoolValidKubevirtConfigConditionType     = "ValidKubevirtConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
@@ -451,7 +452,9 @@ type KubevirtPersistentVolume struct {
 // KubevirtRootVolume represents the volume that the rhcos disk will be stored and run from.
 type KubevirtRootVolume struct {
 	// Image represents what rhcos image to use for the node pool
-	Image *KubevirtDiskImage `json:"diskImage"`
+	//
+	// +optional
+	Image *KubevirtDiskImage `json:"diskImage,omitempty"`
 
 	// KubevirtVolume represents of type of storage to run the image on
 	KubevirtVolume `json:",inline"`
@@ -487,7 +490,9 @@ type KubevirtVolume struct {
 // KubevirtDiskImage contains values representing where the rhcos image is located
 type KubevirtDiskImage struct {
 	// ContainerDiskImage is a string representing the container image that holds the root disk
-	ContainerDiskImage *string `json:"containerDiskImage"`
+	//
+	// +optional
+	ContainerDiskImage *string `json:"containerDiskImage,omitempty"`
 }
 
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating

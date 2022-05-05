@@ -3896,6 +3896,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>ContainerDiskImage is a string representing the container image that holds the root disk</p>
 </td>
 </tr>
@@ -4017,6 +4018,7 @@ KubevirtDiskImage
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Image represents what rhcos image to use for the node pool</p>
 </td>
 </tr>
