@@ -1771,7 +1771,8 @@ string
 ###ClusterAutoscaling { #hypershift.openshift.io/v1alpha1.ClusterAutoscaling }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>)
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
 <p>ClusterAutoscaling specifies auto-scaling behavior that applies to all
@@ -3426,6 +3427,21 @@ Value must be one of:
 &#34;guest&#34;, 
 &#34;management&#34;
 </p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoscaling</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterAutoscaling">
+ClusterAutoscaling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
+associated with the control plane.</p>
 </td>
 </tr>
 </tbody>

@@ -30,9 +30,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/metrics"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -59,8 +56,10 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -112,9 +111,12 @@ const (
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
-	controlPlaneOperatorSubcommandsLabel           = "io.openshift.hypershift.control-plane-operator-subcommands"
-	ignitionServerHealthzHandlerLabel              = "io.openshift.hypershift.ignition-server-healthz-handler"
+	controlPlaneOperatorSubcommandsLabel = "io.openshift.hypershift.control-plane-operator-subcommands"
+	ignitionServerHealthzHandlerLabel    = "io.openshift.hypershift.ignition-server-healthz-handler"
+
 	controlplaneOperatorManagesIgnitionServerLabel = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
+	controlPlaneOperatorManagesMachineApprover     = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
+	controlPlaneOperatorManagesMachineAutoscaler   = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -1130,15 +1132,21 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
-	// Reconcile the autoscaler
-	err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
+	// In >= 4.11 We want to move most of the components reconciliation down to the CPO https://issues.redhat.com/browse/HOSTEDCP-375.
+	// For IBM existing clusters < 4.11 we need to stay consistent and keep deploying existing pods to satisfy validations.
+	// TODO (alberto): drop this after dropping < 4.11 support.
+	if _, hasLabel := util.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]; !hasLabel {
+		// Reconcile the autoscaler
+		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
+		}
 	}
-
-	// Reconcile the machine approver
-	if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
+	if _, hasLabel := util.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]; !hasLabel {
+		// Reconcile the machine approver
+		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
+		}
 	}
 
 	defaultIngressDomain, err := r.defaultIngressDomain(ctx)
@@ -1315,6 +1323,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
 	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
+	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
+
 	return nil
 }
 
@@ -2107,6 +2117,23 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			ResourceNames: []string{"hostnetwork"},
 			Resources:     []string{"securitycontextconstraints"},
 			Verbs:         []string{"use"},
+		},
+		// This is needed for CPO to grant Autoscaler its RBAC policy.
+		{
+			APIGroups: []string{"cluster.x-k8s.io"},
+			Resources: []string{
+				"machinedeployments",
+				"machinedeployments/scale",
+				"machines",
+				"machinesets",
+				"machinesets/scale",
+			},
+			Verbs: []string{"*"},
+		},
+		{
+			APIGroups: []string{"apiextensions.k8s.io"},
+			Resources: []string{"customresourcedefinitions"},
+			Verbs:     []string{"get", "list", "watch"},
 		},
 	}
 	return nil
@@ -4146,21 +4173,27 @@ func validateClusterID(hc *hyperv1.HostedCluster) error {
 	return nil
 }
 
-// getPayloadImage get an image from the payload for a particular component.
-func (r *HostedClusterReconciler) getPayloadImage(ctx context.Context, hc *hyperv1.HostedCluster, component string) (string, error) {
+// getReleaseImage get the releaseInfo releaseImage for a given HC release image reference.
+func (r *HostedClusterReconciler) getReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster) (*releaseinfo.ReleaseImage, error) {
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return "", fmt.Errorf("failed to get pull secret: %w", err)
+		return nil, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
 	if !ok {
-		return "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	return r.ReleaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecretBytes)
+}
+
+// getPayloadImage get an image from the payload for a particular component.
+func (r *HostedClusterReconciler) getPayloadImage(ctx context.Context, hc *hyperv1.HostedCluster, component string) (string, error) {
+	releaseImage, err := r.getReleaseImage(ctx, hc)
 	if err != nil {
 		return "", fmt.Errorf("failed to lookup release image: %w", err)
 	}
-	image, exists := releaseInfo.ComponentImages()[component]
+
+	image, exists := releaseImage.ComponentImages()[component]
 	if !exists {
 		return "", fmt.Errorf("image does not exist for release: %q", image)
 	}
