@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/blang/semver"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
@@ -43,6 +44,7 @@ type CreateOptions struct {
 	EtcdStorageClass                 string
 	FIPS                             bool
 	GenerateSSH                      bool
+	ImageContentSources              string
 	InfrastructureAvailabilityPolicy string
 	InfrastructureJSON               string
 	InfraID                          string
@@ -170,8 +172,23 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		}
 	}
 
+	var imageContentSources []hyperv1.ImageContentSource
+	if len(opts.ImageContentSources) > 0 {
+		icspFileBytes, err := ioutil.ReadFile(opts.ImageContentSources)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read image content sources file: %w", err)
+		}
+
+		err = yaml.Unmarshal(icspFileBytes, &imageContentSources)
+		if err != nil {
+			return nil, fmt.Errorf("unable to deserialize image content sources file: %w", err)
+		}
+
+	}
+
 	return &apifixtures.ExampleOptions{
 		AdditionalTrustBundle:            string(userCABundle),
+		ImageContentSources:              imageContentSources,
 		InfraID:                          opts.InfraID,
 		Annotations:                      annotations,
 		AutoRepair:                       opts.AutoRepair,
