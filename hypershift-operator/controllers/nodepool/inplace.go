@@ -9,9 +9,11 @@ import (
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/support/labelenforcingclient"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -66,17 +68,14 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 		return nil
 	}
 
-	hostedClusterClient, err := newHostedClusterClient(ctx, r.Client, hc)
-	if err != nil {
-		return fmt.Errorf("failed to create remote client: %w", err)
-	}
-
 	// Watch hosted cluster Nodes. We track the created caches, so we don't add a watcher on every reconciliation.
-	// TODO (alberto): cache by HC instead so we reduce the cache size.
+	// This cache might be accessed in parallel by multiple reconciliations on the same cache key if
+	// a hostedcluster has multiple nodepoool, thus we do not use a RWLock.
 	r.hostedClusterCachesTracker.Lock()
 	defer r.hostedClusterCachesTracker.Unlock()
-	if _, ok := r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(nodePool)]; !ok {
-		hostedClusterCache, err := newHostedClusterCache(ctx, r.Client, hc)
+	cacheEntry, ok := r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(hc)]
+	if !ok {
+		hostedClusterCache, hostedClusterClient, err := newHostedClusterCacheAndClient(ctx, r.Client, hc)
 		if err != nil {
 			return fmt.Errorf("failed to create hosted cluster cache: %w", err)
 		}
@@ -84,9 +83,14 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 		cacheCtx, cacheCtxCancel := context.WithCancel(ctx)
 		// TODO: index by HC here instead?
 		if r.hostedClusterCachesTracker.caches == nil {
-			r.hostedClusterCachesTracker.caches = make(map[client.ObjectKey]context.CancelFunc)
+			r.hostedClusterCachesTracker.caches = make(map[client.ObjectKey]cacheWithCancel)
 		}
-		r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(nodePool)] = cacheCtxCancel
+		// Avoid leaking the ctx if we error out
+		defer func() {
+			if cacheEntry.cancel == nil {
+				cacheCtxCancel()
+			}
+		}()
 
 		go hostedClusterCache.Start(cacheCtx)
 		if !hostedClusterCache.WaitForCacheSync(cacheCtx) {
@@ -97,8 +101,17 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 			return fmt.Errorf("error adding watcher for hosted cluster nodes: %w", err)
 		}
 
+		cacheEntry = cacheWithCancel{
+			cache:  hostedClusterCache,
+			client: hostedClusterClient,
+			cancel: cacheCtxCancel,
+		}
+		r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(hc)] = cacheEntry
 		log.Info("Created hosted cluster cache")
+
 	}
+
+	hostedClusterClient := cacheEntry.client
 
 	nodes, err := getNodesForMachineSet(ctx, r.Client, hostedClusterClient, machineSet)
 	if err != nil {
@@ -170,13 +183,23 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 	// Check the nodes to see if any need our help to progress drain
 	// TODO (jerzhang): actually implement drain logic, likely as separate goroutines to monitor success
 	// TODO (jerzhang): consider what happens if the desiredConfig has changed since the node last upgraded
-	for _, node := range nodes {
-		if node.Annotations[DesiredDrainerAnnotationKey] != node.Annotations[LastAppliedDrainerAnnotationKey] {
-			if err = r.handleNodeDrainRequest(ctx, hostedClusterClient, node, node.Annotations[DesiredDrainerAnnotationKey]); err != nil {
-				return fmt.Errorf("failed to create upgrade manifests in hosted cluster: %w", err)
+	for idx := range nodes {
+		if _, err := r.CreateOrUpdate(ctx, hostedClusterClient, nodes[idx], func() error {
+			// TODO (jerzhang): delete the pod after we uncordon
+			// desiredVerb := strings.Split(desiredState, "-")[0]
+			// if desiredVerb == DrainerStateUncordon {
+			// }
+
+			// TODO (jerzhang): actually implement the node draining. For now, just set the singal and pretend we drained.
+			if nodes[idx].Annotations == nil {
+				nodes[idx].Annotations = map[string]string{}
 			}
-			// TODO (jerzhang): in the future, consider exiting here and let future syncs handle post-drain functions
+			nodes[idx].Annotations[LastAppliedDrainerAnnotationKey] = nodes[idx].Annotations[DesiredDrainerAnnotationKey]
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to create upgrade manifests in hosted cluster: %w", err)
 		}
+		// TODO (jerzhang): in the future, consider exiting here and let future syncs handle post-drain functions
 	}
 
 	// Find nodes that can be upgraded
@@ -193,7 +216,7 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 func (r *NodePoolReconciler) performNodesUpgrade(ctx context.Context, hostedClusterClient client.Client, nodePool *hyperv1.NodePool, nodes []*corev1.Node, targetConfigVersionHash string) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	for _, node := range nodes {
+	for idx, node := range nodes {
 		// Set the upgrade pod
 		// TODO (jerzhang): maybe this can be a daemonset instead, since we are using a state machine MCD now
 		// There are also considerations on how to properly handle multiple upgrades, or to force upgrades
@@ -212,16 +235,10 @@ func (r *NodePoolReconciler) performNodesUpgrade(ctx context.Context, hostedClus
 			log.Info("Reconciled upgrade pod", "result", result)
 		}
 
-		// Set the actual annotation
-		annotations := map[string]string{
-			DesiredMachineConfigAnnotationKey: targetConfigVersionHash,
-		}
-		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, node, func() error {
-			return r.reconcileNodeAnnotations(
-				ctx,
-				node,
-				annotations,
-			)
+		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, nodes[idx], func() error {
+			// Set the actual annotation
+			nodes[idx].Annotations[DesiredMachineConfigAnnotationKey] = targetConfigVersionHash
+			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile node drain annotations: %w", err)
 		} else {
@@ -363,39 +380,6 @@ func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable
 
 	// Not sure if we need to order this
 	return candidateNodes[:capacity]
-}
-
-func (r *NodePoolReconciler) handleNodeDrainRequest(ctx context.Context, hostedClusterClient client.Client, node *corev1.Node, desiredState string) error {
-	log := ctrl.LoggerFrom(ctx)
-
-	// TODO (jerzhang): delete the pod after we uncordon
-	// desiredVerb := strings.Split(desiredState, "-")[0]
-	// if desiredVerb == DrainerStateUncordon {
-	// }
-
-	// TODO (jerzhang): actually implement the node draining. For now, just set the singal and pretend we drained.
-	annotations := map[string]string{
-		LastAppliedDrainerAnnotationKey: desiredState,
-	}
-	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, node, func() error {
-		return r.reconcileNodeAnnotations(
-			ctx,
-			node,
-			annotations,
-		)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile node drain annotations: %w", err)
-	} else {
-		log.Info("Reconciled Node drain annotations", "result", result)
-	}
-	return nil
-}
-
-func (r *NodePoolReconciler) reconcileNodeAnnotations(ctx context.Context, node *corev1.Node, annotations map[string]string) error {
-	for k, v := range annotations {
-		node.Annotations[k] = v
-	}
-	return nil
 }
 
 func (r *NodePoolReconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash string, payload []byte, nodePool *hyperv1.NodePool) error {
@@ -579,34 +563,52 @@ func hostedClusterRESTConfig(ctx context.Context, c client.Reader, hc *hyperv1.H
 	return restConfig, nil
 }
 
-// newHostedClusterClient returns a Client for interacting with a remote Cluster using the given scheme for encoding and decoding objects.
-func newHostedClusterClient(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) (client.Client, error) {
+const (
+	cacheLabelSelectorKey = "hypershift.io/managed-by-nodepool-controller"
+)
+
+// newHostedClusterCacheAndClient returns a cache and a client for interacting with a guest cluster using the given scheme for encoding and decoding objects.
+// The cache needs to be started and synced before either the cache or the client can be used.
+func newHostedClusterCacheAndClient(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) (cache.Cache, client.Client, error) {
 	restConfig, err := hostedClusterRESTConfig(ctx, c, hc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create config: %w", err)
+		return nil, nil, fmt.Errorf("failed to create client: %w", err)
 	}
-
-	remoteClient, err := client.New(restConfig, client.Options{Scheme: c.Scheme()})
+	hostedClusterClient, err := client.New(restConfig, client.Options{Scheme: c.Scheme()})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create client: %w", err)
+		return nil, nil, fmt.Errorf("failed to construct guest cluster client: %w", err)
 	}
 
-	return remoteClient, nil
-}
-
-// newHostedClusterCache returns a cache for interacting with a guest cluster using the given scheme for encoding and decoding objects.
-func newHostedClusterCache(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) (cache.Cache, error) {
-	restConfig, err := hostedClusterRESTConfig(ctx, c, hc)
+	labelSelector, err := labels.ValidatedSelectorFromSet(labels.Set{cacheLabelSelectorKey: labelenforcingclient.CacheLabelSelectorValue})
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("failed to construct labelSelector: %w", err)
 	}
-
-	hostedClusterCache, err := cache.New(restConfig, cache.Options{Scheme: c.Scheme()})
+	hostedClusterCache, err := cache.New(restConfig, cache.Options{
+		// Make sure everything other than nodes can only be accessed if we labeled it.
+		DefaultSelector: cache.ObjectSelector{Label: labelSelector},
+		Mapper:          hostedClusterClient.RESTMapper(),
+		Scheme:          hostedClusterClient.Scheme(),
+		SelectorsByObject: cache.SelectorsByObject{
+			&corev1.Node{}: cache.ObjectSelector{Label: labels.Everything()},
+		},
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cache: %w", err)
+		return nil, nil, fmt.Errorf("failed to create cache: %w", err)
 	}
 
-	return hostedClusterCache, nil
+	hostedClusterClient, err = client.NewDelegatingClient(client.NewDelegatingClientInput{
+		CacheReader: hostedClusterCache,
+		Client:      hostedClusterClient,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create cached hostedClusterClient: %w", err)
+	}
+	// Force everything created through this to be labeled so we can get it from the cache. This is needed
+	// because we access pods and we do only want to cache the pods we actualy created, everything
+	// else is irrelevant for us.
+	hostedClusterClient = labelenforcingclient.New(hostedClusterClient, map[string]string{cacheLabelSelectorKey: labelenforcingclient.CacheLabelSelectorValue})
+
+	return hostedClusterCache, hostedClusterClient, nil
 }
 
 func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
