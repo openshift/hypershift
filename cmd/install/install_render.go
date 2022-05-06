@@ -125,7 +125,7 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 			map[string]string{"name": TemplateParamAWSPrivateCredsSecret, "value": opts.AWSPrivateCredentialsSecret},
 			map[string]string{"name": TemplateParamAWSPrivateCredsSecretKey, "value": opts.AWSPrivateCredentialsSecretKey},
 		)
-		opts.AWSPrivateRegion = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecret)
+		opts.AWSPrivateRegion = fmt.Sprintf("${%s}", TemplateParamAWSPrivateRegion)
 		opts.AWSPrivateCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecret)
 		opts.AWSPrivateCredentialsSecretKey = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecretKey)
 	}
