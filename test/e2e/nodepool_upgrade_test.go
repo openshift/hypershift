@@ -22,6 +22,7 @@ import (
 )
 
 func TestReplaceUpgradeNodePool(t *testing.T) {
+	t.SkipNow()
 	t.Parallel()
 	g := NewWithT(t)
 
@@ -138,6 +139,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 }
 
 func TestInPlaceUpgradeNodePool(t *testing.T) {
+	t.SkipNow()
 	t.Parallel()
 	g := NewWithT(t)
 
