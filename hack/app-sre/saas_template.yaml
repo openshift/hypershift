@@ -317,7 +317,7 @@ objects:
           - name: AWS_SHARED_CREDENTIALS_FILE
             value: /etc/provider/${AWS_PRIVATE_CREDS_SECRET_KEY}
           - name: AWS_REGION
-            value: ${AWS_PRIVATE_CREDS_SECRET}
+            value: ${AWS_PRIVATE_REGION}
           - name: AWS_SDK_LOAD_CONFIG
             value: "1"
           image: ${OPERATOR_IMG}:${IMAGE_TAG}
