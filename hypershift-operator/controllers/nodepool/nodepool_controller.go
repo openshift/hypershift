@@ -423,6 +423,21 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 
+	// Validate KubeVirt platform specific format
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		if err := kubevirtPlatformValidation(nodePool); err != nil {
+			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidKubevirtConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
+		}
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidKubevirtConfigConditionType)
+	}
+
 	// Validate config input.
 	// 3 generic core config resoures: fips, ssh and haproxy.
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
