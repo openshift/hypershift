@@ -73,6 +73,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
 	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
+	flag.StringVar(&globalOpts.configurableClusterOptions.NetworkType, "network-type", "", "The network type to use. If unset, will default based on the OCP version.")
 
 	flag.Parse()
 
@@ -217,13 +218,14 @@ type configurableClusterOptions struct {
 	KubeVirtNodeMemory         string
 	NodePoolReplicas           int
 	SSHKeyFile                 string
+	NetworkType                string
 }
 
 func (o *options) DefaultClusterOptions() core.CreateOptions {
 	createOption := core.CreateOptions{
 		ReleaseImage:              o.LatestReleaseImage,
 		NodePoolReplicas:          int32(o.configurableClusterOptions.NodePoolReplicas),
-		NetworkType:               string(hyperv1.OpenShiftSDN),
+		NetworkType:               string(o.configurableClusterOptions.NetworkType),
 		BaseDomain:                o.configurableClusterOptions.BaseDomain,
 		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
 		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
