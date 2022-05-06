@@ -26,6 +26,8 @@ func TestUpgradeControlPlane(t *testing.T) {
 	t.Logf("Starting control plane upgrade test. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
 	clusterOpts := globalOpts.DefaultClusterOptions()
+	//  Wokaround for https://bugzilla.redhat.com/show_bug.cgi?id=2079679, we need at least three nodes
+	clusterOpts.NodePoolReplicas += 1
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
