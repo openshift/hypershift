@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
@@ -58,6 +60,12 @@ func (r *NodePoolReconciler) reconcileInPlaceUpgrade(ctx context.Context, hc *hy
 	// If there's no guest cluster yet return early.
 	if hc.Status.KubeConfig == nil {
 		log.Info("HostedCluster has no Kubeconfig yet")
+		return nil
+	}
+
+	hostedClusterAvailable := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterAvailable))
+	if hostedClusterAvailable.Status != metav1.ConditionTrue {
+		log.Info("HostedCluster is not available yet")
 		return nil
 	}
 
