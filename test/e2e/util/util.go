@@ -205,9 +205,24 @@ func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Cli
 	return nodes.Items
 }
 
-func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
+func preRolloutPlatformCheck(t *testing.T, ctx context.Context, client crclient.Client, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
+	switch hc.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		// Setup wildcard *.apps route for nested kubevirt cluster
+		// This is required for kubevirt ingress to function properly and for the console operator to pass health checks.
+		// This logic will be replaced with the 'cloud-provider-kubevirt' component once it is implemented
+		//
+		// TODO: dvossel - remove this once cloud-provider-kubevirt is in use
+		t.Logf("Setting up wildcard *.apps route for nested kubevirt tenant cluster")
+		createKubeVirtClusterWildcardRoute(t, ctx, client, guestClient, hc, hc.Spec.DNS.BaseDomain)
+	}
+}
+
+func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	g := NewWithT(t)
 	start := time.Now()
+
+	preRolloutPlatformCheck(t, ctx, client, guestClient, hostedCluster)
 
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {

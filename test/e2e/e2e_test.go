@@ -314,7 +314,26 @@ func (o *options) Validate() error {
 	}
 
 	if len(o.configurableClusterOptions.BaseDomain) == 0 {
-		errs = append(errs, fmt.Errorf("base domain is required"))
+		// The KubeVirt e2e tests don't require a base domain right now.
+		//
+		// For KubeVirt, the e2e tests generate a base domain within the *apps domain
+		// of the ocp cluster. So, the guest cluster's base domain is a
+		// subdomain of the hypershift infra/mgmt cluster's base domain.
+		//
+		// Example:
+		//   Infra/Mgmt cluster's DNS
+		//     Base: example.com
+		//     Cluster: mgmt-cluster.example.com
+		//     Apps:    *apps.mgmt-cluster.example.com
+		//   KubeVirt Guest cluster's DNS
+		//     Base: apps.mgmt-cluster.example.com
+		//     Cluster: guest.apps.mgmt-cluster.example.com
+		//     Apps: *apps.guest.apps.mgmt-cluster.example.com
+		//
+		// This is possible using OCP wildcard routes
+		if o.Platform != hyperv1.KubevirtPlatform {
+			errs = append(errs, fmt.Errorf("base domain is required"))
+		}
 	}
 
 	return errors.NewAggregate(errs)

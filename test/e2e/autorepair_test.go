@@ -48,7 +48,7 @@ func TestAutoRepair(t *testing.T) {
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
-	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, ctx, client, guestClient, hostedCluster, globalOpts.LatestReleaseImage)
 
 	// Terminate one of the machines belonging to the cluster
 	nodeToReplace := nodes[0].Name
