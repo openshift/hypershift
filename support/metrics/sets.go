@@ -98,7 +98,7 @@ func EtcdRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
-				Regex:        "(etcd_disk_wal_fsync_duration_seconds_bucket|etcd_mvcc_db_total_size_in_bytes|etcd_network_peer_round_trip_time_seconds_bucket|etcd_mvcc_db_total_size_in_use_in_bytes|etcd_disk_backend_commit_duration_seconds_bucket)",
+				Regex:        "(etcd_disk_wal_fsync_duration_seconds_bucket|etcd_mvcc_db_total_size_in_bytes|etcd_network_peer_round_trip_time_seconds_bucket|etcd_mvcc_db_total_size_in_use_in_bytes|etcd_disk_backend_commit_duration_seconds_bucket|etcd_server_leader_changes_seen_total)",
 				SourceLabels: []string{"__name__"},
 			},
 		}
