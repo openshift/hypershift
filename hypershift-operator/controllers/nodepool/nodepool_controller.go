@@ -50,6 +50,7 @@ import (
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -87,7 +88,13 @@ type NodePoolReconciler struct {
 
 type hostedClusterCachesTracker struct {
 	sync.RWMutex
-	caches map[client.ObjectKey]context.CancelFunc
+	caches map[client.ObjectKey]cacheWithCancel
+}
+
+type cacheWithCancel struct {
+	cache  cache.Cache
+	client client.Client
+	cancel context.CancelFunc
 }
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -142,7 +149,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// If deleted, clean up and return early.
 	if !nodePool.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, nodePool, hcluster.Spec.InfraID, controlPlaneNamespace); err != nil {
+		if err := r.delete(ctx, nodePool, hcluster, controlPlaneNamespace); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete nodepool: %w", err)
 		}
 		// Now we can remove the finalizer.
@@ -751,14 +758,17 @@ func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.
 	return nil
 }
 
-func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, infraID, controlPlaneNamespace string) error {
-	r.hostedClusterCachesTracker.Lock()
-	if cacheContextCancelFunc, ok := r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(nodePool)]; ok {
-		cacheContextCancelFunc()
+func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	if hcluster.DeletionTimestamp != nil {
+		r.hostedClusterCachesTracker.Lock()
+		if cacheEntry, ok := r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(hcluster)]; ok {
+			cacheEntry.cancel()
+		}
+		delete(r.hostedClusterCachesTracker.caches, client.ObjectKeyFromObject(hcluster))
+		r.hostedClusterCachesTracker.Unlock()
 	}
-	delete(r.hostedClusterCachesTracker.caches, client.ObjectKeyFromObject(nodePool))
-	r.hostedClusterCachesTracker.Unlock()
 
+	infraID := hcluster.Spec.InfraID
 	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
 	ms := machineSet(nodePool, infraID, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)

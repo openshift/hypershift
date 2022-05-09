@@ -1,4 +1,4 @@
-package operator
+package labelenforcingclient
 
 import (
 	"context"
@@ -10,23 +10,35 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// labelEnforcingClient enforces that its configured labels are set during a Create or Update call
-type labelEnforcingClient struct {
+const (
+	CacheLabelSelectorKey   = "hypershift.io/managed"
+	CacheLabelSelectorValue = "true"
+)
+
+func New(upstream client.Client, labels map[string]string) *LabelEnforcingClient {
+	return &LabelEnforcingClient{
+		Client: upstream,
+		labels: labels,
+	}
+}
+
+// LabelEnforcingClient enforces that its configured labels are set during a Create or Update call
+type LabelEnforcingClient struct {
 	client.Client
 	labels map[string]string
 }
 
-func (l *labelEnforcingClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+func (l *LabelEnforcingClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
 	l.setLabels(obj)
 	return l.Client.Create(ctx, obj, opts...)
 }
 
-func (l *labelEnforcingClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+func (l *LabelEnforcingClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
 	l.setLabels(obj)
 	return l.Client.Update(ctx, obj, opts...)
 }
 
-func (l *labelEnforcingClient) setLabels(obj client.Object) {
+func (l *LabelEnforcingClient) setLabels(obj client.Object) {
 	labels := obj.GetLabels()
 	if labels == nil {
 		labels = map[string]string{}

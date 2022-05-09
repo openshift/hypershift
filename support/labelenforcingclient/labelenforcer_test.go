@@ -1,4 +1,4 @@
-package operator
+package labelenforcingclient
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func TestLabelEnforcingClientEnforcesLabel(t *testing.T) {
 			name: "Label set with wrong value gets overriden",
 			in: &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 				Name:   "foo",
-				Labels: map[string]string{cacheLabelSelectorKey: "invalid"},
+				Labels: map[string]string{CacheLabelSelectorKey: "invalid"},
 			}},
 		},
 	}
@@ -38,9 +38,9 @@ func TestLabelEnforcingClientEnforcesLabel(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			client := &labelEnforcingClient{
+			client := &LabelEnforcingClient{
 				Client: fake.NewClientBuilder().Build(),
-				labels: map[string]string{cacheLabelSelectorKey: cacheLabelSelectorValue},
+				labels: map[string]string{CacheLabelSelectorKey: CacheLabelSelectorValue},
 			}
 
 			if err := client.Create(ctx, tc.in.DeepCopyObject().(crclient.Object)); err != nil {
@@ -51,8 +51,8 @@ func TestLabelEnforcingClientEnforcesLabel(t *testing.T) {
 			if err := client.Get(ctx, crclient.ObjectKeyFromObject(retrieved), retrieved); err != nil {
 				t.Fatalf("failed to get object after creating it: %v", err)
 			}
-			if val := retrieved.GetLabels()[cacheLabelSelectorKey]; val != cacheLabelSelectorValue {
-				t.Errorf("expected label %s to have value %s, found %q", cacheLabelSelectorKey, cacheLabelSelectorValue, val)
+			if val := retrieved.GetLabels()[CacheLabelSelectorKey]; val != CacheLabelSelectorValue {
+				t.Errorf("expected label %s to have value %s, found %q", CacheLabelSelectorKey, CacheLabelSelectorValue, val)
 			}
 
 			if err := client.Update(ctx, tc.in.DeepCopyObject().(crclient.Object)); err != nil {
@@ -63,8 +63,8 @@ func TestLabelEnforcingClientEnforcesLabel(t *testing.T) {
 			if err := client.Get(ctx, crclient.ObjectKeyFromObject(retrieved), retrieved); err != nil {
 				t.Fatalf("failed to get object after creating it: %v", err)
 			}
-			if val := retrieved.GetLabels()[cacheLabelSelectorKey]; val != cacheLabelSelectorValue {
-				t.Errorf("expected label %s to have value %s, found %q", cacheLabelSelectorKey, cacheLabelSelectorValue, val)
+			if val := retrieved.GetLabels()[CacheLabelSelectorKey]; val != CacheLabelSelectorValue {
+				t.Errorf("expected label %s to have value %s, found %q", CacheLabelSelectorKey, CacheLabelSelectorValue, val)
 			}
 		})
 	}
@@ -99,7 +99,7 @@ func TestLabelEnforcingUpsertProvider(t *testing.T) {
 	client := fake.NewClientBuilder().WithObjects(obj).Build()
 	clientWithSelector := labelselectingReadClient{
 		Client:   client,
-		selector: labels.SelectorFromSet(labels.Set{cacheLabelSelectorKey: cacheLabelSelectorValue}),
+		selector: labels.SelectorFromSet(labels.Set{CacheLabelSelectorKey: CacheLabelSelectorValue}),
 	}
 
 	// Adding it to the fakeclient sets the ResourceVersion which will

@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/spf13/cobra"
@@ -210,7 +211,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		},
 	}
 	operatorConfig := &operator.HostedClusterConfigOperatorConfig{
-		TargetCreateOrUpdateProvider: &operator.LabelEnforcingUpsertProvider{
+		TargetCreateOrUpdateProvider: &labelenforcingclient.LabelEnforcingUpsertProvider{
 			Upstream:  upsert.New(o.enableCIDebugOutput),
 			APIReader: mgr.GetAPIReader(),
 		},

@@ -23,6 +23,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 )
@@ -93,10 +94,10 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 			if err != nil {
 				return nil, err
 			}
-			return &labelEnforcingClient{
-				Client: client,
-				labels: map[string]string{cacheLabelSelectorKey: cacheLabelSelectorValue},
-			}, nil
+			return labelenforcingclient.New(
+				client,
+				map[string]string{cacheLabelSelectorKey: cacheLabelSelectorValue},
+			), nil
 		},
 		NewCache: cache.BuilderWithOptions(cache.Options{
 			SelectorsByObject: cache.SelectorsByObject{
