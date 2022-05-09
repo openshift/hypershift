@@ -562,7 +562,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetConfigVersionHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, proxy)
+		orig := userDataSecret.DeepCopy()
+		err := reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, proxy)
+		if diff := cmp.Diff(orig, userDataSecret); len(diff) > 0 {
+			log.Info("Mutating user data secret", "diff", "<redacted>")
+		}
+		return err
 	}); err != nil {
 		return ctrl.Result{}, err
 	} else {
@@ -606,7 +611,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 	if result, err := r.CreateOrUpdate(ctx, r.Client, template, func() error {
-		return mutateTemplate(template)
+		orig := template.DeepCopyObject()
+		err := mutateTemplate(template)
+		if diff := cmp.Diff(orig, template); len(diff) > 0 {
+			log.Info("Mutating machine template", "diff", diff)
+		}
+		return err
 	}); err != nil {
 		return ctrl.Result{}, err
 	} else {
@@ -616,13 +626,18 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
 		ms := machineSet(nodePool, infraID, controlPlaneNamespace)
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, ms, func() error {
-			return r.reconcileMachineSet(
+			orig := ms.DeepCopy()
+			err := r.reconcileMachineSet(
 				ctx,
 				ms, hcluster, nodePool,
 				userDataSecret,
 				template,
 				infraID,
 				targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
+			if diff := cmp.Diff(orig, ms); len(diff) > 0 {
+				log.Info("Mutating machineset", "diff", diff)
+			}
+			return err
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineSet %q: %w",
 				client.ObjectKeyFromObject(ms).String(), err)
