@@ -16,6 +16,7 @@ import (
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
@@ -637,13 +638,18 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
 		md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
-			return r.reconcileMachineDeployment(
+			orig := md.DeepCopy()
+			err := r.reconcileMachineDeployment(
 				log,
 				md, nodePool,
 				userDataSecret,
 				template,
 				infraID,
 				targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
+			if diff := cmp.Diff(orig, md); len(diff) > 0 {
+				log.Info("Updating MachineDeployment", "diff", diff)
+			}
+			return err
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
 				client.ObjectKeyFromObject(md).String(), err)
