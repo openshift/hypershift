@@ -32,6 +32,7 @@ import (
 	installcmd "github.com/openshift/hypershift/cmd/install"
 )
 
+// TODO
 func main() {
 	cmd := &cobra.Command{
 		Use:              "hypershift",
