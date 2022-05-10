@@ -17,9 +17,6 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 
 	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{
 		RootVolume: &hyperv1.KubevirtRootVolume{
-			Image: &hyperv1.KubevirtDiskImage{
-				ContainerDiskImage: &o.Image,
-			},
 			KubevirtVolume: hyperv1.KubevirtVolume{
 				Type: hyperv1.KubevirtVolumeTypePersistent,
 				Persistent: &hyperv1.KubevirtPersistentVolume{
@@ -37,6 +34,12 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 	}
 	if o.Cores != 0 {
 		exampleTemplate.Compute.Cores = &o.Cores
+	}
+
+	if o.Image != "" {
+		exampleTemplate.RootVolume.Image = &hyperv1.KubevirtDiskImage{
+			ContainerDiskImage: &o.Image,
+		}
 	}
 
 	return exampleTemplate
