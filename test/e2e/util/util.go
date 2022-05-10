@@ -502,18 +502,18 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			// a particular test cluster These budgets will also need to scale up with
 			// additional tests that create HostedClusters
 			//
-			// Current HCs per periodic job: 9
+			// Current HCs per periodic job: 10
 			// Read per HC: 300
-			// Mutate per HC: 400
+			// Mutate per HC: 500
 			{
 				name:   "hypershift-operator read",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="GET"})`,
-				budget: 2700,
+				budget: 3000,
 			},
 			{
 				name:   "hypershift-operator mutate",
 				query:  `sum(hypershift:operator:component_api_requests_total{method!="GET"})`,
-				budget: 3600,
+				budget: 5000,
 			},
 			{
 				name:   "hypershift-operator no 404 deletes",
