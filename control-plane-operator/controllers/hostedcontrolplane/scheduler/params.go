@@ -21,6 +21,7 @@ type KubeSchedulerParams struct {
 	HyperkubeImage          string                `json:"hyperkubeImage"`
 	AvailabilityProberImage string                `json:"availabilityProberImage"`
 	config.DeploymentConfig `json:",inline"`
+	APIServer               *configv1.APIServer `json:"apiServer"`
 }
 
 func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig globalconfig.GlobalConfig, setDefaultSecurityContext bool) *KubeSchedulerParams {
@@ -29,6 +30,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		Scheduler:               globalConfig.Scheduler,
 		HyperkubeImage:          images["hyperkube"],
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		APIServer:               globalConfig.APIServer,
 	}
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
@@ -97,6 +99,20 @@ func (p *KubeSchedulerParams) FeatureGates() []string {
 	} else {
 		return config.FeatureGates(&configv1.FeatureGateSelection{FeatureSet: configv1.Default})
 	}
+}
+
+func (p *KubeSchedulerParams) CipherSuites() []string {
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
+}
+
+func (p *KubeSchedulerParams) MinTLSVersion() string {
+	if p.APIServer != nil {
+		return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+	}
+	return config.MinTLSVersion(nil)
 }
 
 func (p *KubeSchedulerParams) SchedulerPolicy() configv1.ConfigMapNameReference {
