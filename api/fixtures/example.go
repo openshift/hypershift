@@ -56,6 +56,7 @@ type ExampleOptions struct {
 	SSHPublicKey                     []byte
 	SSHPrivateKey                    []byte
 	NodePoolReplicas                 int32
+	ImageContentSources              []hyperv1.ImageContentSource
 	InfraID                          string
 	ComputeCIDR                      string
 	ServiceCIDR                      string
@@ -499,6 +500,10 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			},
 		}
 		cluster.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: userCABundleCM.Name}
+	}
+
+	if len(o.ImageContentSources) > 0 {
+		cluster.Spec.ImageContentSources = o.ImageContentSources
 	}
 
 	if o.NodePoolReplicas <= -1 {
