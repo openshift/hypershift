@@ -132,9 +132,6 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 	}
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
-	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
-	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, client, hostedCluster)
 }
 
 func TestInPlaceUpgradeNodePool(t *testing.T) {
@@ -242,8 +239,4 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 	}
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
-	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, client, hostedCluster)
-	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
-	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, client, hostedCluster)
 }
