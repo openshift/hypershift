@@ -5,6 +5,9 @@ set -ex
 # The kubevirt tests require wildcard routes to be allowed
 oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'
 
+# Make the masters schedulable so we have more capacity to run VMs
+oc patch scheduler cluster --type=json -p '[{ "op": "replace", "path": "/spec/mastersSchedulable", "value": true }]'
+
 oc apply -f - <<EOF
 apiVersion: v1
 kind: Namespace
