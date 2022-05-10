@@ -59,7 +59,9 @@ func TestUpgradeControlPlane(t *testing.T) {
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
+	// The CPO version upgrades results in a nodepool rollout because the image of the static HAProxy
+	// pod changes. https://issues.redhat.com/browse/HOSTEDCP-426
+	//e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, client, hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
