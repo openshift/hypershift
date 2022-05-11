@@ -8,4 +8,5 @@ rules:
     verbs: ["get", "list", "create", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
+    resourceNames: ["pprof-cert"]
     verbs: ["get", "update"]
