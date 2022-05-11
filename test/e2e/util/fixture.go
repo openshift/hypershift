@@ -90,7 +90,6 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 
 	t.Cleanup(func() { teardown(context.Background(), t, client, hc, opts, artifactDir) })
 
-	t.Cleanup(func() { EnsureNoCrashingPods(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureHCPContainersHaveResourceRequests(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureNoPodsWithTooHighPriority(t, context.Background(), client, hc) })
