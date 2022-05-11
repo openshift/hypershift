@@ -30,6 +30,7 @@ import (
 	destroycmd "github.com/openshift/hypershift/cmd/destroy"
 	dumpcmd "github.com/openshift/hypershift/cmd/dump"
 	installcmd "github.com/openshift/hypershift/cmd/install"
+	"github.com/openshift/hypershift/pkg/version"
 )
 
 func main() {
@@ -43,6 +44,8 @@ func main() {
 			os.Exit(1)
 		},
 	}
+
+	cmd.Version = version.GetRevision()
 
 	ctx, cancel := context.WithCancel(context.Background())
 

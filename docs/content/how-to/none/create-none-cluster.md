@@ -15,7 +15,7 @@ This document explains how to create HostedClusters and NodePools using the 'Non
 ## Prerequisites: Building the Hypershift Operator
 
 Currently, the HyperShift operator is deployed using the `hypershift` binary, which needs to be compiled manually.
-RHEL8 doesn't include go1.17 officially but it can be installed via `gvm` by following the next steps:
+RHEL8 doesn't include go1.18 officially but it can be installed via `gvm` by following the next steps:
 
 ~~~sh
 # Install prerequisites
@@ -23,11 +23,11 @@ sudo dnf install -y curl git make bison gcc glibc-devel
 git clone https://github.com/openshift/hypershift.git
 pushd hypershift
 
-# Install gvm to install go 1.17
+# Install gvm to install go 1.18
 bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
 source ${HOME}/.gvm/scripts/gvm
-gvm install go1.17
-gvm use go1.17
+gvm install go1.18
+gvm use go1.18
 
 # build the binary
 make hypershift
@@ -47,7 +47,7 @@ Alternatively, it can be compiled using a container as:
 sudo dnf install podman -y
 # Compile hypershift
 mkdir -p ./tmp/ && \
-podman run -it -v ${PWD}/tmp:/var/tmp/hypershift-bin/:Z --rm docker.io/golang:1.17 sh -c \
+podman run -it -v ${PWD}/tmp:/var/tmp/hypershift-bin/:Z --rm docker.io/golang:1.18 sh -c \
   'git clone --depth 1 https://github.com/openshift/hypershift.git /var/tmp/hypershift/ && \
   cd /var/tmp/hypershift && \
   make hypershift && \
@@ -68,11 +68,11 @@ sudo dnf install -y curl git make bison gcc glibc-devel
 git clone https://github.com/openshift/hypershift.git
 pushd hypershift
 
-# Install gvm to install go 1.17
+# Install gvm to install go 1.18
 bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
 source ${HOME}/.gvm/scripts/gvm
-gvm install go1.17 -B
-gvm use go1.17
+gvm install go1.18 -B
+gvm use go1.18
 
 # Build the binaries and the container
 make build

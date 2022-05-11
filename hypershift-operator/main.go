@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -60,6 +61,9 @@ func main() {
 			os.Exit(1)
 		},
 	}
+
+	cmd.Version = version.GetRevision()
+
 	cmd.AddCommand(NewStartCommand())
 
 	if err := cmd.Execute(); err != nil {

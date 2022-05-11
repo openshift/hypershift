@@ -18,7 +18,7 @@ you should adjust to your own environment.
 
 * The HyperShift CLI (`hypershift`).
 
-    Install it using Go 1.17:
+    Install it using Go 1.18:
         ```shell linenums="1"
         git clone https://github.com/openshift/hypershift.git
         cd hypershift
