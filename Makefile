@@ -234,6 +234,6 @@ ci-test-e2e:
 		--e2e.base-domain=ci.hypershift.devcluster.openshift.com \
 		--e2e.latest-release-image=${OCP_IMAGE_LATEST} \
 		--e2e.previous-release-image=${OCP_IMAGE_PREVIOUS} \
-		--e2e.additional-tags="expirationDate=$(date -d '4 hours' --iso=minutes --utc)" \
+		--e2e.additional-tags="expirationDate=$(shell date -d '4 hours' --iso=minutes --utc)" \
 		--e2e.aws-endpoint-access=PublicAndPrivate \
 		--e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com
