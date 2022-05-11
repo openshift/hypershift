@@ -904,12 +904,20 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		return err
 	}
 
+	// Set defaults. These are normally set by the CAPI machinedeployment webhook.
+	// However, since we don't run the webhook, CAPI updates the machinedeployment
+	// after it has been created with defaults.
+	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32Ptr(0)
+	machineDeployment.Spec.RevisionHistoryLimit = k8sutilspointer.Int32Ptr(1)
+	machineDeployment.Spec.ProgressDeadlineSeconds = k8sutilspointer.Int32Ptr(600)
+
 	// Set selector and template
 	machineDeployment.Spec.ClusterName = CAPIClusterName
 	if machineDeployment.Spec.Selector.MatchLabels == nil {
 		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
 	}
 	machineDeployment.Spec.Selector.MatchLabels[resourcesName] = resourcesName
+	machineDeployment.Spec.Selector.MatchLabels[capiv1.ClusterLabelName] = CAPIClusterName
 	machineDeployment.Spec.Template = capiv1.MachineTemplateSpec{
 		ObjectMeta: capiv1.ObjectMeta{
 			Labels: map[string]string{
@@ -975,7 +983,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		// Before persisting, if the NodePool is brand new we want to make sure the replica number is set so the machineDeployment controller
 		// does not panic.
 		if machineDeployment.Spec.Replicas == nil {
-			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
+			setMachineDeploymentReplicas(nodePool, machineDeployment)
 		}
 		return nil
 	}
