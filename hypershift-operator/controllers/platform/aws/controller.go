@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/upsert"
@@ -166,7 +167,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Reconcile the AWSEndpointService Status
 	oldStatus := awsEndpointService.Status.DeepCopy()
-	if err = reconcileAWSEndpointServiceStatus(ctx, awsEndpointService, r.ec2Client, r.elbv2Client); err != nil {
+	if err = reconcileAWSEndpointServiceStatus(ctx, r.Client, awsEndpointService, r.ec2Client, r.elbv2Client); err != nil {
 		meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
 			Type:    string(hyperv1.AWSEndpointServiceAvailable),
 			Status:  metav1.ConditionFalse,
@@ -257,11 +258,8 @@ func listSubnetIDs(ctx context.Context, c client.Client, clusterName, nodePoolNa
 	return subnetIDs, nil
 }
 
-func reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, elbv2Client elbv2iface.ELBV2API) error {
-	log, err := logr.FromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("no logger found: %w", err)
-	}
+func reconcileAWSEndpointServiceStatus(ctx context.Context, c client.Client, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, elbv2Client elbv2iface.ELBV2API) error {
+	log := ctrl.LoggerFrom(ctx)
 
 	serviceName := awsEndpointService.Status.EndpointServiceName
 	if len(serviceName) != 0 {
@@ -312,6 +310,11 @@ func reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *
 		return fmt.Errorf("load balancer %s is not yet active", *lbARN)
 	}
 
+	managementClusterInfrastructure := &configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(managementClusterInfrastructure), managementClusterInfrastructure); err != nil {
+		return fmt.Errorf("failed to get management cluster infrastructure: %w", err)
+	}
+
 	// create the Endpoint Service
 	createEndpointServiceOutput, err := ec2Client.CreateVpcEndpointServiceConfigurationWithContext(ctx, &ec2.CreateVpcEndpointServiceConfigurationInput{
 		// TODO: we should probably do some sort of automated acceptance check against the VPC ID in the HostedCluster
@@ -319,7 +322,10 @@ func reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *
 		NetworkLoadBalancerArns: []*string{lbARN},
 		TagSpecifications: []*ec2.TagSpecification{{
 			ResourceType: aws.String("vpc-endpoint-service"),
-			Tags:         apiTagToEC2Tag(awsEndpointService.Spec.ResourceTags),
+			Tags: append(apiTagToEC2Tag(awsEndpointService.Spec.ResourceTags), &ec2.Tag{
+				Key:   aws.String("kubernetes.io/cluster/" + managementClusterInfrastructure.Status.InfrastructureName),
+				Value: aws.String("owned"),
+			}),
 		}},
 	})
 	if err != nil {
