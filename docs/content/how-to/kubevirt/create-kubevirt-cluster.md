@@ -18,9 +18,6 @@ Install a nested OCP cluster running on VMs within a management OCP cluster
   https://docs.openshift.com/container-platform/4.10/post_installation_configuration/storage-configuration.html)
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository.
-* A valid RHCOS container disk image. Currently there is no officially supported RHCOS container disk image, therefore
-  it must be provided when creating the cluster (The following image can be used, but currently there is no guarenty
-that it works properly quay.io/containerdisks/rhcos:4.10 - Work in progress)
 * A base domain that can be [configured for ingress](#handling-ingress-and-dns)
 
 ## Before you begin
@@ -33,21 +30,19 @@ hypershift install
 
 ## Create a HostedCluster
 
-Create a new cluster, specifying the base domain, RHCOS container disk image, and the pull secret
+Create a new cluster, specifying the base domain and the pull secret
 provided in the [Prerequisites](#prerequisites):
 
 ```shell linenums="1"
 export CLUSTER_NAME=example
 export BASE_DOMAIN=example.com
 export PULL_SECRET="$HOME/pull-secret"
-export CONTAINER_DISK=quay.io/containerdisks/rhcos:4.10
 
 hypershift create cluster kubevirt \
 --name $CLUSTER_NAME \
 --base-domain $BASE_DOMAIN \
 --node-pool-replicas=3 \
 --pull-secret $PULL_SECRET \
---containerdisk ${CONTAINER_DISK} \
 ```
 
 !!! note
@@ -275,7 +270,6 @@ hypershift create nodepool kubevirt \
   --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
   --node-count $NODEPOOL_REPLICAS \
-  --containerdisk ${CONTAINER_DISK} \
 ```
 
 Check the status of the NodePool by listing `nodepool` resources in the `clusters`
