@@ -11,6 +11,7 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	"github.com/spf13/cobra"
@@ -23,6 +24,7 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -143,6 +145,10 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&agentv1.AgentMachine{},
 		&agentv1.AgentMachineTemplate{},
 		&agentv1.AgentCluster{},
+		&capikubevirt.KubevirtMachine{},
+		&capikubevirt.KubevirtMachineTemplate{},
+		&capikubevirt.KubevirtCluster{},
+		&routev1.Route{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	if opts.AgentNamespace != "" {
