@@ -504,7 +504,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			//
 			// Current HCs per periodic job: 10
 			// Read per HC: 300
-			// Mutate per HC: 500
+			// Mutate per HC: 600  TODO: need to tighten this when HO stop communicating with guest KAS for in-place upgrade
 			{
 				name:   "hypershift-operator read",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="GET"})`,
@@ -513,7 +513,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "hypershift-operator mutate",
 				query:  `sum(hypershift:operator:component_api_requests_total{method!="GET"})`,
-				budget: 5000,
+				budget: 6000,
 			},
 			{
 				name:   "hypershift-operator no 404 deletes",
