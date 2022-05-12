@@ -236,4 +236,5 @@ ci-test-e2e:
 		--e2e.previous-release-image=${OCP_IMAGE_PREVIOUS} \
 		--e2e.additional-tags="expirationDate=$(shell date -d '4 hours' --iso=minutes --utc)" \
 		--e2e.aws-endpoint-access=PublicAndPrivate \
-		--e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com
+		--e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com \
+		--e2e.control-plane-operator-image=${CONTROL_PLANE_OPERATOR_IMAGE}
