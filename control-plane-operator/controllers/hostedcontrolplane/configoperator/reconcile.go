@@ -4,16 +4,7 @@ import (
 	"fmt"
 	"path"
 
-	"k8s.io/utils/pointer"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	appsv1 "k8s.io/api/apps/v1"
-	coordinationv1 "k8s.io/api/coordination/v1"
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -21,6 +12,14 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
+	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/pointer"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
@@ -109,6 +108,20 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			},
 			Verbs: []string{
 				"get",
+				"list",
+				"watch",
+			},
+		},
+		{
+			APIGroups: []string{capiv1.GroupVersion.Group},
+			Resources: []string{
+				"machinesets",
+				"machines",
+			},
+			Verbs: []string{
+				"get",
+				"patch",
+				"update",
 				"list",
 				"watch",
 			},

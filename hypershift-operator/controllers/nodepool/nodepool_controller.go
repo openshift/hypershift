@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -50,7 +49,6 @@ import (
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -61,12 +59,16 @@ import (
 )
 
 const (
-	finalizer                                 = "hypershift.openshift.io/finalizer"
-	autoscalerMaxAnnotation                   = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
-	autoscalerMinAnnotation                   = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
-	nodePoolAnnotation                        = "hypershift.openshift.io/nodePool"
-	nodePoolAnnotationCurrentConfig           = "hypershift.openshift.io/nodePoolCurrentConfig"
-	nodePoolAnnotationCurrentConfigVersion    = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+	finalizer                                = "hypershift.openshift.io/finalizer"
+	autoscalerMaxAnnotation                  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
+	autoscalerMinAnnotation                  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
+	nodePoolAnnotation                       = "hypershift.openshift.io/nodePool"
+	nodePoolAnnotationCurrentConfig          = "hypershift.openshift.io/nodePoolCurrentConfig"
+	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+	nodePoolAnnotationTargetConfigVersion    = "hypershift.openshift.io/nodePoolTargetConfigVersion"
+	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
+	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
+
 	nodePoolAnnotationPlatformMachineTemplate = "hypershift.openshift.io/nodePoolPlatformMachineTemplate"
 	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
 	TokenSecretTokenGenerationTime            = "hypershift.openshift.io/last-token-generation-time"
@@ -81,20 +83,7 @@ type NodePoolReconciler struct {
 	recorder        record.EventRecorder
 	ReleaseProvider releaseinfo.Provider
 	controller      controller.Controller
-	// hostedClusterCachesTracker maintains an index of NodePool key/cancelFunc for every NodePool running a hosted cluster cache.
-	hostedClusterCachesTracker hostedClusterCachesTracker
 	upsert.CreateOrUpdateProvider
-}
-
-type hostedClusterCachesTracker struct {
-	sync.RWMutex
-	caches map[client.ObjectKey]cacheWithCancel
-}
-
-type cacheWithCancel struct {
-	cache  cache.Cache
-	client client.Client
-	cancel context.CancelFunc
 }
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -103,6 +92,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
 		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
 		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&source.Kind{Type: &capiv1.MachineSet{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &agentv1.AgentMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		Watches(&source.Kind{Type: &capiazure.AzureMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
@@ -644,7 +634,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, ms, func() error {
 			return r.reconcileMachineSet(
 				ctx,
-				ms, hcluster, nodePool,
+				ms, nodePool,
 				userDataSecret,
 				template,
 				infraID,
@@ -654,10 +644,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				client.ObjectKeyFromObject(ms).String(), err)
 		} else {
 			log.Info("Reconciled MachineSet", "result", result)
-		}
-
-		if err := r.reconcileInPlaceUpgrade(ctx, hcluster, nodePool, ms, targetConfigHash, targetVersion, targetConfigVersionHash, tokenSecret); err != nil {
-			return ctrl.Result{}, err
 		}
 	}
 
@@ -779,15 +765,6 @@ func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.
 }
 
 func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	if hcluster.DeletionTimestamp != nil {
-		r.hostedClusterCachesTracker.Lock()
-		if cacheEntry, ok := r.hostedClusterCachesTracker.caches[client.ObjectKeyFromObject(hcluster)]; ok {
-			cacheEntry.cancel()
-		}
-		delete(r.hostedClusterCachesTracker.caches, client.ObjectKeyFromObject(hcluster))
-		r.hostedClusterCachesTracker.Unlock()
-	}
-
 	infraID := hcluster.Spec.InfraID
 	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
 	ms := machineSet(nodePool, infraID, controlPlaneNamespace)

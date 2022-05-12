@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
@@ -48,6 +49,7 @@ func NewCommand() *cobra.Command {
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"controller-manager-ca":  cmca.Setup,
 	resources.ControllerName: resources.Setup,
+	"inplaceupgrader":        inplaceupgrader.Setup,
 }
 
 type HostedClusterConfigOperator struct {
