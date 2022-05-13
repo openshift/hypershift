@@ -76,11 +76,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/clock"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1" // Need this dep atm to satisfy IBM provider dep.
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -134,7 +134,7 @@ type HostedClusterReconciler struct {
 	SetDefaultSecurityContext bool
 
 	// Clock is used to determine the time in a testable way.
-	Clock clock.Clock
+	Clock clock.WithTickerAndDelayedExecution
 
 	EnableOCPClusterMonitoring bool
 
@@ -3057,7 +3057,7 @@ func reconcileAutoScalerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Ro
 
 // computeClusterVersionStatus determines the ClusterVersionStatus of the
 // given HostedCluster and returns it.
-func computeClusterVersionStatus(clock clock.Clock, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) *hyperv1.ClusterVersionStatus {
+func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) *hyperv1.ClusterVersionStatus {
 	// If there's no history, rebuild it from scratch.
 	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 {
 		return &hyperv1.ClusterVersionStatus{
