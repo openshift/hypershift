@@ -238,6 +238,24 @@ func (o *DestroyInfraOptions) DestroyVPCEndpointServices(ctx context.Context, cl
 		if len(ids) < 1 {
 			return true
 		}
+
+		endpointConnections, err := client.DescribeVpcEndpointConnections(&ec2.DescribeVpcEndpointConnectionsInput{Filters: []*ec2.Filter{{Name: aws.String("service-id"), Values: aws.StringSlice(ids)}}})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to list endpoint conncetions: %w", err))
+			return false
+		}
+		endpointConnectionsByServiceID := map[*string][]*string{}
+		for _, endpointConnection := range endpointConnections.VpcEndpointConnections {
+			endpointConnectionsByServiceID[endpointConnection.ServiceId] = append(endpointConnectionsByServiceID[endpointConnection.ServiceId], endpointConnection.VpcEndpointId)
+		}
+		for service, endpoints := range endpointConnectionsByServiceID {
+			if _, err := client.RejectVpcEndpointConnectionsWithContext(ctx, &ec2.RejectVpcEndpointConnectionsInput{ServiceId: service, VpcEndpointIds: endpoints}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reject endpoint connections for service %s endpoints %v", aws.StringValue(service), aws.StringValueSlice(endpoints)))
+				return false
+			}
+			log.Log.Info("Deleted endpoint connections", "serviceID", aws.StringValue(service), "endpoints", fmt.Sprintf("%v", aws.StringValueSlice(endpoints)))
+		}
+
 		if _, err := client.DeleteVpcEndpointServiceConfigurationsWithContext(ctx, &ec2.DeleteVpcEndpointServiceConfigurationsInput{
 			ServiceIds: aws.StringSlice(ids),
 		}); err != nil {
