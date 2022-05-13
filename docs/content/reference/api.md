@@ -5261,6 +5261,18 @@ retain: delete the image from the openshift but retain in the infrastructure.</p
 <tbody>
 <tr>
 <td>
+<code>accountID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>AccountID is the IBMCloud account id.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>resourceGroup</code></br>
 <em>
 string
@@ -5355,9 +5367,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <p>KubeCloudControllerCreds is a reference to a secret containing cloud
-credentials with permissions matching the cloud controller policy. The
-secret should have exactly one key, <code>credentials</code>, whose value is an AWS
-credentials file.
+credentials with permissions matching the cloud controller policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
 </td>
@@ -5373,9 +5383,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <p>NodePoolManagementCreds is a reference to a secret containing cloud
-credentials with permissions matching the node pool management policy. The
-secret should have exactly one key, <code>credentials</code>, whose value is an AWS
-credentials file.
+credentials with permissions matching the node pool management policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
 </td>
@@ -5392,8 +5400,6 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
 credentials with permissions matching the control-plane-operator policy.
-The secret should have exactly one key, <code>credentials</code>, whose value is
-an AWS credentials file.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
 </td>

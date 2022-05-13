@@ -183,15 +183,22 @@ func (p PowerVS) ReconcileCredentials(ctx context.Context, c client.Client, crea
 		},
 	}
 	_, err := createOrUpdate(ctx, c, dest, func() error {
-		srcData, srcHasData := src.Data["ibm-credentials.env"]
-		if !srcHasData {
-			return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key", src.Name)
+		apiKeySrcData, apiKeySrcHasData := src.Data["ibmcloud_api_key"]
+		if !apiKeySrcHasData {
+			return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key ibmcloud_api_key", src.Name)
 		}
 		dest.Type = corev1.SecretTypeOpaque
 		if dest.Data == nil {
 			dest.Data = map[string][]byte{}
 		}
-		dest.Data["ibm-credentials.env"] = srcData
+		dest.Data["ibmcloud_api_key"] = apiKeySrcData
+
+		envSrcData, envSrcHasData := src.Data["ibm-credentials.env"]
+		if !envSrcHasData {
+			return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key ibm-credentials.env", src.Name)
+		}
+		dest.Data["ibm-credentials.env"] = envSrcData
+
 		return nil
 	})
 	if err != nil {
