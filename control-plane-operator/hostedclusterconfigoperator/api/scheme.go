@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
-	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1beta1"
+	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/config/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"

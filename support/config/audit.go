@@ -3,7 +3,7 @@ package config
 import (
 	"bytes"
 
-	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1beta1"
+	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 
 	"github.com/openshift/hypershift/support/api"
 )

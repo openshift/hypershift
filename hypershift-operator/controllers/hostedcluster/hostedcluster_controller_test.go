@@ -29,9 +29,10 @@ import (
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/clock"
+	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -262,7 +263,7 @@ func TestComputeClusterVersionStatus(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			actualStatus := computeClusterVersionStatus(clock.NewFakeClock(Now.Time), &test.Cluster, &test.ControlPlane)
+			actualStatus := computeClusterVersionStatus(clocktesting.NewFakeClock(Now.Time), &test.Cluster, &test.ControlPlane)
 			if !equality.Semantic.DeepEqual(&test.ExpectedStatus, actualStatus) {
 				t.Errorf(cmp.Diff(&test.ExpectedStatus, actualStatus))
 			}
