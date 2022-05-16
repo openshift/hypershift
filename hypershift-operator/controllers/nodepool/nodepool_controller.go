@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	supportutil "github.com/openshift/hypershift/support/util"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -84,6 +85,8 @@ type NodePoolReconciler struct {
 	// hostedClusterCachesTracker maintains an index of NodePool key/cancelFunc for every NodePool running a hosted cluster cache.
 	hostedClusterCachesTracker hostedClusterCachesTracker
 	upsert.CreateOrUpdateProvider
+	HypershiftOperatorImage string
+	ImageMetadataProvider   supportutil.ImageMetadataProvider
 }
 
 type hostedClusterCachesTracker struct {
@@ -474,7 +477,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// additional core config resource created when image content source specified.
 		expectedCoreConfigResources += 1
 	}
-	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace)
+	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster, gConfig)
 	if err != nil {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -1143,10 +1146,47 @@ func ignConfig(encodedCACert, encodedToken, endpoint string, proxy *configv1.Pro
 	return cfg
 }
 
-func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int, controlPlaneResource string) (configsRaw string, missingConfigs bool, err error) {
+func (r *NodePoolReconciler) getConfig(ctx context.Context,
+	nodePool *hyperv1.NodePool,
+	expectedCoreConfigResources int,
+	controlPlaneResource string,
+	releaseImage *releaseinfo.ReleaseImage,
+	hcluster *hyperv1.HostedCluster,
+	globalConfig globalconfig.GlobalConfig,
+) (configsRaw string, missingConfigs bool, err error) {
 	var configs []corev1.ConfigMap
 	var allConfigPlainText []string
 	var errors []error
+
+	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to check if we manage haproxy ignition config: %w", err)
+	}
+	if isHAProxyIgnitionConfigManaged {
+		oldHAProxyIgnitionConfig := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneResource, Name: "ignition-config-apiserver-haproxy"},
+		}
+		err := r.Client.Get(ctx, client.ObjectKeyFromObject(oldHAProxyIgnitionConfig), oldHAProxyIgnitionConfig)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return "", false, fmt.Errorf("failed to get CPO-managed haproxy ignition config: %w", err)
+		}
+		if err == nil {
+			if err := r.Client.Delete(ctx, oldHAProxyIgnitionConfig); err != nil && !apierrors.IsNotFound(err) {
+				return "", false, fmt.Errorf("failed to delete the CPO-managed haproxy ignition config: %w", err)
+			}
+		}
+		expectedCoreConfigResources--
+
+		haproxyIgnitionConfig, missing, err := r.reconcileHAProxyIgnitionConfig(ctx, releaseImage, hcluster, globalConfig, cpoImage)
+		if err != nil {
+			return "", false, fmt.Errorf("failed to generate haporoxy ignition config: %w", err)
+		}
+		if missing {
+			missingConfigs = true
+		} else {
+			allConfigPlainText = append(allConfigPlainText, haproxyIgnitionConfig)
+		}
+	}
 
 	coreConfigMapList := &corev1.ConfigMapList{}
 	if err := r.List(ctx, coreConfigMapList, client.MatchingLabels{

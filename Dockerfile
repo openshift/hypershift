@@ -20,3 +20,4 @@ RUN cd /usr/bin && \
 
 ENTRYPOINT /usr/bin/hypershift
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
+LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true

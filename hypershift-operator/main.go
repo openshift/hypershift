@@ -250,7 +250,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			},
 			RegistryOverrides: opts.RegistryOverrides,
 		},
-		CreateOrUpdateProvider: createOrUpdate,
+		CreateOrUpdateProvider:  createOrUpdate,
+		HypershiftOperatorImage: operatorImage,
+		ImageMetadataProvider:   &util.RegistryClientImageMetadataProvider{},
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
