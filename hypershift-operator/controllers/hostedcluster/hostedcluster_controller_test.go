@@ -1457,6 +1457,30 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 	}
 }
 
+func TestIgnoreHostedCluster(t *testing.T) {
+	testHC := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fake-cluster",
+			Namespace: "fake-namespace",
+			Annotations: map[string]string{
+				"hypershift.openshift.io/ignore": "True",
+			},
+		},
+	}
+	r := &HostedClusterReconciler{
+		Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(testHC).Build(),
+	}
+	g := NewGomegaWithT(t)
+	req := ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Namespace: testHC.Namespace,
+			Name:      testHC.Name,
+		},
+	}
+	_, err := r.Reconcile(context.Background(), req)
+	g.Expect(err).ToNot(HaveOccurred())
+}
+
 type fakeImageMetadataProvider struct{}
 
 func (*fakeImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {

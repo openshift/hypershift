@@ -145,6 +145,15 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// Check if the NodePool CR should be ignored
+	if (hcluster.Annotations != nil &&
+		strings.ToLower(hcluster.Annotations[hyperutil.HypershiftIgnoreAnnotation]) == "true") ||
+		(nodePool.Annotations != nil &&
+			strings.ToLower(nodePool.Annotations[hyperutil.HypershiftIgnoreAnnotation]) == "true") {
+		log.Info("Skip reconcile, found ignore annotation")
+		return ctrl.Result{}, nil
+	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
 	// If deleted, clean up and return early.

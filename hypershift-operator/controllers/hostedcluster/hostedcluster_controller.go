@@ -269,6 +269,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 
+	// Check if the HostedCluster CR should be ignored
+	if hcluster.Annotations != nil && strings.ToLower(hcluster.Annotations[hyperutil.HypershiftIgnoreAnnotation]) == "true" {
+		log.Info("Skip reconcile, found ignore annotation")
+		return ctrl.Result{}, nil
+	}
+
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
 		// Keep trying to delete until we know it's safe to finalize.

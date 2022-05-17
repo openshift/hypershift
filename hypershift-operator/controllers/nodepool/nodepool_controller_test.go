@@ -14,10 +14,12 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -1089,6 +1091,78 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 			// ensures the 2 hour expiration is active. 119 minutes is one minute less than 2 hours. gives time for
 			// test to run.
 			g.Expect(time.Now().Add(119 * time.Minute).Before(expirationTimestamp)).To(BeTrue())
+		})
+	}
+}
+
+func TestIgnoreNodePoolHostedClusterAnnotation(t *testing.T) {
+
+	testWithAHC := func(choice bool) *hyperv1.HostedCluster {
+		an := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "fake-cluster",
+				Namespace: "test",
+			},
+		}
+		if choice {
+			an.Annotations = map[string]string{
+				"hypershift.openshift.io/ignore": "True",
+			}
+		}
+		return an
+	}
+	testWithANP := func(choice bool) *hyperv1.NodePool {
+		np := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "test",
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "fake-cluster",
+			},
+		}
+		if choice {
+			np.Annotations = map[string]string{
+				"hypershift.openshift.io/ignore": "True",
+			}
+		}
+		return np
+	}
+	tests := []struct {
+		name string
+		hc   *hyperv1.HostedCluster
+		np   *hyperv1.NodePool
+	}{
+		{
+			name: "hostedCluster annotated to ignore",
+			hc:   testWithAHC(true),
+			np:   testWithANP(false),
+		},
+		{
+			name: "hostedCluster & nodePool annotated to ignore",
+			hc:   testWithAHC(true),
+			np:   testWithANP(true),
+		},
+		{
+			name: "nodePool annotated to ignore",
+			hc:   testWithAHC(false),
+			np:   testWithANP(true),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r := &NodePoolReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.hc, test.np).Build(),
+			}
+			g := NewGomegaWithT(t)
+			req := ctrl.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: test.np.Namespace,
+					Name:      test.np.Name,
+				},
+			}
+			_, err := r.Reconcile(context.Background(), req)
+			g.Expect(err).ToNot(HaveOccurred())
 		})
 	}
 }

@@ -2,8 +2,9 @@ package util
 
 import (
 	"context"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"strings"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -33,7 +34,8 @@ func ParseNamespacedName(name string) types.NamespacedName {
 }
 
 const (
-	UserDataKey = "data"
+	UserDataKey                = "data"
+	HypershiftIgnoreAnnotation = "hypershift.openshift.io/ignore"
 )
 
 func ReconcileWorkerManifest(cm *corev1.ConfigMap, resource client.Object) error {
