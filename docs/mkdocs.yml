@@ -56,6 +56,7 @@ nav:
     - how-to/none/create-none-cluster.md
 - 'Reference':
   - reference/index.md
+  - reference/goals-and-design-invariants.md
   - reference/api.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
