@@ -135,6 +135,7 @@ type HostedClusterSpec struct {
 	// critical control plane components. The default value is SingleReplica.
 	//
 	// +optional
+	// +kubebuilder:default:="SingleReplica"
 	// +immutable
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
@@ -143,6 +144,7 @@ type HostedClusterSpec struct {
 	// HighlyAvailable.
 	//
 	// +optional
+	// +kubebuilder:default:="HighlyAvailable"
 	// +immutable
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
