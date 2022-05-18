@@ -190,7 +190,11 @@ func run(ctx context.Context, opts Options) error {
 
 		value, ok := payloadStore.Get(string(decodedToken))
 		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			// We return a 5xx here to give ignition the chance to backoff and retry if the machine request happens
+			// before the content is cached for this token.
+			// https://coreos.github.io/ignition/operator-notes/#http-backoff-and-retry
+			log.Printf("Token not found")
+			http.Error(w, "Token not found", http.StatusNetworkAuthenticationRequired)
 			return
 		}
 

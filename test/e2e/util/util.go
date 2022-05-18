@@ -287,7 +287,7 @@ func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.C
 	start := time.Now()
 
 	t.Logf("Waiting for nodepool %s/%s to report version %s (currently %s)", nodePool.Namespace, nodePool.Name, version, nodePool.Status.Version)
-	err := wait.PollImmediateUntil(10*time.Second, func() (done bool, err error) {
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
 		latest := nodePool.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), latest)
 		if err != nil {
@@ -295,7 +295,7 @@ func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.C
 			return false, nil
 		}
 		return latest.Status.Version == version, nil
-	}, ctx.Done())
+	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for nodepool version")
 
 	t.Logf("Observed nodepool %s/%s to report version %s in %s", nodePool.Namespace, nodePool.Name, version, time.Since(start).Round(time.Second))
