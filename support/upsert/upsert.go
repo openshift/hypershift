@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 
 	configv1 "github.com/openshift/api/config/v1"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -101,6 +102,8 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 		defaultRouteSpec(&existingTyped.Spec, &obj.(*routev1.Route).Spec)
 	case *apiextensionsv1.CustomResourceDefinition:
 		defaultCRDSpec(&existingTyped.Spec, &obj.(*apiextensionsv1.CustomResourceDefinition).Spec)
+	case *admissionregistrationv1.MutatingWebhookConfiguration:
+		defaultMutatingWebhookConfiguration(&existingTyped.Webhooks, &obj.(*admissionregistrationv1.MutatingWebhookConfiguration).Webhooks)
 	}
 
 	if equality.Semantic.DeepEqual(existing, obj) {
@@ -426,4 +429,40 @@ func defaultCRDSpec(original, mutated *apiextensionsv1.CustomResourceDefinitionS
 			Strategy: apiextensionsv1.NoneConverter,
 		}
 	}
+}
+
+func defaultMutatingWebhookConfiguration(original, mutated *[]admissionregistrationv1.MutatingWebhook) {
+	if len(*original) != len(*mutated) {
+		return
+	}
+
+	for idx, webhook := range *mutated {
+		if len(webhook.Rules) == len((*original)[idx].Rules) {
+			for jdx, webhookRule := range webhook.Rules {
+				if webhookRule.Scope == nil {
+					(*mutated)[idx].Rules[jdx].Scope = (*original)[idx].Rules[jdx].Scope
+				}
+			}
+
+			if webhook.FailurePolicy == nil {
+				(*mutated)[idx].FailurePolicy = (*original)[idx].FailurePolicy
+			}
+			if webhook.MatchPolicy == nil {
+				(*mutated)[idx].MatchPolicy = (*original)[idx].MatchPolicy
+			}
+			if webhook.NamespaceSelector == nil {
+				(*mutated)[idx].NamespaceSelector = (*original)[idx].NamespaceSelector
+			}
+			if webhook.ObjectSelector == nil {
+				(*mutated)[idx].ObjectSelector = (*original)[idx].ObjectSelector
+			}
+			if webhook.TimeoutSeconds == nil {
+				(*mutated)[idx].TimeoutSeconds = (*original)[idx].TimeoutSeconds
+			}
+			if webhook.ReinvocationPolicy == nil {
+				(*mutated)[idx].ReinvocationPolicy = (*original)[idx].ReinvocationPolicy
+			}
+		}
+	}
+
 }

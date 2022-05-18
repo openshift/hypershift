@@ -1280,6 +1280,15 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile cvo serving cert: %w", err)
 	}
 
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		awsPodIdentityWebhookServingCert := manifests.AWSPodIdentityWebhookServingCert(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, awsPodIdentityWebhookServingCert, func() error {
+			return pki.ReconcileAWSPodIdentityWebhookServingCert(awsPodIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
+		}
+	}
+
 	return nil
 }
 
@@ -1611,9 +1620,19 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		r.Log.Info("Reconciled api server service monitor", "result", result)
 	}
 
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		podIdentityWebhookSecret := manifests.AWSPodIdentityWebhookKubeconfig(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, podIdentityWebhookSecret, func() error {
+			return r.reconcileAWSPodIdentityWebhookKubeconfig(ctx, podIdentityWebhookSecret, hcp)
+		}); err != nil {
+			return fmt.Errorf("failecd to reconcile aws pod identity webhook kubeconfig secret: %w", err)
+		}
+	}
+
 	kubeAPIServerDeployment := manifests.KASDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
 		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
+			hcp,
 			p.OwnerRef,
 			p.DeploymentConfig,
 			p.NamedCertificates(),
@@ -1623,13 +1642,9 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.Images,
 			kubeAPIServerConfig,
 			p.AuditWebhookRef,
-			hcp.Spec.SecretEncryption,
 			aesCBCActiveKey,
 			aesCBCBackupKey,
-			hcp.Spec.Etcd.ManagementType,
 			p.APIServerPort,
-			hcp.Spec.PodCIDR,
-			hcp.Spec.ServiceCIDR,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
@@ -2472,4 +2487,22 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 		Message: message,
 	}, nil
 
+}
+
+func (r *HostedControlPlaneReconciler) reconcileAWSPodIdentityWebhookKubeconfig(ctx context.Context, s *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
+	rootCASecret := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
+		return err
+	}
+	if err := pki.ReconcileAWSPodIdentityWebhookClientCertSecret(s, rootCASecret, config.OwnerRefFrom(hcp)); err != nil {
+		return err
+	}
+
+	// TODO: This duplicates logic from the kas params. We should simply write the default into the HCP instead
+	apiServerPort := int32(config.DefaultAPIServerPort)
+	if hcp.Spec.APIPort != nil {
+		apiServerPort = *hcp.Spec.APIPort
+	}
+
+	return kas.ReconcileAWSPodIdentityWebhookKubeconfigSecret(s, rootCASecret, config.OwnerRefFrom(hcp), apiServerPort)
 }

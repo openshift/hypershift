@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"fmt"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -13,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	utilpointer "k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -59,6 +61,7 @@ type reconciler struct {
 	client client.Client
 	upsert.CreateOrUpdateProvider
 	platformType              hyperv1.PlatformType
+	rootCA                    string
 	clusterSignerCA           string
 	cpClient                  client.Client
 	hcpName                   string
@@ -89,6 +92,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		client:                    opts.Manager.GetClient(),
 		CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
 		platformType:              opts.PlatformType,
+		rootCA:                    opts.InitialCA,
 		clusterSignerCA:           opts.ClusterSignerCA,
 		cpClient:                  opts.CPCluster.GetClient(),
 		hcpName:                   opts.HCPName,
@@ -127,6 +131,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.ClusterVersion{},
 		&apiregistrationv1.APIService{},
 		&operatorv1.Network{},
+		&admissionregistrationv1.MutatingWebhookConfiguration{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
@@ -410,6 +415,10 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	if err = r.client.Get(ctx, client.ObjectKeyFromObject(nodeTuningCO), nodeTuningCO); err == nil {
 		log.Info("removing existing node tuning cluster operator")
 		errs = append(errs, r.client.Delete(ctx, nodeTuningCO))
+	}
+
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		errs = append(errs, r.reconcileAWSIdentityWebhook(ctx)...)
 	}
 
 	return ctrl.Result{}, errors.NewAggregate(errs)
@@ -1028,4 +1037,67 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 	}
 
 	return nil
+}
+
+func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
+	var errs []error
+	clusterRole := manifests.AWSPodIdentityWebhookClusterRole()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRole, func() error {
+		clusterRole.Rules = []rbacv1.PolicyRule{{
+			APIGroups: []string{""},
+			Resources: []string{"serviceaccounts"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
+	}
+
+	clusterRoleBinding := manifests.AWSPodIdentityWebhookClusterRoleBinding()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRoleBinding, func() error {
+		clusterRoleBinding.RoleRef.APIGroup = "rbac.authorization.k8s.io"
+		clusterRoleBinding.RoleRef.Kind = "ClusterRole"
+		clusterRoleBinding.RoleRef.Name = clusterRole.Name
+		clusterRoleBinding.Subjects = []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      "aws-pod-identity-webhook",
+			Namespace: "openshift-authentication",
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRoleBinding, clusterRoleBinding.Name, err))
+	}
+
+	ignoreFailurePolicy := admissionregistrationv1.Ignore
+	sideEffectsNone := admissionregistrationv1.SideEffectClassNone
+	webhook := manifests.AWSPodIdentityWebhook()
+	if _, err := r.CreateOrUpdate(ctx, r.client, webhook, func() error {
+		webhook.Webhooks = []admissionregistrationv1.MutatingWebhook{{
+			AdmissionReviewVersions: []string{"v1beta1"},
+			Name:                    "pod-identity-webhook.amazonaws.com",
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				CABundle: []byte(r.rootCA),
+				URL:      utilpointer.String("https://127.0.0.1:4443/mutate"),
+			},
+			FailurePolicy: &ignoreFailurePolicy,
+			Rules: []admissionregistrationv1.RuleWithOperations{{
+				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+				Rule: admissionregistrationv1.Rule{
+					APIGroups:   []string{""},
+					APIVersions: []string{"v1"},
+					Resources:   []string{"pods"},
+				},
+			}},
+			SideEffects: &sideEffectsNone,
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", webhook, webhook.Name, err))
+	}
+
+	return errs
 }
