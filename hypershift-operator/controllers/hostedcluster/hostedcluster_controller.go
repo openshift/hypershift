@@ -1512,6 +1512,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
 	}
 
+	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		// Reconcile operator role - for ingress
 		controlPlaneOperatorIngressRole := controlplaneoperator.OperatorIngressRole("openshift-ingress", controlPlaneNamespace.Name)
@@ -2429,6 +2430,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"nodes",
 				"serviceaccounts",
 				"services",
+				"endpoints",
 			},
 			Verbs: []string{"*"},
 		},
@@ -2453,6 +2455,18 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"leases",
 			},
 			Verbs: []string{"*"},
+		},
+		{
+			APIGroups: []string{
+				"discovery.k8s.io",
+			},
+			Resources: []string{
+				"endpointslices",
+			},
+			Verbs: []string{
+				"list",
+				"watch",
+			},
 		},
 	}
 	return nil
@@ -3537,6 +3551,16 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
 
+	// Reconcile private-router Network Policy
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcilePrivateRouterNetworkPolicy(policy, hcluster)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
+		}
+	}
+
 	for _, svc := range hcluster.Spec.Services {
 		switch svc.Service {
 		case hyperv1.OAuthServer:
@@ -3922,6 +3946,34 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "kube-apiserver",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	httpPort := intstr.FromInt(8080)
+	httpsPort := intstr.FromInt(8443)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &httpPort,
+					Protocol: &protocol,
+				},
+				{
+					Port:     &httpsPort,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "private-router",
 		},
 	}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}

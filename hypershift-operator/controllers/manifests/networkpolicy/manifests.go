@@ -50,6 +50,15 @@ func NodePortOauthNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	}
 }
 
+func PrivateRouterNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "private-router",
+		},
+	}
+}
+
 func NodePortIgnitionNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{

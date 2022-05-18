@@ -37,6 +37,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/upsert"
 )
 
@@ -467,12 +468,13 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	}
 
 	var recordName string
-	if awsEndpointService.Name == "kube-apiserver-private" {
+	if awsEndpointService.Name == manifests.KubeAPIServerPrivateService("").Name {
 		recordName = "api"
-	} else if strings.HasPrefix(awsEndpointService.Name, "router-") {
+	} else if awsEndpointService.Name == manifests.PrivateRouterService("").Name {
 		recordName = "*.apps"
 	} else {
-		return fmt.Errorf("no mapping from AWSEndpointService to DNS")
+		log.Info("WARNING: no mapping from AWSEndpointService to DNS")
+		return nil
 	}
 
 	zoneName := fmt.Sprintf("%s.%s", hcp.Name, hypershiftLocalZone)
