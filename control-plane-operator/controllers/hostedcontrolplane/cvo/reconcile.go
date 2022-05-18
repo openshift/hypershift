@@ -340,6 +340,10 @@ func buildCVOContainerMain(image string) func(c *corev1.Container) {
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("20m"),
+			corev1.ResourceMemory: resource.MustParse("50Mi"),
+		}
 	}
 }
 
