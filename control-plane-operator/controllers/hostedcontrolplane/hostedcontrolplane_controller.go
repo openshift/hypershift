@@ -159,10 +159,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, hostedControlPlane); err != nil {
-			r.Log.Error(err, "failed to delete cluster")
-			return ctrl.Result{}, err
-		}
 		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
 			originalHCP := hostedControlPlane.DeepCopy()
 			controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
@@ -669,10 +665,15 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
 	}
 
-	// Reconcile private IngressController
+	// Reconcile private router
 	if util.IsPrivateHCP(hostedControlPlane) {
-		r.Log.Info("Reconciling private IngressController")
+		r.Log.Info("Removing private IngressController")
+		// Ensure that if an ingress controller exists from a previous version, it is removed
 		if err = r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
+			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
+		}
+		r.Log.Info("Reconciling private router")
+		if err = r.reconcilePrivateRouter(ctx, hostedControlPlane, releaseImage); err != nil {
 			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
 		}
 	}
@@ -708,16 +709,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to ensure control plane: %w", err)
 	}
 
-	return nil
-}
-
-func (r *HostedControlPlaneReconciler) delete(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	if util.IsPrivateHCP(hcp) {
-		ic := manifests.IngressPrivateIngressController(hcp.Namespace)
-		if err := r.Delete(ctx, ic); err != nil {
-			return fmt.Errorf("unable to delete private ingress controller: %w", err)
-		}
-	}
 	return nil
 }
 
@@ -2284,11 +2275,51 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 
 func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	ic := manifests.IngressPrivateIngressController(hcp.Namespace)
-	_, err := r.CreateOrUpdate(ctx, r.Client, ic, func() error {
-		return ingress.ReconcilePrivateIngressController(ic, hcp.Namespace, fmt.Sprintf("%s.hypershift.local", hcp.Name), hcp.Spec.Platform.Type)
-	})
-	if err != nil {
-		return err
+	if err := r.Get(ctx, client.ObjectKeyFromObject(ic), ic); err == nil {
+		if err = r.Delete(ctx, ic); err != nil {
+			return fmt.Errorf("failed to delete private ingress controller: %w", err)
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to get private ingress controller: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcilePrivateRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage) error {
+	sa := manifests.PrivateRouterServiceAccount(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, sa, func() error {
+		config.OwnerRefFrom(hcp).ApplyTo(sa)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile private router service account: %w", err)
+	}
+	role := manifests.PrivateRouterRole(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, role, func() error {
+		return ingress.ReconcilePrivateRouterRole(role, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile private router role: %w", err)
+	}
+	rb := manifests.PrivateRouterRoleBinding(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, rb, func() error {
+		return ingress.ReconcilePrivateRouterRoleBinding(rb, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile private router rolebinding: %w", err)
+	}
+	deployment := manifests.PrivateRouterDeployment(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+		return ingress.ReconcilePrivateRouterDeployment(deployment,
+			config.OwnerRefFrom(hcp),
+			ingress.PrivateRouterConfig(hcp, r.SetDefaultSecurityContext),
+			ingress.PrivateRouterImage(releaseInfo.ComponentImages()),
+			fmt.Sprintf("%s.hypershift.local", hcp.Name))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile private router deployment: %w", err)
+	}
+	svc := manifests.PrivateRouterService(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		return ingress.ReconcilePrivateRouterService(svc, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile private router service: %w", err)
 	}
 	return nil
 }

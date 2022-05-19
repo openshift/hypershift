@@ -381,12 +381,12 @@ func NewStartCommand() *cobra.Command {
 			if err := (&awsprivatelink.PrivateServiceObserver{
 				Client:                 mgr.GetClient(),
 				ControllerName:         controllerName,
-				ServiceNamespace:       "openshift-ingress",
-				ServiceName:            fmt.Sprintf("router-%s", namespace),
+				ServiceNamespace:       namespace,
+				ServiceName:            manifests.PrivateRouterService("").Name,
 				HCPNamespace:           namespace,
 				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 			}).SetupWithManager(ctx, mgr); err != nil {
-				controllerName := awsprivatelink.ControllerName(fmt.Sprintf("router-%s", namespace))
+				controllerName := awsprivatelink.ControllerName(manifests.PrivateRouterService("").Name)
 				setupLog.Error(err, "unable to create controller", "controller", controllerName)
 				os.Exit(1)
 			}

@@ -824,6 +824,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"clusterdeployments"},
 				Verbs:     []string{"*"},
 			},
+			{
+				APIGroups: []string{"discovery.k8s.io"},
+				Resources: []string{"endpointslices"},
+				Verbs:     []string{"list", "watch"},
+			},
 		},
 	}
 	return role

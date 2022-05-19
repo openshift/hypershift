@@ -28,6 +28,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/upsert"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -58,24 +59,48 @@ func mapNodePoolToAWSEndpointServicesFunc(c client.Client) func(obj client.Objec
 			return []reconcile.Request{}
 		}
 
-		// This is a pretty fragile but without a client or context with which to list the
-		// AWSEndpointServices and no way to return and error from here, hardcoding the known
-		// names of the potential AWSEndpointServices (won't exist if Public) is a way to do it.
 		hcpNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, nodePool.Spec.ClusterName)
-		return []reconcile.Request{
-			{
-				NamespacedName: types.NamespacedName{
-					Namespace: hcpNamespace,
-					Name:      "kube-apiserver-private",
-				},
-			},
-			{
-				NamespacedName: types.NamespacedName{
-					Namespace: hcpNamespace,
-					Name:      fmt.Sprintf("router-%s", hcpNamespace),
-				},
-			},
+		return awsEndpointServicesByName(hcpNamespace)
+	}
+}
+
+func mapHostedClusterToAWSEndpointServicesFunc(c client.Client) func(obj client.Object) []reconcile.Request {
+	return func(obj client.Object) []reconcile.Request {
+		hc, ok := obj.(*hyperv1.HostedCluster)
+		if !ok {
+			return []reconcile.Request{}
 		}
+
+		hcpNamespace := fmt.Sprintf("%s-%s", hc.Namespace, hc.Name)
+		return awsEndpointServicesByName(hcpNamespace)
+	}
+}
+
+func awsEndpointServicesByName(ns string) []reconcile.Request {
+	// This is a pretty fragile but without a client or context with which to list the
+	// AWSEndpointServices and no way to return and error from here, hardcoding the known
+	// names of the potential AWSEndpointServices (won't exist if Public) is a way to do it.
+	return []reconcile.Request{
+		{
+			NamespacedName: types.NamespacedName{
+				Namespace: ns,
+				Name:      manifests.KubeAPIServerPrivateService("").Name,
+			},
+		},
+		{
+			NamespacedName: types.NamespacedName{
+				Namespace: ns,
+				Name:      manifests.PrivateRouterService("").Name,
+			},
+		},
+		// TODO: Remove this once initial commit is merged. Not needed for
+		// current version of CPO.
+		{
+			NamespacedName: types.NamespacedName{
+				Namespace: ns,
+				Name:      fmt.Sprintf("router-%s", ns),
+			},
+		},
 	}
 }
 
@@ -83,6 +108,7 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
 		Watches(&source.Kind{Type: &hyperv1.NodePool{}}, handler.EnqueueRequestsFromMapFunc(mapNodePoolToAWSEndpointServicesFunc(r))).
+		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(mapHostedClusterToAWSEndpointServicesFunc(r))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -260,6 +286,40 @@ func listSubnetIDs(ctx context.Context, c client.Client, clusterName, nodePoolNa
 
 func reconcileAWSEndpointServiceStatus(ctx context.Context, c client.Client, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, elbv2Client elbv2iface.ELBV2API) error {
 	log := ctrl.LoggerFrom(ctx)
+
+	// If a previous awsendpointservice that points to an ingress controller exists, remove it
+	endpointServices := &hyperv1.AWSEndpointServiceList{}
+	if err := c.List(ctx, endpointServices, client.InNamespace(awsEndpointService.Namespace)); err != nil {
+		return fmt.Errorf("failed to list aws endpoint services in namespace: %s: %w", awsEndpointService.Namespace, err)
+	}
+	privateRouterEPServiceName := fmt.Sprintf("router-%s", awsEndpointService.Namespace)
+	hasPrivateRouterEPService := false
+	hasPrivateIngressControllerEPService := false
+	for _, eps := range endpointServices.Items {
+		// If a private-router AWSEndpointService exists, it means that
+		if eps.Name == manifests.PrivateRouterService("").Name {
+			hasPrivateRouterEPService = true
+		}
+		if eps.Name == privateRouterEPServiceName {
+			hasPrivateIngressControllerEPService = true
+		}
+	}
+	// Only if both private router and private ingress controller AWSEndpointServices exist, delete the obsolete one
+	if hasPrivateRouterEPService && hasPrivateIngressControllerEPService {
+		privateIngressControllerEPService := &hyperv1.AWSEndpointService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      privateRouterEPServiceName,
+				Namespace: awsEndpointService.Namespace,
+			},
+		}
+		if err := c.Delete(ctx, privateIngressControllerEPService); err != nil {
+			return fmt.Errorf("failed to delete awsendpointservice %s: %w", client.ObjectKeyFromObject(privateIngressControllerEPService).String(), err)
+		}
+		// No need to further reconcile if the endpointservice is the one we just deleted.
+		if awsEndpointService.Name == privateRouterEPServiceName {
+			return nil
+		}
+	}
 
 	serviceName := awsEndpointService.Status.EndpointServiceName
 	if len(serviceName) != 0 {
