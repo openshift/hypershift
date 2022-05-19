@@ -44,7 +44,7 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 					Name:      "foo",
 					Namespace: "bar",
 					Annotations: map[string]string{
-						hostedClusterAnnotation: annotationValue,
+						HostedClusterAnnotation: annotationValue,
 					},
 				},
 			},
@@ -74,7 +74,7 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 					Name:      "foo",
 					Namespace: "bar",
 					Annotations: map[string]string{
-						hostedClusterAnnotation: annotationValue,
+						HostedClusterAnnotation: annotationValue,
 						"foo":                   "bar",
 					},
 				},
