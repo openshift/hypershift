@@ -114,6 +114,8 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&configv1.ClusterVersion{}:  allSelector,
 				&configv1.FeatureGate{}:     allSelector,
 				&configv1.ClusterOperator{}: allSelector,
+				// Needed for inplace upgrader.
+				&corev1.Node{}: allSelector,
 			},
 			DefaultSelector: cache.ObjectSelector{Label: cacheLabelSelector()},
 		}),
