@@ -103,7 +103,7 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("NodePool %s was rendered to yaml output file\n", o.Name)
+		fmt.Fprintf(os.Stderr, "NodePool %s was rendered to yaml output file\n", o.Name)
 		return nil
 	}
 
