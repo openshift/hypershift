@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"fmt"
 
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -27,6 +28,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
@@ -126,6 +128,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.ClusterVersion{},
 		&apiregistrationv1.APIService{},
 		&operatorv1.Network{},
+		&prometheusoperatorv1.PrometheusRule{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
@@ -175,6 +178,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling guest cluster crds")
 	if err := r.reconcileCRDs(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile crds: %w", err))
+	}
+
+	log.Info("reconciling guest cluster alert rules")
+	if err := r.reconcileGuestClusterAlertRules(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile guest cluster alert rules: %w", err))
 	}
 
 	log.Info("reconciling clusterversion")
@@ -1002,4 +1010,16 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 	}
 
 	return nil
+}
+
+func (r *reconciler) reconcileGuestClusterAlertRules(ctx context.Context) error {
+	var errs []error
+	apiUsageRule := manifests.ApiUsageRule()
+	if _, err := r.CreateOrUpdate(ctx, r.client, apiUsageRule, func() error {
+		return alerts.ReconcileApiUsageRule(apiUsageRule)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile guest cluster api usage rule: %w", err))
+	}
+
+	return errors.NewAggregate(errs)
 }
