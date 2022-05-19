@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -30,6 +31,14 @@ func KubeadminPasswordSecret(hostedClusterNamespace string, hostedClusterName st
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedClusterNamespace,
 			Name:      hostedClusterName + "-kubeadmin-password",
+		},
+	}
+}
+
+func MachineConfigAPIServerHAProxy() *mcfgv1.MachineConfig {
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "20-apiserver-haproxy",
 		},
 	}
 }
