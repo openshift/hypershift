@@ -110,6 +110,7 @@ const (
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
 	controlPlaneOperatorSubcommandsLabel = "io.openshift.hypershift.control-plane-operator-subcommands"
+	ignitionServerHealthzHandlerLabel    = "io.openshift.hypershift.ignition-server-healthz-handler"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -683,6 +684,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if !cpoHasUtilities {
 		utilitiesImage = r.HypershiftOperatorImage
 	}
+	_, ignitionServerHasHealthzHandler := util.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
 
 	// Reconcile Platform specifics.
 	p, err := platform.GetPlatform(hcluster, utilitiesImage)
@@ -1124,7 +1126,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the Ignition server
-	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster, utilitiesImage, hcp, defaultIngressDomain); err != nil {
+	if err = r.reconcileIgnitionServer(ctx, createOrUpdate, hcluster, utilitiesImage, hcp, defaultIngressDomain, ignitionServerHasHealthzHandler); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
 
@@ -1639,7 +1641,7 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, utilitiesImage string, hcp *hyperv1.HostedControlPlane, defaultIngressDomain string) error {
+func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, utilitiesImage string, hcp *hyperv1.HostedControlPlane, defaultIngressDomain string, hasHealthzHandler bool) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -1848,6 +1850,19 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		log.Info("Reconciled ignition server rolebinding", "result", result)
 	}
 
+	var probeHandler corev1.ProbeHandler
+	if hasHealthzHandler {
+		probeHandler.HTTPGet = &corev1.HTTPGetAction{
+			Path:   "/healthz",
+			Port:   intstr.FromInt(9090),
+			Scheme: corev1.URISchemeHTTPS,
+		}
+	} else {
+		probeHandler.TCPSocket = &corev1.TCPSocketAction{
+			Port: intstr.FromInt(9090),
+		}
+	}
+
 	// Reconcile deployment
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
 	if result, err := createOrUpdate(ctx, r.Client, ignitionServerDeployment, func() error {
@@ -1916,11 +1931,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 								"--platform", string(hcluster.Spec.Platform.Type),
 							},
 							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									TCPSocket: &corev1.TCPSocketAction{
-										Port: intstr.FromInt(9090),
-									},
-								},
+								ProbeHandler:        probeHandler,
 								InitialDelaySeconds: 120,
 								TimeoutSeconds:      5,
 								PeriodSeconds:       60,
@@ -1928,11 +1939,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 								SuccessThreshold:    1,
 							},
 							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									TCPSocket: &corev1.TCPSocketAction{
-										Port: intstr.FromInt(9090),
-									},
-								},
+								ProbeHandler:        probeHandler,
 								InitialDelaySeconds: 5,
 								TimeoutSeconds:      5,
 								PeriodSeconds:       60,

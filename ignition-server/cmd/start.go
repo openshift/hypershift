@@ -201,6 +201,7 @@ func run(ctx context.Context, opts Options) error {
 		w.WriteHeader(http.StatusOK)
 		w.Write(value.Payload)
 	})
+	mux.HandleFunc("/healthz", func(http.ResponseWriter, *http.Request) {})
 
 	server := http.Server{
 		Addr:         opts.Addr,
