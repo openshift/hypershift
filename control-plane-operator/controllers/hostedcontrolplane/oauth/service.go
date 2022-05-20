@@ -27,7 +27,9 @@ var (
 
 func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy) error {
 	ownerRef.ApplyTo(svc)
-	svc.Spec.Selector = oauthServerLabels
+	if svc.Spec.Selector == nil {
+		svc.Spec.Selector = oauthServerLabels
+	}
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]

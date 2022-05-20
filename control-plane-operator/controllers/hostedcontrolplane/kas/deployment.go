@@ -115,9 +115,10 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	if mainContainer != nil {
 		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
-
-	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: kasLabels(),
+	if deployment.Spec.Selector == nil {
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: kasLabels(),
+		}
 	}
 	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
 		Type: appsv1.RollingUpdateDeploymentStrategyType,

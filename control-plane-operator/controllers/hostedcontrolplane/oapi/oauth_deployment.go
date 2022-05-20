@@ -62,8 +62,10 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 			MaxSurge:       &maxSurge,
 		},
 	}
-	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: openShiftOAuthAPIServerLabels(),
+	if deployment.Spec.Selector == nil {
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: openShiftOAuthAPIServerLabels(),
+		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftOAuthAPIServerLabels()
 	deployment.Spec.Template.Spec = corev1.PodSpec{

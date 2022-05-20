@@ -39,7 +39,9 @@ func ReconcileOLMPackageServerService(svc *corev1.Service, ownerRef config.Owner
 func reconcileAPIService(svc *corev1.Service, ownerRef config.OwnerRef, labels map[string]string, targetPort int) error {
 	ownerRef.ApplyTo(svc)
 	svc.Labels = openshiftAPIServerLabels()
-	svc.Spec.Selector = labels
+	if svc.Spec.Selector == nil {
+		svc.Spec.Selector = labels
+	}
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]
