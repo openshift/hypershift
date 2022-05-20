@@ -184,7 +184,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	// in order to progress the rollout. However, you do not want to set that in the single replica case because it will
 	// result in downtime.
 	if c.Replicas > 1 {
-		maxSurge := intstr.FromInt(3)
+		maxSurge := intstr.FromInt(0)
 		maxUnavailable := intstr.FromInt(1)
 		if deployment.Spec.Strategy.RollingUpdate == nil {
 			deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{}
