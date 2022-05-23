@@ -17,8 +17,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -118,6 +120,9 @@ func (r *TokenSecretReconciler) SetupWithManager(ctx context.Context, mgr ctrl.M
 	log.Info("SetupWithManager", "ns", os.Getenv("MY_NAMESPACE"))
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Secret{}).WithEventFilter(tokenSecretAnnotationPredicate(ctx)).
+		WithOptions(controller.Options{
+			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(2*time.Second, 5*time.Minute),
+		}).
 		Complete(r)
 }
 
