@@ -22,6 +22,9 @@ type fakeEC2Client struct {
 	ec2iface.EC2API
 	created   *ec2.CreateVpcEndpointServiceConfigurationInput
 	createOut *ec2.CreateVpcEndpointServiceConfigurationOutput
+
+	permsOut *ec2.DescribeVpcEndpointServicePermissionsOutput
+	setPerms *ec2.ModifyVpcEndpointServicePermissionsInput
 }
 
 func (f *fakeEC2Client) CreateVpcEndpointServiceConfigurationWithContext(ctx aws.Context, in *ec2.CreateVpcEndpointServiceConfigurationInput, o ...request.Option) (*ec2.CreateVpcEndpointServiceConfigurationOutput, error) {
@@ -41,6 +44,15 @@ func (f *fakeElbv2Client) DescribeLoadBalancersWithContext(aws.Context, *elbv2.D
 	return f.out, nil
 }
 
+func (f *fakeEC2Client) DescribeVpcEndpointServicePermissions(in *ec2.DescribeVpcEndpointServicePermissionsInput) (*ec2.DescribeVpcEndpointServicePermissionsOutput, error) {
+	return f.permsOut, nil
+}
+
+func (f *fakeEC2Client) ModifyVpcEndpointServicePermissions(in *ec2.ModifyVpcEndpointServicePermissionsInput) (*ec2.ModifyVpcEndpointServicePermissionsOutput, error) {
+	f.setPerms = in
+	return &ec2.ModifyVpcEndpointServicePermissionsOutput{}, nil
+}
+
 func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 	elbClient := &fakeElbv2Client{out: &elbv2.DescribeLoadBalancersOutput{LoadBalancers: []*elbv2.LoadBalancer{{
 		LoadBalancerArn: aws.String("lb-arn"),
@@ -55,9 +67,18 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 
 	ec2Client := &fakeEC2Client{
 		createOut: &ec2.CreateVpcEndpointServiceConfigurationOutput{ServiceConfiguration: &ec2.ServiceConfiguration{ServiceName: aws.String("ep-service")}},
+		permsOut:  &ec2.DescribeVpcEndpointServicePermissionsOutput{},
 	}
 
-	if err := reconcileAWSEndpointServiceStatus(context.Background(), client, &hyperv1.AWSEndpointService{}, ec2Client, elbClient); err != nil {
+	roleARN := "fakeRoleARN"
+	r := AWSEndpointServiceReconciler{
+		Client: client,
+		controlPlaneOperatorRoleARNFn: func(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
+			return roleARN, nil
+		},
+	}
+
+	if err := r.reconcileAWSEndpointServiceStatus(context.Background(), &hyperv1.AWSEndpointService{}, nil, ec2Client, elbClient); err != nil {
 		t.Fatalf("reconcileAWSEndpointServiceStatus failed: %v", err)
 	}
 
@@ -67,5 +88,9 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 
 	if actual, expected := *ec2Client.created.TagSpecifications[0].Tags[0].Value, "owned"; actual != expected {
 		t.Errorf("expected first tags value to be %s, was %s", expected, actual)
+	}
+
+	if actual, expected := aws.StringValueSlice(ec2Client.setPerms.AddAllowedPrincipals)[0], roleARN; actual != expected {
+		t.Errorf("expected role arn to be added as an allowed principal, actual: %v", aws.StringValueSlice(ec2Client.setPerms.AddAllowedPrincipals))
 	}
 }

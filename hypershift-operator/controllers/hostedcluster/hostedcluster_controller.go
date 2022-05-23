@@ -99,7 +99,7 @@ import (
 
 const (
 	finalizer                      = "hypershift.openshift.io/finalizer"
-	hostedClusterAnnotation        = "hypershift.openshift.io/cluster"
+	HostedClusterAnnotation        = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration = 5 * time.Second
 
 	// Image built from https://github.com/openshift/cluster-api/tree/release-1.0
@@ -1178,7 +1178,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 
 	hcp.Annotations = map[string]string{
-		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
+		HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
 
 	// These annotations are copied from the HostedCluster
@@ -1581,7 +1581,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		if podMonitor.Annotations == nil {
 			podMonitor.Annotations = map[string]string{}
 		}
-		podMonitor.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+		podMonitor.Annotations[HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		util.ApplyClusterIDLabelToPodMonitor(&podMonitor.Spec.PodMetricsEndpoints[0], hcluster.Spec.ClusterID)
 		return nil
 	}); err != nil {
@@ -1693,7 +1693,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			} else if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 				ignitionServerRoute.ObjectMeta.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = serviceStrategy.Route.Hostname
 			}
-			ignitionServerRoute.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+			ignitionServerRoute.Annotations[HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
 				Termination: routev1.TLSTerminationPassthrough,
 			}
@@ -1873,7 +1873,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 			"app":                         ignitionserver.ResourceName,
 			hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
 		}
-		ignitionServerDeployment.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+		ignitionServerDeployment.Annotations[HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: ignitionServerLabels,
@@ -2034,7 +2034,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionServer(ctx context.Context, c
 		if podMonitor.Annotations == nil {
 			podMonitor.Annotations = map[string]string{}
 		}
-		podMonitor.Annotations[hostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+		podMonitor.Annotations[HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server pod monitor: %w", err)
@@ -2566,7 +2566,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	}
 
 	cluster.Annotations = map[string]string{
-		hostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
+		HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
 	cluster.Spec = capiv1.ClusterSpec{
 		ControlPlaneEndpoint: capiv1.APIEndpoint{},
@@ -3376,7 +3376,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
 	var hostedClusterName string
 	if obj.GetAnnotations() != nil {
-		hostedClusterName = obj.GetAnnotations()[hostedClusterAnnotation]
+		hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
 	}
 	if hostedClusterName == "" {
 		return []reconcile.Request{}

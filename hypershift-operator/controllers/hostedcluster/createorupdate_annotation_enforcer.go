@@ -26,7 +26,7 @@ func createOrUpdateWithAnnotationFactory(upstream upsert.CreateOrUpdateProvider)
 				if annotations == nil {
 					annotations = map[string]string{}
 				}
-				annotations[hostedClusterAnnotation] = req.String()
+				annotations[HostedClusterAnnotation] = req.String()
 				obj.SetAnnotations(annotations)
 				return nil
 			}
