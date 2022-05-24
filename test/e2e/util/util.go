@@ -511,45 +511,41 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 			{
 				name:   "control-plane-operator read",
 				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="GET", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
-				budget: 1500,
+				budget: 3000,
 			},
 			{
 				name:   "control-plane-operator mutate",
 				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method!="GET", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
-				budget: 610,
+				budget: 3000,
 			},
 			{
 				name:   "control-plane-operator no 404 deletes",
 				query:  fmt.Sprintf(`sum by (pod) (max_over_time(hypershift:controlplane:component_api_requests_total{app="control-plane-operator", method="DELETE", code="404", namespace=~"%s"}[%dm]))`, namespace, clusterAgeMinutes),
-				budget: 5,
+				budget: 50,
 			},
-			{
-				name:   "ignition-server p90 payload generation time",
-				query:  fmt.Sprintf(`sum by (namespace) (max_over_time(hypershift:controlplane:ign_payload_generation_seconds_p90{namespace="%s"}[%dm]))`, namespace, clusterAgeMinutes),
-				budget: 45,
-			},
+			//{
+			//	name:   "ignition-server p90 payload generation time",
+			//	query:  fmt.Sprintf(`sum by (namespace) (max_over_time(hypershift:controlplane:ign_payload_generation_seconds_p90{namespace="%s"}[%dm]))`, namespace, clusterAgeMinutes),
+			//	budget: 45,
+			//},
 			// hypershift-operator budget can not be per HC so metric will be
 			// significantly under budget for all but the last test(s) to complete on
 			// a particular test cluster These budgets will also need to scale up with
 			// additional tests that create HostedClusters
-			//
-			// Current HCs per periodic job: 10
-			// Read per HC: 300
-			// Mutate per HC: 600  TODO: need to tighten this when HO stop communicating with guest KAS for in-place upgrade
 			{
 				name:   "hypershift-operator read",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="GET"})`,
-				budget: 3000,
+				budget: 5000,
 			},
 			{
 				name:   "hypershift-operator mutate",
 				query:  `sum(hypershift:operator:component_api_requests_total{method!="GET"})`,
-				budget: 6000,
+				budget: 20000,
 			},
 			{
 				name:   "hypershift-operator no 404 deletes",
 				query:  `sum(hypershift:operator:component_api_requests_total{method="DELETE", code="404"})`,
-				budget: 5,
+				budget: 50,
 			},
 		}
 
@@ -564,7 +560,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 					t.Fatal("expected vector result")
 				}
 				if len(vector) == 0 {
-					if budget.budget < 10 {
+					if budget.budget <= 50 {
 						t.Log("no samples returned for query with small budget, skipping check")
 					} else {
 						t.Errorf("no samples returned for query with large budget, failed check")
