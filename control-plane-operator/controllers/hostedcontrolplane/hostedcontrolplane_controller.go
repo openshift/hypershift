@@ -607,6 +607,17 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
 	}
 
+	// Block until kube apiserver is fully ready to enforce upgrade order of version skew policy
+	// https://kubernetes.io/releases/version-skew-policy/#supported-component-upgrade-order
+	ready, err := util.IsDeploymentReady(ctx, r, manifests.KASDeployment(hostedControlPlane.Namespace))
+	if err != nil {
+		return fmt.Errorf("failed to check kube apiserver availability: %w", err)
+	}
+	if !ready {
+		r.Log.Info("Waiting for kube apiserver deployment to become ready")
+		return nil
+	}
+
 	// Reconcile kube controller manager
 	r.Log.Info("Reconciling Kube Controller Manager")
 	if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, globalConfig, releaseImage); err != nil {
@@ -623,6 +634,17 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reconciling OpenShift API Server")
 	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, globalConfig, releaseImage, infraStatus.OpenShiftAPIHost); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver: %w", err)
+	}
+
+	// Block until openshift apiserver is fully ready to enforce upgrade order of version skew policy
+	// https://github.com/openshift/enhancements/blob/master/enhancements/update/eus-upgrades-mvp.md
+	ready, err = util.IsDeploymentReady(ctx, r, manifests.OpenShiftAPIServerDeployment(hostedControlPlane.Namespace))
+	if err != nil {
+		return fmt.Errorf("failed to check openshift apiserver availability: %w", err)
+	}
+	if !ready {
+		r.Log.Info("Waiting for openshift apiserver deployment to become ready")
+		return nil
 	}
 
 	// Reconcile openshift oauth apiserver
@@ -1640,6 +1662,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)
 	}
+
 	return nil
 }
 
@@ -1749,6 +1772,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
+
 	return nil
 }
 
