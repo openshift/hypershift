@@ -134,15 +134,11 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	hcluster, err := GetHostedClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName).Name
 
 	// If deleted, clean up and return early.
 	if !nodePool.DeletionTimestamp.IsZero() {
-		if err := r.delete(ctx, nodePool, hcluster, controlPlaneNamespace); err != nil {
+		if err := r.delete(ctx, nodePool, controlPlaneNamespace); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete nodepool: %w", err)
 		}
 		// Now we can remove the finalizer.
@@ -154,6 +150,11 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		log.Info("Deleted nodepool", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
+	}
+
+	hcluster, err := GetHostedClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Ensure the nodePool has a finalizer for cleanup
@@ -633,7 +634,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
-		ms := machineSet(nodePool, infraID, controlPlaneNamespace)
+		ms := machineSet(nodePool, controlPlaneNamespace)
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, ms, func() error {
 			return r.reconcileMachineSet(
 				ctx,
@@ -651,7 +652,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
-		md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
+		md := machineDeployment(nodePool, controlPlaneNamespace)
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
 			return r.reconcileMachineDeployment(
 				log,
@@ -767,10 +768,9 @@ func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.
 	return nil
 }
 
-func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	infraID := hcluster.Spec.InfraID
-	md := machineDeployment(nodePool, infraID, controlPlaneNamespace)
-	ms := machineSet(nodePool, infraID, controlPlaneNamespace)
+func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
+	md := machineDeployment(nodePool, controlPlaneNamespace)
+	ms := machineSet(nodePool, controlPlaneNamespace)
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 	machineTemplates, err := r.listMachineTemplates(nodePool)
 	if err != nil {
