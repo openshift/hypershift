@@ -328,10 +328,10 @@ spec:
                   with the HostedCluster and its associated NodePools.
                 type: string
               infrastructureAvailabilityPolicy:
-                default: HighlyAvailable
+                default: SingleReplica
                 description: InfrastructureAvailabilityPolicy specifies the availability
                   policy applied to infrastructure services which run on cluster nodes.
-                  The default value is HighlyAvailable.
+                  The default value is SingleReplica.
                 type: string
               issuerURL:
                 default: https://kubernetes.default.svc

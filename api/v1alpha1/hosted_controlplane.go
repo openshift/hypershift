@@ -60,15 +60,19 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	APIAdvertiseAddress *string `json:"apiAdvertiseAddress,omitempty"`
 
-	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
-	// Defaults to SingleReplica when not set
+	// ControllerAvailabilityPolicy specifies the availability policy applied to
+	// critical control plane components. The default value is SingleReplica.
+	//
 	// +optional
+	// +kubebuilder:default:="SingleReplica"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
-	// InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
-	// run on the guest cluster nodes in HA mode
-	// Defaults to HighlyAvailable when not set
+	// InfrastructureAvailabilityPolicy specifies the availability policy applied
+	// to infrastructure services which run on cluster nodes. The default value is
+	// SingleReplica.
+	//
 	// +optional
+	// +kubebuilder:default:="SingleReplica"
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
 	// FIPS specifies if the nodes for the cluster will be running in FIPS mode
