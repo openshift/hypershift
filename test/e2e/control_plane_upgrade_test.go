@@ -41,7 +41,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	// Wait for the first rollout to be complete
 	t.Logf("Waiting for initial cluster rollout. Image: %s", globalOpts.PreviousReleaseImage)
-	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.PreviousReleaseImage)
+	e2eutil.WaitForImageRollout(t, ctx, client, guestClient, hostedCluster, globalOpts.PreviousReleaseImage)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
@@ -55,7 +55,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	// Wait for the new rollout to be complete
 	t.Logf("waiting for updated cluster image rollout. Image: %s", globalOpts.LatestReleaseImage)
-	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, ctx, client, guestClient, hostedCluster, globalOpts.LatestReleaseImage)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 

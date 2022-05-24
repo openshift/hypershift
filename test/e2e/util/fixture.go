@@ -9,6 +9,7 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -66,7 +67,8 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	}
 
 	// Build options specific to the platform.
-	opts = createClusterOpts(hc, opts)
+	opts, err = createClusterOpts(ctx, client, hc, opts)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to generate platform specific cluster options")
 
 	// Try and create the cluster. If it fails, immediately try and clean up.
 	t.Logf("Creating a new cluster. Options: %v", opts)
@@ -171,16 +173,33 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 // know or care about in advance.
 //
 // TODO: Mutates the input, instead should use a copy of the input options
-func createClusterOpts(hc *hyperv1.HostedCluster, opts *core.CreateOptions) *core.CreateOptions {
+func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions) (*core.CreateOptions, error) {
 	opts.Namespace = hc.Namespace
 	opts.Name = hc.Name
 
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		opts.InfraID = hc.Name
+	case hyperv1.KubevirtPlatform:
+		opts.KubevirtPlatform.RootVolumeSize = 16
+
+		// get base domain from default ingress of management cluster
+		defaultIngressOperator := &operatorv1.IngressController{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "default",
+				Namespace: "openshift-ingress-operator",
+			},
+		}
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(defaultIngressOperator), defaultIngressOperator)
+		if err != nil {
+			return opts, err
+		}
+
+		opts.BaseDomain = defaultIngressOperator.Status.Domain
+
 	}
 
-	return opts
+	return opts, nil
 }
 
 // createCluster calls the correct cluster create CLI function based on the

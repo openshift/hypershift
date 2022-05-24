@@ -77,7 +77,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 
 	// Wait for the first rollout to be complete and refresh the HostedCluster.
 	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
-	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, hostedCluster.Spec.Release.Image)
+	e2eutil.WaitForImageRollout(t, ctx, client, guestClient, hostedCluster, hostedCluster.Spec.Release.Image)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
@@ -184,7 +184,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 
 	// Wait for the first rollout to be complete and refresh the hostedcluster
 	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
-	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, hostedCluster.Spec.Release.Image)
+	e2eutil.WaitForImageRollout(t, ctx, client, guestClient, hostedCluster, hostedCluster.Spec.Release.Image)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 

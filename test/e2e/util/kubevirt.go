@@ -82,7 +82,7 @@ func WaitForKubeVirtCluster(t *testing.T, ctx context.Context, client crclient.C
 	t.Logf("KubeVirtCluster is ready in %s", time.Since(start).Round(time.Second))
 }
 
-func CreateKubeVirtClusterWildcardRoute(t *testing.T, ctx context.Context, client crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster, baseDomain string) {
+func createKubeVirtClusterWildcardRoute(t *testing.T, ctx context.Context, client crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster, baseDomain string) {
 
 	g := NewWithT(t)
 
