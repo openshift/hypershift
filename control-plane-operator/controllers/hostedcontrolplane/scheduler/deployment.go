@@ -46,10 +46,14 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
+	selector := deployment.Spec.Selector
+	if deployment.Spec.Selector == nil {
+		selector = &metav1.LabelSelector{
 			MatchLabels: schedulerLabels,
-		},
+		}
+	}
+	deployment.Spec = appsv1.DeploymentSpec{
+		Selector: selector,
 		Strategy: appsv1.DeploymentStrategy{
 			Type: appsv1.RollingUpdateDeploymentStrategyType,
 			RollingUpdate: &appsv1.RollingUpdateDeployment{

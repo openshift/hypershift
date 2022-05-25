@@ -65,8 +65,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 		p.DeploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
 
-	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: kcmLabels(),
+	if deployment.Spec.Selector == nil {
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: kcmLabels(),
+		}
 	}
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
 	maxSurge := intstr.FromInt(3)

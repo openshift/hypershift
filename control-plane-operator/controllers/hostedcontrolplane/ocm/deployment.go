@@ -59,8 +59,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MaxSurge:       &maxSurge,
 		MaxUnavailable: &maxUnavailable,
 	}
-	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: openShiftControllerManagerLabels(),
+	if deployment.Spec.Selector == nil {
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: openShiftControllerManagerLabels(),
+		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftControllerManagerLabels()
 	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
