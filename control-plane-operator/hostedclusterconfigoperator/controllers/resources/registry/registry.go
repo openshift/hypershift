@@ -13,10 +13,10 @@ func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.Platf
 	// Only initialize number of replicas if creating the config
 	if cfg.ResourceVersion == "" {
 		switch availabilityPolicy {
-		case hyperv1.SingleReplica:
-			cfg.Spec.Replicas = 1
-		default:
+		case hyperv1.HighlyAvailable:
 			cfg.Spec.Replicas = 2
+		default:
+			cfg.Spec.Replicas = 1
 		}
 	}
 	if cfg.Spec.ManagementState == "" {

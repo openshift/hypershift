@@ -179,7 +179,7 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>InfrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
-HighlyAvailable.</p>
+SingleReplica.</p>
 <p>
 Value must be one of:
 &#34;HighlyAvailable&#34;, 
@@ -2446,7 +2446,7 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>InfrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
-HighlyAvailable.</p>
+SingleReplica.</p>
 <p>
 Value must be one of:
 &#34;HighlyAvailable&#34;, 
@@ -3035,8 +3035,8 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
-Defaults to SingleReplica when not set</p>
+<p>ControllerAvailabilityPolicy specifies the availability policy applied to
+critical control plane components. The default value is SingleReplica.</p>
 <p>
 Value must be one of:
 &#34;HighlyAvailable&#34;, 
@@ -3055,9 +3055,9 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>InfrastructureAvailabilityPolicy specifies whether to run infrastructure services that
-run on the guest cluster nodes in HA mode
-Defaults to HighlyAvailable when not set</p>
+<p>InfrastructureAvailabilityPolicy specifies the availability policy applied
+to infrastructure services which run on cluster nodes. The default value is
+SingleReplica.</p>
 <p>
 Value must be one of:
 &#34;HighlyAvailable&#34;, 

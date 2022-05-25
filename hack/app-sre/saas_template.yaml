@@ -20263,10 +20263,10 @@ objects:
                     with the HostedCluster and its associated NodePools.
                   type: string
                 infrastructureAvailabilityPolicy:
-                  default: HighlyAvailable
+                  default: SingleReplica
                   description: InfrastructureAvailabilityPolicy specifies the availability
                     policy applied to infrastructure services which run on cluster
-                    nodes. The default value is HighlyAvailable.
+                    nodes. The default value is SingleReplica.
                   type: string
                 issuerURL:
                   default: https://kubernetes.default.svc
@@ -21418,9 +21418,10 @@ objects:
                       type: array
                   type: object
                 controllerAvailabilityPolicy:
-                  description: ControllerAvailabilityPolicy specifies whether to run
-                    control plane controllers in HA mode Defaults to SingleReplica
-                    when not set
+                  default: SingleReplica
+                  description: ControllerAvailabilityPolicy specifies the availability
+                    policy applied to critical control plane components. The default
+                    value is SingleReplica.
                   type: string
                 dns:
                   description: DNSSpec specifies the DNS configuration in the cluster.
@@ -21562,9 +21563,10 @@ objects:
                 infraID:
                   type: string
                 infrastructureAvailabilityPolicy:
-                  description: InfrastructureAvailabilityPolicy specifies whether
-                    to run infrastructure services that run on the guest cluster nodes
-                    in HA mode Defaults to HighlyAvailable when not set
+                  default: SingleReplica
+                  description: InfrastructureAvailabilityPolicy specifies the availability
+                    policy applied to infrastructure services which run on cluster
+                    nodes. The default value is SingleReplica.
                   type: string
                 issuerURL:
                   type: string

@@ -141,10 +141,10 @@ type HostedClusterSpec struct {
 
 	// InfrastructureAvailabilityPolicy specifies the availability policy applied
 	// to infrastructure services which run on cluster nodes. The default value is
-	// HighlyAvailable.
+	// SingleReplica.
 	//
 	// +optional
-	// +kubebuilder:default:="HighlyAvailable"
+	// +kubebuilder:default:="SingleReplica"
 	// +immutable
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 

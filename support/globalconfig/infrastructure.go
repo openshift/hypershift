@@ -38,10 +38,10 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	}
 
 	switch hcp.Spec.InfrastructureAvailabilityPolicy {
-	case hyperv1.SingleReplica:
-		infra.Status.InfrastructureTopology = configv1.SingleReplicaTopologyMode
-	default:
+	case hyperv1.HighlyAvailable:
 		infra.Status.InfrastructureTopology = configv1.HighlyAvailableTopologyMode
+	default:
+		infra.Status.InfrastructureTopology = configv1.SingleReplicaTopologyMode
 	}
 
 	switch platformType {
