@@ -663,6 +663,21 @@ the purpose of the change. In future we plan to propagate this field in-place.
 <a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a></p>
 </td>
 </tr>
+<tr>
+<td>
+<code>pausedUntil</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+Either a date can be provided in RFC3339 format or a boolean. If a date is
+provided: reconciliation is paused on the resource until that date. If the boolean true is
+provided: reconciliation is paused on the resource until the field is removed.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -5601,6 +5616,21 @@ NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
 TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
 the purpose of the change. In future we plan to propagate this field in-place.
 <a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>pausedUntil</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+Either a date can be provided in RFC3339 format or a boolean. If a date is
+provided: reconciliation is paused on the resource until that date. If the boolean true is
+provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
 </tr>
 </tbody>
