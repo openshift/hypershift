@@ -3,6 +3,7 @@ package kcm
 import (
 	"fmt"
 	"path"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -301,6 +302,12 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	}
 	if p.CloudProvider != "" {
 		args = append(args, fmt.Sprintf("--cloud-provider=%s", p.CloudProvider))
+	}
+	if p.MinTLSVersion() != "" {
+		args = append(args, fmt.Sprintf("--tls-min-version=%s", p.MinTLSVersion()))
+	}
+	if len(p.CipherSuites()) != 0 {
+		args = append(args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(p.CipherSuites(), ",")))
 	}
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
