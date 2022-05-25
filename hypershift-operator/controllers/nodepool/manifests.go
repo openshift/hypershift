@@ -14,17 +14,16 @@ const (
 	EC2VolumeDefaultType string = "gp3"
 )
 
-func machineDeployment(nodePool *hyperv1.NodePool, clusterName string, controlPlaneNamespace string) *capiv1.MachineDeployment {
-	resourcesName := generateName(clusterName, nodePool.Spec.ClusterName, nodePool.GetName())
+func machineDeployment(nodePool *hyperv1.NodePool, controlPlaneNamespace string) *capiv1.MachineDeployment {
 	return &capiv1.MachineDeployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      resourcesName,
+			Name:      nodePool.GetName(),
 			Namespace: controlPlaneNamespace,
 		},
 	}
 }
 
-func machineSet(nodePool *hyperv1.NodePool, clusterName string, controlPlaneNamespace string) *capiv1.MachineSet {
+func machineSet(nodePool *hyperv1.NodePool, controlPlaneNamespace string) *capiv1.MachineSet {
 	return &capiv1.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nodePool.GetName(),

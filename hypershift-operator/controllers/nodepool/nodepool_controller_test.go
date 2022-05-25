@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -26,6 +27,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 func TestIsUpdatingConfig(t *testing.T) {
@@ -1244,5 +1246,32 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 			// test to run.
 			g.Expect(time.Now().Add(119 * time.Minute).Before(expirationTimestamp)).To(BeTrue())
 		})
+	}
+}
+
+func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "some-nodepool",
+			Namespace:  "clusters",
+			Finalizers: []string{finalizer},
+		},
+	}
+
+	ctx := context.Background()
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool).Build()
+	if err := c.Delete(ctx, nodePool); err != nil {
+		t.Fatalf("failed to delete nodepool: %v", err)
+	}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(nodePool), nodePool); err != nil {
+		t.Errorf("expected to be able to get nodepool after deletion because of finalizer, but got err: %v", err)
+	}
+
+	if _, err := (&NodePoolReconciler{Client: c}).Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nodePool)}); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	if err := c.Get(ctx, client.ObjectKeyFromObject(nodePool), nodePool); !apierrors.IsNotFound(err) {
+		t.Errorf("expected to get NotFound after deleted nodePool was reconciled, got %v", err)
 	}
 }
