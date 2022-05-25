@@ -40,7 +40,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			expectedArgs: []string{
 				"run",
 				"--namespace=$(MY_NAMESPACE)",
-				"--deployment-name=operator",
+				"--pod-name=$(MY_NAME)",
 				"--metrics-addr=:9000",
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),
@@ -89,7 +89,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			expectedArgs: []string{
 				"run",
 				"--namespace=$(MY_NAMESPACE)",
-				"--deployment-name=operator",
+				"--pod-name=$(MY_NAME)",
 				"--metrics-addr=:9000",
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),
@@ -123,7 +123,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			expectedArgs: []string{
 				"run",
 				"--namespace=$(MY_NAMESPACE)",
-				"--deployment-name=operator",
+				"--pod-name=$(MY_NAME)",
 				"--metrics-addr=:9000",
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),
@@ -183,7 +183,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			expectedArgs: []string{
 				"run",
 				"--namespace=$(MY_NAMESPACE)",
-				"--deployment-name=operator",
+				"--pod-name=$(MY_NAME)",
 				"--metrics-addr=:9000",
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),

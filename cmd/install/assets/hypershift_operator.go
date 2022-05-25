@@ -275,7 +275,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	args := []string{
 		"run",
 		"--namespace=$(MY_NAMESPACE)",
-		"--deployment-name=operator",
+		"--pod-name=$(MY_NAME)",
 		"--metrics-addr=:9000",
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
@@ -290,6 +290,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			ValueFrom: &corev1.EnvVarSource{
 				FieldRef: &corev1.ObjectFieldSelector{
 					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+		{
+			Name: "MY_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
 				},
 			},
 		},
