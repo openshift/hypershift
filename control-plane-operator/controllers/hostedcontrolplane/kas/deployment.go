@@ -399,6 +399,10 @@ func buildKASContainerMain(image string, port int32, podCIDR, serviceCIDR string
 			Name:      "HOST_IP",
 			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"}},
 		}}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("350m"),
+			corev1.ResourceMemory: resource.MustParse("1500Mi"),
+		}
 
 		// We have to exempt the pod and service CIDR, otherwise the proxy will get respected by the transport inside
 		// the the egress transport and that breaks the egress selection/konnektivity usage.
