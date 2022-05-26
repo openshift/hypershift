@@ -2312,8 +2312,7 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx con
 func (r *HostedControlPlaneReconciler) reconcilePrivateRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage) error {
 	sa := manifests.PrivateRouterServiceAccount(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, sa, func() error {
-		config.OwnerRefFrom(hcp).ApplyTo(sa)
-		return nil
+		return ingress.ReconcilePrivateRouterServiceAccount(sa, config.OwnerRefFrom(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile private router service account: %w", err)
 	}

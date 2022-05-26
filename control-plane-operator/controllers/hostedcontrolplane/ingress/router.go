@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -299,6 +300,12 @@ func ReconcilePrivateRouterRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.O
 		Kind:     "Role",
 		Name:     manifests.PrivateRouterRole("").Name,
 	}
+	return nil
+}
+
+func ReconcilePrivateRouterServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(sa)
+	util.EnsurePullSecret(sa, common.PullSecret("").Name)
 	return nil
 }
 
