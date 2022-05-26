@@ -10,7 +10,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -37,12 +36,8 @@ const LoopDetectorWarningMessage = "WARNING: Object got updated more than one ti
 // Once we did a no-op update, we will ignore the object because we assume that if we have
 // a bug in the defaulting, we will end up always updating.
 func updateLoopThreshold(o runtime.Object) int {
-	// Nodes in in-place upgrade scenario to through through three updates
-	// in a row.
-	if _, isNode := o.(*corev1.Node); isNode {
-		return 3
-	}
-	return 2
+	// Give some leeway, if we actually revert defaults we will do a lot more than this
+	return 5
 }
 
 type updateLoopDetector struct {
