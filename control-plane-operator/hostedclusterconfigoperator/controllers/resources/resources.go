@@ -319,14 +319,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
 	}
 
-	log.Info("reconciling monitoring configuration")
-	monitoringConfig := manifests.MonitoringConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, monitoringConfig, func() error {
-		return monitoring.ReconcileMonitoringConfig(monitoringConfig)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile monitoring config: %w", err))
-	}
-
 	log.Info("reconciling pull secret")
 	for _, ns := range manifests.PullSecretTargetNamespaces() {
 		secret := manifests.PullSecret(ns)
