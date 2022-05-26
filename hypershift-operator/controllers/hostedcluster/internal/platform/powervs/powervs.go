@@ -109,10 +109,6 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 								ReadOnly:  true,
 								MountPath: "/tmp/k8s-webhook-server/serving-certs",
 							},
-							{
-								Name:      "token",
-								MountPath: "/var/run/secrets/openshift/serviceaccount",
-							},
 						},
 						Env: []corev1.EnvVar{
 							{

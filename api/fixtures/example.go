@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -74,6 +75,7 @@ type ExampleOptions struct {
 	Agent                            *ExampleAgentOptions
 	Kubevirt                         *ExampleKubevirtOptions
 	Azure                            *ExampleAzureOptions
+	PowerVS                          *ExamplePowerVSOptions
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
@@ -408,6 +410,55 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		}
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType)
 
+	case o.PowerVS != nil:
+		buildIBMCloudCreds := func(name, apikey string) *corev1.Secret {
+			return &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Secret",
+					APIVersion: corev1.SchemeGroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace.Name,
+					Name:      name,
+				},
+				Data: map[string][]byte{
+					"ibm-credentials.env": []byte(fmt.Sprintf(`IBMCLOUD_AUTH_TYPE=iam
+ IBMCLOUD_APIKEY=%s
+ IBMCLOUD_AUTH_URL=https://iam.cloud.ibm.com
+ `, apikey)),
+				},
+			}
+		}
+
+		// TODO(dharaneeshvrd): Need exploration to use granular permissions
+		powerVSResources := &ExamplePowerVSResources{
+			buildIBMCloudCreds(o.Name+"-cloud-ctrl-creds", o.PowerVS.ApiKey),
+			buildIBMCloudCreds(o.Name+"-node-mgmt-creds", o.PowerVS.ApiKey),
+			buildIBMCloudCreds(o.Name+"-cpo-creds", o.PowerVS.ApiKey),
+		}
+		resources = powerVSResources.AsObjects()
+		platformSpec = hyperv1.PlatformSpec{
+			Type: hyperv1.PowerVSPlatform,
+			PowerVS: &hyperv1.PowerVSPlatformSpec{
+				ResourceGroup:     o.PowerVS.ResourceGroup,
+				Region:            o.PowerVS.Region,
+				Zone:              o.PowerVS.Zone,
+				ServiceInstanceID: o.PowerVS.CloudInstanceID,
+				Subnet: &hyperv1.PowerVSResourceReference{
+					Name: &o.PowerVS.Subnet,
+					ID:   &o.PowerVS.SubnetID,
+				},
+				VPC: &hyperv1.PowerVSVPC{
+					Name:   o.PowerVS.Vpc,
+					Region: o.PowerVS.VpcRegion,
+					Subnet: o.PowerVS.VpcSubnet,
+				},
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerPowerVSCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementPowerVSCreds.Name},
+				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorPowerVSCreds.Name},
+			},
+		}
+		services = getIngressServicePublishingStrategyMapping(o.NetworkType)
 	default:
 		panic("no platform specified")
 	}
@@ -597,6 +648,15 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			}
 			nodePools = append(nodePools, nodePool)
 		}
+	case hyperv1.PowerVSPlatform:
+		nodePool := defaultNodePool(cluster.Name)
+		nodePool.Spec.Platform.PowerVS = &hyperv1.PowerVSNodePoolPlatform{
+			SystemType:    o.PowerVS.SysType,
+			ProcessorType: o.PowerVS.ProcType,
+			Processors:    intstr.FromString(o.PowerVS.Processors),
+			MemoryGiB:     o.PowerVS.Memory,
+		}
+		nodePools = append(nodePools, nodePool)
 	default:
 		panic("Unsupported platform")
 	}

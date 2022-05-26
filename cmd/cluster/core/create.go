@@ -65,6 +65,7 @@ type CreateOptions struct {
 	AWSPlatform                      AWSPlatformOptions
 	AgentPlatform                    AgentPlatformCreateOptions
 	AzurePlatform                    AzurePlatformOptions
+	PowerVSPlatform                  PowerVSPlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
 
@@ -72,6 +73,24 @@ type CreateOptions struct {
 	// server, giving the user an opportunity to inspect or mutate the resources.
 	// This is intended primarily for e2e testing and should be used with care.
 	BeforeApply func(crclient.Object) `json:"-"`
+}
+
+type PowerVSPlatformOptions struct {
+	APIKey          string
+	ResourceGroup   string
+	Region          string
+	Zone            string
+	CloudInstanceID string
+	CloudConnection string
+	VpcRegion       string
+	Vpc             string
+	VpcSubnet       string
+
+	// nodepool related options
+	SysType    string
+	ProcType   string
+	Processors string
+	Memory     int32
 }
 
 type AgentPlatformCreateOptions struct {
