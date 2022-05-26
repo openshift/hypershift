@@ -26,6 +26,7 @@ type KubeControllerManagerParams struct {
 	Port                int32                        `json:"port"`
 	ServiceCIDR         string
 	PodCIDR             string
+	APIServer           *configv1.APIServer `json:"apiServer"`
 
 	config.DeploymentConfig
 	config.OwnerRef
@@ -49,6 +50,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		ServiceCIDR:             hcp.Spec.ServiceCIDR,
 		PodCIDR:                 hcp.Spec.PodCIDR,
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		APIServer:               globalConfig.APIServer,
 	}
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
@@ -129,4 +131,18 @@ func (p *KubeControllerManagerParams) FeatureGates() []string {
 			FeatureSet: configv1.Default,
 		})
 	}
+}
+
+func (p *KubeControllerManagerParams) CipherSuites() []string {
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
+}
+
+func (p *KubeControllerManagerParams) MinTLSVersion() string {
+	if p.APIServer != nil {
+		return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+	}
+	return config.MinTLSVersion(nil)
 }
