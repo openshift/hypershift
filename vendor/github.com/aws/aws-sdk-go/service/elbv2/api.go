@@ -4442,7 +4442,7 @@ type CreateLoadBalancerInput struct {
 
 	// The type of IP addresses used by the subnets for your load balancer. The
 	// possible values are ipv4 (for IPv4 addresses) and dualstack (for IPv4 and
-	// IPv6 addresses). Internal load balancers must use ipv4.
+	// IPv6 addresses).
 	IpAddressType *string `type:"string" enum:"IpAddressType"`
 
 	// The name of the load balancer.
@@ -4853,6 +4853,11 @@ type CreateTargetGroupInput struct {
 	// GENEVE, the default is 3. If the target type is lambda, the default is 5.
 	HealthyThresholdCount *int64 `min:"2" type:"integer"`
 
+	// The type of IP address used for this target group. The possible values are
+	// ipv4 and ipv6. This is an optional parameter. If not specified, the IP address
+	// type defaults to ipv4.
+	IpAddressType *string `type:"string" enum:"TargetGroupIpAddressTypeEnum"`
+
 	// [HTTP/HTTPS health checks] The HTTP or gRPC codes to use when checking for
 	// a successful response from a target.
 	Matcher *Matcher `type:"structure"`
@@ -5018,6 +5023,12 @@ func (s *CreateTargetGroupInput) SetHealthCheckTimeoutSeconds(v int64) *CreateTa
 // SetHealthyThresholdCount sets the HealthyThresholdCount field's value.
 func (s *CreateTargetGroupInput) SetHealthyThresholdCount(v int64) *CreateTargetGroupInput {
 	s.HealthyThresholdCount = &v
+	return s
+}
+
+// SetIpAddressType sets the IpAddressType field's value.
+func (s *CreateTargetGroupInput) SetIpAddressType(v string) *CreateTargetGroupInput {
+	s.IpAddressType = &v
 	return s
 }
 
@@ -6095,6 +6106,10 @@ func (s *DescribeRulesOutput) SetRules(v []*Rule) *DescribeRulesOutput {
 type DescribeSSLPoliciesInput struct {
 	_ struct{} `type:"structure"`
 
+	// The type of load balancer. The default lists the SSL policies for all load
+	// balancers.
+	LoadBalancerType *string `type:"string" enum:"LoadBalancerTypeEnum"`
+
 	// The marker for the next set of results. (You received this marker from a
 	// previous call.)
 	Marker *string `type:"string"`
@@ -6135,6 +6150,12 @@ func (s *DescribeSSLPoliciesInput) Validate() error {
 		return invalidParams
 	}
 	return nil
+}
+
+// SetLoadBalancerType sets the LoadBalancerType field's value.
+func (s *DescribeSSLPoliciesInput) SetLoadBalancerType(v string) *DescribeSSLPoliciesInput {
+	s.LoadBalancerType = &v
+	return s
 }
 
 // SetMarker sets the Marker field's value.
@@ -7230,6 +7251,11 @@ type LoadBalancerAttribute struct {
 	//    * access_logs.s3.prefix - The prefix for the location in the S3 bucket
 	//    for the access logs.
 	//
+	//    * ipv6.deny-all-igw-traffic - Blocks internet gateway (IGW) access to
+	//    the load balancer. It is set to false for internet-facing load balancers
+	//    and true for internal load balancers, preventing unintended access to
+	//    your internal load balancer through an internet gateway.
+	//
 	// The following attributes are supported by only Application Load Balancers:
 	//
 	//    * idle_timeout.timeout_seconds - The idle timeout value, in seconds. The
@@ -7372,6 +7398,9 @@ type Matcher struct {
 	// "200,202") or a range of values (for example, "200-299").
 	//
 	// For Network Load Balancers and Gateway Load Balancers, this must be "200–399".
+	//
+	// Note that when using shorthand syntax, some values such as commas need to
+	// be escaped.
 	HttpCode *string `type:"string"`
 }
 
@@ -8840,9 +8869,8 @@ type SetIpAddressTypeInput struct {
 	_ struct{} `type:"structure"`
 
 	// The IP address type. The possible values are ipv4 (for IPv4 addresses) and
-	// dualstack (for IPv4 and IPv6 addresses). Internal load balancers must use
-	// ipv4. You can’t specify dualstack for a load balancer with a UDP or TCP_UDP
-	// listener.
+	// dualstack (for IPv4 and IPv6 addresses). You can’t specify dualstack for
+	// a load balancer with a UDP or TCP_UDP listener.
 	//
 	// IpAddressType is a required field
 	IpAddressType *string `type:"string" required:"true" enum:"IpAddressType"`
@@ -9114,8 +9142,7 @@ type SetSubnetsInput struct {
 	// [Network Load Balancers] The type of IP addresses used by the subnets for
 	// your load balancer. The possible values are ipv4 (for IPv4 addresses) and
 	// dualstack (for IPv4 and IPv6 addresses). You can’t specify dualstack for
-	// a load balancer with a UDP or TCP_UDP listener. Internal load balancers must
-	// use ipv4.
+	// a load balancer with a UDP or TCP_UDP listener. .
 	IpAddressType *string `type:"string" enum:"IpAddressType"`
 
 	// The Amazon Resource Name (ARN) of the load balancer.
@@ -9307,6 +9334,9 @@ type SslPolicy struct {
 
 	// The protocols.
 	SslProtocols []*string `type:"list"`
+
+	// The supported load balancers.
+	SupportedLoadBalancerTypes []*string `type:"list"`
 }
 
 // String returns the string representation.
@@ -9342,6 +9372,12 @@ func (s *SslPolicy) SetName(v string) *SslPolicy {
 // SetSslProtocols sets the SslProtocols field's value.
 func (s *SslPolicy) SetSslProtocols(v []*string) *SslPolicy {
 	s.SslProtocols = v
+	return s
+}
+
+// SetSupportedLoadBalancerTypes sets the SupportedLoadBalancerTypes field's value.
+func (s *SslPolicy) SetSupportedLoadBalancerTypes(v []*string) *SslPolicy {
+	s.SupportedLoadBalancerTypes = v
 	return s
 }
 
@@ -9625,6 +9661,11 @@ type TargetGroup struct {
 	// an unhealthy target healthy.
 	HealthyThresholdCount *int64 `min:"2" type:"integer"`
 
+	// The type of IP address used for this target group. The possible values are
+	// ipv4 and ipv6. This is an optional parameter. If not specified, the IP address
+	// type defaults to ipv4.
+	IpAddressType *string `type:"string" enum:"TargetGroupIpAddressTypeEnum"`
+
 	// The Amazon Resource Names (ARN) of the load balancers that route traffic
 	// to this target group.
 	LoadBalancerArns []*string `type:"list"`
@@ -9722,6 +9763,12 @@ func (s *TargetGroup) SetHealthCheckTimeoutSeconds(v int64) *TargetGroup {
 // SetHealthyThresholdCount sets the HealthyThresholdCount field's value.
 func (s *TargetGroup) SetHealthyThresholdCount(v int64) *TargetGroup {
 	s.HealthyThresholdCount = &v
+	return s
+}
+
+// SetIpAddressType sets the IpAddressType field's value.
+func (s *TargetGroup) SetIpAddressType(v string) *TargetGroup {
+	s.IpAddressType = &v
 	return s
 }
 
@@ -10333,6 +10380,22 @@ func RedirectActionStatusCodeEnum_Values() []string {
 	return []string{
 		RedirectActionStatusCodeEnumHttp301,
 		RedirectActionStatusCodeEnumHttp302,
+	}
+}
+
+const (
+	// TargetGroupIpAddressTypeEnumIpv4 is a TargetGroupIpAddressTypeEnum enum value
+	TargetGroupIpAddressTypeEnumIpv4 = "ipv4"
+
+	// TargetGroupIpAddressTypeEnumIpv6 is a TargetGroupIpAddressTypeEnum enum value
+	TargetGroupIpAddressTypeEnumIpv6 = "ipv6"
+)
+
+// TargetGroupIpAddressTypeEnum_Values returns all elements of the TargetGroupIpAddressTypeEnum enum
+func TargetGroupIpAddressTypeEnum_Values() []string {
+	return []string{
+		TargetGroupIpAddressTypeEnumIpv4,
+		TargetGroupIpAddressTypeEnumIpv6,
 	}
 }
 

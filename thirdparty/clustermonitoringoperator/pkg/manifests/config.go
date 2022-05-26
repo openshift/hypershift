@@ -16,19 +16,33 @@ package manifests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 
 	configv1 "github.com/openshift/api/config/v1"
 	monv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	poperator "github.com/prometheus-operator/prometheus-operator/pkg/operator"
 	v1 "k8s.io/api/core/v1"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
+	"k8s.io/klog/v2"
 )
 
 const (
 	DefaultRetentionValue = "15d"
+
+	// Limit the body size from scrape queries
+	// Assumptions: one node has in average 110 pods, each pod exposes 400 metrics, each metric is expressed by on average 250 bytes.
+	// 1.5x the size for a safe margin,
+	// minimal HA requires 3 nodes. it rounds to 47.2 MB (49,500,000 Bytes).
+	minimalSizeLimit = 3 * 1.5 * 110 * 400 * 250
+
+	// A value of Prometheusk8s.enforceBodySizeLimit,
+	// meaning the limit will be automatically calculated based on cluster capacity.
+	automaticBodySizeLimit = "automatic"
 )
 
 type Config struct {
@@ -98,7 +112,6 @@ type ClusterMonitoringConfiguration struct {
 	AlertmanagerMainConfig   *AlertmanagerMainConfig      `json:"alertmanagerMain"`
 	KubeStateMetricsConfig   *KubeStateMetricsConfig      `json:"kubeStateMetrics"`
 	OpenShiftMetricsConfig   *OpenShiftStateMetricsConfig `json:"openshiftStateMetrics"`
-	GrafanaConfig            *GrafanaConfig               `json:"grafana"`
 	EtcdConfig               *EtcdConfig                  `json:"-"`
 	HTTPConfig               *HTTPConfig                  `json:"http"`
 	TelemeterClientConfig    *TelemeterClientConfig       `json:"telemeterClient"`
@@ -108,20 +121,21 @@ type ClusterMonitoringConfiguration struct {
 }
 
 type Images struct {
-	K8sPrometheusAdapter     string
-	PromLabelProxy           string
-	PrometheusOperator       string
-	PrometheusConfigReloader string
-	Prometheus               string
-	Alertmanager             string
-	Grafana                  string
-	OauthProxy               string
-	NodeExporter             string
-	KubeStateMetrics         string
-	OpenShiftStateMetrics    string
-	KubeRbacProxy            string
-	TelemeterClient          string
-	Thanos                   string
+	K8sPrometheusAdapter               string
+	PromLabelProxy                     string
+	PrometheusOperatorAdmissionWebhook string
+	PrometheusOperator                 string
+	PrometheusConfigReloader           string
+	Prometheus                         string
+	Alertmanager                       string
+	Grafana                            string
+	OauthProxy                         string
+	NodeExporter                       string
+	KubeStateMetrics                   string
+	OpenShiftStateMetrics              string
+	KubeRbacProxy                      string
+	TelemeterClient                    string
+	Thanos                             string
 }
 
 type HTTPConfig struct {
@@ -157,6 +171,10 @@ type RemoteWriteSpec struct {
 	BasicAuth *monv1.BasicAuth `json:"basicAuth,omitempty"`
 	// Bearer token for remote write.
 	BearerTokenFile string `json:"bearerTokenFile,omitempty"`
+	// Authorization section for remote write
+	Authorization *monv1.SafeAuthorization `json:"authorization,omitempty"`
+	// Sigv4 allows to configures AWS's Signature Verification 4
+	Sigv4 *monv1.Sigv4 `json:"sigv4,omitempty"`
 	// TLS Config to use for remote write.
 	TLSConfig *monv1.SafeTLSConfig `json:"tlsConfig,omitempty"`
 	// Optional ProxyURL
@@ -165,11 +183,14 @@ type RemoteWriteSpec struct {
 	QueueConfig *monv1.QueueConfig `json:"queueConfig,omitempty"`
 	// MetadataConfig configures the sending of series metadata to remote storage.
 	MetadataConfig *monv1.MetadataConfig `json:"metadataConfig,omitempty"`
+	// OAuth2 configures OAuth2 authentication for remote write.
+	OAuth2 *monv1.OAuth2 `json:"oauth2,omitempty"`
 }
 
 type PrometheusK8sConfig struct {
 	LogLevel            string                               `json:"logLevel"`
 	Retention           string                               `json:"retention"`
+	RetentionSize       string                               `json:"retentionSize"`
 	NodeSelector        map[string]string                    `json:"nodeSelector"`
 	Tolerations         []v1.Toleration                      `json:"tolerations"`
 	Resources           *v1.ResourceRequirements             `json:"resources"`
@@ -178,6 +199,13 @@ type PrometheusK8sConfig struct {
 	RemoteWrite         []RemoteWriteSpec                    `json:"remoteWrite"`
 	TelemetryMatches    []string                             `json:"-"`
 	AlertmanagerConfigs []AdditionalAlertmanagerConfig       `json:"additionalAlertmanagerConfigs"`
+	QueryLogFile        string                               `json:"queryLogFile"`
+	/* EnforcedBodySizeLimit accept 3 kind of values:
+	 * 1. empty value: no limit
+	 * 2. a value in Prometheus size format, e.g. "64MB"
+	 * 3. string "automatic", which means the limit will be automatically calculated based on cluster capacity.
+	 */
+	EnforcedBodySizeLimit string `json:"enforcedBodySizeLimit,omitempty"`
 }
 
 type AdditionalAlertmanagerConfig struct {
@@ -212,12 +240,13 @@ type TLSConfig struct {
 }
 
 type AlertmanagerMainConfig struct {
-	Enabled             *bool                                `json:"enabled"`
-	LogLevel            string                               `json:"logLevel"`
-	NodeSelector        map[string]string                    `json:"nodeSelector"`
-	Tolerations         []v1.Toleration                      `json:"tolerations"`
-	Resources           *v1.ResourceRequirements             `json:"resources"`
-	VolumeClaimTemplate *monv1.EmbeddedPersistentVolumeClaim `json:"volumeClaimTemplate"`
+	Enabled                      *bool                                `json:"enabled"`
+	EnableUserAlertManagerConfig bool                                 `json:"enableUserAlertmanagerConfig"`
+	LogLevel                     string                               `json:"logLevel"`
+	NodeSelector                 map[string]string                    `json:"nodeSelector"`
+	Tolerations                  []v1.Toleration                      `json:"tolerations"`
+	Resources                    *v1.ResourceRequirements             `json:"resources"`
+	VolumeClaimTemplate          *monv1.EmbeddedPersistentVolumeClaim `json:"volumeClaimTemplate"`
 }
 
 func (a AlertmanagerMainConfig) IsEnabled() bool {
@@ -227,6 +256,7 @@ func (a AlertmanagerMainConfig) IsEnabled() bool {
 type ThanosRulerConfig struct {
 	LogLevel             string                               `json:"logLevel"`
 	NodeSelector         map[string]string                    `json:"nodeSelector"`
+	Retention            string                               `json:"retention"`
 	Tolerations          []v1.Toleration                      `json:"tolerations"`
 	Resources            *v1.ResourceRequirements             `json:"resources"`
 	VolumeClaimTemplate  *monv1.EmbeddedPersistentVolumeClaim `json:"volumeClaimTemplate"`
@@ -234,26 +264,11 @@ type ThanosRulerConfig struct {
 }
 
 type ThanosQuerierConfig struct {
-	LogLevel     string                   `json:"logLevel"`
-	NodeSelector map[string]string        `json:"nodeSelector"`
-	Tolerations  []v1.Toleration          `json:"tolerations"`
-	Resources    *v1.ResourceRequirements `json:"resources"`
-}
-
-type GrafanaConfig struct {
-	Enabled      *bool             `json:"enabled"`
-	NodeSelector map[string]string `json:"nodeSelector"`
-	Tolerations  []v1.Toleration   `json:"tolerations"`
-}
-
-// IsEnabled returns the underlying value of the `Enabled` boolean pointer.  It
-// defaults to TRUE if the pointer is nil because Grafana should be enabled by
-// default.
-func (g *GrafanaConfig) IsEnabled() bool {
-	if g.Enabled == nil {
-		return true
-	}
-	return *g.Enabled
+	LogLevel             string                   `json:"logLevel"`
+	NodeSelector         map[string]string        `json:"nodeSelector"`
+	Tolerations          []v1.Toleration          `json:"tolerations"`
+	Resources            *v1.ResourceRequirements `json:"resources"`
+	EnableRequestLogging bool                     `json:"enableRequestLogging"`
 }
 
 type KubeStateMetricsConfig struct {
@@ -266,13 +281,24 @@ type OpenShiftStateMetricsConfig struct {
 	Tolerations  []v1.Toleration   `json:"tolerations"`
 }
 
+// Prometheus Adapater related configurations
 type K8sPrometheusAdapter struct {
 	NodeSelector map[string]string `json:"nodeSelector"`
 	Tolerations  []v1.Toleration   `json:"tolerations"`
-	Audit        *Audit            `json:"audit"`
+
+	// Prometheus Adapter audit logging related configuration
+	Audit *Audit `json:"audit"`
 }
 
+// Audit profile configurations
 type Audit struct {
+
+	// The Profile to set for audit logs. This currently matches the various
+	// audit log levels such as: "metadata, request, requestresponse, none".
+	// The default audit log level is "metadata"
+	//
+	// see: https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#audit-policy
+	// for more information about auditing and log levels.
 	Profile auditv1.Level `json:"profile"`
 }
 
@@ -323,7 +349,6 @@ func NewConfig(content io.Reader) (*Config, error) {
 	res := &c
 	res.applyDefaults()
 	c.UserWorkloadConfiguration = NewDefaultUserWorkloadMonitoringConfig()
-
 	return res, nil
 }
 
@@ -340,7 +365,7 @@ func (c *Config) applyDefaults() {
 	if c.ClusterMonitoringConfiguration.PrometheusK8sConfig == nil {
 		c.ClusterMonitoringConfiguration.PrometheusK8sConfig = &PrometheusK8sConfig{}
 	}
-	if c.ClusterMonitoringConfiguration.PrometheusK8sConfig.Retention == "" {
+	if c.ClusterMonitoringConfiguration.PrometheusK8sConfig.Retention == "" && c.ClusterMonitoringConfiguration.PrometheusK8sConfig.RetentionSize == "" {
 		c.ClusterMonitoringConfiguration.PrometheusK8sConfig.Retention = DefaultRetentionValue
 	}
 	if c.ClusterMonitoringConfiguration.AlertmanagerMainConfig == nil {
@@ -352,9 +377,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.ClusterMonitoringConfiguration.ThanosQuerierConfig == nil {
 		c.ClusterMonitoringConfiguration.ThanosQuerierConfig = &ThanosQuerierConfig{}
-	}
-	if c.ClusterMonitoringConfiguration.GrafanaConfig == nil {
-		c.ClusterMonitoringConfiguration.GrafanaConfig = &GrafanaConfig{}
 	}
 	if c.ClusterMonitoringConfiguration.KubeStateMetricsConfig == nil {
 		c.ClusterMonitoringConfiguration.KubeStateMetricsConfig = &KubeStateMetricsConfig{}
@@ -387,6 +409,7 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) SetImages(images map[string]string) {
+	c.Images.PrometheusOperatorAdmissionWebhook = images["prometheus-operator-admission-webhook"]
 	c.Images.PrometheusOperator = images["prometheus-operator"]
 	c.Images.PrometheusConfigReloader = images["prometheus-config-reloader"]
 	c.Images.Prometheus = images["prometheus"]
@@ -473,6 +496,42 @@ func (c *Config) NoProxy() string {
 	return c.ClusterMonitoringConfiguration.HTTPConfig.NoProxy
 }
 
+// PodCapacityReader returns the maximum number of pods that can be scheduled in a cluster.
+type PodCapacityReader interface {
+	PodCapacity(context.Context) (int, error)
+}
+
+func (c *Config) LoadEnforcedBodySizeLimit(pcr PodCapacityReader, ctx context.Context) error {
+	if c.ClusterMonitoringConfiguration.PrometheusK8sConfig.EnforcedBodySizeLimit == "" {
+		return nil
+	}
+
+	if c.ClusterMonitoringConfiguration.PrometheusK8sConfig.EnforcedBodySizeLimit == automaticBodySizeLimit {
+		podCapacity, err := pcr.PodCapacity(ctx)
+		if err != nil {
+			return fmt.Errorf("error fetching pod capacity: %v", err)
+		}
+		c.ClusterMonitoringConfiguration.PrometheusK8sConfig.EnforcedBodySizeLimit = calculateBodySizeLimit(podCapacity)
+		return nil
+	}
+
+	return poperator.ValidateSizeField(c.ClusterMonitoringConfiguration.PrometheusK8sConfig.EnforcedBodySizeLimit)
+
+}
+
+func calculateBodySizeLimit(podCapacity int) string {
+	const samplesPerPod = 400 // 400 samples per pod
+	const sizePerSample = 200 // 200 Bytes
+
+	bodySize := podCapacity * samplesPerPod * sizePerSample
+	if bodySize < minimalSizeLimit {
+		klog.Infof("Calculated scrape body size limit %v is too small, using default value %v instead", bodySize, minimalSizeLimit)
+		bodySize = minimalSizeLimit
+	}
+
+	return fmt.Sprintf("%dMB", int(math.Ceil(float64(bodySize)/(1024*1024))))
+}
+
 func NewConfigFromString(content string) (*Config, error) {
 	if content == "" {
 		return NewDefaultConfig(), nil
@@ -497,17 +556,22 @@ type UserWorkloadConfiguration struct {
 }
 
 type PrometheusRestrictedConfig struct {
-	LogLevel            string                               `json:"logLevel"`
-	Retention           string                               `json:"retention"`
-	NodeSelector        map[string]string                    `json:"nodeSelector"`
-	Tolerations         []v1.Toleration                      `json:"tolerations"`
-	Resources           *v1.ResourceRequirements             `json:"resources"`
-	ExternalLabels      map[string]string                    `json:"externalLabels"`
-	VolumeClaimTemplate *monv1.EmbeddedPersistentVolumeClaim `json:"volumeClaimTemplate"`
-	RemoteWrite         []RemoteWriteSpec                    `json:"remoteWrite"`
-	EnforcedSampleLimit *uint64                              `json:"enforcedSampleLimit"`
-	EnforcedTargetLimit *uint64                              `json:"enforcedTargetLimit"`
-	AlertmanagerConfigs []AdditionalAlertmanagerConfig       `json:"additionalAlertmanagerConfigs"`
+	LogLevel                      string                               `json:"logLevel"`
+	Retention                     string                               `json:"retention"`
+	RetentionSize                 string                               `json:"retentionSize"`
+	NodeSelector                  map[string]string                    `json:"nodeSelector"`
+	Tolerations                   []v1.Toleration                      `json:"tolerations"`
+	Resources                     *v1.ResourceRequirements             `json:"resources"`
+	ExternalLabels                map[string]string                    `json:"externalLabels"`
+	VolumeClaimTemplate           *monv1.EmbeddedPersistentVolumeClaim `json:"volumeClaimTemplate"`
+	RemoteWrite                   []RemoteWriteSpec                    `json:"remoteWrite"`
+	EnforcedSampleLimit           *uint64                              `json:"enforcedSampleLimit"`
+	EnforcedTargetLimit           *uint64                              `json:"enforcedTargetLimit"`
+	EnforcedLabelLimit            *uint64                              `json:"enforcedLabelLimit"`
+	EnforcedLabelNameLengthLimit  *uint64                              `json:"enforcedLabelNameLengthLimit"`
+	EnforcedLabelValueLengthLimit *uint64                              `json:"enforcedLabelValueLengthLimit"`
+	AlertmanagerConfigs           []AdditionalAlertmanagerConfig       `json:"additionalAlertmanagerConfigs"`
+	QueryLogFile                  string                               `json:"queryLogFile"`
 }
 
 func (u *UserWorkloadConfiguration) applyDefaults() {

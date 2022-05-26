@@ -32,7 +32,7 @@ func ReconcileKubeAPIServerServiceMonitor(serviceMonitor *prometheusoperatorv1.S
 				{
 					Action: "keep",
 					Regex:  "etcd_object_counts.*",
-					SourceLabels: []string{
+					SourceLabels: []prometheusoperatorv1.LabelName{
 						"__name__",
 					},
 				},
