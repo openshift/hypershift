@@ -1710,7 +1710,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 
 	schedulerDeployment := manifests.SchedulerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, schedulerDeployment, func() error {
-		return scheduler.ReconcileDeployment(schedulerDeployment, p.OwnerRef, p.DeploymentConfig, p.HyperkubeImage, p.FeatureGates(), p.SchedulerPolicy(), p.AvailabilityProberImage, hcp.Spec.APIPort)
+		return scheduler.ReconcileDeployment(schedulerDeployment, p.OwnerRef, p.DeploymentConfig, p.HyperkubeImage, p.FeatureGates(), p.SchedulerPolicy(), p.AvailabilityProberImage, hcp.Spec.APIPort, p.CipherSuites(), p.MinTLSVersion())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile scheduler deployment: %w", err)
 	}
