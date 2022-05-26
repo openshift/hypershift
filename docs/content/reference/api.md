@@ -770,6 +770,19 @@ pods using host networking cannot listen on this port. If not specified,
 6443 is used.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>allowedCIDRBlocks</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>AllowedCIDRBlocks is a set of CIDR blocks that serve as an allow list in
+the ingress section of the NetworkPolicy that protects the API server.
+If not specified, traffic is allowed from all addresses.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSCloudProviderConfig { #hypershift.openshift.io/v1alpha1.AWSCloudProviderConfig }

@@ -3947,9 +3947,21 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 		port = intstr.FromInt(int(*hcluster.Spec.Networking.APIServer.Port))
 	}
 	protocol := corev1.ProtocolTCP
+	// NOTE: If from is empty, that is an "allow all" policy
+	from := []networkingv1.NetworkPolicyPeer{}
+	if hcluster.Spec.Networking.APIServer != nil && len(hcluster.Spec.Networking.APIServer.AllowedCIDRBlocks) > 0 {
+		for _, block := range hcluster.Spec.Networking.APIServer.AllowedCIDRBlocks {
+			from = append(from, networkingv1.NetworkPolicyPeer{
+				IPBlock: &networkingv1.IPBlock{
+					CIDR: block,
+				},
+			})
+		}
+		from = []networkingv1.NetworkPolicyPeer{}
+	}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
-			From: []networkingv1.NetworkPolicyPeer{},
+			From: from,
 			Ports: []networkingv1.NetworkPolicyPort{
 				{
 					Port:     &port,

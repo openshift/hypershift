@@ -354,6 +354,14 @@ spec:
                           with the loopback adapter of each node. If not specified,
                           172.20.0.1 is used.
                         type: string
+                      allowedCIDRBlocks:
+                        description: AllowedCIDRBlocks is a set of CIDR blocks that
+                          serve as an allow list in the ingress section of the NetworkPolicy
+                          that protects the API server. If not specified, traffic
+                          is allowed from all addresses.
+                        items:
+                          type: string
+                        type: array
                       port:
                         description: Port is the port at which the APIServer is exposed
                           inside a node. Other pods using host networking cannot listen

@@ -478,6 +478,11 @@ type APIServerNetworking struct {
 	// pods using host networking cannot listen on this port. If not specified,
 	// 6443 is used.
 	Port *int32 `json:"port,omitempty"`
+
+	// AllowedCIDRBlocks is a set of CIDR blocks that serve as an allow list in
+	// the ingress section of the NetworkPolicy that protects the API server.
+	// If not specified, traffic is allowed from all addresses.
+	AllowedCIDRBlocks []string `json:"allowedCIDRBlocks,omitempty"`
 }
 
 // NetworkType specifies the SDN provider used for cluster networking.
