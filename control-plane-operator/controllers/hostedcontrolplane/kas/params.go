@@ -38,6 +38,7 @@ type KubeAPIServerParams struct {
 	CloudProvider       string                       `json:"cloudProvider"`
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
+	PlatformType        hyperv1.PlatformType         `json:"platformType"`
 
 	ServiceAccountIssuer string                       `json:"serviceAccountIssuer"`
 	ServiceCIDR          string                       `json:"serviceCIDR"`
@@ -280,6 +281,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
+	params.PlatformType = hcp.Spec.Platform.Type
 
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -383,6 +385,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		NodePortRange:                p.ServiceNodePortRange(),
 		AuditWebhookEnabled:          p.AuditWebhookRef != nil,
 		ConsolePublicURL:             p.ConsolePublicURL,
+		PlatformType:                 p.PlatformType,
 	}
 }
 
@@ -400,6 +403,7 @@ type KubeAPIServerConfigParams struct {
 	AdvertiseAddress             string
 	ServiceAccountIssuerURL      string
 	CloudProvider                string
+	PlatformType                 hyperv1.PlatformType
 	CloudProviderConfigRef       *corev1.LocalObjectReference
 	EtcdURL                      string
 	FeatureGates                 []string

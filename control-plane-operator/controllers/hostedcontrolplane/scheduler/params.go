@@ -21,7 +21,8 @@ type KubeSchedulerParams struct {
 	HyperkubeImage          string                `json:"hyperkubeImage"`
 	AvailabilityProberImage string                `json:"availabilityProberImage"`
 	config.DeploymentConfig `json:",inline"`
-	APIServer               *configv1.APIServer `json:"apiServer"`
+	APIServer               *configv1.APIServer  `json:"apiServer"`
+	PlatformType            hyperv1.PlatformType `json:"platformType"`
 }
 
 func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig globalconfig.GlobalConfig, setDefaultSecurityContext bool) *KubeSchedulerParams {
@@ -79,6 +80,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
+	params.PlatformType = hcp.Spec.Platform.Type
 	switch hcp.Spec.ControllerAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
 		params.Replicas = 3

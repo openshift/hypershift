@@ -177,6 +177,9 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("max-mutating-requests-inflight", "1000")
 	args.Set("max-requests-inflight", "3000")
 	args.Set("min-request-timeout", "3600")
+	if p.PlatformType == hyperv1.IBMCloudPlatform {
+		args.Set("profiling", "false")
+	}
 	args.Set("proxy-client-cert-file", cpath(kasVolumeAggregatorCert().Name, corev1.TLSCertKey))
 	args.Set("proxy-client-key-file", cpath(kasVolumeAggregatorCert().Name, corev1.TLSPrivateKeyKey))
 	args.Set("requestheader-allowed-names", requestHeaderAllowedNames()...)

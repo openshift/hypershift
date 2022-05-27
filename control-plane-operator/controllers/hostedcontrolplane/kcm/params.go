@@ -24,9 +24,10 @@ type KubeControllerManagerParams struct {
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 	Port                int32                        `json:"port"`
+	APIServer           *configv1.APIServer          `json:"apiServer"`
+	PlatformType        hyperv1.PlatformType         `json:"platformType"`
 	ServiceCIDR         string
 	PodCIDR             string
-	APIServer           *configv1.APIServer `json:"apiServer"`
 
 	config.DeploymentConfig
 	config.OwnerRef
@@ -99,6 +100,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
+	params.PlatformType = hcp.Spec.Platform.Type
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider
