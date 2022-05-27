@@ -2553,9 +2553,9 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
-							"--leader-elect-lease-duration=60s",
-							"--leader-elect-retry-period=15s",
-							"--leader-elect-renew-deadline=40s",
+							fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
+							fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
+							fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
 						},
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
@@ -2802,9 +2802,9 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 		// we might end up locked with three nodes.
 		"--skip-nodes-with-local-storage=false",
 		"--alsologtostderr",
-		"--leader-elect-lease-duration=60s",
-		"--leader-elect-retry-period=15s",
-		"--leader-elect-renew-deadline=40s",
+		fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
+		fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
+		fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
 		"--v=4",
 	}
 
