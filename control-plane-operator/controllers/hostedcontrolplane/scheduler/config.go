@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +34,18 @@ func ReconcileConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef) error {
 }
 
 func generateConfig() (string, error) {
+	leaseDuration, err := time.ParseDuration(config.RecommendedLeaseDuration)
+	if err != nil {
+		return "", err
+	}
+	renewDeadline, err := time.ParseDuration(config.RecommendedRenewDeadline)
+	if err != nil {
+		return "", err
+	}
+	retryPeriod, err := time.ParseDuration(config.RecommendedRetryPeriod)
+	if err != nil {
+		return "", err
+	}
 	kubeConfigPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeKubeconfig().Name), kas.KubeconfigKey)
 	config := schedulerv1beta2.KubeSchedulerConfiguration{
 		TypeMeta: metav1.TypeMeta{
@@ -43,7 +56,10 @@ func generateConfig() (string, error) {
 			Kubeconfig: kubeConfigPath,
 		},
 		LeaderElection: componentbasev1.LeaderElectionConfiguration{
-			LeaderElect: pointer.BoolPtr(true),
+			LeaderElect:   pointer.BoolPtr(true),
+			LeaseDuration: metav1.Duration{Duration: leaseDuration},
+			RenewDeadline: metav1.Duration{Duration: renewDeadline},
+			RetryPeriod:   metav1.Duration{Duration: retryPeriod},
 		},
 	}
 	b, err := json.Marshal(config)
