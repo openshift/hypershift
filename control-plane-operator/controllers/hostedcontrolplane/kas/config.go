@@ -158,7 +158,6 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	}
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
-	args.Set("enable-swagger-ui", "true")
 	args.Set("endpoint-reconciler-type", "lease")
 	args.Set("etcd-cafile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientCAKey))
 	args.Set("etcd-certfile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientCrtKey))
