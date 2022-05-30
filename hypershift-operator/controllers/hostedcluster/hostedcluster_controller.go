@@ -2980,6 +2980,10 @@ func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.Ho
 									},
 								},
 							},
+							{
+								Name:  "CAPI_GROUP",
+								Value: "cluster.x-k8s.io",
+							},
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
