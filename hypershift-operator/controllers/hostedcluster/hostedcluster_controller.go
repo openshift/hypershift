@@ -3536,6 +3536,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 }
 
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	return nil
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
 	// Reconcile openshift-ingress Network Policy
