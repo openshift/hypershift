@@ -770,6 +770,21 @@ pods using host networking cannot listen on this port. If not specified,
 6443 is used.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>allowedCIDRBlocks</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.CIDRBlock">
+[]CIDRBlock
+</a>
+</em>
+</td>
+<td>
+<p>AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+If not specified, traffic is allowed from all addresses.
+This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSCloudProviderConfig { #hypershift.openshift.io/v1alpha1.AWSCloudProviderConfig }
@@ -1745,6 +1760,14 @@ string
 </tr>
 </tbody>
 </table>
+###CIDRBlock { #hypershift.openshift.io/v1alpha1.CIDRBlock }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.APIServerNetworking">APIServerNetworking</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+</p>
 ###ClusterAutoscaling { #hypershift.openshift.io/v1alpha1.ClusterAutoscaling }
 <p>
 (<em>Appears on:</em>
@@ -3022,6 +3045,21 @@ string
 <em>(Optional)</em>
 <p>APIAdvertiseAddress is the address at which the APIServer listens
 inside a worker.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>apiAllowedCIDRBlocks</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.CIDRBlock">
+[]CIDRBlock
+</a>
+</em>
+</td>
+<td>
+<p>APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+If not specified, traffic is allowed from all addresses.
+This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
 </td>
 </tr>
 <tr>
