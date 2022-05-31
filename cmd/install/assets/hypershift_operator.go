@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
@@ -269,6 +270,7 @@ type HyperShiftOperatorDeployment struct {
 	OIDCStorageProviderS3Secret    *corev1.Secret
 	OIDCStorageProviderS3SecretKey string
 	MetricsSet                     metrics.MetricsSet
+	IncludeVersion                 bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -522,6 +524,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		},
+	}
+
+	if o.IncludeVersion {
+		deployment.Annotations = map[string]string{
+			"hypershift.openshift.io/install-cli-version": version.String(),
+		}
 	}
 
 	if o.AdditionalTrustBundle != nil {

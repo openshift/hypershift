@@ -426,6 +426,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		OIDCStorageProviderS3SecretKey: opts.OIDCStorageProviderS3CredentialsSecretKey,
 		Images:                         images,
 		MetricsSet:                     opts.MetricsSet,
+		IncludeVersion:                 !opts.Template,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 

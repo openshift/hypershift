@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	socks5 "github.com/armon/go-socks5"
+	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/proxy"
 	"k8s.io/apimachinery/pkg/types"
@@ -48,7 +49,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&clientKeyPath, "tls-key-path", "/etc/konnectivity-proxy-tls/tls.key", "The path to the konnectivity client's private key.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		fmt.Println("Starting proxy...")
+		fmt.Printf("Starting proxy. Version %s\n", version.String())
 		client, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
 		if err != nil {
 			panic(err)

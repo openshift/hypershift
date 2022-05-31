@@ -16,6 +16,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/ignition-server/controllers"
+	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
@@ -140,9 +141,11 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 }
 
 func run(ctx context.Context, opts Options) error {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	logger := zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
-	})))
+	}))
+	ctrl.SetLogger(logger)
+	logger.Info("Starting ignition-server", "version", version.String())
 
 	certWatcher, err := certwatcher.New(opts.CertFile, opts.KeyFile)
 	if err != nil {

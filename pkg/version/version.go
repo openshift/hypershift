@@ -1,6 +1,7 @@
 package version
 
 import (
+	"fmt"
 	"runtime/debug"
 )
 
@@ -18,4 +19,8 @@ func GetRevision() string {
 		}
 	}
 	return "<unknown>"
+}
+
+func String() string {
+	return fmt.Sprintf("openshift/hypershift %s", GetRevision())
 }
