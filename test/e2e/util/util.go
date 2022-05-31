@@ -139,7 +139,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
-	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 60*time.Minute, func(ctx context.Context) (done bool, err error) {
 		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {
