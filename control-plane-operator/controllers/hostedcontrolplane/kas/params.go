@@ -64,8 +64,9 @@ type KubeAPIServerParams struct {
 }
 
 type KubeAPIServerServiceParams struct {
-	APIServerPort  int
-	OwnerReference *metav1.OwnerReference
+	APIServerPort     int
+	AllowedCIDRBlocks []string
+	OwnerReference    *metav1.OwnerReference
 }
 
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
@@ -478,8 +479,14 @@ func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServ
 	if hcp.Spec.APIPort != nil {
 		port = int(*hcp.Spec.APIPort)
 	}
+	var allowedCIDRBlocks []string
+	for _, block := range hcp.Spec.APIAllowedCIDRBlocks {
+		allowedCIDRBlocks = append(allowedCIDRBlocks, string(block))
+	}
+
 	return &KubeAPIServerServiceParams{
-		APIServerPort:  port,
-		OwnerReference: config.ControllerOwnerRef(hcp),
+		APIServerPort:     port,
+		AllowedCIDRBlocks: allowedCIDRBlocks,
+		OwnerReference:    config.ControllerOwnerRef(hcp),
 	}
 }

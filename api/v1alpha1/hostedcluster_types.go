@@ -466,6 +466,9 @@ type ClusterNetworking struct {
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
 
+//+kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
+type CIDRBlock string
+
 // APIServerNetworking specifies how the APIServer is exposed inside a cluster
 // node.
 type APIServerNetworking struct {
@@ -478,6 +481,11 @@ type APIServerNetworking struct {
 	// pods using host networking cannot listen on this port. If not specified,
 	// 6443 is used.
 	Port *int32 `json:"port,omitempty"`
+
+	// AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+	// If not specified, traffic is allowed from all addresses.
+	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
+	AllowedCIDRBlocks []CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
 }
 
 // NetworkType specifies the SDN provider used for cluster networking.

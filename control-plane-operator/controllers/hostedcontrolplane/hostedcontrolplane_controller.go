@@ -761,7 +761,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, util.IsPublicHCP(hcp))
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}

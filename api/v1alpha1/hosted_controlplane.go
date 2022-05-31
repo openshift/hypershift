@@ -59,6 +59,10 @@ type HostedControlPlaneSpec struct {
 	// inside a worker.
 	// +optional
 	APIAdvertiseAddress *string `json:"apiAdvertiseAddress,omitempty"`
+	// APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+	// If not specified, traffic is allowed from all addresses.
+	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
+	APIAllowedCIDRBlocks []CIDRBlock `json:"apiAllowedCIDRBlocks,omitempty"`
 
 	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode
 	// Defaults to SingleReplica when not set

@@ -1203,6 +1203,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcluster.Spec.Networking.APIServer != nil {
 		hcp.Spec.APIAdvertiseAddress = hcluster.Spec.Networking.APIServer.AdvertiseAddress
 		hcp.Spec.APIPort = hcluster.Spec.Networking.APIServer.Port
+		hcp.Spec.APIAllowedCIDRBlocks = hcluster.Spec.Networking.APIServer.AllowedCIDRBlocks
 	}
 
 	hcp.Spec.ClusterID = hcluster.Spec.ClusterID
