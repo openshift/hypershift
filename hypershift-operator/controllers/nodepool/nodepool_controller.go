@@ -1192,13 +1192,14 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 	}
 
 	for _, config := range configs {
-		manifest := config.Data[TokenSecretConfigKey]
-		if err := validateConfigManifest([]byte(manifest)); err != nil {
+		manifestRaw := config.Data[TokenSecretConfigKey]
+		manifest, err := defaultAndValidateConfigManifest([]byte(manifestRaw))
+		if err != nil {
 			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
 			continue
 		}
 
-		allConfigPlainText = append(allConfigPlainText, manifest)
+		allConfigPlainText = append(allConfigPlainText, string(manifest))
 	}
 
 	// These configs are the input to a hash func whose output is used as part of the name of the user-data secret,
@@ -1238,7 +1239,8 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 
 	return nil
 }
-func validateConfigManifest(manifest []byte) error {
+
+func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
 	v1alpha1.Install(scheme)
@@ -1250,19 +1252,28 @@ func validateConfigManifest(manifest []byte) error {
 
 	cr, _, err := YamlSerializer.Decode(manifest, nil, nil)
 	if err != nil {
-		return fmt.Errorf("error decoding config: %w", err)
+		return nil, fmt.Errorf("error decoding config: %w", err)
 	}
 
 	switch obj := cr.(type) {
 	case *mcfgv1.MachineConfig:
+		if obj.Labels == nil {
+			obj.Labels = map[string]string{}
+		}
+		obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
+		buff := bytes.Buffer{}
+		if err := YamlSerializer.Encode(obj, &buff); err != nil {
+			return nil, fmt.Errorf("failed to encode config after defaulting it: %w", err)
+		}
+		manifest = buff.Bytes()
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *mcfgv1.KubeletConfig:
 	case *mcfgv1.ContainerRuntimeConfig:
 	default:
-		return fmt.Errorf("unsupported config type: %T", obj)
+		return nil, fmt.Errorf("unsupported config type: %T", obj)
 	}
 
-	return nil
+	return manifest, err
 }
 
 func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, releaseImage string) (*releaseinfo.ReleaseImage, error) {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	"github.com/openshift/api/image/docker10"
 	imagev1 "github.com/openshift/api/image/v1"
@@ -257,6 +258,36 @@ spec:
         mode: 493
         path: /usr/local/bin/core.sh
 `
+	coreMachineConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: config-1
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents: null
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/core.sh
+        source: |-
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/echo Hello Core
+
+          [Install]
+          WantedBy=multi-user.target
+  extensions: null
+  fips: false
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: ""
+`
 
 	machineConfig1 := `
 apiVersion: machineconfiguration.openshift.io/v1
@@ -277,6 +308,36 @@ spec:
         mode: 493
         path: /usr/local/bin/file1.sh
 `
+	machineConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: config-1
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents: null
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/file1.sh
+        source: |-
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/echo Hello World
+
+          [Install]
+          WantedBy=multi-user.target
+  extensions: null
+  fips: false
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: ""
+`
 	machineConfig2 := `
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
@@ -295,6 +356,36 @@ spec:
         filesystem: root
         mode: 493
         path: /usr/local/bin/file2.sh
+`
+	machineConfig2Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: config-2
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents: null
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/file2.sh
+        source: |-
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/echo Hello World 2
+
+          [Install]
+          WantedBy=multi-user.target
+  extensions: null
+  fips: false
+  kernelArguments: null
+  kernelType: ""
+  osImageURL: ""
 `
 	kubeletConfig1 := `
 apiVersion: machineconfiguration.openshift.io/v1
@@ -404,7 +495,7 @@ spec:
 					BinaryData: nil,
 				},
 			},
-			expect: machineConfig1,
+			expect: machineConfig1Defaulted,
 			error:  false,
 		},
 		{
@@ -445,7 +536,7 @@ spec:
 					},
 				},
 			},
-			expect: machineConfig1 + "\n---\n" + machineConfig2,
+			expect: machineConfig1Defaulted + "\n---\n" + machineConfig2Defaulted,
 			error:  false,
 		},
 		{
@@ -535,7 +626,7 @@ spec:
 				},
 			},
 			expectedCoreConfigResources: 1,
-			expect:                      coreMachineConfig1 + "\n---\n" + machineConfig1,
+			expect:                      coreMachineConfig1Defaulted + "\n---\n" + machineConfig1Defaulted,
 			error:                       false,
 		},
 		{
@@ -590,7 +681,7 @@ spec:
 				},
 			},
 			expectedCoreConfigResources: 1,
-			expect:                      coreMachineConfig1 + "\n---\n" + machineConfig1,
+			expect:                      coreMachineConfig1Defaulted + "\n---\n" + machineConfig1Defaulted,
 			error:                       false,
 		},
 		{
@@ -633,7 +724,7 @@ spec:
 						},
 					},
 					Data: map[string]string{
-						TokenSecretConfigKey: machineConfig2,
+						TokenSecretConfigKey: machineConfig2Defaulted,
 					},
 				},
 				&corev1.ConfigMap{
@@ -669,7 +760,7 @@ kind: Config`)},
 				Labels: map[string]string{"io.openshift.hypershift.control-plane-operator-skips-haproxy": "true"},
 			}},
 			expectedCoreConfigResources: 3,
-			expect:                      coreMachineConfig1 + "\n---\n" + machineConfig1 + "\n---\n" + haproxyIgnititionConfig,
+			expect:                      haproxyIgnititionConfig + "\n---\n" + coreMachineConfig1Defaulted + "\n---\n" + machineConfig1Defaulted,
 		},
 	}
 
@@ -710,7 +801,9 @@ kind: Config`)},
 			}
 			g.Expect(missingConfigs).To(Equal(tc.missingConfigs))
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(got).To(Equal(tc.expect))
+			if diff := cmp.Diff(got, tc.expect); diff != "" {
+				t.Errorf("actual config differs from expected: %s", diff)
+			}
 		})
 	}
 }
