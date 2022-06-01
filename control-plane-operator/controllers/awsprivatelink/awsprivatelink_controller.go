@@ -397,10 +397,12 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 				RemoveSubnetIds: removed,
 			})
 			if err != nil {
+				msg := err.Error()
 				if awsErr, ok := err.(awserr.Error); ok {
-					return errors.New(awsErr.Code())
+					msg = awsErr.Code()
 				}
-				return err
+				log.Error(err, "failed to modify vpc endpoint")
+				return fmt.Errorf("failed to modify vpc endpoint: %s", msg)
 			}
 			log.Info("endpoint subnets updated")
 		} else {
@@ -418,10 +420,12 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
 		})
 		if err != nil {
+			msg := err.Error()
 			if awsErr, ok := err.(awserr.Error); ok {
-				return errors.New(awsErr.Code())
+				msg = awsErr.Code()
 			}
-			return err
+			log.Error(err, "failed to describe vpc endpoints")
+			return fmt.Errorf("failed to describe vpc endpoints: %s", msg)
 		}
 		if len(output.VpcEndpoints) != 0 {
 			endpointID = *output.VpcEndpoints[0].VpcEndpointId
@@ -446,10 +450,12 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 				}},
 			})
 			if err != nil {
+				msg := err.Error()
 				if awsErr, ok := err.(awserr.Error); ok {
-					return errors.New(awsErr.Code())
+					msg = awsErr.Code()
 				}
-				return err
+				log.Error(err, "failed to create vpc endpoint")
+				return fmt.Errorf("failed to create vpc endpoint: %s", msg)
 			}
 			if output == nil || output.VpcEndpoint == nil {
 				return fmt.Errorf("CreateVpcEndpointWithContext output is nil")
