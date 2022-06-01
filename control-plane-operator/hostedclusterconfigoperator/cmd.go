@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -193,6 +194,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	cfg := operator.CfgFromFile(o.TargetKubeconfig)
 	cpConfig := ctrl.GetConfigOrDie()
 	mgr := operator.Mgr(cfg, cpConfig, o.Namespace)
+	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", version.String())
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
 		opt.Namespace = o.Namespace
 		opt.Scheme = api.Scheme

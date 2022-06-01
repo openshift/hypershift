@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+
+	"github.com/openshift/hypershift/pkg/version"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -38,4 +41,22 @@ func LookupDefaultOCPVersion() (OCPVersion, error) {
 		return version, err
 	}
 	return version, nil
+}
+
+func NewVersionCommand() *cobra.Command {
+	var commitOnly bool
+	cmd := &cobra.Command{
+		Use:          "version",
+		Short:        "Prints HyperShift CLI version",
+		SilenceUsage: true,
+		Run: func(cmd *cobra.Command, args []string) {
+			if commitOnly {
+				fmt.Printf("%s\n", version.GetRevision())
+				return
+			}
+			fmt.Printf("%s\n", version.String())
+		},
+	}
+	cmd.Flags().BoolVar(&commitOnly, "commit-only", commitOnly, "Output only the code commit")
+	return cmd
 }

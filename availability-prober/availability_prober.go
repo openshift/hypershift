@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,6 +43,7 @@ func NewStartCommand() *cobra.Command {
 	}))
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
+		log.Info("Starting availability-prober", "version", version.String())
 		url, err := url.Parse(opts.target)
 		if err != nil {
 			log.Error(err, fmt.Sprintf("failed to parse %q as url", opts.target))

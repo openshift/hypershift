@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -67,7 +68,7 @@ func (s *server) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on tcp:%s: %w", s.listenAddr, err)
 	}
-	s.log.Info("Starting to listen", "listen-address", s.listenAddr)
+	s.log.Info("Starting to listen", "listen-address", s.listenAddr, "version", version.String())
 
 	for {
 		if ctx.Err() != nil {
