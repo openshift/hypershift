@@ -1050,7 +1050,7 @@ func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHeal
 		},
 		MaxUnhealthy: &maxUnhealthy,
 		NodeStartupTimeout: &metav1.Duration{
-			Duration: 10 * time.Minute,
+			Duration: 20 * time.Minute,
 		},
 	}
 	return nil
