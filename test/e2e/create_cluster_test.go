@@ -5,7 +5,6 @@ package e2e
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -48,16 +47,6 @@ func TestCreateCluster(t *testing.T) {
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-}
-
-// DEPRECATED in favor of TestCreateCluster with --e2e.platform=KubeVirt cli arg
-func TestKubeVirtCreateCluster(t *testing.T) {
-	if os.Getenv("KUBEVIRT_PLATFORM_ENABLED") != "true" {
-		t.Skip("Skipping testing because environment doesn't support KubeVirt")
-	}
-
-	globalOpts.Platform = hyperv1.KubevirtPlatform
-	TestCreateCluster(t)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
