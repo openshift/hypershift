@@ -9,23 +9,22 @@ import (
 
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/clientcmd"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/wait"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	routev1 "github.com/openshift/api/route/v1"
-
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promconfig "github.com/prometheus/common/config"
 	prommodel "github.com/prometheus/common/model"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	k8s "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -443,21 +442,10 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 				break
 			}
 		}
-		if secretName == "" {
-			t.Fatal("failed to determine hypershift operator token secret name")
-		}
-		tokenSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      secretName,
-				Namespace: "hypershift",
-			},
-		}
-		if err := client.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
-			t.Fatalf("failed to get hypershift operator token secret: %v", err)
-		}
-		token, ok := tokenSecret.Data["token"]
-		if !ok {
-			t.Fatal("token secret did not contain a token value")
+
+		token, err := getPrometheusToken(ctx, secretName, client)
+		if err != nil {
+			t.Fatalf("can't get token for Prometheus; %v", err)
 		}
 
 		// Get thanos-querier endpoint
@@ -467,7 +455,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 				Namespace: "openshift-monitoring",
 			},
 		}
-		if err := client.Get(ctx, crclient.ObjectKeyFromObject(promRoute), promRoute); err != nil {
+		if err = client.Get(ctx, crclient.ObjectKeyFromObject(promRoute), promRoute); err != nil {
 			t.Skip("unable to get prometheus route, skipping")
 		}
 		if len(promRoute.Status.Ingress) == 0 {
@@ -489,14 +477,14 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 		if err != nil {
 			t.Fatalf("failed to get create round tripper: %v", err)
 		}
-		client, err := promapi.NewClient(promapi.Config{
+		promClient, err := promapi.NewClient(promapi.Config{
 			Address:      promEndpoint,
 			RoundTripper: rt,
 		})
 		if err != nil {
 			t.Fatalf("failed to get create prometheus client: %v", err)
 		}
-		v1api := promv1.NewAPI(client)
+		v1api := promv1.NewAPI(promClient)
 
 		// Compare metrics against budgets
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
@@ -580,6 +568,56 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 	})
 }
 
+func getPrometheusToken(ctx context.Context, secretName string, client crclient.Client) ([]byte, error) {
+	if secretName == "" {
+		return createPrometheusToken(ctx)
+	} else {
+		return getTokenFromSecret(ctx, secretName, client)
+	}
+}
+
+func createPrometheusToken(ctx context.Context) ([]byte, error) {
+	cli, err := createK8sClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenReq, err := cli.CoreV1().ServiceAccounts("openshift-monitoring").CreateToken(
+		ctx,
+		"prometheus-k8s",
+		&authenticationv1.TokenRequest{
+			Spec: authenticationv1.TokenRequestSpec{
+				// Avoid specifying any audiences so that the token will be
+				// issued for the default audience of the issuer.
+			},
+		},
+		metav1.CreateOptions{},
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token; %w", err)
+	}
+
+	return []byte(tokenReq.Status.Token), nil
+}
+
+func getTokenFromSecret(ctx context.Context, secretName string, client crclient.Client) ([]byte, error) {
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: "hypershift",
+		},
+	}
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+		return nil, fmt.Errorf("failed to get hypershift operator token secret: %w", err)
+	}
+	token, ok := tokenSecret.Data["token"]
+	if !ok {
+		return nil, fmt.Errorf("token secret did not contain a token value")
+	}
+	return token, nil
+}
+
 func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureHCPContainersHaveResourceRequests", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
@@ -638,4 +676,18 @@ func WaitForNodePoolConditionsNotToBePresent(t *testing.T, ctx context.Context, 
 		return false, nil
 	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for nodepool conditions")
+}
+
+func createK8sClient() (*k8s.Clientset, error) {
+	config, err := GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
+	}
+
+	cli, err := k8s.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
+	}
+
+	return cli, nil
 }
