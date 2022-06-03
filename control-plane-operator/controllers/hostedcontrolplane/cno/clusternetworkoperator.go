@@ -96,8 +96,13 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
 	p.DeploymentConfig.Replicas = 1
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
-	p.APIServerAddress = hcp.Status.ControlPlaneEndpoint.Host
-	p.APIServerPort = hcp.Status.ControlPlaneEndpoint.Port
+	if util.IsPrivateHCP(hcp) {
+		p.APIServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
+		p.APIServerPort = 6443
+	} else {
+		p.APIServerAddress = hcp.Status.ControlPlaneEndpoint.Host
+		p.APIServerPort = hcp.Status.ControlPlaneEndpoint.Port
+	}
 	p.HostedClusterName = hcp.Name
 	p.TokenAudience = hcp.Spec.IssuerURL
 
