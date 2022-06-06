@@ -16,6 +16,13 @@ groups:
             label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
           )
 
+  - record: hypershift:controlplane:component_memory_request
+    expr: sum by (app, namespace, pod) (
+            sum(kube_pod_container_resource_requests{resource="memory"}) by (pod, namespace)
+          * on (pod, namespace) group_left(app)
+            label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""}, "app", "$1", "label_app", "(.*)")
+          )
+
   - record: hypershift:controlplane:ign_payload_generation_seconds_p90
     expr: histogram_quantile(0.9, sum by (namespace, le) (rate(ign_server_payload_generation_seconds_bucket{container="ignition-server"}[3m])))
 
