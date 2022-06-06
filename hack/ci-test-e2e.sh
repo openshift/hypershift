@@ -1,10 +1,20 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
+#
+# This script takes the first argument and use it as the input for -test.run.
 
 set -euo pipefail
 
 set -o monitor
 
 set -x
+
+CI_TESTS_RUN=${1:-}
+if [ -z  ${CI_TESTS_RUN} ]
+then
+      echo "Running all tests"
+else
+      echo "Running tests matching ${CI_TESTS_RUN}"
+fi
 
 generate_junit() {
   cat  /tmp/test_out | go tool test2json -t > /tmp/test_out.json
@@ -15,6 +25,7 @@ trap generate_junit EXIT
 bin/test-e2e \
   -test.v \
   -test.timeout=2h10m \
+  -test.run=${CI_TESTS_RUN} \
   -test.parallel=20 \
   --e2e.aws-credentials-file=/etc/hypershift-pool-aws-credentials/credentials \
   --e2e.aws-zones=us-east-1a,us-east-1b,us-east-1c \
