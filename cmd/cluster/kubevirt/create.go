@@ -26,12 +26,14 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 	opts.KubevirtPlatform = core.KubevirtPlatformCreateOptions{
 		ServicePublishingStrategy: IngressServicePublishingStrategy,
+		APIServerAddress:          "",
 		Memory:                    "4Gi",
 		Cores:                     2,
 		ContainerDiskImage:        "",
 		RootVolumeSize:            16,
 	}
 
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.APIServerAddress, "api-server-address", opts.KubevirtPlatform.APIServerAddress, "The API server address that should be used for components outside the control plane")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.Memory, "memory", opts.KubevirtPlatform.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
 	cmd.Flags().Uint32Var(&opts.KubevirtPlatform.Cores, "cores", opts.KubevirtPlatform.Cores, "The number of cores inside the vmi, Must be a value greater or equal 1")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.RootVolumeStorageClass, "root-volume-storage-class", opts.KubevirtPlatform.RootVolumeStorageClass, "The storage class to use for machines in the NodePool")

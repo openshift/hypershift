@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,9 +23,11 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.AgentPlatform = core.AgentPlatformCreateOptions{
-		AgentNamespace: "",
+		APIServerAddress: "",
+		AgentNamespace:   "",
 	}
 
+	cmd.Flags().StringVar(&opts.AgentPlatform.APIServerAddress, "api-server-address", opts.AgentPlatform.APIServerAddress, "The API server address that should be used for components outside the control plane")
 	cmd.Flags().StringVar(&opts.AgentPlatform.AgentNamespace, "agent-namespace", opts.AgentPlatform.AgentNamespace, "The namespace in which to search for Agents")
 	cmd.MarkFlagRequired("agent-namespace")
 
