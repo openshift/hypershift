@@ -23,6 +23,8 @@ GO=GO111MODULE=on GOFLAGS=-mod=vendor go
 GO_BUILD_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS)
 GO_E2E_RECIPE=CGO_ENABLED=0 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
+CI_TESTS_RUN ?= ""
+
 OUT_DIR ?= bin
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -224,4 +226,4 @@ ci-install-hypershift-private:
 
 .PHONY: ci-test-e2e
 ci-test-e2e:
-	./hack/ci-test-e2e.sh
+	hack/ci-test-e2e.sh ${CI_TESTS_RUN}
