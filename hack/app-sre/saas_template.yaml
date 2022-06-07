@@ -483,6 +483,10 @@ objects:
           by (pod, namespace) * on (pod, namespace) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
           "app", "$1", "label_app", "(.*)") )
         record: hypershift:controlplane:component_memory_usage
+      - expr: sum by (app, namespace, pod) ( sum(container_memory_rss{container!="POD",container!=""})
+          by (pod, namespace) * on (pod, namespace) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
+          "app", "$1", "label_app", "(.*)") )
+        record: hypershift:controlplane:component_memory_rss
       - expr: sum by (app, namespace, pod) ( sum(kube_pod_container_resource_requests{resource="memory"})
           by (pod, namespace) * on (pod, namespace) group_left(app) label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
           "app", "$1", "label_app", "(.*)") )
