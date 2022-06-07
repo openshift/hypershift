@@ -33,7 +33,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, globalCon
 		Resources: map[string]corev1.ResourceRequirements{
 			cpcContainerMain().Name: {
 				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("100Mi"),
+					corev1.ResourceMemory: resource.MustParse("200Mi"),
 					corev1.ResourceCPU:    resource.MustParse("10m"),
 				},
 			},

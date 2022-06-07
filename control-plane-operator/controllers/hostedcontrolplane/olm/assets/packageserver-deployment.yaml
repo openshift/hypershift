@@ -68,7 +68,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 70Mi
+            memory: 250Mi
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
