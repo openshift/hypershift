@@ -37,8 +37,8 @@ func SetDefaultPriorityClass(deployment *appsv1.Deployment) {
 	deployment.Spec.Template.Spec.PriorityClassName = DefaultPriorityClass
 }
 
-func SetRestartAnnotation(hc *hyperv1.HostedCluster, deployment *appsv1.Deployment) {
-	if value, ok := hc.Annotations[hyperv1.RestartDateAnnotation]; ok {
+func SetRestartAnnotation(objectMeta metav1.ObjectMeta, deployment *appsv1.Deployment) {
+	if value, ok := objectMeta.Annotations[hyperv1.RestartDateAnnotation]; ok {
 		if deployment.Spec.Template.ObjectMeta.Annotations == nil {
 			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
@@ -66,14 +66,14 @@ func SetMultizoneSpread(labels map[string]string, deployment *appsv1.Deployment)
 
 const colocationLabelKey = "hypershift.openshift.io/hosted-control-plane"
 
-func colocationLabel(hc *hyperv1.HostedCluster) string {
-	return clusterKey(hc)
+func colocationLabel(objectMeta metav1.ObjectMeta) string {
+	return clusterKey(objectMeta)
 }
 
 // SetColocation sets labels and affinity rules for this deployment so that pods
 // of the deployment will prefer to group with pods of the anchor deployment as
 // established by SetColocationAnchor.
-func SetColocation(hc *hyperv1.HostedCluster, deployment *appsv1.Deployment) {
+func SetColocation(objectMeta metav1.ObjectMeta, deployment *appsv1.Deployment) {
 	if deployment.Spec.Template.Spec.Affinity == nil {
 		deployment.Spec.Template.Spec.Affinity = &corev1.Affinity{}
 	}
@@ -83,14 +83,14 @@ func SetColocation(hc *hyperv1.HostedCluster, deployment *appsv1.Deployment) {
 	if deployment.Spec.Template.ObjectMeta.Labels == nil {
 		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{}
 	}
-	deployment.Spec.Template.ObjectMeta.Labels[colocationLabelKey] = colocationLabel(hc)
+	deployment.Spec.Template.ObjectMeta.Labels[colocationLabelKey] = colocationLabel(objectMeta)
 	deployment.Spec.Template.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = []corev1.WeightedPodAffinityTerm{
 		{
 			Weight: 100,
 			PodAffinityTerm: corev1.PodAffinityTerm{
 				LabelSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						colocationLabelKey: colocationLabel(hc),
+						colocationLabelKey: colocationLabel(objectMeta),
 					},
 				},
 				TopologyKey: corev1.LabelHostname,
@@ -113,11 +113,14 @@ const (
 	controlPlaneNodeSchedulingAffinityWeight = clusterNodeSchedulingAffinityWeight / 2
 )
 
-func clusterKey(hc *hyperv1.HostedCluster) string {
-	return fmt.Sprintf("%s-%s", hc.Namespace, hc.Name)
+func clusterKey(objectMeta metav1.ObjectMeta) string {
+	if strings.Contains(objectMeta.Namespace, objectMeta.Name) {
+		return objectMeta.Namespace
+	}
+	return fmt.Sprintf("%s-%s", objectMeta.Namespace, objectMeta.Name)
 }
 
-func SetControlPlaneIsolation(hc *hyperv1.HostedCluster, deployment *appsv1.Deployment) {
+func SetControlPlaneIsolation(objectMeta metav1.ObjectMeta, deployment *appsv1.Deployment) {
 	deployment.Spec.Template.Spec.Tolerations = []corev1.Toleration{
 		{
 			Key:      controlPlaneWorkloadTolerationKey,
@@ -128,7 +131,7 @@ func SetControlPlaneIsolation(hc *hyperv1.HostedCluster, deployment *appsv1.Depl
 		{
 			Key:      clusterWorkloadTolerationKey,
 			Operator: corev1.TolerationOpEqual,
-			Value:    clusterKey(hc),
+			Value:    clusterKey(objectMeta),
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
 	}
@@ -159,7 +162,7 @@ func SetControlPlaneIsolation(hc *hyperv1.HostedCluster, deployment *appsv1.Depl
 					{
 						Key:      clusterNodeLabel,
 						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{clusterKey(hc)},
+						Values:   []string{clusterKey(objectMeta)},
 					},
 				},
 			},

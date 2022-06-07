@@ -3,6 +3,7 @@ FROM quay.io/openshift/origin-base:4.10
 LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
 LABEL io.openshift.hypershift.ignition-server-healthz-handler=true
+LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=true
 
 RUN cd /usr/bin && \
     ln -s control-plane-operator ignition-server && \
