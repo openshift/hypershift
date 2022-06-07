@@ -12,6 +12,10 @@ COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/control-plane-operator \
      /usr/bin/
 
+# Copying these files so commands can be invoked consistently via Make.
+COPY --from=builder /hypershift/Makefile /Makefile
+COPY --from=builder /hypershift/hack/ci-test-e2e.sh /hack/ci-test-e2e.sh
+
 RUN cd /usr/bin && \
     ln -s control-plane-operator ignition-server && \
     ln -s control-plane-operator konnectivity-socks5-proxy && \
