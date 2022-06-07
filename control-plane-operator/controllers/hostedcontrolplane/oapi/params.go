@@ -143,7 +143,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, globalConfig g
 		Resources: map[string]corev1.ResourceRequirements{
 			oauthContainerMain().Name: {
 				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("200Mi"),
+					corev1.ResourceMemory: resource.MustParse("80Mi"),
 					corev1.ResourceCPU:    resource.MustParse("150m"),
 				},
 			},

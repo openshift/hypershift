@@ -90,7 +90,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	params.Resources = map[string]corev1.ResourceRequirements{
 		kcmContainerMain().Name: {
 			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("200Mi"),
+				corev1.ResourceMemory: resource.MustParse("400Mi"),
 				corev1.ResourceCPU:    resource.MustParse("60m"),
 			},
 		},

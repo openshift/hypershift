@@ -38,7 +38,7 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 	params.Resources = map[string]corev1.ResourceRequirements{
 		hccContainerMain().Name: {
 			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
+				corev1.ResourceMemory: resource.MustParse("80Mi"),
 				corev1.ResourceCPU:    resource.MustParse("60m"),
 			},
 		},
