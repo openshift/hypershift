@@ -23,3 +23,4 @@ ENTRYPOINT /usr/bin/hypershift
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
 LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true
 LABEL io.openshift.hypershift.ignition-server-healthz-handler=true
+LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=true

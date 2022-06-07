@@ -66,6 +66,7 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 					Data:       map[string][]byte{".dockerconfigjson": []byte("something")},
 				},
 				&configv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}},
+				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "none-cluster"}},
 			},
 		},
 	}

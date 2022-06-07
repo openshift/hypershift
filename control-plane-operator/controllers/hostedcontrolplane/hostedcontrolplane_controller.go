@@ -44,6 +44,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -105,7 +106,7 @@ type HostedControlPlaneReconciler struct {
 	SetDefaultSecurityContext bool
 
 	Log             logr.Logger
-	ReleaseProvider releaseinfo.Provider
+	ReleaseProvider releaseinfo.ProviderWithRegistryOverrides
 	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
 	EnableCIDebugOutput   bool
@@ -548,6 +549,22 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	if !infraStatus.IsReady() {
 		r.Log.Info("Waiting for infrastructure to be ready before proceeding")
 		return nil
+	}
+
+	r.Log.Info("Reconciling ignition server")
+	if err := ignitionserver.ReconcileIgnitionServer(ctx,
+		r.Client,
+		r.CreateOrUpdateProvider.CreateOrUpdate,
+		releaseImage.ComponentImages()[util.CPOImageName],
+		hostedControlPlane,
+		r.DefaultIngressDomain,
+		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
+		r.ReleaseProvider.GetRegistryOverrides(),
+		// The healthz handler was added before the CPO started to mange te ignition server and its the same binary,
+		// so we know it always exists here.
+		true,
+	); err != nil {
+		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
 
 	// Reconcile default service account
