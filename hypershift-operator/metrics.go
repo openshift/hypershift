@@ -42,9 +42,9 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 			Name: "hypershift_cluster_initial_rollout_duration_seconds",
 		}, []string{"name"}),
 		hostedClusters: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "hypershift_hostedclusters",
-			Help: "Total number of HostedClusters by platform, endpoint_access, version",
-		}, []string{"platform", "endpoint_access", "version"}),
+			Name: "hypershift_hostedclusters_total",
+			Help: "Total number of HostedClusters by platform",
+		}, []string{"platform"}),
 		hostedClustersWithFailureCondition: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hypershift_hostedclusters_failure_conditions",
 			Help: "Total number of HostedClusters by platform with conditions in undesired state",
@@ -54,9 +54,9 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 			Help: "Number of NodePools associated with a given HostedCluster",
 		}, []string{"cluster_name", "platform"}),
 		nodePools: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "hypershift_nodepools",
-			Help: "Total number of NodePools by platform, version, autoscaling, autorepair and upgrade type",
-		}, []string{"platform", "version", "hc_version", "autorepair", "autoscaling", "upgrade_type"}),
+			Name: "hypershift_nodepools_total",
+			Help: "Total number of NodePools by platform",
+		}, []string{"platform"}),
 		nodePoolsWithFailureCondition: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hypershift_nodepools_failure_conditions",
 			Help: "Total number of NodePools by platform with conditions in undesired state",
@@ -141,17 +141,12 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 	hcCount := newLabelCounter()
 	hcByConditions := newLabelCounter()
 	for _, hc := range hostedClusters.Items {
-		version := clusterVersion(&hc)
 		creationTime := clusterCreationTime(&hc)
 		if creationTime != nil {
 			m.clusterCreationTime.WithLabelValues(hc.Namespace + "/" + hc.Name).Set(*creationTime)
 		}
 		platform := string(hc.Spec.Platform.Type)
-		epAccess := "Public"
-		if platform == string(hyperv1.AWSPlatform) && hc.Spec.Platform.AWS != nil {
-			epAccess = string(hc.Spec.Platform.AWS.EndpointAccess)
-		}
-		hcCount.Add(platform, epAccess, version)
+		hcCount.Add(platform)
 		for _, cond := range hc.Status.Conditions {
 			expectedState, known := expectedHCConditionStates[hyperv1.ConditionType(cond.Type)]
 			if !known {
@@ -219,32 +214,14 @@ func (m *hypershiftMetrics) observeNodePools(ctx context.Context, nodePools *hyp
 		hc.Namespace = np.Namespace
 		hc.Name = np.Spec.ClusterName
 		hcPlatform := ""
-		hcVersion := ""
 		if err := m.client.Get(ctx, crclient.ObjectKeyFromObject(hc), hc); err == nil {
 			hcPlatform = string(hc.Spec.Platform.Type)
 			npByCluster.Add(crclient.ObjectKeyFromObject(hc).String(), hcPlatform)
-			hcVersion = clusterVersion(hc)
 		} else {
 			m.log.Error(err, "cannot get hosted cluster for nodepool", "nodepool", crclient.ObjectKeyFromObject(&np).String())
 		}
 		platform := string(np.Spec.Platform.Type)
-		autoRepair := func() string {
-			if np.Spec.Management.AutoRepair {
-				return "1"
-			} else {
-				return "0"
-			}
-		}()
-		autoScaling := func() string {
-			if np.Spec.AutoScaling != nil {
-				return "1"
-			} else {
-				return "0"
-			}
-		}()
-		upgradeType := string(np.Spec.Management.UpgradeType)
-		version := np.Status.Version
-		npCount.Add(platform, version, hcVersion, autoRepair, autoScaling, upgradeType)
+		npCount.Add(platform)
 
 		for _, cond := range np.Status.Conditions {
 			expectedState, known := expectedNPConditionStates[cond.Type]
