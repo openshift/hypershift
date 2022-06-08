@@ -250,7 +250,7 @@ func NewStartCommand() *cobra.Command {
 				for _, container := range me.Status.ContainerStatuses {
 					// TODO: could use downward API for this too, overkill?
 					if container.Name == "control-plane-operator" {
-						return container.ImageID, nil
+						return strings.TrimPrefix(container.ImageID, "docker-pullable://"), nil
 					}
 				}
 			}
