@@ -104,6 +104,7 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 --initial-cluster=${INITIAL_CLUSTER} \
 --initial-cluster-state=new \
 --quota-backend-bytes=${QUOTA_BACKEND_BYTES} \
+--snapshot-count=10000 \
 --peer-client-cert-auth=true \
 --peer-cert-file=/etc/etcd/tls/peer/peer.crt \
 --peer-key-file=/etc/etcd/tls/peer/peer.key \
