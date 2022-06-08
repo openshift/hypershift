@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -185,7 +186,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		for _, container := range me.Status.ContainerStatuses {
 			// TODO: could use downward API for this too, overkill?
 			if container.Name == "operator" {
-				return container.ImageID, nil
+				return strings.TrimPrefix(container.ImageID, "docker-pullable://"), nil
 			}
 		}
 		return "", fmt.Errorf("couldn't locate operator container on deployment")
