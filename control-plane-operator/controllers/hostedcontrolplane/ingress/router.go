@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	utilpointer "k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -231,6 +232,9 @@ func buildPrivateRouterContainerMain(image, namespace string) func(*corev1.Conta
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
+
+		// Needed for the router pods to work: https://github.com/openshift/cluster-ingress-operator/blob/649fe5dfe2c6f795651592a045be901b00a1f93a/assets/router/deployment.yaml#L22-L23
+		c.SecurityContext = &corev1.SecurityContext{AllowPrivilegeEscalation: utilpointer.Bool(true)}
 	}
 }
 
@@ -282,6 +286,14 @@ func ReconcilePrivateRouterRole(role *rbacv1.Role, ownerRef config.OwnerRef) err
 				"list",
 				"watch",
 			},
+		},
+		{
+			// Copied from https://github.com/openshift/cluster-ingress-operator/blob/649fe5dfe2c6f795651592a045be901b00a1f93a/manifests/00-cluster-role.yaml#L173-L181
+			// Needed to allow PrivilegeEscalation: true
+			APIGroups:     []string{"security.openshift.io"},
+			ResourceNames: []string{"hostnetwork"},
+			Resources:     []string{"securitycontextconstraints"},
+			Verbs:         []string{"use"},
 		},
 	}
 	return nil
