@@ -45,6 +45,8 @@ func TestCreateCluster(t *testing.T) {
 	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
+	e2eutil.PlatformHealthCheck(t, testContext, client, guestClient, hostedCluster)
+
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }
