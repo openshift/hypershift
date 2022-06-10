@@ -639,7 +639,7 @@ NodePoolAutoScaling
 <p>Config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
-<p><a href="https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172">https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172</a></p>
+<p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
 JSON or YAML of a serialized MachineConfig.</p>
 </td>
@@ -4751,7 +4751,7 @@ NodePoolAutoScaling
 <p>Config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
-<p><a href="https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172">https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172</a></p>
+<p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
 JSON or YAML of a serialized MachineConfig.</p>
 </td>
