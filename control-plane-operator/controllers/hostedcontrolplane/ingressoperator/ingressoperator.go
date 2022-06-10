@@ -33,6 +33,7 @@ type Params struct {
 	TokenMinterImage        string
 	AvailabilityProberImage string
 	Socks5ProxyImage        string
+	CLIImage                string
 	Platform                hyperv1.PlatformType
 	DeploymentConfig        config.DeploymentConfig
 }
@@ -44,6 +45,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 		ReleaseVersion:          version,
 		TokenMinterImage:        images["token-minter"],
 		Socks5ProxyImage:        images["socks5-proxy"],
+		CLIImage:                images["cli"],
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 		Platform:                platform,
 	}
@@ -103,6 +105,30 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	}
 	dep.Spec.Template.Labels["name"] = "ingress-operator"
 	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.BoolPtr(false)
+
+	dep.Spec.Template.Spec.InitContainers = []corev1.Container{
+		{
+			Command: []string{"/usr/bin/kubectl"},
+			Args: []string{
+				"--kubeconfig=/etc/kubernetes/kubeconfig",
+				"-n=openshift-ingress-operator",
+				"get",
+				"ingresscontroller",
+				"default",
+			},
+			Name:  "wait-for-default-ingresscontroller",
+			Image: params.CLIImage,
+			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+			}},
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "ingress-operator-kubeconfig", MountPath: "/etc/kubernetes"},
+			},
+		},
+	}
+
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{
 			"ingress-operator",
