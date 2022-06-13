@@ -590,6 +590,13 @@ type PowerVSPlatformSpec struct {
 	// +immutable
 	AccountID string `json:"accountID"`
 
+	// CISInstanceCRN is the IBMCloud CIS Service Instance's Cloud Resource Name
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +kubebuilder:validation:Pattern=`^crn:`
+	// +immutable
+	CISInstanceCRN string `json:"cisInstanceCRN"`
+
 	// ResourceGroup is the IBMCloud Resource Group in which the cluster resides.
 	// This field is immutable. Once set, It can't be changed.
 	//
@@ -663,6 +670,12 @@ type PowerVSPlatformSpec struct {
 	//
 	// +immutable
 	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
+
+	// IngressOperatorCloudCreds is a reference to a secret containing ibm cloud
+	// credentials for ingress operator to get authenticated with ibm cloud.
+	//
+	// +immutable
+	IngressOperatorCloudCreds corev1.LocalObjectReference `json:"ingressOperatorCloudCreds"`
 }
 
 // PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control

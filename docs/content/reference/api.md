@@ -5467,6 +5467,18 @@ This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </tr>
 <tr>
 <td>
+<code>cisInstanceCRN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>CISInstanceCRN is the IBMCloud CIS Service Instance&rsquo;s Cloud Resource Name
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>resourceGroup</code></br>
 <em>
 string
@@ -5596,6 +5608,20 @@ Kubernetes core/v1.LocalObjectReference
 credentials with permissions matching the control-plane-operator policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressOperatorCloudCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>IngressOperatorCloudCreds is a reference to a secret containing ibm cloud
+credentials for ingress operator to get authenticated with ibm cloud.</p>
 </td>
 </tr>
 </tbody>

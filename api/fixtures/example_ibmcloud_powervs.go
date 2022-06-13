@@ -11,6 +11,7 @@ type ExamplePowerVSOptions struct {
 	ResourceGroup   string
 	Region          string
 	Zone            string
+	CISInstanceCRN  string
 	CloudInstanceID string
 	Subnet          string
 	SubnetID        string
@@ -30,6 +31,7 @@ type ExamplePowerVSResources struct {
 	KubeCloudControllerCreds  *corev1.Secret
 	NodePoolManagementCreds   *corev1.Secret
 	ControlPlaneOperatorCreds *corev1.Secret
+	IngressOperatorCloudCreds *corev1.Secret
 }
 
 func (o *ExamplePowerVSResources) AsObjects() []crclient.Object {
@@ -42,6 +44,9 @@ func (o *ExamplePowerVSResources) AsObjects() []crclient.Object {
 	}
 	if o.ControlPlaneOperatorCreds != nil {
 		objects = append(objects, o.ControlPlaneOperatorCreds)
+	}
+	if o.IngressOperatorCloudCreds != nil {
+		objects = append(objects, o.IngressOperatorCloudCreds)
 	}
 	return objects
 }

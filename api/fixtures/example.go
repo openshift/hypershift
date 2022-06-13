@@ -438,6 +438,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			buildIBMCloudCreds(o.Name+"-cloud-ctrl-creds", o.PowerVS.ApiKey),
 			buildIBMCloudCreds(o.Name+"-node-mgmt-creds", o.PowerVS.ApiKey),
 			buildIBMCloudCreds(o.Name+"-cpo-creds", o.PowerVS.ApiKey),
+			buildIBMCloudCreds(o.Name+"-ingress-creds", o.PowerVS.ApiKey),
 		}
 		resources = powerVSResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
@@ -447,6 +448,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				ResourceGroup:     o.PowerVS.ResourceGroup,
 				Region:            o.PowerVS.Region,
 				Zone:              o.PowerVS.Zone,
+				CISInstanceCRN:    o.PowerVS.CISInstanceCRN,
 				ServiceInstanceID: o.PowerVS.CloudInstanceID,
 				Subnet: &hyperv1.PowerVSResourceReference{
 					Name: &o.PowerVS.Subnet,
@@ -460,6 +462,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerCreds.Name},
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementCreds.Name},
 				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorCreds.Name},
+				IngressOperatorCloudCreds: corev1.LocalObjectReference{Name: powerVSResources.IngressOperatorCloudCreds.Name},
 			},
 		}
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType)

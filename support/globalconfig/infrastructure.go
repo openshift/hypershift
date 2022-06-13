@@ -71,8 +71,9 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		}
 	case hyperv1.PowerVSPlatform:
 		infra.Status.PlatformStatus.PowerVS = &configv1.PowerVSPlatformStatus{
-			Region: hcp.Spec.Platform.PowerVS.Region,
-			Zone:   hcp.Spec.Platform.PowerVS.Zone,
+			Region:         hcp.Spec.Platform.PowerVS.Region,
+			Zone:           hcp.Spec.Platform.PowerVS.Zone,
+			CISInstanceCRN: hcp.Spec.Platform.PowerVS.CISInstanceCRN,
 		}
 	}
 }
