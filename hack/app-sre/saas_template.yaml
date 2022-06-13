@@ -20620,14 +20620,16 @@ objects:
                         on IBMCloud Power VS Service. This field is immutable. Once
                         set, It can't be changed.
                       properties:
+                        accountID:
+                          description: AccountID is the IBMCloud account id. This
+                            field is immutable. Once set, It can't be changed.
+                          type: string
                         controlPlaneOperatorCreds:
                           description: "ControlPlaneOperatorCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the control-plane-operator policy. The secret
-                            should have exactly one key, `credentials`, whose value
-                            is an AWS credentials file. This field is immutable. Once
-                            set, It can't be changed. \n TODO(dan): document the \"control
-                            plane operator policy\""
+                            matching the control-plane-operator policy. This field
+                            is immutable. Once set, It can't be changed. \n TODO(dan):
+                            document the \"control plane operator policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -20637,11 +20639,9 @@ objects:
                         kubeCloudControllerCreds:
                           description: "KubeCloudControllerCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the cloud controller policy. The secret should
-                            have exactly one key, `credentials`, whose value is an
-                            AWS credentials file. This field is immutable. Once set,
-                            It can't be changed. \n TODO(dan): document the \"cloud
-                            controller policy\""
+                            matching the cloud controller policy. This field is immutable.
+                            Once set, It can't be changed. \n TODO(dan): document
+                            the \"cloud controller policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -20651,11 +20651,9 @@ objects:
                         nodePoolManagementCreds:
                           description: "NodePoolManagementCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the node pool management policy. The secret should
-                            have exactly one key, `credentials`, whose value is an
-                            AWS credentials file. This field is immutable. Once set,
-                            It can't be changed. \n TODO(dan): document the \"node
-                            pool management policy\""
+                            matching the node pool management policy. This field is
+                            immutable. Once set, It can't be changed. \n TODO(dan):
+                            document the \"node pool management policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -20732,6 +20730,7 @@ objects:
                             Once set, It can't be changed.
                           type: string
                       required:
+                      - accountID
                       - controlPlaneOperatorCreds
                       - kubeCloudControllerCreds
                       - nodePoolManagementCreds
@@ -21891,14 +21890,16 @@ objects:
                         on IBMCloud Power VS Service. This field is immutable. Once
                         set, It can't be changed.
                       properties:
+                        accountID:
+                          description: AccountID is the IBMCloud account id. This
+                            field is immutable. Once set, It can't be changed.
+                          type: string
                         controlPlaneOperatorCreds:
                           description: "ControlPlaneOperatorCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the control-plane-operator policy. The secret
-                            should have exactly one key, `credentials`, whose value
-                            is an AWS credentials file. This field is immutable. Once
-                            set, It can't be changed. \n TODO(dan): document the \"control
-                            plane operator policy\""
+                            matching the control-plane-operator policy. This field
+                            is immutable. Once set, It can't be changed. \n TODO(dan):
+                            document the \"control plane operator policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -21908,11 +21909,9 @@ objects:
                         kubeCloudControllerCreds:
                           description: "KubeCloudControllerCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the cloud controller policy. The secret should
-                            have exactly one key, `credentials`, whose value is an
-                            AWS credentials file. This field is immutable. Once set,
-                            It can't be changed. \n TODO(dan): document the \"cloud
-                            controller policy\""
+                            matching the cloud controller policy. This field is immutable.
+                            Once set, It can't be changed. \n TODO(dan): document
+                            the \"cloud controller policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -21922,11 +21921,9 @@ objects:
                         nodePoolManagementCreds:
                           description: "NodePoolManagementCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the node pool management policy. The secret should
-                            have exactly one key, `credentials`, whose value is an
-                            AWS credentials file. This field is immutable. Once set,
-                            It can't be changed. \n TODO(dan): document the \"node
-                            pool management policy\""
+                            matching the node pool management policy. This field is
+                            immutable. Once set, It can't be changed. \n TODO(dan):
+                            document the \"node pool management policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -22003,6 +22000,7 @@ objects:
                             Once set, It can't be changed.
                           type: string
                       required:
+                      - accountID
                       - controlPlaneOperatorCreds
                       - kubeCloudControllerCreds
                       - nodePoolManagementCreds

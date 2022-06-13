@@ -576,6 +576,12 @@ type IBMCloudPlatformSpec struct {
 
 // PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components
 type PowerVSPlatformSpec struct {
+	// AccountID is the IBMCloud account id.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	AccountID string `json:"accountID"`
+
 	// ResourceGroup is the IBMCloud Resource Group in which the cluster resides.
 	// This field is immutable. Once set, It can't be changed.
 	//
@@ -624,9 +630,7 @@ type PowerVSPlatformSpec struct {
 	VPC *PowerVSVPC `json:"vpc"`
 
 	// KubeCloudControllerCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the cloud controller policy. The
-	// secret should have exactly one key, `credentials`, whose value is an AWS
-	// credentials file.
+	// credentials with permissions matching the cloud controller policy.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// TODO(dan): document the "cloud controller policy"
@@ -635,9 +639,7 @@ type PowerVSPlatformSpec struct {
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
 
 	// NodePoolManagementCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the node pool management policy. The
-	// secret should have exactly one key, `credentials`, whose value is an AWS
-	// credentials file.
+	// credentials with permissions matching the node pool management policy.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// TODO(dan): document the "node pool management policy"
@@ -647,8 +649,6 @@ type PowerVSPlatformSpec struct {
 
 	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the control-plane-operator policy.
-	// The secret should have exactly one key, `credentials`, whose value is
-	// an AWS credentials file.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// TODO(dan): document the "control plane operator policy"

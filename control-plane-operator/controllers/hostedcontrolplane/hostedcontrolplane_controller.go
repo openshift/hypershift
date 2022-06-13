@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/powervs"
 	"math/big"
 	"strings"
 	"time"
@@ -721,6 +722,12 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	r.Log.Info("Reconciling Hosted Cluster Config Operator")
 	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImage, infraStatus); err != nil {
 		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
+	}
+
+	// Reconcile cloud controller manager
+	r.Log.Info("Reconciling Cloud Controller Manager")
+	if err := r.reconcileCloudControllerManager(ctx, hostedControlPlane, releaseImage); err != nil {
+		return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
 	}
 
 	// Reconcile OLM
@@ -2555,4 +2562,25 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPodIdentityWebhookKubeconfig(
 	}
 
 	return kas.ReconcileAWSPodIdentityWebhookKubeconfigSecret(s, rootCASecret, config.OwnerRefFrom(hcp), apiServerPort)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.PowerVSPlatform:
+		ccmConfig := manifests.PowerVSCCMConfigMap(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, ccmConfig, func() error {
+			return powervs.ReconcileCCMConfigMap(ccmConfig, hcp)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cloud controller manager config: %w", err)
+		}
+
+		deployment := manifests.PowerVSCCMDeployment(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
+			return powervs.ReconcileCCMDeployment(deployment, hcp, ccmConfig, releaseImage)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cloud controller manager deployment: %w", err)
+		}
+	}
+
+	return nil
 }
