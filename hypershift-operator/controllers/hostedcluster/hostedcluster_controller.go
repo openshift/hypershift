@@ -2063,6 +2063,12 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"watch",
 			},
 		},
+		{
+			APIGroups:     []string{"security.openshift.io"},
+			ResourceNames: []string{"hostnetwork"},
+			Resources:     []string{"securitycontextconstraints"},
+			Verbs:         []string{"use"},
+		},
 	}
 	return nil
 }
