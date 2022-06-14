@@ -15,7 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, isPublic bool) error {
+func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, apiAllowedCIDRBlocks []string, isPublic bool) error {
 	util.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
@@ -60,6 +60,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	default:
 		return fmt.Errorf("invalid publishing strategy for Kube API server service: %s", strategy.Type)
 	}
+	svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
 	svc.Spec.Ports[0] = portSpec
 	return nil
 }
