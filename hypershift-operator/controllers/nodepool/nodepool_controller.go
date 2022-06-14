@@ -222,29 +222,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 1. - Reconcile conditions according to current state of the world.
-
-	// Validate the HostedCluster cluster config is valid.
-	// This config is used to set the proxy config for ignition.
-	gConfig, err := globalconfig.ParseGlobalConfig(ctx, hcluster.Spec.Configuration)
-	if err != nil {
-		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               string(hyperv1.NodePoolValidHostedClusterConditionType),
-			Status:             corev1.ConditionFalse,
-			Message:            err.Error(),
-			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
-			ObservedGeneration: nodePool.Generation,
-		})
-		log.Info("Invalid cluster config for HostedCluster, aborting reconciliation")
-		return reconcile.Result{}, nil
-	}
-	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidHostedClusterConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-		ObservedGeneration: nodePool.Generation,
-	})
 	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster, gConfig)
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
 
 	// Validate autoscaling input.
 	if err := validateAutoscaling(nodePool); err != nil {
@@ -468,7 +447,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// additional core config resource created when image content source specified.
 		expectedCoreConfigResources += 1
 	}
-	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster, gConfig)
+	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
 	if err != nil {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -1129,7 +1108,6 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 	controlPlaneResource string,
 	releaseImage *releaseinfo.ReleaseImage,
 	hcluster *hyperv1.HostedCluster,
-	globalConfig globalconfig.GlobalConfig,
 ) (configsRaw string, missingConfigs bool, err error) {
 	var configs []corev1.ConfigMap
 	var allConfigPlainText []string
@@ -1154,7 +1132,7 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 		}
 		expectedCoreConfigResources--
 
-		haproxyIgnitionConfig, missing, err := r.reconcileHAProxyIgnitionConfig(ctx, releaseImage, hcluster, globalConfig, cpoImage)
+		haproxyIgnitionConfig, missing, err := r.reconcileHAProxyIgnitionConfig(ctx, releaseImage, hcluster, cpoImage)
 		if err != nil {
 			return "", false, fmt.Errorf("failed to generate haporoxy ignition config: %w", err)
 		}

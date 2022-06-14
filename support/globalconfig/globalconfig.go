@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	configv1 "github.com/openshift/api/config/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -25,6 +24,12 @@ type GlobalConfig struct {
 	Proxy          *configv1.Proxy
 	Build          *configv1.Build
 	Project        *configv1.Project
+}
+
+type ObservedConfig struct {
+	Image   *configv1.Image
+	Build   *configv1.Build
+	Project *configv1.Project
 }
 
 func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (GlobalConfig, error) {
@@ -70,220 +75,220 @@ func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (
 	return globalConfig, nil
 }
 
-func ValidateGlobalConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	if hcp.Spec.Configuration == nil {
-		return nil
-	}
-	gCfg, err := ParseGlobalConfig(ctx, hcp.Spec.Configuration)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	referencedSecrets := sets.NewString()
-	referencedConfigMaps := sets.NewString()
-
-	for _, cmRef := range hcp.Spec.Configuration.ConfigMapRefs {
-		referencedConfigMaps.Insert(cmRef.Name)
-	}
-
-	for _, secretRef := range hcp.Spec.Configuration.SecretRefs {
-		referencedSecrets.Insert(secretRef.Name)
-	}
-
-	if gCfg.APIServer != nil {
-		refErrs := validateAPIServerReferencedResources(gCfg.APIServer, referencedSecrets, referencedConfigMaps)
-		errs = append(errs, refErrs...)
-	}
-	if gCfg.Authentication != nil {
-		refErrs := validateAuthenticationReferencedResources(gCfg.Authentication, referencedSecrets, referencedConfigMaps)
-		errs = append(errs, refErrs...)
-	}
-	// Skipping FeatureGate because it has no referenced resources
-	if gCfg.Image != nil {
-		refErrs := validateImageReferencedResources(gCfg.Image, referencedConfigMaps)
-		errs = append(errs, refErrs...)
-	}
-	// Skipping Ingress because it has no referenced resources
-	// Skipping Network because it has no referenced resources
-	if gCfg.OAuth != nil {
-		refErrs := validateOauthReferencedResources(gCfg.OAuth, referencedSecrets, referencedConfigMaps)
-		errs = append(errs, refErrs...)
-	}
-	if gCfg.Scheduler != nil {
-		refErrs := validateSchedulerReferencedResources(gCfg.Scheduler, referencedConfigMaps)
-		errs = append(errs, refErrs...)
-	}
-	return utilerrors.NewAggregate(errs)
+func SecretRefs(cfg *hyperv1.ClusterConfiguration) []string {
+	result := sets.NewString()
+	result = result.Union(apiServerSecretRefs(cfg.APIServer))
+	result = result.Union(authenticationSecretRefs(cfg.Authentication))
+	result = result.Union(ingressSecretRefs(cfg.Ingress))
+	result = result.Union(oauthSecretRefs(cfg.OAuth))
+	return result.List()
 }
 
-func validateAPIServerReferencedResources(cfg *configv1.APIServer, secrets, configMaps sets.String) []error {
-	var errs []error
-	for _, namedCert := range cfg.Spec.ServingCerts.NamedCertificates {
+func ConfigMapRefs(cfg *hyperv1.ClusterConfiguration) []string {
+	result := sets.NewString()
+	result = result.Union(apiServerConfigMapRefs(cfg.APIServer))
+	result = result.Union(authenticationConfigMapRefs(cfg.Authentication))
+	result = result.Union(imageConfigMapRefs(cfg.Image))
+	result = result.Union(oauthConfigMapRefs(cfg.OAuth))
+	result = result.Union(proxyConfigMapRefs(cfg.Proxy))
+	result = result.Union(schedulerConfigMapRefs(cfg.Scheduler))
+	return result.List()
+}
+
+func apiServerSecretRefs(spec *configv1.APIServerSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
+	}
+	for _, namedCert := range spec.ServingCerts.NamedCertificates {
 		if len(namedCert.ServingCertificate.Name) > 0 {
-			if !secrets.Has(namedCert.ServingCertificate.Name) {
-				errs = append(errs, fmt.Errorf("APIServer: named serving certificate %s not included in secret references", namedCert.ServingCertificate.Name))
-			}
+			refs.Insert(namedCert.ServingCertificate.Name)
 		}
 	}
-	if len(cfg.Spec.ClientCA.Name) > 0 {
-		if !configMaps.Has(cfg.Spec.ClientCA.Name) {
-			errs = append(errs, fmt.Errorf("APIServer: client CA configmap %s not included in configmap references", cfg.Spec.ClientCA.Name))
-		}
-	}
-	return errs
+	return refs
 }
 
-func validateAuthenticationReferencedResources(cfg *configv1.Authentication, secrets, configMaps sets.String) []error {
-	var errs []error
-	if len(cfg.Spec.OAuthMetadata.Name) > 0 {
-		if !configMaps.Has(cfg.Spec.OAuthMetadata.Name) {
-			errs = append(errs, fmt.Errorf("authentication: oauth metadata configmap %s is not included in configmap references", cfg.Spec.OAuthMetadata.Name))
-		}
+func apiServerConfigMapRefs(spec *configv1.APIServerSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
 	}
-	if cfg.Spec.WebhookTokenAuthenticator != nil {
-		if len(cfg.Spec.WebhookTokenAuthenticator.KubeConfig.Name) > 0 {
-			if !secrets.Has(cfg.Spec.WebhookTokenAuthenticator.KubeConfig.Name) {
-				errs = append(errs, fmt.Errorf("authentication: webhook token authenticator kubeconfig %s is not included in secret references", cfg.Spec.WebhookTokenAuthenticator.KubeConfig.Name))
-			}
-		}
+	if len(spec.ClientCA.Name) > 0 {
+		refs.Insert(spec.ClientCA.Name)
 	}
-	return errs
+	return refs
 }
 
-func validateImageReferencedResources(cfg *configv1.Image, configMaps sets.String) []error {
-	var errs []error
-	if len(cfg.Spec.AdditionalTrustedCA.Name) > 0 {
-		if !configMaps.Has(cfg.Spec.AdditionalTrustedCA.Name) {
-			errs = append(errs, fmt.Errorf("image: additional trusted CA configmap %s is not included in configmap references", cfg.Spec.AdditionalTrustedCA.Name))
+func authenticationSecretRefs(spec *configv1.AuthenticationSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
+	}
+	for _, tokenAuth := range spec.WebhookTokenAuthenticators {
+		if len(tokenAuth.KubeConfig.Name) > 0 {
+			refs.Insert(tokenAuth.KubeConfig.Name)
 		}
 	}
-	return errs
+	if spec.WebhookTokenAuthenticator != nil {
+		if len(spec.WebhookTokenAuthenticator.KubeConfig.Name) > 0 {
+			refs.Insert(spec.WebhookTokenAuthenticator.KubeConfig.Name)
+		}
+	}
+	return refs
 }
 
-func validateOauthReferencedResources(cfg *configv1.OAuth, secrets, configMaps sets.String) []error {
-	var errs []error
-	for _, idp := range cfg.Spec.IdentityProviders {
+func authenticationConfigMapRefs(spec *configv1.AuthenticationSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
+	}
+	if len(spec.OAuthMetadata.Name) > 0 {
+		refs.Insert(spec.OAuthMetadata.Name)
+	}
+	return refs
+}
+
+func ingressSecretRefs(spec *configv1.IngressSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
+	}
+	for _, componentRoute := range spec.ComponentRoutes {
+		if len(componentRoute.ServingCertKeyPairSecret.Name) > 0 {
+			refs.Insert(componentRoute.ServingCertKeyPairSecret.Name)
+		}
+	}
+	return refs
+}
+
+func imageConfigMapRefs(spec *configv1.ImageSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
+	}
+	if len(spec.AdditionalTrustedCA.Name) > 0 {
+		refs.Insert(spec.AdditionalTrustedCA.Name)
+	}
+	return refs
+}
+
+func oauthSecretRefs(spec *configv1.OAuthSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
+	}
+	for _, idp := range spec.IdentityProviders {
 		switch {
 		case idp.BasicAuth != nil:
-			if len(idp.BasicAuth.CA.Name) > 0 {
-				if !configMaps.Has(idp.BasicAuth.CA.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s basicauth CA configmap %s is not included in configmap references", idp.Name, idp.BasicAuth.CA.Name))
-				}
-			}
 			if len(idp.BasicAuth.TLSClientCert.Name) > 0 {
-				if !secrets.Has(idp.BasicAuth.TLSClientCert.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s basicauth TLS client cert secret %s is not included in secret references", idp.Name, idp.BasicAuth.TLSClientCert.Name))
-				}
+				refs.Insert(idp.BasicAuth.TLSClientCert.Name)
 			}
 			if len(idp.BasicAuth.TLSClientKey.Name) > 0 {
-				if !secrets.Has(idp.BasicAuth.TLSClientKey.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s basicauth TLS client key secret %s is not included in secret references", idp.Name, idp.BasicAuth.TLSClientKey.Name))
-				}
+				refs.Insert(idp.BasicAuth.TLSClientKey.Name)
 			}
 		case idp.GitHub != nil:
 			if len(idp.GitHub.ClientSecret.Name) > 0 {
-				if !secrets.Has(idp.GitHub.ClientSecret.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s github client secret %s is not included in referenced secrets", idp.Name, idp.GitHub.ClientSecret.Name))
-				}
-			}
-			if len(idp.GitHub.CA.Name) > 0 {
-				if !configMaps.Has(idp.GitHub.CA.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s github CA configmap %s is not included in referenced configmaps", idp.Name, idp.GitHub.CA.Name))
-				}
+				refs.Insert(idp.GitHub.ClientSecret.Name)
 			}
 		case idp.GitLab != nil:
 			if len(idp.GitLab.ClientSecret.Name) > 0 {
-				if !secrets.Has(idp.GitLab.ClientSecret.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s gitlab client secret %s is not included in referenced secrets", idp.Name, idp.GitLab.ClientSecret.Name))
-				}
-			}
-			if len(idp.GitLab.CA.Name) > 0 {
-				if !configMaps.Has(idp.GitLab.CA.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s gitlab CA configmap %s is not included in referenced configmaps", idp.Name, idp.GitLab.CA.Name))
-				}
+				refs.Insert(idp.GitLab.ClientSecret.Name)
 			}
 		case idp.Google != nil:
 			if len(idp.Google.ClientSecret.Name) > 0 {
-				if !secrets.Has(idp.Google.ClientSecret.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s google client secret %s is not included in referenced secrets", idp.Name, idp.Google.ClientSecret.Name))
-				}
+				refs.Insert(idp.Google.ClientSecret.Name)
 			}
 		case idp.HTPasswd != nil:
 			if len(idp.HTPasswd.FileData.Name) > 0 {
-				if !secrets.Has(idp.HTPasswd.FileData.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s htpasswd filedata secret %s is not included in referenced secrets", idp.Name, idp.HTPasswd.FileData.Name))
-				}
+				refs.Insert(idp.HTPasswd.FileData.Name)
 			}
 		case idp.Keystone != nil:
-			if len(idp.Keystone.CA.Name) > 0 {
-				if !configMaps.Has(idp.Keystone.CA.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s keystone CA configmap %s is not included in configmap references", idp.Name, idp.Keystone.CA.Name))
-				}
-			}
 			if len(idp.Keystone.TLSClientCert.Name) > 0 {
-				if !secrets.Has(idp.Keystone.TLSClientCert.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s keystone TLS client cert secret %s is not included in secret references", idp.Name, idp.Keystone.TLSClientCert.Name))
-				}
+				refs.Insert(idp.Keystone.TLSClientCert.Name)
 			}
 			if len(idp.Keystone.TLSClientKey.Name) > 0 {
-				if !secrets.Has(idp.Keystone.TLSClientKey.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s keystone TLS client key secret %s is not included in secret references", idp.Name, idp.Keystone.TLSClientKey.Name))
-				}
+				refs.Insert(idp.Keystone.TLSClientKey.Name)
 			}
 		case idp.LDAP != nil:
 			if len(idp.LDAP.BindPassword.Name) > 0 {
-				if !secrets.Has(idp.LDAP.BindPassword.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s ldap bind password secret %s is not included in referenced secrets", idp.Name, idp.LDAP.BindPassword.Name))
-				}
-			}
-			if len(idp.LDAP.CA.Name) > 0 {
-				if !configMaps.Has(idp.LDAP.CA.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s ldap CA configmap %s is not included in referenced configmaps", idp.Name, idp.LDAP.CA.Name))
-				}
+				refs.Insert(idp.LDAP.BindPassword.Name)
 			}
 		case idp.OpenID != nil:
 			if len(idp.OpenID.ClientSecret.Name) > 0 {
-				if !secrets.Has(idp.OpenID.ClientSecret.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s openid client secret %s is not included in referenced secrets", idp.Name, idp.OpenID.ClientSecret.Name))
-				}
+				refs.Insert(idp.OpenID.ClientSecret.Name)
 			}
+		}
+	}
+	if len(spec.Templates.Error.Name) > 0 {
+		refs.Insert(spec.Templates.Error.Name)
+	}
+	if len(spec.Templates.Login.Name) > 0 {
+		refs.Insert(spec.Templates.Login.Name)
+	}
+	if len(spec.Templates.ProviderSelection.Name) > 0 {
+		refs.Insert(spec.Templates.ProviderSelection.Name)
+	}
+	return refs
+}
+
+func oauthConfigMapRefs(spec *configv1.OAuthSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
+	}
+	for _, idp := range spec.IdentityProviders {
+		switch {
+		case idp.BasicAuth != nil:
+			if len(idp.BasicAuth.CA.Name) > 0 {
+				refs.Insert(idp.BasicAuth.CA.Name)
+			}
+		case idp.GitHub != nil:
+			if len(idp.GitHub.CA.Name) > 0 {
+				refs.Insert(idp.GitHub.CA.Name)
+			}
+		case idp.GitLab != nil:
+			if len(idp.GitLab.CA.Name) > 0 {
+				refs.Insert(idp.GitLab.CA.Name)
+			}
+		case idp.Keystone != nil:
+			if len(idp.Keystone.CA.Name) > 0 {
+				refs.Insert(idp.Keystone.CA.Name)
+			}
+		case idp.LDAP != nil:
+			if len(idp.LDAP.CA.Name) > 0 {
+				refs.Insert(idp.LDAP.CA.Name)
+			}
+		case idp.OpenID != nil:
 			if len(idp.OpenID.CA.Name) > 0 {
-				if !configMaps.Has(idp.OpenID.CA.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s openid CA configmap %s is not included in referenced configmaps", idp.Name, idp.OpenID.CA.Name))
-				}
+				refs.Insert(idp.OpenID.CA.Name)
 			}
 		case idp.RequestHeader != nil:
 			if len(idp.RequestHeader.ClientCA.Name) > 0 {
-				if !configMaps.Has(idp.RequestHeader.ClientCA.Name) {
-					errs = append(errs, fmt.Errorf("OAuth: identity provider %s requestheader client CA configmap %s is not included in referenced configmaps", idp.Name, idp.RequestHeader.ClientCA.Name))
-				}
+				refs.Insert(idp.RequestHeader.ClientCA.Name)
 			}
 		}
 	}
-	if len(cfg.Spec.Templates.Error.Name) > 0 {
-		if !secrets.Has(cfg.Spec.Templates.Error.Name) {
-			errs = append(errs, fmt.Errorf("OAuth: error template secret %s is not included in referenced secrets", cfg.Spec.Templates.Error.Name))
-		}
-	}
-	if len(cfg.Spec.Templates.Login.Name) > 0 {
-		if !secrets.Has(cfg.Spec.Templates.Login.Name) {
-			errs = append(errs, fmt.Errorf("OAuth: login template secret %s is not included in referenced secrets", cfg.Spec.Templates.Login.Name))
-		}
-	}
-	if len(cfg.Spec.Templates.ProviderSelection.Name) > 0 {
-		if !secrets.Has(cfg.Spec.Templates.ProviderSelection.Name) {
-			errs = append(errs, fmt.Errorf("OAuth: provider selection template secret %s is not included in referenced secrets", cfg.Spec.Templates.ProviderSelection.Name))
-		}
-	}
-	return errs
+	return refs
 }
 
-func validateSchedulerReferencedResources(cfg *configv1.Scheduler, configMaps sets.String) []error {
-	var errs []error
-	if len(cfg.Spec.Policy.Name) > 0 {
-		if !configMaps.Has(cfg.Spec.Policy.Name) {
-			errs = append(errs, fmt.Errorf("scheduler: policy configmap %s is not included in referenced configmaps", cfg.Spec.Policy.Name))
-		}
+func proxyConfigMapRefs(spec *configv1.ProxySpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
 	}
-	return errs
+	if len(spec.TrustedCA.Name) > 0 {
+		refs.Insert(spec.TrustedCA.Name)
+	}
+	return refs
+}
+
+func schedulerConfigMapRefs(spec *configv1.SchedulerSpec) sets.String {
+	refs := sets.NewString()
+	if spec == nil {
+		return refs
+	}
+	if len(spec.Policy.Name) > 0 {
+		refs.Insert(spec.Policy.Name)
+	}
+	return refs
 }
