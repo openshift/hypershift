@@ -18,22 +18,22 @@ func ProxyConfig() *configv1.Proxy {
 	}
 }
 
-func ReconcileProxyConfig(cfg *configv1.Proxy, globalConfig GlobalConfig) {
+func ReconcileProxyConfig(cfg *configv1.Proxy, hcfg *hyperv1.ClusterConfiguration) {
 	spec := configv1.ProxySpec{}
-	if globalConfig.Proxy != nil {
-		spec = globalConfig.Proxy.Spec
+	if hcfg != nil && hcfg.Proxy != nil {
+		spec = *hcfg.Proxy
 	}
 
 	cfg.Spec = spec
 }
 
-func ReconcileProxyConfigWithStatus(cfg *configv1.Proxy, hcp *hyperv1.HostedControlPlane, globalConfig GlobalConfig) {
-	ReconcileProxyConfig(cfg, globalConfig)
+func ReconcileProxyConfigWithStatus(cfg *configv1.Proxy, hcp *hyperv1.HostedControlPlane) {
+	ReconcileProxyConfig(cfg, hcp.Spec.Configuration)
 	defaultProxyStatus(cfg, hcp.Spec.MachineCIDR, hcp.Spec.PodCIDR, hcp.Spec.ServiceCIDR, hcp.Spec.Platform)
 }
 
-func ReconcileProxyConfigWithStatusFromHostedCluster(cfg *configv1.Proxy, hc *hyperv1.HostedCluster, globalConfig GlobalConfig) {
-	ReconcileProxyConfig(cfg, globalConfig)
+func ReconcileProxyConfigWithStatusFromHostedCluster(cfg *configv1.Proxy, hc *hyperv1.HostedCluster) {
+	ReconcileProxyConfig(cfg, hc.Spec.Configuration)
 	defaultProxyStatus(cfg, hc.Spec.Networking.MachineCIDR, hc.Spec.Networking.PodCIDR, hc.Spec.Networking.ServiceCIDR, hc.Spec.Platform)
 }
 

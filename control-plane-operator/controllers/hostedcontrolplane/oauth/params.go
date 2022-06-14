@@ -13,7 +13,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -29,8 +28,8 @@ type OAuthServerParams struct {
 	ExternalAPIPort         int32           `json:"externalAPIPort"`
 	OAuthServerImage        string
 	config.DeploymentConfig `json:",inline"`
-	OAuth                   *configv1.OAuth     `json:"oauth"`
-	APIServer               *configv1.APIServer `json:"apiServer"`
+	OAuth                   *configv1.OAuthSpec     `json:"oauth"`
+	APIServer               *configv1.APIServerSpec `json:"apiServer"`
 	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
 	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
 	OauthConfigOverrides map[string]*ConfigOverride
@@ -72,7 +71,7 @@ type ConfigOverride struct {
 	Challenge *bool               `json:"challenge,omitempty"`
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,
@@ -80,10 +79,12 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalco
 		ExternalHost:            host,
 		ExternalPort:            port,
 		OAuthServerImage:        images["oauth-server"],
-		OAuth:                   globalConfig.OAuth,
-		APIServer:               globalConfig.APIServer,
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
+	}
+	if hcp.Spec.Configuration != nil {
+		p.APIServer = hcp.Spec.Configuration.APIServer
+		p.OAuth = hcp.Spec.Configuration.OAuth
 	}
 	p.Scheduling = config.Scheduling{
 		PriorityClass: config.APICriticalPriorityClass,
@@ -163,7 +164,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, globalConfig globalco
 
 func (p *OAuthServerParams) NamedCertificates() []configv1.APIServerNamedServingCert {
 	if p.APIServer != nil {
-		return p.APIServer.Spec.ServingCerts.NamedCertificates
+		return p.APIServer.ServingCerts.NamedCertificates
 	} else {
 		return nil
 	}
@@ -171,28 +172,28 @@ func (p *OAuthServerParams) NamedCertificates() []configv1.APIServerNamedServing
 
 func (p *OAuthServerParams) IdentityProviders() []configv1.IdentityProvider {
 	if p.OAuth != nil {
-		return p.OAuth.Spec.IdentityProviders
+		return p.OAuth.IdentityProviders
 	}
 	return []configv1.IdentityProvider{}
 }
 
 func (p *OAuthServerParams) AccessTokenMaxAgeSeconds() int32 {
-	if p.OAuth != nil && p.OAuth.Spec.TokenConfig.AccessTokenMaxAgeSeconds > 0 {
-		return p.OAuth.Spec.TokenConfig.AccessTokenMaxAgeSeconds
+	if p.OAuth != nil && p.OAuth.TokenConfig.AccessTokenMaxAgeSeconds > 0 {
+		return p.OAuth.TokenConfig.AccessTokenMaxAgeSeconds
 	}
 	return defaultAccessTokenMaxAgeSeconds
 }
 
 func (p *OAuthServerParams) MinTLSVersion() string {
 	if p.APIServer != nil {
-		return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+		return config.MinTLSVersion(p.APIServer.TLSSecurityProfile)
 	}
 	return config.MinTLSVersion(nil)
 }
 
 func (p *OAuthServerParams) CipherSuites() []string {
 	if p.APIServer != nil {
-		return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+		return config.CipherSuites(p.APIServer.TLSSecurityProfile)
 	}
 	return config.CipherSuites(nil)
 }

@@ -214,29 +214,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 1. - Reconcile conditions according to current state of the world.
-
-	// Validate the HostedCluster cluster config is valid.
-	// This config is used to set the proxy config for ignition.
-	gConfig, err := globalconfig.ParseGlobalConfig(ctx, hcluster.Spec.Configuration)
-	if err != nil {
-		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               string(hyperv1.NodePoolValidHostedClusterConditionType),
-			Status:             corev1.ConditionFalse,
-			Message:            err.Error(),
-			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
-			ObservedGeneration: nodePool.Generation,
-		})
-		log.Info("Invalid cluster config for HostedCluster, aborting reconciliation")
-		return reconcile.Result{}, nil
-	}
-	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidHostedClusterConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
-		ObservedGeneration: nodePool.Generation,
-	})
 	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster, gConfig)
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
 
 	// Validate autoscaling input.
 	if err := validateAutoscaling(nodePool); err != nil {

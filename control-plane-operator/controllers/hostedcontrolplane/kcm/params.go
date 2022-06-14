@@ -13,12 +13,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
 )
 
 type KubeControllerManagerParams struct {
-	FeatureGate         *configv1.FeatureGate        `json:"featureGate"`
+	FeatureGate         *configv1.FeatureGateSpec    `json:"featureGate"`
 	ServiceCA           []byte                       `json:"serviceCA"`
 	CloudProvider       string                       `json:"cloudProvider"`
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
@@ -26,8 +25,8 @@ type KubeControllerManagerParams struct {
 	Port                int32                        `json:"port"`
 	ServiceCIDR         string
 	PodCIDR             string
-	APIServer           *configv1.APIServer `json:"apiServer"`
-	DisableProfiling    bool                `json:"disableProfiling"`
+	APIServer           *configv1.APIServerSpec `json:"apiServer"`
+	DisableProfiling    bool                    `json:"disableProfiling"`
 
 	config.DeploymentConfig
 	config.OwnerRef
@@ -40,9 +39,8 @@ const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, setDefaultSecurityContext bool) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
-		FeatureGate: globalConfig.FeatureGate,
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
 		HyperkubeImage:          images["hyperkube"],
@@ -51,8 +49,12 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		ServiceCIDR:             hcp.Spec.ServiceCIDR,
 		PodCIDR:                 hcp.Spec.PodCIDR,
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
-		APIServer:               globalConfig.APIServer,
 	}
+	if hcp.Spec.Configuration != nil {
+		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
+		params.APIServer = hcp.Spec.Configuration.APIServer
+	}
+
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
@@ -127,7 +129,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 
 func (p *KubeControllerManagerParams) FeatureGates() []string {
 	if p.FeatureGate != nil {
-		return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
+		return config.FeatureGates(&p.FeatureGate.FeatureGateSelection)
 	} else {
 		return config.FeatureGates(&configv1.FeatureGateSelection{
 			FeatureSet: configv1.Default,
@@ -137,14 +139,14 @@ func (p *KubeControllerManagerParams) FeatureGates() []string {
 
 func (p *KubeControllerManagerParams) CipherSuites() []string {
 	if p.APIServer != nil {
-		return config.CipherSuites(p.APIServer.Spec.TLSSecurityProfile)
+		return config.CipherSuites(p.APIServer.TLSSecurityProfile)
 	}
 	return config.CipherSuites(nil)
 }
 
 func (p *KubeControllerManagerParams) MinTLSVersion() string {
 	if p.APIServer != nil {
-		return config.MinTLSVersion(p.APIServer.Spec.TLSSecurityProfile)
+		return config.MinTLSVersion(p.APIServer.TLSSecurityProfile)
 	}
 	return config.MinTLSVersion(nil)
 }

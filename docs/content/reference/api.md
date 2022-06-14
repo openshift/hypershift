@@ -1866,6 +1866,8 @@ configuration API.</p>
 <em>(Optional)</em>
 <p>SecretRefs holds references to any secrets referenced by configuration
 entries. Entries can reference the secrets using local object references.</p>
+<p>Deprecated
+This field is deprecated and will be removed in a future release</p>
 </td>
 </tr>
 <tr>
@@ -1882,6 +1884,8 @@ entries. Entries can reference the secrets using local object references.</p>
 <p>ConfigMapRefs holds references to any configmaps referenced by
 configuration entries. Entries can reference the configmaps using local
 object references.</p>
+<p>Deprecated
+This field is deprecated and will be removed in a future release</p>
 </td>
 </tr>
 <tr>
@@ -1896,6 +1900,148 @@ object references.</p>
 <td>
 <em>(Optional)</em>
 <p>Items embeds the serialized configuration resources.</p>
+<p>Deprecated
+This field is deprecated and will be removed in a future release</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>apiServer</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.APIServerSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>APIServer holds configuration (like serving certificates, client CA and CORS domains)
+shared by all API servers in the system, among them especially kube-apiserver
+and openshift-apiserver.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>authentication</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.AuthenticationSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Authentication specifies cluster-wide settings for authentication (like OAuth and
+webhook token authenticators).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>featureGate</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.FeatureGateSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>FeatureGate holds cluster-wide information about feature gates.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.ImageSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Image governs policies related to imagestream imports and runtime configuration
+for external registries. It allows cluster admins to configure which registries
+OpenShift is allowed to import images from, extra CA trust bundles for external
+registries, and policies to block or allow registry hostnames.
+When exposing OpenShift&rsquo;s image registry to the public, this also lets cluster
+admins specify the external hostname.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.IngressSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Ingress holds cluster-wide information about ingress, including the default ingress domain
+used for routes.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.NetworkSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Network holds cluster-wide information about the network. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc.
+Please view network.spec for an explanation on what applies when configuring this resource.
+TODO (csrwng): Add validation here to exclude changes that conflict with networking settings in the HostedCluster.Spec.Networking field.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>oauth</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.OAuthSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OAuth holds cluster-wide information about OAuth.
+It is used to configure the integrated OAuth server.
+This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scheduler</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.SchedulerSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Scheduler holds cluster-wide config information to run the Kubernetes Scheduler
+and influence its placement decisions. The canonical name for this config is <code>cluster</code>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>proxy</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.ProxySpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Proxy holds cluster-wide information on how to configure default proxies for the cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -2025,7 +2171,9 @@ with the information available, which may be an image or a tag.</p>
 <td>
 <code>history</code></br>
 <em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
 []github.com/openshift/api/config/v1.UpdateHistory
+</a>
 </em>
 </td>
 <td>
@@ -3676,7 +3824,9 @@ call IBM Cloud KMS APIs</p>
 <td>
 <code>providerType</code></br>
 <em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
 github.com/openshift/api/config/v1.IBMCloudProviderType
+</a>
 </em>
 </td>
 <td>

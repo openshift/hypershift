@@ -18,6 +18,10 @@
     {
       "typeMatchPrefix": "^k8s\\.io/(api|apimachinery|apiextensions-apiserver/pkg/apis)/",
       "docsURLTemplate": "https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#{{lower .TypeIdentifier}}-{{arrIndex .PackageSegments -1}}-{{arrIndex .PackageSegments -2}}"
+    },
+    {
+      "typeMatchPrefix": "^github\\.com/openshift/api/config/",
+      "docsURLTemplate": "https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html"
     }
   ],
   "typeDisplayNamePrefixOverrides": {

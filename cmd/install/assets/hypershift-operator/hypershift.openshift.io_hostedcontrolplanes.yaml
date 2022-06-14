@@ -93,10 +93,394 @@ spec:
                 description: 'Configuration embeds resources that correspond to the
                   openshift configuration API: https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html'
                 properties:
+                  apiServer:
+                    description: APIServer holds configuration (like serving certificates,
+                      client CA and CORS domains) shared by all API servers in the
+                      system, among them especially kube-apiserver and openshift-apiserver.
+                    properties:
+                      additionalCORSAllowedOrigins:
+                        description: additionalCORSAllowedOrigins lists additional,
+                          user-defined regular expressions describing hosts for which
+                          the API server allows access using the CORS headers. This
+                          may be needed to access the API and the integrated OAuth
+                          server from JavaScript applications. The values are regular
+                          expressions that correspond to the Golang regular expression
+                          language.
+                        items:
+                          type: string
+                        type: array
+                      audit:
+                        default:
+                          profile: Default
+                        description: audit specifies the settings for audit configuration
+                          to be applied to all OpenShift-provided API servers in the
+                          cluster.
+                        properties:
+                          customRules:
+                            description: customRules specify profiles per group. These
+                              profile take precedence over the top-level profile field
+                              if they apply. They are evaluation from top to bottom
+                              and the first one that matches, applies.
+                            items:
+                              description: AuditCustomRule describes a custom rule
+                                for an audit profile that takes precedence over the
+                                top-level profile.
+                              properties:
+                                group:
+                                  description: group is a name of group a request
+                                    user must be member of in order to this profile
+                                    to apply.
+                                  minLength: 1
+                                  type: string
+                                profile:
+                                  description: "profile specifies the name of the
+                                    desired audit policy configuration to be deployed
+                                    to all OpenShift-provided API servers in the cluster.
+                                    \n The following profiles are provided: - Default:
+                                    the existing default policy. - WriteRequestBodies:
+                                    like 'Default', but logs request and response
+                                    HTTP payloads for write requests (create, update,
+                                    patch). - AllRequestBodies: like 'WriteRequestBodies',
+                                    but also logs request and response HTTP payloads
+                                    for read requests (get, list). - None: no requests
+                                    are logged at all, not even oauthaccesstokens
+                                    and oauthauthorizetokens. \n If unset, the 'Default'
+                                    profile is used as the default."
+                                  enum:
+                                  - Default
+                                  - WriteRequestBodies
+                                  - AllRequestBodies
+                                  - None
+                                  type: string
+                              required:
+                              - group
+                              - profile
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - group
+                            x-kubernetes-list-type: map
+                          profile:
+                            default: Default
+                            description: "profile specifies the name of the desired
+                              top-level audit profile to be applied to all requests
+                              sent to any of the OpenShift-provided API servers in
+                              the cluster (kube-apiserver, openshift-apiserver and
+                              oauth-apiserver), with the exception of those requests
+                              that match one or more of the customRules. \n The following
+                              profiles are provided: - Default: default policy which
+                              means MetaData level logging with the exception of events
+                              \  (not logged at all), oauthaccesstokens and oauthauthorizetokens
+                              (both logged at RequestBody   level). - WriteRequestBodies:
+                              like 'Default', but logs request and response HTTP payloads
+                              for write requests (create, update, patch). - AllRequestBodies:
+                              like 'WriteRequestBodies', but also logs request and
+                              response HTTP payloads for read requests (get, list).
+                              - None: no requests are logged at all, not even oauthaccesstokens
+                              and oauthauthorizetokens. \n Warning: It is not recommended
+                              to disable audit logging by using the `None` profile
+                              unless you are fully aware of the risks of not logging
+                              data that can be beneficial when troubleshooting issues.
+                              If you disable audit logging and a support situation
+                              arises, you might need to enable audit logging and reproduce
+                              the issue in order to troubleshoot properly. \n If unset,
+                              the 'Default' profile is used as the default."
+                            enum:
+                            - Default
+                            - WriteRequestBodies
+                            - AllRequestBodies
+                            - None
+                            type: string
+                        type: object
+                      clientCA:
+                        description: 'clientCA references a ConfigMap containing a
+                          certificate bundle for the signers that will be recognized
+                          for incoming client certificates in addition to the operator
+                          managed signers. If this is empty, then only operator managed
+                          signers are valid. You usually only have to set this if
+                          you have your own PKI you wish to honor client certificates
+                          from. The ConfigMap must exist in the openshift-config namespace
+                          and contain the following required fields: - ConfigMap.Data["ca-bundle.crt"]
+                          - CA bundle.'
+                        properties:
+                          name:
+                            description: name is the metadata.name of the referenced
+                              config map
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      encryption:
+                        description: encryption allows the configuration of encryption
+                          of resources at the datastore layer.
+                        properties:
+                          type:
+                            description: "type defines what encryption type should
+                              be used to encrypt resources at the datastore layer.
+                              When this field is unset (i.e. when it is set to the
+                              empty string), identity is implied. The behavior of
+                              unset can and will change over time.  Even if encryption
+                              is enabled by default, the meaning of unset may change
+                              to a different encryption type based on changes in best
+                              practices. \n When encryption is enabled, all sensitive
+                              resources shipped with the platform are encrypted. This
+                              list of sensitive resources can and will change over
+                              time.  The current authoritative list is: \n   1. secrets
+                              \  2. configmaps   3. routes.route.openshift.io   4.
+                              oauthaccesstokens.oauth.openshift.io   5. oauthauthorizetokens.oauth.openshift.io"
+                            enum:
+                            - ""
+                            - identity
+                            - aescbc
+                            type: string
+                        type: object
+                      servingCerts:
+                        description: servingCert is the TLS cert info for serving
+                          secure traffic. If not specified, operator managed certificates
+                          will be used for serving secure traffic.
+                        properties:
+                          namedCertificates:
+                            description: namedCertificates references secrets containing
+                              the TLS cert info for serving secure traffic to specific
+                              hostnames. If no named certificates are provided, or
+                              no named certificates match the server name as understood
+                              by a client, the defaultServingCertificate will be used.
+                            items:
+                              description: APIServerNamedServingCert maps a server
+                                DNS name, as understood by a client, to a certificate.
+                              properties:
+                                names:
+                                  description: names is a optional list of explicit
+                                    DNS names (leading wildcards allowed) that should
+                                    use this certificate to serve secure traffic.
+                                    If no names are provided, the implicit names will
+                                    be extracted from the certificates. Exact names
+                                    trump over wildcard names. Explicit names defined
+                                    here trump over extracted implicit names.
+                                  items:
+                                    type: string
+                                  type: array
+                                servingCertificate:
+                                  description: 'servingCertificate references a kubernetes.io/tls
+                                    type secret containing the TLS cert info for serving
+                                    secure traffic. The secret must exist in the openshift-config
+                                    namespace and contain the following required fields:
+                                    - Secret.Data["tls.key"] - TLS private key. -
+                                    Secret.Data["tls.crt"] - TLS certificate.'
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                              type: object
+                            type: array
+                        type: object
+                      tlsSecurityProfile:
+                        description: "tlsSecurityProfile specifies settings for TLS
+                          connections for externally exposed servers. \n If unset,
+                          a default (which may change between releases) is chosen.
+                          Note that only Old, Intermediate and Custom profiles are
+                          currently supported, and the maximum available MinTLSVersions
+                          is VersionTLS12."
+                        properties:
+                          custom:
+                            description: "custom is a user-defined TLS security profile.
+                              Be extremely careful using a custom profile as invalid
+                              configurations can be catastrophic. An example custom
+                              profile looks like this: \n   ciphers:     - ECDHE-ECDSA-CHACHA20-POLY1305
+                              \    - ECDHE-RSA-CHACHA20-POLY1305     - ECDHE-RSA-AES128-GCM-SHA256
+                              \    - ECDHE-ECDSA-AES128-GCM-SHA256   minTLSVersion:
+                              TLSv1.1"
+                            nullable: true
+                            properties:
+                              ciphers:
+                                description: "ciphers is used to specify the cipher
+                                  algorithms that are negotiated during the TLS handshake.
+                                  \ Operators may remove entries their operands do
+                                  not support.  For example, to use DES-CBC3-SHA  (yaml):
+                                  \n   ciphers:     - DES-CBC3-SHA"
+                                items:
+                                  type: string
+                                type: array
+                              minTLSVersion:
+                                description: "minTLSVersion is used to specify the
+                                  minimal version of the TLS protocol that is negotiated
+                                  during the TLS handshake. For example, to use TLS
+                                  versions 1.1, 1.2 and 1.3 (yaml): \n   minTLSVersion:
+                                  TLSv1.1 \n NOTE: currently the highest minTLSVersion
+                                  allowed is VersionTLS12"
+                                enum:
+                                - VersionTLS10
+                                - VersionTLS11
+                                - VersionTLS12
+                                - VersionTLS13
+                                type: string
+                            type: object
+                          intermediate:
+                            description: "intermediate is a TLS security profile based
+                              on: \n https://wiki.mozilla.org/Security/Server_Side_TLS#Intermediate_compatibility_.28recommended.29
+                              \n and looks like this (yaml): \n   ciphers:     - TLS_AES_128_GCM_SHA256
+                              \    - TLS_AES_256_GCM_SHA384     - TLS_CHACHA20_POLY1305_SHA256
+                              \    - ECDHE-ECDSA-AES128-GCM-SHA256     - ECDHE-RSA-AES128-GCM-SHA256
+                              \    - ECDHE-ECDSA-AES256-GCM-SHA384     - ECDHE-RSA-AES256-GCM-SHA384
+                              \    - ECDHE-ECDSA-CHACHA20-POLY1305     - ECDHE-RSA-CHACHA20-POLY1305
+                              \    - DHE-RSA-AES128-GCM-SHA256     - DHE-RSA-AES256-GCM-SHA384
+                              \  minTLSVersion: TLSv1.2"
+                            nullable: true
+                            type: object
+                          modern:
+                            description: "modern is a TLS security profile based on:
+                              \n https://wiki.mozilla.org/Security/Server_Side_TLS#Modern_compatibility
+                              \n and looks like this (yaml): \n   ciphers:     - TLS_AES_128_GCM_SHA256
+                              \    - TLS_AES_256_GCM_SHA384     - TLS_CHACHA20_POLY1305_SHA256
+                              \  minTLSVersion: TLSv1.3 \n NOTE: Currently unsupported."
+                            nullable: true
+                            type: object
+                          old:
+                            description: "old is a TLS security profile based on:
+                              \n https://wiki.mozilla.org/Security/Server_Side_TLS#Old_backward_compatibility
+                              \n and looks like this (yaml): \n   ciphers:     - TLS_AES_128_GCM_SHA256
+                              \    - TLS_AES_256_GCM_SHA384     - TLS_CHACHA20_POLY1305_SHA256
+                              \    - ECDHE-ECDSA-AES128-GCM-SHA256     - ECDHE-RSA-AES128-GCM-SHA256
+                              \    - ECDHE-ECDSA-AES256-GCM-SHA384     - ECDHE-RSA-AES256-GCM-SHA384
+                              \    - ECDHE-ECDSA-CHACHA20-POLY1305     - ECDHE-RSA-CHACHA20-POLY1305
+                              \    - DHE-RSA-AES128-GCM-SHA256     - DHE-RSA-AES256-GCM-SHA384
+                              \    - DHE-RSA-CHACHA20-POLY1305     - ECDHE-ECDSA-AES128-SHA256
+                              \    - ECDHE-RSA-AES128-SHA256     - ECDHE-ECDSA-AES128-SHA
+                              \    - ECDHE-RSA-AES128-SHA     - ECDHE-ECDSA-AES256-SHA384
+                              \    - ECDHE-RSA-AES256-SHA384     - ECDHE-ECDSA-AES256-SHA
+                              \    - ECDHE-RSA-AES256-SHA     - DHE-RSA-AES128-SHA256
+                              \    - DHE-RSA-AES256-SHA256     - AES128-GCM-SHA256
+                              \    - AES256-GCM-SHA384     - AES128-SHA256     - AES256-SHA256
+                              \    - AES128-SHA     - AES256-SHA     - DES-CBC3-SHA
+                              \  minTLSVersion: TLSv1.0"
+                            nullable: true
+                            type: object
+                          type:
+                            description: "type is one of Old, Intermediate, Modern
+                              or Custom. Custom provides the ability to specify individual
+                              TLS security profile parameters. Old, Intermediate and
+                              Modern are TLS security profiles based on: \n https://wiki.mozilla.org/Security/Server_Side_TLS#Recommended_configurations
+                              \n The profiles are intent based, so they may change
+                              over time as new ciphers are developed and existing
+                              ciphers are found to be insecure.  Depending on precisely
+                              which ciphers are available to a process, the list may
+                              be reduced. \n Note that the Modern profile is currently
+                              not supported because it is not yet well adopted by
+                              common software libraries."
+                            enum:
+                            - Old
+                            - Intermediate
+                            - Modern
+                            - Custom
+                            type: string
+                        type: object
+                    type: object
+                  authentication:
+                    description: Authentication specifies cluster-wide settings for
+                      authentication (like OAuth and webhook token authenticators).
+                    properties:
+                      oauthMetadata:
+                        description: 'oauthMetadata contains the discovery endpoint
+                          data for OAuth 2.0 Authorization Server Metadata for an
+                          external OAuth server. This discovery document can be viewed
+                          from its served location: oc get --raw ''/.well-known/oauth-authorization-server''
+                          For further details, see the IETF Draft: https://tools.ietf.org/html/draft-ietf-oauth-discovery-04#section-2
+                          If oauthMetadata.name is non-empty, this value has precedence
+                          over any metadata reference stored in status. The key "oauthMetadata"
+                          is used to locate the data. If specified and the config
+                          map or expected key is not found, no metadata is served.
+                          If the specified metadata is not valid, no metadata is served.
+                          The namespace for this config map is openshift-config.'
+                        properties:
+                          name:
+                            description: name is the metadata.name of the referenced
+                              config map
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      serviceAccountIssuer:
+                        description: 'serviceAccountIssuer is the identifier of the
+                          bound service account token issuer. The default is https://kubernetes.default.svc
+                          WARNING: Updating this field will result in the invalidation
+                          of all bound tokens with the previous issuer value. Unless
+                          the holder of a bound token has explicit support for a change
+                          in issuer, they will not request a new bound token until
+                          pod restart or until their existing token exceeds 80% of
+                          its duration.'
+                        type: string
+                      type:
+                        description: type identifies the cluster managed, user facing
+                          authentication mode in use. Specifically, it manages the
+                          component that responds to login attempts. The default is
+                          IntegratedOAuth.
+                        type: string
+                      webhookTokenAuthenticator:
+                        description: webhookTokenAuthenticator configures a remote
+                          token reviewer. These remote authentication webhooks can
+                          be used to verify bearer tokens via the tokenreviews.authentication.k8s.io
+                          REST API. This is required to honor bearer tokens that are
+                          provisioned by an external authentication service.
+                        properties:
+                          kubeConfig:
+                            description: "kubeConfig references a secret that contains
+                              kube config file data which describes how to access
+                              the remote webhook service. The namespace for the referenced
+                              secret is openshift-config. \n For further details,
+                              see: \n https://kubernetes.io/docs/reference/access-authn-authz/authentication/#webhook-token-authentication
+                              \n The key \"kubeConfig\" is used to locate the data.
+                              If the secret or expected key is not found, the webhook
+                              is not honored. If the specified kube config data is
+                              not valid, the webhook is not honored."
+                            properties:
+                              name:
+                                description: name is the metadata.name of the referenced
+                                  secret
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - kubeConfig
+                        type: object
+                      webhookTokenAuthenticators:
+                        description: webhookTokenAuthenticators is DEPRECATED, setting
+                          it has no effect.
+                        items:
+                          description: deprecatedWebhookTokenAuthenticator holds the
+                            necessary configuration options for a remote token authenticator.
+                            It's the same as WebhookTokenAuthenticator but it's missing
+                            the 'required' validation on KubeConfig field.
+                          properties:
+                            kubeConfig:
+                              description: 'kubeConfig contains kube config file data
+                                which describes how to access the remote webhook service.
+                                For further details, see: https://kubernetes.io/docs/reference/access-authn-authz/authentication/#webhook-token-authentication
+                                The key "kubeConfig" is used to locate the data. If
+                                the secret or expected key is not found, the webhook
+                                is not honored. If the specified kube config data
+                                is not valid, the webhook is not honored. The namespace
+                                for this secret is determined by the point of use.'
+                              properties:
+                                name:
+                                  description: name is the metadata.name of the referenced
+                                    secret
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                          type: object
+                        type: array
+                    type: object
                   configMapRefs:
-                    description: ConfigMapRefs holds references to any configmaps
+                    description: "ConfigMapRefs holds references to any configmaps
                       referenced by configuration entries. Entries can reference the
-                      configmaps using local object references.
+                      configmaps using local object references. \n Deprecated This
+                      field is deprecated and will be removed in a future release"
                     items:
                       description: LocalObjectReference contains enough information
                         to let you locate the referenced object inside the same namespace.
@@ -107,16 +491,1295 @@ spec:
                           type: string
                       type: object
                     type: array
+                  featureGate:
+                    description: FeatureGate holds cluster-wide information about
+                      feature gates.
+                    properties:
+                      customNoUpgrade:
+                        description: customNoUpgrade allows the enabling or disabling
+                          of any feature. Turning this feature set on IS NOT SUPPORTED,
+                          CANNOT BE UNDONE, and PREVENTS UPGRADES. Because of its
+                          nature, this setting cannot be validated.  If you have any
+                          typos or accidentally apply invalid combinations your cluster
+                          may fail in an unrecoverable way.  featureSet must equal
+                          "CustomNoUpgrade" must be set to use this field.
+                        nullable: true
+                        properties:
+                          disabled:
+                            description: disabled is a list of all feature gates that
+                              you want to force off
+                            items:
+                              type: string
+                            type: array
+                          enabled:
+                            description: enabled is a list of all feature gates that
+                              you want to force on
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      featureSet:
+                        description: featureSet changes the list of features in the
+                          cluster.  The default is empty.  Be very careful adjusting
+                          this setting. Turning on or off features may cause irreversible
+                          changes in your cluster which cannot be undone.
+                        type: string
+                    type: object
+                  image:
+                    description: Image governs policies related to imagestream imports
+                      and runtime configuration for external registries. It allows
+                      cluster admins to configure which registries OpenShift is allowed
+                      to import images from, extra CA trust bundles for external registries,
+                      and policies to block or allow registry hostnames. When exposing
+                      OpenShift's image registry to the public, this also lets cluster
+                      admins specify the external hostname.
+                    properties:
+                      additionalTrustedCA:
+                        description: additionalTrustedCA is a reference to a ConfigMap
+                          containing additional CAs that should be trusted during
+                          imagestream import, pod image pull, build image pull, and
+                          imageregistry pullthrough. The namespace for this config
+                          map is openshift-config.
+                        properties:
+                          name:
+                            description: name is the metadata.name of the referenced
+                              config map
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      allowedRegistriesForImport:
+                        description: allowedRegistriesForImport limits the container
+                          image registries that normal users may import images from.
+                          Set this list to the registries that you trust to contain
+                          valid Docker images and that you want applications to be
+                          able to import from. Users with permission to create Images
+                          or ImageStreamMappings via the API are not affected by this
+                          policy - typically only administrators or system integrations
+                          will have those permissions.
+                        items:
+                          description: RegistryLocation contains a location of the
+                            registry specified by the registry domain name. The domain
+                            name might include wildcards, like '*' or '??'.
+                          properties:
+                            domainName:
+                              description: domainName specifies a domain name for
+                                the registry In case the registry use non-standard
+                                (80 or 443) port, the port should be included in the
+                                domain name as well.
+                              type: string
+                            insecure:
+                              description: insecure indicates whether the registry
+                                is secure (https) or insecure (http) By default (if
+                                not specified) the registry is assumed as secure.
+                              type: boolean
+                          type: object
+                        type: array
+                      externalRegistryHostnames:
+                        description: externalRegistryHostnames provides the hostnames
+                          for the default external image registry. The external hostname
+                          should be set only when the image registry is exposed externally.
+                          The first value is used in 'publicDockerImageRepository'
+                          field in ImageStreams. The value must be in "hostname[:port]"
+                          format.
+                        items:
+                          type: string
+                        type: array
+                      registrySources:
+                        description: registrySources contains configuration that determines
+                          how the container runtime should treat individual registries
+                          when accessing images for builds+pods. (e.g. whether or
+                          not to allow insecure access).  It does not contain configuration
+                          for the internal cluster registry.
+                        properties:
+                          allowedRegistries:
+                            description: "allowedRegistries are the only registries
+                              permitted for image pull and push actions. All other
+                              registries are denied. \n Only one of BlockedRegistries
+                              or AllowedRegistries may be set."
+                            items:
+                              type: string
+                            type: array
+                          blockedRegistries:
+                            description: "blockedRegistries cannot be used for image
+                              pull and push actions. All other registries are permitted.
+                              \n Only one of BlockedRegistries or AllowedRegistries
+                              may be set."
+                            items:
+                              type: string
+                            type: array
+                          containerRuntimeSearchRegistries:
+                            description: 'containerRuntimeSearchRegistries are registries
+                              that will be searched when pulling images that do not
+                              have fully qualified domains in their pull specs. Registries
+                              will be searched in the order provided in the list.
+                              Note: this search list only works with the container
+                              runtime, i.e CRI-O. Will NOT work with builds or imagestream
+                              imports.'
+                            format: hostname
+                            items:
+                              type: string
+                            minItems: 1
+                            type: array
+                            x-kubernetes-list-type: set
+                          insecureRegistries:
+                            description: insecureRegistries are registries which do
+                              not have a valid TLS certificates or only support HTTP
+                              connections.
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                    type: object
+                  ingress:
+                    description: Ingress holds cluster-wide information about ingress,
+                      including the default ingress domain used for routes.
+                    properties:
+                      appsDomain:
+                        description: appsDomain is an optional domain to use instead
+                          of the one specified in the domain field when a Route is
+                          created without specifying an explicit host. If appsDomain
+                          is nonempty, this value is used to generate default host
+                          values for Route. Unlike domain, appsDomain may be modified
+                          after installation. This assumes a new ingresscontroller
+                          has been setup with a wildcard certificate.
+                        type: string
+                      componentRoutes:
+                        description: "componentRoutes is an optional list of routes
+                          that are managed by OpenShift components that a cluster-admin
+                          is able to configure the hostname and serving certificate
+                          for. The namespace and name of each route in this list should
+                          match an existing entry in the status.componentRoutes list.
+                          \n To determine the set of configurable Routes, look at
+                          namespace and name of entries in the .status.componentRoutes
+                          list, where participating operators write the status of
+                          configurable routes."
+                        items:
+                          description: ComponentRouteSpec allows for configuration
+                            of a route's hostname and serving certificate.
+                          properties:
+                            hostname:
+                              description: hostname is the hostname that should be
+                                used by the route.
+                              pattern: ^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z\p{L}]){2,63})$|^(([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})[\.]){0,}([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})$
+                              type: string
+                            name:
+                              description: "name is the logical name of the route
+                                to customize. \n The namespace and name of this componentRoute
+                                must match a corresponding entry in the list of status.componentRoutes
+                                if the route is to be customized."
+                              maxLength: 256
+                              minLength: 1
+                              type: string
+                            namespace:
+                              description: "namespace is the namespace of the route
+                                to customize. \n The namespace and name of this componentRoute
+                                must match a corresponding entry in the list of status.componentRoutes
+                                if the route is to be customized."
+                              maxLength: 63
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                              type: string
+                            servingCertKeyPairSecret:
+                              description: servingCertKeyPairSecret is a reference
+                                to a secret of type `kubernetes.io/tls` in the openshift-config
+                                namespace. The serving cert/key pair must match and
+                                will be used by the operator to fulfill the intent
+                                of serving with this name. If the custom hostname
+                                uses the default routing suffix of the cluster, the
+                                Secret specification for a serving certificate will
+                                not be needed.
+                              properties:
+                                name:
+                                  description: name is the metadata.name of the referenced
+                                    secret
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                          required:
+                          - hostname
+                          - name
+                          - namespace
+                          type: object
+                        type: array
+                      domain:
+                        description: "domain is used to generate a default host name
+                          for a route when the route's host name is empty. The generated
+                          host name will follow this pattern: \"<route-name>.<route-namespace>.<domain>\".
+                          \n It is also used as the default wildcard domain suffix
+                          for ingress. The default ingresscontroller domain will follow
+                          this pattern: \"*.<domain>\". \n Once set, changing domain
+                          is not currently supported."
+                        type: string
+                      requiredHSTSPolicies:
+                        description: "requiredHSTSPolicies specifies HSTS policies
+                          that are required to be set on newly created  or updated
+                          routes matching the domainPattern/s and namespaceSelector/s
+                          that are specified in the policy. Each requiredHSTSPolicy
+                          must have at least a domainPattern and a maxAge to validate
+                          a route HSTS Policy route annotation, and affect route admission.
+                          \n A candidate route is checked for HSTS Policies if it
+                          has the HSTS Policy route annotation: \"haproxy.router.openshift.io/hsts_header\"
+                          E.g. haproxy.router.openshift.io/hsts_header: max-age=31536000;preload;includeSubDomains
+                          \n - For each candidate route, if it matches a requiredHSTSPolicy
+                          domainPattern and optional namespaceSelector, then the maxAge,
+                          preloadPolicy, and includeSubdomainsPolicy must be valid
+                          to be admitted.  Otherwise, the route is rejected. - The
+                          first match, by domainPattern and optional namespaceSelector,
+                          in the ordering of the RequiredHSTSPolicies determines the
+                          route's admission status. - If the candidate route doesn't
+                          match any requiredHSTSPolicy domainPattern and optional
+                          namespaceSelector, then it may use any HSTS Policy annotation.
+                          \n The HSTS policy configuration may be changed after routes
+                          have already been created. An update to a previously admitted
+                          route may then fail if the updated route does not conform
+                          to the updated HSTS policy configuration. However, changing
+                          the HSTS policy configuration will not cause a route that
+                          is already admitted to stop working. \n Note that if there
+                          are no RequiredHSTSPolicies, any HSTS Policy annotation
+                          on the route is valid."
+                        items:
+                          properties:
+                            domainPatterns:
+                              description: "domainPatterns is a list of domains for
+                                which the desired HSTS annotations are required. If
+                                domainPatterns is specified and a route is created
+                                with a spec.host matching one of the domains, the
+                                route must specify the HSTS Policy components described
+                                in the matching RequiredHSTSPolicy. \n The use of
+                                wildcards is allowed like this: *.foo.com matches
+                                everything under foo.com. foo.com only matches foo.com,
+                                so to cover foo.com and everything under it, you must
+                                specify *both*."
+                              items:
+                                type: string
+                              minItems: 1
+                              type: array
+                            includeSubDomainsPolicy:
+                              description: 'includeSubDomainsPolicy means the HSTS
+                                Policy should apply to any subdomains of the host''s
+                                domain name.  Thus, for the host bar.foo.com, if includeSubDomainsPolicy
+                                was set to RequireIncludeSubDomains: - the host app.bar.foo.com
+                                would inherit the HSTS Policy of bar.foo.com - the
+                                host bar.foo.com would inherit the HSTS Policy of
+                                bar.foo.com - the host foo.com would NOT inherit the
+                                HSTS Policy of bar.foo.com - the host def.foo.com
+                                would NOT inherit the HSTS Policy of bar.foo.com'
+                              enum:
+                              - RequireIncludeSubDomains
+                              - RequireNoIncludeSubDomains
+                              - NoOpinion
+                              type: string
+                            maxAge:
+                              description: maxAge is the delta time range in seconds
+                                during which hosts are regarded as HSTS hosts. If
+                                set to 0, it negates the effect, and hosts are removed
+                                as HSTS hosts. If set to 0 and includeSubdomains is
+                                specified, all subdomains of the host are also removed
+                                as HSTS hosts. maxAge is a time-to-live value, and
+                                if this policy is not refreshed on a client, the HSTS
+                                policy will eventually expire on that client.
+                              properties:
+                                largestMaxAge:
+                                  description: The largest allowed value (in seconds)
+                                    of the RequiredHSTSPolicy max-age This value can
+                                    be left unspecified, in which case no upper limit
+                                    is enforced.
+                                  format: int32
+                                  maximum: 2147483647
+                                  minimum: 0
+                                  type: integer
+                                smallestMaxAge:
+                                  description: The smallest allowed value (in seconds)
+                                    of the RequiredHSTSPolicy max-age Setting max-age=0
+                                    allows the deletion of an existing HSTS header
+                                    from a host.  This is a necessary tool for administrators
+                                    to quickly correct mistakes. This value can be
+                                    left unspecified, in which case no lower limit
+                                    is enforced.
+                                  format: int32
+                                  maximum: 2147483647
+                                  minimum: 0
+                                  type: integer
+                              type: object
+                            namespaceSelector:
+                              description: namespaceSelector specifies a label selector
+                                such that the policy applies only to those routes
+                                that are in namespaces with labels that match the
+                                selector, and are in one of the DomainPatterns. Defaults
+                                to the empty LabelSelector, which matches everything.
+                              properties:
+                                matchExpressions:
+                                  description: matchExpressions is a list of label
+                                    selector requirements. The requirements are ANDed.
+                                  items:
+                                    description: A label selector requirement is a
+                                      selector that contains values, a key, and an
+                                      operator that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: key is the label key that the
+                                          selector applies to.
+                                        type: string
+                                      operator:
+                                        description: operator represents a key's relationship
+                                          to a set of values. Valid operators are
+                                          In, NotIn, Exists and DoesNotExist.
+                                        type: string
+                                      values:
+                                        description: values is an array of string
+                                          values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the
+                                          operator is Exists or DoesNotExist, the
+                                          values array must be empty. This array is
+                                          replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                matchLabels:
+                                  additionalProperties:
+                                    type: string
+                                  description: matchLabels is a map of {key,value}
+                                    pairs. A single {key,value} in the matchLabels
+                                    map is equivalent to an element of matchExpressions,
+                                    whose key field is "key", the operator is "In",
+                                    and the values array contains only "value". The
+                                    requirements are ANDed.
+                                  type: object
+                              type: object
+                            preloadPolicy:
+                              description: preloadPolicy directs the client to include
+                                hosts in its host preload list so that it never needs
+                                to do an initial load to get the HSTS header (note
+                                that this is not defined in RFC 6797 and is therefore
+                                client implementation-dependent).
+                              enum:
+                              - RequirePreload
+                              - RequireNoPreload
+                              - NoOpinion
+                              type: string
+                          required:
+                          - domainPatterns
+                          type: object
+                        type: array
+                    type: object
                   items:
-                    description: Items embeds the serialized configuration resources.
+                    description: "Items embeds the serialized configuration resources.
+                      \n Deprecated This field is deprecated and will be removed in
+                      a future release"
                     items:
                       type: object
                     type: array
                     x-kubernetes-preserve-unknown-fields: true
+                  network:
+                    description: 'Network holds cluster-wide information about the
+                      network. It is used to configure the desired network configuration,
+                      such as: IP address pools for services/pod IPs, network plugin,
+                      etc. Please view network.spec for an explanation on what applies
+                      when configuring this resource. TODO (csrwng): Add validation
+                      here to exclude changes that conflict with networking settings
+                      in the HostedCluster.Spec.Networking field.'
+                    properties:
+                      clusterNetwork:
+                        description: IP address pool to use for pod IPs. This field
+                          is immutable after installation.
+                        items:
+                          description: ClusterNetworkEntry is a contiguous block of
+                            IP addresses from which pod IPs are allocated.
+                          properties:
+                            cidr:
+                              description: The complete block for pod IPs.
+                              type: string
+                            hostPrefix:
+                              description: The size (prefix) of block to allocate
+                                to each node. If this field is not used by the plugin,
+                                it can be left unset.
+                              format: int32
+                              minimum: 0
+                              type: integer
+                          type: object
+                        type: array
+                      externalIP:
+                        description: externalIP defines configuration for controllers
+                          that affect Service.ExternalIP. If nil, then ExternalIP
+                          is not allowed to be set.
+                        properties:
+                          autoAssignCIDRs:
+                            description: autoAssignCIDRs is a list of CIDRs from which
+                              to automatically assign Service.ExternalIP. These are
+                              assigned when the service is of type LoadBalancer. In
+                              general, this is only useful for bare-metal clusters.
+                              In Openshift 3.x, this was misleadingly called "IngressIPs".
+                              Automatically assigned External IPs are not affected
+                              by any ExternalIPPolicy rules. Currently, only one entry
+                              may be provided.
+                            items:
+                              type: string
+                            type: array
+                          policy:
+                            description: policy is a set of restrictions applied to
+                              the ExternalIP field. If nil or empty, then ExternalIP
+                              is not allowed to be set.
+                            properties:
+                              allowedCIDRs:
+                                description: allowedCIDRs is the list of allowed CIDRs.
+                                items:
+                                  type: string
+                                type: array
+                              rejectedCIDRs:
+                                description: rejectedCIDRs is the list of disallowed
+                                  CIDRs. These take precedence over allowedCIDRs.
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                        type: object
+                      networkType:
+                        description: 'NetworkType is the plugin that is to be deployed
+                          (e.g. OpenShiftSDN). This should match a value that the
+                          cluster-network-operator understands, or else no networking
+                          will be installed. Currently supported values are: - OpenShiftSDN
+                          This field is immutable after installation.'
+                        type: string
+                      serviceNetwork:
+                        description: IP address pool for services. Currently, we only
+                          support a single entry here. This field is immutable after
+                          installation.
+                        items:
+                          type: string
+                        type: array
+                      serviceNodePortRange:
+                        description: The port range allowed for Services of type NodePort.
+                          If not specified, the default of 30000-32767 will be used.
+                          Such Services without a NodePort specified will have one
+                          automatically allocated from this range. This parameter
+                          can be updated after the cluster is installed.
+                        pattern: ^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$
+                        type: string
+                    type: object
+                  oauth:
+                    description: OAuth holds cluster-wide information about OAuth.
+                      It is used to configure the integrated OAuth server. This configuration
+                      is only honored when the top level Authentication config has
+                      type set to IntegratedOAuth.
+                    properties:
+                      identityProviders:
+                        description: identityProviders is an ordered list of ways
+                          for a user to identify themselves. When this list is empty,
+                          no identities are provisioned for users.
+                        items:
+                          description: IdentityProvider provides identities for users
+                            authenticating using credentials
+                          properties:
+                            basicAuth:
+                              description: basicAuth contains configuration options
+                                for the BasicAuth IdP
+                              properties:
+                                ca:
+                                  description: ca is an optional reference to a config
+                                    map by name containing the PEM-encoded CA bundle.
+                                    It is used as a trust anchor to validate the TLS
+                                    certificate presented by the remote server. The
+                                    key "ca.crt" is used to locate the data. If specified
+                                    and the config map or expected key is not found,
+                                    the identity provider is not honored. If the specified
+                                    ca data is not valid, the identity provider is
+                                    not honored. If empty, the default system roots
+                                    are used. The namespace for this config map is
+                                    openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced config map
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                tlsClientCert:
+                                  description: tlsClientCert is an optional reference
+                                    to a secret by name that contains the PEM-encoded
+                                    TLS client certificate to present when connecting
+                                    to the server. The key "tls.crt" is used to locate
+                                    the data. If specified and the secret or expected
+                                    key is not found, the identity provider is not
+                                    honored. If the specified certificate data is
+                                    not valid, the identity provider is not honored.
+                                    The namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                tlsClientKey:
+                                  description: tlsClientKey is an optional reference
+                                    to a secret by name that contains the PEM-encoded
+                                    TLS private key for the client certificate referenced
+                                    in tlsClientCert. The key "tls.key" is used to
+                                    locate the data. If specified and the secret or
+                                    expected key is not found, the identity provider
+                                    is not honored. If the specified certificate data
+                                    is not valid, the identity provider is not honored.
+                                    The namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                url:
+                                  description: url is the remote URL to connect to
+                                  type: string
+                              type: object
+                            github:
+                              description: github enables user authentication using
+                                GitHub credentials
+                              properties:
+                                ca:
+                                  description: ca is an optional reference to a config
+                                    map by name containing the PEM-encoded CA bundle.
+                                    It is used as a trust anchor to validate the TLS
+                                    certificate presented by the remote server. The
+                                    key "ca.crt" is used to locate the data. If specified
+                                    and the config map or expected key is not found,
+                                    the identity provider is not honored. If the specified
+                                    ca data is not valid, the identity provider is
+                                    not honored. If empty, the default system roots
+                                    are used. This can only be configured when hostname
+                                    is set to a non-empty value. The namespace for
+                                    this config map is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced config map
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                clientID:
+                                  description: clientID is the oauth client ID
+                                  type: string
+                                clientSecret:
+                                  description: clientSecret is a required reference
+                                    to the secret by name containing the oauth client
+                                    secret. The key "clientSecret" is used to locate
+                                    the data. If the secret or expected key is not
+                                    found, the identity provider is not honored. The
+                                    namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                hostname:
+                                  description: hostname is the optional domain (e.g.
+                                    "mycompany.com") for use with a hosted instance
+                                    of GitHub Enterprise. It must match the GitHub
+                                    Enterprise settings value configured at /setup/settings#hostname.
+                                  type: string
+                                organizations:
+                                  description: organizations optionally restricts
+                                    which organizations are allowed to log in
+                                  items:
+                                    type: string
+                                  type: array
+                                teams:
+                                  description: teams optionally restricts which teams
+                                    are allowed to log in. Format is <org>/<team>.
+                                  items:
+                                    type: string
+                                  type: array
+                              type: object
+                            gitlab:
+                              description: gitlab enables user authentication using
+                                GitLab credentials
+                              properties:
+                                ca:
+                                  description: ca is an optional reference to a config
+                                    map by name containing the PEM-encoded CA bundle.
+                                    It is used as a trust anchor to validate the TLS
+                                    certificate presented by the remote server. The
+                                    key "ca.crt" is used to locate the data. If specified
+                                    and the config map or expected key is not found,
+                                    the identity provider is not honored. If the specified
+                                    ca data is not valid, the identity provider is
+                                    not honored. If empty, the default system roots
+                                    are used. The namespace for this config map is
+                                    openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced config map
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                clientID:
+                                  description: clientID is the oauth client ID
+                                  type: string
+                                clientSecret:
+                                  description: clientSecret is a required reference
+                                    to the secret by name containing the oauth client
+                                    secret. The key "clientSecret" is used to locate
+                                    the data. If the secret or expected key is not
+                                    found, the identity provider is not honored. The
+                                    namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                url:
+                                  description: url is the oauth server base URL
+                                  type: string
+                              type: object
+                            google:
+                              description: google enables user authentication using
+                                Google credentials
+                              properties:
+                                clientID:
+                                  description: clientID is the oauth client ID
+                                  type: string
+                                clientSecret:
+                                  description: clientSecret is a required reference
+                                    to the secret by name containing the oauth client
+                                    secret. The key "clientSecret" is used to locate
+                                    the data. If the secret or expected key is not
+                                    found, the identity provider is not honored. The
+                                    namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                hostedDomain:
+                                  description: hostedDomain is the optional Google
+                                    App domain (e.g. "mycompany.com") to restrict
+                                    logins to
+                                  type: string
+                              type: object
+                            htpasswd:
+                              description: htpasswd enables user authentication using
+                                an HTPasswd file to validate credentials
+                              properties:
+                                fileData:
+                                  description: fileData is a required reference to
+                                    a secret by name containing the data to use as
+                                    the htpasswd file. The key "htpasswd" is used
+                                    to locate the data. If the secret or expected
+                                    key is not found, the identity provider is not
+                                    honored. If the specified htpasswd data is not
+                                    valid, the identity provider is not honored. The
+                                    namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                              type: object
+                            keystone:
+                              description: keystone enables user authentication using
+                                keystone password credentials
+                              properties:
+                                ca:
+                                  description: ca is an optional reference to a config
+                                    map by name containing the PEM-encoded CA bundle.
+                                    It is used as a trust anchor to validate the TLS
+                                    certificate presented by the remote server. The
+                                    key "ca.crt" is used to locate the data. If specified
+                                    and the config map or expected key is not found,
+                                    the identity provider is not honored. If the specified
+                                    ca data is not valid, the identity provider is
+                                    not honored. If empty, the default system roots
+                                    are used. The namespace for this config map is
+                                    openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced config map
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                domainName:
+                                  description: domainName is required for keystone
+                                    v3
+                                  type: string
+                                tlsClientCert:
+                                  description: tlsClientCert is an optional reference
+                                    to a secret by name that contains the PEM-encoded
+                                    TLS client certificate to present when connecting
+                                    to the server. The key "tls.crt" is used to locate
+                                    the data. If specified and the secret or expected
+                                    key is not found, the identity provider is not
+                                    honored. If the specified certificate data is
+                                    not valid, the identity provider is not honored.
+                                    The namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                tlsClientKey:
+                                  description: tlsClientKey is an optional reference
+                                    to a secret by name that contains the PEM-encoded
+                                    TLS private key for the client certificate referenced
+                                    in tlsClientCert. The key "tls.key" is used to
+                                    locate the data. If specified and the secret or
+                                    expected key is not found, the identity provider
+                                    is not honored. If the specified certificate data
+                                    is not valid, the identity provider is not honored.
+                                    The namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                url:
+                                  description: url is the remote URL to connect to
+                                  type: string
+                              type: object
+                            ldap:
+                              description: ldap enables user authentication using
+                                LDAP credentials
+                              properties:
+                                attributes:
+                                  description: attributes maps LDAP attributes to
+                                    identities
+                                  properties:
+                                    email:
+                                      description: email is the list of attributes
+                                        whose values should be used as the email address.
+                                        Optional. If unspecified, no email is set
+                                        for the identity
+                                      items:
+                                        type: string
+                                      type: array
+                                    id:
+                                      description: id is the list of attributes whose
+                                        values should be used as the user ID. Required.
+                                        First non-empty attribute is used. At least
+                                        one attribute is required. If none of the
+                                        listed attribute have a value, authentication
+                                        fails. LDAP standard identity attribute is
+                                        "dn"
+                                      items:
+                                        type: string
+                                      type: array
+                                    name:
+                                      description: name is the list of attributes
+                                        whose values should be used as the display
+                                        name. Optional. If unspecified, no display
+                                        name is set for the identity LDAP standard
+                                        display name attribute is "cn"
+                                      items:
+                                        type: string
+                                      type: array
+                                    preferredUsername:
+                                      description: preferredUsername is the list of
+                                        attributes whose values should be used as
+                                        the preferred username. LDAP standard login
+                                        attribute is "uid"
+                                      items:
+                                        type: string
+                                      type: array
+                                  type: object
+                                bindDN:
+                                  description: bindDN is an optional DN to bind with
+                                    during the search phase.
+                                  type: string
+                                bindPassword:
+                                  description: bindPassword is an optional reference
+                                    to a secret by name containing a password to bind
+                                    with during the search phase. The key "bindPassword"
+                                    is used to locate the data. If specified and the
+                                    secret or expected key is not found, the identity
+                                    provider is not honored. The namespace for this
+                                    secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                ca:
+                                  description: ca is an optional reference to a config
+                                    map by name containing the PEM-encoded CA bundle.
+                                    It is used as a trust anchor to validate the TLS
+                                    certificate presented by the remote server. The
+                                    key "ca.crt" is used to locate the data. If specified
+                                    and the config map or expected key is not found,
+                                    the identity provider is not honored. If the specified
+                                    ca data is not valid, the identity provider is
+                                    not honored. If empty, the default system roots
+                                    are used. The namespace for this config map is
+                                    openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced config map
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                insecure:
+                                  description: 'insecure, if true, indicates the connection
+                                    should not use TLS WARNING: Should not be set
+                                    to `true` with the URL scheme "ldaps://" as "ldaps://"
+                                    URLs always          attempt to connect using
+                                    TLS, even when `insecure` is set to `true` When
+                                    `true`, "ldap://" URLS connect insecurely. When
+                                    `false`, "ldap://" URLs are upgraded to a TLS
+                                    connection using StartTLS as specified in https://tools.ietf.org/html/rfc2830.'
+                                  type: boolean
+                                url:
+                                  description: 'url is an RFC 2255 URL which specifies
+                                    the LDAP search parameters to use. The syntax
+                                    of the URL is: ldap://host:port/basedn?attribute?scope?filter'
+                                  type: string
+                              type: object
+                            mappingMethod:
+                              description: mappingMethod determines how identities
+                                from this provider are mapped to users Defaults to
+                                "claim"
+                              type: string
+                            name:
+                              description: 'name is used to qualify the identities
+                                returned by this provider. - It MUST be unique and
+                                not shared by any other identity provider used - It
+                                MUST be a valid path segment: name cannot equal "."
+                                or ".." or contain "/" or "%" or ":"   Ref: https://godoc.org/github.com/openshift/origin/pkg/user/apis/user/validation#ValidateIdentityProviderName'
+                              type: string
+                            openID:
+                              description: openID enables user authentication using
+                                OpenID credentials
+                              properties:
+                                ca:
+                                  description: ca is an optional reference to a config
+                                    map by name containing the PEM-encoded CA bundle.
+                                    It is used as a trust anchor to validate the TLS
+                                    certificate presented by the remote server. The
+                                    key "ca.crt" is used to locate the data. If specified
+                                    and the config map or expected key is not found,
+                                    the identity provider is not honored. If the specified
+                                    ca data is not valid, the identity provider is
+                                    not honored. If empty, the default system roots
+                                    are used. The namespace for this config map is
+                                    openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced config map
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                claims:
+                                  description: claims mappings
+                                  properties:
+                                    email:
+                                      description: email is the list of claims whose
+                                        values should be used as the email address.
+                                        Optional. If unspecified, no email is set
+                                        for the identity
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    groups:
+                                      description: groups is the list of claims value
+                                        of which should be used to synchronize groups
+                                        from the OIDC provider to OpenShift for the
+                                        user. If multiple claims are specified, the
+                                        first one with a non-empty value is used.
+                                      items:
+                                        description: OpenIDClaim represents a claim
+                                          retrieved from an OpenID provider's tokens
+                                          or userInfo responses
+                                        minLength: 1
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    name:
+                                      description: name is the list of claims whose
+                                        values should be used as the display name.
+                                        Optional. If unspecified, no display name
+                                        is set for the identity
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    preferredUsername:
+                                      description: preferredUsername is the list of
+                                        claims whose values should be used as the
+                                        preferred username. If unspecified, the preferred
+                                        username is determined from the value of the
+                                        sub claim
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                  type: object
+                                clientID:
+                                  description: clientID is the oauth client ID
+                                  type: string
+                                clientSecret:
+                                  description: clientSecret is a required reference
+                                    to the secret by name containing the oauth client
+                                    secret. The key "clientSecret" is used to locate
+                                    the data. If the secret or expected key is not
+                                    found, the identity provider is not honored. The
+                                    namespace for this secret is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                extraAuthorizeParameters:
+                                  additionalProperties:
+                                    type: string
+                                  description: extraAuthorizeParameters are any custom
+                                    parameters to add to the authorize request.
+                                  type: object
+                                extraScopes:
+                                  description: extraScopes are any scopes to request
+                                    in addition to the standard "openid" scope.
+                                  items:
+                                    type: string
+                                  type: array
+                                issuer:
+                                  description: issuer is the URL that the OpenID Provider
+                                    asserts as its Issuer Identifier. It must use
+                                    the https scheme with no query or fragment component.
+                                  type: string
+                              type: object
+                            requestHeader:
+                              description: requestHeader enables user authentication
+                                using request header credentials
+                              properties:
+                                ca:
+                                  description: ca is a required reference to a config
+                                    map by name containing the PEM-encoded CA bundle.
+                                    It is used as a trust anchor to validate the TLS
+                                    certificate presented by the remote server. Specifically,
+                                    it allows verification of incoming requests to
+                                    prevent header spoofing. The key "ca.crt" is used
+                                    to locate the data. If the config map or expected
+                                    key is not found, the identity provider is not
+                                    honored. If the specified ca data is not valid,
+                                    the identity provider is not honored. The namespace
+                                    for this config map is openshift-config.
+                                  properties:
+                                    name:
+                                      description: name is the metadata.name of the
+                                        referenced config map
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                challengeURL:
+                                  description: challengeURL is a URL to redirect unauthenticated
+                                    /authorize requests to Unauthenticated requests
+                                    from OAuth clients which expect WWW-Authenticate
+                                    challenges will be redirected here. ${url} is
+                                    replaced with the current URL, escaped to be safe
+                                    in a query parameter   https://www.example.com/sso-login?then=${url}
+                                    ${query} is replaced with the current query string   https://www.example.com/auth-proxy/oauth/authorize?${query}
+                                    Required when challenge is set to true.
+                                  type: string
+                                clientCommonNames:
+                                  description: clientCommonNames is an optional list
+                                    of common names to require a match from. If empty,
+                                    any client certificate validated against the clientCA
+                                    bundle is considered authoritative.
+                                  items:
+                                    type: string
+                                  type: array
+                                emailHeaders:
+                                  description: emailHeaders is the set of headers
+                                    to check for the email address
+                                  items:
+                                    type: string
+                                  type: array
+                                headers:
+                                  description: headers is the set of headers to check
+                                    for identity information
+                                  items:
+                                    type: string
+                                  type: array
+                                loginURL:
+                                  description: loginURL is a URL to redirect unauthenticated
+                                    /authorize requests to Unauthenticated requests
+                                    from OAuth clients which expect interactive logins
+                                    will be redirected here ${url} is replaced with
+                                    the current URL, escaped to be safe in a query
+                                    parameter   https://www.example.com/sso-login?then=${url}
+                                    ${query} is replaced with the current query string   https://www.example.com/auth-proxy/oauth/authorize?${query}
+                                    Required when login is set to true.
+                                  type: string
+                                nameHeaders:
+                                  description: nameHeaders is the set of headers to
+                                    check for the display name
+                                  items:
+                                    type: string
+                                  type: array
+                                preferredUsernameHeaders:
+                                  description: preferredUsernameHeaders is the set
+                                    of headers to check for the preferred username
+                                  items:
+                                    type: string
+                                  type: array
+                              type: object
+                            type:
+                              description: type identifies the identity provider type
+                                for this entry.
+                              type: string
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      templates:
+                        description: templates allow you to customize pages like the
+                          login page.
+                        properties:
+                          error:
+                            description: error is the name of a secret that specifies
+                              a go template to use to render error pages during the
+                              authentication or grant flow. The key "errors.html"
+                              is used to locate the template data. If specified and
+                              the secret or expected key is not found, the default
+                              error page is used. If the specified template is not
+                              valid, the default error page is used. If unspecified,
+                              the default error page is used. The namespace for this
+                              secret is openshift-config.
+                            properties:
+                              name:
+                                description: name is the metadata.name of the referenced
+                                  secret
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          login:
+                            description: login is the name of a secret that specifies
+                              a go template to use to render the login page. The key
+                              "login.html" is used to locate the template data. If
+                              specified and the secret or expected key is not found,
+                              the default login page is used. If the specified template
+                              is not valid, the default login page is used. If unspecified,
+                              the default login page is used. The namespace for this
+                              secret is openshift-config.
+                            properties:
+                              name:
+                                description: name is the metadata.name of the referenced
+                                  secret
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          providerSelection:
+                            description: providerSelection is the name of a secret
+                              that specifies a go template to use to render the provider
+                              selection page. The key "providers.html" is used to
+                              locate the template data. If specified and the secret
+                              or expected key is not found, the default provider selection
+                              page is used. If the specified template is not valid,
+                              the default provider selection page is used. If unspecified,
+                              the default provider selection page is used. The namespace
+                              for this secret is openshift-config.
+                            properties:
+                              name:
+                                description: name is the metadata.name of the referenced
+                                  secret
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        type: object
+                      tokenConfig:
+                        description: tokenConfig contains options for authorization
+                          and access tokens
+                        properties:
+                          accessTokenInactivityTimeout:
+                            description: "accessTokenInactivityTimeout defines the
+                              token inactivity timeout for tokens granted by any client.
+                              The value represents the maximum amount of time that
+                              can occur between consecutive uses of the token. Tokens
+                              become invalid if they are not used within this temporal
+                              window. The user will need to acquire a new token to
+                              regain access once a token times out. Takes valid time
+                              duration string such as \"5m\", \"1.5h\" or \"2h45m\".
+                              The minimum allowed value for duration is 300s (5 minutes).
+                              If the timeout is configured per client, then that value
+                              takes precedence. If the timeout value is not specified
+                              and the client does not override the value, then tokens
+                              are valid until their lifetime. \n WARNING: existing
+                              tokens' timeout will not be affected (lowered) by changing
+                              this value"
+                            type: string
+                          accessTokenInactivityTimeoutSeconds:
+                            description: 'accessTokenInactivityTimeoutSeconds - DEPRECATED:
+                              setting this field has no effect.'
+                            format: int32
+                            type: integer
+                          accessTokenMaxAgeSeconds:
+                            description: accessTokenMaxAgeSeconds defines the maximum
+                              age of access tokens
+                            format: int32
+                            type: integer
+                        type: object
+                    type: object
+                  proxy:
+                    description: Proxy holds cluster-wide information on how to configure
+                      default proxies for the cluster.
+                    properties:
+                      httpProxy:
+                        description: httpProxy is the URL of the proxy for HTTP requests.  Empty
+                          means unset and will not result in an env var.
+                        type: string
+                      httpsProxy:
+                        description: httpsProxy is the URL of the proxy for HTTPS
+                          requests.  Empty means unset and will not result in an env
+                          var.
+                        type: string
+                      noProxy:
+                        description: noProxy is a comma-separated list of hostnames
+                          and/or CIDRs and/or IPs for which the proxy should not be
+                          used. Empty means unset and will not result in an env var.
+                        type: string
+                      readinessEndpoints:
+                        description: readinessEndpoints is a list of endpoints used
+                          to verify readiness of the proxy.
+                        items:
+                          type: string
+                        type: array
+                      trustedCA:
+                        description: "trustedCA is a reference to a ConfigMap containing
+                          a CA certificate bundle. The trustedCA field should only
+                          be consumed by a proxy validator. The validator is responsible
+                          for reading the certificate bundle from the required key
+                          \"ca-bundle.crt\", merging it with the system default trust
+                          bundle, and writing the merged trust bundle to a ConfigMap
+                          named \"trusted-ca-bundle\" in the \"openshift-config-managed\"
+                          namespace. Clients that expect to make proxy connections
+                          must use the trusted-ca-bundle for all HTTPS requests to
+                          the proxy, and may use the trusted-ca-bundle for non-proxy
+                          HTTPS requests as well. \n The namespace for the ConfigMap
+                          referenced by trustedCA is \"openshift-config\". Here is
+                          an example ConfigMap (in yaml): \n apiVersion: v1 kind:
+                          ConfigMap metadata:  name: user-ca-bundle  namespace: openshift-config
+                          \ data:    ca-bundle.crt: |      -----BEGIN CERTIFICATE-----
+                          \     Custom CA certificate bundle.      -----END CERTIFICATE-----"
+                        properties:
+                          name:
+                            description: name is the metadata.name of the referenced
+                              config map
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    type: object
+                  scheduler:
+                    description: Scheduler holds cluster-wide config information to
+                      run the Kubernetes Scheduler and influence its placement decisions.
+                      The canonical name for this config is `cluster`.
+                    properties:
+                      defaultNodeSelector:
+                        description: 'defaultNodeSelector helps set the cluster-wide
+                          default node selector to restrict pod placement to specific
+                          nodes. This is applied to the pods created in all namespaces
+                          and creates an intersection with any existing nodeSelectors
+                          already set on a pod, additionally constraining that pod''s
+                          selector. For example, defaultNodeSelector: "type=user-node,region=east"
+                          would set nodeSelector field in pod spec to "type=user-node,region=east"
+                          to all pods created in all namespaces. Namespaces having
+                          project-wide node selectors won''t be impacted even if this
+                          field is set. This adds an annotation section to the namespace.
+                          For example, if a new namespace is created with node-selector=''type=user-node,region=east'',
+                          the annotation openshift.io/node-selector: type=user-node,region=east
+                          gets added to the project. When the openshift.io/node-selector
+                          annotation is set on the project the value is used in preference
+                          to the value we are setting for defaultNodeSelector field.
+                          For instance, openshift.io/node-selector: "type=user-node,region=west"
+                          means that the default of "type=user-node,region=east" set
+                          in defaultNodeSelector would not be applied.'
+                        type: string
+                      mastersSchedulable:
+                        description: 'MastersSchedulable allows masters nodes to be
+                          schedulable. When this flag is turned on, all the master
+                          nodes in the cluster will be made schedulable, so that workload
+                          pods can run on them. The default value for this field is
+                          false, meaning none of the master nodes are schedulable.
+                          Important Note: Once the workload pods start running on
+                          the master nodes, extreme care must be taken to ensure that
+                          cluster-critical control plane components are not impacted.
+                          Please turn on this field after doing due diligence.'
+                        type: boolean
+                      policy:
+                        description: 'DEPRECATED: the scheduler Policy API has been
+                          deprecated and will be removed in a future release. policy
+                          is a reference to a ConfigMap containing scheduler policy
+                          which has user specified predicates and priorities. If this
+                          ConfigMap is not available scheduler will default to use
+                          DefaultAlgorithmProvider. The namespace for this configmap
+                          is openshift-config.'
+                        properties:
+                          name:
+                            description: name is the metadata.name of the referenced
+                              config map
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      profile:
+                        description: "profile sets which scheduling profile should
+                          be set in order to configure scheduling decisions for new
+                          pods. \n Valid values are \"LowNodeUtilization\", \"HighNodeUtilization\",
+                          \"NoScoring\" Defaults to \"LowNodeUtilization\""
+                        enum:
+                        - ""
+                        - LowNodeUtilization
+                        - HighNodeUtilization
+                        - NoScoring
+                        type: string
+                    type: object
                   secretRefs:
-                    description: SecretRefs holds references to any secrets referenced
+                    description: "SecretRefs holds references to any secrets referenced
                       by configuration entries. Entries can reference the secrets
-                      using local object references.
+                      using local object references. \n Deprecated This field is deprecated
+                      and will be removed in a future release"
                     items:
                       description: LocalObjectReference contains enough information
                         to let you locate the referenced object inside the same namespace.

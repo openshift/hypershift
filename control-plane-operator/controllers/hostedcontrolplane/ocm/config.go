@@ -21,7 +21,7 @@ const (
 	configKey = "config.yaml"
 )
 
-func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, buildConfig *configv1.Build, networkConfig *configv1.Network) error {
+func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -43,7 +43,7 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, buildConfig *configv1.Build, networkConfig *configv1.Network) error {
+func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(ocmContainerMain().Name, volume)
 		return path.Join(dir, file)
@@ -98,8 +98,8 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 	}
 
 	// network config
-	if networkConfig != nil && networkConfig.Spec.ExternalIP != nil && len(networkConfig.Spec.ExternalIP.AutoAssignCIDRs) > 0 {
-		cfg.Ingress.IngressIPNetworkCIDR = networkConfig.Spec.ExternalIP.AutoAssignCIDRs[0]
+	if networkConfig != nil && networkConfig.ExternalIP != nil && len(networkConfig.ExternalIP.AutoAssignCIDRs) > 0 {
+		cfg.Ingress.IngressIPNetworkCIDR = networkConfig.ExternalIP.AutoAssignCIDRs[0]
 	} else {
 		cfg.Ingress.IngressIPNetworkCIDR = ""
 	}
