@@ -1199,6 +1199,9 @@ type ClusterConfiguration struct {
 	// SecretRefs holds references to any secrets referenced by configuration
 	// entries. Entries can reference the secrets using local object references.
 	//
+	// Deprecated
+	// This field is deprecated and will be removed in a future release
+	//
 	// +kubebuilder:validation:Optional
 	// +optional
 	SecretRefs []corev1.LocalObjectReference `json:"secretRefs,omitempty"`
@@ -1207,16 +1210,72 @@ type ClusterConfiguration struct {
 	// configuration entries. Entries can reference the configmaps using local
 	// object references.
 	//
+	// Deprecated
+	// This field is deprecated and will be removed in a future release
+	//
 	// +kubebuilder:validation:Optional
 	// +optional
 	ConfigMapRefs []corev1.LocalObjectReference `json:"configMapRefs,omitempty"`
 
 	// Items embeds the serialized configuration resources.
 	//
+	// Deprecated
+	// This field is deprecated and will be removed in a future release
+	//
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Optional
 	// +optional
 	Items []runtime.RawExtension `json:"items,omitempty"`
+
+	// APIServer holds configuration (like serving certificates, client CA and CORS domains)
+	// shared by all API servers in the system, among them especially kube-apiserver
+	// and openshift-apiserver.
+	// +optional
+	APIServer *configv1.APIServerSpec `json:"apiServer,omitempty"`
+
+	// Authentication specifies cluster-wide settings for authentication (like OAuth and
+	// webhook token authenticators).
+	// +optional
+	Authentication *configv1.AuthenticationSpec `json:"authentication,omitempty"`
+
+	// FeatureGate holds cluster-wide information about feature gates.
+	// +optional
+	FeatureGate *configv1.FeatureGateSpec `json:"featureGate,omitempty"`
+
+	// Image governs policies related to imagestream imports and runtime configuration
+	// for external registries. It allows cluster admins to configure which registries
+	// OpenShift is allowed to import images from, extra CA trust bundles for external
+	// registries, and policies to block or allow registry hostnames.
+	// When exposing OpenShift's image registry to the public, this also lets cluster
+	// admins specify the external hostname.
+	// +optional
+	Image *configv1.ImageSpec `json:"image,omitempty"`
+
+	// Ingress holds cluster-wide information about ingress, including the default ingress domain
+	// used for routes.
+	// +optional
+	Ingress *configv1.IngressSpec `json:"ingress,omitempty"`
+
+	// Network holds cluster-wide information about the network. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc.
+	// Please view network.spec for an explanation on what applies when configuring this resource.
+	// TODO (csrwng): Add validation here to exclude changes that conflict with networking settings in the HostedCluster.Spec.Networking field.
+	// +optional
+	Network *configv1.NetworkSpec `json:"network,omitempty"`
+
+	// OAuth holds cluster-wide information about OAuth.
+	// It is used to configure the integrated OAuth server.
+	// This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.
+	// +optional
+	OAuth *configv1.OAuthSpec `json:"oauth,omitempty"`
+
+	// Scheduler holds cluster-wide config information to run the Kubernetes Scheduler
+	// and influence its placement decisions. The canonical name for this config is `cluster`.
+	// +optional
+	Scheduler *configv1.SchedulerSpec `json:"scheduler,omitempty"`
+
+	// Proxy holds cluster-wide information on how to configure default proxies for the cluster.
+	// +optional
+	Proxy *configv1.ProxySpec `json:"proxy,omitempty"`
 }
 
 // +genclient

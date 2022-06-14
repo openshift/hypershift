@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -204,6 +205,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 1. - Reconcile conditions according to current state of the world.
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
 
 	// Validate autoscaling input.
 	if err := validateAutoscaling(nodePool); err != nil {
@@ -360,7 +363,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// additional core config resource created when image content source specified.
 		expectedCoreConfigResources += 1
 	}
-	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace)
+	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
 	if err != nil {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
@@ -943,7 +946,13 @@ func ignConfig(encodedCACert, encodedToken, endpoint string) ignitionapi.Config 
 	}
 }
 
-func (r *NodePoolReconciler) getConfig(ctx context.Context, nodePool *hyperv1.NodePool, expectedCoreConfigResources int, controlPlaneResource string) (configsRaw string, missingConfigs bool, err error) {
+func (r *NodePoolReconciler) getConfig(ctx context.Context,
+	nodePool *hyperv1.NodePool,
+	expectedCoreConfigResources int,
+	controlPlaneResource string,
+	releaseImage *releaseinfo.ReleaseImage,
+	hcluster *hyperv1.HostedCluster,
+) (configsRaw string, missingConfigs bool, err error) {
 	var configs []corev1.ConfigMap
 	var allConfigPlainText []string
 	var errors []error

@@ -22,7 +22,7 @@ type MCSParams struct {
 	InstallConfig  *globalconfig.InstallConfig
 }
 
-func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Secret, combinedCA, userCA *corev1.ConfigMap, globalConfig globalconfig.GlobalConfig) *MCSParams {
+func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Secret, combinedCA, userCA *corev1.ConfigMap) *MCSParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 
@@ -30,10 +30,10 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 	globalconfig.ReconcileInfrastructure(infra, hcp)
 
 	network := globalconfig.NetworkConfig()
-	globalconfig.ReconcileNetworkConfig(network, hcp, globalConfig)
+	globalconfig.ReconcileNetworkConfig(network, hcp)
 
 	proxy := globalconfig.ProxyConfig()
-	globalconfig.ReconcileProxyConfig(proxy, hcp, globalConfig)
+	globalconfig.ReconcileProxyConfigWithStatus(proxy, hcp)
 
 	return &MCSParams{
 		OwnerRef:       config.OwnerRefFrom(hcp),

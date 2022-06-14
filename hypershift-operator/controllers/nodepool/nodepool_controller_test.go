@@ -8,9 +8,11 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	imagev1 "github.com/openshift/api/image/v1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -547,7 +549,21 @@ spec:
 			r := NodePoolReconciler{
 				Client: fake.NewClientBuilder().WithObjects(tc.config...).Build(),
 			}
-			got, missingConfigs, err := r.getConfig(context.Background(), tc.nodePool, tc.expectedCoreConfigResources, namespace)
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"hypershift.openshift.io/control-plane-operator-image": "cpo-image"}},
+				Status:     hyperv1.HostedClusterStatus{KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"}},
+			}
+			releaseImage := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{Spec: imagev1.ImageStreamSpec{Tags: []imagev1.TagReference{{
+				Name: "haproxy-router",
+				From: &corev1.ObjectReference{},
+			}}}}}
+			got, missingConfigs, err := r.getConfig(context.Background(),
+				tc.nodePool,
+				tc.expectedCoreConfigResources,
+				namespace,
+				releaseImage,
+				hc,
+			)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				return

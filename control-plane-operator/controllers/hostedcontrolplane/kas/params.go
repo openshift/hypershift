@@ -30,11 +30,11 @@ type KubeAPIServerImages struct {
 }
 
 type KubeAPIServerParams struct {
-	APIServer           *configv1.APIServer          `json:"apiServer"`
-	FeatureGate         *configv1.FeatureGate        `json:"featureGate"`
-	Network             *configv1.Network            `json:"network"`
-	Image               *configv1.Image              `json:"image"`
-	Scheduler           *configv1.Scheduler          `json:"scheduler"`
+	APIServer           *configv1.APIServerSpec      `json:"apiServer"`
+	FeatureGate         *configv1.FeatureGateSpec    `json:"featureGate"`
+	Network             *configv1.NetworkSpec        `json:"network"`
+	Image               *configv1.ImageSpec          `json:"image"`
+	Scheduler           *configv1.SchedulerSpec      `json:"scheduler"`
 	CloudProvider       string                       `json:"cloudProvider"`
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
@@ -69,15 +69,10 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference    *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig, images map[string]string, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 	params := &KubeAPIServerParams{
-		APIServer:            globalConfig.APIServer,
-		FeatureGate:          globalConfig.FeatureGate,
-		Network:              globalConfig.Network,
-		Image:                globalConfig.Image,
-		Scheduler:            globalConfig.Scheduler,
 		ExternalAddress:      externalAPIAddress,
 		ExternalPort:         externalAPIPort,
 		InternalAddress:      fmt.Sprintf("api.%s.hypershift.local", hcp.Name),
@@ -98,6 +93,13 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			TokenMinterImage:      images["token-minter"],
 			AWSKMS:                images["aws-kms-provider"],
 		},
+	}
+	if hcp.Spec.Configuration != nil {
+		params.APIServer = hcp.Spec.Configuration.APIServer
+		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
+		params.Network = hcp.Spec.Configuration.Network
+		params.Image = hcp.Spec.Configuration.Image
+		params.Scheduler = hcp.Spec.Configuration.Scheduler
 	}
 	if hcp.Spec.APIAdvertiseAddress != nil {
 		params.AdvertiseAddress = *hcp.Spec.APIAdvertiseAddress
@@ -319,7 +321,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 
 func (p *KubeAPIServerParams) NamedCertificates() []configv1.APIServerNamedServingCert {
 	if p.APIServer != nil {
-		return p.APIServer.Spec.ServingCerts.NamedCertificates
+		return p.APIServer.ServingCerts.NamedCertificates
 	} else {
 		return []configv1.APIServerNamedServingCert{}
 	}
@@ -327,7 +329,7 @@ func (p *KubeAPIServerParams) NamedCertificates() []configv1.APIServerNamedServi
 
 func (p *KubeAPIServerParams) AuditPolicyProfile() configv1.AuditProfileType {
 	if p.APIServer != nil {
-		return p.APIServer.Spec.Audit.Profile
+		return p.APIServer.Audit.Profile
 	} else {
 		return configv1.DefaultAuditProfileType
 	}
@@ -350,7 +352,7 @@ func (p *KubeAPIServerParams) ExternalKubeconfigKey() string {
 
 func (p *KubeAPIServerParams) ExternalIPConfig() *configv1.ExternalIPConfig {
 	if p.Network != nil {
-		return p.Network.Spec.ExternalIP
+		return p.Network.ExternalIP
 	} else {
 		return nil
 	}
@@ -413,7 +415,7 @@ type KubeAPIServerConfigParams struct {
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {
 	if p.APIServer != nil {
-		return p.APIServer.Spec.TLSSecurityProfile
+		return p.APIServer.TLSSecurityProfile
 	}
 	return &configv1.TLSSecurityProfile{
 		Type:         configv1.TLSProfileIntermediateType,
@@ -423,7 +425,7 @@ func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile 
 
 func (p *KubeAPIServerParams) AdditionalCORSAllowedOrigins() []string {
 	if p.APIServer != nil {
-		return p.APIServer.Spec.AdditionalCORSAllowedOrigins
+		return p.APIServer.AdditionalCORSAllowedOrigins
 	}
 	return []string{}
 }
@@ -434,7 +436,7 @@ func (p *KubeAPIServerParams) InternalRegistryHostName() string {
 
 func (p *KubeAPIServerParams) ExternalRegistryHostNames() []string {
 	if p.Image != nil {
-		return p.Image.Spec.ExternalRegistryHostnames
+		return p.Image.ExternalRegistryHostnames
 	} else {
 		return []string{}
 	}
@@ -442,7 +444,7 @@ func (p *KubeAPIServerParams) ExternalRegistryHostNames() []string {
 
 func (p *KubeAPIServerParams) DefaultNodeSelector() string {
 	if p.Scheduler != nil {
-		return p.Scheduler.Spec.DefaultNodeSelector
+		return p.Scheduler.DefaultNodeSelector
 	} else {
 		return ""
 	}
@@ -458,7 +460,7 @@ func (p *KubeAPIServerParams) ServiceAccountIssuerURL() string {
 
 func (p *KubeAPIServerParams) FeatureGates() []string {
 	if p.FeatureGate != nil {
-		return config.FeatureGates(&p.FeatureGate.Spec.FeatureGateSelection)
+		return config.FeatureGates(&p.FeatureGate.FeatureGateSelection)
 	} else {
 		return config.FeatureGates(&configv1.FeatureGateSelection{
 			FeatureSet: configv1.Default,
@@ -467,8 +469,8 @@ func (p *KubeAPIServerParams) FeatureGates() []string {
 }
 
 func (p *KubeAPIServerParams) ServiceNodePortRange() string {
-	if p.Network != nil && len(p.Network.Spec.ServiceNodePortRange) > 0 {
-		return p.Network.Spec.ServiceNodePortRange
+	if p.Network != nil && len(p.Network.ServiceNodePortRange) > 0 {
+		return p.Network.ServiceNodePortRange
 	} else {
 		return config.DefaultServiceNodePortRange
 	}

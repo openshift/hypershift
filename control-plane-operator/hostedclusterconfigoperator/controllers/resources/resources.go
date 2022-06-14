@@ -159,11 +159,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		return ctrl.Result{}, nil
 	}
 
-	globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hcp.Spec.Configuration)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to parse global config for control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
-	}
-
 	pullSecret := manifests.PullSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
@@ -196,7 +191,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling guest cluster global configuration")
-	if err := r.reconcileConfig(ctx, hcp, globalConfig); err != nil {
+	if err := r.reconcileConfig(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile global configuration: %w", err))
 	}
 
@@ -224,7 +219,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling ingress controller")
-	if err := r.reconcileIngressController(ctx, hcp, globalConfig); err != nil {
+	if err := r.reconcileIngressController(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
 	}
 
@@ -409,7 +404,7 @@ func (r *reconciler) reconcileCRDs(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig) error {
+func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 
 	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
@@ -447,7 +442,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 
 	ingress := globalconfig.IngressConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingress, func() error {
-		globalconfig.ReconcileIngressConfig(ingress, hcp, globalConfig)
+		globalconfig.ReconcileIngressConfig(ingress, hcp)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress config: %w", err))
@@ -455,7 +450,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 
 	networkConfig := globalconfig.NetworkConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkConfig, func() error {
-		globalconfig.ReconcileNetworkConfig(networkConfig, hcp, globalConfig)
+		globalconfig.ReconcileNetworkConfig(networkConfig, hcp)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
@@ -463,7 +458,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 
 	proxy := globalconfig.ProxyConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, proxy, func() error {
-		globalconfig.ReconcileProxyConfig(proxy, hcp, globalConfig)
+		globalconfig.ReconcileProxyConfig(proxy, hcp.Spec.Configuration)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
@@ -564,9 +559,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane, globalConfig globalconfig.GlobalConfig) error {
+func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
-	p := ingress.NewIngressParams(hcp, globalConfig)
+	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
 		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, (hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI))
