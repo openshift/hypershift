@@ -313,19 +313,29 @@ func (r *TokenSecretReconciler) rotateToken(ctx context.Context, tokenSecret *co
 		patch.Annotations = make(map[string]string)
 	}
 
-	if _, ok := tokenSecret.Data[TokenSecretOldTokenKey]; ok {
-		r.PayloadStore.Delete(string(tokenSecret.Data[TokenSecretOldTokenKey]))
+	oldtoken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
+	if ok {
+		r.PayloadStore.Delete(string(oldtoken))
+
 	}
 
 	patch.Annotations[TokenSecretTokenGenerationTime] = rotationTime.Format(time.RFC3339Nano)
 	patch.Data[TokenSecretOldTokenKey] = tokenSecret.Data[TokenSecretTokenKey]
 	patch.Data[TokenSecretTokenKey] = []byte(newToken)
 
+	// Set the new token before patching the object. Otherwise, there is a race: if the secret is reconciled
+	// before the value is set in the cache the new token would require a new payload generation in that reconciliation.
+	r.PayloadStore.Set(newToken, value)
+
 	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+		// If token patch operation fails, consistently restore the cache.
+		// Otherwise, the next reconciliation the token would require a new payload generation because
+		// it wouldn't be in the cache anymore.
+		r.PayloadStore.Delete(newToken)
+		r.PayloadStore.Set(string(oldtoken), value)
 		return err
 	}
 
-	r.PayloadStore.Set(newToken, value)
 	return nil
 }
 
