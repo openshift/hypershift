@@ -67,7 +67,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 		util.BuildContainer(etcdContainer(), buildEtcdContainer(p, ss.Namespace)),
 	}
 
-	if len(p.StorageSpec.RestoreSnapshotURL) > 0 {
+	if len(p.StorageSpec.RestoreSnapshotURL) > 0 && !p.SnapshotRestored {
 		ss.Spec.Template.Spec.InitContainers = []corev1.Container{
 			util.BuildContainer(etcdInitContainer(), buildEtcdInitContainer(p)),
 		}

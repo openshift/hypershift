@@ -2649,6 +2649,8 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
+<td></td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.</p>
