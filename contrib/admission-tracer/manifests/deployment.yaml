@@ -17,7 +17,7 @@ spec:
       - command:
         - /usr/bin/admission-tracer
         image: quay.io/sjenning/admission-tracer:latest
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         name: admission-tracer
         ports:
         - containerPort: 9443
