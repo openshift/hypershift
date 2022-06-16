@@ -2131,6 +2131,12 @@ ClusterConfiguration specified for the HostedCluster is valid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ValidReleaseImage&#34;</p></td>
+<td><p>ValidReleaseImage indicates if the release image set in the spec is valid
+for the HostedCluster. For example, this can be set false if the
+HostedCluster itself attempts an unsupported version before 4.9 or an
+unsupported upgrade e.g y-stream upgrade before 4.11.</p>
+</td>
 </tr></tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1alpha1.DNSSpec }
