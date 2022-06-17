@@ -28,7 +28,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.PowerVSPlatform = core.PowerVSPlatformOptions{
-		APIKey:     os.Getenv("IBMCLOUD_API_KEY"),
 		Region:     "us-south",
 		Zone:       "us-south",
 		VpcRegion:  "us-south",
@@ -83,6 +82,12 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 }
 
 func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
+	var err error
+	opts.PowerVSPlatform.APIKey, err = powervsinfra.GetAPIKey()
+	if err != nil {
+		return fmt.Errorf("error retrieving IBM Cloud API Key %w", err)
+	}
+
 	if err := validate(opts); err != nil {
 		return err
 	}
@@ -98,8 +103,9 @@ func validate(opts *core.CreateOptions) error {
 	}
 
 	if opts.PowerVSPlatform.APIKey == "" {
-		return fmt.Errorf("IBMCLOUD_API_KEY not set")
+		return fmt.Errorf("cloud API Key not set. Set it with IBMCLOUD_API_KEY env var or set file path containing API Key credential in IBMCLOUD_CREDENTIALS")
 	}
+
 	return nil
 }
 

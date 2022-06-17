@@ -64,7 +64,7 @@ func TestAutoscaling(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 	// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// find the zone value. This might not be identical to the zone value passed
 	// in during node creation, e.G. in azure this is $region-$zone, on AWS it is
@@ -126,7 +126,7 @@ func TestAutoscaling(t *testing.T) {
 	// Wait for one more node.
 	// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
 	numNodes = numNodes + 1
-	_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Delete workload.
 	cascadeDelete := metav1.DeletePropagationForeground
@@ -138,7 +138,7 @@ func TestAutoscaling(t *testing.T) {
 
 	// Wait for one less node.
 	numNodes = numNodes - 1
-	_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 }
 
 func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, image string, zone string) *batchv1.Job {

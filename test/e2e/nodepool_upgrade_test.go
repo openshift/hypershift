@@ -73,7 +73,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 
 	// Wait for Nodes to be Ready.
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the first rollout to be complete and refresh the HostedCluster.
 	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
@@ -122,7 +122,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 	// Wait for at least 1 Node to be unready, so we know the process is started.
 	e2eutil.WaitForNUnReadyNodes(t, ctx, guestClient, 1)
 	t.Log("Upgrade has stated as at least 1 Node to is unready")
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for NodePools to roll out the latest version
 	// TODO: Consider doing this in parallel
@@ -180,7 +180,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 
 	// Wait for Nodes to be Ready
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the first rollout to be complete and refresh the hostedcluster
 	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
@@ -229,7 +229,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 	// Wait for at least 1 Node to be unready, so we know the process is started.
 	e2eutil.WaitForNUnReadyNodes(t, ctx, guestClient, 1)
 	t.Log("Upgrade has started as at least 1 Node to is unready")
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for NodePools to roll out the latest version.
 	// TODO: Consider doing this in parallel

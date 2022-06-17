@@ -28,7 +28,7 @@ import (
 	hypershiftLog "github.com/openshift/hypershift/cmd/log"
 )
 
-var cloudApiKey = os.Getenv("IBMCLOUD_API_KEY")
+var cloudApiKey string
 
 const (
 	// Resource name suffix for creation
@@ -245,15 +245,38 @@ func checkUnsupportedPowerVSZone(zone string) (err error) {
 	return
 }
 
+func GetAPIKey() (string, error) {
+	apiKey := os.Getenv("IBMCLOUD_API_KEY")
+	if apiKey != "" {
+		return apiKey, nil
+	}
+	apiKeyCredFile := os.Getenv("IBMCLOUD_CREDENTIALS")
+	if apiKeyCredFile != "" {
+		data, err := os.ReadFile(apiKeyCredFile)
+		if err != nil {
+			return "", fmt.Errorf("error reading from IBMCLOUD_CREDENTIALS file %s: %w", apiKeyCredFile, err)
+		}
+		apiKey = strings.Trim(string(data), "\n")
+		return apiKey, nil
+	}
+
+	return "", nil
+}
+
 // SetupInfra infra creation orchestration
 func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 	startTime := time.Now()
 
 	log(options.InfraID).Info("Setup infra started")
 
-	// if IBMCLOUD_API_KEY is not set, infra cannot be set up.
+	cloudApiKey, err = GetAPIKey()
+	if err != nil {
+		return fmt.Errorf("error retrieving IBM Cloud API Key: %w", err)
+	}
+
+	// if CLOUD API KEY is not set, infra cannot be set up.
 	if cloudApiKey == "" {
-		return fmt.Errorf("IBMCLOUD_API_KEY not set")
+		return fmt.Errorf("cloud API Key not set. Set it with IBMCLOUD_API_KEY env var or set file path containing API Key credential in IBMCLOUD_CREDENTIALS")
 	}
 
 	infra.AccountID, err = getAccount(getIAMAuth())

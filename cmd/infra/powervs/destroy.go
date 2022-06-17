@@ -128,9 +128,14 @@ func (options *DestroyInfraOptions) Run(ctx context.Context) (err error) {
 func (options *DestroyInfraOptions) DestroyInfra(infra *Infra) (err error) {
 	log(options.InfraID).Info("Destroy Infra Started")
 
-	// if IBMCLOUD_API_KEY is not set, infra cannot be set up.
+	cloudApiKey, err = GetAPIKey()
+	if err != nil {
+		return fmt.Errorf("error retrieving IBM Cloud API Key: %w", err)
+	}
+
+	// if CLOUD API KEY is not set, infra cannot be set up.
 	if cloudApiKey == "" {
-		return fmt.Errorf("IBMCLOUD_API_KEY not set")
+		return fmt.Errorf("cloud API Key not set. Set it with IBMCLOUD_API_KEY env var or set file path containing API Key credential in IBMCLOUD_CREDENTIALS")
 	}
 
 	accountID, err := getAccount(getIAMAuth())
@@ -173,7 +178,11 @@ func (options *DestroyInfraOptions) DestroyInfra(infra *Infra) (err error) {
 		cloudInstanceName := fmt.Sprintf("%s-%s", options.InfraID, cloudInstanceNameSuffix)
 		cloudInstance, err := validateCloudInstanceByName(cloudInstanceName, resourceGroupID, options.PowerVSZone, serviceID, servicePlanID)
 		if err != nil {
-			errL = append(errL, err)
+			if err.Error() == cloudInstanceNotFound(cloudInstanceName).Error() {
+				log(options.InfraID).Info("No PowerVS Service Instance available to delete")
+			} else {
+				errL = append(errL, err)
+			}
 			skipPowerVs = true
 		}
 		if cloudInstance != nil {
@@ -282,7 +291,8 @@ func destroyPowerVsDhcpServer(infra *Infra, cloudInstanceID string, session *ibm
 	}
 
 	if dhcpServers == nil || len(dhcpServers) < 1 {
-		return fmt.Errorf("no dhcp servers available to delete in powervs")
+		log(infraID).Info("No DHCP servers available to delete in PowerVS")
+		return nil
 	}
 
 	dhcpID := *dhcpServers[0].ID
@@ -420,7 +430,8 @@ func destroyPowerVsCloudConnection(options *DestroyInfraOptions, infra *Infra, c
 		}
 
 		if len(cloudConnL.CloudConnections) < 1 {
-			return fmt.Errorf("no cloud connection available to unset in powervs")
+			log(options.InfraID).Info("No Cloud Connection available to delete in PowerVS")
+			return nil
 		}
 
 		for _, cloudConn := range cloudConnL.CloudConnections {
@@ -470,7 +481,8 @@ func destroyPowerVsCloudConnection(options *DestroyInfraOptions, infra *Infra, c
 		}
 
 		if len(cloudConnL.CloudConnections) < 1 {
-			return fmt.Errorf("no cloud connection available to delete in powervs")
+			log(options.InfraID).Info("No Cloud Connection available to delete in PowerVS")
+			return nil
 		}
 
 		cloudConnName = fmt.Sprintf("%s-%s", options.InfraID, cloudConnNameSuffix)
@@ -515,8 +527,8 @@ func destroyVpc(options *DestroyInfraOptions, infra *Infra, resourceGroupID stri
 		}
 
 		if vpcL == nil || len(vpcL.Vpcs) <= 0 {
-			err = fmt.Errorf("no vpcs available")
-			return
+			log(infraID).Info("No VPC available to delete")
+			return true, "", nil
 		}
 
 		// Will attempt VPC deletion only if the VPC is created by this script by matching the VPC naming convention followed by this script
@@ -565,8 +577,8 @@ func destroyVpcSubnet(options *DestroyInfraOptions, infra *Infra, resourceGroupI
 		}
 
 		if subnetL == nil || len(subnetL.Subnets) <= 0 {
-			err = fmt.Errorf("no subnets available")
-			return
+			log(infraID).Info("No VPC Subnets available to delete")
+			return true, "", nil
 		}
 
 		// Consider deleting only if the subnet created by this script by matching the VPC naming convention followed by this script
@@ -654,7 +666,7 @@ func destroyVpcLB(options *DestroyInfraOptions, subnetID string, v1 *vpcv1.VpcV1
 		}
 
 		if loadBalancerL == nil || len(loadBalancerL.LoadBalancers) <= 0 {
-			log(options.InfraID).Info("no load balancers available")
+			log(options.InfraID).Info("No Load Balancers available to delete")
 			return true, "", nil
 		}
 
