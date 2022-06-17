@@ -37,6 +37,14 @@ const (
 	// while the expired ones get eventually garbageCollected.
 	// https://github.com/kubernetes-sigs/controller-runtime/blob/1e4d87c9f9e15e4a58bb81909dd787f30ede7693/pkg/cache/cache.go#L118
 	ttl = time.Hour * 11
+	// the background cache removal process should only remove tokens when it is guaranteed the token has been rotated, expired,
+	// and the local Kube client secret cache that the ignition server utilizes is updated with the new rotated content.
+	// On every PayloadStore.Get() call: cache entries are scanned and all expired entries are removed completing the rotation process.
+	// Three hours is determined from the time an old nodepool config token is allowed to persist to process in
+	// flight provisioning requests: https://github.com/openshift/hypershift/blob/f5a193216ba9bd9f8d9926ad779fabb94f07ab31/hypershift-operator/controllers/nodepool/nodepool_controller.go#L1728
+	// plus some additional time (1 hour) to give a chance for the secret to be explicitly deleted and kube client secret cache updated.
+	// This is necessary to prevent extra periodic unnecessary registry pull requests of the mco image which is significant in size (approximately 440 Megabytes).
+	cacheExpirationTime = ttl + (time.Hour * 3)
 )
 
 var (
@@ -65,7 +73,7 @@ func init() {
 func NewPayloadStore() *ExpiringCache {
 	return &ExpiringCache{
 		cache:   make(map[string]*entry),
-		ttl:     ttl,
+		ttl:     cacheExpirationTime,
 		RWMutex: sync.RWMutex{},
 	}
 }
@@ -321,13 +329,6 @@ func (r *TokenSecretReconciler) rotateToken(ctx context.Context, tokenSecret *co
 	if patch.Annotations == nil {
 		patch.Annotations = make(map[string]string)
 	}
-
-	oldtoken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
-	if ok {
-		r.PayloadStore.Delete(string(oldtoken))
-
-	}
-
 	patch.Annotations[TokenSecretTokenGenerationTime] = rotationTime.Format(time.RFC3339Nano)
 	patch.Data[TokenSecretOldTokenKey] = tokenSecret.Data[TokenSecretTokenKey]
 	patch.Data[TokenSecretTokenKey] = []byte(newToken)
@@ -337,11 +338,8 @@ func (r *TokenSecretReconciler) rotateToken(ctx context.Context, tokenSecret *co
 	r.PayloadStore.Set(newToken, value)
 
 	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
-		// If token patch operation fails, consistently restore the cache.
-		// Otherwise, the next reconciliation the token would require a new payload generation because
-		// it wouldn't be in the cache anymore.
+		// If token patch operation fails, token data should not be stored
 		r.PayloadStore.Delete(newToken)
-		r.PayloadStore.Set(string(oldtoken), value)
 		return err
 	}
 
