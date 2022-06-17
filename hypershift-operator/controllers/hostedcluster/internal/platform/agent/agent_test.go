@@ -3,15 +3,24 @@ package agent
 import (
 	"context"
 	"fmt"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/upsert"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func TestReconcileCredentials(t *testing.T) {
@@ -93,4 +102,91 @@ func TestDeleteCredentials(t *testing.T) {
 		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
 	}, roleBinding)
 	g.Expect(apierrors.IsNotFound(err)).To(Equal(true))
+}
+
+func TestReconcileCAPIInfraCR(t *testing.T) {
+	hostedClusterNamespace := "clusters"
+	hostedClusterName := "hc1"
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName).Name
+
+	ignitionEndpoint := "ign"
+	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
+
+	APIEndpoint := hyperv1.APIEndpoint{
+		Host: "example.com",
+		Port: 443,
+	}
+
+	tests := map[string]struct {
+		hostedCluster         *hyperv1.HostedCluster
+		APIEndpoint           hyperv1.APIEndpoint
+		controlPlaneNamespace string
+		expectedObject        client.Object
+	}{
+		"When no ign endpoint it should not create infra cluster": {
+			controlPlaneNamespace: controlPlaneNamespace,
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: hostedClusterNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AgentPlatform,
+					},
+				},
+			},
+			APIEndpoint:    APIEndpoint,
+			expectedObject: nil,
+		},
+		"When ign endpoint exists it should create infra cluster": {
+			controlPlaneNamespace: controlPlaneNamespace,
+			hostedCluster: &hyperv1.HostedCluster{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: hostedClusterNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AgentPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: ignitionEndpoint,
+				},
+			},
+			APIEndpoint: APIEndpoint,
+			expectedObject: &agentv1.AgentCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlPlaneNamespace,
+					Name:      hostedClusterName,
+					// since resource created through fakeclient this is set to 1 to ensure the struct compare works
+					ResourceVersion: "1",
+				},
+				Spec: agentv1.AgentClusterSpec{
+					IgnitionEndpoint: &agentv1.IgnitionEndpoint{
+						Url:                    "https://" + ignitionEndpoint + "/ignition",
+						CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
+					},
+					ControlPlaneEndpoint: capiv1.APIEndpoint{
+						Port: APIEndpoint.Port,
+						Host: APIEndpoint.Host,
+					},
+				},
+				Status: agentv1.AgentClusterStatus{},
+			},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+			goInfraCR, err := Agent{}.ReconcileCAPIInfraCR(context.Background(), client, controllerutil.CreateOrUpdate, test.hostedCluster, test.controlPlaneNamespace, test.APIEndpoint)
+			g.Expect(err).To(Not(HaveOccurred()))
+			if diff := cmp.Diff(goInfraCR, test.expectedObject); diff != "" {
+				t.Errorf("got and expected differ: %s", diff)
+			}
+		})
+	}
 }
