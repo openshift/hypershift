@@ -918,6 +918,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
 				},
 			},
+			Status: hyperv1.HostedClusterStatus{
+				IgnitionEndpoint: "ign",
+			},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "aws"},

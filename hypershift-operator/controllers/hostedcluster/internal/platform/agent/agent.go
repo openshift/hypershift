@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
-
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 	appsv1 "k8s.io/api/apps/v1"
@@ -36,9 +34,13 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
 
-	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
-	if err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
-		return nil, fmt.Errorf("failed to get control plane ref: %w", err)
+	// Ensure we create the agentCluster only after ignition endpoint exists
+	// so AgentClusterInstall is only created with the right ign to boot machines.
+	// https://bugzilla.redhat.com/show_bug.cgi?id=2097895
+	// https://github.com/openshift/assisted-service/blob/241ad46db74add5f16e153f5f7ba0a5496fb06ba/pkg/validating-webhooks/hiveextension/v1beta1/agentclusterinstall_admission_hook.go#L185
+	// https://github.com/openshift/cluster-api-provider-agent/blob/master/controllers/agentcluster_controller.go#L126
+	if hcluster.Status.IgnitionEndpoint == "" {
+		return nil, nil
 	}
 
 	agentCluster := &agentv1.AgentCluster{
@@ -49,7 +51,7 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	}
 
 	_, err := createOrUpdate(ctx, c, agentCluster, func() error {
-		return reconcileAgentCluster(agentCluster, hcluster, hcp)
+		return reconcileAgentCluster(agentCluster, hcluster.Status.IgnitionEndpoint, controlPlaneNamespace, apiEndpoint)
 	})
 	if err != nil {
 		return nil, err
@@ -189,16 +191,15 @@ func (Agent) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	}
 }
 
-func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
-	caSecret := ignitionserver.IgnitionCACertSecret(hcp.Namespace)
-	if hcluster.Status.IgnitionEndpoint != "" {
-		agentCluster.Spec.IgnitionEndpoint = &agentv1.IgnitionEndpoint{
-			Url:                    "https://" + hcluster.Status.IgnitionEndpoint + "/ignition",
-			CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace}}
-	}
+func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, ignEndpoint, controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) error {
+	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
+	agentCluster.Spec.IgnitionEndpoint = &agentv1.IgnitionEndpoint{
+		Url:                    "https://" + ignEndpoint + "/ignition",
+		CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace}}
+
 	agentCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
-		Host: hcp.Status.ControlPlaneEndpoint.Host,
-		Port: hcp.Status.ControlPlaneEndpoint.Port,
+		Host: apiEndpoint.Host,
+		Port: apiEndpoint.Port,
 	}
 
 	return nil
