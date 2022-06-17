@@ -15,6 +15,9 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	r := &Reconciler{
 		client:                 opts.CPCluster.GetClient(),
 		guestClusterClient:     opts.Manager.GetClient(),
+		releaseProvider:        opts.ReleaseProvider,
+		hcpName:                opts.HCPName,
+		hcpNamespace:           opts.Namespace,
 		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,
 	}
 	c, err := controller.New("inplaceupgrader", opts.Manager, controller.Options{Reconciler: r})
