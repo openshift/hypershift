@@ -129,6 +129,9 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 		args.Set("audit-webhook-config-file", auditWebhookConfigFile())
 		args.Set("audit-webhook-mode", "batch")
 	}
+	if p.DisableProfiling {
+		args.Set("profiling", "false")
+	}
 	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
 	args.Set("enable-admission-plugins", admissionPlugins()...)
 	if version.Minor == 10 || version.Minor == 11 {
