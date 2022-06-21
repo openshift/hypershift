@@ -130,7 +130,7 @@ app-sre-saas-template: hypershift
 		--oidc-storage-provider-s3-secret=oidc-s3-creds \
 		--oidc-storage-provider-s3-region=us-east-1 \
 		--oidc-storage-provider-s3-secret-key=credentials \
-		--enable-ocp-cluster-monitoring=false \
+		--platform-monitoring=None \
 		--enable-ci-debug-output=false \
 		--enable-admin-rbac-generation=true \
 		--private-platform=AWS \
