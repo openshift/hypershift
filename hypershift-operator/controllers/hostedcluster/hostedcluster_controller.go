@@ -591,7 +591,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// This check can be expensive looking up release image versions
 		// (hopefully they are cached).  Skip if we have already observed for
 		// this generation.
-		if condition == nil || condition.ObservedGeneration != hcluster.Generation {
+		if condition == nil || condition.ObservedGeneration != hcluster.Generation || condition.Status != metav1.ConditionTrue {
 			condition := metav1.Condition{
 				Type:               string(hyperv1.ValidReleaseImage),
 				ObservedGeneration: hcluster.Generation,
