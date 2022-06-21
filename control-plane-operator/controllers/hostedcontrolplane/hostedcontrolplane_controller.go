@@ -16,6 +16,9 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/ccm"
+	ccmplatform "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/ccm/platform"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/powervs"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cno"
@@ -1291,6 +1294,18 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
 		}
+	case hyperv1.KubevirtPlatform:
+		kubeconfig, err := kubevirt.CreateInClusterConfig(ctx, hcp, r.Client, r.CreateOrUpdate)
+		if err != nil {
+			return fmt.Errorf("failed to create Kubeconfig for Service Account: %w", err)
+		}
+
+		ccmConfig := manifests.CCMConfigMap(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, ccmConfig, func() error {
+			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp, kubeconfig)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud config: %w", err)
+		}
 	}
 	return nil
 }
@@ -2512,6 +2527,15 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return powervs.ReconcileCCMDeployment(deployment, hcp, ccmConfig, releaseImage)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile cloud controller manager deployment: %w", err)
+		}
+	}
+	ccmPlatform := ccmplatform.GetPlatform(hcp)
+	if ccmPlatform != nil {
+		deployment := manifests.CCMDeployment(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
+			return ccm.ReconcileDeployment(deployment, hcp, ccmPlatform)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ccm deployment: %w", err)
 		}
 	}
 	return nil

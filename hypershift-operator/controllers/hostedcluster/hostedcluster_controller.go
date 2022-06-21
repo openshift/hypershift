@@ -1576,6 +1576,24 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
 	}
 
+	// Reconcile operator cluster role
+	controlPlaneOperatorClusterRole := controlplaneoperator.OperatorClusterRole()
+	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRole, func() error {
+		return reconcileControlPlaneOperatorClusterRole(controlPlaneOperatorClusterRole)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator cluster role: %w", err)
+	}
+
+	// Reconcile operator cluster role binding
+	controlPlaneOperatorClusterRoleBinding := controlplaneoperator.OperatorClusterRoleBinding()
+	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRoleBinding, func() error {
+		return reconcileControlPlaneOperatorClusterRoleBinding(controlPlaneOperatorClusterRoleBinding, controlPlaneOperatorClusterRole, controlPlaneOperatorServiceAccount)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator cluster rolebinding: %w", err)
+	}
+
 	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		// Reconcile operator role - for ingress
@@ -2135,6 +2153,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Resources: []string{"customresourcedefinitions"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		{
+			APIGroups: []string{"kubevirt.io"},
+			Resources: []string{"virtualmachines", "virtualmachineinstances"},
+			Verbs:     []string{rbacv1.VerbAll},
+		},
 	}
 	return nil
 }
@@ -2143,6 +2166,53 @@ func reconcileControlPlaneOperatorRoleBinding(binding *rbacv1.RoleBinding, role 
 	binding.RoleRef = rbacv1.RoleRef{
 		APIGroup: "rbac.authorization.k8s.io",
 		Kind:     "Role",
+		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+
+	return nil
+}
+
+func reconcileControlPlaneOperatorClusterRole(role *rbacv1.ClusterRole) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"rbac.authorization.k8s.io"},
+			Resources: []string{
+				"clusterroles",
+				"clusterroles/finalizers",
+				"clusterrolebindings",
+				"clusterrolebindings/finalizers",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"create",
+				"update",
+				"patch",
+				"delete",
+			},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"nodes"},
+			Verbs:     []string{"get"},
+		},
+	}
+	return nil
+}
+
+func reconcileControlPlaneOperatorClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, role *rbacv1.ClusterRole, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "ClusterRole",
 		Name:     role.Name,
 	}
 
