@@ -347,7 +347,8 @@ func (o *CreateInfraOptions) CreateNATGateway(client ec2iface.EC2API, publicSubn
 
 	isNATGatewayRetriable := func(err error) bool {
 		if awsErr, ok := err.(awserr.Error); ok {
-			return strings.EqualFold(awsErr.Code(), invalidSubnet)
+			return strings.EqualFold(awsErr.Code(), invalidSubnet) ||
+				strings.EqualFold(awsErr.Code(), invalidElasticIPNotFound)
 		}
 		return false
 	}

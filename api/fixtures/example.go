@@ -412,6 +412,14 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 
 	case o.PowerVS != nil:
 		buildIBMCloudCreds := func(name, apikey string) *corev1.Secret {
+			data := map[string][]byte{
+				"ibm-credentials.env": []byte(fmt.Sprintf(`IBMCLOUD_AUTH_TYPE=iam
+ IBMCLOUD_APIKEY=%s
+ IBMCLOUD_AUTH_URL=https://iam.cloud.ibm.com
+ `, apikey)),
+				"ibmcloud_api_key": []byte(apikey),
+			}
+
 			return &corev1.Secret{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Secret",
@@ -421,12 +429,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					Namespace: namespace.Name,
 					Name:      name,
 				},
-				Data: map[string][]byte{
-					"ibm-credentials.env": []byte(fmt.Sprintf(`IBMCLOUD_AUTH_TYPE=iam
- IBMCLOUD_APIKEY=%s
- IBMCLOUD_AUTH_URL=https://iam.cloud.ibm.com
- `, apikey)),
-				},
+				Data: data,
 			}
 		}
 
@@ -440,6 +443,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.PowerVSPlatform,
 			PowerVS: &hyperv1.PowerVSPlatformSpec{
+				AccountID:         o.PowerVS.AccountID,
 				ResourceGroup:     o.PowerVS.ResourceGroup,
 				Region:            o.PowerVS.Region,
 				Zone:              o.PowerVS.Zone,
@@ -453,9 +457,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					Region: o.PowerVS.VpcRegion,
 					Subnet: o.PowerVS.VpcSubnet,
 				},
-				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerPowerVSCreds.Name},
-				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementPowerVSCreds.Name},
-				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorPowerVSCreds.Name},
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementCreds.Name},
+				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorCreds.Name},
 			},
 		}
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType)

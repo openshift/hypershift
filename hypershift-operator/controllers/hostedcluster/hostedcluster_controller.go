@@ -584,6 +584,31 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	meta.SetStatusCondition(&hcluster.Status.Conditions, util.GenerateReconciliationPausedCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
+	// Set ValidReleaseImage condition
+	{
+		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
+
+		// This check can be expensive looking up release image versions
+		// (hopefully they are cached).  Skip if we have already observed for
+		// this generation.
+		if condition == nil || condition.ObservedGeneration != hcluster.Generation || condition.Status != metav1.ConditionTrue {
+			condition := metav1.Condition{
+				Type:               string(hyperv1.ValidReleaseImage),
+				ObservedGeneration: hcluster.Generation,
+			}
+			if err := r.validateReleaseImage(ctx, hcluster); err != nil {
+				condition.Status = metav1.ConditionFalse
+				condition.Message = err.Error()
+				condition.Reason = hyperv1.InvalidImageReason
+			} else {
+				condition.Status = metav1.ConditionTrue
+				condition.Message = "Release image is valid"
+				condition.Reason = hyperv1.AsExpectedReason
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		}
+	}
+
 	// Persist status updates
 	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 		if apierrors.IsConflict(err) {
@@ -633,12 +658,17 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	{
 		validConfig := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
-			log.Info("Configuration is invalid, reconciliation is blocked", "message", validConfig.Message)
+			log.Error(fmt.Errorf("configuration is invalid"), "reconciliation is blocked", "message", validConfig.Message)
 			return ctrl.Result{}, nil
 		}
 		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
 		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
-			log.Info("Hosted Cluster is not supported by operator configuration, reconciliation is blocked", "message", supportedHostedCluster.Message)
+			log.Error(fmt.Errorf("not supported by operator configuration"), "reconciliation is blocked", "message", supportedHostedCluster.Message)
+			return ctrl.Result{}, nil
+		}
+		validReleaseImage := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
+		if validReleaseImage != nil && validReleaseImage.Status == metav1.ConditionFalse {
+			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 			return ctrl.Result{}, nil
 		}
 	}
@@ -1237,6 +1267,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcluster.Spec.Networking.APIServer != nil {
 		hcp.Spec.APIAdvertiseAddress = hcluster.Spec.Networking.APIServer.AdvertiseAddress
 		hcp.Spec.APIPort = hcluster.Spec.Networking.APIServer.Port
+		hcp.Spec.APIAllowedCIDRBlocks = hcluster.Spec.Networking.APIServer.AllowedCIDRBlocks
 	}
 
 	hcp.Spec.ClusterID = hcluster.Spec.ClusterID
@@ -2062,6 +2093,12 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"list",
 				"watch",
 			},
+		},
+		{
+			APIGroups:     []string{"security.openshift.io"},
+			ResourceNames: []string{"hostnetwork"},
+			Resources:     []string{"securitycontextconstraints"},
+			Verbs:         []string{"use"},
 		},
 	}
 	return nil
@@ -3228,6 +3265,54 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+
+	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	version, err := semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return err
+	}
+
+	var currentVersion *semver.Version
+	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != hc.Spec.Release.Image {
+		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
+		if err != nil {
+			return fmt.Errorf("failed to lookup release image: %w", err)
+		}
+		version, err := semver.Parse(releaseInfo.Version())
+		if err != nil {
+			return err
+		}
+		currentVersion = &version
+	}
+
+	return isValidReleaseVersion(version, currentVersion, hc.Spec.Networking.NetworkType)
+}
+
+func isValidReleaseVersion(version semver.Version, currentVersion *semver.Version, networkType hyperv1.NetworkType) error {
+	if version.LT(semver.MustParse("4.8.0")) {
+		return fmt.Errorf("releases before 4.8 are not supported")
+	}
+	if currentVersion != nil && currentVersion.Minor > version.Minor {
+		return fmt.Errorf("y-stream downgrade is not supported")
+	}
+	if networkType == hyperv1.OpenShiftSDN && currentVersion != nil && currentVersion.Minor < version.Minor {
+		return fmt.Errorf("y-stream upgrade is not for OpenShiftSDN")
+	}
+	return nil
 }
 
 func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {

@@ -20306,6 +20306,15 @@ objects:
                             associated with the loopback adapter of each node. If
                             not specified, 172.20.0.1 is used.
                           type: string
+                        allowedCIDRBlocks:
+                          description: AllowedCIDRBlocks is an allow list of CIDR
+                            blocks that can access the APIServer If not specified,
+                            traffic is allowed from all addresses. This depends on
+                            underlying support by the cloud provider for Service LoadBalancerSourceRanges
+                          items:
+                            pattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$
+                            type: string
+                          type: array
                         port:
                           description: Port is the port at which the APIServer is
                             exposed inside a node. Other pods using host networking
@@ -20620,14 +20629,16 @@ objects:
                         on IBMCloud Power VS Service. This field is immutable. Once
                         set, It can't be changed.
                       properties:
+                        accountID:
+                          description: AccountID is the IBMCloud account id. This
+                            field is immutable. Once set, It can't be changed.
+                          type: string
                         controlPlaneOperatorCreds:
                           description: "ControlPlaneOperatorCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the control-plane-operator policy. The secret
-                            should have exactly one key, `credentials`, whose value
-                            is an AWS credentials file. This field is immutable. Once
-                            set, It can't be changed. \n TODO(dan): document the \"control
-                            plane operator policy\""
+                            matching the control-plane-operator policy. This field
+                            is immutable. Once set, It can't be changed. \n TODO(dan):
+                            document the \"control plane operator policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -20637,11 +20648,9 @@ objects:
                         kubeCloudControllerCreds:
                           description: "KubeCloudControllerCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the cloud controller policy. The secret should
-                            have exactly one key, `credentials`, whose value is an
-                            AWS credentials file. This field is immutable. Once set,
-                            It can't be changed. \n TODO(dan): document the \"cloud
-                            controller policy\""
+                            matching the cloud controller policy. This field is immutable.
+                            Once set, It can't be changed. \n TODO(dan): document
+                            the \"cloud controller policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -20651,11 +20660,9 @@ objects:
                         nodePoolManagementCreds:
                           description: "NodePoolManagementCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the node pool management policy. The secret should
-                            have exactly one key, `credentials`, whose value is an
-                            AWS credentials file. This field is immutable. Once set,
-                            It can't be changed. \n TODO(dan): document the \"node
-                            pool management policy\""
+                            matching the node pool management policy. This field is
+                            immutable. Once set, It can't be changed. \n TODO(dan):
+                            document the \"node pool management policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -20732,6 +20739,7 @@ objects:
                             Once set, It can't be changed.
                           type: string
                       required:
+                      - accountID
                       - controlPlaneOperatorCreds
                       - kubeCloudControllerCreds
                       - nodePoolManagementCreds
@@ -21366,6 +21374,15 @@ objects:
                   description: APIAdvertiseAddress is the address at which the APIServer
                     listens inside a worker.
                   type: string
+                apiAllowedCIDRBlocks:
+                  description: APIAllowedCIDRBlocks is an allow list of CIDR blocks
+                    that can access the APIServer If not specified, traffic is allowed
+                    from all addresses. This depends on underlying support by the
+                    cloud provider for Service LoadBalancerSourceRanges
+                  items:
+                    pattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$
+                    type: string
+                  type: array
                 apiPort:
                   description: APIPort is the port at which the APIServer listens
                     inside a worker
@@ -21891,14 +21908,16 @@ objects:
                         on IBMCloud Power VS Service. This field is immutable. Once
                         set, It can't be changed.
                       properties:
+                        accountID:
+                          description: AccountID is the IBMCloud account id. This
+                            field is immutable. Once set, It can't be changed.
+                          type: string
                         controlPlaneOperatorCreds:
                           description: "ControlPlaneOperatorCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the control-plane-operator policy. The secret
-                            should have exactly one key, `credentials`, whose value
-                            is an AWS credentials file. This field is immutable. Once
-                            set, It can't be changed. \n TODO(dan): document the \"control
-                            plane operator policy\""
+                            matching the control-plane-operator policy. This field
+                            is immutable. Once set, It can't be changed. \n TODO(dan):
+                            document the \"control plane operator policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -21908,11 +21927,9 @@ objects:
                         kubeCloudControllerCreds:
                           description: "KubeCloudControllerCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the cloud controller policy. The secret should
-                            have exactly one key, `credentials`, whose value is an
-                            AWS credentials file. This field is immutable. Once set,
-                            It can't be changed. \n TODO(dan): document the \"cloud
-                            controller policy\""
+                            matching the cloud controller policy. This field is immutable.
+                            Once set, It can't be changed. \n TODO(dan): document
+                            the \"cloud controller policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -21922,11 +21939,9 @@ objects:
                         nodePoolManagementCreds:
                           description: "NodePoolManagementCreds is a reference to
                             a secret containing cloud credentials with permissions
-                            matching the node pool management policy. The secret should
-                            have exactly one key, `credentials`, whose value is an
-                            AWS credentials file. This field is immutable. Once set,
-                            It can't be changed. \n TODO(dan): document the \"node
-                            pool management policy\""
+                            matching the node pool management policy. This field is
+                            immutable. Once set, It can't be changed. \n TODO(dan):
+                            document the \"node pool management policy\""
                           properties:
                             name:
                               description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -22003,6 +22018,7 @@ objects:
                             Once set, It can't be changed.
                           type: string
                       required:
+                      - accountID
                       - controlPlaneOperatorCreds
                       - kubeCloudControllerCreds
                       - nodePoolManagementCreds
@@ -22633,7 +22649,7 @@ objects:
                   description: "Config is a list of references to ConfigMaps containing
                     serialized MachineConfig resources to be injected into the ignition
                     configurations of nodes in the NodePool. The MachineConfig API
-                    schema is defined here: \n https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172
+                    schema is defined here: \n https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
                     \n Each ConfigMap must have a single key named \"config\" whose
                     value is the JSON or YAML of a serialized MachineConfig."
                   items:
@@ -23393,6 +23409,7 @@ objects:
     - get
     - list
     - watch
+    - use
   - apiGroups:
     - rbac.authorization.k8s.io
     resources:

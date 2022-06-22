@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -15,6 +16,8 @@ var _ releaseinfo.ProviderWithRegistryOverrides = &FakeReleaseProvider{}
 type FakeReleaseProvider struct {
 	// Version of the returned release iamge. Defaults to 4.10.0 if unset.
 	Version string
+	// Allows image-based versioning
+	ImageVersion map[string]string
 }
 
 func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
@@ -35,10 +38,17 @@ func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecr
 			},
 		},
 	}
-	if f.Version != "" {
-		releaseImage.ImageStream.Name = f.Version
+	if len(f.ImageVersion) == 0 {
+		if f.Version != "" {
+			releaseImage.ImageStream.Name = f.Version
+		}
+		return releaseImage, nil
 	}
-
+	version, ok := f.ImageVersion[image]
+	if !ok {
+		return nil, fmt.Errorf("unable to lookup release image")
+	}
+	releaseImage.ImageStream.Name = version
 	return releaseImage, nil
 }
 

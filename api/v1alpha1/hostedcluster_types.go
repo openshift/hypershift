@@ -466,6 +466,9 @@ type ClusterNetworking struct {
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
 
+//+kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
+type CIDRBlock string
+
 // APIServerNetworking specifies how the APIServer is exposed inside a cluster
 // node.
 type APIServerNetworking struct {
@@ -478,6 +481,11 @@ type APIServerNetworking struct {
 	// pods using host networking cannot listen on this port. If not specified,
 	// 6443 is used.
 	Port *int32 `json:"port,omitempty"`
+
+	// AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+	// If not specified, traffic is allowed from all addresses.
+	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
+	AllowedCIDRBlocks []CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
 }
 
 // NetworkType specifies the SDN provider used for cluster networking.
@@ -576,6 +584,12 @@ type IBMCloudPlatformSpec struct {
 
 // PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components
 type PowerVSPlatformSpec struct {
+	// AccountID is the IBMCloud account id.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// +immutable
+	AccountID string `json:"accountID"`
+
 	// ResourceGroup is the IBMCloud Resource Group in which the cluster resides.
 	// This field is immutable. Once set, It can't be changed.
 	//
@@ -624,9 +638,7 @@ type PowerVSPlatformSpec struct {
 	VPC *PowerVSVPC `json:"vpc"`
 
 	// KubeCloudControllerCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the cloud controller policy. The
-	// secret should have exactly one key, `credentials`, whose value is an AWS
-	// credentials file.
+	// credentials with permissions matching the cloud controller policy.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// TODO(dan): document the "cloud controller policy"
@@ -635,9 +647,7 @@ type PowerVSPlatformSpec struct {
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
 
 	// NodePoolManagementCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the node pool management policy. The
-	// secret should have exactly one key, `credentials`, whose value is an AWS
-	// credentials file.
+	// credentials with permissions matching the node pool management policy.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// TODO(dan): document the "node pool management policy"
@@ -647,8 +657,6 @@ type PowerVSPlatformSpec struct {
 
 	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the control-plane-operator policy.
-	// The secret should have exactly one key, `credentials`, whose value is
-	// an AWS credentials file.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// TODO(dan): document the "control plane operator policy"
@@ -1231,6 +1239,12 @@ const (
 	// OIDCConfigurationInvalid indicates if an AWS cluster's OIDC condition is
 	// detected as invalid.
 	OIDCConfigurationInvalid ConditionType = "OIDCConfigurationInvalid"
+
+	// ValidReleaseImage indicates if the release image set in the spec is valid
+	// for the HostedCluster. For example, this can be set false if the
+	// HostedCluster itself attempts an unsupported version before 4.9 or an
+	// unsupported upgrade e.g y-stream upgrade before 4.11.
+	ValidReleaseImage ConditionType = "ValidReleaseImage"
 )
 
 const (
@@ -1267,6 +1281,8 @@ const (
 	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
 
 	OIDCConfigurationInvalidReason = "OIDCConfigurationInvalid"
+
+	InvalidImageReason = "InvalidImage"
 )
 
 // HostedClusterStatus is the latest observed status of a HostedCluster.

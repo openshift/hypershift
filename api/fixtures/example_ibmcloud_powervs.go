@@ -27,21 +27,21 @@ type ExamplePowerVSOptions struct {
 }
 
 type ExamplePowerVSResources struct {
-	KubeCloudControllerPowerVSCreds  *corev1.Secret
-	NodePoolManagementPowerVSCreds   *corev1.Secret
-	ControlPlaneOperatorPowerVSCreds *corev1.Secret
+	KubeCloudControllerCreds  *corev1.Secret
+	NodePoolManagementCreds   *corev1.Secret
+	ControlPlaneOperatorCreds *corev1.Secret
 }
 
 func (o *ExamplePowerVSResources) AsObjects() []crclient.Object {
 	var objects []crclient.Object
-	if o.KubeCloudControllerPowerVSCreds != nil {
-		objects = append(objects, o.KubeCloudControllerPowerVSCreds)
+	if o.KubeCloudControllerCreds != nil {
+		objects = append(objects, o.KubeCloudControllerCreds)
 	}
-	if o.NodePoolManagementPowerVSCreds != nil {
-		objects = append(objects, o.NodePoolManagementPowerVSCreds)
+	if o.NodePoolManagementCreds != nil {
+		objects = append(objects, o.NodePoolManagementCreds)
 	}
-	if o.ControlPlaneOperatorPowerVSCreds != nil {
-		objects = append(objects, o.ControlPlaneOperatorPowerVSCreds)
+	if o.ControlPlaneOperatorCreds != nil {
+		objects = append(objects, o.ControlPlaneOperatorCreds)
 	}
 	return objects
 }

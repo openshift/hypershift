@@ -95,6 +95,7 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	t.Cleanup(func() { EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureHCPContainersHaveResourceRequests(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureNoPodsWithTooHighPriority(t, context.Background(), client, hc) })
+	t.Cleanup(func() { NoticePreemptionOrFailedScheduling(t, context.Background(), client, hc) })
 
 	return hc
 }

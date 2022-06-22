@@ -344,6 +344,23 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
+func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("NoticePreemptionOrFailedScheduling", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+
+		var eventList corev1.EventList
+		if err := client.List(ctx, &eventList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list events in namespace %s: %v", namespace, err)
+		}
+		for _, event := range eventList.Items {
+			if event.Reason == "FailedScheduling" || event.Reason == "Preempted" {
+				// "error: " is to trigger prow syntax highlight in prow
+				t.Logf("error: non-fatal, observed FailedScheduling or Preempted event: %s", event.Message)
+			}
+		}
+	})
+}
+
 func EnsureNoPodsWithTooHighPriority(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	// Priority of the etcd priority class, nothing should ever exceed this.
 	const maxAllowedPriority = 100002000

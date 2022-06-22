@@ -1244,7 +1244,7 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"security.openshift.io"},
 				Resources: []string{"securitycontextconstraints"},
-				Verbs:     []string{"get", "list", "watch"},
+				Verbs:     []string{"get", "list", "watch", "use"},
 			},
 			{
 				APIGroups: []string{"rbac.authorization.k8s.io"},

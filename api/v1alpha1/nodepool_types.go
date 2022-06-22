@@ -119,7 +119,7 @@ type NodePoolSpec struct {
 	// MachineConfig resources to be injected into the ignition configurations of
 	// nodes in the NodePool. The MachineConfig API schema is defined here:
 	//
-	// https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172
+	// https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
 	//
 	// Each ConfigMap must have a single key named "config" whose value is the
 	// JSON or YAML of a serialized MachineConfig.

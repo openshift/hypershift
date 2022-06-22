@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +37,8 @@ const (
 	DesiredDrainerAnnotationKey = "machineconfiguration.openshift.io/desiredDrain"
 	// LastAppliedDrainerAnnotationKey is set by the controller to indicate the last request applied
 	LastAppliedDrainerAnnotationKey = "machineconfiguration.openshift.io/lastAppliedDrain"
+	// MachineConfigOperatorImage is the MCO image reference in the release payload
+	MachineConfigOperatorImage = "machine-config-operator"
 
 	// TODO (alberto): MachineSet CR annotations are used to communicate between the NodePool controller and the in-place upgrade controller.
 	// This might eventually become a CRD equivalent to the struct nodePoolUpgradeAPI defined below.
@@ -44,11 +48,15 @@ const (
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
 
 	TokenSecretPayloadKey = "payload"
+	TokenSecretReleaseKey = "release"
 )
 
 type Reconciler struct {
 	client             client.Client
 	guestClusterClient client.Client
+	releaseProvider    releaseinfo.Provider
+	hcpName            string
+	hcpNamespace       string
 	upsert.CreateOrUpdateProvider
 }
 
@@ -111,7 +119,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		},
 	}
 
-	return ctrl.Result{}, r.reconcileInPlaceUpgrade(ctx, nodePoolUpgradeAPI, tokenSecret)
+	mcoImage, err := r.getPayloadImage(ctx, MachineConfigOperatorImage)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	log.Info("discovered mco image", "image", mcoImage)
+
+	return ctrl.Result{}, r.reconcileInPlaceUpgrade(ctx, nodePoolUpgradeAPI, tokenSecret, mcoImage)
 }
 
 type nodePoolUpgradeAPI struct {
@@ -125,7 +139,7 @@ type nodePoolUpgradeAPI struct {
 }
 
 // reconcileInPlaceUpgrade loops over all Nodes that belong to a NodePool and performs an in place upgrade if necessary.
-func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgradeAPI *nodePoolUpgradeAPI, tokenSecret *corev1.Secret) error {
+func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgradeAPI *nodePoolUpgradeAPI, tokenSecret *corev1.Secret, mcoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	currentConfigVersionHash := nodePoolUpgradeAPI.status.currentConfigVersion
@@ -234,7 +248,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	// Find nodes that can be upgraded
 	// TODO (jerzhang): add logic to honor maxUnavailable/maxSurge
 	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, 1)
-	err = r.performNodesUpgrade(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash)
+	err = r.performNodesUpgrade(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash, mcoImage)
 	if err != nil {
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
 	}
@@ -242,7 +256,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	return nil
 }
 
-func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash string) error {
+func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash, mcoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	for idx, node := range nodes {
@@ -257,6 +271,7 @@ func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClien
 				pod,
 				node.Name,
 				poolName,
+				mcoImage,
 			)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile upgrade pod for node %s: %w", node.Name, err)
@@ -277,14 +292,36 @@ func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClien
 	return nil
 }
 
-func (r *Reconciler) reconcileUpgradePod(pod *corev1.Pod, nodeName string, poolName string) error {
-	// TODO (jerzhang): unhardcode some of this
+// getPayloadImage gets the specified image reference from the payload
+func (r *Reconciler) getPayloadImage(ctx context.Context, imageName string) (string, error) {
+	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return "", fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
+	}
+
+	pullSecret := manifests.PullSecret(hcp.Namespace)
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return "", fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	releaseImage, err := r.releaseProvider.Lookup(ctx, hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return "", fmt.Errorf("failed to get lookup release image %s: %w", hcp.Spec.ReleaseImage, err)
+	}
+
+	image, hasImage := releaseImage.ComponentImages()[imageName]
+	if !hasImage {
+		return "", fmt.Errorf("release image does not contain %s (images: %v)", imageName, releaseImage.ComponentImages())
+	}
+	return image, nil
+}
+
+func (r *Reconciler) reconcileUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoImage string) error {
 	configmap := inPlaceUpgradeConfigMap(poolName, pod.Namespace)
 	pod.Spec.Containers = []corev1.Container{
 		{
-			Name: "machine-config-daemon",
-			// TODO (jerzhang): switch this to MCO image once we have it ready
-			Image: "quay.io/jerzhang/hypershiftdaemon:latest",
+			Name:  "machine-config-daemon",
+			Image: mcoImage,
 			Command: []string{
 				"/usr/bin/machine-config-daemon",
 			},

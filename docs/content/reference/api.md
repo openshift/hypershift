@@ -639,7 +639,7 @@ NodePoolAutoScaling
 <p>Config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
-<p><a href="https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172">https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172</a></p>
+<p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
 JSON or YAML of a serialized MachineConfig.</p>
 </td>
@@ -768,6 +768,21 @@ int32
 <p>Port is the port at which the APIServer is exposed inside a node. Other
 pods using host networking cannot listen on this port. If not specified,
 6443 is used.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allowedCIDRBlocks</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.CIDRBlock">
+[]CIDRBlock
+</a>
+</em>
+</td>
+<td>
+<p>AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+If not specified, traffic is allowed from all addresses.
+This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
 </td>
 </tr>
 </tbody>
@@ -1745,6 +1760,14 @@ string
 </tr>
 </tbody>
 </table>
+###CIDRBlock { #hypershift.openshift.io/v1alpha1.CIDRBlock }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.APIServerNetworking">APIServerNetworking</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+</p>
 ###ClusterAutoscaling { #hypershift.openshift.io/v1alpha1.ClusterAutoscaling }
 <p>
 (<em>Appears on:</em>
@@ -2108,6 +2131,12 @@ ClusterConfiguration specified for the HostedCluster is valid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ValidReleaseImage&#34;</p></td>
+<td><p>ValidReleaseImage indicates if the release image set in the spec is valid
+for the HostedCluster. For example, this can be set false if the
+HostedCluster itself attempts an unsupported version before 4.9 or an
+unsupported upgrade e.g y-stream upgrade before 4.11.</p>
+</td>
 </tr></tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1alpha1.DNSSpec }
@@ -3022,6 +3051,21 @@ string
 <em>(Optional)</em>
 <p>APIAdvertiseAddress is the address at which the APIServer listens
 inside a worker.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>apiAllowedCIDRBlocks</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.CIDRBlock">
+[]CIDRBlock
+</a>
+</em>
+</td>
+<td>
+<p>APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+If not specified, traffic is allowed from all addresses.
+This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
 </td>
 </tr>
 <tr>
@@ -4751,7 +4795,7 @@ NodePoolAutoScaling
 <p>Config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
-<p><a href="https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172">https://github.com/openshift/machine-config-operator/blob/master/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L172</a></p>
+<p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
 JSON or YAML of a serialized MachineConfig.</p>
 </td>
@@ -5261,6 +5305,18 @@ retain: delete the image from the openshift but retain in the infrastructure.</p
 <tbody>
 <tr>
 <td>
+<code>accountID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>AccountID is the IBMCloud account id.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>resourceGroup</code></br>
 <em>
 string
@@ -5355,9 +5411,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <p>KubeCloudControllerCreds is a reference to a secret containing cloud
-credentials with permissions matching the cloud controller policy. The
-secret should have exactly one key, <code>credentials</code>, whose value is an AWS
-credentials file.
+credentials with permissions matching the cloud controller policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
 </td>
@@ -5373,9 +5427,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <p>NodePoolManagementCreds is a reference to a secret containing cloud
-credentials with permissions matching the node pool management policy. The
-secret should have exactly one key, <code>credentials</code>, whose value is an AWS
-credentials file.
+credentials with permissions matching the node pool management policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
 </td>
@@ -5392,8 +5444,6 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
 credentials with permissions matching the control-plane-operator policy.
-The secret should have exactly one key, <code>credentials</code>, whose value is
-an AWS credentials file.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
 </td>
