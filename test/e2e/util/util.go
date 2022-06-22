@@ -287,6 +287,29 @@ func EnsureNoPodsWithTooHighPriority(t *testing.T, ctx context.Context, client c
 	})
 }
 
+func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureAllContainersHavePullPolicyIfNotPresent", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+		}
+		for _, pod := range podList.Items {
+			for _, initContainer := range pod.Spec.InitContainers {
+				if initContainer.ImagePullPolicy != corev1.PullIfNotPresent {
+					t.Errorf("container %s in pod %s has doesn't have imagePullPolicy %s but %s", initContainer.Name, pod.Name, corev1.PullIfNotPresent, initContainer.ImagePullPolicy)
+				}
+			}
+			for _, container := range pod.Spec.Containers {
+				if container.ImagePullPolicy != corev1.PullIfNotPresent {
+					t.Errorf("container %s in pod %s has doesn't have imagePullPolicy %s but %s", container.Name, pod.Name, corev1.PullIfNotPresent, container.ImagePullPolicy)
+				}
+			}
+		}
+	})
+}
+
 func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
 		var nodePoolList hyperv1.NodePoolList
