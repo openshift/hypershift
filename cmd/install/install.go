@@ -70,6 +70,7 @@ type Options struct {
 	ExternalDNSCredentialsSecret              string
 	ExternalDNSDomainFilter                   string
 	EnableAdminRBACGeneration                 bool
+	EnableUWMTelemetryRemoteWrite             bool
 	MetricsSet                                metrics.MetricsSet
 }
 
@@ -165,6 +166,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 	cmd.PersistentFlags().Var(&opts.MetricsSet, "metrics-set", "The set of metrics to produce for each HyperShift control plane. Valid values are: Telemetry, SRE, All")
+	cmd.PersistentFlags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, HyperShift operator ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -427,6 +429,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		Images:                         images,
 		MetricsSet:                     opts.MetricsSet,
 		IncludeVersion:                 !opts.Template,
+		UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 
