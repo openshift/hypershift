@@ -70,7 +70,7 @@ func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, crea
 }
 
 func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	defaultMode := int32(420)
+	defaultMode := int32(416)
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
