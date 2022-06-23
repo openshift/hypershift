@@ -467,7 +467,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								RunAsUser: k8sutilspointer.Int64Ptr(1000),
 							},
 							Image:           image,
-							ImagePullPolicy: corev1.PullAlways,
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env:             envVars,
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            args,
