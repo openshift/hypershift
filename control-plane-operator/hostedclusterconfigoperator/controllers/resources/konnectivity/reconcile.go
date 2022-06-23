@@ -84,7 +84,7 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32) func(
 	}
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.ImagePullPolicy = corev1.PullAlways
+		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"/usr/bin/proxy-agent",
 		}

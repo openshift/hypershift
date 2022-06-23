@@ -34,7 +34,7 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 	availabilityProberContainer := corev1.Container{
 		Name:            "availability-prober",
 		Image:           image,
-		ImagePullPolicy: corev1.PullAlways,
+		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command: []string{
 			"/usr/bin/control-plane-operator",
 			"availability-prober",

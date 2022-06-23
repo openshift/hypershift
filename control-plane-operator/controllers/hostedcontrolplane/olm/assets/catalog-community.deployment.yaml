@@ -20,7 +20,7 @@ spec:
       containers:
         - name: registry
           image: registry.redhat.io/redhat/community-operator-index:v4.9
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 50051
               name: grpc
