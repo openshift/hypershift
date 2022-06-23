@@ -108,7 +108,7 @@ spec:
         name: tmpfs
       - name: apiservice-cert
         secret:
-          defaultMode: 420
+          defaultMode: 416
           items:
           - key: tls.crt
             path: apiserver.crt
@@ -117,7 +117,7 @@ spec:
           secretName: packageserver-cert
       - name: webhook-cert
         secret:
-          defaultMode: 420
+          defaultMode: 416
           secretName: packageserver-cert
       - name: kubeconfig
         secret:
