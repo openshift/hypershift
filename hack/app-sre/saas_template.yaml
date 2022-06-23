@@ -332,7 +332,7 @@ objects:
           - name: AWS_SDK_LOAD_CONFIG
             value: "1"
           image: ${OPERATOR_IMG}:${IMAGE_TAG}
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 5
             httpGet:
