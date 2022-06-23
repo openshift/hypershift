@@ -14,7 +14,6 @@ import (
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -793,7 +792,6 @@ kind: Config`)},
 				namespace,
 				releaseImage,
 				hc,
-				globalconfig.GlobalConfig{},
 			)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())

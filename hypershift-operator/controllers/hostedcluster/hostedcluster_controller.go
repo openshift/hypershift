@@ -71,10 +71,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -675,6 +677,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	createOrUpdate := r.createOrUpdate(req)
 
+	// Reconcile deprecated global configuration
+	if err := r.reconcileDeprecatedGlobalConfig(ctx, hcluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile the hosted cluster namespace
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
@@ -962,10 +969,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile global config related configmaps and secrets
 	{
 		if hcluster.Spec.Configuration != nil {
-			for _, configMapRef := range hcluster.Spec.Configuration.ConfigMapRefs {
+			configMapRefs := globalconfig.ConfigMapRefs(hcluster.Spec.Configuration)
+			for _, configMapRef := range configMapRefs {
 				sourceCM := &corev1.ConfigMap{}
-				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef.Name}, sourceCM); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef.Name, err)
+				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
 				}
 				destCM := &corev1.ConfigMap{}
 				destCM.Name = sourceCM.Name
@@ -981,11 +989,11 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					return ctrl.Result{}, fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
 				}
 			}
-
-			for _, secretRef := range hcluster.Spec.Configuration.SecretRefs {
+			secretRefs := globalconfig.SecretRefs(hcluster.Spec.Configuration)
+			for _, secretRef := range secretRefs {
 				sourceSecret := &corev1.Secret{}
-				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef.Name}, sourceSecret); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef.Name, err)
+				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
 				}
 				destSecret := &corev1.Secret{}
 				destSecret.Name = sourceSecret.Name
@@ -1304,7 +1312,15 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	// always reconcile the release image (facilitates rolling forward)
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 
-	hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
+	if hcluster.Spec.Configuration != nil {
+		hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
+		// for compatibility with previous versions of the CPO, the hcp configuration should be
+		// populated with individual fields *AND* the previous raw extension resources.
+		hcp.Spec.Configuration.Items = configurationFieldsToRawExtensions(hcluster.Spec.Configuration)
+	} else {
+		hcp.Spec.Configuration = nil
+	}
+
 	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
 	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
 	return nil
@@ -3259,9 +3275,40 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
-	_, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("failed to parse cluster configuration: %w", err))
+	// TODO: Drop when we no longer need to support versions < 4.11
+	if hc.Spec.Configuration != nil {
+		globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to parse cluster configuration: %w", err))
+		} else {
+			if globalConfig.APIServer != nil && hc.Spec.Configuration.APIServer != nil {
+				errs = append(errs, fmt.Errorf("apiServer raw extension config is invalid when APIServer configuration field is set"))
+			}
+			if globalConfig.Authentication != nil && hc.Spec.Configuration.Authentication != nil {
+				errs = append(errs, fmt.Errorf("authentication raw extension config is invalid when Authentication configuration field is set"))
+			}
+			if globalConfig.FeatureGate != nil && hc.Spec.Configuration.FeatureGate != nil {
+				errs = append(errs, fmt.Errorf("featureGate raw extension config is invalid when FeatureGate configuration field is set"))
+			}
+			if globalConfig.Image != nil && hc.Spec.Configuration.Image != nil {
+				errs = append(errs, fmt.Errorf("image raw extension config is invalid when Image configuration field is set"))
+			}
+			if globalConfig.Ingress != nil && hc.Spec.Configuration.Ingress != nil {
+				errs = append(errs, fmt.Errorf("ingress raw extension config is invalid when Ingress configuration field is set"))
+			}
+			if globalConfig.Network != nil && hc.Spec.Configuration.Network != nil {
+				errs = append(errs, fmt.Errorf("network raw extension config is invalid when Network configuration field is set"))
+			}
+			if globalConfig.OAuth != nil && hc.Spec.Configuration.OAuth != nil {
+				errs = append(errs, fmt.Errorf("oAuth raw extension config is invalid when OAuth configuration field is set"))
+			}
+			if globalConfig.Proxy != nil && hc.Spec.Configuration.Proxy != nil {
+				errs = append(errs, fmt.Errorf("proxy raw extension config is invalid when Proxy configuration field is set"))
+			}
+			if globalConfig.Scheduler != nil && hc.Spec.Configuration.Scheduler != nil {
+				errs = append(errs, fmt.Errorf("scheduler raw extension config is invalid when Scheduler configuration field is set"))
+			}
+		}
 	}
 
 	return utilerrors.NewAggregate(errs)
@@ -4182,4 +4229,140 @@ func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Cont
 		return nil, nil, fmt.Errorf("cannot serialize public key from private key %s: %w", signingKeySecret.Name, err)
 	}
 	return privateKeyPEMBytes, publicKeyPEMBytes, nil
+}
+
+// reconcileDeprecatedGlobalConfig converts previously specified configuration in RawExtension format to
+// the new configuration fields. It clears the previous, deprecated configuration.
+// TODO: drop when we no longer need to support versions < 4.11
+func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
+
+	// Skip if no deprecated configuration is set
+	if hc.Spec.Configuration == nil || len(hc.Spec.Configuration.Items) == 0 {
+		return nil
+	}
+
+	log := ctrl.LoggerFrom(ctx)
+
+	originalSpec := hc.Spec.DeepCopy()
+	gconfig, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
+	if err != nil {
+		// This should never happen because at this point, the global configuration
+		// should be valid
+		return err
+	}
+
+	// Only copy over config from the raw extension if the field is not already populated.
+	// Once populated, the field takes precedence and a conflicting raw extension config
+	// results in an invalid configuration field.
+
+	if gconfig.APIServer != nil && hc.Spec.Configuration.APIServer == nil {
+		hc.Spec.Configuration.APIServer = &gconfig.APIServer.Spec
+	}
+	if gconfig.Authentication != nil && hc.Spec.Configuration.Authentication == nil {
+		hc.Spec.Configuration.Authentication = &gconfig.Authentication.Spec
+	}
+	if gconfig.FeatureGate != nil && hc.Spec.Configuration.FeatureGate == nil {
+		hc.Spec.Configuration.FeatureGate = &gconfig.FeatureGate.Spec
+	}
+	if gconfig.Image != nil && hc.Spec.Configuration.Image == nil {
+		hc.Spec.Configuration.Image = &gconfig.Image.Spec
+	}
+	if gconfig.Ingress != nil && hc.Spec.Configuration.Ingress == nil {
+		hc.Spec.Configuration.Ingress = &gconfig.Ingress.Spec
+	}
+	if gconfig.Network != nil && hc.Spec.Configuration.Network == nil {
+		hc.Spec.Configuration.Network = &gconfig.Network.Spec
+	}
+	if gconfig.OAuth != nil && hc.Spec.Configuration.OAuth == nil {
+		hc.Spec.Configuration.OAuth = &gconfig.OAuth.Spec
+	}
+	if gconfig.Scheduler != nil && hc.Spec.Configuration.Scheduler == nil {
+		hc.Spec.Configuration.Scheduler = &gconfig.Scheduler.Spec
+	}
+	if gconfig.Proxy != nil && hc.Spec.Configuration.Proxy == nil {
+		hc.Spec.Configuration.Proxy = &gconfig.Proxy.Spec
+	}
+	hc.Spec.Configuration.Items = nil
+	hc.Spec.Configuration.ConfigMapRefs = nil
+	hc.Spec.Configuration.SecretRefs = nil
+
+	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
+		log.Info("Updating deprecated configuration for hosted cluster", "hostedcluster", client.ObjectKeyFromObject(hc).String())
+		if err = r.Client.Update(ctx, hc); err != nil {
+			return fmt.Errorf("failed to update hosted cluster configuration: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) []runtime.RawExtension {
+	var result []runtime.RawExtension
+	if config == nil {
+		return result
+	}
+	if config.APIServer != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.APIServer{
+				Spec: *config.APIServer,
+			},
+		})
+	}
+	if config.Authentication != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.Authentication{
+				Spec: *config.Authentication,
+			},
+		})
+	}
+	if config.FeatureGate != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.FeatureGate{
+				Spec: *config.FeatureGate,
+			},
+		})
+	}
+	if config.Image != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.Image{
+				Spec: *config.Image,
+			},
+		})
+	}
+	if config.Ingress != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.Ingress{
+				Spec: *config.Ingress,
+			},
+		})
+	}
+	if config.Network != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.Network{
+				Spec: *config.Network,
+			},
+		})
+	}
+	if config.OAuth != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.OAuth{
+				Spec: *config.OAuth,
+			},
+		})
+	}
+	if config.Scheduler != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.Scheduler{
+				Spec: *config.Scheduler,
+			},
+		})
+	}
+	if config.Proxy != nil {
+		result = append(result, runtime.RawExtension{
+			Object: &configv1.Proxy{
+				Spec: *config.Proxy,
+			},
+		})
+	}
+	return result
 }

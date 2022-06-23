@@ -18,7 +18,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -61,7 +60,7 @@ func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context,
 	return cpoSkips, controlPlaneOperatorImage, nil
 }
 
-func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, releaseImage *releaseinfo.ReleaseImage, hcluster *hyperv1.HostedCluster, globalConfig globalconfig.GlobalConfig, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
+func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, releaseImage *releaseinfo.ReleaseImage, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
 
 	if hcluster.Status.KubeConfig == nil {
 		return "", true, nil
@@ -100,8 +99,8 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 	}
 
 	var apiserverProxy string
-	if globalConfig.Proxy != nil && globalConfig.Proxy.Spec.HTTPSProxy != "" && util.ConnectsThroughInternetToControlplane(hcluster.Spec.Platform) {
-		apiserverProxy = globalConfig.Proxy.Spec.HTTPSProxy
+	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" && util.ConnectsThroughInternetToControlplane(hcluster.Spec.Platform) {
+		apiserverProxy = hcluster.Spec.Configuration.Proxy.HTTPSProxy
 	}
 
 	machineConfig := manifests.MachineConfigAPIServerHAProxy()

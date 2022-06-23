@@ -15,7 +15,7 @@ func NetworkConfig() *configv1.Network {
 	}
 }
 
-func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPlane, globalConfig GlobalConfig) {
+func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPlane) {
 	cfg.Spec.ClusterNetwork = []configv1.ClusterNetworkEntry{
 		{
 			CIDR: hcp.Spec.PodCIDR,
@@ -27,9 +27,9 @@ func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPla
 	cfg.Spec.ServiceNetwork = []string{
 		hcp.Spec.ServiceCIDR,
 	}
-	if globalConfig.Network != nil {
-		cfg.Spec.ExternalIP = globalConfig.Network.Spec.ExternalIP
-		cfg.Spec.ServiceNodePortRange = globalConfig.Network.Spec.ServiceNodePortRange
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Network != nil {
+		cfg.Spec.ExternalIP = hcp.Spec.Configuration.Network.ExternalIP
+		cfg.Spec.ServiceNodePortRange = hcp.Spec.Configuration.Network.ServiceNodePortRange
 	}
 
 	// Without this, the CNOs proxy controller refuses to reconcile the proxy status
@@ -37,7 +37,7 @@ func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPla
 	// controller to populate proxy status. Proxy not being populated makes the MTU
 	// probing fail if there is a proxy. Get out of the deadlock by initially populating
 	// it if unset.
-	if globalConfig.Proxy != nil {
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil {
 		if len(cfg.Status.ClusterNetwork) == 0 {
 			cfg.Status.ClusterNetwork = cfg.Spec.ClusterNetwork
 		}
