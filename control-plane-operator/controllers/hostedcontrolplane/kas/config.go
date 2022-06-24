@@ -95,6 +95,11 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 									Warn:           "restricted",
 									WarnVersion:    "latest",
 								},
+								Exemptions: podsecurityadmissionv1beta1.PodSecurityExemptions{
+									Usernames: []string{
+										"system:serviceaccount:openshift-infra:build-controller",
+									},
+								},
 							},
 						},
 					},
