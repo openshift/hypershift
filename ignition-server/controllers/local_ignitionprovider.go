@@ -57,6 +57,8 @@ type LocalIgnitionProvider struct {
 	// deleted after use.
 	PreserveOutput bool
 
+	ImageFileCache *imageFileCache
+
 	lock sync.Mutex
 }
 
@@ -204,7 +206,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			if err := file.Chmod(0777); err != nil {
 				return fmt.Errorf("failed to chmod file: %w", err)
 			}
-			if err := registryclient.ExtractImageFile(ctx, mcoImage, pullSecret, filepath.Join("usr/bin/", name), file); err != nil {
+			if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, filepath.Join("usr/bin/", name), file); err != nil {
 				return fmt.Errorf("failed to extract image file: %w", err)
 			}
 			if err := file.Close(); err != nil {
