@@ -72,6 +72,7 @@ var (
 		"0000_80_machine-config-operator_01_machineconfig.crd.yaml",
 		"0000_80_machine-config-operator_01_machineconfigpool.crd.yaml",
 		"0000_50_cluster-node-tuning-operator_50-operator-ibm-cloud-managed.yaml",
+		"0000_50_cluster-node-tuning-operator_50-operator.yaml",
 		"0000_50_cluster-node-tuning-operator_60-clusteroperator.yaml",
 
 		// TODO: Remove these when cluster profiles annotations are fixed
