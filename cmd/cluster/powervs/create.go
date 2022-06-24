@@ -157,6 +157,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
 		Region:          opts.PowerVSPlatform.Region,
 		Zone:            opts.PowerVSPlatform.Zone,
+		CISInstanceCRN:  infra.CisCrn,
 		CloudInstanceID: infra.PowerVSCloudInstanceID,
 		Subnet:          infra.PowerVSDhcpSubnet,
 		SubnetID:        infra.PowerVSDhcpSubnetID,

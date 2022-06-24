@@ -876,6 +876,37 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile csi driver secret: %w", err))
 		}
+	case hyperv1.PowerVSPlatform:
+		var ingressCredentials corev1.Secret
+		err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.IngressOperatorCloudCreds.Name}, &ingressCredentials)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to get ingress operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.IngressOperatorCloudCreds.Name, err))
+			return errs
+		}
+
+		cloudCredentials := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "openshift-ingress-operator",
+				Name:      "cloud-credentials",
+			},
+		}
+
+		_, err = r.CreateOrUpdate(ctx, r.client, cloudCredentials, func() error {
+			credData, credHasData := ingressCredentials.Data["ibmcloud_api_key"]
+			if !credHasData {
+				return fmt.Errorf("ingress cloud credentials secret %q is missing credentials key", ingressCredentials.Name)
+			}
+			cloudCredentials.Type = corev1.SecretTypeOpaque
+			if cloudCredentials.Data == nil {
+				cloudCredentials.Data = map[string][]byte{}
+			}
+			cloudCredentials.Data["ibmcloud_api_key"] = credData
+			return nil
+		})
+
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile powervs cloud credentials secret %w", err))
+		}
 	}
 	return errs
 }
