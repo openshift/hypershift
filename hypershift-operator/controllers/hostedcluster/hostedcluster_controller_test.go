@@ -2,6 +2,7 @@ package hostedcluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -1662,5 +1664,37 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 				g.Expect(resultHC.Spec.InfraID).To(BeIdenticalTo(previousInfraID))
 			}
 		})
+	}
+}
+
+func TestConfigurationFieldsToRawExtensions(t *testing.T) {
+	config := &hyperv1.ClusterConfiguration{Proxy: &configv1.ProxySpec{HTTPProxy: "http://10.0.136.57:3128", HTTPSProxy: "http://10.0.136.57:3128"}}
+	result, err := configurationFieldsToRawExtensions(config)
+	if err != nil {
+		t.Fatalf("configurationFieldsToRawExtensions: %v", err)
+	}
+
+	serialized, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var roundtripped []runtime.RawExtension
+	if err := json.Unmarshal(serialized, &roundtripped); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	// CreateOrUpdate does a naive DeepEqual which can not deal with custom unmarshallers, so make
+	// sure the output matches a roundtripped result.
+	if diff := cmp.Diff(result, roundtripped); diff != "" {
+		t.Errorf("output does not match a json-roundtripped version: %s", diff)
+	}
+
+	var proxy configv1.Proxy
+	if err := json.Unmarshal(result[0].Raw, &proxy); err != nil {
+		t.Fatalf("failed to unmarshal raw data: %v", err)
+	}
+	if proxy.APIVersion == "" || proxy.Kind == "" {
+		t.Errorf("rawObject has no apiVersion or kind set: %+v", proxy.ObjectMeta)
 	}
 }
