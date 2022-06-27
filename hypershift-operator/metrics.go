@@ -42,20 +42,20 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 			Name: "hypershift_cluster_initial_rollout_duration_seconds",
 		}, []string{"name"}),
 		hostedClusters: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "hypershift_hostedclusters_total",
-			Help: "Total number of HostedClusters by platform",
+			Name: "hypershift_hostedclusters",
+			Help: "Number of HostedClusters by platform",
 		}, []string{"platform"}),
 		hostedClustersWithFailureCondition: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hypershift_hostedclusters_failure_conditions",
 			Help: "Total number of HostedClusters by platform with conditions in undesired state",
 		}, []string{"platform", "condition"}),
 		hostedClustersNodePools: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "hypershift_hostedclusters_nodepool_count",
+			Name: "hypershift_hostedcluster_nodepools",
 			Help: "Number of NodePools associated with a given HostedCluster",
 		}, []string{"cluster_name", "platform"}),
 		nodePools: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "hypershift_nodepools_total",
-			Help: "Total number of NodePools by platform",
+			Name: "hypershift_nodepools",
+			Help: "Number of NodePools by platform",
 		}, []string{"platform"}),
 		nodePoolsWithFailureCondition: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hypershift_nodepools_failure_conditions",
@@ -173,13 +173,6 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 		labels := counterKeyToLabels(key)
 		m.hostedClustersWithFailureCondition.WithLabelValues(labels...).Set(float64(count))
 	}
-}
-
-func clusterVersion(hc *hyperv1.HostedCluster) string {
-	if hc.Status.Version == nil || len(hc.Status.Version.History) == 0 {
-		return "unknown"
-	}
-	return hc.Status.Version.History[0].Version
 }
 
 func clusterCreationTime(hc *hyperv1.HostedCluster) *float64 {
