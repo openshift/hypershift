@@ -77,6 +77,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	kjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -1316,7 +1317,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
 		// for compatibility with previous versions of the CPO, the hcp configuration should be
 		// populated with individual fields *AND* the previous raw extension resources.
-		hcp.Spec.Configuration.Items = configurationFieldsToRawExtensions(hcluster.Spec.Configuration)
+		items, err := configurationFieldsToRawExtensions(hcluster.Spec.Configuration)
+		if err != nil {
+			return fmt.Errorf("failed to convert configuration fields to raw extension: %w", err)
+		}
+		hcp.Spec.Configuration.Items = items
 	} else {
 		hcp.Spec.Configuration = nil
 	}
@@ -4296,10 +4301,10 @@ func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Co
 	return nil
 }
 
-func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) []runtime.RawExtension {
+func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) ([]runtime.RawExtension, error) {
 	var result []runtime.RawExtension
 	if config == nil {
-		return result
+		return result, nil
 	}
 	if config.APIServer != nil {
 		result = append(result, runtime.RawExtension{
@@ -4364,5 +4369,27 @@ func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) []
 			},
 		})
 	}
-	return result
+
+	serializer := kjson.NewSerializerWithOptions(
+		kjson.DefaultMetaFactory, api.Scheme, api.Scheme,
+		kjson.SerializerOptions{Yaml: false, Pretty: false, Strict: true},
+	)
+	for idx := range result {
+		gvk, err := apiutil.GVKForObject(result[idx].Object, api.Scheme)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get gvk for %T: %w", result[idx].Object, err)
+		}
+		result[idx].Object.GetObjectKind().SetGroupVersionKind(gvk)
+
+		// We do a DeepEqual in the upsert func, so we must match the deserialized version from
+		// the server which has Raw set and Object unset.
+		b := &bytes.Buffer{}
+		if err := serializer.Encode(result[idx].Object, b); err != nil {
+			return nil, fmt.Errorf("failed to marshal %+v: %w", result[idx].Object, err)
+		}
+		result[idx].Raw = bytes.TrimSuffix(b.Bytes(), []byte("\n"))
+		result[idx].Object = nil
+	}
+
+	return result, nil
 }
