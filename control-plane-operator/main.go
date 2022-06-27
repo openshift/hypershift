@@ -9,7 +9,6 @@ import (
 
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
@@ -334,18 +333,6 @@ func NewStartCommand() *cobra.Command {
 			RegistryOverrides: registryOverrides,
 		}
 
-		var hostedKubeconfigScope manifests.KubeconfigScope
-		if inCluster {
-			hostedKubeconfigScope = manifests.KubeconfigScopeLocal
-		} else {
-			hostedKubeconfigScope = manifests.KubeconfigScopeExternal
-		}
-		apiCacheController, err := hostedapicache.RegisterHostedAPICacheReconciler(mgr, ctx, ctrl.Log.WithName("hosted-api-cache"), hostedKubeconfigScope)
-		if err != nil {
-			setupLog.Error(err, "failed to create controller", "controller", "hosted-api-cache")
-			os.Exit(1)
-		}
-
 		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)
 
 		metricsSet, err := metrics.MetricsSetFromEnv()
@@ -358,7 +345,6 @@ func NewStartCommand() *cobra.Command {
 			Client:                        mgr.GetClient(),
 			ManagementClusterCapabilities: mgmtClusterCaps,
 			ReleaseProvider:               releaseProvider,
-			HostedAPICache:                apiCacheController.GetCache(),
 			CreateOrUpdateProvider:        upsert.New(enableCIDebugOutput),
 			EnableCIDebugOutput:           enableCIDebugOutput,
 			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),

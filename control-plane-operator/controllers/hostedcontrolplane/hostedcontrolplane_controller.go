@@ -13,7 +13,6 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,7 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedapicache"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
@@ -109,7 +107,6 @@ type HostedControlPlaneReconciler struct {
 
 	Log             logr.Logger
 	ReleaseProvider releaseinfo.ProviderWithRegistryOverrides
-	HostedAPICache  hostedapicache.HostedAPICache
 	upsert.CreateOrUpdateProvider
 	EnableCIDebugOutput   bool
 	OperateOnReleaseImage string
@@ -132,7 +129,6 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(&source.Kind{Type: &corev1.ServiceAccount{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &policyv1.PodDisruptionBudget{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Watches(&source.Kind{Type: &prometheusoperatorv1.PodMonitor{}}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
-		Watches(&source.Channel{Source: r.HostedAPICache.Events()}, &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager %w", err)
@@ -335,43 +331,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
-	{
-		r.Log.Info("Reconciling hosted cluster version conditions")
-		newCondition := func() metav1.Condition {
-			timeout, cancel := context.WithTimeout(ctx, 2*time.Second)
-			defer cancel()
-			var clusterVersion configv1.ClusterVersion
-			if err := r.HostedAPICache.Get(timeout, client.ObjectKey{Name: "version"}, &clusterVersion); err != nil {
-				return metav1.Condition{
-					Type:    string(hyperv1.ClusterVersionFailing),
-					Status:  metav1.ConditionUnknown,
-					Reason:  hyperv1.ClusterVersionStatusUnknownReason,
-					Message: fmt.Sprintf("failed to get clusterversion: %v", err),
-				}
-			}
-			for _, cond := range clusterVersion.Status.Conditions {
-				if cond.Type == "Failing" {
-					if cond.Status == configv1.ConditionTrue {
-						return metav1.Condition{
-							Type:    string(hyperv1.ClusterVersionFailing),
-							Status:  metav1.ConditionTrue,
-							Reason:  cond.Reason,
-							Message: cond.Message,
-						}
-					}
-				}
-			}
-			return metav1.Condition{
-				Type:   string(hyperv1.ClusterVersionFailing),
-				Status: metav1.ConditionFalse,
-				Reason: hyperv1.AsExpectedReason,
-			}
-		}()
-		newCondition.ObservedGeneration = hostedControlPlane.Generation
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
-		r.Log.Info("Finished reconciling hosted cluster version conditions")
-	}
-
 	// Reconcile hostedcontrolplane availability and Ready flag
 	{
 		infrastructureCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.InfrastructureReady))
@@ -441,36 +400,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	hostedControlPlane.Status.Initialized = true
 
-	// If a rollout is in progress, compute and record the rollout status. The
-	// image version will be considered rolled out if the hosted CVO reports
-	// having completed the rollout of the semantic version matching the release
-	// image specified on the HCP.
-	if hostedControlPlane.Status.ReleaseImage != hostedControlPlane.Spec.ReleaseImage {
-		releaseImage, err := r.LookupReleaseImage(ctx, hostedControlPlane)
-		if err != nil {
-			r.Log.Error(err, "failed to look up release image metadata")
-			return ctrl.Result{}, err
-		}
-
-		timeout, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		var clusterVersion configv1.ClusterVersion
-		if err := r.HostedAPICache.Get(timeout, client.ObjectKey{Name: "version"}, &clusterVersion); err != nil {
-			r.Log.Info("failed to get clusterversion, can't determine image version rollout status", "error", err)
-		} else {
-			versionHistory := clusterVersion.Status.History
-			if len(versionHistory) > 0 &&
-				versionHistory[0].Version == releaseImage.Version() &&
-				versionHistory[0].State == configv1.CompletedUpdate {
-				// Rollout to the desired release image version is complete, so record
-				// that fact on the HCP status.
-				now := metav1.NewTime(time.Now())
-				hostedControlPlane.Status.ReleaseImage = hostedControlPlane.Spec.ReleaseImage
-				hostedControlPlane.Status.Version = releaseImage.Version()
-				hostedControlPlane.Status.LastReleaseImageTransitionTime = &now
-			}
-		}
-	}
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationPausedCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
