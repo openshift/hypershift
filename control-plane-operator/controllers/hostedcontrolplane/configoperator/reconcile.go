@@ -71,6 +71,15 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			},
 		},
 		{
+			APIGroups: []string{hyperv1.GroupVersion.Group},
+			Resources: []string{
+				"hostedcontrolplanes/status",
+			},
+			Verbs: []string{
+				"update",
+			},
+		},
+		{
 			// Access to the finalizers subresource is required by the
 			// hosted-cluster-config-operator due to an OpenShift requirement
 			// that setting an owner of a resource requires write access
