@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilpointer "k8s.io/utils/pointer"
 
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
@@ -741,6 +742,29 @@ func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID strin
 	}
 
 	err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f)
+
+	if err != nil {
+		return
+	}
+
+	// Adding allow rules for VPC's default security group to allow http and https for ingress
+	for _, port := range []int64{80, 443} {
+		_, _, err = v1.CreateSecurityGroupRule(&vpcv1.CreateSecurityGroupRuleOptions{
+			SecurityGroupID: vpc.DefaultSecurityGroup.ID,
+
+			SecurityGroupRulePrototype: &vpcv1.SecurityGroupRulePrototype{
+				Direction: utilpointer.String("inbound"),
+				Protocol:  utilpointer.String("tcp"),
+				PortMax:   utilpointer.Int64Ptr(port),
+				PortMin:   utilpointer.Int64Ptr(port),
+			},
+		})
+
+		if err != nil {
+			err = fmt.Errorf("error attaching inbound security group rule to allow %d to vpc %v", port, err)
+			return
+		}
+	}
 
 	if !startTime.IsZero() && vpc != nil {
 		infra.Stats.Vpc.Duration.Duration = time.Since(startTime)

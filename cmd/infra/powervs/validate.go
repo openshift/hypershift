@@ -99,7 +99,7 @@ func validateCloudInstanceByName(cloudInstance string, resourceGroupID string, p
 }
 
 // validateVpc
-// validates vpc's existence by name
+// validates vpc's existence by name and validate its default security group's inbound rules to allow http & https
 func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (vpc *vpcv1.VPC, err error) {
 	f := func(start string) (isDone bool, nextUrl string, err error) {
 		vpcListOpt := vpcv1.ListVpcsOptions{ResourceGroupID: &resourceGroupID}
@@ -131,10 +131,34 @@ func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (vpc *
 		return
 	}
 
-	if vpc != nil {
+	if vpc == nil {
+		err = fmt.Errorf("%s vpc not found", vpcName)
 		return
 	}
-	err = fmt.Errorf("%s vpc not found", vpcName)
+
+	vpcSg, _, err := v1.GetSecurityGroup(&vpcv1.GetSecurityGroupOptions{ID: vpc.DefaultSecurityGroup.ID})
+	if err != nil {
+		err = fmt.Errorf("error retrieving security group of vpc %w", err)
+		return
+	}
+
+	var httpOk, httpsOk bool
+	for _, ruleInf := range vpcSg.Rules {
+		switch rule := ruleInf.(type) {
+		case *vpcv1.SecurityGroupRuleSecurityGroupRuleProtocolTcpudp:
+			if *rule.PortMin <= 80 && *rule.PortMax >= 80 {
+				httpOk = true
+			}
+			if *rule.PortMin <= 443 && *rule.PortMax >= 443 {
+				httpsOk = true
+			}
+		}
+	}
+
+	if !httpOk || !httpsOk {
+		err = fmt.Errorf("vpc security group does not have the required inbound rules, ports 80 and 443 should be allowed")
+	}
+
 	return
 }
 
