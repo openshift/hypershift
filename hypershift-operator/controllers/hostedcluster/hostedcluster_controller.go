@@ -324,18 +324,19 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+	err = r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+		} else {
+			hcp = nil
+		}
+	}
+
 	// Set version status
 	{
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				hcp = nil
-			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
-			}
-		}
 		hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
 	}
 
@@ -347,14 +348,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
 			ObservedGeneration: hcluster.Generation,
 		}
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
-			}
-		} else {
+		if hcp != nil {
 			failingCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing))
 			if failingCond != nil {
 				switch failingCond.Status {
@@ -370,6 +364,23 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
+	// Copy the ClusterVersionUpgradeable condition on the hostedcontrolplane
+	{
+		condition := &metav1.Condition{
+			Type:               string(hyperv1.ClusterVersionUpgradeable),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			upgradeableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable))
+			if upgradeableCondition != nil {
+				condition = upgradeableCondition
+			}
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
 	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
@@ -400,16 +411,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// conditions (so that it could incorporate e.g. HostedControlPlane and IgnitionServer
 	// availability in the ultimate HostedCluster Available condition)
 	{
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				hcp = nil
-			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
-			}
-		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
 	}
 
@@ -451,16 +452,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set ValidHostedControlPlaneConfiguration condition
 	{
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				hcp = nil
-			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
-			}
-		}
 		condition := metav1.Condition{
 			Type:   string(hyperv1.ValidHostedControlPlaneConfiguration),
 			Status: metav1.ConditionUnknown,
@@ -486,7 +477,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
 			return ctrl.Result{}, nil
 		}
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		switch serviceStrategy.Type {
 		case hyperv1.Route:
 			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
@@ -528,16 +518,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set the OAuth URL
 	{
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				hcp = nil
-			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
-			}
-		}
 		if hcp != nil {
 			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
 		}
@@ -552,7 +532,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Reason: hyperv1.IgnitionServerDeploymentStatusUnknownReason,
 		}
 		// Check to ensure the deployment exists and is available.
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		deployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
 			if apierrors.IsNotFound(err) {
@@ -635,8 +614,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
 	if isPaused, duration := util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -674,6 +651,16 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 			return ctrl.Result{}, nil
 		}
+		upgrading, msg, err := isUpgradeable(hcluster)
+		if upgrading {
+			if err != nil {
+				log.Error(err, "reconciliation is blocked", "message", validReleaseImage.Message)
+				return ctrl.Result{}, nil
+			}
+			if msg != "" {
+				log.Info(msg)
+			}
+		}
 	}
 
 	createOrUpdate := r.createOrUpdate(req)
@@ -684,7 +671,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the hosted cluster namespace
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
 		if controlPlaneNamespace.Labels == nil {
 			controlPlaneNamespace.Labels = make(map[string]string)
@@ -1014,7 +1000,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the HostedControlPlane
-	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
+	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
 		return reconcileHostedControlPlane(hcp, hcluster)
 	})
@@ -4063,6 +4049,24 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
 	}
 	return nil
+}
+
+func isUpgradeable(hcluster *hyperv1.HostedCluster) (bool, string, error) {
+	if hcluster.Status.Version != nil && hcluster.Status.Version.Desired.Image != hcluster.Spec.Release.Image {
+		upgradeable := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable))
+		if upgradeable != nil && upgradeable.Status == metav1.ConditionFalse {
+			releaseImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
+			if !exists {
+				return true, "", fmt.Errorf("cluster version is not upgradable")
+			} else if releaseImage != hcluster.Spec.Release.Image {
+				return true, "", fmt.Errorf("cluster version is not upgradable, force annotation is present but does not match desired release image")
+			} else {
+				return true, "cluster version is not upgradable, upgrade is forced by annotation", nil
+			}
+		}
+		return true, "", nil
+	}
+	return false, "", nil
 }
 
 // defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround

@@ -90,6 +90,10 @@ const (
 	// ExternalDNSHostnameAnnotation is the annotation external-dns uses to register DNS name for different HCP services.
 	ExternalDNSHostnameAnnotation = "external-dns.alpha.kubernetes.io/hostname"
 
+	// ForceUpgradeToAnnotation is the annotation that forces HostedCluster upgrade even if the underlying ClusterVersion
+	// is reporting it is not Upgradeable.  The annotation value must be set to the release image being forced.
+	ForceUpgradeToAnnotation = "hypershift.openshift.io/force-upgrade-to"
+
 	// ServiceAccountSigningKeySecretKey is the name of the secret key that should contain the service account signing
 	// key if specified.
 	ServiceAccountSigningKeySecretKey = "key"
@@ -1249,6 +1253,10 @@ const (
 	// version of the HostedCluster as indicated by the Failing condition in the
 	// underlying cluster's ClusterVersion.
 	ClusterVersionSucceeding ConditionType = "ClusterVersionSucceeding"
+
+	// ClusterVersionUpgradeable indicates the Upgradeable condition in the
+	// underlying cluster's ClusterVersion.
+	ClusterVersionUpgradeable ConditionType = "ClusterVersionUpgradeable"
 
 	// ReconciliationPaused indicates if reconciliation of the hostedcluster is
 	// paused.
