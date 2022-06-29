@@ -39,7 +39,7 @@ func (r *IBMPowerVSMachineTemplate) SetupWebhookWithManager(mgr ctrl.Manager) er
 
 var _ webhook.Defaulter = &IBMPowerVSMachineTemplate{}
 
-// Default implements webhook.Defaulter so a webhook will be registered for the type
+// Default implements webhook.Defaulter so a webhook will be registered for the type.
 func (r *IBMPowerVSMachineTemplate) Default() {
 	ibmpowervsmachinetemplatelog.Info("default", "name", r.Name)
 	defaultIBMPowerVSMachineSpec(&r.Spec.Template.Spec)
@@ -49,19 +49,19 @@ func (r *IBMPowerVSMachineTemplate) Default() {
 
 var _ webhook.Validator = &IBMPowerVSMachineTemplate{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
+// ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSMachineTemplate) ValidateCreate() error {
 	ibmpowervsmachinetemplatelog.Info("validate create", "name", r.Name)
 	return r.validateIBMPowerVSMachineTemplate()
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
+// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSMachineTemplate) ValidateUpdate(old runtime.Object) error {
 	ibmpowervsmachinetemplatelog.Info("validate update", "name", r.Name)
 	return r.validateIBMPowerVSMachineTemplate()
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
+// ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSMachineTemplate) ValidateDelete() error {
 	ibmpowervsmachinetemplatelog.Info("validate delete", "name", r.Name)
 	return nil
@@ -79,6 +79,12 @@ func (r *IBMPowerVSMachineTemplate) validateIBMPowerVSMachineTemplate() error {
 		allErrs = append(allErrs, err)
 	}
 	if err := r.validateIBMPowerVSMachineTemplateImage(); err != nil {
+		allErrs = append(allErrs, err)
+	}
+	if err := r.validateIBMPowerVSMachineTemplateMemory(); err != nil {
+		allErrs = append(allErrs, err)
+	}
+	if err := r.validateIBMPowerVSMachineTemplateProcessors(); err != nil {
 		allErrs = append(allErrs, err)
 	}
 	if len(allErrs) == 0 {
@@ -128,5 +134,19 @@ func (r *IBMPowerVSMachineTemplate) validateIBMPowerVSMachineTemplateImage() *fi
 		}
 	}
 
+	return nil
+}
+
+func (r *IBMPowerVSMachineTemplate) validateIBMPowerVSMachineTemplateMemory() *field.Error {
+	if res := validateIBMPowerVSMemoryValues(r.Spec.Template.Spec.Memory); !res {
+		return field.Invalid(field.NewPath("spec", "memory"), r.Spec.Template.Spec.Memory, "Invalid Memory value - must be non-empty and a positive integer no lesser than 2")
+	}
+	return nil
+}
+
+func (r *IBMPowerVSMachineTemplate) validateIBMPowerVSMachineTemplateProcessors() *field.Error {
+	if res := validateIBMPowerVSProcessorValues(r.Spec.Template.Spec.Processors); !res {
+		return field.Invalid(field.NewPath("spec", "processors"), r.Spec.Template.Spec.Processors, "Invalid Processors value - must be non-empty and positive floating-point number no lesser than 0.25")
+	}
 	return nil
 }

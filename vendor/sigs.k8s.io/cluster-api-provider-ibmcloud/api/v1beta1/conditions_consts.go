@@ -17,7 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 const (
@@ -33,13 +33,16 @@ const (
 	// InstanceStoppedReason instance is in a stopped state.
 	InstanceStoppedReason = "InstanceStopped"
 
+	// InstanceErroredReason instance is in a errored state.
+	InstanceErroredReason = "InstanceErrored"
+
 	// InstanceNotReadyReason used when the instance is in a pending state.
 	InstanceNotReadyReason = "InstanceNotReady"
 )
 
 const (
 	// InstanceReadyCondition reports on current status of the instance. Ready indicates the instance is in a Running state.
-	InstanceReadyCondition clusterv1.ConditionType = "InstanceReady"
+	InstanceReadyCondition capiv1beta1.ConditionType = "InstanceReady"
 )
 
 const (
@@ -57,8 +60,8 @@ const (
 
 const (
 	// ImageReadyCondition reports on current status of the image. Ready indicates the image is in a active state.
-	ImageReadyCondition clusterv1.ConditionType = "ImageReady"
+	ImageReadyCondition capiv1beta1.ConditionType = "ImageReady"
 
 	// ImageImportedCondition reports on current status of the image import job. Ready indicates the import job is finished.
-	ImageImportedCondition clusterv1.ConditionType = "ImageImported"
+	ImageImportedCondition capiv1beta1.ConditionType = "ImageImported"
 )

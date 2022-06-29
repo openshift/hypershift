@@ -31,6 +31,9 @@ var (
 
 	// PowerVSInstanceStateREBOOT is the string representing an instance in a REBOOT state.
 	PowerVSInstanceStateREBOOT = PowerVSInstanceState("REBOOT")
+
+	// PowerVSInstanceStateERROR is the string representing an instance in a ERROR state.
+	PowerVSInstanceStateERROR = PowerVSInstanceState("ERROR")
 )
 
 // PowerVSImageState describes the state of an IBM Power VS image.
@@ -60,11 +63,11 @@ var (
 
 // NetworkInterface holds the network interface information like subnet id.
 type NetworkInterface struct {
-	// Subnet ID of the network interface
+	// Subnet ID of the network interface.
 	Subnet string `json:"subnet,omitempty"`
 }
 
-// Subnet describes a subnet
+// Subnet describes a subnet.
 type Subnet struct {
 	Ipv4CidrBlock *string `json:"cidr"`
 	Name          *string `json:"name"`
@@ -72,7 +75,7 @@ type Subnet struct {
 	Zone          *string `json:"zone"`
 }
 
-// VPCEndpoint describes a VPCEndpoint
+// VPCEndpoint describes a VPCEndpoint.
 type VPCEndpoint struct {
 	Address *string `json:"address"`
 	FIPID   *string `json:"floatingIPID"`

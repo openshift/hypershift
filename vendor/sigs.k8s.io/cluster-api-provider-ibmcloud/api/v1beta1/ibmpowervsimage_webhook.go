@@ -36,7 +36,7 @@ func (r *IBMPowerVSImage) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 var _ webhook.Defaulter = &IBMPowerVSImage{}
 
-// Default implements webhook.Defaulter so a webhook will be registered for the type
+// Default implements webhook.Defaulter so a webhook will be registered for the type.
 func (r *IBMPowerVSImage) Default() {
 	ibmpowervsimagelog.Info("default", "name", r.Name)
 }
@@ -46,19 +46,19 @@ func (r *IBMPowerVSImage) Default() {
 
 var _ webhook.Validator = &IBMPowerVSImage{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
+// ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSImage) ValidateCreate() error {
 	ibmpowervsimagelog.Info("validate create", "name", r.Name)
 	return nil
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
+// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSImage) ValidateUpdate(old runtime.Object) error {
 	ibmpowervsimagelog.Info("validate update", "name", r.Name)
 	return nil
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
+// ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSImage) ValidateDelete() error {
 	ibmpowervsimagelog.Info("validate delete", "name", r.Name)
 	return nil
