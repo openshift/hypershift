@@ -303,7 +303,7 @@ objects:
               fieldRef:
                 fieldPath: metadata.namespace
           image: ${OPERATOR_IMG}:${IMAGE_TAG}
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 5
             httpGet:
