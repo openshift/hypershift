@@ -386,7 +386,7 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
 		}
 
 		// For paging over next set of resources getting the start token
-		if resourceList.NextURL != nil || *resourceList.NextURL != "" {
+		if resourceList.NextURL != nil && *resourceList.NextURL != "" {
 			nextUrl = *resourceList.NextURL
 			return
 		}
