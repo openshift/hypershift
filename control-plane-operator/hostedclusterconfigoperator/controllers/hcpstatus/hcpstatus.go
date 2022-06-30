@@ -79,9 +79,10 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 	log := ctrl.LoggerFrom(ctx)
 
 	log.Info("Reconciling hosted cluster version conditions")
-	newCondition := func() metav1.Condition {
-		var clusterVersion configv1.ClusterVersion
-		if err := h.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "version"}, &clusterVersion); err != nil {
+	var clusterVersion configv1.ClusterVersion
+	err := h.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "version"}, &clusterVersion)
+	failingCondition := func() metav1.Condition {
+		if err != nil {
 			return metav1.Condition{
 				Type:    string(hyperv1.ClusterVersionFailing),
 				Status:  metav1.ConditionUnknown,
@@ -107,8 +108,37 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 			Reason: hyperv1.AsExpectedReason,
 		}
 	}()
-	newCondition.ObservedGeneration = hcp.Generation
-	meta.SetStatusCondition(&hcp.Status.Conditions, newCondition)
+	upgradeableCondition := func() metav1.Condition {
+		if err != nil {
+			return metav1.Condition{
+				Type:    string(hyperv1.ClusterVersionUpgradeable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.ClusterVersionStatusUnknownReason,
+				Message: fmt.Sprintf("failed to get clusterversion: %v", err),
+			}
+		}
+		for _, cond := range clusterVersion.Status.Conditions {
+			if cond.Type == configv1.OperatorUpgradeable {
+				if cond.Status == configv1.ConditionFalse {
+					return metav1.Condition{
+						Type:    string(hyperv1.ClusterVersionUpgradeable),
+						Status:  metav1.ConditionFalse,
+						Reason:  cond.Reason,
+						Message: cond.Message,
+					}
+				}
+			}
+		}
+		return metav1.Condition{
+			Type:   string(hyperv1.ClusterVersionUpgradeable),
+			Status: metav1.ConditionTrue,
+			Reason: hyperv1.AsExpectedReason,
+		}
+	}()
+	failingCondition.ObservedGeneration = hcp.Generation
+	meta.SetStatusCondition(&hcp.Status.Conditions, failingCondition)
+	upgradeableCondition.ObservedGeneration = hcp.Generation
+	meta.SetStatusCondition(&hcp.Status.Conditions, upgradeableCondition)
 	log.Info("Finished reconciling hosted cluster version conditions")
 
 	// If a rollout is in progress, compute and record the rollout status. The

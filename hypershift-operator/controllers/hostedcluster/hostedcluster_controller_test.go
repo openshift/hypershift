@@ -1698,3 +1698,146 @@ func TestConfigurationFieldsToRawExtensions(t *testing.T) {
 		t.Errorf("rawObject has no apiVersion or kind set: %+v", proxy.ObjectMeta)
 	}
 }
+
+func TestIsUpgradeable(t *testing.T) {
+	releaseImageFrom := "image:1.2"
+	releaseImageTo := "image:1.3"
+	tests := []struct {
+		name      string
+		hc        *hyperv1.HostedCluster
+		upgrading bool
+		err       bool
+	}{
+		{
+			name: "version not reported yet",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageFrom,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: nil,
+				},
+			},
+			upgrading: false,
+			err:       false,
+		},
+		{
+			name: "not upgrading",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageFrom,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: releaseImageFrom,
+						},
+					},
+				},
+			},
+			upgrading: false,
+			err:       false,
+		},
+		{
+			name: "not upgradable, no force annotation",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageTo,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: releaseImageFrom,
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			upgrading: true,
+			err:       true,
+		},
+		{
+			name: "not upgradable, old force annotation",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: releaseImageFrom,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageTo,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: releaseImageFrom,
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			upgrading: true,
+			err:       true,
+		},
+		{
+			name: "not upgradable, force annotation",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: releaseImageTo,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageTo,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: releaseImageFrom,
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			upgrading: true,
+			err:       false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upgrading, _, err := isUpgradeable(test.hc)
+			if upgrading != test.upgrading {
+				t.Errorf("isUpgradeable() upgrading = %v, want %v", upgrading, test.upgrading)
+			}
+			if (err == nil) == test.err {
+				t.Errorf("isUpgradeable() err = %v, want %v", (err == nil), test.err)
+				return
+			}
+		})
+	}
+}
