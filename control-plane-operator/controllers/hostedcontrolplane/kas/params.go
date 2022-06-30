@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type KubeAPIServerImages struct {
@@ -53,6 +54,7 @@ type KubeAPIServerParams struct {
 	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
 	AuditWebhookRef      *corev1.LocalObjectReference `json:"auditWebhookRef"`
 	ConsolePublicURL     string                       `json:"consolePublicURL"`
+	DisableProfiling     bool                         `json:"disableProfiling"`
 	config.DeploymentConfig
 	config.OwnerRef
 
@@ -86,6 +88,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		PodCIDR:              hcp.Spec.PodCIDR,
 		Availability:         hcp.Spec.ControllerAvailabilityPolicy,
 		ConsolePublicURL:     fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
+		DisableProfiling:     util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),
 
 		Images: KubeAPIServerImages{
 			HyperKube:             images["hyperkube"],
@@ -404,6 +407,7 @@ type KubeAPIServerConfigParams struct {
 	NodePortRange                string
 	AuditWebhookEnabled          bool
 	ConsolePublicURL             string
+	DisableProfiling             bool
 }
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {

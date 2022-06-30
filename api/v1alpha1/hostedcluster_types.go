@@ -93,6 +93,11 @@ const (
 	// ServiceAccountSigningKeySecretKey is the name of the secret key that should contain the service account signing
 	// key if specified.
 	ServiceAccountSigningKeySecretKey = "key"
+
+	// DisableProfilingAnnotation is the annotation that allows disabling profiling for control plane components.
+	// Any components specified in this list will have profiling disabled. Profiling is disabled by default for etcd and konnectivity.
+	// Components this annotation can apply to: kube-scheduler, kube-controller-manager, kube-apiserver.
+	DisableProfilingAnnotation = "hypershift.openshift.io/disable-profiling"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
