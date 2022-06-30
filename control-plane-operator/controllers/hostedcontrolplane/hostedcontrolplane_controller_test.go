@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -15,6 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -223,6 +226,89 @@ func TestReconcileAPIServerService(t *testing.T) {
 				actualService.Spec.Selector = nil
 				g.Expect(actualService.Spec).To(Equal(expectedService.Spec))
 				g.Expect(actualService.Annotations).To(Equal(expectedService.Annotations))
+			}
+		})
+	}
+}
+
+// TestClusterAutoscalerArgs checks to make sure that fields specified in a ClusterAutoscaling spec
+// become arguments to the autoscaler.
+func TestClusterAutoscalerArgs(t *testing.T) {
+	tests := map[string]struct {
+		AutoscalerOptions   hyperv1.ClusterAutoscaling
+		ExpectedArgs        []string
+		ExpectedMissingArgs []string
+	}{
+		"contains only default arguments": {
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{},
+			ExpectedArgs: []string{
+				"--cloud-provider=clusterapi",
+				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
+				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+				"--clusterapi-cloud-config-authoritative",
+				"--skip-nodes-with-local-storage=false",
+				"--alsologtostderr",
+				"--v=4",
+			},
+			ExpectedMissingArgs: []string{
+				"--max-nodes-total",
+				"--max-graceful-termination-sec",
+				"--max-node-provision-time",
+				"--expendable-pods-priority-cutoff",
+			},
+		},
+		"contains all optional parameters": {
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				MaxNodesTotal:        pointer.Int32Ptr(100),
+				MaxPodGracePeriod:    pointer.Int32Ptr(300),
+				MaxNodeProvisionTime: "20m",
+				PodPriorityThreshold: pointer.Int32Ptr(-5),
+			},
+			ExpectedArgs: []string{
+				"--cloud-provider=clusterapi",
+				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
+				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+				"--clusterapi-cloud-config-authoritative",
+				"--skip-nodes-with-local-storage=false",
+				"--alsologtostderr",
+				"--v=4",
+				"--max-nodes-total=100",
+				"--max-graceful-termination-sec=300",
+				"--max-node-provision-time=20m",
+				"--expendable-pods-priority-cutoff=-5",
+			},
+			ExpectedMissingArgs: []string{},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			deployment := manifests.AutoscalerDeployment("test-ns")
+			sa := manifests.AutoscalerServiceAccount("test-ns")
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test-secret",
+				},
+			}
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Name = "name"
+			hcp.Namespace = "namespace"
+			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false)
+			if err != nil {
+				t.Error(err)
+			}
+
+			observedArgs := sets.NewString(deployment.Spec.Template.Spec.Containers[0].Args...)
+			for _, arg := range test.ExpectedArgs {
+				if !observedArgs.Has(arg) {
+					t.Errorf("Expected to find \"%s\" in observed arguments: %v", arg, observedArgs)
+				}
+			}
+
+			for _, arg := range test.ExpectedMissingArgs {
+				if observedArgs.Has(arg) {
+					t.Errorf("Did not expect to find \"%s\" in observed arguments", arg)
+				}
 			}
 		})
 	}

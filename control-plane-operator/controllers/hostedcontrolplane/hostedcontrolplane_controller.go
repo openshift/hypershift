@@ -9,15 +9,48 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/powervs"
-
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/powervs"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cno"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/mcs"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -33,39 +66,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cno"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingressoperator"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kcm"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/mcs"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
-	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/events"
-	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/metrics"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -461,6 +461,16 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("invalid component versions found in release info: %w", err)
 	}
 	r.Log.Info("Found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", len(releaseImage.ComponentImages()), "componentVersions", componentVersions)
+
+	r.Log.Info("Reconciling autoscaler")
+	if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImage.ComponentImages()); err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler: %w", err)
+	}
+
+	r.Log.Info("Reconciling machine approver")
+	if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImage.ComponentImages()); err != nil {
+		return fmt.Errorf("failed to reconcile machine approver: %w", err)
+	}
 
 	r.Log.Info("Reconciling infrastructure services")
 	if err := r.reconcileInfrastructure(ctx, hostedControlPlane); err != nil {
@@ -2502,6 +2512,125 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return powervs.ReconcileCCMDeployment(deployment, hcp, ccmConfig, releaseImage)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile cloud controller manager deployment: %w", err)
+		}
+	}
+	return nil
+}
+
+// reconcileAutoscaler orchestrates reconciliation of autoscaler components using
+func (r *HostedControlPlaneReconciler) reconcileAutoscaler(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string) error {
+	autoscalerRole := manifests.AutoscalerRole(hcp.Namespace)
+	_, err := r.CreateOrUpdate(ctx, r.Client, autoscalerRole, func() error {
+		return autoscaler.ReconcileAutoscalerRole(autoscalerRole, config.OwnerRefFrom(hcp))
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler role: %w", err)
+	}
+
+	autoscalerServiceAccount := manifests.AutoscalerServiceAccount(hcp.Namespace)
+	_, err = r.CreateOrUpdate(ctx, r.Client, autoscalerServiceAccount, func() error {
+		util.EnsurePullSecret(autoscalerServiceAccount, controlplaneoperator.PullSecret("").Name)
+		config.OwnerRefFrom(hcp).ApplyTo(autoscalerServiceAccount)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
+	}
+
+	autoscalerRoleBinding := manifests.AutoscalerRoleBinding(hcp.Namespace)
+	_, err = r.CreateOrUpdate(ctx, r.Client, autoscalerRoleBinding, func() error {
+		return autoscaler.ReconcileAutoscalerRoleBinding(autoscalerRoleBinding, autoscalerRole, autoscalerServiceAccount, config.OwnerRefFrom(hcp))
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler role binding: %w", err)
+	}
+
+	// The deployment depends on the kubeconfig being reported.
+	if hcp.Status.KubeConfig != nil {
+		// Resolve the kubeconfig secret for CAPI which the
+		// autoscaler is deployed alongside of.
+		capiKubeConfigSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hcp.Namespace,
+				Name:      fmt.Sprintf("%s-kubeconfig", hcp.Spec.InfraID),
+			},
+		}
+		err = r.Client.Get(ctx, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
+		if err != nil {
+			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
+		}
+
+		autoscalerImage, ok := images["cluster-autoscaler"]
+		if !ok {
+			return fmt.Errorf("autoscaler image not found")
+		}
+
+		availabilityProberImage, ok := images[util.AvailabilityProberImageName]
+		if !ok {
+			return fmt.Errorf("availability prober image not found")
+		}
+
+		autoscalerDeployment := manifests.AutoscalerDeployment(hcp.Namespace)
+		_, err = r.CreateOrUpdate(ctx, r.Client, autoscalerDeployment, func() error {
+			return autoscaler.ReconcileAutoscalerDeployment(autoscalerDeployment, hcp, autoscalerServiceAccount, capiKubeConfigSecret, hcp.Spec.Autoscaling, autoscalerImage, availabilityProberImage, r.SetDefaultSecurityContext)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string) error {
+	role := manifests.MachineApproverRole(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, role, func() error {
+		return machineapprover.ReconcileMachineApproverRole(role, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver role: %w", err)
+	}
+
+	sa := manifests.MachineApproverServiceAccount(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, sa, func() error {
+		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
+		config.OwnerRefFrom(hcp).ApplyTo(sa)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
+	}
+
+	roleBinding := manifests.MachineApproverRoleBinding(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, roleBinding, func() error {
+		return machineapprover.ReconcileMachineApproverRoleBinding(roleBinding, role, sa, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver role binding: %w", err)
+	}
+	cm := manifests.ConfigMap(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.Client, cm, func() error {
+		return machineapprover.ReconcileMachineApproverConfig(cm, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver config: %w", err)
+	}
+
+	if hcp.Status.KubeConfig != nil {
+		// Resolve the kubeconfig secret for machine-approver
+		kubeconfigSecretName := manifests.KASServiceKubeconfigSecret(hcp.Namespace).Name
+
+		machineApproverImage, ok := images["cluster-machine-approver"]
+		if !ok {
+			return fmt.Errorf("autoscaler image not found")
+		}
+
+		availabilityProberImage, ok := images[util.AvailabilityProberImageName]
+		if !ok {
+			return fmt.Errorf("availability prober image not found")
+		}
+
+		deployment := manifests.MachineApproverDeployment(hcp.Namespace)
+		if _, err := r.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+			return machineapprover.ReconcileMachineApproverDeployment(deployment, hcp, sa, kubeconfigSecretName, cm, machineApproverImage, availabilityProberImage, r.SetDefaultSecurityContext)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}
 	}
 

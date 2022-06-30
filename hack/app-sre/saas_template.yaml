@@ -23123,6 +23123,39 @@ objects:
                         TODO: Add other useful fields. apiVersion, kind, uid?'
                       type: string
                   type: object
+                autoscaling:
+                  description: Autoscaling specifies auto-scaling behavior that applies
+                    to all NodePools associated with the control plane.
+                  properties:
+                    maxNodeProvisionTime:
+                      description: MaxNodeProvisionTime is the maximum time to wait
+                        for node provisioning before considering the provisioning
+                        to be unsuccessful, expressed as a Go duration string. The
+                        default is 15 minutes.
+                      pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
+                      type: string
+                    maxNodesTotal:
+                      description: MaxNodesTotal is the maximum allowable number of
+                        nodes across all NodePools for a HostedCluster. The autoscaler
+                        will not grow the cluster beyond this number.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    maxPodGracePeriod:
+                      description: MaxPodGracePeriod is the maximum seconds to wait
+                        for graceful pod termination before scaling down a NodePool.
+                        The default is 600 seconds.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    podPriorityThreshold:
+                      description: "PodPriorityThreshold enables users to schedule
+                        \"best-effort\" pods, which shouldn't trigger autoscaler actions,
+                        but only run when there are spare resources available. The
+                        default is -10. \n See the following for more details: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption"
+                      format: int32
+                      type: integer
+                  type: object
                 clusterID:
                   description: ClusterID is the unique id that identifies the cluster
                     externally. Making it optional here allows us to keep compatibility
