@@ -17,3 +17,9 @@ func IsPublicHCP(hcp *hyperv1.HostedControlPlane) bool {
 	return hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate ||
 		hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Public
 }
+
+func IsPrivateHC(hc *hyperv1.HostedCluster) bool {
+	return hc.Spec.Platform.Type == hyperv1.AWSPlatform &&
+		(hc.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate ||
+			hc.Spec.Platform.AWS.EndpointAccess == hyperv1.Private)
+}
