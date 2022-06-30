@@ -89,6 +89,11 @@ const (
 
 	// ExternalDNSHostnameAnnotation is the annotation external-dns uses to register DNS name for different HCP services.
 	ExternalDNSHostnameAnnotation = "external-dns.alpha.kubernetes.io/hostname"
+
+	// DisableProfilingAnnotation is the annotation that allows disabling profiling for control plane components.
+	// Any components specified in this list will have profiling disabled. Profiling is disabled by default for etcd and konnectivity.
+	// Components this annotation can apply to: kube-scheduler, kube-controller-manager, kube-apiserver.
+	DisableProfilingAnnotation = "hypershift.openshift.io/disable-profiling"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

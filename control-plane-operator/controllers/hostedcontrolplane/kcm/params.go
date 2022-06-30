@@ -27,6 +27,7 @@ type KubeControllerManagerParams struct {
 	ServiceCIDR         string
 	PodCIDR             string
 	APIServer           *configv1.APIServer `json:"apiServer"`
+	DisableProfiling    bool                `json:"disableProfiling"`
 
 	config.DeploymentConfig
 	config.OwnerRef
@@ -55,6 +56,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
+	params.DisableProfiling = util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KCMDeployment("").Name)
 	params.LivenessProbes = config.LivenessProbes{
 		kcmContainerMain().Name: {
 			ProbeHandler: corev1.ProbeHandler{

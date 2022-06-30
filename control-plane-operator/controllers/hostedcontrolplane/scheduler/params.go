@@ -9,6 +9,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
@@ -22,6 +23,7 @@ type KubeSchedulerParams struct {
 	AvailabilityProberImage string                `json:"availabilityProberImage"`
 	config.DeploymentConfig `json:",inline"`
 	APIServer               *configv1.APIServer `json:"apiServer"`
+	DisableProfiling        bool                `json:"disableProfiling"`
 }
 
 func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, globalConfig globalconfig.GlobalConfig, setDefaultSecurityContext bool) *KubeSchedulerParams {
@@ -88,6 +90,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 
 	params.SetDefaultSecurityContext = setDefaultSecurityContext
+	params.DisableProfiling = util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.SchedulerDeployment("").Name)
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
