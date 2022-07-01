@@ -49,10 +49,13 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	}
 	if hostedCluster != nil {
 		o.InfraID = hostedCluster.Spec.InfraID
+		o.PowerVSPlatform.BaseDomain = hostedCluster.Spec.DNS.BaseDomain
 		o.PowerVSPlatform.ResourceGroup = hostedCluster.Spec.Platform.PowerVS.ResourceGroup
 		o.PowerVSPlatform.Region = hostedCluster.Spec.Platform.PowerVS.Region
 		o.PowerVSPlatform.Zone = hostedCluster.Spec.Platform.PowerVS.Zone
 		o.PowerVSPlatform.VPCRegion = hostedCluster.Spec.Platform.PowerVS.VPC.Region
+		o.PowerVSPlatform.CISCRN = hostedCluster.Spec.Platform.PowerVS.CISInstanceCRN
+		o.PowerVSPlatform.CISDomainID = hostedCluster.Spec.DNS.PrivateZoneID
 	}
 
 	var inputErrors []error
@@ -80,7 +83,11 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
 	return (&powervsinfra.DestroyInfraOptions{
+		Name:          o.Name,
 		InfraID:       o.InfraID,
+		BaseDomain:    o.PowerVSPlatform.BaseDomain,
+		CISCRN:        o.PowerVSPlatform.CISCRN,
+		CISDomainID:   o.PowerVSPlatform.CISDomainID,
 		ResourceGroup: o.PowerVSPlatform.ResourceGroup,
 		PowerVSRegion: o.PowerVSPlatform.Region,
 		PowerVSZone:   o.PowerVSPlatform.Zone,
