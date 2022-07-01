@@ -799,36 +799,6 @@ type AWSPlatformSpec struct {
 	// +immutable
 	Roles AWSRoles `json:"roles"`
 
-	// KubeCloudControllerCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the cloud controller policy. The
-	// secret should have exactly one key, `credentials`, whose value is an AWS
-	// credentials file.
-	//
-	// TODO(dan): document the "cloud controller policy"
-	//
-	// +immutable
-	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
-
-	// NodePoolManagementCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the node pool management policy. The
-	// secret should have exactly one key, `credentials`, whose value is an AWS
-	// credentials file.
-	//
-	// TODO(dan): document the "node pool management policy"
-	//
-	// +immutable
-	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
-
-	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the control-plane-operator policy.
-	// The secret should have exactly one key, `credentials`, whose value is
-	// an AWS credentials file.
-	//
-	// TODO(dan): document the "control plane operator policy"
-	//
-	// +immutable
-	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
-
 	// ResourceTags is a list of additional tags to apply to AWS resources created
 	// for the cluster. See
 	// https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
@@ -1018,6 +988,206 @@ type AWSRoles struct {
 	//	]
 	// }
 	NetworkARN string `json:"networkARN"`
+
+	// KubeCloudControllerARN is an ARN value referencing a role that should contain
+	// policy permissions matching the cloud controller policy.
+	//
+	// The following is an example of a valid policy document:
+	//
+	//  {
+	//  "Version": "2012-10-17",
+	//  "Statement": [
+	//    {
+	//      "Action": [
+	//        "ec2:DescribeInstances",
+	//        "ec2:DescribeImages",
+	//        "ec2:DescribeRegions",
+	//        "ec2:DescribeRouteTables",
+	//        "ec2:DescribeSecurityGroups",
+	//        "ec2:DescribeSubnets",
+	//        "ec2:DescribeVolumes",
+	//        "ec2:CreateSecurityGroup",
+	//        "ec2:CreateTags",
+	//        "ec2:CreateVolume",
+	//        "ec2:ModifyInstanceAttribute",
+	//        "ec2:ModifyVolume",
+	//        "ec2:AttachVolume",
+	//        "ec2:AuthorizeSecurityGroupIngress",
+	//        "ec2:CreateRoute",
+	//        "ec2:DeleteRoute",
+	//        "ec2:DeleteSecurityGroup",
+	//        "ec2:DeleteVolume",
+	//        "ec2:DetachVolume",
+	//        "ec2:RevokeSecurityGroupIngress",
+	//        "ec2:DescribeVpcs",
+	//        "elasticloadbalancing:AddTags",
+	//        "elasticloadbalancing:AttachLoadBalancerToSubnets",
+	//        "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+	//        "elasticloadbalancing:CreateLoadBalancer",
+	//        "elasticloadbalancing:CreateLoadBalancerPolicy",
+	//        "elasticloadbalancing:CreateLoadBalancerListeners",
+	//        "elasticloadbalancing:ConfigureHealthCheck",
+	//        "elasticloadbalancing:DeleteLoadBalancer",
+	//        "elasticloadbalancing:DeleteLoadBalancerListeners",
+	//        "elasticloadbalancing:DescribeLoadBalancers",
+	//        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+	//        "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+	//        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+	//        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+	//        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+	//        "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+	//        "elasticloadbalancing:AddTags",
+	//        "elasticloadbalancing:CreateListener",
+	//        "elasticloadbalancing:CreateTargetGroup",
+	//        "elasticloadbalancing:DeleteListener",
+	//        "elasticloadbalancing:DeleteTargetGroup",
+	//        "elasticloadbalancing:DescribeListeners",
+	//        "elasticloadbalancing:DescribeLoadBalancerPolicies",
+	//        "elasticloadbalancing:DescribeTargetGroups",
+	//        "elasticloadbalancing:DescribeTargetHealth",
+	//        "elasticloadbalancing:ModifyListener",
+	//        "elasticloadbalancing:ModifyTargetGroup",
+	//        "elasticloadbalancing:RegisterTargets",
+	//        "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+	//        "iam:CreateServiceLinkedRole",
+	//        "kms:DescribeKey"
+	//      ],
+	//      "Resource": [
+	//        "*"
+	//      ],
+	//      "Effect": "Allow"
+	//    }
+	//  ]
+	// }
+	// +immutable
+	KubeCloudControllerARN string `json:"kubeCloudControllerARN"`
+
+	// NodePoolManagementARN is an ARN value referencing a role that should contain
+	// policy permissions matching the node pool management policy.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//   "Version": "2012-10-17",
+	//  "Statement": [
+	//    {
+	//      "Action": [
+	//        "ec2:AllocateAddress",
+	//        "ec2:AssociateRouteTable",
+	//        "ec2:AttachInternetGateway",
+	//        "ec2:AuthorizeSecurityGroupIngress",
+	//        "ec2:CreateInternetGateway",
+	//        "ec2:CreateNatGateway",
+	//        "ec2:CreateRoute",
+	//        "ec2:CreateRouteTable",
+	//        "ec2:CreateSecurityGroup",
+	//        "ec2:CreateSubnet",
+	//        "ec2:CreateTags",
+	//        "ec2:DeleteInternetGateway",
+	//        "ec2:DeleteNatGateway",
+	//        "ec2:DeleteRouteTable",
+	//        "ec2:DeleteSecurityGroup",
+	//        "ec2:DeleteSubnet",
+	//        "ec2:DeleteTags",
+	//        "ec2:DescribeAccountAttributes",
+	//        "ec2:DescribeAddresses",
+	//        "ec2:DescribeAvailabilityZones",
+	//        "ec2:DescribeImages",
+	//        "ec2:DescribeInstances",
+	//        "ec2:DescribeInternetGateways",
+	//        "ec2:DescribeNatGateways",
+	//        "ec2:DescribeNetworkInterfaces",
+	//        "ec2:DescribeNetworkInterfaceAttribute",
+	//        "ec2:DescribeRouteTables",
+	//        "ec2:DescribeSecurityGroups",
+	//        "ec2:DescribeSubnets",
+	//        "ec2:DescribeVpcs",
+	//        "ec2:DescribeVpcAttribute",
+	//        "ec2:DescribeVolumes",
+	//        "ec2:DetachInternetGateway",
+	//        "ec2:DisassociateRouteTable",
+	//        "ec2:DisassociateAddress",
+	//        "ec2:ModifyInstanceAttribute",
+	//        "ec2:ModifyNetworkInterfaceAttribute",
+	//        "ec2:ModifySubnetAttribute",
+	//        "ec2:ReleaseAddress",
+	//        "ec2:RevokeSecurityGroupIngress",
+	//        "ec2:RunInstances",
+	//        "ec2:TerminateInstances",
+	//        "tag:GetResources",
+	//        "ec2:CreateLaunchTemplate",
+	//        "ec2:CreateLaunchTemplateVersion",
+	//        "ec2:DescribeLaunchTemplates",
+	//        "ec2:DescribeLaunchTemplateVersions",
+	//        "ec2:DeleteLaunchTemplate",
+	//        "ec2:DeleteLaunchTemplateVersions"
+	//      ],
+	//      "Resource": [
+	//        "*"
+	//      ],
+	//      "Effect": "Allow"
+	//    },
+	//    {
+	//      "Condition": {
+	//        "StringLike": {
+	//          "iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"
+	//        }
+	//      },
+	//      "Action": [
+	//        "iam:CreateServiceLinkedRole"
+	//      ],
+	//      "Resource": [
+	//        "arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
+	//      ],
+	//      "Effect": "Allow"
+	//    },
+	//    {
+	//      "Action": [
+	//        "iam:PassRole"
+	//      ],
+	//      "Resource": [
+	//        "arn:*:iam::*:role/*-worker-role"
+	//      ],
+	//      "Effect": "Allow"
+	//    }
+	//  ]
+	// }
+	//
+	// +immutable
+	NodePoolManagementARN string `json:"nodePoolManagementARN"`
+
+	// ControlPlaneOperatorARN  is an ARN value referencing a role that should contain
+	// policy permissions matching the control-plane-operator policy.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"ec2:CreateVpcEndpoint",
+	//				"ec2:DescribeVpcEndpoints",
+	//				"ec2:ModifyVpcEndpoint",
+	//				"ec2:DeleteVpcEndpoints",
+	//				"ec2:CreateTags",
+	//				"route53:ListHostedZones"
+	//			],
+	//			"Resource": "*"
+	//		},
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"route53:ChangeResourceRecordSets",
+	//				"route53:ListResourceRecordSets"
+	//			],
+	//			"Resource": "arn:aws:route53:::%s"
+	//		}
+	//	]
+	// }
+	// +immutable
+	ControlPlaneOperatorARN string `json:"controlPlaneOperatorARN"`
 }
 
 // AWSServiceEndpoint stores the configuration for services to

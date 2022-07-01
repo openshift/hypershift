@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/images"
@@ -13,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -20,6 +23,7 @@ import (
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -93,7 +97,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 						Name: "credentials",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: hcluster.Spec.Platform.AWS.NodePoolManagementCreds.Name,
+								SecretName: NodePoolManagementCredsSecret("").Name,
 							},
 						},
 					},
@@ -230,93 +234,46 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
-	// Reconcile the platform provider cloud controller credentials secret by resolving
-	// the reference from the HostedCluster and syncing the secret in the control
-	// plane namespace.
-	var src corev1.Secret
-	if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name}, &src); err != nil {
-		return fmt.Errorf("failed to get cloud controller provider creds %s: %w", hcluster.Spec.Platform.AWS.KubeCloudControllerCreds.Name, err)
-	}
-	dest := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      src.Name,
-		},
-	}
-	_, err := createOrUpdate(ctx, c, dest, func() error {
-		srcData, srcHasData := src.Data["credentials"]
-		if !srcHasData {
-			return fmt.Errorf("hostedcluster cloud controller provider credentials secret %q must have a credentials key", src.Name)
+
+	awsCredentialsTemplate := `[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`
+	// TODO (alberto): consider moving this reconciliation logic down to the CPO.
+	// this is not trivial as the CPO deployment itself needs the secret with the ControlPlaneOperatorARN
+	var errs []error
+	syncSecret := func(secret *corev1.Secret, arn string) error {
+		ns := &corev1.Namespace{}
+		err := c.Get(ctx, client.ObjectKey{Name: secret.Namespace}, ns)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.FromContext(ctx, "WARNING: cannot sync cloud credential secret because namespace does not exist", "secret", client.ObjectKeyFromObject(secret))
+				return nil
+			}
+			return fmt.Errorf("failed to get secret namespace %s: %w", secret.Namespace, err)
 		}
-		dest.Type = corev1.SecretTypeOpaque
-		if dest.Data == nil {
-			dest.Data = map[string][]byte{}
+		if _, err := createOrUpdate(ctx, c, secret, func() error {
+			credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
+			secret.Data = map[string][]byte{"credentials": []byte(credentials)}
+			secret.Type = corev1.SecretTypeOpaque
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile aws cloud credential secret %s/%s: %w", secret.Namespace, secret.Name, err)
 		}
-		dest.Data["credentials"] = srcData
 		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile cloud controller provider creds: %w", err)
+	}
+	for arn, secret := range map[string]*corev1.Secret{
+		hcluster.Spec.Platform.AWS.Roles.KubeCloudControllerARN:  KubeCloudControllerCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.Roles.NodePoolManagementARN:   NodePoolManagementCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.Roles.ControlPlaneOperatorARN: ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+	} {
+		err := syncSecret(secret, arn)
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	// Reconcile the platform provider node pool management credentials secret by
-	// resolving  the reference from the HostedCluster and syncing the secret in
-	// the control plane namespace.
-	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.NodePoolManagementCreds.Name}, &src)
-	if err != nil {
-		return fmt.Errorf("failed to get node pool provider creds %s: %w", hcluster.Spec.Platform.AWS.NodePoolManagementCreds.Name, err)
-	}
-	dest = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      src.Name,
-		},
-	}
-	_, err = createOrUpdate(ctx, c, dest, func() error {
-		srcData, srcHasData := src.Data["credentials"]
-		if !srcHasData {
-			return fmt.Errorf("node pool provider credentials secret %q is missing credentials key", src.Name)
-		}
-		dest.Type = corev1.SecretTypeOpaque
-		if dest.Data == nil {
-			dest.Data = map[string][]byte{}
-		}
-		dest.Data["credentials"] = srcData
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile node pool provider creds: %w", err)
-	}
-
-	// Reconcile the platform provider node pool management credentials secret by
-	// resolving  the reference from the HostedCluster and syncing the secret in
-	// the control plane namespace.
-	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name}, &src)
-	if err != nil {
-		return fmt.Errorf("failed to get control plane operator provider creds %s: %w", hcluster.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name, err)
-	}
-	dest = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      src.Name,
-		},
-	}
-	_, err = createOrUpdate(ctx, c, dest, func() error {
-		srcData, srcHasData := src.Data["credentials"]
-		if !srcHasData {
-			return fmt.Errorf("control plane operator provider credentials secret %q is missing credentials key", src.Name)
-		}
-		dest.Type = corev1.SecretTypeOpaque
-		if dest.Data == nil {
-			dest.Data = map[string][]byte{}
-		}
-		dest.Data["credentials"] = srcData
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile control plane operator provider creds: %w", err)
-	}
-	return nil
+	return utilerrors.NewAggregate(errs)
 }
 
 func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -389,4 +346,31 @@ func (AWS) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 
 func (AWS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
+}
+
+func KubeCloudControllerCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cloud-controller-creds",
+		},
+	}
+}
+
+func NodePoolManagementCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "node-management-creds",
+		},
+	}
+}
+
+func ControlPlaneOperatorCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "control-plane-operator-creds",
+		},
+	}
 }

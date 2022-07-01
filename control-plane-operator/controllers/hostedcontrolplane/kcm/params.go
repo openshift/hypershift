@@ -107,7 +107,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AWSProviderConfig("").Name}
-		params.CloudProviderCreds = &corev1.LocalObjectReference{Name: hcp.Spec.Platform.AWS.KubeCloudControllerCreds.Name}
+		params.CloudProviderCreds = &corev1.LocalObjectReference{Name: aws.KubeCloudControllerCredsSecret("").Name}
 	case hyperv1.AzurePlatform:
 		params.CloudProvider = azure.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AzureProviderConfigWithCredentials("").Name}

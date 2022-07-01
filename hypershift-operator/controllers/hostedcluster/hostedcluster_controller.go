@@ -48,6 +48,7 @@ import (
 	ignitionserverreconciliation "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
+	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
@@ -1939,7 +1940,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				Name: "provider-creds",
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName: hc.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name,
+						SecretName: platformaws.ControlPlaneOperatorCredsSecret("").Name,
 					},
 				},
 			})

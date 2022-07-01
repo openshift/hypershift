@@ -930,10 +930,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.AWSPlatform,
 					AWS: &hyperv1.AWSPlatformSpec{
-						KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: "secret"},
-						NodePoolManagementCreds:   corev1.LocalObjectReference{Name: "secret"},
-						ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: "secret"},
-						EndpointAccess:            hyperv1.Public,
+						EndpointAccess: hyperv1.Public,
 					},
 				},
 			},
