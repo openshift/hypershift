@@ -2084,19 +2084,6 @@ spec:
                         required:
                         - vpc
                         type: object
-                      controlPlaneOperatorCreds:
-                        description: "ControlPlaneOperatorCreds is a reference to
-                          a secret containing cloud credentials with permissions matching
-                          the control-plane-operator policy. The secret should have
-                          exactly one key, `credentials`, whose value is an AWS credentials
-                          file. \n TODO(dan): document the \"control plane operator
-                          policy\""
-                        properties:
-                          name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                              TODO: Add other useful fields. apiVersion, kind, uid?'
-                            type: string
-                        type: object
                       endpointAccess:
                         default: Public
                         description: EndpointAccess specifies the publishing scope
@@ -2106,31 +2093,6 @@ spec:
                         - PublicAndPrivate
                         - Private
                         type: string
-                      kubeCloudControllerCreds:
-                        description: "KubeCloudControllerCreds is a reference to a
-                          secret containing cloud credentials with permissions matching
-                          the cloud controller policy. The secret should have exactly
-                          one key, `credentials`, whose value is an AWS credentials
-                          file. \n TODO(dan): document the \"cloud controller policy\""
-                        properties:
-                          name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                              TODO: Add other useful fields. apiVersion, kind, uid?'
-                            type: string
-                        type: object
-                      nodePoolManagementCreds:
-                        description: "NodePoolManagementCreds is a reference to a
-                          secret containing cloud credentials with permissions matching
-                          the node pool management policy. The secret should have
-                          exactly one key, `credentials`, whose value is an AWS credentials
-                          file. \n TODO(dan): document the \"node pool management
-                          policy\""
-                        properties:
-                          name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                              TODO: Add other useful fields. apiVersion, kind, uid?'
-                            type: string
-                        type: object
                       region:
                         description: Region is the AWS region in which the cluster
                           resides. This configures the OCP control plane cloud integrations,
@@ -2173,6 +2135,21 @@ spec:
                         description: Roles contains references to various AWS IAM
                           roles required to enable integrations such as OIDC.
                         properties:
+                          controlPlaneOperatorARN:
+                            description: "ControlPlaneOperatorARN  is an ARN value
+                              referencing a role that should contain policy permissions
+                              matching the control-plane-operator policy. \n The following
+                              is an example of a valid policy document: \n { \t\"Version\":
+                              \"2012-10-17\", \t\"Statement\": [ \t\t{ \t\t\t\"Effect\":
+                              \"Allow\", \t\t\t\"Action\": [ \t\t\t\t\"ec2:CreateVpcEndpoint\",
+                              \t\t\t\t\"ec2:DescribeVpcEndpoints\", \t\t\t\t\"ec2:ModifyVpcEndpoint\",
+                              \t\t\t\t\"ec2:DeleteVpcEndpoints\", \t\t\t\t\"ec2:CreateTags\",
+                              \t\t\t\t\"route53:ListHostedZones\" \t\t\t], \t\t\t\"Resource\":
+                              \"*\" \t\t}, \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
+                              [ \t\t\t\t\"route53:ChangeResourceRecordSets\", \t\t\t\t\"route53:ListResourceRecordSets\"
+                              \t\t\t], \t\t\t\"Resource\": \"arn:aws:route53:::%s\"
+                              \t\t} \t] }"
+                            type: string
                           imageRegistryARN:
                             description: "ImageRegistryARN is an ARN value referencing
                               a role used for image registry OIDC integration. \n
@@ -2212,6 +2189,51 @@ spec:
                               \t\t\t\t\"arn:aws:route53:::PRIVATE_ZONE_ID\" \t\t\t]
                               \t\t} \t] }"
                             type: string
+                          kubeCloudControllerARN:
+                            description: "KubeCloudControllerARN is an ARN value referencing
+                              a role that should contain policy permissions matching
+                              the cloud controller policy. \n The following is an
+                              example of a valid policy document: \n  {  \"Version\":
+                              \"2012-10-17\",  \"Statement\": [    {      \"Action\":
+                              [        \"ec2:DescribeInstances\",        \"ec2:DescribeImages\",
+                              \       \"ec2:DescribeRegions\",        \"ec2:DescribeRouteTables\",
+                              \       \"ec2:DescribeSecurityGroups\",        \"ec2:DescribeSubnets\",
+                              \       \"ec2:DescribeVolumes\",        \"ec2:CreateSecurityGroup\",
+                              \       \"ec2:CreateTags\",        \"ec2:CreateVolume\",
+                              \       \"ec2:ModifyInstanceAttribute\",        \"ec2:ModifyVolume\",
+                              \       \"ec2:AttachVolume\",        \"ec2:AuthorizeSecurityGroupIngress\",
+                              \       \"ec2:CreateRoute\",        \"ec2:DeleteRoute\",
+                              \       \"ec2:DeleteSecurityGroup\",        \"ec2:DeleteVolume\",
+                              \       \"ec2:DetachVolume\",        \"ec2:RevokeSecurityGroupIngress\",
+                              \       \"ec2:DescribeVpcs\",        \"elasticloadbalancing:AddTags\",
+                              \       \"elasticloadbalancing:AttachLoadBalancerToSubnets\",
+                              \       \"elasticloadbalancing:ApplySecurityGroupsToLoadBalancer\",
+                              \       \"elasticloadbalancing:CreateLoadBalancer\",
+                              \       \"elasticloadbalancing:CreateLoadBalancerPolicy\",
+                              \       \"elasticloadbalancing:CreateLoadBalancerListeners\",
+                              \       \"elasticloadbalancing:ConfigureHealthCheck\",
+                              \       \"elasticloadbalancing:DeleteLoadBalancer\",
+                              \       \"elasticloadbalancing:DeleteLoadBalancerListeners\",
+                              \       \"elasticloadbalancing:DescribeLoadBalancers\",
+                              \       \"elasticloadbalancing:DescribeLoadBalancerAttributes\",
+                              \       \"elasticloadbalancing:DetachLoadBalancerFromSubnets\",
+                              \       \"elasticloadbalancing:DeregisterInstancesFromLoadBalancer\",
+                              \       \"elasticloadbalancing:ModifyLoadBalancerAttributes\",
+                              \       \"elasticloadbalancing:RegisterInstancesWithLoadBalancer\",
+                              \       \"elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer\",
+                              \       \"elasticloadbalancing:AddTags\",        \"elasticloadbalancing:CreateListener\",
+                              \       \"elasticloadbalancing:CreateTargetGroup\",
+                              \       \"elasticloadbalancing:DeleteListener\",        \"elasticloadbalancing:DeleteTargetGroup\",
+                              \       \"elasticloadbalancing:DescribeListeners\",
+                              \       \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
+                              \       \"elasticloadbalancing:DescribeTargetGroups\",
+                              \       \"elasticloadbalancing:DescribeTargetHealth\",
+                              \       \"elasticloadbalancing:ModifyListener\",        \"elasticloadbalancing:ModifyTargetGroup\",
+                              \       \"elasticloadbalancing:RegisterTargets\",        \"elasticloadbalancing:SetLoadBalancerPoliciesOfListener\",
+                              \       \"iam:CreateServiceLinkedRole\",        \"kms:DescribeKey\"
+                              \     ],      \"Resource\": [        \"*\"      ],      \"Effect\":
+                              \"Allow\"    }  ] }"
+                            type: string
                           networkARN:
                             description: "NetworkOIDC is an ARN value referencing
                               a role used for networking OIDC integration. \n The
@@ -2224,6 +2246,47 @@ spec:
                               \       \"ec2:AssignIpv6Addresses\",        \"ec2:DescribeSubnets\",
                               \       \"ec2:DescribeNetworkInterfaces\" \t\t\t], \t\t\t\"Resource\":
                               \"*\" \t\t} \t] }"
+                            type: string
+                          nodePoolManagementARN:
+                            description: "NodePoolManagementARN is an ARN value referencing
+                              a role that should contain policy permissions matching
+                              the node pool management policy. \n The following is
+                              an example of a valid policy document: \n {   \"Version\":
+                              \"2012-10-17\",  \"Statement\": [    {      \"Action\":
+                              [        \"ec2:AllocateAddress\",        \"ec2:AssociateRouteTable\",
+                              \       \"ec2:AttachInternetGateway\",        \"ec2:AuthorizeSecurityGroupIngress\",
+                              \       \"ec2:CreateInternetGateway\",        \"ec2:CreateNatGateway\",
+                              \       \"ec2:CreateRoute\",        \"ec2:CreateRouteTable\",
+                              \       \"ec2:CreateSecurityGroup\",        \"ec2:CreateSubnet\",
+                              \       \"ec2:CreateTags\",        \"ec2:DeleteInternetGateway\",
+                              \       \"ec2:DeleteNatGateway\",        \"ec2:DeleteRouteTable\",
+                              \       \"ec2:DeleteSecurityGroup\",        \"ec2:DeleteSubnet\",
+                              \       \"ec2:DeleteTags\",        \"ec2:DescribeAccountAttributes\",
+                              \       \"ec2:DescribeAddresses\",        \"ec2:DescribeAvailabilityZones\",
+                              \       \"ec2:DescribeImages\",        \"ec2:DescribeInstances\",
+                              \       \"ec2:DescribeInternetGateways\",        \"ec2:DescribeNatGateways\",
+                              \       \"ec2:DescribeNetworkInterfaces\",        \"ec2:DescribeNetworkInterfaceAttribute\",
+                              \       \"ec2:DescribeRouteTables\",        \"ec2:DescribeSecurityGroups\",
+                              \       \"ec2:DescribeSubnets\",        \"ec2:DescribeVpcs\",
+                              \       \"ec2:DescribeVpcAttribute\",        \"ec2:DescribeVolumes\",
+                              \       \"ec2:DetachInternetGateway\",        \"ec2:DisassociateRouteTable\",
+                              \       \"ec2:DisassociateAddress\",        \"ec2:ModifyInstanceAttribute\",
+                              \       \"ec2:ModifyNetworkInterfaceAttribute\",        \"ec2:ModifySubnetAttribute\",
+                              \       \"ec2:ReleaseAddress\",        \"ec2:RevokeSecurityGroupIngress\",
+                              \       \"ec2:RunInstances\",        \"ec2:TerminateInstances\",
+                              \       \"tag:GetResources\",        \"ec2:CreateLaunchTemplate\",
+                              \       \"ec2:CreateLaunchTemplateVersion\",        \"ec2:DescribeLaunchTemplates\",
+                              \       \"ec2:DescribeLaunchTemplateVersions\",        \"ec2:DeleteLaunchTemplate\",
+                              \       \"ec2:DeleteLaunchTemplateVersions\"      ],
+                              \     \"Resource\": [        \"*\"      ],      \"Effect\":
+                              \"Allow\"    },    {      \"Condition\": {        \"StringLike\":
+                              {          \"iam:AWSServiceName\": \"elasticloadbalancing.amazonaws.com\"
+                              \       }      },      \"Action\": [        \"iam:CreateServiceLinkedRole\"
+                              \     ],      \"Resource\": [        \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
+                              \     ],      \"Effect\": \"Allow\"    },    {      \"Action\":
+                              [        \"iam:PassRole\"      ],      \"Resource\":
+                              [        \"arn:*:iam::*:role/*-worker-role\"      ],
+                              \     \"Effect\": \"Allow\"    }  ] }"
                             type: string
                           storageARN:
                             description: "StorageOIDC is an ARN value referencing
@@ -2241,9 +2304,12 @@ spec:
                               \t\t\t], \t\t\t\"Resource\": \"*\" \t\t} \t] }"
                             type: string
                         required:
+                        - controlPlaneOperatorARN
                         - imageRegistryARN
                         - ingressARN
+                        - kubeCloudControllerARN
                         - networkARN
+                        - nodePoolManagementARN
                         - storageARN
                         type: object
                       serviceEndpoints:
@@ -2272,9 +2338,6 @@ spec:
                           type: object
                         type: array
                     required:
-                    - controlPlaneOperatorCreds
-                    - kubeCloudControllerCreds
-                    - nodePoolManagementCreds
                     - region
                     - roles
                     type: object

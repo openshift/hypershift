@@ -1199,57 +1199,6 @@ integrations such as OIDC.</p>
 </tr>
 <tr>
 <td>
-<code>kubeCloudControllerCreds</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>KubeCloudControllerCreds is a reference to a secret containing cloud
-credentials with permissions matching the cloud controller policy. The
-secret should have exactly one key, <code>credentials</code>, whose value is an AWS
-credentials file.</p>
-<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>nodePoolManagementCreds</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>NodePoolManagementCreds is a reference to a secret containing cloud
-credentials with permissions matching the node pool management policy. The
-secret should have exactly one key, <code>credentials</code>, whose value is an AWS
-credentials file.</p>
-<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>controlPlaneOperatorCreds</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
-credentials with permissions matching the control-plane-operator policy.
-The secret should have exactly one key, <code>credentials</code>, whose value is
-an AWS credentials file.</p>
-<p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>resourceTags</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.AWSResourceTag">
@@ -1577,6 +1526,220 @@ integration.</p>
 &ldquo;ec2:DescribeNetworkInterfaces&rdquo;
 ],
 &ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeCloudControllerARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>KubeCloudControllerARN is an ARN value referencing a role that should contain
+policy permissions matching the cloud controller policy.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeImages&rdquo;,
+&ldquo;ec2:DescribeRegions&rdquo;,
+&ldquo;ec2:DescribeRouteTables&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;,
+&ldquo;ec2:DescribeVolumes&rdquo;,
+&ldquo;ec2:CreateSecurityGroup&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;ec2:CreateVolume&rdquo;,
+&ldquo;ec2:ModifyInstanceAttribute&rdquo;,
+&ldquo;ec2:ModifyVolume&rdquo;,
+&ldquo;ec2:AttachVolume&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:CreateRoute&rdquo;,
+&ldquo;ec2:DeleteRoute&rdquo;,
+&ldquo;ec2:DeleteSecurityGroup&rdquo;,
+&ldquo;ec2:DeleteVolume&rdquo;,
+&ldquo;ec2:DetachVolume&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:DescribeVpcs&rdquo;,
+&ldquo;elasticloadbalancing:AddTags&rdquo;,
+&ldquo;elasticloadbalancing:AttachLoadBalancerToSubnets&rdquo;,
+&ldquo;elasticloadbalancing:ApplySecurityGroupsToLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:CreateLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:CreateLoadBalancerPolicy&rdquo;,
+&ldquo;elasticloadbalancing:CreateLoadBalancerListeners&rdquo;,
+&ldquo;elasticloadbalancing:ConfigureHealthCheck&rdquo;,
+&ldquo;elasticloadbalancing:DeleteLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:DeleteLoadBalancerListeners&rdquo;,
+&ldquo;elasticloadbalancing:DescribeLoadBalancers&rdquo;,
+&ldquo;elasticloadbalancing:DescribeLoadBalancerAttributes&rdquo;,
+&ldquo;elasticloadbalancing:DetachLoadBalancerFromSubnets&rdquo;,
+&ldquo;elasticloadbalancing:DeregisterInstancesFromLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:ModifyLoadBalancerAttributes&rdquo;,
+&ldquo;elasticloadbalancing:RegisterInstancesWithLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer&rdquo;,
+&ldquo;elasticloadbalancing:AddTags&rdquo;,
+&ldquo;elasticloadbalancing:CreateListener&rdquo;,
+&ldquo;elasticloadbalancing:CreateTargetGroup&rdquo;,
+&ldquo;elasticloadbalancing:DeleteListener&rdquo;,
+&ldquo;elasticloadbalancing:DeleteTargetGroup&rdquo;,
+&ldquo;elasticloadbalancing:DescribeListeners&rdquo;,
+&ldquo;elasticloadbalancing:DescribeLoadBalancerPolicies&rdquo;,
+&ldquo;elasticloadbalancing:DescribeTargetGroups&rdquo;,
+&ldquo;elasticloadbalancing:DescribeTargetHealth&rdquo;,
+&ldquo;elasticloadbalancing:ModifyListener&rdquo;,
+&ldquo;elasticloadbalancing:ModifyTargetGroup&rdquo;,
+&ldquo;elasticloadbalancing:RegisterTargets&rdquo;,
+&ldquo;elasticloadbalancing:SetLoadBalancerPoliciesOfListener&rdquo;,
+&ldquo;iam:CreateServiceLinkedRole&rdquo;,
+&ldquo;kms:DescribeKey&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;*&rdquo;
+],
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagementARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>NodePoolManagementARN is an ARN value referencing a role that should contain
+policy permissions matching the node pool management policy.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:AllocateAddress&rdquo;,
+&ldquo;ec2:AssociateRouteTable&rdquo;,
+&ldquo;ec2:AttachInternetGateway&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:CreateInternetGateway&rdquo;,
+&ldquo;ec2:CreateNatGateway&rdquo;,
+&ldquo;ec2:CreateRoute&rdquo;,
+&ldquo;ec2:CreateRouteTable&rdquo;,
+&ldquo;ec2:CreateSecurityGroup&rdquo;,
+&ldquo;ec2:CreateSubnet&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;ec2:DeleteInternetGateway&rdquo;,
+&ldquo;ec2:DeleteNatGateway&rdquo;,
+&ldquo;ec2:DeleteRouteTable&rdquo;,
+&ldquo;ec2:DeleteSecurityGroup&rdquo;,
+&ldquo;ec2:DeleteSubnet&rdquo;,
+&ldquo;ec2:DeleteTags&rdquo;,
+&ldquo;ec2:DescribeAccountAttributes&rdquo;,
+&ldquo;ec2:DescribeAddresses&rdquo;,
+&ldquo;ec2:DescribeAvailabilityZones&rdquo;,
+&ldquo;ec2:DescribeImages&rdquo;,
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInternetGateways&rdquo;,
+&ldquo;ec2:DescribeNatGateways&rdquo;,
+&ldquo;ec2:DescribeNetworkInterfaces&rdquo;,
+&ldquo;ec2:DescribeNetworkInterfaceAttribute&rdquo;,
+&ldquo;ec2:DescribeRouteTables&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;,
+&ldquo;ec2:DescribeVpcs&rdquo;,
+&ldquo;ec2:DescribeVpcAttribute&rdquo;,
+&ldquo;ec2:DescribeVolumes&rdquo;,
+&ldquo;ec2:DetachInternetGateway&rdquo;,
+&ldquo;ec2:DisassociateRouteTable&rdquo;,
+&ldquo;ec2:DisassociateAddress&rdquo;,
+&ldquo;ec2:ModifyInstanceAttribute&rdquo;,
+&ldquo;ec2:ModifyNetworkInterfaceAttribute&rdquo;,
+&ldquo;ec2:ModifySubnetAttribute&rdquo;,
+&ldquo;ec2:ReleaseAddress&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:TerminateInstances&rdquo;,
+&ldquo;tag:GetResources&rdquo;,
+&ldquo;ec2:CreateLaunchTemplate&rdquo;,
+&ldquo;ec2:CreateLaunchTemplateVersion&rdquo;,
+&ldquo;ec2:DescribeLaunchTemplates&rdquo;,
+&ldquo;ec2:DescribeLaunchTemplateVersions&rdquo;,
+&ldquo;ec2:DeleteLaunchTemplate&rdquo;,
+&ldquo;ec2:DeleteLaunchTemplateVersions&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;<em>&rdquo;
+],
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+},
+{
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;iam:AWSServiceName&rdquo;: &ldquo;elasticloadbalancing.amazonaws.com&rdquo;
+}
+},
+&ldquo;Action&rdquo;: [
+&ldquo;iam:CreateServiceLinkedRole&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:iam::<em>:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing&rdquo;
+],
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+},
+{
+&ldquo;Action&rdquo;: [
+&ldquo;iam:PassRole&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:iam::<em>:role/</em>-worker-role&rdquo;
+],
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperatorARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ControlPlaneOperatorARN  is an ARN value referencing a role that should contain
+policy permissions matching the control-plane-operator policy.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:CreateVpcEndpoint&rdquo;,
+&ldquo;ec2:DescribeVpcEndpoints&rdquo;,
+&ldquo;ec2:ModifyVpcEndpoint&rdquo;,
+&ldquo;ec2:DeleteVpcEndpoints&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;route53:ListHostedZones&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;route53:ChangeResourceRecordSets&rdquo;,
+&ldquo;route53:ListResourceRecordSets&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:route53:::%s&rdquo;
 }
 ]
 }</p>

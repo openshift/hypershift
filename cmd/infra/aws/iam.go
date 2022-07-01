@@ -417,21 +417,21 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	if err != nil {
 		return nil, err
 	}
-	output.KubeCloudControllerRoleARN = arn
+	output.Roles.KubeCloudControllerARN = arn
 
 	nodePoolManagementTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:capa-controller-manager")
 	arn, err = o.CreateOIDCRole(iamClient, "node-pool", nodePoolManagementTrustPolicy, nodePoolPolicy)
 	if err != nil {
 		return nil, err
 	}
-	output.NodePoolManagementRoleARN = arn
+	output.Roles.NodePoolManagementARN = arn
 
 	controlPlaneOperatorTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:control-plane-operator")
 	arn, err = o.CreateOIDCRole(iamClient, "control-plane-operator", controlPlaneOperatorTrustPolicy, controlPlaneOperatorPolicy(o.LocalZoneID))
 	if err != nil {
 		return nil, err
 	}
-	output.ControlPlaneOperatorRoleARN = arn
+	output.Roles.ControlPlaneOperatorARN = arn
 
 	if len(o.KMSKeyARN) > 0 {
 		kmsProviderTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kms-provider")
