@@ -1271,6 +1271,10 @@ const (
 	// HostedCluster itself attempts an unsupported version before 4.9 or an
 	// unsupported upgrade e.g y-stream upgrade before 4.11.
 	ValidReleaseImage ConditionType = "ValidReleaseImage"
+
+	// PlatformCredentialsFound indicates that credentials required for the
+	// desired platform are valid.
+	PlatformCredentialsFound ConditionType = "PlatformCredentialsFound"
 )
 
 const (
@@ -1306,7 +1310,8 @@ const (
 
 	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
 
-	OIDCConfigurationInvalidReason = "OIDCConfigurationInvalid"
+	OIDCConfigurationInvalidReason    = "OIDCConfigurationInvalid"
+	PlatformCredentialsNotFoundReason = "PlatformCredentialsNotFound"
 
 	InvalidImageReason = "InvalidImage"
 )

@@ -714,16 +714,38 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	_, ignitionServerHasHealthzHandler := util.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
 	_, controlplaneOperatorManagesIgnitionServer := util.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
 
-	// Reconcile Platform specifics.
 	p, err := platform.GetPlatform(hcluster, utilitiesImage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err := p.ReconcileCredentials(ctx, r.Client, createOrUpdate,
-		hcluster,
-		controlPlaneNamespace.Name); err != nil {
-		return ctrl.Result{}, err
+	// Reconcile Platform specifics.
+	{
+		if err := p.ReconcileCredentials(ctx, r.Client, createOrUpdate, hcluster, controlPlaneNamespace.Name); err != nil {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.PlatformCredentialsFound),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.PlatformCredentialsNotFoundReason,
+				ObservedGeneration: hcluster.Generation,
+				Message:            err.Error(),
+			})
+			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %w", err)
+		}
+		if meta.IsStatusConditionFalse(hcluster.Status.Conditions, string(hyperv1.PlatformCredentialsFound)) {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.PlatformCredentialsFound),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				ObservedGeneration: hcluster.Generation,
+				Message:            "Required platform credentials are found",
+			})
+			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
+			}
+		}
 	}
 
 	// Reconcile the HostedControlPlane pull secret by resolving the source secret
